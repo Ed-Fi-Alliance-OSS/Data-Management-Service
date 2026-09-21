@@ -18,8 +18,11 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [NonParallelizable]
 public sealed class Given_CdcSqlServerFixtureStartupLiveRecreation
 {
-    [Test]
-    public async Task It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence(
+        bool reasonTwo
+    )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
             CdcProvider.SqlServer
@@ -33,10 +36,14 @@ public sealed class Given_CdcSqlServerFixtureStartupLiveRecreation
             "Docker is required for SQL startup recreation qualification."
         );
         string prefix = $"dms-cdc-recreation-{Guid.NewGuid():N}";
-        var controlled = new FirstSqlStartFailure(docker, prefix + "-provider");
+        var controlled = new FirstSqlStartFailure(docker, prefix + "-provider", reasonTwo);
         string[] before = Directory.GetFiles(
             TestContext.CurrentContext.WorkDirectory,
             "admission-evidence-sql-startup-*.json"
+        );
+        string[] recoveryBefore = Directory.GetFiles(
+            TestContext.CurrentContext.WorkDirectory,
+            "admission-evidence-sql-recovery-*.json"
         );
         int beforeWorkerCalls = 0;
         await using (
@@ -89,7 +96,21 @@ public sealed class Given_CdcSqlServerFixtureStartupLiveRecreation
                 .GetProperty("LsaInitializationTimeout")
                 .GetBoolean()
                 .Should()
-                .BeTrue();
+                .Be(!reasonTwo);
+            string recoveryPath = Directory
+                .GetFiles(TestContext.CurrentContext.WorkDirectory, "admission-evidence-sql-recovery-*.json")
+                .Except(recoveryBefore)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            using var outcome = JsonDocument.Parse(await File.ReadAllTextAsync(recoveryPath, timeout.Token));
+            outcome.RootElement.GetProperty("Outcome").GetString().Should().Be("Ready");
+            outcome.RootElement.GetProperty("Injected").GetBoolean().Should().BeTrue();
+            outcome
+                .RootElement.GetProperty("Signature")
+                .GetString()
+                .Should()
+                .Be(reasonTwo ? "ReasonTwoErrnoEleven" : "LsaInitializationTimeout");
         }
         foreach (string id in controlled.ContainerIds)
         {
@@ -105,7 +126,8 @@ public sealed class Given_CdcSqlServerFixtureStartupLiveRecreation
 
     // Inject only the first process exit. All inspection, removal, replacement startup, readiness,
     // and final cleanup use real Docker operations and the unchanged configured SQL image.
-    private sealed class FirstSqlStartFailure(IDockerCli inner, string providerName) : IDockerCli
+    private sealed class FirstSqlStartFailure(IDockerCli inner, string providerName, bool reasonTwo)
+        : IDockerCli
     {
         public bool IsOffline => false;
         public int ProviderStarts { get; private set; }
@@ -145,7 +167,12 @@ public sealed class Given_CdcSqlServerFixtureStartupLiveRecreation
                     .. arguments.Skip(1),
                     "-c",
                     "cat >&2 <<'CDC_LSA_FAILURE'\n"
-                        + Given_CdcSqlServerFixtureStartup.LsaFailureLog
+                        + "CDC_SQL_STARTUP_INJECTED_FAILURE\n"
+                        + (
+                            reasonTwo
+                                ? Given_CdcSqlServerFixtureStartup.ReasonTwoFailureLog
+                                : Given_CdcSqlServerFixtureStartup.LsaFailureLog
+                        )
                         + "\nCDC_LSA_FAILURE\nexit 1",
                 ];
             }

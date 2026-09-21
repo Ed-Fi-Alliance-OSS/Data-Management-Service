@@ -10,7 +10,7 @@ internal sealed record CdcSqlServerContainerState(string Status, int ExitCode, b
     public CdcSqlServerStartupLogEvidence Logs { get; init; } =
         CdcSqlServerStartupLogEvidence.Empty("NotObserved");
 
-    internal bool IsLsaInitializationTimeout =>
+    private bool HasCompleteStartupFailure =>
         Status == "exited"
         && ExitCode == 1
         && !OomKilled
@@ -19,11 +19,29 @@ internal sealed record CdcSqlServerContainerState(string Status, int ExitCode, b
         && Logs.FatalMessage
         && !Logs.MemoryMessage
         && !Logs.MappingMessage
-        && Logs.LsaInitializationTimeout
-        && Logs.FatalReasonCodes.SequenceEqual([6U])
-        && Logs.LastErrnos.SequenceEqual([2])
         && Logs.SqlErrorNumbers.Count == 0
         && Logs.Signals.Count == 0;
+
+    internal bool IsLsaInitializationTimeout =>
+        HasCompleteStartupFailure
+        && Logs.LsaInitializationTimeout
+        && Logs.FatalReasonCodes.SequenceEqual([6U])
+        && Logs.LastErrnos.SequenceEqual([2]);
+
+    // An observed CI signature, not a diagnosis of the underlying SQL Server fault.
+    internal bool IsReasonTwoErrnoEleven =>
+        HasCompleteStartupFailure
+        && !Logs.LsaInitializationTimeout
+        && Logs.FatalReasonCodes.SequenceEqual([2U])
+        && Logs.LastErrnos.SequenceEqual([11]);
+
+    internal string RecoverySignature =>
+        (IsLsaInitializationTimeout, IsReasonTwoErrnoEleven) switch
+        {
+            (true, _) => "LsaInitializationTimeout",
+            (_, true) => "ReasonTwoErrnoEleven",
+            _ => "None",
+        };
 }
 
 internal sealed record CdcSqlServerStartupBudgets(
@@ -33,6 +51,8 @@ internal sealed record CdcSqlServerStartupBudgets(
     TimeSpan Overall
 )
 {
+    public TimeSpan RecoveryDelay { get; init; } = TimeSpan.FromSeconds(5);
+
     public static CdcSqlServerStartupBudgets Default { get; } =
         new(
             TimeSpan.FromSeconds(90),
@@ -42,10 +62,12 @@ internal sealed record CdcSqlServerStartupBudgets(
         );
 }
 
+internal sealed record CdcSqlServerStartupResult(int Attempts, string Signature, bool Injected);
+
 // Applies only to a fresh fixture provider, before database provisioning or any scenario work.
 internal static class CdcSqlServerFixtureStartup
 {
-    internal static async Task RunAsync(
+    internal static async Task<CdcSqlServerStartupResult> RunAsync(
         Func<CancellationToken, Task> startAndWait,
         Func<CancellationToken, Task<CdcSqlServerContainerState>> inspectFailure,
         Func<int, CdcSqlServerContainerState, bool, CancellationToken, Task> retainFailure,
@@ -57,6 +79,8 @@ internal static class CdcSqlServerFixtureStartup
     {
         using var overall = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         overall.CancelAfter(budgets.Overall);
+        string signature = "None";
+        bool injected = false;
         for (int attempt = 1; attempt <= 2; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -67,7 +91,7 @@ internal static class CdcSqlServerFixtureStartup
             {
                 await startAndWait(startup.Token);
                 startup.Token.ThrowIfCancellationRequested();
-                return;
+                return new(attempt, signature, injected);
             }
             catch (Exception exception)
                 when (exception is InvalidOperationException or OperationCanceledException)
@@ -83,7 +107,9 @@ internal static class CdcSqlServerFixtureStartup
                 {
                     CdcSqlServerContainerState state = await inspectFailure(inspection.Token);
                     inspection.Token.ThrowIfCancellationRequested();
-                    recreate = attempt == 1 && !keepContainer && state.IsLsaInitializationTimeout;
+                    recreate = attempt == 1 && !keepContainer && state.RecoverySignature != "None";
+                    signature = state.RecoverySignature;
+                    injected = state.Logs.InjectedFailure;
                     await retainFailure(attempt, state, recreate, inspection.Token);
                     inspection.Token.ThrowIfCancellationRequested();
                     recorded = true;
@@ -104,7 +130,9 @@ internal static class CdcSqlServerFixtureStartup
                 await removeContainer(removal.Token);
                 cancellationToken.ThrowIfCancellationRequested();
                 removal.Token.ThrowIfCancellationRequested();
+                await Task.Delay(budgets.RecoveryDelay, overall.Token);
             }
         }
+        throw new InvalidOperationException("SQL Server startup attempts exhausted.");
     }
 }

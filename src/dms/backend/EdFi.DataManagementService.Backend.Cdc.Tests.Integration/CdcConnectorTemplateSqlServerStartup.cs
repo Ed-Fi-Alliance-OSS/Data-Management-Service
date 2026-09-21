@@ -10,8 +10,9 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
-    private Task StartSqlServerWithRecoveryAsync(CancellationToken cancellationToken) =>
-        CdcSqlServerFixtureStartup.RunAsync(
+    private async Task StartSqlServerWithRecoveryAsync(CancellationToken cancellationToken)
+    {
+        CdcSqlServerStartupResult result = await CdcSqlServerFixtureStartup.RunAsync(
             StartSqlServerAttemptAsync,
             ReadFailedSqlServerContainerStateAsync,
             RetainSqlServerStartupAttemptAsync,
@@ -24,6 +25,29 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             cancellationToken,
             CdcSqlServerStartupBudgets.Default
         );
+        if (result.Attempts > 1)
+        {
+            string path = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory,
+                "admission-evidence-sql-recovery-" + Guid.NewGuid().ToString("N") + ".json"
+            );
+            await File.WriteAllTextAsync(
+                path,
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        Stage = "unprovisioned-sql-recovery",
+                        Outcome = "Ready",
+                        result.Attempts,
+                        result.Signature,
+                        result.Injected,
+                    }
+                ),
+                cancellationToken
+            );
+            TestContext.AddTestAttachment(path, "Sanitized SQL Server startup recovery outcome");
+        }
+    }
 
     private async Task StartSqlServerAttemptAsync(CancellationToken cancellationToken)
     {
@@ -76,6 +100,13 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                     LastProbeState = _sqlServerReadinessState,
                     Container = container,
                     RecreationPermitted = recreationPermitted,
+                    Signature = container.RecoverySignature,
+                    Resources = await ReadSqlServerStartupResourcesAsync(
+                        _docker,
+                        _settings.ProviderImage,
+                        ProviderContainerName,
+                        cancellationToken
+                    ),
                 }
             ),
             cancellationToken

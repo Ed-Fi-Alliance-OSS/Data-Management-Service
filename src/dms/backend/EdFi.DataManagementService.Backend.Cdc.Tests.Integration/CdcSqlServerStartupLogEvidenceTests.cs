@@ -13,6 +13,54 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 public sealed class Given_CdcSqlServerStartupLogEvidence
 {
     [Test]
+    public void It_preserves_crash_identity_without_publishing_arbitrary_messages_or_paths()
+    {
+        const string log = """
+            Status: 0xc0000017
+            [0] 0xffffffffc0000017
+            [1] 0x123456789abcdef01
+            Message: private-secret on private-host
+            file://package6/windows/system32/sqlpal.dll+0x0000a123
+            file:///Windows/System32/lsasrv.dll+0x1234
+            file:///private-secret.dll+0x1234
+            Build stamp: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            CDC_SQL_STARTUP_INJECTED_FAILURE
+            """;
+        var evidence = CdcSqlServerStartupLogClassifier.Parse(new(0, log, ""));
+        evidence.StatusCodes.Should().Equal("0XC0000017");
+        evidence.Parameters.Should().Equal("0XFFFFFFFFC0000017");
+        evidence.StackFrames.Should().Equal("sqlpal.dll+0X0000A123", "lsasrv.dll+0X1234");
+        evidence.MessageKind.Should().Be("Other");
+        evidence.MessageSha256.Should().HaveLength(64);
+        evidence.BuildStamp.Should().Be(new string('a', 64));
+        evidence.InjectedFailure.Should().BeTrue();
+        JsonSerializer.Serialize(evidence).Should().NotContain("private").And.NotContain("file://");
+    }
+
+    [Test]
+    public void It_retains_only_numeric_resource_fields_and_known_limit_names()
+    {
+        Dictionary<string, object> evidence = [];
+        CdcSqlServerStartupResourceParser.AddHostMemory(
+            evidence,
+            "MemTotal: 12345 kB\nMemAvailable: 456 kB\nprivate-secret: 999 kB\n"
+        );
+        CdcSqlServerStartupResourceParser.AddContainerLimits(
+            evidence,
+            """
+            {"Memory":2147483648,"PidsLimit":null,"NanoCpus":0,"Binds":["private-secret"],
+             "Ulimits":[{"Name":"nproc","Soft":4096,"Hard":8192},{"Name":"private-secret","Soft":1,"Hard":1}]}
+            """
+        );
+        evidence["HostMemTotalKiB"].Should().Be(12345L);
+        evidence["HostMemAvailableKiB"].Should().Be(456L);
+        evidence["ContainerMemory"].Should().Be(2147483648L);
+        evidence["ContainernprocSoft"].Should().Be(4096L);
+        evidence.Should().NotContainKey("ContainerPidsLimit");
+        JsonSerializer.Serialize(evidence).Should().NotContain("private");
+    }
+
+    [Test]
     public void It_retains_only_fixed_markers_and_numeric_error_codes_from_both_streams()
     {
         var evidence = CdcSqlServerStartupLogClassifier.Parse(
@@ -102,5 +150,58 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
         evidence.Signals.Should().BeEmpty();
         evidence.SqlErrorNumbers.Should().BeEmpty();
         JsonSerializer.Serialize(evidence).Should().NotContain("private");
+    }
+
+    [Test]
+    public async Task It_collects_resource_groups_without_allowing_a_diagnostic_failure_to_escape()
+    {
+        var docker = new ResourceDockerCli(failInfo: true);
+        Dictionary<string, object> evidence =
+            await CdcConnectorTemplatePinnedImageFixture.ReadSqlServerStartupResourcesAsync(
+                docker,
+                "mcr.microsoft.com/mssql/server:2025-latest",
+                "sql-server",
+                CancellationToken.None
+            );
+
+        evidence["ContainerLimitsState"].Should().Be("Observed");
+        evidence["ImageState"].Should().Be("Observed");
+        evidence["DiskState"].Should().Be("Unavailable");
+        docker.Commands.Should().ContainInOrder("inspect", "info", "image");
+    }
+
+    private sealed class ResourceDockerCli(bool failInfo) : IDockerCli
+    {
+        public bool IsOffline => false;
+        public List<string> Commands { get; } = [];
+
+        public Task RequireDockerAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<DockerCommandResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken
+        ) => RunAllowingFailureAsync(arguments, cancellationToken);
+
+        public Task<DockerCommandResult> RunAllowingFailureAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken
+        )
+        {
+            Commands.Add(arguments[0]);
+            if (arguments[0] == "info" && failInfo)
+            {
+                return Task.FromException<DockerCommandResult>(
+                    new InvalidOperationException("diagnostic unavailable")
+                );
+            }
+
+            string output = arguments[0] switch
+            {
+                "inspect" => "{\"Memory\":2147483648,\"NanoCpus\":0,\"Ulimits\":[]}",
+                "image" => "17.0.4075.5",
+                _ => "/",
+            };
+            return Task.FromResult(new DockerCommandResult(0, output, string.Empty));
+        }
     }
 }
