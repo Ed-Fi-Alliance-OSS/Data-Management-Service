@@ -26,11 +26,9 @@ public class TestAuthHandler(
     public const string ClientIdHeaderName = "X-Test-ClientId";
 
     /// <summary>
-    /// Optional request header that suppresses the service-role claim. The resulting principal is
-    /// shaped like an ordinary client-credentials token from <c>/connect/token</c>: authenticated,
-    /// but without the <c>IdentitySettings:ConfigServiceRole</c> claim that
-    /// <c>SecurityConstants.ServicePolicy</c> requires. Absent the header the role claim is
-    /// emitted exactly as before.
+    /// Optional request header that suppresses the <c>IdentitySettings:ConfigServiceRole</c>
+    /// claim, yielding an authenticated principal shaped like an ordinary client-credentials
+    /// token. Absent the header the role claim is emitted as before.
     /// </summary>
     public const string OmitRoleClaimHeaderName = "X-Test-OmitRoleClaim";
 

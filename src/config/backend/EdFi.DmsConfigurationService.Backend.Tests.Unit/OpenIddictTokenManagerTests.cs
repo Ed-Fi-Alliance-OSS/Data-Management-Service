@@ -766,9 +766,7 @@ public class OpenIddictTokenManagerTests
 
     // The ownership comparison is deliberately case-sensitive (StringComparison.Ordinal).
     // Switching it to OrdinalIgnoreCase would make the ownership boundary depend on the deployed
-    // database engine's collation and would let one client revoke another's token wherever client
-    // ids differ only by case, so this fixture exists to fail loudly if anyone loosens it.
-    // See docs/parking-lot.md for the upstream minting defect that makes such a pair possible.
+    // database engine's collation, so this fixture exists to fail loudly if anyone loosens it.
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenWhoseClientIdDiffersOnlyByCase : OpenIddictTokenManagerTests
     {

@@ -352,12 +352,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// Verifies a token's signature, issuer, audience and lifetime against the currently
         /// active public keys, returning the parsed token, or <c>null</c> when it fails.
         ///
-        /// This is the shared front half of <see cref="ValidateTokenAsync"/> and
-        /// <see cref="RevokeTokenAsync"/>. It deliberately stops short of the database status
-        /// lookup, and that omission is load-bearing: authentication additionally requires the
-        /// stored status to be "valid", whereas revocation must still accept an already-revoked
-        /// token so that re-revoking stays the idempotent no-op RFC 7009 expects. Each caller
-        /// applies whatever status gate it needs — do not move a status check in here.
+        /// Shared by <see cref="ValidateTokenAsync"/> and <see cref="RevokeTokenAsync"/>, which
+        /// apply different database status gates afterwards — do not move a status check in here.
         /// </summary>
         private async Task<JwtSecurityToken?> VerifyTokenAsync(string rawToken)
         {
@@ -411,7 +407,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
         /// <summary>
         /// Revokes a token by setting its status to 'revoked', but only when the token belongs to
-        /// the calling client. Anything else is a no-op returning false.
+        /// the calling client. Anything else is a no-op returning false. See
+        /// reference/design/configuration-service/CS-AUTH.md for the rationale.
         /// </summary>
         public async Task<bool> RevokeTokenAsync(string token, string callerClientId)
         {
@@ -423,12 +420,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     return false;
                 }
 
-                // The signature, issuer and audience must be verified before any claim on the
-                // target token is trusted: an unverified client_id could be forged to name the
-                // caller while carrying a victim's jti, which would defeat the ownership check.
-                // ValidateTokenAsync is deliberately not reused because it also requires the
-                // stored status to be "valid", which would turn re-revoking an already-revoked
-                // token into a failure instead of the idempotent no-op RFC 7009 expects.
+                // Verify before trusting any claim: an unverified client_id could be forged to
+                // name the caller while carrying a victim's jti. ValidateTokenAsync is not reused
+                // because its "valid" status gate would break RFC 7009 re-revocation idempotency.
                 var jwtToken = await VerifyTokenAsync(token);
                 if (jwtToken is null)
                 {
@@ -442,19 +436,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     .Claims.FirstOrDefault(x => x.Type == SecurityConstants.ClientIdClaimType)
                     ?.Value;
 
-                // Ordinal (case-sensitive) on purpose. A case-insensitive comparison would make
-                // the ownership boundary depend on the deployed database engine's collation —
-                // Postgres is case-sensitive, SQL Server is not by default — so the same token
-                // would be revocable on one engine and not the other. Pinned by
-                // Given_RevokeTokenAsync_WithATokenWhoseClientIdDiffersOnlyByCase.
+                // Ordinal (case-sensitive) on purpose: a case-insensitive comparison would make
+                // the ownership boundary depend on the deployed engine's collation, since
+                // Postgres is case-sensitive and SQL Server is not by default.
                 if (!string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal))
                 {
-                    // A token owned by someone else is deliberately indistinguishable from an
-                    // unknown token, so the caller learns nothing about who owns it.
-                    //
-                    // Logged at Debug, not Warning: this is an expected, by-design no-op that any
-                    // authenticated caller can trigger at will, so a higher level would let a
-                    // caller flood the log at a severity operators alert on.
+                    // Debug, not Warning: an expected no-op any authenticated caller can trigger
+                    // at will, so a higher level would let them flood a severity operators alert on.
                     _logger.LogDebug(
                         "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
                         LoggingUtility.SanitizeForLog(callerClientId)
