@@ -4,7 +4,7 @@
 issue tokens. Applies to the self-contained (OpenIddict) identity provider only; Keycloak mints
 its own tokens and resolves its own clients. \
 **Date:** 2026-09-21 \
-**Author:** Stephen Fuqua.
+**Author:** Stephen Fuqua, with implementation assistance from Claude Code.
 
 ## Executive summary
 
