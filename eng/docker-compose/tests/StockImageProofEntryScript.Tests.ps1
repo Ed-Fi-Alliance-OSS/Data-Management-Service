@@ -18,6 +18,7 @@ Describe 'Stock image proof entry script' {
     BeforeAll {
         $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $script:entryScript = Join-Path $script:composeRoot 'tests/plugin-deployment/Invoke-StockImagePluginProof.ps1'
+        Import-Module (Join-Path $PSScriptRoot 'plugin-deployment/stock-image-proof.psm1') -Force
         $script:committedPin = Join-Path $script:composeRoot 'tests/plugin-deployment/stock-image-pin.json'
 
         # Every external command the script launches is answered from a plan file, so a scenario
@@ -333,6 +334,38 @@ catch {
             )
 
             $run.Failure | Should -Match 'host port 18080'
+        }
+
+        It 'ignores a bound port the ordinary local stack uses but this run does not' {
+            # 8080 is .env.e2e's DMS_HTTP_PORTS. This run writes its own ports precisely so that a
+            # local stack on the shipped ones is not something it competes for, so a bound 8080 must
+            # not refuse it.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                (Get-MatchingDescriptorRule)
+                @{ match = 'docker ps --format'; exitCode = 0; output = "0.0.0.0:8080->8080/tcp`n127.0.0.1:5435->5432/tcp" }
+            )
+
+            $run.Failure | Should -Not -Match 'host port'
+        }
+
+        It 'guards the same ports it writes into the environment file' {
+            # The two must be one decision. Guarding one set while the deployment binds another
+            # would check nothing at all.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @((Get-MatchingDescriptorRule))
+
+            foreach ($port in @(18080, 18081, 15435)) {
+                @($run.ShimCall) -join ' ' | Should -Not -Match "host port $port"
+            }
+
+            # The env file the first scenario would run from is written after the preflight, so the
+            # agreement is asserted through the composer the script calls.
+            $content = Get-StockProofEnvironmentContent -Pin (Get-Content -LiteralPath $script:pinPath -Raw | ConvertFrom-Json) `
+                -BaseContent 'X=1' -PluginComposeFiles 'plugins-dms.yml'
+            $line = $content -split "`n"
+
+            $line | Should -Contain 'DMS_HTTP_PORTS=18080'
+            $line | Should -Contain 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081'
+            $line | Should -Contain 'POSTGRES_PORT=15435'
         }
     }
 

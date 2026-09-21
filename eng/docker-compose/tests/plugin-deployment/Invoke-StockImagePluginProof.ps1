@@ -589,7 +589,6 @@ function Start-ProofDeployment {
         return Invoke-Recorded -FilePath 'pwsh' -AllowFailure:$AllowFailure -ArgumentList @(
             '-NoProfile', '-File', (Join-Path $composeRoot 'bootstrap-published-dms.ps1')
             '-EnvironmentFile', $EnvironmentFile
-            '-AddSmokeTestCredentials'
         )
     }
     finally {
@@ -688,8 +687,8 @@ function Assert-PluginRootReadOnly {
 function Get-DmsAccessToken {
     param([Parameter(Mandatory)] [string] $BaseUrl, [Parameter(Mandatory)] $SmokeClient)
 
-    $script:secret += @($SmokeClient.secret)
-    $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($SmokeClient.key):$($SmokeClient.secret)"))
+    $script:secret += @($SmokeClient.Secret)
+    $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($SmokeClient.Key):$($SmokeClient.Secret)"))
 
     Write-ProofLog "POST $BaseUrl/oauth/token"
 
@@ -841,7 +840,11 @@ function Invoke-ProofScenario {
 }
 
 function Invoke-HappyPath {
-    param([Parameter(Mandatory)] [string] $BaseUrl, [Parameter(Mandatory)] $Pin)
+    param(
+        [Parameter(Mandatory)] [string] $BaseUrl,
+        [Parameter(Mandatory)] [string] $ConfigurationServiceUrl,
+        [Parameter(Mandatory)] $Pin
+    )
 
     $dms = Get-ComposeContainerName 'dms'
 
@@ -864,8 +867,15 @@ function Invoke-HappyPath {
 
     Assert-PluginRootReadOnly -Container $dms.Name
 
-    $credential = Get-Content -LiteralPath (Join-Path $composeRoot '.bootstrap/smoke-credentials.json') -Raw | ConvertFrom-Json
-    $http = Assert-FixtureRejection -BaseUrl $BaseUrl -SmokeClient $credential
+    # Created here rather than read from disk. configure-local-data-store.ps1's
+    # -AddSmokeTestCredentials calls Get-SmokeTestCredential and pipes the result to Out-Null: the
+    # key and secret are RETURNED to the caller and never written to a file, so there is nothing on
+    # disk for this harness to read. Calling the same module directly is how a caller obtains them.
+    Import-Module (Join-Path $repositoryRoot 'eng/smoke_test/modules/SmokeTest.psm1') -Force
+    Write-ProofLog "Get-SmokeTestCredential $ConfigurationServiceUrl"
+    $smokeClient = Get-SmokeTestCredential -ConfigServiceUrl $ConfigurationServiceUrl
+
+    $http = Assert-FixtureRejection -BaseUrl $BaseUrl -SmokeClient $smokeClient
 
     return [ordered]@{
         readyState  = $status.State
@@ -960,13 +970,16 @@ try {
     $allowedOverlay = 'tests/plugin-deployment/plugins-allowed-dms.yml'
     $feedOverlay = 'tests/plugin-deployment/plugins-feed-dms.yml'
     $pinOverlay = 'tests/plugin-deployment/stock-image-pin-dms.yml'
-    $baseUrl = 'http://localhost:18080'
+    # The ports Get-StockProofEnvironmentContent writes, which are also the ports the
+    # preflight refused on, so these three values cannot drift apart.
+    $baseUrl = "http://localhost:$($requiredPort[0])"
+    $configurationServiceUrl = "http://localhost:$($requiredPort[1])"
 
     # Recipe 1: the committed plugins-dms.yml, run unedited, with the plugin bind-mounted.
     $result.recipe1 = Invoke-ProofScenario -Name 'recipe1' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
         -PluginMountSource $fixture.PublishRoot -AllowedPlugins $pluginName `
-        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -Pin $pin }
+        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -Pin $pin }
 
     # Recipe 2: the committed plugins-fetch-dms.yml, run unedited, fetching over HTTP from the
     # digest-pinned static-file container in the test-owned feed overlay.
@@ -974,7 +987,7 @@ try {
         -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 $package.Sha256 -PluginName $pluginName -AllowedPlugins $pluginName `
-        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -Pin $pin }
+        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -Pin $pin }
 
     # A digest that does not match the served package: the fetch must fail on the comparison
     # specifically, and DMS must never start.

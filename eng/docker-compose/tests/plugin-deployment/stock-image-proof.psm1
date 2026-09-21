@@ -905,6 +905,11 @@ function Get-GovernedEnvironmentKey {
         'DMS_IMAGE_TAG'
         'DMS_CONFIG_DATA_STANDARD_VERSION'
         'SCHEMA_PACKAGES'
+        # The ports the stack actually binds. They are governed because the preflight refuses on
+        # them: guarding one set while the deployment took another would check nothing.
+        'DMS_HTTP_PORTS'
+        'DMS_CONFIG_ASPNETCORE_HTTP_PORTS'
+        'POSTGRES_PORT'
         'DMS_PLUGINS_COMPOSE_FILES'
         'DMS_PLUGINS_ALLOWED'
         'DMS_PLUGINS_MOUNT_SOURCE'
@@ -959,7 +964,14 @@ function Get-StockProofEnvironmentContent {
         [string] $PluginPackageSha256,
         [string] $PluginName,
         [string] $PluginFeedSource,
-        [string] $AllowedPlugins = ''
+        [string] $AllowedPlugins = '',
+
+        # The host ports the stack binds. Written here so the preflight and the deployment cannot
+        # disagree about which ports this run takes; the base file's defaults are the ordinary local
+        # stack's, which is exactly what this run must not compete for.
+        [int] $DmsPort = 18080,
+        [int] $ConfigurationServicePort = 18081,
+        [int] $PostgresPort = 15435
     )
 
     $line = [System.Collections.Generic.List[string]]::new()
@@ -979,6 +991,9 @@ function Get-StockProofEnvironmentContent {
     $line.Add("DMS_STOCK_IMAGE_REFERENCE=$edFiApi")
     $line.Add("DMS_CONFIG_DOCKER_IMAGE=$configurationService")
     $line.Add("DMS_CONFIG_DATA_STANDARD_VERSION=$($Pin.provisioning.dataStandardVersion)")
+    $line.Add("DMS_HTTP_PORTS=$DmsPort")
+    $line.Add("DMS_CONFIG_ASPNETCORE_HTTP_PORTS=$ConfigurationServicePort")
+    $line.Add("POSTGRES_PORT=$PostgresPort")
 
     # Single line and single quoted, which is the form .env.bootstrap.ds52 uses and the form Compose
     # hands to the container verbatim.

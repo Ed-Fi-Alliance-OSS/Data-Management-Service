@@ -344,6 +344,26 @@ Describe 'Stock image proof orchestration' {
             $line | Should -Contain 'PLUGIN_NAME=Acme.CustomValidationProof'
         }
 
+        It 'moves the stack off the ordinary local ports' {
+            # .env.e2e declares DMS_HTTP_PORTS=8080, DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081 and
+            # POSTGRES_PORT=5435, which are the ports an ordinary local stack takes. Competing for
+            # them is exactly what this run must not do.
+            $script:effective['DMS_HTTP_PORTS'] | Should -BeExactly '18080'
+            $script:effective['DMS_CONFIG_ASPNETCORE_HTTP_PORTS'] | Should -BeExactly '18081'
+            $script:effective['POSTGRES_PORT'] | Should -BeExactly '15435'
+        }
+
+        It 'writes the ports the caller asked for, so the preflight can guard the same ones' {
+            $content = Get-StockProofEnvironmentContent -Pin (New-Pin) -BaseContent 'X=1' `
+                -PluginComposeFiles 'plugins-dms.yml' -PluginMountSource '/scratch/plugins' `
+                -DmsPort 19090 -ConfigurationServicePort 19091 -PostgresPort 19092
+
+            $line = $content -split "`n"
+            $line | Should -Contain 'DMS_HTTP_PORTS=19090'
+            $line | Should -Contain 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS=19091'
+            $line | Should -Contain 'POSTGRES_PORT=19092'
+        }
+
         It 'writes an empty allowlist rather than omitting it' {
             # An allowlisted-nothing deployment has to differ from one that never set the key.
             $content = Get-StockProofEnvironmentContent -Pin (New-Pin) -BaseContent 'X=1' `
