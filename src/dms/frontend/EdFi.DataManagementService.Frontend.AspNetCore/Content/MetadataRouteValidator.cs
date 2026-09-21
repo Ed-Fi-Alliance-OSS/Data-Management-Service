@@ -71,10 +71,9 @@ public class MetadataRouteValidator(
             return false;
         }
 
-        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers = ReadRouteQualifiers(
-            httpContext,
-            qualifierSegments
-        );
+        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers = hasQualifiers
+            ? ReadRouteQualifiers(httpContext, qualifierSegments)
+            : [];
 
         if (hasTenant && !await tenantValidator.ValidateTenantAsync(tenant))
         {

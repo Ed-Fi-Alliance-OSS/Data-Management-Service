@@ -16,6 +16,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -334,6 +336,43 @@ public class MetadataModuleTests
             bool result = await validator.ValidateAsync(httpContext);
 
             result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_does_not_read_tenant_only_xsd_values_as_route_qualifiers()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.SetEndpoint(
+                new RouteEndpoint(
+                    _ => Task.CompletedTask,
+                    RoutePatternFactory.Parse("/{tenant}/metadata/xsd/{section}/{fileName}.xsd"),
+                    0,
+                    EndpointMetadataCollection.Empty,
+                    "XSD metadata file"
+                )
+            );
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["section"] = "ed-fi";
+            httpContext.Request.RouteValues["fileName"] = "Ed-Fi-Core";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var options = RouteOptions("section", "fileName");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeTrue();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901"))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>._, A<CancellationToken>._)
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).MustNotHaveHappened();
         }
 
         [Test]
