@@ -110,14 +110,24 @@ A revoked token reports `{"active": false}`. If it still reports `{"active": tru
 the revocation did not take effect and the credential is still live. Treat
 containment as incomplete until introspection confirms it.
 
-This matters because silent no-ops are reachable in practice, not just in theory:
-a target token whose `client_id` differs from the caller's only by letter case is
-rejected by the case-sensitive ownership comparison even though both tokens belong
-to the same registered client. Such a pair is possible because a token is minted
-with the `client_id` casing the client supplied at `/connect/token` rather than the
-stored canonical casing, while client lookup is case-insensitive under SQL Server's
-default collation. An operator who assumed `200 OK` meant success would believe a
-leaked credential was contained when it was not.
+### Client id casing
+
+Tokens are minted with the **stored canonical** `client_id`, not the casing the caller
+supplied at `/connect/token`, and client lookup accepts any casing on both database
+engines. Together these mean every token issued to one registered client carries one
+identity, so the case-sensitive ownership comparison above always matches a client's
+own tokens.
+
+This was previously a live defect: a token minted under one casing could not be
+revoked by a caller authenticated under another, and the mismatch surfaced as the
+silent `200 OK` no-op described above. See
+[ADR: Canonical `client_id` casing in tokens, case-insensitive client lookup](../../adr-client-id-casing.md)
+for the decision record, including why the ownership comparison itself deliberately
+remains case-sensitive.
+
+One residue remains: tokens minted **before** this change still carry the requested
+casing, so such a token may resist revocation by a canonically-cased caller until it
+expires. Token lifetimes are short and the population drains on its own.
 
 ### Which provider modes actually perform the check
 
