@@ -51,4 +51,4 @@ Implemented PostgreSQL claim-set resource-action mutations for grant, modify, re
 
 ## Commit
 
-Pending commit amendment with final commit ID.
+`30f1be2f feat: add PostgreSQL claim-set resource action mutations`
