@@ -66,6 +66,24 @@ public class KeycloakClientRepositoryTests
         return new FlurlHttpException(call);
     }
 
+    /// <summary>
+    /// Builds the exception Flurl raises when the request never produced a response at all, so
+    /// the call carries no status. The provider's answer is unknown rather than a refusal, which
+    /// is what makes the operation's outcome unconfirmed.
+    /// </summary>
+    protected static FlurlHttpException CreateFlurlTransportException(
+        HttpMethod? method = null,
+        string url = "http://localhost:8045/admin/realms/edfi/clients/x"
+    ) =>
+        new(
+            new FlurlCall
+            {
+                Request = new FlurlRequest(url),
+                HttpRequestMessage = new HttpRequestMessage(method ?? HttpMethod.Delete, url),
+            },
+            new HttpRequestException("connection reset")
+        );
+
     protected static ClientProtocolMapper ClaimMapper(string name, string claimName, string value) =>
         new()
         {
@@ -1519,16 +1537,27 @@ public class KeycloakClientRepositoryTests
         protected ClientCreateResult _result = null!;
         protected List<string> _providerClients = null!;
         protected List<Client> _createdClients = null!;
+        protected List<string> _createdUuids = null!;
+        protected List<string> _deletedUuids = null!;
         protected List<(string UserId, string RoleName)> _roleMappings = null!;
         protected List<string> _callOrder = null!;
+
+        /// <summary>
+        /// Overrides the identifier the create call reports, for the case where the provider
+        /// returns something the caller cannot parse as a UUID.
+        /// </summary>
+        protected string? _identifierToReturn;
 
         [SetUp]
         public void SetUpCreateDefaults()
         {
             _providerClients = [];
             _createdClients = [];
+            _createdUuids = [];
+            _deletedUuids = [];
             _roleMappings = [];
             _callOrder = [];
+            _identifierToReturn = null;
 
             A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
                 .Returns(Task.FromResult<IEnumerable<Role>>([new Role { Id = RoleId, Name = RoleName }]));
@@ -1556,8 +1585,9 @@ public class KeycloakClientRepositoryTests
                 )
                 .ReturnsLazily(call =>
                 {
-                    string createdUuid = Guid.NewGuid().ToString();
+                    string createdUuid = _identifierToReturn ?? Guid.NewGuid().ToString();
                     _providerClients.Add(createdUuid);
+                    _createdUuids.Add(createdUuid);
                     _createdClients.Add(call.GetArgument<Client>(1)!);
                     _callOrder.Add("create-client");
                     return Task.FromResult<string?>(createdUuid);
@@ -1588,7 +1618,9 @@ public class KeycloakClientRepositoryTests
             A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
                 .ReturnsLazily(call =>
                 {
-                    _providerClients.Remove(call.GetArgument<string>(1)!);
+                    string requested = call.GetArgument<string>(1)!;
+                    _providerClients.Remove(requested);
+                    _deletedUuids.Add(requested);
                     _callOrder.Add("delete-client");
                     return Task.FromResult(true);
                 });
@@ -1618,6 +1650,64 @@ public class KeycloakClientRepositoryTests
                 .MustNotHaveHappened();
             _providerClients.Should().BeEmpty();
         }
+
+        /// <summary>
+        /// The identifier the provider reported for the one client this request created.
+        /// </summary>
+        protected string CreatedUuid() => _createdUuids.Should().ContainSingle().Subject;
+
+        /// <summary>
+        /// Recovery never rebuilds what it removed: the client is created once and never again,
+        /// no update or secret regeneration reissues a credential, the secret the caller supplied
+        /// is the only one ever sent, and nothing deletes a realm-shared role or scope.
+        /// </summary>
+        protected void AssertNoRecreationOrCredentialReissue()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _keycloakClientFacade.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<Client>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.GenerateClientSecretAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.DeleteDefaultClientScopeAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+            _createdClients.Should().OnlyContain(created => created.Secret == ClientSecret);
+
+            int lastDeletion = _callOrder.LastIndexOf("delete-client");
+            if (lastDeletion >= 0)
+            {
+                _callOrder
+                    .Skip(lastDeletion)
+                    .Should()
+                    .NotContain("create-client", "a deleted client is never recreated");
+            }
+        }
+
+        /// <summary>
+        /// No log entry may carry the client secret, whatever else it reports.
+        /// </summary>
+        protected void AssertNoSecretLogged() =>
+            _logger.LoggedMessages().Should().OnlyContain(message => !message.Contains(ClientSecret));
     }
 
     [TestFixture]
@@ -1658,8 +1748,11 @@ public class KeycloakClientRepositoryTests
         public void It_returns_success() => _result.Should().BeOfType<ClientCreateResult.Success>();
 
         [Test]
-        public void It_creates_the_role_before_the_client() =>
+        public void It_creates_the_role_before_the_client()
+        {
+            _callOrder.Should().Contain("create-role").And.Contain("create-client");
             _callOrder.IndexOf("create-role").Should().BeLessThan(_callOrder.IndexOf("create-client"));
+        }
 
         [Test]
         public void It_maps_the_looked_up_role_to_the_service_account() =>
@@ -1756,5 +1849,770 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_logs_the_scope_creation_phase() => _logger.VerifyLogError("scope-creation");
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_that_succeeds : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActCreateAsync(isApproved: false);
+
+        [Test]
+        public void It_returns_success_carrying_the_created_identifier()
+        {
+            _result.Should().BeOfType<ClientCreateResult.Success>();
+            ((ClientCreateResult.Success)_result).ClientUuid.Should().Be(Guid.Parse(CreatedUuid()));
+        }
+
+        [Test]
+        public void It_assigns_the_configured_role_to_the_service_account() =>
+            _roleMappings.Should().Equal((ServiceAccountUserId, RoleName));
+
+        [Test]
+        public void It_leaves_the_client_in_place() => _providerClients.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_performs_no_cleanup() =>
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_sends_the_requested_enabled_state_and_scope()
+        {
+            Client created = _createdClients.Should().ContainSingle().Subject;
+            created.Enabled.Should().BeFalse();
+            created.DefaultClientScopes.Should().Equal(ScopeName);
+            created.ServiceAccountsEnabled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_sends_the_supplied_secret_once() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_assigns_the_role_after_creating_the_client() =>
+            _callOrder.Should().Equal("create-client", "service-account", "role-mapping");
+    }
+
+    /// <summary>
+    /// The shape <c>IdentityModule.RegisterClient</c> uses: a caller-chosen key and secret, the
+    /// configuration-service role, the admin scope, and no namespace or education-organization
+    /// claims. It provisions by the same contract, so its failures compensate the same way.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_registration_shaped_client_creation_that_succeeds : CreateClientTestBase
+    {
+        private const string CallerChosenKey = "CSClientApp";
+        private const string ConfigServiceRole = "cms-client";
+        private const string AdminScope = "edfi_admin_api/full_access";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Returns(
+                    Task.FromResult<IEnumerable<Role>>([
+                        new Role { Id = "cms-client-role-id", Name = ConfigServiceRole },
+                    ])
+                );
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
+                .Returns(
+                    Task.FromResult<IEnumerable<ClientScope>>([
+                        new ClientScope { Id = "admin-scope-id", Name = AdminScope },
+                    ])
+                );
+
+            _result = await _repository.CreateClientAsync(
+                CallerChosenKey,
+                ClientSecret,
+                ConfigServiceRole,
+                "CSClientApp",
+                AdminScope,
+                string.Empty,
+                string.Empty
+            );
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientCreateResult.Success>();
+
+        [Test]
+        public void It_assigns_the_configuration_service_role() =>
+            _roleMappings.Should().Equal((ServiceAccountUserId, ConfigServiceRole));
+
+        [Test]
+        public void It_registers_the_caller_chosen_key() =>
+            _createdClients.Should().ContainSingle().Which.ClientId.Should().Be(CallerChosenKey);
+    }
+
+    /// <summary>
+    /// Shared arrangement for a provisioning failure the repository has to compensate: the client
+    /// was created, and the role assignment the client needs was reported unsuccessful. Fixtures
+    /// override the cleanup outcome.
+    /// </summary>
+    public abstract class RejectedRoleAssignmentTestBase : CreateClientTestBase
+    {
+        [SetUp]
+        public void SetUpRejectedRoleAssignment() =>
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        "edfi",
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .Invokes(_ => _callOrder.Add("role-mapping"))
+                .Returns(false);
+    }
+
+    /// <summary>
+    /// The defect this ticket fixes: the provider refused the role assignment and the previous
+    /// implementation still reported success, leaving a client that authenticates without the
+    /// role its tokens need.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_assignment_is_rejected : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActCreateAsync();
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_deletes_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_leaves_no_client_at_the_provider() => _providerClients.Should().BeEmpty();
+
+        [Test]
+        public void It_logs_the_role_assignment_phase() => _logger.VerifyLogError("role-assignment");
+
+        [Test]
+        public void It_logs_the_confirmed_deletion() =>
+            _logger.VerifyLog(LogLevel.Information, "Deleted provider client");
+
+        [Test]
+        public void It_reports_no_unconfirmed_cleanup() =>
+            _logger.VerifyNoLog(LogLevel.Error, "Could not confirm deletion");
+
+        [Test]
+        public void It_deletes_after_attempting_the_assignment() =>
+            _callOrder.Should().Equal("create-client", "service-account", "role-mapping", "delete-client");
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_assignment_throws_at_keycloak : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        "edfi",
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .Throws(CreateFlurlHttpException(HttpStatusCode.InternalServerError));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_deletes_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_logs_the_role_assignment_phase() => _logger.VerifyLogError("role-assignment");
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+    }
+
+    /// <summary>
+    /// The assignment reached Keycloak and then the response was lost. The role state is
+    /// unconfirmed rather than known absent, and deleting the client resolves it either way.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_assignment_takes_effect_then_throws : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        "edfi",
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                {
+                    string userId = call.GetArgument<string>(1)!;
+                    foreach (Role mapped in call.GetArgument<IEnumerable<Role>>(2)!)
+                    {
+                        _roleMappings.Add((userId, mapped.Name));
+                    }
+                    _callOrder.Add("role-mapping");
+                })
+                .Throws(CreateFlurlTransportException(HttpMethod.Post));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_had_already_recorded_the_assignment() =>
+            _roleMappings.Should().Equal((ServiceAccountUserId, RoleName));
+
+        [Test]
+        public void It_deletes_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_leaves_no_client_at_the_provider() => _providerClients.Should().BeEmpty();
+
+        [Test]
+        public void It_logs_the_role_assignment_phase() => _logger.VerifyLogError("role-assignment");
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_assignment_throws_unexpectedly : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        "edfi",
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .Throws(new InvalidOperationException("unexpected"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_deletes_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_logs_the_role_assignment_phase() => _logger.VerifyLogError("role-assignment");
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_service_account_lookup_fails_at_keycloak : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetUserForServiceAccountAsync("edfi", A<string>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_deletes_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_assigns_no_role() => _roleMappings.Should().BeEmpty();
+
+        [Test]
+        public void It_logs_the_service_account_lookup_phase() =>
+            _logger.VerifyLogError("service-account-lookup");
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_service_account_has_no_identifier : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetUserForServiceAccountAsync("edfi", A<string>.Ignored))
+                .Returns(new User { Id = string.Empty });
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_deletes_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_assigns_no_role() => _roleMappings.Should().BeEmpty();
+
+        [Test]
+        public void It_logs_the_service_account_lookup_phase() =>
+            _logger.VerifyLogError("service-account-lookup");
+    }
+
+    /// <summary>
+    /// The identifier the provider returned cannot be parsed, so it can never be stored — but it
+    /// can still be deleted, and the raw value is what the deletion has to use.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_created_identifier_is_not_a_uuid : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _identifierToReturn = "not-a-uuid";
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_deletes_the_identifier_the_provider_returned() =>
+            _deletedUuids.Should().Equal("not-a-uuid");
+
+        [Test]
+        public void It_never_looks_up_the_service_account() =>
+            A.CallTo(() =>
+                    _keycloakClientFacade.GetUserForServiceAccountAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_the_identifier_parse_phase() => _logger.VerifyLogError("client-identifier-parse");
+    }
+
+    [TestFixture]
+    public class Given_a_rejected_role_assignment_whose_cleanup_finds_the_client_already_absent
+        : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.NotFound, HttpMethod.Delete));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_provisioning_classification() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_logs_the_absent_client_as_a_warning() =>
+            _logger.VerifyLog(LogLevel.Warning, "was already absent during cleanup");
+
+        [Test]
+        public void It_reports_no_unconfirmed_cleanup() =>
+            _logger.VerifyNoLog(LogLevel.Error, "Could not confirm deletion");
+    }
+
+    [TestFixture]
+    public class Given_a_rejected_role_assignment_whose_cleanup_fails_at_keycloak
+        : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden, HttpMethod.Delete));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_provider_classification() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_leaves_the_client_at_the_provider() => _providerClients.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_logs_the_unconfirmed_cleanup_with_both_identifiers()
+        {
+            _logger.VerifyLogError("Could not confirm deletion of provider client");
+            _logger
+                .LoggedMessages()
+                .Should()
+                .Contain(message =>
+                    message.Contains("Could not confirm deletion")
+                    && message.Contains(CreatedUuid())
+                    && message.Contains(ClientKey)
+                    && message.Contains(nameof(ClientDeleteResult.FailureIdentityProvider))
+                );
+        }
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
+    }
+
+    /// <summary>
+    /// The deletion request never produced a response, so the client's removal is unconfirmed
+    /// rather than known to have failed. The request stays provider attributable.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_rejected_role_assignment_whose_cleanup_is_unreachable
+        : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Throws(CreateFlurlTransportException());
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_provider_classification() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_logs_the_unconfirmed_cleanup() =>
+            _logger.VerifyLogError("Could not confirm deletion of provider client");
+    }
+
+    /// <summary>
+    /// The provider reported the deletion unsuccessful without saying why, so the request is no
+    /// longer purely provider attributable and its outcome becomes an unknown failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_rejected_role_assignment_whose_cleanup_reports_no_change
+        : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Invokes(_ => _callOrder.Add("delete-client"))
+                .Returns(false);
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_escalates_to_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_leaves_the_client_at_the_provider() => _providerClients.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_logs_the_unconfirmed_cleanup_outcome()
+        {
+            _logger.VerifyLogError("Could not confirm deletion of provider client");
+            _logger
+                .LoggedMessages()
+                .Should()
+                .Contain(message =>
+                    message.Contains("Could not confirm deletion")
+                    && message.Contains(nameof(ClientDeleteResult.FailureUnknown))
+                );
+        }
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+    }
+
+    [TestFixture]
+    public class Given_a_rejected_role_assignment_whose_cleanup_throws_unexpectedly
+        : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Throws(new InvalidOperationException("unexpected"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_escalates_to_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_leaves_the_client_at_the_provider() => _providerClients.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_logs_the_exception_with_the_unconfirmed_cleanup()
+        {
+            _logger.VerifyLogError("Could not confirm deletion of provider client");
+            A.CallTo(_logger)
+                .Where(call =>
+                    call.Method.Name == "Log" && call.Arguments.Get<Exception>(3) is InvalidOperationException
+                )
+                .MustHaveHappened();
+        }
+    }
+
+    /// <summary>
+    /// The deletion took effect and the response was then lost. The client is gone, but this
+    /// request cannot prove it, so the outcome is reported as unknown and the log says
+    /// unconfirmed rather than claiming the client remains.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_rejected_role_assignment_whose_cleanup_takes_effect_then_throws
+        : RejectedRoleAssignmentTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Invokes(call =>
+                {
+                    string requested = call.GetArgument<string>(1)!;
+                    _providerClients.Remove(requested);
+                    _deletedUuids.Add(requested);
+                    _callOrder.Add("delete-client");
+                })
+                .Throws(new InvalidOperationException("unexpected"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_escalates_to_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_had_already_removed_the_client() => _providerClients.Should().BeEmpty();
+
+        [Test]
+        public void It_reports_the_cleanup_as_unconfirmed_rather_than_remaining() =>
+            _logger
+                .LoggedMessages()
+                .Should()
+                .Contain(message => message.Contains("Could not confirm deletion of provider client"));
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+    }
+
+    /// <summary>
+    /// An unknown provisioning failure combined with a provider-attributable cleanup failure
+    /// stays an unknown failure: the request was never purely the provider's fault.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_failed_provisioning_whose_base_failure_is_unknown_and_cleanup_fails_at_keycloak
+        : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _identifierToReturn = "not-a-uuid";
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden, HttpMethod.Delete));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_logs_both_the_parse_phase_and_the_unconfirmed_cleanup()
+        {
+            _logger.VerifyLogError("client-identifier-parse");
+            _logger.VerifyLogError("Could not confirm deletion of provider client");
+        }
+    }
+
+    /// <summary>
+    /// A preflight failure states that creation was never attempted, which is what keeps an
+    /// operator from hunting for a client this request could not have created.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_preflight_call_throws_at_keycloak : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.InternalServerError));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_creates_no_client() => AssertNoClientCreated();
+
+        [Test]
+        public void It_attempts_no_cleanup() =>
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_that_creation_was_not_attempted()
+        {
+            _logger.VerifyLogError("creation not attempted");
+            _logger.VerifyNoLog(LogLevel.Error, "creation outcome unconfirmed");
+        }
+
+        [Test]
+        public void It_logs_the_client_identifier() =>
+            _logger.LoggedMessages().Should().Contain(message => message.Contains(ClientKey));
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_create_call_throws_without_a_status : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .Throws(CreateFlurlTransportException(HttpMethod.Post));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_attempts_no_cleanup() =>
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_creation_outcome_as_unconfirmed()
+        {
+            _logger.VerifyLogError("creation outcome unconfirmed");
+            _logger.VerifyNoLog(LogLevel.Error, "creation not attempted");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_create_call_throws_unexpectedly : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .Throws(new NullReferenceException("no location header"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_attempts_no_cleanup() =>
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_creation_outcome_as_unconfirmed() =>
+            _logger.VerifyLogError("creation outcome unconfirmed");
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_create_call_returns_no_identifier : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .Returns(Task.FromResult<string?>(string.Empty));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_attempts_no_cleanup() =>
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_creation_outcome_as_unconfirmed() =>
+            _logger.VerifyLogError("creation outcome unconfirmed");
+    }
+
+    /// <summary>
+    /// Client-derived text reaches the failure logs, so it passes through the sanitizer first:
+    /// line breaks and markup characters cannot be used to forge or break log entries.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_client_id_needs_sanitizing : RejectedRoleAssignmentTestBase
+    {
+        private const string RawClientId = "key\r\n<b>{x}</b>";
+        private const string SanitizedClientId = "keybx/b";
+
+        [SetUp]
+        public async Task Act() => await ActCreateAsync(RawClientId);
+
+        [Test]
+        public void It_logs_the_sanitized_client_identifier() =>
+            _logger
+                .LoggedMessages()
+                .Should()
+                .Contain(message =>
+                    message.Contains("role-assignment") && message.Contains(SanitizedClientId)
+                );
+
+        [Test]
+        public void It_logs_none_of_the_raw_characters() =>
+            _logger
+                .LoggedMessages()
+                .Should()
+                .OnlyContain(message =>
+                    !message.Contains('\r')
+                    && !message.Contains('\n')
+                    && !message.Contains('<')
+                    && !message.Contains('>')
+                    && !message.Contains('{')
+                    && !message.Contains('}')
+                );
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 }

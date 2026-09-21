@@ -31,6 +31,26 @@ public class KeycloakClientRepository(
     /// </summary>
     private static readonly string _serviceAccountScopeName = "service_account";
 
+    /// <summary>
+    /// Fixed phrases the create-path failure logs carry to say whether a client may exist. They
+    /// are the operator's entry point into the recovery procedure: only an attempted creation can
+    /// have left a client behind, and a creation that reported no usable identifier cannot be
+    /// compensated because there is nothing to address the deletion to.
+    /// </summary>
+    private const string CreationNotAttempted = "creation not attempted";
+
+    private const string CreationOutcomeUnconfirmed = "creation outcome unconfirmed";
+
+    /// <summary>
+    /// Provisioning phases named in the create-path failure logs, so an operator can tell which
+    /// step failed and, from that, what the client's role state is.
+    /// </summary>
+    private const string ClientIdentifierParsePhase = "client-identifier-parse";
+
+    private const string ServiceAccountLookupPhase = "service-account-lookup";
+
+    private const string RoleAssignmentPhase = "role-assignment";
+
     public async Task<ClientCreateResult> CreateClientAsync(
         string clientId,
         string clientSecret,
@@ -43,6 +63,11 @@ public class KeycloakClientRepository(
         bool isApproved = true
     )
     {
+        // Tracks whether the create call has been issued, so a failure reaching the catches below
+        // can state whether a client may exist. Nothing before that call leaves a client behind,
+        // while the call itself can fail after Keycloak has already persisted one.
+        string creationOutcome = CreationNotAttempted;
+
         try
         {
             var protocolMappers = ConfigServiceRoleProtocolMapper();
@@ -115,44 +140,234 @@ public class KeycloakClientRepository(
                 );
             }
 
+            creationOutcome = CreationOutcomeUnconfirmed;
             string? createdClientUuid = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
                 _realm,
                 client
             );
-            if (!string.IsNullOrEmpty(createdClientUuid))
+
+            if (string.IsNullOrEmpty(createdClientUuid))
             {
-                // Assign the service role to client's service account
-                var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
-                    _realm,
-                    createdClientUuid
+                logger.LogError(
+                    "Error while creating the client {ClientId}: the identity provider returned no client identifier and raised no exception, so the {CreationOutcome}",
+                    SanitizeForLog(clientId),
+                    CreationOutcomeUnconfirmed
                 );
-
-                _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
-                    _realm,
-                    serviceAccountUser.Id,
-                    [clientRole]
-                );
-
-                return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
+                return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
             }
 
-            logger.LogError(
-                "Error while creating the client {ClientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception.",
-                SanitizeForLog(clientId)
+            // The client exists at the provider from here on, so every failure below is
+            // compensated by deleting it: the request returns no credentials and persists no row,
+            // which would leave a client nothing could ever address again.
+            if (!Guid.TryParse(createdClientUuid, out Guid parsedClientUuid))
+            {
+                LogProvisioningFailure(ClientIdentifierParsePhase, clientId, createdClientUuid);
+                return await CompensateFailedProvisioningAsync(
+                    createdClientUuid,
+                    clientId,
+                    new ClientCreateResult.FailureUnknown(
+                        "The identity provider returned a client identifier that is not a UUID."
+                    )
+                );
+            }
+
+            ClientCreateResult? provisioningFailure = await ProvisionServiceAccountRoleAsync(
+                createdClientUuid,
+                clientId,
+                clientRole
             );
-            return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
+
+            if (provisioningFailure is not null)
+            {
+                return await CompensateFailedProvisioningAsync(
+                    createdClientUuid,
+                    clientId,
+                    provisioningFailure
+                );
+            }
+
+            return new ClientCreateResult.Success(parsedClientUuid);
         }
         catch (FlurlHttpException ex)
         {
-            logger.LogError(ex, "Create client failure");
+            logger.LogError(
+                ex,
+                "Create client failure for client {ClientId}; {CreationOutcome}",
+                SanitizeForLog(clientId),
+                creationOutcome
+            );
             return new ClientCreateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Create client failure");
+            logger.LogError(
+                ex,
+                "Create client failure for client {ClientId}; {CreationOutcome}",
+                SanitizeForLog(clientId),
+                creationOutcome
+            );
             return new ClientCreateResult.FailureUnknown(ex.Message);
         }
     }
+
+    /// <summary>
+    /// Assigns the resolved realm role to the service account of the client this request created.
+    /// Returns <c>null</c> when the provider reported the assignment applied, otherwise the
+    /// classified failure, already logged with the phase that produced it. Exceptions are
+    /// classified here rather than at the method boundary because the caller has to compensate
+    /// the client that now exists; a lost response leaves the assignment unconfirmed rather than
+    /// known to be absent.
+    /// </summary>
+    private async Task<ClientCreateResult?> ProvisionServiceAccountRoleAsync(
+        string createdClientUuid,
+        string clientId,
+        Role clientRole
+    )
+    {
+        string phase = ServiceAccountLookupPhase;
+        try
+        {
+            var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
+                _realm,
+                createdClientUuid
+            );
+
+            if (serviceAccountUser is null || string.IsNullOrEmpty(serviceAccountUser.Id))
+            {
+                LogProvisioningFailure(phase, clientId, createdClientUuid);
+                return new ClientCreateResult.FailureUnknown(
+                    "The identity provider returned no service account for the client."
+                );
+            }
+
+            phase = RoleAssignmentPhase;
+            if (
+                !await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                    _realm,
+                    serviceAccountUser.Id,
+                    [clientRole]
+                )
+            )
+            {
+                LogProvisioningFailure(phase, clientId, createdClientUuid);
+                return new ClientCreateResult.FailureIdentityProvider(
+                    new IdentityProviderError(
+                        "The identity provider did not assign the realm role to the client's service account."
+                    )
+                );
+            }
+
+            return null;
+        }
+        catch (FlurlHttpException ex)
+        {
+            LogProvisioningFailure(phase, clientId, createdClientUuid, ex);
+            return new ClientCreateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            LogProvisioningFailure(phase, clientId, createdClientUuid, ex);
+            return new ClientCreateResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Deletes the client a failed provisioning attempt created and decides the outcome the
+    /// caller sees. A deletion the provider reports successful, a client it reports already
+    /// absent, and a deletion it reports unsuccessful for a provider reason all keep the
+    /// provisioning classification: the whole request is then provider attributable. An unknown
+    /// result, an unrecognized one, or an unexpected exception is not, so the outcome becomes an
+    /// unknown failure. The client is never recreated and no secret is ever reissued.
+    /// </summary>
+    private async Task<ClientCreateResult> CompensateFailedProvisioningAsync(
+        string createdClientUuid,
+        string clientId,
+        ClientCreateResult provisioningFailure
+    )
+    {
+        ClientDeleteResult cleanupResult;
+        try
+        {
+            cleanupResult = await DeleteClientAsync(createdClientUuid);
+        }
+        catch (Exception ex)
+        {
+            // DeleteClientAsync classifies provider failures itself, so only an unexpected
+            // exception arrives here, and it may have been raised after the deletion took effect.
+            LogUnconfirmedCleanup(createdClientUuid, clientId, ex.GetType().Name, ex);
+            return AsUnknownFailure(provisioningFailure);
+        }
+
+        switch (cleanupResult)
+        {
+            case ClientDeleteResult.Success:
+                logger.LogInformation(
+                    "Deleted provider client {ClientUuid} (client {ClientId}) after failed provisioning",
+                    SanitizeForLog(createdClientUuid),
+                    SanitizeForLog(clientId)
+                );
+                return provisioningFailure;
+
+            case ClientDeleteResult.FailureClientNotFound:
+                logger.LogWarning(
+                    "Provider client {ClientUuid} (client {ClientId}) was already absent during cleanup after failed provisioning",
+                    SanitizeForLog(createdClientUuid),
+                    SanitizeForLog(clientId)
+                );
+                return provisioningFailure;
+
+            case ClientDeleteResult.FailureIdentityProvider:
+                LogUnconfirmedCleanup(
+                    createdClientUuid,
+                    clientId,
+                    nameof(ClientDeleteResult.FailureIdentityProvider)
+                );
+                return provisioningFailure;
+
+            case ClientDeleteResult.FailureUnknown:
+                LogUnconfirmedCleanup(createdClientUuid, clientId, nameof(ClientDeleteResult.FailureUnknown));
+                return AsUnknownFailure(provisioningFailure);
+
+            default:
+                LogUnconfirmedCleanup(createdClientUuid, clientId, cleanupResult.GetType().Name);
+                return AsUnknownFailure(provisioningFailure);
+        }
+
+        static ClientCreateResult AsUnknownFailure(ClientCreateResult failure) =>
+            failure is ClientCreateResult.FailureUnknown unknown
+                ? unknown
+                : new ClientCreateResult.FailureUnknown(
+                    "The client created for this request could not be removed after its provisioning failed."
+                );
+    }
+
+    private void LogProvisioningFailure(
+        string phase,
+        string clientId,
+        string createdClientUuid,
+        Exception? exception = null
+    ) =>
+        logger.LogError(
+            exception,
+            "Client provisioning failed during {Phase} for client {ClientId} (provider client {ClientUuid}); deleting the created client",
+            phase,
+            SanitizeForLog(clientId),
+            SanitizeForLog(createdClientUuid)
+        );
+
+    private void LogUnconfirmedCleanup(
+        string createdClientUuid,
+        string clientId,
+        string outcome,
+        Exception? exception = null
+    ) =>
+        logger.LogError(
+            exception,
+            "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after failed provisioning; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+            SanitizeForLog(createdClientUuid),
+            SanitizeForLog(clientId),
+            outcome
+        );
 
     /// <summary>
     /// Rewrites one client's namespace-prefixes claim **in place**, under its existing UUID. The
