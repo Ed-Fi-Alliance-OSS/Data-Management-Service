@@ -5,7 +5,6 @@
 
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
@@ -50,10 +49,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<OpenIddictDataRepository>.Instance
-            );
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
             var applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"delete-expired-client-{Guid.NewGuid():N}"
@@ -104,10 +100,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<OpenIddictDataRepository>.Instance
-            );
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
             var applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"delete-expired-boundary-client-{Guid.NewGuid():N}"
@@ -133,94 +126,38 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
     }
 
-    // Client lookup accepts any casing on PostgreSQL, matching SQL Server's default collation, so
-    // a client is not rejected on one engine and accepted on the other. An exact match always
-    // wins, because the unique constraint on "ClientId" is case-sensitive and a database may
-    // already hold rows differing only by case.
+    // RFC 6749: "Unless otherwise noted, all the protocol parameter names and values are case
+    // sensitive." client_id is one of those values, so a mis-cased id must not resolve. This is
+    // pinned deliberately rather than left as an accident of the SQL, because an earlier revision
+    // of this branch made the lookup case-insensitive and that was reversed on purpose.
     [TestFixture]
-    public class Given_A_Client_Registered_With_Mixed_Casing : OpenIddictDataRepositoryTests
+    public class Given_A_Client_Looked_Up_With_Different_Casing : OpenIddictDataRepositoryTests
     {
         private OpenIddictDataRepository _repository = null!;
-        private string _canonicalClientId = null!;
+        private string _registeredClientId = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<OpenIddictDataRepository>.Instance
-            );
-            _canonicalClientId = $"Acme-Client-{Guid.NewGuid():N}";
-            await RegisterApplicationAsync(_repository, _canonicalClientId);
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _registeredClientId = $"Casing-Client-{Guid.NewGuid():N}";
+            await RegisterApplicationAsync(_repository, _registeredClientId);
         }
 
         [Test]
-        public async Task It_resolves_the_client_when_the_casing_matches_exactly()
+        public async Task It_resolves_the_client_on_an_exact_match()
         {
-            var found = await _repository.GetApplicationByClientIdAsync(_canonicalClientId);
+            var found = await _repository.GetApplicationByClientIdAsync(_registeredClientId);
 
-            found!.ClientId.Should().Be(_canonicalClientId);
+            found!.ClientId.Should().Be(_registeredClientId);
         }
 
         [Test]
-        public async Task It_resolves_the_client_when_the_casing_differs()
+        public async Task It_does_not_resolve_the_client_when_the_casing_differs()
         {
             var found = await _repository.GetApplicationByClientIdAsync(
-                _canonicalClientId.ToLowerInvariant()
+                _registeredClientId.ToLowerInvariant()
             );
-
-            found!.ClientId.Should().Be(_canonicalClientId);
-        }
-    }
-
-    [TestFixture]
-    public class Given_Two_Clients_Differing_Only_By_Case : OpenIddictDataRepositoryTests
-    {
-        private OpenIddictDataRepository _repository = null!;
-        private string _lowerClientId = null!;
-        private string _upperClientId = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            _repository = new OpenIddictDataRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<OpenIddictDataRepository>.Instance
-            );
-
-            // The case-sensitive unique constraint permits both of these to exist at once.
-            string suffix = Guid.NewGuid().ToString("N");
-            _lowerClientId = $"casing-pair-{suffix}";
-            _upperClientId = $"CASING-PAIR-{suffix}";
-            await RegisterApplicationAsync(_repository, _lowerClientId);
-            await RegisterApplicationAsync(_repository, _upperClientId);
-        }
-
-        [Test]
-        public async Task It_prefers_the_exact_match_for_the_lowercase_client()
-        {
-            var found = await _repository.GetApplicationByClientIdAsync(_lowerClientId);
-
-            found!.ClientId.Should().Be(_lowerClientId);
-        }
-
-        [Test]
-        public async Task It_prefers_the_exact_match_for_the_uppercase_client()
-        {
-            var found = await _repository.GetApplicationByClientIdAsync(_upperClientId);
-
-            found!.ClientId.Should().Be(_upperClientId);
-        }
-
-        // Neither row matches exactly, and the case-insensitive fallback matches both. Picking one
-        // would make authentication depend on row order, so the lookup refuses. It must fail
-        // cleanly rather than throwing out of QuerySingleOrDefaultAsync.
-        [Test]
-        public async Task It_refuses_an_ambiguous_case_insensitive_match_without_throwing()
-        {
-            string neitherExact = $"Casing-Pair-{_lowerClientId.Split('-')[^1]}";
-
-            var found = await _repository.GetApplicationByClientIdAsync(neitherExact);
 
             found.Should().BeNull();
         }
