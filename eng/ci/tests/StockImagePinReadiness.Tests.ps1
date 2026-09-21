@@ -299,10 +299,17 @@ Describe 'Stock image pin readiness' {
                 @{ Field = $field; Case = 'a two-part version'; Value = '1.0' }
             }
         ) {
-            # NuGet reads a bare version as a floor, so every one of these would let a restore
-            # resolve a package this pin does not name.
+            # The field records one version identity. A range or a wildcard names a set; the
+            # bracketed form is NuGet resolution syntax rather than a version, and one value gets
+            # one spelling here.
             { Invoke-Readiness -Pin (New-PublishedPin -Override @{ $Field = $Value }) } |
                 Should -Throw '*does not match*'
+        }
+
+        It 'accepts a bare exact version, which is the identity form' {
+            (Invoke-Readiness -Pin (New-PublishedPin -Override @{
+                        'contracts.pluginsPackageVersion' = '1.2.3'
+                    })).ready | Should -BeExactly 'true'
         }
 
         It 'accepts an exact prerelease version, which is what a pinned alpha release carries' {
@@ -313,7 +320,62 @@ Describe 'Stock image pin readiness' {
 
         It 'refuses an empty schema package set rather than letting the catalog pick' {
             { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @() }) } |
-                Should -Throw '*schemaPackages*'
+                Should -Throw '*schemaPackages is empty*'
+        }
+
+        It 'accepts a singleton array, which must survive being read back' {
+            # PowerShell enumerates a returned array, so a one-element set is exactly where a reader
+            # turns an array into its element and stops being able to tell the two apart.
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+
+            (Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($package) })).ready |
+                Should -BeExactly 'true'
+        }
+
+        It 'refuses a single object written where an array belongs' {
+            # The harness writes this field out verbatim as SCHEMA_PACKAGES, so a shape that is not
+            # an array would be validated here and rejected there.
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = $package }) } |
+                Should -Throw '*rather than an array*'
+        }
+
+        It 'refuses a null entry at index <Index>, rather than dropping it' -ForEach @(
+            @{ Index = 1; Order = 'after' }
+            @{ Index = 0; Order = 'before' }
+        ) {
+            # Filtering a hole out would validate a set the deployment never receives: the whole
+            # field is written to SCHEMA_PACKAGES, holes included.
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+            $set = if ($Order -eq 'after') { @($package, $null) } else { @($null, $package) }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = $set }) } |
+                Should -Throw "*schemaPackages``[$Index``] is null*"
+        }
+
+        It 'refuses a set of nothing but nulls' {
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($null, $null) }) } |
+                Should -Throw '*is null*'
+        }
+
+        It 'refuses a <_> where a package object belongs' -ForEach @('string', 'number') {
+            $entry = if ($_ -eq 'string') { 'EdFi.DataStandard52.ApiSchema' } else { 335 }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($entry) }) } |
+                Should -Throw '*rather than an object carrying name, version and feedUrl*'
         }
 
         It 'refuses a schema package missing <_>' -ForEach @('name', 'version', 'feedUrl') {

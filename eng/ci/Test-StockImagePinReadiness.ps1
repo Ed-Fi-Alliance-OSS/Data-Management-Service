@@ -56,11 +56,15 @@ $digestPattern = '^sha256:[0-9a-f]{64}$'
 $commitPattern = '^[0-9a-f]{40}$'
 $movingTag = @('pre', 'latest')
 
-# One exact package version and nothing else. NuGet reads "1.0.0" as a floor, "[1.0.0,2.0.0)" as a
-# range and "1.0.*" as a wildcard, and any of the three would let the restore choose a package this
-# pin does not name. The bracketed exact form "[1.0.0]" is refused too: it means the right thing to
-# NuGet, but it is not what goes in a version field here, and accepting two spellings of one value
-# is how the harness and the pin end up disagreeing about what was pinned.
+# One version identity and nothing else: "1.0.0" or "1.0.0-alpha.3", which is the form that names a
+# single package. A range like "[1.0.0,2.0.0)" and a wildcard like "1.0.*" name a set rather than a
+# version and are refused. The bracketed exact form "[1.0.0]" is refused as well: it selects the
+# right package, but it is NuGet resolution syntax rather than a version, and accepting two
+# spellings of one value is how the pin and the harness end up disagreeing about what was pinned.
+#
+# This pattern records identity. It does not by itself make a restore resolve that exact version -
+# NuGet reads a bare version in a PackageReference as a floor - so the harness brackets the value
+# when it writes a reference and verifies the restored version against the pin afterwards.
 $exactVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$'
 $feedUrlPattern = '^https://'
 
@@ -89,7 +93,10 @@ function Get-PinValue {
         $node = $node.$segment
     }
 
-    return $node
+    # Comma-wrapped, so an array value survives the return. A bare `return $node` is enumerated by
+    # the pipeline, which turns a one-element array into its element and would let a single object
+    # be mistaken for a singleton array by every caller.
+    return , $node
 }
 
 function Get-PinName([string[]]$Path) {
@@ -200,40 +207,52 @@ else {
     # above is only the label the container reports. Each entry has to name the package, an exact
     # version and the feed it came from, so neither a catalog default nor an ambient feed can
     # substitute an input the pinned release was never verified against.
-    $schemaPackageValue = Get-PinValue -Path @('provisioning', 'schemaPackages')
+    $schemaPackage = Get-PinValue -Path @('provisioning', 'schemaPackages')
 
-    if ($null -eq $schemaPackageValue) {
+    if ($null -eq $schemaPackage) {
         throw "The stock image pin is published but provisioning.schemaPackages is missing. A published pin must carry every field; publication is not partially recordable."
     }
 
-    # Nulls filtered rather than tolerated: an array with a null hole names no package, and letting
-    # one through would reach the field loop below as an indexing failure instead of a diagnostic.
-    $schemaPackage = @($schemaPackageValue | Where-Object { $null -ne $_ })
+    # An array, not merely something enumerable. A single object would otherwise be read as a
+    # one-package set, and the harness serializes the original field to SCHEMA_PACKAGES, so the set
+    # this validated and the set the deployment consumes have to be the same shape.
+    if ($schemaPackage -isnot [System.Collections.IList]) {
+        throw "The stock image pin's provisioning.schemaPackages is a $($schemaPackage.GetType().Name) rather than an array. It has to be an array even when it names one package, because it is written out verbatim as SCHEMA_PACKAGES."
+    }
 
     if ($schemaPackage.Count -eq 0) {
         throw "The stock image pin is published but provisioning.schemaPackages is empty. It has to name every schema package the pinned release was verified against; an empty set would let the catalog pick."
     }
 
-    $index = 0
-    foreach ($package in $schemaPackage) {
+    # Every entry is validated at its own index, and nothing is filtered out. Dropping a malformed
+    # entry would validate a set the deployment never receives: the whole field is what gets
+    # written to SCHEMA_PACKAGES, holes included.
+    for ($index = 0; $index -lt $schemaPackage.Count; $index++) {
+        $package = $schemaPackage[$index]
         $where = "provisioning.schemaPackages[$index]"
 
+        if ($null -eq $package) {
+            throw "The stock image pin's $where is null. A null entry names no package, and it is carried into SCHEMA_PACKAGES as written."
+        }
+
+        if ($package -is [string] -or $package -is [ValueType] -or $package -is [System.Collections.IList]) {
+            throw "The stock image pin's $where is a $($package.GetType().Name) rather than an object carrying name, version and feedUrl."
+        }
+
         foreach ($field in @('name', 'version', 'feedUrl')) {
-            if ($null -eq $package.PSObject.Properties[$field] -or
+            if ($package.PSObject.Properties.Name -notcontains $field -or
                 [string]::IsNullOrWhiteSpace([string]$package.$field)) {
                 throw "The stock image pin's $where is missing $field. A schema package is identified by its name, an exact version and the feed it came from."
             }
         }
 
         if ([string]$package.version -cnotmatch $exactVersionPattern) {
-            throw "The stock image pin's $where.version is '$($package.version)', which is not an exact version. A floor, a range or a wildcard would let the restore choose a package this pin does not name."
+            throw "The stock image pin's $where.version is '$($package.version)', which is not an exact version identity. A range or a wildcard names a set of packages rather than one."
         }
 
         if ([string]$package.feedUrl -cnotmatch $feedUrlPattern) {
             throw "The stock image pin's $where.feedUrl is '$($package.feedUrl)', which is not an https feed address."
         }
-
-        $index++
     }
 
     # The tag the recorded release actually publishes, computed by the rule the publication workflow
