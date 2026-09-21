@@ -61,10 +61,12 @@ logging itself out — but need not be:
 
 ```http
 POST /connect/revoke HTTP/1.1
-Authorization: Bearer eyJ...CALLER    <- identifies the caller; its client_id must match
+# Authorization identifies the caller; its client_id must match the target's.
+Authorization: Bearer eyJ...CALLER
 Content-Type: application/x-www-form-urlencoded
 
-token=eyJ...TARGET                    <- the token to revoke; its client_id is compared
+# The token form field is what gets revoked; its client_id is the one compared.
+token=eyJ...TARGET
 ```
 
 A client revoking one of its *other* outstanding tokens (say, rotating a leaked

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -44,7 +45,7 @@ public class AuditContext(IHttpContextAccessor httpContextAccessor, ILogger<Audi
             }
 
             // Check for "client_id" claim (OAuth client)
-            var clientIdClaim = claimsPrincipal.FindFirst("client_id");
+            var clientIdClaim = claimsPrincipal.FindFirst(SecurityConstants.ClientIdClaimType);
             if (clientIdClaim != null && !string.IsNullOrWhiteSpace(clientIdClaim.Value))
             {
                 return TruncateIfNeeded(clientIdClaim.Value);

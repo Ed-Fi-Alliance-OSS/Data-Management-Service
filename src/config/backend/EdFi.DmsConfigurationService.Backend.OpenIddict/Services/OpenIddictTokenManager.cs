@@ -409,7 +409,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// Shared by <see cref="ValidateTokenAsync"/> and <see cref="RevokeTokenAsync"/>, which
         /// apply different database status gates afterwards — do not move a status check in here.
         /// </summary>
-        private async Task<JwtSecurityToken?> VerifyTokenAsync(string rawToken)
+        private async Task<(JwtSecurityToken? Token, TokenVerificationFailure Failure)> VerifyTokenAsync(
+            string rawToken
+        )
         {
             var publicKeys = await GetPublicKeysAsync();
             var signingKeys = publicKeys.ToDictionary(
@@ -417,16 +419,35 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
             );
 
-            return JwtTokenValidator.ValidateToken(
+            bool verified = JwtTokenValidator.ValidateToken(
                 rawToken,
                 signingKeys,
                 _identityOptions.Value.Authority,
                 _identityOptions.Value.Audience,
                 out var jwtToken,
+                out var failure,
                 _logger
-            )
-                ? jwtToken
-                : null;
+            );
+
+            return verified ? (jwtToken, TokenVerificationFailure.None) : (null, failure);
+        }
+
+        /// <summary>
+        /// Routes a verification failure to a log level that matches what it actually means. An
+        /// expired token is an ordinary fact of life and goes to Debug; anything untrusted means
+        /// the token was not issued by this service and goes to Warning, so that signal is not
+        /// drowned out by routine expiry.
+        /// </summary>
+        private void LogVerificationFailure(string context, TokenVerificationFailure failure)
+        {
+            if (failure == TokenVerificationFailure.Expired)
+            {
+                _logger.LogDebug("{Context} the lifetime check (token expired)", context);
+            }
+            else
+            {
+                _logger.LogWarning("{Context} verification (signature, issuer, or audience)", context);
+            }
         }
 
         /// <summary>
@@ -436,10 +457,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         {
             try
             {
-                var jwtToken = await VerifyTokenAsync(rawToken);
+                var (jwtToken, failure) = await VerifyTokenAsync(rawToken);
                 if (jwtToken is null)
                 {
-                    _logger.LogWarning("Token validation failed (signature, issuer, audience, or lifetime)");
+                    LogVerificationFailure("Token validation failed", failure);
                     return false;
                 }
 
@@ -477,12 +498,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 // Verify before trusting any claim: an unverified client_id could be forged to
                 // name the caller while carrying a victim's jti. ValidateTokenAsync is not reused
                 // because its "valid" status gate would break RFC 7009 re-revocation idempotency.
-                var jwtToken = await VerifyTokenAsync(token);
+                var (jwtToken, failure) = await VerifyTokenAsync(token);
                 if (jwtToken is null)
                 {
-                    _logger.LogWarning(
-                        "Revocation ignored: the supplied token failed validation (signature, issuer, audience, or lifetime)"
-                    );
+                    LogVerificationFailure("Revocation ignored: the supplied token failed", failure);
                     return false;
                 }
 
