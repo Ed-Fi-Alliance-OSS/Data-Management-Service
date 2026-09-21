@@ -29,6 +29,23 @@ public class ResourceClaimActionRequestValidatorTests
     }
 
     [Test]
+    public async Task It_rejects_null_action_collections()
+    {
+        var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions = null,
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimActions");
+    }
+
+    [Test]
     public async Task It_rejects_disabled_only_action_collections()
     {
         var validator = new EditResourceClaimActionsOnClaimSetRequest.Validator();
