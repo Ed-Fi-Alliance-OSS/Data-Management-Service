@@ -1,0 +1,52 @@
+{
+    "$comment": [
+        "The published artifacts the stock-image plugin proof runs against. Every value is null and",
+        "status is 'pending' because the qualifying release does not exist yet: it is the first",
+        "successful prerelease publication carrying both DMS-1499's plugin loader and DMS-1433's",
+        "custom-validator fan-in step, cut after this ticket's version-specific image tagging merged.",
+        "",
+        "Nothing here may be guessed. A fabricated tag or digest would make the proof a statement",
+        "about an artifact nobody published, which is the one thing this tier exists not to be.",
+        "Test-StockImagePinReadiness.ps1 refuses a half-filled pin in either direction: a 'pending'",
+        "pin carrying values, and a 'published' pin missing any of them, are both invalid rather",
+        "than pending.",
+        "",
+        "edFiApi is pinned by version-specific tag AND digest. configurationService is pinned by",
+        "digest alone: this ticket adds version-specific tags to the Ed-Fi API publication only, so",
+        "the Configuration Service still carries nothing but the moving 'pre' tag, and a bare digest",
+        "is honest about that where a tag plus digest would imply a version-specific tag exists.",
+        "",
+        "tooling and contracts pin what the harness consumes rather than builds: the released",
+        "SchemaTools package that provisions the database the pinned runtime validates, and the two",
+        "published contract packages the fixture plugin compiles against. Building the fixture from",
+        "this branch against this branch's contracts would test version skew rather than plugin",
+        "loading, and would stop working the moment either contract surface moved."
+    ],
+    "status": "pending",
+    "edFiApi": {
+        "repository": "edfialliance/ed-fi-api",
+        "tag": null,
+        "digest": null
+    },
+    "configurationService": {
+        "repository": "edfialliance/ed-fi-api-configuration-service",
+        "digest": null
+    },
+    "release": {
+        "githubRelease": null,
+        "sourceCommit": null,
+        "publicationRunUrl": null
+    },
+    "provisioning": {
+        "schemaToolsPackageVersion": null,
+        "dataStandardVersion": null
+    },
+    "contracts": {
+        "pluginsPackageVersion": null,
+        "customValidationPackageVersion": null
+    },
+    "requires": [
+        "DMS-1499 LoadPlugins startup phase",
+        "DMS-1433 custom-validator fan-in pipeline step"
+    ]
+}
