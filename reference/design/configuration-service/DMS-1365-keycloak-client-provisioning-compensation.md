@@ -538,3 +538,55 @@ Configuration-source checks, all on the **self-contained** lane except where not
 * **A custom client role was verified on the self-contained lane only.** No separate Keycloak run with a non-default role was recorded.
 * **The create path classifies a `false` role assignment as a provider failure** while the update path maps its `false` results to unknown failures. Reconciling those conventions stays out of scope (D-1).
 * **`InsertApiClient` remains a non-participating writer** with respect to the DMS-1218 aggregate locks (S-2). This ticket did not change that.
+
+## 18. Pre-push validation, executed
+
+Tested at `b92d52dc0`, the eleventh commit on the branch. Every command was run from the worktree root.
+
+| # | Gate | Command | Result |
+|---|---|---|---|
+| 1 | Backend unit, whole project | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/...csproj` | 835 passed, 0 failed, 0 skipped |
+| 2 | Frontend unit, whole project | `dotnet test src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/...csproj` | 1452 passed, 0 failed, 0 skipped |
+| 3 | Formatting, scoped | `dotnet csharpier check src/config` | clean, 440 files |
+| 4 | E2E full suite, Keycloak, image rebuilt from this revision | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider keycloak` | 218 passed, 0 failed, 9 not executed of 227. Scenario 05 **passed** |
+| 5 | E2E full suite, self-contained | same with `-SkipDockerBuild -IdentityProvider self-contained` | 221 passed, 0 failed, 6 not executed of 227. Scenario 05 **passed** |
+| 6 | E2E MSSQL representative, Keycloak | same with `-EnvironmentFile './.env.config.mssql.e2e' -E2ETestFilter 'TestCategory=MssqlRepresentative'` | 23 passed, 0 failed. `AppSettings__Datastore=mssql` confirmed |
+| 7 | PostgreSQL backend integration | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/...csproj` against a trust-auth PostgreSQL 16 on 5432 with `edfi_configurationservice` created | 486 passed, 0 failed |
+| 8 | SQL Server backend integration | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration/...csproj` against a dedicated SQL Server 2025 on `localhost,1434` | 500 passed, 0 failed (see §18.2 for the first attempt) |
+| 9 | Branch diff review | `git diff origin/main..HEAD` | see §18.3 |
+
+The not-executed E2E scenarios are the suite's own environment gates, not failures: the multi-tenant scenarios, the `@SelfContainedOnly` basic-auth scenarios on the Keycloak lane, and the pending ApiClients scenarios 09 and 15 that have undefined `Given` bindings on both lanes.
+
+### 18.1 Two harness findings from this validation
+
+**Running two E2E lanes from one shell mis-configures the second.** `build-config.ps1` publishes `DMS_CONFIG_DATASTORE` from the environment file into the session it runs in, and Compose resolves a shell value ahead of `--env-file`. The first MSSQL attempt therefore started the SQL Server compose files while the Configuration Service container still received `AppSettings__Datastore=postgresql`, and all 23 scenarios failed with `socket hang up`. Rerunning the lane in a fresh process passed 23 of 23. This is pre-existing behavior, unrelated to this ticket: CI runs one lane per job and never sees it. It is the same shell-over-file precedence that the Step 3.1 review corrected for the role-claim settings.
+
+**Do not run the CMS SQL Server integration lane against the E2E SQL Server.** Pointing `ConnectionStrings__MssqlAdmin` at the E2E stack's container on host port 1435 failed every fixture's schema deploy with a TCP connection timeout. AGENTS.md already prescribes a dedicated server on `localhost,1434` for this lane.
+
+### 18.2 SQL Server backend integration
+
+Attempted twice.
+
+Against the E2E stack's SQL Server on 1435: 500 failed, 0 passed, every failure `SQL Server schema deploy failed: ... The wait operation timed out`. Verified this is **not** a branch regression by running one fixture set on `origin/main` in a detached worktree against the same server: 16 of 16 failed there too, identically.
+
+Against a dedicated SQL Server 2025 on `localhost,1434`, the setup AGENTS.md documents: **500 passed, 0 failed** in 2 minutes 33 seconds. The container was removed afterwards. This ticket changes no SQL Server backend code, so this lane is regression coverage rather than coverage of new behavior, and it is green.
+
+### 18.3 Branch diff review against the acceptance criteria
+
+Sixteen files, 3891 insertions and 76 deletions. Three production files: the Keycloak repository and the two insert modules. No change to `IIdentityProviderRepository` or its result unions, `OpenIddictClientRepository`, the vendor or delete workflows, the lock managers, any repository or schema, or `RelationalMappingVersion`.
+
+Reviewed for the two properties the ticket is most exposed to:
+
+* **Credential exposure.** Every log template added by the branch was listed and inspected. None carries a secret placeholder. The caller-derived values are the client id, the role name, the scope name and a failure message, and each passes through `SanitizeForLog`. Every new `IdentityProviderError` message is fixed text, which matters because `IdentityModule.RegisterClient` puts that message in its `502` detail.
+* **Test weakening.** Every line the branch removes from a test file was listed. Only two shapes appear: the body of `VerifyLogError`, which now delegates to the level-aware helper, and the two `SetUpClient` signatures, which gained an optional parameter. No assertion or fixture was removed or relaxed.
+
+| AC | Evidence |
+|---|---|
+| 1 | `Given_a_client_creation_whose_role_assignment_is_rejected`: provider failure returned, `role-assignment` phase logged, the created client deleted |
+| 2 | Seven cleanup-outcome fixtures covering confirmed deletion, already-absent, provider refusal, unreachable provider, unknown result, thrown exception, and deletion that took effect before throwing, each asserting the returned failure, the level-specific log events and the resulting provider state |
+| 3 | Both insert workflows: no `201`, no credentials, no database insert after a failed provisioning, and one cleanup call with its outcome inspected |
+| 4 | Exact `502` and sanitized `500` bodies deep-compared on both workflows, with sentinel provider, database, cleanup and exception messages absent from the response |
+| 5 | Successful-creation fixtures on the repository, both modules and the real-provider E2E scenario, asserting the configured role reaches the provider and the insert still returns its credentials |
+| 6 | E2E scenario 05, passing on the Keycloak and self-contained lanes, asserting the configured claim type carries the configured role for both credential pairs a client can come from |
+| 7 | Every compensation fixture asserts exactly one creation call, no update or secret regeneration, the supplied secret unchanged, and no creation after a deletion; the DMS-1218 R7 delete-workflow suites are untouched and green |
+| 8 | The audit table in §5 D-4, with fixtures for both corrected booleans, the reordered role resolution, and the shared update-path guard |
