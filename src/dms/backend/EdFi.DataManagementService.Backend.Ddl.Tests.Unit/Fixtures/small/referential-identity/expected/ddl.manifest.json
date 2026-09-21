@@ -4,8 +4,8 @@
   "ddl": [
     {
       "dialect": "mssql",
-      "normalized_sql_sha256": "c707f61e9cc2c3ac49d9d823a8273c02caa225ae686b0030bf8066775db7be7c",
-      "statement_count": 206
+      "normalized_sql_sha256": "3c61f4fdf80bb64e5dac665643de7edfe4f27bb26d7a4e2d00a580c317000b02",
+      "statement_count": 212
     },
     {
       "dialect": "pgsql",
