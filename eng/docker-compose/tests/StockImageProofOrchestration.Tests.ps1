@@ -261,6 +261,37 @@ Describe 'Stock image proof orchestration' {
         It 'refuses anything when nothing is owned' {
             Test-OwnedDeletionPath -Path $script:safeWorkspace -OwnedDirectory @() | Should -BeFalse
         }
+
+        It 'refuses a workspace reached through a link, rather than claiming to canonicalize it' {
+            # Resolving a provider path does not follow a junction to its target, so the name this
+            # checks and the directory a delete would reach can be different places. The ancestry is
+            # refused instead of a canonicalization being asserted.
+            $root = Join-Path ([IO.Path]::GetTempPath()) "dms1502-link-$([guid]::NewGuid().ToString('N'))"
+            $target = Join-Path $root 'real'
+            $link = Join-Path $root 'via-link'
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+
+            $linkCreated = $false
+            try {
+                try {
+                    New-Item -ItemType Junction -Path $link -Target $target -ErrorAction Stop | Out-Null
+                    $linkCreated = $true
+                }
+                catch {
+                    Set-ItResult -Inconclusive -Because 'this machine does not permit creating a junction'
+                    return
+                }
+
+                $verdict = Test-Safety -Workspace (Join-Path $link 'workspace')
+
+                $verdict.Safe | Should -BeFalse
+                $verdict.Blocker -join ' ' | Should -Match 'link or junction'
+            }
+            finally {
+                if ($linkCreated) { Remove-Item -LiteralPath $link -Force -Recurse -ErrorAction SilentlyContinue }
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     Context 'the shared external network, absent versus unreadable' {
@@ -395,6 +426,51 @@ Describe 'Stock image proof orchestration' {
 
         It 'reports nothing for a clean environment' {
             Get-AmbientOverride -ProcessEnvironment @{} | Should -HaveCount 0
+        }
+
+        It 'refuses an ambient <_> although its value is kept from the base file' -ForEach @(
+            'DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
+        ) {
+            # Not governed, because moving them would move the port the container listens on. Still
+            # refused ambiently, because Compose and Get-EnvValue both prefer a process variable
+            # while the preflight and the URLs read only the file.
+            Get-GovernedEnvironmentKey | Should -Not -Contain $_
+            Get-AmbientRefusedKey | Should -Contain $_
+            Get-AmbientOverride -ProcessEnvironment @{ $_ = '9999' } | Should -Contain $_
+        }
+    }
+
+    Context 'the ports read out of the environment file' {
+        It 'accepts three declared, in-range ports' {
+            $verdict = Test-ProofPort -Key @('A', 'B') -EnvironmentValue @{ A = '8080'; B = '5435' }
+
+            $verdict.Valid | Should -BeTrue
+            $verdict.Port['A'] | Should -Be 8080
+        }
+
+        It 'refuses a key the file does not declare' {
+            # An absent key reads as an empty string and would become port 0, which binds to
+            # whatever the operating system hands out and makes the preflight's answer meaningless.
+            $verdict = Test-ProofPort -Key @('A') -EnvironmentValue @{}
+
+            $verdict.Valid | Should -BeFalse
+            $verdict.Blocker -join ' ' | Should -Match 'declares no A'
+        }
+
+        It 'refuses <Case>' -ForEach @(
+            @{ Case = 'an empty value'; Value = '' }
+            @{ Case = 'a non-numeric value'; Value = 'eighty-eighty' }
+            @{ Case = 'zero'; Value = '0' }
+            @{ Case = 'a negative port'; Value = '-1' }
+            @{ Case = 'a port above the range'; Value = '65536' }
+        ) {
+            (Test-ProofPort -Key @('A') -EnvironmentValue @{ A = $Value }).Valid | Should -BeFalse
+        }
+
+        It 'reports every unusable port rather than the first' {
+            $verdict = Test-ProofPort -Key @('A', 'B', 'C') -EnvironmentValue @{ A = '0'; B = 'x'; C = '8080' }
+
+            $verdict.Blocker | Should -HaveCount 2
         }
     }
 

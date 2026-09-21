@@ -17,6 +17,18 @@
 # The Configuration Service is not pinned here. It has its own whole-reference variable,
 # DMS_CONFIG_DOCKER_IMAGE in published-config.yml, because the two services shared DMS_IMAGE_TAG and
 # a digest is meaningful only against the repository it was published under.
+#
+# It also turns the DMS restart policy off. published-dms.yml carries restart: unless-stopped, which
+# is right for a deployment and wrong for a proof: a DMS that refuses to start is restarted for as
+# long as the stack is up, so it is repeatedly exited with a non-zero code and then restarting
+# again, and an exit code read once could be any attempt's. With restarts off, the first failure is
+# the final state and the harness can wait for the container to settle without stopping it itself -
+# which matters, because a harness-induced exit and the startup failure under test would be
+# indistinguishable afterwards.
+#
+# A scalar is replaced by a later file rather than merged, so this needs no !override; the list-
+# valued keys are the ones Compose concatenates.
 services:
   dms:
     image: ${DMS_STOCK_IMAGE_REFERENCE:?set the pinned Ed-Fi API image reference, version-specific tag plus digest}
+    restart: "no"

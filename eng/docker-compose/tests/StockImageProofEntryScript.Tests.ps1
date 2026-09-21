@@ -42,6 +42,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $global:DmsShimPlan = Get-Content -LiteralPath $ShimPlan -Raw | ConvertFrom-Json
 $global:DmsShimLog = $ShimLog
+$global:DmsWorkspaceRoot = $WorkspaceRoot
 
 function global:Invoke-DmsShim {
     param([string] $Tool, [string[]] $ShimArgs)
@@ -51,8 +52,29 @@ function global:Invoke-DmsShim {
 
     foreach ($rule in $global:DmsShimPlan) {
         if ($line -match $rule.match) {
+            # A command that would have produced a file on disk says so, because the script looks
+            # for what its commands produced rather than trusting that they ran.
+            if ($rule.PSObject.Properties.Name -contains 'createFile' -and -not [string]::IsNullOrEmpty($rule.createFile)) {
+                $produced = Join-Path $global:DmsWorkspaceRoot $rule.createFile
+                New-Item -ItemType Directory -Path (Split-Path -Parent $produced) -Force | Out-Null
+
+                # A real managed assembly where the script reads an assembly version, because
+                # GetAssemblyName refuses anything else and a placeholder would fail for a reason
+                # that has nothing to do with what is under test.
+                if ($rule.PSObject.Properties.Name -contains 'asAssembly' -and $rule.asAssembly) {
+                    Copy-Item -LiteralPath ([psobject].Assembly.Location) -Destination $produced -Force
+                }
+                else {
+                    Set-Content -LiteralPath $produced -Value 'shim' -Encoding utf8
+                }
+            }
+
             $global:LASTEXITCODE = [int]$rule.exitCode
-            if (-not [string]::IsNullOrEmpty($rule.output)) { return $rule.output }
+
+            if ($rule.PSObject.Properties.Name -contains 'output' -and -not [string]::IsNullOrEmpty($rule.output)) {
+                return $rule.output
+            }
+
             return @()
         }
     }
@@ -64,6 +86,34 @@ function global:Invoke-DmsShim {
 function global:docker { Invoke-DmsShim -Tool 'docker' -ShimArgs $args }
 function global:dotnet { Invoke-DmsShim -Tool 'dotnet' -ShimArgs $args }
 function global:pwsh { Invoke-DmsShim -Tool 'pwsh' -ShimArgs $args }
+
+# The credential helper and the two HTTP verbs the proof uses. Shimming them keeps the traversal
+# entirely off the network while still running the script's own request and assertion logic.
+function global:Get-SmokeTestCredential {
+    param([string] $ConfigServiceUrl, [long[]] $DataStoreIds, [string] $Tenant)
+    Add-Content -LiteralPath $global:DmsShimLog -Value "smoke-credential $ConfigServiceUrl"
+    return @{ Key = 'stock-proof-key'; Secret = 'stock-proof-secret'; VendorId = 1; ApplicationName = 'Stock Proof' }
+}
+
+function global:Invoke-RestMethod {
+    param([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $ContentType, $Body)
+    Add-Content -LiteralPath $global:DmsShimLog -Value "rest $Method $Uri"
+    return [pscustomobject]@{ access_token = 'stock-proof-token' }
+}
+
+function global:Invoke-WebRequest {
+    param([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $ContentType, $Body, [switch] $SkipHttpErrorCheck)
+    Add-Content -LiteralPath $global:DmsShimLog -Value "http $Method $Uri"
+
+    foreach ($rule in $global:DmsShimPlan) {
+        if ($rule.match -like 'http:*' -and "$Body" -match ($rule.match -replace '^http:', '')) {
+            return [pscustomobject]@{ StatusCode = [int]$rule.exitCode; Content = $rule.output }
+        }
+    }
+
+    # An ordinary document: the passing control.
+    return [pscustomobject]@{ StatusCode = 201; Content = '{}' }
+}
 
 if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
     Set-Item -Path "Env:$AmbientKey" -Value $AmbientValue
@@ -152,13 +202,33 @@ catch {
             }
         }
 
+        # The answers that carry a run past the released-tool install: the version the pin names,
+        # and an executable where the install would have left one.
+        function script:Get-InstalledToolRule {
+            param([string] $Version = '8.0.1-alpha.0.7')
+
+            return @(
+                @{ match = 'dotnet tool list'; exitCode = 0; output = "Package Id             Version   Commands`nedfi.api.schematools   $Version   api-schema-tools" }
+                @{ match = 'dotnet tool install'; exitCode = 0; createFile = 'schema-tools/api-schema-tools' }
+            )
+        }
+
+        # The files a successful fixture publish would have left behind, so a traversal can reach
+        # the deployments. The entry assembly is a real one: the script reads its version.
+        function script:Get-PublishedFixtureRule {
+            return @(
+                @{ match = 'dotnet publish'; exitCode = 0; createFile = 'plugins/Acme.CustomValidationProof/Acme.CustomValidationProof.dll'; asAssembly = $true }
+            )
+        }
+
         function script:Invoke-EntryScript {
             param(
                 [string] $PinPath,
                 [hashtable[]] $ShimRule = @(),
                 [string] $AmbientKey,
                 [string] $AmbientValue,
-                [int[]] $Port
+                [int[]] $Port,
+                [string] $AssetsVersion
             )
 
             $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-entry-$([guid]::NewGuid().ToString('N'))"
@@ -192,6 +262,30 @@ catch {
                 $baseLine += "POSTGRES_PORT=$($Port[2])"
                 Set-Content -LiteralPath $baseEnvironmentFile -Value $baseLine -Encoding utf8
 
+                # The fixture's own assets file, in the shape the restore writes, so the script
+                # reads what a build would actually have produced rather than a stub of its own.
+                $writtenAssets = $null
+                $createdObjDirectory = $null
+
+                if (-not [string]::IsNullOrWhiteSpace($AssetsVersion)) {
+                    $objDirectory = Join-Path $script:composeRoot "../fixtures/plugins/Acme.CustomValidationProof/obj"
+                    $objDirectory = [IO.Path]::GetFullPath($objDirectory)
+
+                    # Removed again below. This writes into the repository's own fixture tree, which
+                    # a test has no business leaving behind even though the path is git-ignored: a
+                    # stale assets file would be read by a later real build.
+                    if (-not (Test-Path -LiteralPath $objDirectory)) { $createdObjDirectory = $objDirectory }
+                    New-Item -ItemType Directory -Path $objDirectory -Force | Out-Null
+                    $assetsPath = Join-Path $objDirectory 'project.assets.json'
+                    $writtenAssets = $assetsPath
+                    Set-Content -LiteralPath $assetsPath -Encoding utf8 -Value (@{
+                            libraries = @{
+                                "EdFi.Api.Plugins/$AssetsVersion"          = @{ type = 'package' }
+                                "EdFi.Api.CustomValidation/$AssetsVersion" = @{ type = 'package' }
+                            }
+                        } | ConvertTo-Json -Depth 5)
+                }
+
                 $argument = @(
                     '-NoProfile', '-File', $wrapper
                     '-BaseEnvironmentFile', $baseEnvironmentFile
@@ -223,6 +317,13 @@ catch {
                 }
             }
             finally {
+                if ($null -ne $createdObjDirectory) {
+                    Remove-Item -LiteralPath $createdObjDirectory -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                elseif ($null -ne $writtenAssets) {
+                    Remove-Item -LiteralPath $writtenAssets -Force -ErrorAction SilentlyContinue
+                }
+
                 Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
@@ -455,6 +556,86 @@ catch {
             finally {
                 $listener.Stop()
             }
+        }
+    }
+
+    Context 'the four scenarios, traversed end to end under the shim' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'reaches the fixture publish and refuses a restore that resolved another version' {
+            # The pin names 1.0.0. A restore that produced anything else is the whole reason the
+            # contracts are pinned, and bracketing only asks for a version.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AssetsVersion '1.1.0' -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'restored as 1\.1\.0'
+            @($run.ShimCall | Where-Object { $_ -like 'dotnet publish*' }) | Should -Not -BeNullOrEmpty
+        }
+
+        It 'passes bare contract versions to the publish, because the project brackets them itself' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AssetsVersion '1.0.0' -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) | ForEach-Object { $_ })
+
+            $publish = @($run.ShimCall | Where-Object { $_ -like 'dotnet publish*' })
+
+            $publish | Should -Not -BeNullOrEmpty
+            $publish[0] | Should -Match 'PluginsPackageVersion=1\.0\.0'
+            $publish[0] | Should -Not -Match 'PluginsPackageVersion=\['
+        }
+
+        It 'refuses a released tool whose installed version is not the pinned one' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule -Version '9.9.9') | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'not the pinned one'
+        }
+
+        It 'installs the released tool at the pinned version into its own tool path' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) | ForEach-Object { $_ })
+
+            $install = @($run.ShimCall | Where-Object { $_ -like 'dotnet tool install*' })
+
+            $install | Should -Not -BeNullOrEmpty
+            $install[0] | Should -Match '--version 8\.0\.1-alpha\.0\.7'
+            $install[0] | Should -Match '--tool-path'
+        }
+
+        It 'runs no command that builds an image, across the whole traversal' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AssetsVersion '1.0.0' -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) | ForEach-Object { $_ })
+
+            $run.Evidence.buildCommandAbsent.Verified | Should -BeTrue
+        }
+
+        It 'fails the run when the final teardown fails, rather than reporting success' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AssetsVersion '1.0.0' -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'Tearing down'
+        }
+
+        It 'keeps the run directories when teardown failed, because they are still mounted' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AssetsVersion '1.0.0' -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) | ForEach-Object { $_ })
+
+            $run.WorkspaceCreated | Should -BeTrue
+        }
+
+        It 'removes the run directories when teardown succeeded' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AssetsVersion '1.0.0' -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) | ForEach-Object { $_ })
+
+            $run.WorkspaceCreated | Should -BeFalse
         }
     }
 

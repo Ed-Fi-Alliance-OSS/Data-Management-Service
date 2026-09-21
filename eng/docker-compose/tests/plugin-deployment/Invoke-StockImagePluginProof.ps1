@@ -119,9 +119,23 @@ $BaseEnvironmentFile = [IO.Path]::GetFullPath($BaseEnvironmentFile)
 # the container's own listening port as well as the host's - so what the base declares is what the
 # deployment takes, and the preflight has to guard exactly those.
 $baseEnvironment = ReadValuesFromEnvFile $BaseEnvironmentFile
-$dmsPort = [int]$baseEnvironment['DMS_HTTP_PORTS']
-$configurationServicePort = [int]$baseEnvironment['DMS_CONFIG_ASPNETCORE_HTTP_PORTS']
-$requiredPort = @($dmsPort, $configurationServicePort, [int]$baseEnvironment['POSTGRES_PORT'])
+$portKey = @('DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT')
+$portVerdict = Test-ProofPort -EnvironmentValue $baseEnvironment -Key $portKey
+
+if (-not $portVerdict.Valid) {
+    throw ("The environment file does not declare usable ports:" + [Environment]::NewLine +
+        (($portVerdict.Blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+}
+
+$dmsPort = $portVerdict.Port['DMS_HTTP_PORTS']
+$configurationServicePort = $portVerdict.Port['DMS_CONFIG_ASPNETCORE_HTTP_PORTS']
+$requiredPort = @($portKey | ForEach-Object { $portVerdict.Port[$_] })
+
+# The path base the stack serves under, so the addresses this run requests are the ones it exposes
+# rather than a bare root assumed here. UsePathBase serves every route at both the prefix and the
+# root, so an empty value is correct and is not a missing one.
+$pathBase = if ($baseEnvironment.ContainsKey('PATH_BASE')) { [string]$baseEnvironment['PATH_BASE'] } else { '' }
+$pathPrefix = if ([string]::IsNullOrWhiteSpace($pathBase)) { '' } else { '/' + $pathBase.Trim('/') }
 
 $script:commandLog = [System.Collections.Generic.List[string]]::new()
 $script:ownership = Get-StockProofOwnership
@@ -235,6 +249,21 @@ function Remove-OwnedTree {
     Remove-Item -LiteralPath $full -Recurse -Force
 }
 
+# A directory this run created that the stack may still have bind-mounted. The staged bootstrap
+# workspace, the published plugin root, the package feed and the generated environment file are all
+# mounted into containers, so removing any of them under a surviving stack leaves that stack reading
+# files that are no longer there. When teardown failed, all of them are kept.
+function Remove-MountedRunDirectory {
+    param([Parameter(Mandatory)] [string] $Path, [string[]] $AlsoOwned = @())
+
+    if ($script:teardownFailed) {
+        Write-Detail "keeping ${Path}: the stack did not come down, and this run's directories are still mounted into it"
+        return
+    }
+
+    Remove-OwnedTree -Path $Path -AlsoOwned $AlsoOwned
+}
+
 function Invoke-OwnedCleanup {
     # Wrapped: a function returning an empty collection hands back nothing, and under StrictMode
     # reading .Count off that would throw here in the finally, replacing whatever failure brought
@@ -250,30 +279,18 @@ function Invoke-OwnedCleanup {
         try {
             switch ($resource.Kind) {
                 'ComposeProject' {
-                    Push-Location $composeRoot
-                    try {
-                        Invoke-Recorded -FilePath 'pwsh' -AllowFailure -ArgumentList @(
-                            '-NoProfile', '-File', (Join-Path $composeRoot 'bootstrap-published-dms.ps1')
-                            '-d', '-v', '-EnvironmentFile', $script:environmentFile
-                        ) | Out-Null
-                    }
-                    finally {
-                        Pop-Location
+                    # The same checked teardown the scenarios use. Calling the wrapper here with
+                    # -AllowFailure and discarding the result was how a final teardown could fail
+                    # and still leave the run reporting success.
+                    if ($null -ne $script:environmentFile) {
+                        Stop-ProofDeployment -EnvironmentFile $script:environmentFile
                     }
                 }
                 'Bootstrap' {
-                    # Only after the stack is down. The staged workspace is bind-mounted into the
-                    # running containers, so removing it under a surviving stack would leave that
-                    # stack reading files that are no longer there.
-                    if ($script:teardownFailed) {
-                        Write-Detail "keeping $($resource.Name): the stack did not come down, and it is still mounted"
-                    }
-                    else {
-                        Remove-OwnedTree -Path $resource.Name -AlsoOwned @($bootstrapPath)
-                    }
+                    Remove-MountedRunDirectory -Path $resource.Name -AlsoOwned @($bootstrapPath)
                 }
                 'Directory' {
-                    Remove-OwnedTree -Path $resource.Name
+                    Remove-MountedRunDirectory -Path $resource.Name
                 }
             }
         }
@@ -462,10 +479,37 @@ function Install-ReleasedSchemaTool {
     Invoke-Recorded -FilePath 'dotnet' -ArgumentList (Get-SchemaToolInstallArgument `
             -Version $Pin.provisioning.schemaToolsPackageVersion -ToolPath $toolPath -FeedUrl $feed) | Out-Null
 
-    $executable = @(Get-ChildItem -LiteralPath $toolPath -Filter 'api-schema-tools*' -File) | Select-Object -First 1
+    # What was installed, before looking for it. `dotnet tool list --tool-path` reports the version
+    # actually present, and an argument alone is a restatement of the request rather than evidence
+    # that the request was honoured.
+    $listed = Invoke-Recorded -FilePath 'dotnet' -AllowFailure -ArgumentList @('tool', 'list', '--tool-path', $toolPath)
+
+    if ($listed.ExitCode -ne 0) {
+        throw "The installed tools under $toolPath could not be listed, so the SchemaTools version actually present is unknown."
+    }
+
+    $installedVersion = ''
+    foreach ($row in ($listed.Output -split "`r?`n")) {
+        $column = @($row -split '\s{2,}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($column.Count -ge 2 -and $column[0] -ieq 'edfi.api.schematools') {
+            $installedVersion = $column[1]
+        }
+    }
+
+    $toolVerdict = Test-RestoredPackageVersion -PackageId 'EdFi.Api.SchemaTools' `
+        -ExpectedVersion $Pin.provisioning.schemaToolsPackageVersion -RestoredVersion $installedVersion
+
+    if (-not $toolVerdict.Verified) {
+        throw "The released provisioning tool is not the pinned one: $($toolVerdict.Reason)"
+    }
+
+    Write-Detail $toolVerdict.Reason
+
+    $executable = @(Get-ChildItem -LiteralPath $toolPath -Filter 'api-schema-tools*' -File -ErrorAction SilentlyContinue) |
+        Select-Object -First 1
 
     if ($null -eq $executable) {
-        throw "The released EdFi.Api.SchemaTools $($Pin.provisioning.schemaToolsPackageVersion) installed but produced no api-schema-tools executable under $toolPath."
+        throw "The released EdFi.Api.SchemaTools $($Pin.provisioning.schemaToolsPackageVersion) reports as installed but produced no api-schema-tools executable under $toolPath."
     }
 
     # Resolve-DmsSchemaTool honours this ahead of every path that would otherwise find this
@@ -670,47 +714,52 @@ function Get-ContainerFact([string]$name) {
     }
 }
 
-# A container that has stopped and stays stopped. published-dms.yml carries restart: unless-stopped,
-# so a DMS that refuses to start is restarted for as long as the stack is up: it is repeatedly
-# "exited" with a non-zero code and then "restarting" again. Reading an exit code once therefore
-# says nothing about whether it stopped, and could equally be the previous attempt's. This waits for
-# the refusal to be recorded and then stops the service explicitly, so the state asserted afterwards
-# is one the restart policy is no longer changing.
+# A container that has stopped and stayed stopped, of its own accord. published-dms.yml carries
+# restart: unless-stopped, so a DMS that refuses to start would otherwise be restarted for as long
+# as the stack is up and an exit code read once could be any attempt's. The test-owned pin overlay
+# sets restart: "no" for the DMS service, which is what lets the first failure be the final state.
+#
+# Nothing here stops the container. A harness-induced exit and the startup failure under test would
+# be indistinguishable afterwards, so the refusal has to be the thing that ended the process.
 function Wait-ForRecordedStartupFailure {
     param([Parameter(Mandatory)] [string] $Container, [Parameter(Mandatory)] [string] $ExpectedPhase, [int] $TimeoutSeconds = 300)
 
     $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastSeen = 'nothing'
 
     while ([datetime]::UtcNow -lt $deadline) {
-        $status = Get-StartupStatusDocument $Container -FromStoppedContainer
+        $fact = Get-ContainerFact $Container
 
-        if ($null -ne $status -and $status.Phase -ceq $ExpectedPhase -and $status.State -cne 'Ready') {
-            # Stop the service so the restart policy cannot move it while it is being asserted about.
-            Push-Location $composeRoot
-            try {
-                Invoke-Docker -AllowFailure -ArgumentList @('compose', '-p', $composeProject, 'stop', 'dms') | Out-Null
+        if (-not $fact.InspectSucceeded) {
+            throw 'The DMS container could not be inspected, so whether it stopped is unknown.'
+        }
+
+        if ($fact.Restarting -or $fact.Status -ceq 'running') {
+            # Still moving. Not-Ready is not failed, and a container that is up may yet reach Ready.
+            $lastSeen = $fact.Status
+            Start-Sleep -Seconds 5
+            continue
+        }
+
+        if ($fact.Status -ceq 'exited') {
+            $status = Get-StartupStatusDocument $Container -FromStoppedContainer
+
+            if ($null -eq $status) {
+                throw 'The DMS container exited but wrote no readable startup status, so the refusal it should have recorded cannot be asserted.'
             }
-            finally {
-                Pop-Location
-            }
 
-            $fact = Get-ContainerFact $Container
-
-            if (-not $fact.InspectSucceeded) {
-                throw 'The DMS container could not be inspected after it was stopped, so its final state is unknown.'
-            }
-
-            if ($fact.Restarting -or $fact.Status -ceq 'running') {
-                throw "The DMS container is still $($fact.Status) after an explicit stop, so it has not settled and its exit code is not final."
+            if ($status.Phase -cne $ExpectedPhase -or $status.State -ceq 'Ready') {
+                throw "The DMS container exited recording phase '$($status.Phase)' state '$($status.State)', not a failed $ExpectedPhase."
             }
 
             return [pscustomobject]@{ Status = $status; Fact = $fact }
         }
 
+        $lastSeen = $fact.Status
         Start-Sleep -Seconds 5
     }
 
-    throw "DMS did not record a failed $ExpectedPhase phase within $TimeoutSeconds seconds."
+    throw "DMS did not settle into a failed $ExpectedPhase within $TimeoutSeconds seconds; its last observed status was '$lastSeen'."
 }
 
 function Start-ProofDeployment {
@@ -1089,10 +1138,12 @@ Write-Detail "evidence: $EvidenceRoot"
 $script:environmentFile = $null
 $result = [ordered]@{}
 
+# Before the try, so a refusal here cannot reach a finally that would then write evidence into the
+# very path the refusal was about.
+Assert-NoAmbientOverride
+Assert-PathsSafeToOwn
+
 try {
-    # Nothing above this line has touched Docker, the filesystem or the network.
-    Assert-NoAmbientOverride
-    Assert-PathsSafeToOwn
     $pin = Get-ValidatedPin
     $result.pin = [ordered]@{
         edFiApi              = "$($pin.edFiApi.repository):$($pin.edFiApi.tag)@$($pin.edFiApi.digest)"
@@ -1122,7 +1173,7 @@ try {
     $pinOverlay = 'tests/plugin-deployment/stock-image-pin-dms.yml'
     # The same values the preflight refused on, so the guarded ports and the addresses requests go
     # to cannot drift apart.
-    $baseUrl = "http://localhost:$dmsPort"
+    $baseUrl = "http://localhost:$dmsPort$pathPrefix"
     $configurationServiceUrl = "http://localhost:$configurationServicePort"
 
     # Recipe 1: the committed plugins-dms.yml, run unedited, with the plugin bind-mounted.
@@ -1171,16 +1222,18 @@ finally {
     $result.cleanupError = @($script:cleanupError)
     $result.teardownFailed = $script:teardownFailed
 
+    # Attempted after cleanup so the record includes it, and its failure is collected rather than
+    # logged: a lane that reported success without the evidence artifact would be claiming a proof
+    # nobody can read.
     try {
         Write-Evidence -Result ([pscustomobject]$result)
     }
     catch {
-        # Evidence is the record, not the work. Losing it must not also lose the run's verdict.
-        Write-Detail "could not write evidence: $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)"
+        $script:cleanupError.Add("writing evidence: $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)")
     }
 
     if ($script:cleanupError.Count -gt 0) {
-        throw ("This run did not clean up after itself:" + [Environment]::NewLine +
+        throw ("This run did not finish cleanly:" + [Environment]::NewLine +
             (($script:cleanupError | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
     }
 }

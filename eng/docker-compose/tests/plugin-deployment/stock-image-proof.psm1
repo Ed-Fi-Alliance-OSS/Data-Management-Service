@@ -890,6 +890,29 @@ function Test-ProofPathSafety {
         $blocker += "the workspace '$WorkspacePath' contains the evidence directory '$EvidencePath'"
     }
 
+    # A reparse point anywhere above either path means the name checked here and the directory
+    # written to can be different places, and every containment answer above is about the name.
+    # Resolving a provider path does not follow a junction or a symbolic link to its target, so this
+    # refuses the ancestry rather than claiming a canonicalization it does not perform.
+    foreach ($candidate in @(
+            @{ Path = $WorkspacePath; What = 'workspace' }
+            @{ Path = $EvidencePath; What = 'evidence directory' }
+        )) {
+        $walk = $candidate.Path
+
+        while (-not [string]::IsNullOrEmpty($walk)) {
+            if ((Test-Path -LiteralPath $walk) -and
+                ((Get-Item -LiteralPath $walk -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                $blocker += "the $($candidate.What) path passes through '$walk', which is a link or junction; what this run would delete is then not the path it checked"
+                break
+            }
+
+            $parent = Split-Path -Parent $walk
+            if ($parent -ieq $walk) { break }
+            $walk = $parent
+        }
+    }
+
     return [pscustomobject]@{
         Safe    = ($blocker.Count -eq 0)
         Blocker = $blocker
@@ -1105,6 +1128,65 @@ function Get-GovernedEnvironmentKey {
     )
 }
 
+function Get-AmbientRefusedKey {
+    <#
+    .SYNOPSIS
+    Every key that must not already be set in the process environment.
+
+    .DESCRIPTION
+    A superset of the governed keys. The port keys are deliberately NOT governed - their values are
+    kept from the base file, because moving them would move the port the container itself listens
+    on - but an ambient one would still win over the file in Compose and in Get-EnvValue, while the
+    preflight and the URLs read only the file. That is the same silent divergence for a different
+    reason, so they are refused here without being rewritten there.
+    #>
+    return @(Get-GovernedEnvironmentKey) + @(
+        'DMS_HTTP_PORTS'
+        'DMS_CONFIG_ASPNETCORE_HTTP_PORTS'
+        'POSTGRES_PORT'
+    )
+}
+
+function Test-ProofPort {
+    <#
+    .SYNOPSIS
+    Decides whether the ports read from the environment file are usable at all.
+
+    .DESCRIPTION
+    Before anything is bound. A key the file does not declare reads as an empty string and becomes
+    port 0, which binds to whatever the operating system hands out and would make the preflight's
+    answer meaningless; an out-of-range value fails later and less clearly.
+    #>
+    param([hashtable] $EnvironmentValue = @{}, [string[]] $Key = @())
+
+    $blocker = @()
+    $port = @{}
+
+    foreach ($name in $Key) {
+        $raw = if ($EnvironmentValue.ContainsKey($name)) { [string]$EnvironmentValue[$name] } else { '' }
+        $parsed = 0
+
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            $blocker += "the environment file declares no $name, so the port this run would bind is undefined"
+        }
+        elseif (-not [int]::TryParse($raw, [ref]$parsed)) {
+            $blocker += "the environment file's $name is '$raw', which is not a number"
+        }
+        elseif ($parsed -lt 1 -or $parsed -gt 65535) {
+            $blocker += "the environment file's $name is $parsed, which is not a usable TCP port"
+        }
+        else {
+            $port[$name] = $parsed
+        }
+    }
+
+    return [pscustomobject]@{
+        Valid   = ($blocker.Count -eq 0)
+        Port    = $port
+        Blocker = $blocker
+    }
+}
+
 function Get-AmbientOverride {
     <#
     .SYNOPSIS
@@ -1118,7 +1200,7 @@ function Get-AmbientOverride {
     #>
     param([hashtable] $ProcessEnvironment = @{})
 
-    return @(Get-GovernedEnvironmentKey | Where-Object { $ProcessEnvironment.ContainsKey($_) })
+    return @(Get-AmbientRefusedKey | Where-Object { $ProcessEnvironment.ContainsKey($_) })
 }
 
 function Get-StockProofEnvironmentContent {
@@ -1226,6 +1308,8 @@ Export-ModuleMember -Function @(
     'Get-NetworkAttachmentInventory'
     'Test-LocalPortAvailable'
     'Get-GovernedEnvironmentKey'
+    'Get-AmbientRefusedKey'
     'Get-AmbientOverride'
+    'Test-ProofPort'
     'Get-StockProofEnvironmentContent'
 )
