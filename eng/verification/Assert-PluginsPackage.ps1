@@ -30,8 +30,9 @@
     only looked for surprises would pass on the second.
 
     The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
-    path, and the prerelease pack job calls it on the packed artifact before that artifact is
-    uploaded for publication: it is the check that decides what a published version contains, and
+    path, and unconditionally in the merge queue, which is the recovery path for everything the
+    per-PR gates skip. The prerelease pack job calls it on the packed artifact before that artifact
+    is uploaded for publication: it is the check that decides what a published version contains, and
     once published that content cannot be taken back.
 #>
 [CmdletBinding()]

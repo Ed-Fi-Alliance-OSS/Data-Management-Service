@@ -481,7 +481,9 @@ jobs:
 
           # Asserts on what is inside the artifact, not that a file appeared. The prerelease pack
           # job runs this same assertion on the artifact before it is uploaded for publication;
-          # running it on every pull request catches a broken csproj before it reaches a release.
+          # running it here catches a broken csproj before it reaches a release. This job is gated
+          # on a non-draft pull request touching a DMS-relevant path, and runs unconditionally in
+          # the merge queue, so nothing merges without it.
           ./eng/verification/Assert-CustomValidationPackage.ps1 `
             -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$contractVersion.nupkg" `
             -ExtractTo (Join-Path $env:RUNNER_TEMP "custom-validation-nupkg") `

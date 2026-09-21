@@ -13,9 +13,10 @@
     the way an implementer will.
 
     The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
-    path; the prerelease lane does not. A contract change is DMS-relevant, so what this proves about
-    a contract version is proven before the pull request that produced that version merges, not in
-    the job that publishes it.
+    path, and unconditionally in the merge queue; the prerelease lane does not. A contract change is
+    DMS-relevant, and a change that is not still meets this in the queue, so what this proves about a
+    contract version is proven before the pull request that produced that version merges, not in the
+    job that publishes it.
 #>
 [CmdletBinding()]
 param(

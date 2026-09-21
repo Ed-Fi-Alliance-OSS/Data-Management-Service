@@ -543,10 +543,12 @@ refuse a validator built against an identical contract, naming two versions that
 implementer could act on.
 
 **That policy is what the package carries, published or built locally.** The project file declares
-`Version`, `AssemblyVersion` and `FileVersion` itself, so a nupkg packed from this repository is
+`VersionPrefix`, `AssemblyVersion`, `FileVersion` and `InformationalVersion` itself, so a nupkg
+packed from this repository is
 `EdFi.Api.CustomValidation.1.0.0.nupkg` with an assembly at `1.0.0.0` whatever release version the
 build was given; the pull request lane asserts exactly that for every non-draft change to a
-DMS-relevant path, and the prerelease lane asserts it on every prerelease. The sibling
+DMS-relevant path and unconditionally in the merge queue, and the prerelease lane asserts it on
+every `dms-` prerelease. The sibling
 `EdFi.Api.Plugins` contract declares its own version the same way, in
 `src/plugins/Directory.Build.props`, so the two numbers move independently of each other and of the
 Data Management Service release. Read a package's version from the nupkg's own metadata, never from
