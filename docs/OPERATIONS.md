@@ -550,3 +550,140 @@ be relied on for DoS or brute-force protection.
 ### Authentication and Authorization
 
 See [Roles and Scopes](./ROLES-SCOPES.md)
+
+## Configuration Service: identity-provider clients left behind by failed provisioning
+
+Creating an API client is two systems agreeing: the Configuration Service asks
+the identity provider for a client, then records it in its own database. When
+the second half fails, or when the provider accepts the client and then refuses
+the role assignment the client needs, the service removes the client it created
+and answers the caller with an error carrying no credentials.
+
+That removal is usually confirmed. When it is not, a client can be left in the
+provider that no database row references and no caller holds credentials for.
+It cannot be reached through the API, so it has to be removed by hand. The log
+says which situation occurred and carries the identifiers needed to act.
+
+### The one rule for deleting a client during recovery
+
+A client may be deleted as recovery for a failed attempt **only** when its
+internal id equals the provider UUID recorded in that attempt's log line,
+verified in the same realm. When the log carries no UUID, or the UUID does not
+match, every other match — client id, display name, creation time, role
+mappings, correlation id — is investigative context and **not** authorization to
+delete.
+
+Deletion then requires one of:
+
+* provider audit evidence tying the client's creation to the failed attempt, for
+  example Keycloak admin events for `CLIENT` `CREATE` in that realm, correlated
+  by time and representation with the failed request; or
+* an operator's recorded confirmation that documents **how** ownership by the
+  failed attempt was established.
+
+If ownership remains uncertain, stop and leave the client in place.
+
+The rule is strict because two requests can collide. `POST /connect/register`
+checks whether a client id is already taken before creating it, and that check
+is not atomic with the creation: two concurrent registrations of the same client
+id can both pass it, after which the provider creates one client and refuses the
+other. Recovering the refused request by client id alone would delete the
+successful registration's client. A client deleted by its owner and registered
+again under the same id before recovery runs would be destroyed the same way.
+Only the UUID identifies the object a particular attempt created.
+
+Enable admin-event auditing for the realm in advance if you want the first kind
+of evidence available. Turning it on after an incident cannot establish who
+created a client that already exists.
+
+### Situation 1: the service could not confirm its own cleanup
+
+Log pair, from the Configuration Service:
+
+```text
+Client provisioning failed during {phase} for client {clientId} (provider client {clientUuid}); deleting the created client
+Could not confirm deletion of provider client {clientUuid} (client {clientId}) after failed provisioning; cleanup outcome {outcome}; the client may remain and must be reviewed manually
+```
+
+The caller received `502` or `500` and no credentials. The client is expected to
+remain when the outcome names a provider refusal or an unknown result, and may
+or may not remain when the provider was unreachable or the deletion threw: in
+those cases the deletion is unconfirmed rather than known to have failed.
+
+The client's role assignment was reported unsuccessful when the phase is
+`role-assignment`, is unconfirmed when that phase raised an exception, and was
+never attempted in the other phases. For `POST /v3/applications` and
+`POST /v3/apiClients` the secret was generated server-side and never returned,
+so nobody holds usable credentials. For `POST /connect/register` the secret was
+**chosen by the caller**, so if the role assignment did take effect the client
+is a usable credential the caller still has. Treat that as the urgent case.
+
+1. Resolve the client by UUID: `GET {keycloak}/admin/realms/{realm}/clients/{clientUuid}`,
+   or open it by internal id in the admin console. A `404` means the deletion
+   completed; stop. If it is found, confirm its `clientId` equals the logged
+   `{clientId}`. A mismatch means the identifier is not what the log expects:
+   stop and investigate.
+2. For the two insert endpoints, confirm no database row references it:
+
+   ```sql
+   SELECT "Id", "ApplicationId", "ClientUuid" FROM dmscs."ApiClient" WHERE "ClientId" = '<clientId>';
+   ```
+
+   On SQL Server the table is `dmscs.ApiClient`. Add
+   `OR "ClientUuid" = '<clientUuid>'` **only** when the logged value is a
+   well-formed UUID; PostgreSQL rejects a malformed literal compared against a
+   `uuid` column, and the `client-identifier-parse` phase logs exactly such a
+   value. If a row exists, **stop and investigate** rather than assuming it
+   belongs to another request.
+3. For `POST /connect/register`, absence from `dmscs."ApiClient"` is expected and
+   authorizes nothing by itself. The UUID match from step 1 is the
+   authorization; record it.
+4. Delete the client by internal id:
+   `DELETE {keycloak}/admin/realms/{realm}/clients/{clientUuid}`. A `404` means
+   it was already removed.
+5. Re-issue the original request. It provisions a **new** client: the insert
+   endpoints mint a fresh key and secret, and registration may reuse the
+   caller's chosen id once the old client is gone. **There is no automatic
+   retry convergence.** Each attempt is independent.
+
+### Situation 2: cleanup after a failed database insert could not be confirmed
+
+Log line, from the Configuration Service:
+
+```text
+Could not confirm deletion of provider client {clientUuid} (client {clientId}) after the database insert failed; cleanup outcome {outcome}; the client may remain and must be reviewed manually
+```
+
+The caller received `409`, `400` or `500` and no credentials. A **fully
+provisioned** client is expected to remain, or may remain for an unconfirmed
+outcome: it has its role, its claim-set scope and its claims, and is enabled
+according to the request. Its secret was never returned, so it is unusable
+clutter rather than a live credential.
+
+Follow steps 1, 2 and 4 of situation 1. In step 2, a row that **does** exist
+after a `500` means the insert may have committed after all: do not delete the
+provider client. Treat the row as a live API client and let the caller reset its
+credentials or delete it through the API.
+
+### Situation 3: the creation outcome itself is unconfirmed
+
+Log line carrying a client id, no provider UUID, and the phrase
+`creation outcome unconfirmed`. A line saying `creation not attempted` needs no
+recovery: that request created nothing.
+
+Whether a client exists is unknown. A non-success answer from the provider makes
+creation unlikely but does not disprove it; a success with no location to read
+the identifier from makes it likely; a transport failure leaves it open. **This
+attempt did not perform role assignment**, so a client found under that client
+id may belong to a different attempt and may carry roles.
+
+Search by client id as investigation only:
+`GET {keycloak}/admin/realms/{realm}/clients?clientId={clientId}`. If nothing is
+found, stop. If a client is found, the deletion rule above applies in full: with
+no UUID from this attempt, delete only on audit evidence or recorded operator
+confirmation, and otherwise leave it and record the finding. For the two insert
+endpoints, also run step 2 of situation 1; a row means the client is in use and
+must not be deleted.
+
+Recovery never deletes realm roles or client scopes. Those are shared by every
+client in the realm, so a failed attempt leaves nothing about them to repair.

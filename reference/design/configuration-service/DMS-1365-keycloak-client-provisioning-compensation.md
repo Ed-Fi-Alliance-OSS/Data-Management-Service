@@ -474,3 +474,67 @@ Three critical review rounds by Codex (architect) on 2026-09-21. Round 1 challen
 Further R2-review directions adopted: preflight failures log "creation not attempted"; unconditional "absent"/"remains" claims replaced; compensation events asserted at their levels with the reused `DeleteClientAsync` diagnostic allowed; both identifiers in the successful-cleanup template and in the module helper; detached mutation worktree; `RegisterEndpointTests`; per-provider claim-type derivation; sanitization fixtures with input `SanitizeForLog` changes.
 
 Further R1-review directions adopted: bounded compensation guarantee; recovery for all three callers with registration separated; malformed-UUID identification by client ID; captured module logs in the insert fixtures; audit-contract vs behavioral evidence distinction; sanitized insert-path `FailureUnknown` logging; identifiable rather than counted log events; unrecognized cleanup outcome policy; no `Combine(...)` helper; mutation checks in a disposable worktree; E2E counts as observations; per-lane role-claim configuration verification.
+
+## 17. As implemented
+
+### 17.1 Local commits
+
+| Step | Commit | Summary |
+|---|---|---|
+| 0.1 | `f78b66793` | This specification, approved at R3 |
+| 1.1 | `7f2a073a4` | Role and scope creation results checked before the client is created; unresolved role rejected first; update-path scope guard |
+| 1.2 | `b2512aabc` | Role-assignment result classified; compensating deletion with the D-3 precedence; phase-tracked creation logs |
+| 1.2 follow-up | `b29866f24` | Already-absent cleanup state established; secret assertion extended to logged exception text; nullable local removed |
+| 2.1 | `b38af5386` | Application insert: checked cleanup helper, sanitized insert-path logs, exact contracts pinned |
+| 2.1 follow-up | `af8c0559c` | Inherited no-secret-log assertion across the insert fixtures; cleanup-ownership comment corrected |
+| 2.2 | `1bdaa2b11` | API client insert: same helper, contracts, diagnostics, and forwarded role and approval state |
+| 3.1 | `2c3f9475a` | Real-token role-claim scenario, per-provider claim-type derivation, environment propagation |
+| 3.1 follow-up | `2502f20be` | Role-claim expectation read back from the running container instead of the environment file |
+| 4.1 | this documentation commit | Operator recovery procedures in `docs/OPERATIONS.md`, setup-guide pointer, design index link, this section |
+
+### 17.2 Test results recorded per step
+
+| Gate | Result |
+|---|---|
+| `Backend.Tests.Unit`, whole project | 835 passed, 0 failed (717 at baseline) |
+| `Frontend.AspNetCore.Tests.Unit`, whole project | 1452 passed, 0 failed (1400 after Step 2.1; the Step 0.2 baseline measured the insert and registration fixtures only, at 355) |
+| `ApplicationModuleTests` | 182 passed |
+| `ApiClientModuleTests` | 243 passed |
+| `KeycloakClientRepositoryTests` | 203 passed |
+| E2E Token feature, Keycloak lane | 4 passed, 1 skipped of 5; the skip is the self-contained-only scenario 04 |
+| E2E Token feature, self-contained lane | 5 passed, 0 skipped |
+| `dotnet csharpier check src/config` | clean, 440 files |
+
+Mutation evidence was produced per step in a detached worktree, one mutation at a time: five cycles for Step 1.1, five for Step 1.2, eight for Step 2.1, nine for Step 2.2. Each arm of both cleanup helpers, each checked provider boolean, the classification precedence, the phase distinction, the sanitization, and both forwarded values have at least one fixture that only they kill. Two mutation shapes are unusable in this build and were replaced: a constant-false guard (CS0162) and logging a fabricated exception inside a catch clause (Sonar S6667); an emptied helper or dropped argument trips the unused-parameter rule (S1172).
+
+### 17.3 Effective lane configuration, observed
+
+Read back from `ed-fi-api-config-service` on each run:
+
+| Setting | Keycloak lane | Self-contained lane |
+|---|---|---|
+| `AppSettings__IdentityProvider` | `keycloak` | `self-contained` |
+| `IdentitySettings__RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | same |
+| `IdentitySettings__ClientRole` | `dms-client` | `dms-client` |
+| `Authentication__RoleClaimAttribute` | absent | absent |
+
+The last row is the observation the specification required rather than assumed: no compose file forwards that key, so the self-contained provider falls back to the same URI Keycloak is configured with. The lanes agree by default, not by configuration.
+
+Configuration-source checks, all on the **self-contained** lane except where noted:
+
+| Check | Result |
+|---|---|
+| Default configuration | scenario 05 passed |
+| Shell-provided client role `custom-role-e2e` | container carried `custom-role-e2e` and scenario 05 passed, so the expectation follows the container. The role did not pre-exist, so this also exercised on-demand role creation against the real self-contained provider |
+| Same stack judged by the environment file's value | failed with `Expected roles {"custom-role-e2e"} to contain "dms-client"`, reproducing the defect the follow-up removed |
+| Environment file naming an unforwarded `Authentication__RoleClaimAttribute` | container did not carry the key and scenario 05 passed, so an unforwarded key cannot move the expectation |
+| Expected role the provider never assigns (**Keycloak** lane) | failed with `Expected roles {"offline_access", "default-roles-edfi", "dms-client", "uma_authorization"} to contain "role-the-provider-never-assigns"`, so the assertion reads the real claim |
+
+### 17.4 Limitations, stated
+
+* **Identifier-less creation outcomes cannot be compensated.** When the provider returns no usable identifier, there is nothing to address a deletion to. The logs say whether creation was attempted, and §9.3 is the recovery path. No lookup-by-client-id sweep was introduced.
+* **The repository's unrecognized-`ClientDeleteResult` arm is unreachable from a unit fixture** without a production test seam, which Q-8 declined. It is implemented defensively, reviewed by code review, and its module-level equivalent is tested with a test-defined subclass.
+* **The role-claim scenario does not fail against the original defect**, because real Keycloak does assign the role. It is successful-path evidence for AC5 and AC6 and guards the Step 1.1 preflight reorder; the wrong-expected-role check above is what shows the assertion is meaningful.
+* **A custom client role was verified on the self-contained lane only.** No separate Keycloak run with a non-default role was recorded.
+* **The create path classifies a `false` role assignment as a provider failure** while the update path maps its `false` results to unknown failures. Reconciling those conventions stays out of scope (D-1).
+* **`InsertApiClient` remains a non-participating writer** with respect to the DMS-1218 aggregate locks (S-2). This ticket did not change that.
