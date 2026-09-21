@@ -209,7 +209,7 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledWorkflow | Should -Match "inputs.suite \|\| 'All'"
         $script:scheduledJob | Should -Match 'matrix: \$\{\{ fromJSON\(needs.select-suites.outputs.matrix\) \}\}'
         $script:scheduledJob | Should -Not -Match '(?m)^    if:'
-        $weekend = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/scheduled-build.yml') -Raw
+        $weekend = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/dms-weekend-build.yml') -Raw
         $weekend | Should -Not -Match 'Invoke-CdcQualification|run-cdc-heavy-qualification|nightly-cdc-qualification'
     }
     It 'retains fail-closed prerequisites and sanitized artifacts in the nightly jobs' {

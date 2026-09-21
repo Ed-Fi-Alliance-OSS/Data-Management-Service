@@ -70,7 +70,7 @@ CMS E2E coverage is owned by the config workflow and must remain unchanged.
 
 Legacy-backend DMS E2E coverage remains scheduled:
 
-- `.github/workflows/scheduled-build.yml` runs weekly on Saturday at 08:00 UTC and includes `Category!=@relational-backend`.
+- `.github/workflows/dms-weekend-build.yml` runs weekly on Saturday at 08:00 UTC and includes `Category!=@relational-backend`.
 - `.github/workflows/scheduled-pre-image-test.yml` runs weekly on Saturday at 08:30 UTC and includes `Category!=@relational-backend`.
 
 Do not weaken `build-dms.ps1` E2E lane guardrails. The script should continue requiring relational environments to use `Category=@relational-backend` and legacy environments to use `Category!=@relational-backend`; the CI change is a workflow-selection change, not a script contract change.

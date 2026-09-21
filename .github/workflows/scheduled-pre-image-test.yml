@@ -51,7 +51,7 @@ jobs:
         # This lane runs against the default DS 5.2 stack at the shipped MAXIMUM_PAGE_SIZE of 500,
         # so exclude the DS 6.1 version-coupled scenarios, the local-compose-only DocumentCache
         # fixture, and the partition sizing scenarios. DocumentCache runs with its explicit overlay
-        # in scheduled-build.yml; partition sizing needs .env.cursorpartitions.e2e, whose
+        # in dms-weekend-build.yml; partition sizing needs .env.cursorpartitions.e2e, whose
         # MAXIMUM_PAGE_SIZE of 2 is the only setting under which a collection an E2E scenario can
         # seed over HTTP is cut into more than one partition, and runs per-PR in
         # run-e2e-tests-partition-sizing. The non-empty filter writes the filtered TRX.
