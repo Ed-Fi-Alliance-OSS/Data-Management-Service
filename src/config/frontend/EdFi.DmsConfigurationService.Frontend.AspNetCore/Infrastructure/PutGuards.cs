@@ -14,9 +14,22 @@ public static class PutGuards
     {
         if (bodyId != routeId)
         {
-            throw new ValidationException(
-                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
-            );
+            throw new ValidationException([
+                new ValidationFailure("Id", "Request body id must match the id in the url."),
+            ]);
+        }
+    }
+
+    public static void GuardRouteIdMatchesBodyId(int routeId, int bodyId, string propertyName)
+    {
+        if (bodyId != routeId)
+        {
+            throw new ValidationException([
+                new ValidationFailure(
+                    propertyName,
+                    $"Request body {propertyName} must match the id in the url."
+                ),
+            ]);
         }
     }
 }

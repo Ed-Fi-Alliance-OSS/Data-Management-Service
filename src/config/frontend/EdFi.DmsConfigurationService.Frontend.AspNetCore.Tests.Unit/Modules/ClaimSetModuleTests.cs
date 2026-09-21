@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -155,6 +156,33 @@ public class ClaimSetModuleTests
                     )
                 );
 
+            A.CallTo(() =>
+                    _claimSetRepository.GrantResourceClaimActions(
+                        A<ResourceClaimActionMutationCommand>.Ignored
+                    )
+                )
+                .Returns(new ClaimSetResourceActionMutationResult.Success());
+
+            A.CallTo(() =>
+                    _claimSetRepository.ModifyResourceClaimActions(
+                        A<ResourceClaimActionMutationCommand>.Ignored
+                    )
+                )
+                .Returns(new ClaimSetResourceActionMutationResult.Success());
+
+            A.CallTo(() => _claimSetRepository.RevokeResourceClaimActions(1, 2))
+                .Returns(new ClaimSetResourceActionMutationResult.Success());
+
+            A.CallTo(() =>
+                    _claimSetRepository.OverrideAuthorizationStrategy(
+                        A<AuthorizationStrategyOverrideCommand>.Ignored
+                    )
+                )
+                .Returns(new ClaimSetResourceActionMutationResult.Success());
+
+            A.CallTo(() => _claimSetRepository.ResetAuthorizationStrategies(1, 2))
+                .Returns(new ClaimSetResourceActionMutationResult.Success());
+
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
             A.CallTo(() => _dataProvider.GetAuthorizationStrategies())
                 .Returns(["NoFurtherAuthorizationRequired"]);
@@ -232,6 +260,49 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v3/claimSets/1/resourceClaimActions");
+            var resourceClaimActionPostResponse = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        resourceClaimActions = new[] { new { name = "Read", enabled = true } },
+                    }
+                )
+            );
+            var resourceClaimActionPutResponse = await client.PutAsync(
+                "/v3/claimSets/1/resourceClaimActions/2",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        resourceClaimActions = new[] { new { name = "Read", enabled = true } },
+                    }
+                )
+            );
+            var resourceClaimActionDeleteResponse = await client.DeleteAsync(
+                "/v3/claimSets/1/resourceClaimActions/2"
+            );
+            var authorizationStrategyOverrideResponse = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions/2/overrideAuthorizationStrategy",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        actionName = "Read",
+                        authStrategyIds = new[] { 7 },
+                        authorizationStrategies = new[] { "NamespaceBased" },
+                    }
+                )
+            );
+            var authorizationStrategyResetResponse = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions/2/resetAuthorizationStrategies",
+                content: null
+            );
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -244,6 +315,15 @@ public class ClaimSetModuleTests
             copyResponse.Headers.Location!.ToString().Should().EndWith("/v3/claimSets/1");
             exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             importResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            resourceClaimActionPostResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            resourceClaimActionPostResponse
+                .Headers.Location!.ToString()
+                .Should()
+                .EndWith("/v3/claimSets/1/resourceClaimActions/2");
+            resourceClaimActionPutResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            resourceClaimActionDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            authorizationStrategyOverrideResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            authorizationStrategyResetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             // Verify import response body contains our combined warnings array (repository-provided plus any validator warnings)
             var importJson = JsonNode.Parse(await importResponse.Content.ReadAsStringAsync());
@@ -1517,6 +1597,187 @@ public class ClaimSetModuleTests
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class ResourceActionMutationTests : ClaimSetModuleTests
+    {
+        [Test]
+        public async Task Should_return_bad_request_when_post_claim_set_route_id_does_not_match_body_id()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 2,
+                        resourceClaimId = 2,
+                        resourceClaimActions = new[] { new { name = "Read", enabled = true } },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync())
+                .Should()
+                .Contain("Request body ClaimSetId must match the id in the url.");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_put_resource_claim_route_id_does_not_match_body_id()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/claimSets/1/resourceClaimActions/2",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 3,
+                        resourceClaimActions = new[] { new { name = "Read", enabled = true } },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync())
+                .Should()
+                .Contain("Request body ResourceClaimId must match the id in the url.");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_override_resource_claim_route_id_does_not_match_body_id()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions/2/overrideAuthorizationStrategy",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 3,
+                        actionName = "Read",
+                        authStrategyIds = new[] { 7 },
+                        authorizationStrategies = new[] { "NamespaceBased" },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync())
+                .Should()
+                .Contain("Request body ResourceClaimId must match the id in the url.");
+        }
+
+        [Test]
+        public async Task Should_return_not_found_when_resource_action_mutation_claim_set_is_not_found()
+        {
+            A.CallTo(() =>
+                    _claimSetRepository.GrantResourceClaimActions(
+                        A<ResourceClaimActionMutationCommand>.Ignored
+                    )
+                )
+                .Returns(new ClaimSetResourceActionMutationResult.FailureClaimSetNotFound());
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        resourceClaimActions = new[] { new { name = "Read", enabled = true } },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("ClaimSet 1 not found.");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_resource_action_mutation_claim_set_is_system_reserved()
+        {
+            A.CallTo(() =>
+                    _claimSetRepository.ModifyResourceClaimActions(
+                        A<ResourceClaimActionMutationCommand>.Ignored
+                    )
+                )
+                .Returns(new ClaimSetResourceActionMutationResult.FailureSystemReserved());
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/claimSets/1/resourceClaimActions/2",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        resourceClaimActions = new[] { new { name = "Read", enabled = true } },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync())
+                .Should()
+                .Contain("The specified claim set is system-reserved and cannot be updated.");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_authorization_strategies_do_not_match()
+        {
+            A.CallTo(() =>
+                    _claimSetRepository.OverrideAuthorizationStrategy(
+                        A<AuthorizationStrategyOverrideCommand>.Ignored
+                    )
+                )
+                .Returns(new ClaimSetResourceActionMutationResult.FailureAuthorizationStrategyMismatch());
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions/2/overrideAuthorizationStrategy",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        actionName = "Read",
+                        authStrategyIds = new[] { 7 },
+                        authorizationStrategies = new[] { "NamespaceBased" },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync())
+                .Should()
+                .Contain(
+                    "authStrategyIds and authorizationStrategies must resolve to the same authorization strategies."
+                );
+        }
+
+        [Test]
+        public async Task Should_return_conflict_when_resource_action_mutation_has_multi_user_conflict()
+        {
+            A.CallTo(() => _claimSetRepository.RevokeResourceClaimActions(1, 2))
+                .Returns(new ClaimSetResourceActionMutationResult.FailureMultiUserConflict());
+            using var client = SetUpClient();
+
+            var response = await client.DeleteAsync("/v3/claimSets/1/resourceClaimActions/2");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await response.Content.ReadAsStringAsync())
+                .Should()
+                .Contain(
+                    "Unable to update claim set resource actions due to multi-user conflicts. Retry the request."
+                );
         }
     }
 

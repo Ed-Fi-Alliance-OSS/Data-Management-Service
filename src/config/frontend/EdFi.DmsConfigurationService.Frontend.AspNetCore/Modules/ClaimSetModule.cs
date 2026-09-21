@@ -39,6 +39,26 @@ public class ClaimSetModule : IEndpointModule
         endpoints.MapSecuredDelete($"/v3/claimSets/{{id}}", Delete);
         endpoints.MapSecuredPost("/v3/claimSets/copy", Copy);
         endpoints.MapSecuredPost("/v3/claimSets/import", Import);
+        endpoints.MapSecuredPost(
+            "/v3/claimSets/{claimSetId}/resourceClaimActions",
+            GrantResourceClaimActions
+        );
+        endpoints.MapSecuredPut(
+            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}",
+            ModifyResourceClaimActions
+        );
+        endpoints.MapSecuredDelete(
+            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}",
+            RevokeResourceClaimActions
+        );
+        endpoints.MapSecuredPost(
+            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy",
+            OverrideAuthorizationStrategy
+        );
+        endpoints.MapSecuredPost(
+            "/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies",
+            ResetAuthorizationStrategies
+        );
     }
 
     private static async Task<IResult> InsertClaimSet(
@@ -80,6 +100,215 @@ public class ClaimSetModule : IEndpointModule
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
+
+    private static async Task<IResult> GrantResourceClaimActions(
+        int claimSetId,
+        AddResourceClaimActionsOnClaimSetRequest request,
+        AddResourceClaimActionsOnClaimSetRequest.Validator validator,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        PutGuards.GuardRouteIdMatchesBodyId(claimSetId, request.ClaimSetId, "ClaimSetId");
+
+        await validator.GuardAsync(request);
+
+        var result = await repository.GrantResourceClaimActions(
+            new ResourceClaimActionMutationCommand(
+                request.ClaimSetId,
+                request.ResourceClaimId,
+                request
+                    .ResourceClaimActions!.Where(action => action.Enabled)
+                    .Select(action => action.Name!)
+                    .ToList()
+            )
+        );
+
+        return result switch
+        {
+            ClaimSetResourceActionMutationResult.Success => Results.Created(
+                $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}{httpContext.Request.Path.Value?.TrimEnd('/')}/{request.ResourceClaimId}",
+                null
+            ),
+            _ => ToResourceActionFailureResult(
+                result,
+                request.ClaimSetId,
+                request.ResourceClaimId,
+                httpContext
+            ),
+        };
+    }
+
+    private static async Task<IResult> ModifyResourceClaimActions(
+        int claimSetId,
+        int resourceClaimId,
+        EditResourceClaimActionsOnClaimSetRequest request,
+        EditResourceClaimActionsOnClaimSetRequest.Validator validator,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        PutGuards.GuardRouteIdMatchesBodyId(claimSetId, request.ClaimSetId, "ClaimSetId");
+        PutGuards.GuardRouteIdMatchesBodyId(resourceClaimId, request.ResourceClaimId, "ResourceClaimId");
+
+        await validator.GuardAsync(request);
+
+        var result = await repository.ModifyResourceClaimActions(
+            new ResourceClaimActionMutationCommand(
+                request.ClaimSetId,
+                request.ResourceClaimId,
+                request
+                    .ResourceClaimActions!.Where(action => action.Enabled)
+                    .Select(action => action.Name!)
+                    .ToList()
+            )
+        );
+
+        return result switch
+        {
+            ClaimSetResourceActionMutationResult.Success => Results.NoContent(),
+            _ => ToResourceActionFailureResult(
+                result,
+                request.ClaimSetId,
+                request.ResourceClaimId,
+                httpContext
+            ),
+        };
+    }
+
+    private static async Task<IResult> RevokeResourceClaimActions(
+        int claimSetId,
+        int resourceClaimId,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        var result = await repository.RevokeResourceClaimActions(claimSetId, resourceClaimId);
+
+        return result switch
+        {
+            ClaimSetResourceActionMutationResult.Success => Results.NoContent(),
+            _ => ToResourceActionFailureResult(result, claimSetId, resourceClaimId, httpContext),
+        };
+    }
+
+    private static async Task<IResult> OverrideAuthorizationStrategy(
+        int claimSetId,
+        int resourceClaimId,
+        OverrideAuthStategyOnClaimSetRequest request,
+        OverrideAuthStategyOnClaimSetRequest.Validator validator,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        PutGuards.GuardRouteIdMatchesBodyId(claimSetId, request.ClaimSetId, "ClaimSetId");
+        PutGuards.GuardRouteIdMatchesBodyId(resourceClaimId, request.ResourceClaimId, "ResourceClaimId");
+
+        await validator.GuardAsync(request);
+
+        var result = await repository.OverrideAuthorizationStrategy(
+            new AuthorizationStrategyOverrideCommand(
+                request.ClaimSetId,
+                request.ResourceClaimId,
+                request.ActionName!,
+                request.AuthorizationStrategies!,
+                request.AuthStrategyIds ?? []
+            )
+        );
+
+        return result switch
+        {
+            ClaimSetResourceActionMutationResult.Success => Results.Ok(),
+            _ => ToResourceActionFailureResult(
+                result,
+                request.ClaimSetId,
+                request.ResourceClaimId,
+                httpContext
+            ),
+        };
+    }
+
+    private static async Task<IResult> ResetAuthorizationStrategies(
+        int claimSetId,
+        int resourceClaimId,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        var result = await repository.ResetAuthorizationStrategies(claimSetId, resourceClaimId);
+
+        return result switch
+        {
+            ClaimSetResourceActionMutationResult.Success => Results.Ok(),
+            _ => ToResourceActionFailureResult(result, claimSetId, resourceClaimId, httpContext),
+        };
+    }
+
+    private static IResult ToResourceActionFailureResult(
+        ClaimSetResourceActionMutationResult result,
+        int claimSetId,
+        int resourceClaimId,
+        HttpContext httpContext
+    ) =>
+        result switch
+        {
+            ClaimSetResourceActionMutationResult.FailureClaimSetNotFound => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"ClaimSet {claimSetId} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ClaimSetResourceActionMutationResult.FailureResourceClaimNotFound
+            or ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"ResourceClaim {resourceClaimId} not found.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ClaimSetResourceActionMutationResult.FailureSystemReserved => Results.Json(
+                FailureResponse.ForBadRequest(
+                    "The specified claim set is system-reserved and cannot be updated.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ClaimSetResourceActionMutationResult.FailureInvalidAction invalidAction => Results.Json(
+                FailureResponse.ForBadRequest(
+                    $"{invalidAction.ActionName} is not a valid action.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ClaimSetResourceActionMutationResult.FailureInvalidAuthorizationStrategy invalidStrategy =>
+                Results.Json(
+                    FailureResponse.ForBadRequest(
+                        $"{invalidStrategy.AuthorizationStrategy} is not a valid authorization strategy.",
+                        httpContext.TraceIdentifier
+                    ),
+                    statusCode: (int)HttpStatusCode.BadRequest
+                ),
+            ClaimSetResourceActionMutationResult.FailureAuthorizationStrategyMismatch => Results.Json(
+                FailureResponse.ForBadRequest(
+                    "authStrategyIds and authorizationStrategies must resolve to the same authorization strategies.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ClaimSetResourceActionMutationResult.FailureMultiUserConflict => Results.Json(
+                FailureResponse.ForConflict(
+                    "Unable to update claim set resource actions due to multi-user conflicts. Retry the request.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.Conflict
+            ),
+            ClaimSetResourceActionMutationResult.FailureMultipleHierarchiesFound
+            or ClaimSetResourceActionMutationResult.FailureUnknown => FailureResults.Unknown(
+                httpContext.TraceIdentifier
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
 
     private static async Task<IResult> GetById(
         int id,
