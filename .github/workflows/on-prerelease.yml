@@ -596,6 +596,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # The four contract SBOM and provenance jobs below produce run artifacts that nothing attaches to
+  # a GitHub release, and the two provenance jobs run the real SLSA generator with id-token: write
+  # to produce a file only the run holds. Deliberate, and not a step left unfinished.
+  #
+  # The three release-stamped siblings can attach because their version moves with every release,
+  # so the non-alpha prerelease run that populates the vX.Y.Z release is the run that pushed the
+  # package. A contract's version does not move. The run that first pushes a contract version is an
+  # alpha prerelease, which attaches nothing and whose release is deleted at the next final release;
+  # every later run finds the version already on the feed and packs a different archive, because a
+  # nupkg is not byte-reproducible, so its evidence would describe bytes the feed does not serve.
+  # Retaining the alpha run's artifacts for a later backfill was considered and rejected: GitHub
+  # keeps run artifacts for thirty days and this repository's final releases are 36 to 214 days
+  # apart. See reference/design/plugins-DMS-1462/06-publish-plugin-contract-packages.md.
   sbom-create-plugins:
     name: Create Plugins Contract SBOM
     runs-on: ubuntu-latest
@@ -840,6 +853,15 @@ jobs:
     # would push the package; the push lives in this job and nowhere else, so skipping it is what
     # makes the dispatch a dry run.
     if: ${{ github.event_name != 'workflow_dispatch' }}
+    # Serialized across workflow runs, because the decision is check-then-push and a contract's
+    # version is the same in every run. Two prereleases created minutes apart would otherwise both
+    # find 1.0.0 absent and both push it, and the loser fails on a version the feed will not let it
+    # overwrite. Queued rather than cancelled: the second run's recheck step then finds the version
+    # present and skips cleanly, which is the outcome this is for. Scoped to this job so a cs-
+    # prerelease never waits behind a dms- one.
+    concurrency:
+      group: publish-package-plugins
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -904,6 +926,10 @@ jobs:
     # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
     # dry run must not push.
     if: ${{ github.event_name != 'workflow_dispatch' }}
+    # Serialized across runs, for the reason publish-package-plugins records.
+    concurrency:
+      group: publish-package-custom-validation
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     defaults:
       run:
