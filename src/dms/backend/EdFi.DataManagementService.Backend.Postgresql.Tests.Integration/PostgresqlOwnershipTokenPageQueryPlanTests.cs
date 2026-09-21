@@ -64,6 +64,12 @@ public class Given_A_Postgresql_Ownership_Token_Page_Query_Plan
 
     private const string OwnershipTokenIndexName = "IX_Document_CreatedByOwnershipTokenId";
 
+    /// <summary>
+    /// The partial-index predicate as the catalog renders it, the same text the provisioned-schema
+    /// manifest golden pins.
+    /// </summary>
+    private const string OwnershipTokenIndexPredicate = "(\"CreatedByOwnershipTokenId\" IS NOT NULL)";
+
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
 
     private static readonly CollectionPaging _paging = new CollectionPaging.Traditional(
@@ -109,6 +115,7 @@ public class Given_A_Postgresql_Ownership_Token_Page_Query_Plan
     [Test]
     public async Task It_reads_the_ownership_token_index_for_the_page_predicate()
     {
+        await AssertIndexIsPartialAsync();
         await AssertSeededVolumeAsync();
 
         var readPlan = _fixture.MappingSet.GetReadPlanOrThrow(SchoolResource);
@@ -194,6 +201,35 @@ public class Given_A_Postgresql_Ownership_Token_Page_Query_Plan
 
     /// <summary>How the plan reached <c>dms.Document</c>.</summary>
     private sealed record DocumentAccess(string NodeType, string? IndexName);
+
+    /// <summary>
+    /// The index the plan is about to be read against really is the partial one. An index of the same
+    /// name carrying every row would be read just as well and would say nothing about the filter this
+    /// change adds, and PostgreSQL's plan output does not show the predicate, so it is read from the
+    /// catalog instead, the way the provisioned-schema manifest does.
+    /// </summary>
+    private async Task AssertIndexIsPartialAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT pg_get_expr(ix.indpred, ix.indrelid) AS "Filter"
+            FROM pg_catalog.pg_index ix
+            JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid
+            WHERE i.relname = @indexName;
+            """,
+            new NpgsqlParameter("indexName", NpgsqlDbType.Text) { Value = OwnershipTokenIndexName }
+        );
+
+        rows.Should().ContainSingle("the emitted DDL creates this index exactly once");
+        rows[0]
+            ["Filter"]
+            .Should()
+            .Be(
+                OwnershipTokenIndexPredicate,
+                "the plan assertion below is only evidence about the filtered index if the index it names "
+                    + "actually carries the filter"
+            );
+    }
 
     /// <summary>
     /// The seeded collection's shape, asserted here rather than left implicit. A queried-token share that
