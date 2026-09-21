@@ -10,24 +10,19 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class PutGuards
 {
-    public static void GuardRouteIdMatchesBodyId(int routeId, int bodyId)
-    {
-        if (bodyId != routeId)
-        {
-            throw new ValidationException([
-                new ValidationFailure("Id", "Request body id must match the id in the url."),
-            ]);
-        }
-    }
+    public static void GuardRouteIdMatchesBodyId(int routeId, int bodyId) =>
+        GuardRouteIdMatchesBodyId(routeId, bodyId, "Id");
 
     public static void GuardRouteIdMatchesBodyId(int routeId, int bodyId, string propertyName)
     {
         if (bodyId != routeId)
         {
+            string messagePropertyName = propertyName == "Id" ? "id" : propertyName;
+
             throw new ValidationException([
                 new ValidationFailure(
                     propertyName,
-                    $"Request body {propertyName} must match the id in the url."
+                    $"Request body {messagePropertyName} must match the id in the url."
                 ),
             ]);
         }
