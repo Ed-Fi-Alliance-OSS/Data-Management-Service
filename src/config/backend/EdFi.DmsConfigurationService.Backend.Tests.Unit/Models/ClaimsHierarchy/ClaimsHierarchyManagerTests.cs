@@ -621,4 +621,58 @@ public class ClaimsHierarchyManagerTests
             .Should()
             .Equal("Other");
     }
+
+    [Test]
+    public void ResetClaimSetResourceActionStrategies_ShouldReturnTrueWhenTargetAssociationAlreadyHasNoOverrides()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions = [new() { Name = "Read", AuthorizationStrategyOverrides = [] }],
+                    },
+                    new()
+                    {
+                        Name = "Other",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Preserve" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ResetClaimSetResourceActionStrategies(
+            "SIS Vendor",
+            "claim-a",
+            claims
+        );
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "SIS Vendor")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Should()
+            .BeEmpty();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "Other")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Preserve");
+    }
 }
