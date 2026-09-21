@@ -224,9 +224,12 @@ The behaviors above are exercised by automated tests:
   issuer and audience fixtures sign with the service's own registered key, so they
   cannot pass on signature verification alone. The owned-token case also asserts the
   stored status is never queried, pinning revocation as idempotent for an
-  already-revoked token. Two further fixtures assert the **log severity** split:
-  an expired token produces no `Warning` entry (Debug only), while an untrusted
-  token does, so routine expiry cannot bury forgery signal. Two more cover
+  already-revoked token. Three further fixtures assert the **failure-category** split:
+  an expired token produces no `Warning` entry (Debug only); a bad-signature token
+  produces a `Warning` naming signature/key id; and an unacceptable-audience token
+  produces a `Warning` naming issuer/audience and pointing at configuration, *not* the
+  signature message. Routine expiry and a misconfigured `Authority`/`Audience` therefore
+  cannot bury genuine forgery signal. Two more cover
   **canonical `client_id` minting**: a token obtained with non-canonical casing
   carries the canonical `sub`, `client_id` and `azp`, and consequently a token
   obtained under one casing is revocable by a caller authenticated under another —

@@ -67,6 +67,20 @@ public class OpenIddictTokenManagerTests
             .Count(call => call.Method.Name == nameof(ILogger.Log) && call.GetArgument<LogLevel>(0) == level);
 
     /// <summary>
+    /// The formatted messages the manager wrote at a given level. Argument 2 of
+    /// <see cref="ILogger.Log{TState}"/> is the state object, whose ToString() renders the
+    /// message template with its values substituted.
+    /// </summary>
+    private static IReadOnlyList<string> LogMessagesAt(
+        ILogger<OpenIddictTokenManager> logger,
+        LogLevel level
+    ) =>
+        Fake.GetCalls(logger)
+            .Where(call => call.Method.Name == nameof(ILogger.Log) && call.GetArgument<LogLevel>(0) == level)
+            .Select(call => call.Arguments[2]?.ToString() ?? string.Empty)
+            .ToList();
+
+    /// <summary>
     /// Creates an RSA signing key plus the matching public key bytes (SubjectPublicKeyInfo)
     /// that the faked repository returns from GetActivePublicKeysAsync.
     /// </summary>
@@ -1101,11 +1115,72 @@ public class OpenIddictTokenManagerTests
         {
             LogCountAt(_fakeLogger, LogLevel.Warning).Should().BeGreaterThan(0);
         }
+
+        [Test]
+        public void It_reports_the_failure_as_signature_related()
+        {
+            LogMessagesAt(_fakeLogger, LogLevel.Warning)
+                .Should()
+                .Contain(message => message.Contains("signature or key id"));
+        }
     }
 
-    // Client lookup is case-insensitive, so the same registered client can authenticate under
-    // different casings on different calls. The claims must not vary with it: they are minted
-    // from the stored canonical id, so every token for one client carries one identity.
+    // An Authority or Audience typo fails every token in the environment at once. If that shared
+    // the forgery message, the resulting storm would either read as an attack or drown a real one,
+    // so issuer/audience rejection is reported as its own category pointing at configuration.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_LoggingForATokenWithTheWrongAudience : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+
+            // Correctly signed by the service's own key; only the audience is unacceptable.
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                },
+                audience: "some-other-service"
+            );
+
+            await CreateConfiguredTokenManager(_fakeLogger).RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_logs_a_warning()
+        {
+            LogCountAt(_fakeLogger, LogLevel.Warning).Should().BeGreaterThan(0);
+        }
+
+        [Test]
+        public void It_points_at_configuration_rather_than_forgery()
+        {
+            LogMessagesAt(_fakeLogger, LogLevel.Warning)
+                .Should()
+                .Contain(message => message.Contains("issuer or audience"));
+        }
+
+        [Test]
+        public void It_does_not_report_the_failure_as_signature_related()
+        {
+            LogMessagesAt(_fakeLogger, LogLevel.Warning)
+                .Should()
+                .NotContain(message => message.Contains("signature or key id"));
+        }
+    }
+
+    // Where an engine resolves a mis-cased client id (SQL Server does, via its collation), the
+    // same registered client can authenticate under different casings on different calls. The
+    // claims must not vary with it: they are minted from the stored canonical id, so every token
+    // for one client carries one identity.
     [TestFixture]
     public class Given_GetAccessTokenAsync_WhenTheClientUsesNonCanonicalCasing : OpenIddictTokenManagerTests
     {

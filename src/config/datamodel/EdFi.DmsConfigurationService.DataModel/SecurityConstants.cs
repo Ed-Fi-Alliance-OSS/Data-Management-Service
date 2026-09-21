@@ -14,13 +14,24 @@ public static class SecurityConstants
     /// Keycloak-issued tokens both use this name, so the revocation ownership check needs no
     /// per-provider branching.
     ///
-    /// Changing this value is a breaking change. It reaches the claim minted by
-    /// <c>JwtTokenGenerator</c>, the revocation ownership check, <c>GetClientId()</c> and
-    /// <c>AuditContext</c>. Two things it deliberately does not reach: the claim name in
-    /// Keycloak-issued tokens, which Keycloak controls, so a change here would break the
-    /// ownership comparison in Keycloak mode; and the <c>client_id</c> OAuth *request parameter*
-    /// read from the form body in <c>GetAccessTokenAsync</c>, which is fixed by RFC 6749 and is
-    /// kept a separate literal so that renaming the claim cannot rename the wire parameter.
+    /// Changing this value is a breaking change, and the compiler will not show you how far it
+    /// reaches. Within CMS it covers the claim minted by <c>JwtTokenGenerator</c>, the revocation
+    /// ownership check, <c>GetClientId()</c> and <c>AuditContext</c> — but treat that as examples,
+    /// not an exhaustive list.
+    ///
+    /// Three categories of reader are outside this constant entirely:
+    /// <list type="bullet">
+    /// <item>DMS (<c>src/dms</c>) reads the same claim name through its own hardcoded literals —
+    /// <c>Security/JwtValidationService.cs</c> and <c>Security/ApiClientDetailsProvider.cs</c> —
+    /// and has no reference to this assembly, the two being separate products. Renaming the claim
+    /// here is therefore a cross-product breaking change that compiles cleanly and fails at
+    /// runtime.</item>
+    /// <item>Keycloak-issued tokens, whose claim name Keycloak controls, so a rename here would
+    /// break the ownership comparison in Keycloak mode.</item>
+    /// <item>The <c>client_id</c> OAuth *request parameter* read from the form body in
+    /// <c>GetAccessTokenAsync</c>, fixed by RFC 6749 and kept a separate literal on purpose so
+    /// that renaming the claim cannot rename the wire parameter.</item>
+    /// </list>
     /// </summary>
     public const string ClientIdClaimType = "client_id";
 }
