@@ -231,9 +231,15 @@ public sealed class NullabilityShape
 public sealed class NullabilityShapeProvider : ISignatureTypeProvider<NullabilityShape, GenericContext>
 {
     // ELEMENT_TYPE_VALUETYPE and ELEMENT_TYPE_CLASS, the two codes a signature uses to introduce a
-    // type definition or reference. A signature never carries any other, so any other is corrupt.
+    // type definition or reference.
     private const byte ElementTypeValueType = 0x11;
     private const byte ElementTypeClass = 0x12;
+
+    // What SignatureDecoder passes for a type handle the blob introduces with no element type of
+    // its own: the type a custom modifier names. An `in` parameter on a virtual, abstract or
+    // interface member, a `ref readonly` return and a `volatile` field each encode one, so this is
+    // a shape either contract can reach, not a corrupt blob.
+    private const byte ElementTypeUnspecified = 0x00;
 
     public NullabilityShape GetArrayType(NullabilityShape elementType, ArrayShape shape) =>
         elementType.Prepend(true);
@@ -328,8 +334,12 @@ public sealed class NullabilityShapeProvider : ISignatureTypeProvider<Nullabilit
             ElementTypeValueType => typeNamespace == "System" && typeName == "Nullable`1"
                 ? NullabilityShape.SystemNullable
                 : NullabilityShape.ValueType,
+            // A custom modifier names a type but occupies no nullability position of its own:
+            // GetModifiedType below keeps the unmodified type's shape and discards this one. The
+            // compiler agrees, and emits no NullableAttribute entry for a modifier.
+            ElementTypeUnspecified => NullabilityShape.None,
             _ => throw new BadImageFormatException(
-                $"A signature introduces {typeNamespace}.{typeName} with element type 0x{rawTypeKind:X2}, which is neither CLASS nor VALUETYPE."
+                $"A signature introduces {typeNamespace}.{typeName} with element type 0x{rawTypeKind:X2}, which is neither CLASS nor VALUETYPE nor a custom modifier."
             ),
         };
 }
@@ -638,15 +648,29 @@ public static class ContractSurfaceReader
         {
             ParameterAttributes attributes = value.Attributes;
 
-            // `out` is In=false/Out=true, `ref` is neither, and `in` arrives as a required modifier
-            // on the byref type, which the signature provider has already preserved.
+            // `out` is In=false/Out=true and `ref` is neither. `in` and `ref readonly` are both
+            // In=true on a byref, and only RequiresLocationAttribute tells them apart, so without
+            // it the two would render identically and swapping one for the other would pass the
+            // gate. They are not the same to a caller: `ref readonly` warns at a call site that
+            // passes an expression without `in` or `ref`, and `in` does not. (A required modifier
+            // is also present on some of these, but only on a virtual, abstract or interface
+            // member, so it cannot be what the distinction is read from.)
             if (attributes.HasFlag(ParameterAttributes.Out))
             {
                 builder.Append("out ");
             }
             else if (attributes.HasFlag(ParameterAttributes.In))
             {
-                builder.Append("in ");
+                builder.Append(
+                    HasAttribute(
+                        reader,
+                        value.GetCustomAttributes(),
+                        "System.Runtime.CompilerServices",
+                        "RequiresLocationAttribute"
+                    )
+                        ? "ref readonly "
+                        : "in "
+                );
             }
 
             if (HasAttribute(reader, value.GetCustomAttributes(), "System", "ParamArrayAttribute"))

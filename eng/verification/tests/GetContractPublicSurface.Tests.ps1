@@ -317,6 +317,64 @@ Describe "Get-ContractPublicSurface fails closed on malformed metadata" {
     }
 }
 
+Describe "Get-ContractPublicSurface reads a signature carrying a custom modifier" {
+    # SignatureDecoder introduces a modifier's own type with element type 0x00 rather than CLASS or
+    # VALUETYPE, so a reader that admitted only those two threw BadImageFormatException on every
+    # shape below and produced no surface at all. In the prerelease lane that is a whole-release
+    # failure, not one contract's: pack-dms and pack-schema-tools need the check jobs.
+    #
+    # These are the three shapes the C# compiler emits one for. An `in` parameter is deliberately
+    # among them and deliberately virtual: on a non-virtual method `in` emits no modifier, so the
+    # `in` case in the byref test above never exercised this path.
+
+    It "reads a ref readonly return" {
+        $surface = Get-FixtureSurface -Namespace "RefReadonlyReturn" -Body @"
+    public class Contract
+    {
+        private int _value;
+        public ref readonly int Read() => ref _value;
+    }
+"@
+
+        $surface | Should -Contain "METHOD RefReadonlyReturn.Contract.Read``0() : modreq(System.Runtime.InteropServices.InAttribute) System.Int32& nullable=[] accessibility=public modifiers=none generics=none"
+    }
+
+    It "reads a volatile field" {
+        $surface = Get-FixtureSurface -Namespace "VolatileField" -Body "    public class Contract { public volatile int Flag; }"
+
+        $surface | Should -Contain "FIELD VolatileField.Contract.Flag : modreq(System.Runtime.CompilerServices.IsVolatile) System.Int32 nullable=[] accessibility=public modifiers=none"
+    }
+
+    It "reads an in parameter on an interface member" {
+        $surface = Get-FixtureSurface -Namespace "InOnInterface" -Body "    public interface IContract { void Apply(in int value); }"
+
+        $surface | Should -Contain "METHOD InOnInterface.IContract.Apply``0(in modreq(System.Runtime.InteropServices.InAttribute) System.Int32& value nullable=[]) : System.Void nullable=[] accessibility=public modifiers=abstract,virtual generics=none"
+    }
+
+    It "sees a modifier added to a field" {
+        Test-SurfaceChange -Namespace "VolatileAdded" `
+            -Before "    public class Contract { public int Flag; }" `
+            -After "    public class Contract { public volatile int Flag; }" |
+            Should -BeTrue
+    }
+
+    It "keeps a modified type's nullability vector unchanged" {
+        # GetModifiedType discards the modifier's shape and keeps the unmodified type's, so a
+        # modifier must not shift the positions the vector describes.
+        $modified = Get-FixtureSurface -Namespace "ModifierNullability" -Body @"
+    public interface IContract { void Apply(in string? text, string other); }
+"@
+        $plain = Get-FixtureSurface -Namespace "ModifierNullability" -Body @"
+    public interface IContract { void Apply(ref string? text, string other); }
+"@
+
+        ($modified | Where-Object { $_ -clike "METHOD*Apply*" }) |
+            Should -BeExactly "METHOD ModifierNullability.IContract.Apply``0(in modreq(System.Runtime.InteropServices.InAttribute) System.String& text nullable=[2], System.String other nullable=[1]) : System.Void nullable=[] accessibility=public modifiers=abstract,virtual generics=none"
+        ($plain | Where-Object { $_ -clike "METHOD*Apply*" }) |
+            Should -BeExactly "METHOD ModifierNullability.IContract.Apply``0(System.String& text nullable=[2], System.String other nullable=[1]) : System.Void nullable=[] accessibility=public modifiers=abstract,virtual generics=none"
+    }
+}
+
 Describe "Get-ContractPublicSurface sees a change that the XML type list does not" {
     # Every case here leaves the set of public type names identical, which is all the packed-package
     # verifiers compare. That is the whole reason this script exists.
@@ -423,11 +481,21 @@ Describe "Get-ContractPublicSurface sees a change that the XML type list does no
             -After "    public class Contract { public void Apply(out int value) { value = 0; } }" |
             Should -BeTrue
 
-        # `in` is a required custom modifier on an ordinary byref, so a reader that discarded custom
-        # modifiers would call this pair identical.
+        # On a non-virtual method `in` carries no custom modifier at all; it is ParameterAttributes.In
+        # on an ordinary byref, which is what separates this pair. The modifier cases are below.
         Test-SurfaceChange -Namespace "InParameter" `
             -Before "    public class Contract { public void Apply(ref int value) { } }" `
             -After "    public class Contract { public void Apply(in int value) { } }" |
+            Should -BeTrue
+    }
+
+    It "sees in changed to ref readonly on a parameter" {
+        # Both are ParameterAttributes.In on a byref and both compile to the same modifier state, so
+        # only RequiresLocationAttribute separates them. A caller sees the difference: `ref readonly`
+        # warns at a call site that passes an expression without `in` or `ref`, and `in` does not.
+        Test-SurfaceChange -Namespace "RefReadonlyParameter" `
+            -Before "    public class Contract { public void Apply(in int value) { } }" `
+            -After "    public class Contract { public void Apply(ref readonly int value) { } }" |
             Should -BeTrue
     }
 
