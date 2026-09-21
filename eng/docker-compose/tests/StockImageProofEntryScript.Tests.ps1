@@ -34,6 +34,7 @@ param(
     [Parameter(Mandatory)] [string] $ShimPlan,
     [Parameter(Mandatory)] [string] $ShimLog,
     [Parameter(Mandatory)] [string] $ResultFile,
+    [Parameter(Mandatory)] [string] $BaseEnvironmentFile,
     [string] $AmbientKey,
     [string] $AmbientValue
 )
@@ -70,7 +71,7 @@ if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
 
 $failure = '<the script returned without throwing>'
 try {
-    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot
+    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile
 }
 catch {
     $failure = $_.Exception.Message
@@ -118,6 +119,29 @@ catch {
             Set-Content -LiteralPath $Path -Value ($pin | ConvertTo-Json -Depth 8) -Encoding utf8
         }
 
+        function script:Get-FreePort {
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $listener.Start()
+            $port = $listener.LocalEndpoint.Port
+            $listener.Stop()
+            return $port
+        }
+
+        function script:New-PendingPinFile {
+            param([string] $Path)
+
+            $pin = [ordered]@{
+                status               = 'pending'
+                edFiApi              = [ordered]@{ repository = 'edfialliance/ed-fi-api'; tag = $null; digest = $null }
+                configurationService = [ordered]@{ repository = 'edfialliance/ed-fi-api-configuration-service'; digest = $null }
+                release              = [ordered]@{ githubRelease = $null; sourceCommit = $null; publicationRunUrl = $null }
+                provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; dataStandardVersion = $null; schemaPackages = $null }
+                contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null }
+            }
+
+            Set-Content -LiteralPath $Path -Value ($pin | ConvertTo-Json -Depth 8) -Encoding utf8
+        }
+
         # The shim answers that make the registry agree with a published pin, so a scenario that is
         # about the host is not also about the descriptor.
         function script:Get-MatchingDescriptorRule {
@@ -133,7 +157,8 @@ catch {
                 [string] $PinPath,
                 [hashtable[]] $ShimRule = @(),
                 [string] $AmbientKey,
-                [string] $AmbientValue
+                [string] $AmbientValue,
+                [int[]] $Port
             )
 
             $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-entry-$([guid]::NewGuid().ToString('N'))"
@@ -153,8 +178,23 @@ catch {
                 $evidenceRoot = Join-Path $scratch 'evidence'
                 $workspace = Join-Path $scratch 'workspace'
 
+                # A base environment file whose ports are free on this machine, so a scenario about
+                # the host is not also about whatever else happens to be listening here. The entry
+                # script guards exactly the ports this file declares.
+                if ($null -eq $Port -or $Port.Count -lt 3) {
+                    $Port = @((Get-FreePort), (Get-FreePort), (Get-FreePort))
+                }
+
+                $baseEnvironmentFile = Join-Path $scratch 'base.env'
+                $baseLine = @(Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.e2e'))
+                $baseLine += "DMS_HTTP_PORTS=$($Port[0])"
+                $baseLine += "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=$($Port[1])"
+                $baseLine += "POSTGRES_PORT=$($Port[2])"
+                Set-Content -LiteralPath $baseEnvironmentFile -Value $baseLine -Encoding utf8
+
                 $argument = @(
                     '-NoProfile', '-File', $wrapper
+                    '-BaseEnvironmentFile', $baseEnvironmentFile
                     '-EntryScript', $script:entryScript
                     '-PinFile', ($PinPath ? $PinPath : $script:committedPin)
                     '-WorkspaceRoot', $workspace
@@ -175,6 +215,7 @@ catch {
                 $evidenceFile = Join-Path $evidenceRoot 'stock-image-plugin-proof.json'
 
                 return [pscustomobject]@{
+                    Port             = $Port
                     Failure          = (Test-Path -LiteralPath $resultFile) ? ((Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json).Failure) : '<no result>'
                     ShimCall         = @(Get-Content -LiteralPath $shimLog -ErrorAction SilentlyContinue)
                     Evidence         = (Test-Path -LiteralPath $evidenceFile) ? (Get-Content -LiteralPath $evidenceFile -Raw | ConvertFrom-Json) : $null
@@ -210,13 +251,39 @@ catch {
     }
 
     Context 'the pin gates everything after it' {
-        It 'refuses the committed pending pin, and touches nothing' {
-            # Somebody asked for the proof, so a pending pin is a failure rather than a skip.
-            $run = Invoke-EntryScript
+        It 'refuses a pending pin, and touches nothing' {
+            # Synthetic, not the committed document: filling the real pin is a required step of this
+            # ticket, and a test that needs it to stay pending would fail the lane the moment it was.
+            $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pending-$([guid]::NewGuid().ToString('N')).json"
+            New-PendingPinFile -Path $scratch
 
-            $run.Failure | Should -Match 'still pending'
-            $run.ShimCall | Should -HaveCount 0
-            $run.WorkspaceCreated | Should -BeFalse
+            try {
+                # Somebody asked for the proof, so a pending pin is a failure rather than a skip.
+                $run = Invoke-EntryScript -PinPath $scratch
+
+                $run.Failure | Should -Match 'still pending'
+                $run.ShimCall | Should -HaveCount 0
+                $run.WorkspaceCreated | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $scratch -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'validates the committed pin in whichever legitimate state it is in' {
+            # What stays true across that change: the shipped document is one the script accepts or
+            # refuses for the right reason, not one this test requires to be pending.
+            $committed = Get-Content -LiteralPath $script:committedPin -Raw | ConvertFrom-Json
+            $run = Invoke-EntryScript -ShimRule @((Get-MatchingDescriptorRule))
+
+            if ($committed.status -ceq 'pending') {
+                $run.Failure | Should -Match 'still pending'
+                $run.ShimCall | Should -HaveCount 0
+            }
+            else {
+                $run.Failure | Should -Not -Match 'pending'
+                $run.Failure | Should -Not -Match 'does not match'
+            }
         }
 
         It 'refuses a malformed pin before touching anything' {
@@ -321,51 +388,73 @@ catch {
         It 'refuses a foreign container attached to the shared external network' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
                 (Get-MatchingDescriptorRule)
+                @{ match = 'docker network ls'; exitCode = 0; output = "bridge`ndms" }
                 @{ match = 'docker network inspect dms'; exitCode = 0; output = 'someone-elses-api' }
             )
 
             $run.Failure | Should -Match 'was not created by this run'
         }
 
-        It 'refuses a host port it needs' {
+        It 'refuses when the network exists but cannot be inspected' {
+            # A permission or daemon error fails the inspect too, and reading that as no neighbours
+            # is how a run starts on a host it was never allowed to see.
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
                 (Get-MatchingDescriptorRule)
-                @{ match = 'docker ps --format'; exitCode = 0; output = '0.0.0.0:18080->8080/tcp' }
+                @{ match = 'docker network ls'; exitCode = 0; output = 'dms' }
+                @{ match = 'docker network inspect dms'; exitCode = 1; output = 'permission denied' }
             )
 
-            $run.Failure | Should -Match 'host port 18080'
+            $run.Failure | Should -Match 'could not be inspected'
         }
 
-        It 'ignores a bound port the ordinary local stack uses but this run does not' {
-            # 8080 is .env.e2e's DMS_HTTP_PORTS. This run writes its own ports precisely so that a
-            # local stack on the shipped ones is not something it competes for, so a bound 8080 must
-            # not refuse it.
+        It 'proceeds when a successful enumeration shows the network is simply absent' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
                 (Get-MatchingDescriptorRule)
-                @{ match = 'docker ps --format'; exitCode = 0; output = "0.0.0.0:8080->8080/tcp`n127.0.0.1:5435->5432/tcp" }
+                @{ match = 'docker network ls'; exitCode = 0; output = "bridge`nhost" }
+                @{ match = 'docker network inspect dms'; exitCode = 1; output = 'no such network' }
+            )
+
+            $run.Failure | Should -Not -Match 'could not be inspected'
+            $run.Failure | Should -Not -Match 'not available for the stock-image proof'
+        }
+
+        It 'refuses a host port Docker already publishes' {
+            $port = @((Get-FreePort), (Get-FreePort), (Get-FreePort))
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Port $port -ShimRule @(
+                (Get-MatchingDescriptorRule)
+                @{ match = 'docker ps --format'; exitCode = 0; output = "0.0.0.0:$($port[0])->8080/tcp" }
+            )
+
+            $run.Failure | Should -Match "host port $($port[0])"
+        }
+
+        It 'ignores a published port this run does not want' {
+            $port = @((Get-FreePort), (Get-FreePort), (Get-FreePort))
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Port $port -ShimRule @(
+                (Get-MatchingDescriptorRule)
+                @{ match = 'docker ps --format'; exitCode = 0; output = '0.0.0.0:59999->8080/tcp' }
             )
 
             $run.Failure | Should -Not -Match 'host port'
         }
 
-        It 'guards the same ports it writes into the environment file' {
-            # The two must be one decision. Guarding one set while the deployment binds another
-            # would check nothing at all.
-            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @((Get-MatchingDescriptorRule))
+        It 'refuses a port held by a non-Docker listener, which Docker cannot see' {
+            # The container inventory only knows Docker's own publications. This is the case it
+            # misses entirely, and the deployment would fail at compose up instead.
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $listener.Start()
+            $held = $listener.LocalEndpoint.Port
 
-            foreach ($port in @(18080, 18081, 15435)) {
-                @($run.ShimCall) -join ' ' | Should -Not -Match "host port $port"
+            try {
+                $run = Invoke-EntryScript -PinPath $script:pinPath `
+                    -Port @($held, (Get-FreePort), (Get-FreePort)) `
+                    -ShimRule @((Get-MatchingDescriptorRule))
+
+                $run.Failure | Should -Match "host port $held"
             }
-
-            # The env file the first scenario would run from is written after the preflight, so the
-            # agreement is asserted through the composer the script calls.
-            $content = Get-StockProofEnvironmentContent -Pin (Get-Content -LiteralPath $script:pinPath -Raw | ConvertFrom-Json) `
-                -BaseContent 'X=1' -PluginComposeFiles 'plugins-dms.yml'
-            $line = $content -split "`n"
-
-            $line | Should -Contain 'DMS_HTTP_PORTS=18080'
-            $line | Should -Contain 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081'
-            $line | Should -Contain 'POSTGRES_PORT=15435'
+            finally {
+                $listener.Stop()
+            }
         }
     }
 

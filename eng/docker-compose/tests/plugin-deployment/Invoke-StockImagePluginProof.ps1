@@ -68,7 +68,13 @@ param(
     $WorkspaceRoot,
 
     [string]
-    $EvidenceRoot
+    $EvidenceRoot,
+
+    # The environment file the deployment is composed from. The ports it declares are the ports the
+    # stack binds and therefore the ports the preflight guards, so naming a different one is how a
+    # caller runs this against a differently configured stack rather than a way around any check.
+    [string]
+    $BaseEnvironmentFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,18 +98,36 @@ if ([string]::IsNullOrWhiteSpace($EvidenceRoot)) {
     $EvidenceRoot = Join-Path $repositoryRoot '.ai-work/verification'
 }
 
+# Absolute before anything reads them: a relative path names a different directory after a
+# Push-Location, and every safety check below is about a specific place on disk.
+$WorkspaceRoot = [IO.Path]::GetFullPath($WorkspaceRoot)
+$EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
+
 $composeProject = 'dms-published'
 $bootstrapPath = Join-Path $composeRoot '.bootstrap'
 $pluginName = 'Acme.CustomValidationProof'
 $fixtureProject = Join-Path $repositoryRoot "eng/fixtures/plugins/$pluginName/$pluginName.csproj"
 
-# The ports the generated environment file asks for, moved off the shipped defaults so an ordinary
-# local stack's ports are not what this run competes for.
-$requiredPort = @(18080, 18081, 15435)
+if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
+    $BaseEnvironmentFile = Join-Path $composeRoot '.env.e2e'
+}
+
+$BaseEnvironmentFile = [IO.Path]::GetFullPath($BaseEnvironmentFile)
+
+# The ports this run's stack actually binds, read from the environment file it runs from rather
+# than written out a second time here. The composer governs no port key - DMS_HTTP_PORTS publishes
+# the container's own listening port as well as the host's - so what the base declares is what the
+# deployment takes, and the preflight has to guard exactly those.
+$baseEnvironment = ReadValuesFromEnvFile $BaseEnvironmentFile
+$dmsPort = [int]$baseEnvironment['DMS_HTTP_PORTS']
+$configurationServicePort = [int]$baseEnvironment['DMS_CONFIG_ASPNETCORE_HTTP_PORTS']
+$requiredPort = @($dmsPort, $configurationServicePort, [int]$baseEnvironment['POSTGRES_PORT'])
 
 $script:commandLog = [System.Collections.Generic.List[string]]::new()
 $script:ownership = Get-StockProofOwnership
 $script:secret = @()
+$script:teardownFailed = $false
+$script:cleanupError = [System.Collections.Generic.List[string]]::new()
 
 function Write-Phase([string]$text) {
     Write-Information '' -InformationAction Continue
@@ -191,6 +215,26 @@ function Write-Evidence {
 # nothing, so this removes nothing - which is what stops a caller's always() teardown from removing
 # a stack somebody else is using. Pulled images are deliberately not removed: they are a shared
 # cache this run did not create.
+# Recursive removal, permitted only inside something this run claimed. The path is resolved first,
+# so a link or a "..\" segment cannot walk out of the owned tree and then be approved by its
+# spelling.
+function Remove-OwnedTree {
+    param([Parameter(Mandatory)] [string] $Path, [string[]] $AlsoOwned = @())
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $full = (Resolve-Path -LiteralPath $Path).Path
+    $owned = @(Get-CleanupPlan -Ownership $script:ownership | Where-Object { $_.Kind -eq 'Directory' } | ForEach-Object { $_.Name }) + $AlsoOwned
+
+    if (-not (Test-OwnedDeletionPath -Path $full -OwnedDirectory $owned)) {
+        throw "Refusing to remove '$full': this run did not create it."
+    }
+
+    Remove-Item -LiteralPath $full -Recurse -Force
+}
+
 function Invoke-OwnedCleanup {
     # Wrapped: a function returning an empty collection hands back nothing, and under StrictMode
     # reading .Count off that would throw here in the finally, replacing whatever failure brought
@@ -217,15 +261,26 @@ function Invoke-OwnedCleanup {
                         Pop-Location
                     }
                 }
-                'Directory' {
-                    if (Test-Path -LiteralPath $resource.Name) {
-                        Remove-Item -LiteralPath $resource.Name -Recurse -Force
+                'Bootstrap' {
+                    # Only after the stack is down. The staged workspace is bind-mounted into the
+                    # running containers, so removing it under a surviving stack would leave that
+                    # stack reading files that are no longer there.
+                    if ($script:teardownFailed) {
+                        Write-Detail "keeping $($resource.Name): the stack did not come down, and it is still mounted"
                     }
+                    else {
+                        Remove-OwnedTree -Path $resource.Name -AlsoOwned @($bootstrapPath)
+                    }
+                }
+                'Directory' {
+                    Remove-OwnedTree -Path $resource.Name
                 }
             }
         }
         catch {
-            Write-Detail "cleanup of $($resource.Kind) $($resource.Name) failed: $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)"
+            # Collected, not swallowed: a run that could not put the host back is not a passing run,
+            # and the remaining resources are still attempted so as much is released as can be.
+            $script:cleanupError.Add("$($resource.Kind) $($resource.Name): $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)")
         }
     }
 }
@@ -251,6 +306,22 @@ function Assert-NoAmbientOverride {
     }
 
     Write-Detail 'no governed key is set ambiently'
+}
+
+function Assert-PathsSafeToOwn {
+    Write-Phase 'Phase 0c: the paths this run would own'
+
+    $verdict = Test-ProofPathSafety -WorkspacePath $WorkspaceRoot -EvidencePath $EvidenceRoot `
+        -RepositoryRoot $repositoryRoot -ComposeRoot $composeRoot `
+        -WorkspaceExists (Test-Path -LiteralPath $WorkspaceRoot)
+
+    if (-not $verdict.Safe) {
+        throw ("These paths are not ones this run may own:" + [Environment]::NewLine +
+            (($verdict.Blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+    }
+
+    Write-Detail "workspace: $WorkspaceRoot"
+    Write-Detail "evidence:  $EvidenceRoot"
 }
 
 function Get-ValidatedPin {
@@ -311,18 +382,19 @@ function Assert-HostAvailable {
     $projectVolume = Get-Inventory -What "the $composeProject project's volumes" -ArgumentList @(
         'volume', 'ls', '--filter', "label=com.docker.compose.project=$composeProject", '--format', '{{.Name}}'
     )
-    $attachment = Get-Inventory -What 'the shared external network' -ArgumentList @(
+    # Absence established by a successful enumeration, not inferred from a failed inspect. A daemon
+    # that is down or a permission error fails the inspect too, and reading that as "no neighbours"
+    # is how a run starts on a host it was never allowed to see.
+    $networkList = Get-Inventory -What 'the network list' -ArgumentList @('network', 'ls', '--format', '{{.Name}}')
+    $networkInspect = Get-Inventory -What 'the shared external network' -ArgumentList @(
         'network', 'inspect', 'dms', '--format', '{{range .Containers}}{{println .Name}}{{end}}'
     )
 
-    # An absent network is not a failed inventory: nothing is attached to a network that does not
-    # exist, and this run neither creates nor removes that shared network.
-    $attachmentItem = if ($null -eq $attachment.Failure) { $attachment.Item } else { @() }
-    $attachmentFailure = $null
+    $attachment = Get-NetworkAttachmentInventory -NetworkName 'dms' `
+        -ListExitCode ($null -eq $networkList.Failure ? 0 : 1) -ListedNetwork $networkList.Item `
+        -InspectExitCode ($null -eq $networkInspect.Failure ? 0 : 1) -InspectedAttachment $networkInspect.Item
 
-    $port = Get-Inventory -What 'the bound host ports' -ArgumentList @(
-        'ps', '--format', '{{.Ports}}'
-    )
+    $port = Get-Inventory -What 'the published host ports' -ArgumentList @('ps', '--format', '{{.Ports}}')
 
     $boundPort = @(
         foreach ($row in $port.Item) {
@@ -332,11 +404,15 @@ function Assert-HostAvailable {
         }
     )
 
+    # Docker only knows about its own publications. A port held by anything else is invisible to
+    # that list and would fail at compose up instead, so each required port is actually bound here.
+    $boundPort += @($requiredPort | Where-Object { -not (Test-LocalPortAvailable -Port $_) })
+
     $failure = @(
         $container.Failure
         $projectContainer.Failure
         $projectVolume.Failure
-        $attachmentFailure
+        $attachment.Failure
         $port.Failure
     ) | Where-Object { $null -ne $_ }
 
@@ -344,7 +420,7 @@ function Assert-HostAvailable {
         -ExistingContainerName $container.Item `
         -ProjectContainer $projectContainer.Item `
         -ProjectVolume $projectVolume.Item `
-        -NetworkAttachment $attachmentItem `
+        -NetworkAttachment $attachment.Attachment `
         -BootstrapPresent (Test-Path -LiteralPath $bootstrapPath) `
         -BoundPort $boundPort `
         -RequiredPort $requiredPort `
@@ -366,15 +442,11 @@ function Assert-HostAvailable {
 function New-ProofWorkspace {
     Write-Phase 'Phase 3: the workspace'
 
-    # Claimed before it is created, so a failure part way through still tears it down.
+    # Claimed before it is created, so a failure part way through still tears it down. Nothing is
+    # cleared here: an existing workspace was refused by the safety gate, because naming a directory
+    # does not make its contents this run's to delete.
     Add-ProofOwnership -Kind 'Directory' -Name $WorkspaceRoot
-
-    if (Test-Path -LiteralPath $WorkspaceRoot) {
-        Remove-Item -LiteralPath $WorkspaceRoot -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Path $WorkspaceRoot -Force | Out-Null
-    Write-Detail "workspace: $WorkspaceRoot"
+    New-Item -ItemType Directory -Path $WorkspaceRoot | Out-Null
 }
 
 function Install-ReleasedSchemaTool {
@@ -418,10 +490,12 @@ function Build-ProofFixture {
     New-Item -ItemType Directory -Path $publishTarget -Force | Out-Null
     New-Item -ItemType Directory -Path $nugetCache -Force | Out-Null
 
-    # Bracketed, because NuGet reads a bare version in a PackageReference as a floor and the pin
-    # records an identity. The restored version is checked afterwards, since bracketing only asks.
-    $pluginsVersion = Get-ContractPackageReference -Version $Pin.contracts.pluginsPackageVersion
-    $customValidationVersion = Get-ContractPackageReference -Version $Pin.contracts.customValidationPackageVersion
+    # BARE identities, not bracketed. Acme.CustomValidationProof.csproj already writes
+    # Version="[$(PluginsPackageVersion)]" for both contracts, so passing a bracketed value here
+    # would produce [[1.0.0]] and fail the restore. The project supplies the exactness; the
+    # verification below establishes that it worked.
+    $pluginsVersion = $Pin.contracts.pluginsPackageVersion
+    $customValidationVersion = $Pin.contracts.customValidationPackageVersion
 
     $previousCache = $env:NUGET_PACKAGES
     $cacheWasSet = Test-Path -LiteralPath 'Env:NUGET_PACKAGES'
@@ -447,16 +521,30 @@ function Build-ProofFixture {
         elseif (Test-Path -LiteralPath 'Env:NUGET_PACKAGES') { Remove-Item -LiteralPath 'Env:NUGET_PACKAGES' }
     }
 
-    # What the restore actually produced, read from the cache it was pointed at.
+    # What the restore actually RESOLVED, read from the project's own assets file. A directory in
+    # the package cache says a version was extracted at some point, not that this project resolved
+    # it; project.assets.json is the record of what the build was given.
+    $assetsFile = Join-Path (Split-Path -Parent $fixtureProject) 'obj/project.assets.json'
+
+    if (-not (Test-Path -LiteralPath $assetsFile)) {
+        throw "The fixture publish produced no $assetsFile, so what its contract restore resolved is unknown."
+    }
+
+    $assets = Get-Content -LiteralPath $assetsFile -Raw | ConvertFrom-Json
+
     foreach ($contract in @(
             @{ Id = 'EdFi.Api.Plugins'; Expected = $Pin.contracts.pluginsPackageVersion }
             @{ Id = 'EdFi.Api.CustomValidation'; Expected = $Pin.contracts.customValidationPackageVersion }
         )) {
-        $installed = @(Get-ChildItem -LiteralPath (Join-Path $nugetCache $contract.Id.ToLowerInvariant()) -Directory -ErrorAction SilentlyContinue |
-                ForEach-Object { $_.Name })
+        $resolved = @(
+            foreach ($framework in $assets.libraries.PSObject.Properties.Name) {
+                $split = $framework -split '/', 2
+                if ($split[0] -ceq $contract.Id) { $split[1] }
+            }
+        )
 
         $verdict = Test-RestoredPackageVersion -PackageId $contract.Id -ExpectedVersion $contract.Expected `
-            -RestoredVersion (@($installed) -join ',')
+            -RestoredVersion (@($resolved) -join ',')
 
         if (-not $verdict.Verified) {
             throw "The fixture's contract restore did not produce what the pin names: $($verdict.Reason)"
@@ -556,32 +644,82 @@ function Get-ComposeContainerName([string]$service) {
 
 function Get-ContainerFact([string]$name) {
     if ([string]::IsNullOrWhiteSpace($name)) {
-        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = '' }
+        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = ''; Restarting = $false; InspectSucceeded = $true; Absent = $true }
     }
 
     $result = Invoke-Docker -AllowFailure -ArgumentList @(
-        'inspect', $name, '--format', '{{.State.Status}}|{{.State.StartedAt}}|{{.State.ExitCode}}|{{.Image}}'
+        'inspect', $name, '--format', '{{.State.Status}}|{{.State.StartedAt}}|{{.State.ExitCode}}|{{.Image}}|{{.State.Restarting}}'
     )
 
+    # A failed inspect is kept distinct from an absent container. They are different facts, and
+    # collapsing them reports a container that exists but could not be read as one that never was.
     if ($result.ExitCode -ne 0) {
-        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = '' }
+        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = ''; Restarting = $false; InspectSucceeded = $false; Absent = $false }
     }
 
-    $part = ($result.Output.Trim() -split '\|', 4)
+    $part = ($result.Output.Trim() -split '\|', 5)
 
     return [pscustomobject]@{
-        Status       = $part[0]
-        StartedAtRaw = $part[1]
-        ExitCode     = [int]$part[2]
-        ImageId      = $part[3]
+        Status           = $part[0]
+        StartedAtRaw     = $part[1]
+        ExitCode         = [int]$part[2]
+        ImageId          = $part[3]
+        Restarting       = ($part[4] -ceq 'true')
+        InspectSucceeded = $true
+        Absent           = $false
     }
+}
+
+# A container that has stopped and stays stopped. published-dms.yml carries restart: unless-stopped,
+# so a DMS that refuses to start is restarted for as long as the stack is up: it is repeatedly
+# "exited" with a non-zero code and then "restarting" again. Reading an exit code once therefore
+# says nothing about whether it stopped, and could equally be the previous attempt's. This waits for
+# the refusal to be recorded and then stops the service explicitly, so the state asserted afterwards
+# is one the restart policy is no longer changing.
+function Wait-ForRecordedStartupFailure {
+    param([Parameter(Mandatory)] [string] $Container, [Parameter(Mandatory)] [string] $ExpectedPhase, [int] $TimeoutSeconds = 300)
+
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    while ([datetime]::UtcNow -lt $deadline) {
+        $status = Get-StartupStatusDocument $Container -FromStoppedContainer
+
+        if ($null -ne $status -and $status.Phase -ceq $ExpectedPhase -and $status.State -cne 'Ready') {
+            # Stop the service so the restart policy cannot move it while it is being asserted about.
+            Push-Location $composeRoot
+            try {
+                Invoke-Docker -AllowFailure -ArgumentList @('compose', '-p', $composeProject, 'stop', 'dms') | Out-Null
+            }
+            finally {
+                Pop-Location
+            }
+
+            $fact = Get-ContainerFact $Container
+
+            if (-not $fact.InspectSucceeded) {
+                throw 'The DMS container could not be inspected after it was stopped, so its final state is unknown.'
+            }
+
+            if ($fact.Restarting -or $fact.Status -ceq 'running') {
+                throw "The DMS container is still $($fact.Status) after an explicit stop, so it has not settled and its exit code is not final."
+            }
+
+            return [pscustomobject]@{ Status = $status; Fact = $fact }
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    throw "DMS did not record a failed $ExpectedPhase phase within $TimeoutSeconds seconds."
 }
 
 function Start-ProofDeployment {
     param([Parameter(Mandatory)] [string] $EnvironmentFile, [switch] $AllowFailure)
 
-    # Claimed before the up, so a compose that creates containers and then fails is still torn down.
+    # Both claimed before the up. bootstrap-published-dms.ps1 stages eng/docker-compose/.bootstrap
+    # on its way to starting the stack, so a run that fails during startup has already created it.
     Add-ProofOwnership -Kind 'ComposeProject' -Name $composeProject
+    Add-ProofOwnership -Kind 'Bootstrap' -Name $bootstrapPath
     $script:environmentFile = $EnvironmentFile
 
     Push-Location $composeRoot
@@ -601,17 +739,21 @@ function Stop-ProofDeployment {
 
     Push-Location $composeRoot
     try {
-        Invoke-Recorded -FilePath 'pwsh' -AllowFailure -ArgumentList @(
+        $down = Invoke-Recorded -FilePath 'pwsh' -AllowFailure -ArgumentList @(
             '-NoProfile', '-File', (Join-Path $composeRoot 'bootstrap-published-dms.ps1')
             '-d', '-v', '-EnvironmentFile', $EnvironmentFile
-        ) | Out-Null
+        )
     }
     finally {
         Pop-Location
     }
 
-    if (Test-Path -LiteralPath $bootstrapPath) {
-        Remove-Item -LiteralPath $bootstrapPath -Recurse -Force
+    # A teardown that failed leaves a stack running under the ordinary published project name, with
+    # the next scenario's assertions about to be answered by it. Ignoring the exit code here is how
+    # a scenario passes against the previous scenario's containers.
+    if ($down.ExitCode -ne 0) {
+        $script:teardownFailed = $true
+        throw "Tearing down the $composeProject stack failed with exit code $($down.ExitCode). The stack is still up; nothing further can be trusted and the staged bootstrap workspace is being kept because it is still mounted."
     }
 }
 
@@ -899,8 +1041,11 @@ function Invoke-WrongDigestCheck {
     $dms = Get-ComposeContainerName 'dms'
     $dmsFacts = Get-ContainerFact $dms.Name
 
+    # A container that exists but could not be inspected is not one that never started, and the
+    # earlier successful ps says nothing about this inspect.
     $neverStarted = Test-DmsNeverStarted -Status $dmsFacts.Status -StartedAtRaw $dmsFacts.StartedAtRaw `
-        -ExitCode $dmsFacts.ExitCode -EnumerationSucceeded $dms.EnumerationSucceeded
+        -ExitCode $dmsFacts.ExitCode `
+        -EnumerationSucceeded ($dms.EnumerationSucceeded -and $dmsFacts.InspectSucceeded)
 
     if (-not $neverStarted.Verified) {
         throw "The wrong-digest deployment started DMS: $($neverStarted.Reason)"
@@ -918,11 +1063,10 @@ function Invoke-MisspelledAllowlistCheck {
         throw 'The DMS container could not be located, so the refusal it should have recorded cannot be read.'
     }
 
-    $facts = Get-ContainerFact $dms.Name
-    $status = Get-StartupStatusDocument $dms.Name -FromStoppedContainer
+    $settled = Wait-ForRecordedStartupFailure -Container $dms.Name -ExpectedPhase 'LoadPlugins'
 
-    $verdict = Test-LoadPluginsFailure -StatusDocument $status `
-        -ExpectedPath "/app/plugins/${pluginName}1" -ExitCode $facts.ExitCode
+    $verdict = Test-LoadPluginsFailure -StatusDocument $settled.Status `
+        -ExpectedPath "/app/plugins/${pluginName}1" -ExitCode $settled.Fact.ExitCode
 
     if (-not $verdict.Verified) {
         throw "The misspelled allowlist did not produce the expected refusal: $($verdict.Reason)"
@@ -930,7 +1074,12 @@ function Invoke-MisspelledAllowlistCheck {
 
     Write-Detail 'DMS refused to start, recording a failed LoadPlugins phase naming the expected path'
 
-    return [ordered]@{ dmsExitCode = $facts.ExitCode; phase = $status.Phase; state = $status.State }
+    return [ordered]@{
+        dmsExitCode = $settled.Fact.ExitCode
+        dmsStatus   = $settled.Fact.Status
+        phase       = $settled.Status.Phase
+        state       = $settled.Status.State
+    }
 }
 
 Write-Phase 'Stock image plugin proof'
@@ -943,6 +1092,7 @@ $result = [ordered]@{}
 try {
     # Nothing above this line has touched Docker, the filesystem or the network.
     Assert-NoAmbientOverride
+    Assert-PathsSafeToOwn
     $pin = Get-ValidatedPin
     $result.pin = [ordered]@{
         edFiApi              = "$($pin.edFiApi.repository):$($pin.edFiApi.tag)@$($pin.edFiApi.digest)"
@@ -966,14 +1116,14 @@ try {
     $package = Build-ProofPackage -Fixture $fixture
     $result.package = [ordered]@{ version = $package.Version; sha256 = $package.Sha256; url = $package.Url }
 
-    $baseContent = Get-Content -Raw -LiteralPath (Join-Path $composeRoot '.env.e2e')
+    $baseContent = Get-Content -Raw -LiteralPath $BaseEnvironmentFile
     $allowedOverlay = 'tests/plugin-deployment/plugins-allowed-dms.yml'
     $feedOverlay = 'tests/plugin-deployment/plugins-feed-dms.yml'
     $pinOverlay = 'tests/plugin-deployment/stock-image-pin-dms.yml'
-    # The ports Get-StockProofEnvironmentContent writes, which are also the ports the
-    # preflight refused on, so these three values cannot drift apart.
-    $baseUrl = "http://localhost:$($requiredPort[0])"
-    $configurationServiceUrl = "http://localhost:$($requiredPort[1])"
+    # The same values the preflight refused on, so the guarded ports and the addresses requests go
+    # to cannot drift apart.
+    $baseUrl = "http://localhost:$dmsPort"
+    $configurationServiceUrl = "http://localhost:$configurationServicePort"
 
     # Recipe 1: the committed plugins-dms.yml, run unedited, with the plugin bind-mounted.
     $result.recipe1 = Invoke-ProofScenario -Name 'recipe1' -Pin $pin -BaseContent $baseContent `
@@ -1008,7 +1158,29 @@ try {
     Write-Detail 'the pulled stock image ran third-party code and returned the fixture''s custom-validation 400'
 }
 finally {
+    # Cleanup first, then evidence: the record has to include the teardown commands and any failure
+    # they hit, and writing it beforehand omits exactly the part a failed run needs.
+    try {
+        Invoke-OwnedCleanup
+    }
+    catch {
+        $script:cleanupError.Add((Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret))
+    }
+
     $result.buildCommandAbsent = Test-BuildCommandAbsent -Command @($script:commandLog)
-    Write-Evidence -Result ([pscustomobject]$result)
-    Invoke-OwnedCleanup
+    $result.cleanupError = @($script:cleanupError)
+    $result.teardownFailed = $script:teardownFailed
+
+    try {
+        Write-Evidence -Result ([pscustomobject]$result)
+    }
+    catch {
+        # Evidence is the record, not the work. Losing it must not also lose the run's verdict.
+        Write-Detail "could not write evidence: $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)"
+    }
+
+    if ($script:cleanupError.Count -gt 0) {
+        throw ("This run did not clean up after itself:" + [Environment]::NewLine +
+            (($script:cleanupError | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+    }
 }

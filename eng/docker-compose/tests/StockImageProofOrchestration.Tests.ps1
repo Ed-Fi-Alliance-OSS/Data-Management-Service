@@ -170,6 +170,155 @@ Describe 'Stock image proof orchestration' {
         }
     }
 
+    Context 'the paths this run may own and delete' {
+        BeforeAll {
+            $script:repositoryRoot = [IO.Path]::GetFullPath((Join-Path $script:composeRoot '../..'))
+            $script:safeWorkspace = Join-Path ([IO.Path]::GetTempPath()) 'dms1502-safe-workspace'
+            $script:safeEvidence = Join-Path ([IO.Path]::GetTempPath()) 'dms1502-safe-evidence'
+
+            function script:Test-Safety {
+                param([string] $Workspace = $script:safeWorkspace, [string] $Evidence = $script:safeEvidence, [bool] $Exists = $false)
+
+                return Test-ProofPathSafety -WorkspacePath $Workspace -EvidencePath $Evidence `
+                    -RepositoryRoot $script:repositoryRoot -ComposeRoot $script:composeRoot -WorkspaceExists $Exists
+            }
+        }
+
+        It 'allows two separate paths that do not exist yet' {
+            (Test-Safety).Safe | Should -BeTrue
+        }
+
+        It 'refuses a workspace that already exists, rather than clearing it' {
+            # Naming a directory does not make its contents this run's to delete. This is the
+            # difference between owning a resource and pointing at one.
+            $verdict = Test-Safety -Exists $true
+
+            $verdict.Safe | Should -BeFalse
+            $verdict.Blocker -join ' ' | Should -Match 'does not make its contents'
+        }
+
+        It 'refuses a workspace containing <_>, which removing it would take with it' -ForEach @(
+            'the repository', 'the compose directory'
+        ) {
+            $workspace = if ($_ -eq 'the repository') { $script:repositoryRoot } else { $script:composeRoot }
+            $verdict = Test-Safety -Workspace (Split-Path -Parent $workspace)
+
+            $verdict.Safe | Should -BeFalse
+            $verdict.Blocker -join ' ' | Should -Match 'would take'
+        }
+
+        It 'refuses the repository itself as a workspace' {
+            (Test-Safety -Workspace $script:repositoryRoot).Safe | Should -BeFalse
+        }
+
+        It 'refuses a filesystem root' {
+            $root = [IO.Path]::GetPathRoot([IO.Path]::GetTempPath())
+
+            $verdict = Test-Safety -Workspace $root
+
+            $verdict.Safe | Should -BeFalse
+            $verdict.Blocker -join ' ' | Should -Match 'filesystem root'
+        }
+
+        It 'refuses a relative path, whose meaning depends on the working directory' {
+            (Test-Safety -Workspace 'scratch').Safe | Should -BeFalse
+        }
+
+        It 'refuses evidence inside the workspace, which cleanup would erase' {
+            $verdict = Test-Safety -Evidence (Join-Path $script:safeWorkspace 'evidence')
+
+            $verdict.Safe | Should -BeFalse
+            $verdict.Blocker -join ' ' | Should -Match 'record of why the run failed'
+        }
+
+        It 'refuses a workspace inside the evidence directory' {
+            (Test-Safety -Workspace (Join-Path $script:safeEvidence 'workspace')).Safe | Should -BeFalse
+        }
+
+        It 'refuses the same path for both' {
+            (Test-Safety -Evidence $script:safeWorkspace).Safe | Should -BeFalse
+        }
+
+        It 'permits a deletion inside an owned directory' {
+            Test-OwnedDeletionPath -Path (Join-Path $script:safeWorkspace 'feed') -OwnedDirectory @($script:safeWorkspace) |
+                Should -BeTrue
+        }
+
+        It 'permits deleting the owned directory itself' {
+            Test-OwnedDeletionPath -Path $script:safeWorkspace -OwnedDirectory @($script:safeWorkspace) | Should -BeTrue
+        }
+
+        It 'refuses a deletion outside everything owned' {
+            Test-OwnedDeletionPath -Path $script:repositoryRoot -OwnedDirectory @($script:safeWorkspace) | Should -BeFalse
+        }
+
+        It 'refuses a sibling whose name merely starts the same' {
+            # "workspace-other" must not be admitted by a prefix comparison against "workspace".
+            Test-OwnedDeletionPath -Path "$($script:safeWorkspace)-other" -OwnedDirectory @($script:safeWorkspace) |
+                Should -BeFalse
+        }
+
+        It 'refuses anything when nothing is owned' {
+            Test-OwnedDeletionPath -Path $script:safeWorkspace -OwnedDirectory @() | Should -BeFalse
+        }
+    }
+
+    Context 'the shared external network, absent versus unreadable' {
+        It 'reports no attachments when the enumeration succeeded and did not name it' {
+            $result = Get-NetworkAttachmentInventory -NetworkName 'dms' -ListExitCode 0 -ListedNetwork @('bridge', 'host')
+
+            $result.Failure | Should -BeNullOrEmpty
+            $result.Attachment | Should -HaveCount 0
+        }
+
+        It 'reports the attachments when it exists and can be inspected' {
+            $result = Get-NetworkAttachmentInventory -NetworkName 'dms' -ListExitCode 0 -ListedNetwork @('dms') `
+                -InspectExitCode 0 -InspectedAttachment @('someone-elses-api')
+
+            $result.Failure | Should -BeNullOrEmpty
+            $result.Attachment | Should -Contain 'someone-elses-api'
+        }
+
+        It 'fails when the network exists but cannot be inspected' {
+            # A permission or daemon error fails the inspect too, and reading that as "no
+            # neighbours" is how a run starts on a host it was never allowed to see.
+            $result = Get-NetworkAttachmentInventory -NetworkName 'dms' -ListExitCode 0 -ListedNetwork @('dms') `
+                -InspectExitCode 1
+
+            $result.Failure | Should -Match 'could not be inspected'
+        }
+
+        It 'fails when the network list itself could not be read' {
+            (Get-NetworkAttachmentInventory -NetworkName 'dms' -ListExitCode 1).Failure |
+                Should -Match 'whether .* exists is unknown'
+        }
+    }
+
+    Context 'a port actually being free, not merely unpublished by Docker' {
+        It 'reports a free port as available' {
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $listener.Start()
+            $free = $listener.LocalEndpoint.Port
+            $listener.Stop()
+
+            Test-LocalPortAvailable -Port $free | Should -BeTrue
+        }
+
+        It 'reports a port held by a non-Docker listener as unavailable' {
+            # Docker's own publication list cannot see this, which is the case the container
+            # inventory misses entirely.
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $listener.Start()
+
+            try {
+                Test-LocalPortAvailable -Port $listener.LocalEndpoint.Port | Should -BeFalse
+            }
+            finally {
+                $listener.Stop()
+            }
+        }
+    }
+
     Context 'restoring exactly what the pin names' {
         It 'brackets a version so NuGet resolves it rather than treating it as a floor' {
             Get-ContractPackageReference -Version '1.0.0' | Should -BeExactly '[1.0.0]'
@@ -344,24 +493,16 @@ Describe 'Stock image proof orchestration' {
             $line | Should -Contain 'PLUGIN_NAME=Acme.CustomValidationProof'
         }
 
-        It 'moves the stack off the ordinary local ports' {
-            # .env.e2e declares DMS_HTTP_PORTS=8080, DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081 and
-            # POSTGRES_PORT=5435, which are the ports an ordinary local stack takes. Competing for
-            # them is exactly what this run must not do.
-            $script:effective['DMS_HTTP_PORTS'] | Should -BeExactly '18080'
-            $script:effective['DMS_CONFIG_ASPNETCORE_HTTP_PORTS'] | Should -BeExactly '18081'
-            $script:effective['POSTGRES_PORT'] | Should -BeExactly '15435'
-        }
+        It 'governs no port key, so the stack keeps the ports its environment file declares' {
+            # DMS_HTTP_PORTS publishes '127.0.0.1:${VAR}:${VAR}', one variable on both sides, so
+            # moving it would move the port the container itself listens on while six addresses in
+            # the base file name ed-fi-api-config:8081 directly. The preflight reads these declared
+            # values instead of a second list.
+            Get-GovernedEnvironmentKey | Should -Not -Contain 'DMS_HTTP_PORTS'
+            Get-GovernedEnvironmentKey | Should -Not -Contain 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS'
 
-        It 'writes the ports the caller asked for, so the preflight can guard the same ones' {
-            $content = Get-StockProofEnvironmentContent -Pin (New-Pin) -BaseContent 'X=1' `
-                -PluginComposeFiles 'plugins-dms.yml' -PluginMountSource '/scratch/plugins' `
-                -DmsPort 19090 -ConfigurationServicePort 19091 -PostgresPort 19092
-
-            $line = $content -split "`n"
-            $line | Should -Contain 'DMS_HTTP_PORTS=19090'
-            $line | Should -Contain 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS=19091'
-            $line | Should -Contain 'POSTGRES_PORT=19092'
+            $script:effective['DMS_HTTP_PORTS'] | Should -BeExactly '8080'
+            $script:effective['DMS_CONFIG_ASPNETCORE_HTTP_PORTS'] | Should -BeExactly '8081'
         }
 
         It 'writes an empty allowlist rather than omitting it' {

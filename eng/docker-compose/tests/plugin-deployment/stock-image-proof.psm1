@@ -743,6 +743,189 @@ function Get-OccupiedHostResource {
     }
 }
 
+function Get-NetworkAttachmentInventory {
+    <#
+    .SYNOPSIS
+    Who is attached to the shared external network, or why that could not be established.
+
+    .DESCRIPTION
+    An absent network really does mean nothing is attached, but it has to be established by a
+    successful enumeration rather than assumed from a failed inspect. A daemon that is down, or a
+    permission error, fails the inspect too, and treating that as "no neighbours" is how a run
+    starts on a host it was never allowed to see.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $NetworkName,
+        [Nullable[int]] $ListExitCode,
+        [string[]] $ListedNetwork = @(),
+        [Nullable[int]] $InspectExitCode,
+        [string[]] $InspectedAttachment = @()
+    )
+
+    if ($null -eq $ListExitCode -or $ListExitCode -ne 0) {
+        return [pscustomobject]@{
+            Attachment = @()
+            Failure    = "the network list could not be read, so whether '$NetworkName' exists is unknown"
+        }
+    }
+
+    if ($NetworkName -cnotin $ListedNetwork) {
+        # Established, not assumed: the enumeration succeeded and did not name it.
+        return [pscustomobject]@{ Attachment = @(); Failure = $null }
+    }
+
+    if ($null -eq $InspectExitCode -or $InspectExitCode -ne 0) {
+        return [pscustomobject]@{
+            Attachment = @()
+            Failure    = "network '$NetworkName' exists but could not be inspected, so whether anything is attached to it is unknown"
+        }
+    }
+
+    return [pscustomobject]@{ Attachment = @($InspectedAttachment); Failure = $null }
+}
+
+function Test-LocalPortAvailable {
+    <#
+    .SYNOPSIS
+    Whether a TCP port can actually be bound on the loopback interface.
+
+    .DESCRIPTION
+    The container inventory only sees Docker's own publications. A port held by anything else -
+    another service, a debugger, an IDE - is invisible to it, and the deployment would fail at
+    compose up rather than at the preflight. Binding it is the only answer that covers both.
+    #>
+    param([Parameter(Mandatory)] [int] $Port)
+
+    $listener = $null
+
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+        $listener.Start()
+        return $true
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $listener) {
+            try { $listener.Stop() } catch { Write-Debug "listener stop failed: $($_.Exception.Message)" }
+        }
+    }
+}
+
+function Test-ProofPathSafety {
+    <#
+    .SYNOPSIS
+    Decides whether the workspace and evidence paths are ones this run may own and delete.
+
+    .DESCRIPTION
+    The workspace is emptied before use and removed on the way out, so the question is not whether
+    the path is convenient but whether destroying it is this run's business. Claiming a path that
+    already holds somebody's files does not make them this run's to delete, so an existing workspace
+    is refused rather than cleared: ownership is something a run establishes by creating, not by
+    naming.
+
+    A path that contains the repository, the compose directory, or is a filesystem root, would take
+    all of it with them, so those are refused by containment rather than by a list of spellings.
+
+    The evidence directory must not overlap the workspace in either direction, because cleanup
+    removes the workspace and the evidence is the record of why.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $WorkspacePath,
+        [Parameter(Mandatory)] [string] $EvidencePath,
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ComposeRoot,
+        [bool] $WorkspaceExists = $false
+    )
+
+    $blocker = @()
+
+    function Test-PathContainment([string]$Parent, [string]$Child) {
+        $normalizedParent = $Parent.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+        $normalizedChild = $Child.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+
+        if ($normalizedParent -ieq $normalizedChild) {
+            return $true
+        }
+
+        return $normalizedChild.StartsWith($normalizedParent + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+    }
+
+    if (-not [IO.Path]::IsPathRooted($WorkspacePath)) {
+        $blocker += "the workspace path '$WorkspacePath' is not absolute, so what it names depends on the working directory at the moment it is read"
+    }
+
+    if (-not [IO.Path]::IsPathRooted($EvidencePath)) {
+        $blocker += "the evidence path '$EvidencePath' is not absolute"
+    }
+
+    if ($blocker.Count -gt 0) {
+        return [pscustomobject]@{ Safe = $false; Blocker = $blocker }
+    }
+
+    if ($WorkspaceExists) {
+        $blocker += "the workspace '$WorkspacePath' already exists. This run empties and removes its workspace, and naming a directory does not make its contents this run's to delete. Choose a path that does not exist."
+    }
+
+    $root = [IO.Path]::GetPathRoot($WorkspacePath)
+    if ($WorkspacePath.TrimEnd([IO.Path]::DirectorySeparatorChar) -ieq $root.TrimEnd([IO.Path]::DirectorySeparatorChar)) {
+        $blocker += "the workspace '$WorkspacePath' is a filesystem root"
+    }
+
+    foreach ($protected in @(
+            @{ Path = $RepositoryRoot; What = 'the repository' }
+            @{ Path = $ComposeRoot; What = 'the compose directory' }
+        )) {
+        if (Test-PathContainment -Parent $WorkspacePath -Child $protected.Path) {
+            $blocker += "the workspace '$WorkspacePath' contains $($protected.What), so removing it would take $($protected.What) with it"
+        }
+    }
+
+    if (Test-PathContainment -Parent $WorkspacePath -Child $EvidencePath) {
+        $blocker += "the evidence directory '$EvidencePath' is inside the workspace, so cleanup would remove the record of why the run failed"
+    }
+
+    if (Test-PathContainment -Parent $EvidencePath -Child $WorkspacePath) {
+        $blocker += "the workspace '$WorkspacePath' contains the evidence directory '$EvidencePath'"
+    }
+
+    return [pscustomobject]@{
+        Safe    = ($blocker.Count -eq 0)
+        Blocker = $blocker
+    }
+}
+
+function Test-OwnedDeletionPath {
+    <#
+    .SYNOPSIS
+    Decides whether a path may be removed, given what this run owns.
+
+    .DESCRIPTION
+    Every recursive removal is checked against the specific resources the run claimed rather than
+    against a convention. A path is removable when it is one of the owned directories or sits
+    inside one; anything else is refused however it was arrived at, including by a link or a
+    relative segment, because the caller resolves before asking.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [string[]] $OwnedDirectory = @()
+    )
+
+    $normalized = $Path.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+
+    foreach ($owned in $OwnedDirectory) {
+        $normalizedOwned = $owned.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+
+        if ($normalized -ieq $normalizedOwned -or
+            $normalized.StartsWith($normalizedOwned + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Get-StockProofOwnership {
     <#
     .SYNOPSIS
@@ -766,7 +949,7 @@ function Add-OwnedResource {
     #>
     param(
         [Parameter(Mandatory)] $Ownership,
-        [Parameter(Mandatory)] [ValidateSet('ComposeProject', 'Directory', 'Image')] [string] $Kind,
+        [Parameter(Mandatory)] [ValidateSet('ComposeProject', 'Bootstrap', 'Directory')] [string] $Kind,
         [Parameter(Mandatory)] [string] $Name
     )
 
@@ -794,7 +977,9 @@ function Get-CleanupPlan {
         return @()
     }
 
-    $order = @{ ComposeProject = 0; Image = 1; Directory = 2 }
+    # The compose project first: it owns the containers that hold the staged bootstrap
+    # workspace and the scratch directories open.
+    $order = @{ ComposeProject = 0; Bootstrap = 1; Directory = 2 }
 
     return @(
         $Ownership.Resource |
@@ -905,11 +1090,11 @@ function Get-GovernedEnvironmentKey {
         'DMS_IMAGE_TAG'
         'DMS_CONFIG_DATA_STANDARD_VERSION'
         'SCHEMA_PACKAGES'
-        # The ports the stack actually binds. They are governed because the preflight refuses on
-        # them: guarding one set while the deployment took another would check nothing.
-        'DMS_HTTP_PORTS'
-        'DMS_CONFIG_ASPNETCORE_HTTP_PORTS'
-        'POSTGRES_PORT'
+        # No port key is governed. DMS_HTTP_PORTS and DMS_CONFIG_ASPNETCORE_HTTP_PORTS publish
+        # '127.0.0.1:${VAR}:${VAR}', one variable on both sides, so moving either would move the
+        # port the container itself listens on while six addresses in the base file name
+        # ed-fi-api-config:8081 directly. The run therefore uses the ports the environment file
+        # declares, and the preflight reads those same declared values rather than a second list.
         'DMS_PLUGINS_COMPOSE_FILES'
         'DMS_PLUGINS_ALLOWED'
         'DMS_PLUGINS_MOUNT_SOURCE'
@@ -964,14 +1149,7 @@ function Get-StockProofEnvironmentContent {
         [string] $PluginPackageSha256,
         [string] $PluginName,
         [string] $PluginFeedSource,
-        [string] $AllowedPlugins = '',
-
-        # The host ports the stack binds. Written here so the preflight and the deployment cannot
-        # disagree about which ports this run takes; the base file's defaults are the ordinary local
-        # stack's, which is exactly what this run must not compete for.
-        [int] $DmsPort = 18080,
-        [int] $ConfigurationServicePort = 18081,
-        [int] $PostgresPort = 15435
+        [string] $AllowedPlugins = ''
     )
 
     $line = [System.Collections.Generic.List[string]]::new()
@@ -991,9 +1169,6 @@ function Get-StockProofEnvironmentContent {
     $line.Add("DMS_STOCK_IMAGE_REFERENCE=$edFiApi")
     $line.Add("DMS_CONFIG_DOCKER_IMAGE=$configurationService")
     $line.Add("DMS_CONFIG_DATA_STANDARD_VERSION=$($Pin.provisioning.dataStandardVersion)")
-    $line.Add("DMS_HTTP_PORTS=$DmsPort")
-    $line.Add("DMS_CONFIG_ASPNETCORE_HTTP_PORTS=$ConfigurationServicePort")
-    $line.Add("POSTGRES_PORT=$PostgresPort")
 
     # Single line and single quoted, which is the form .env.bootstrap.ds52 uses and the form Compose
     # hands to the container verbatim.
@@ -1046,6 +1221,10 @@ Export-ModuleMember -Function @(
     'Get-ContractPackageReference'
     'Test-RestoredPackageVersion'
     'Get-SchemaToolInstallArgument'
+    'Test-ProofPathSafety'
+    'Test-OwnedDeletionPath'
+    'Get-NetworkAttachmentInventory'
+    'Test-LocalPortAvailable'
     'Get-GovernedEnvironmentKey'
     'Get-AmbientOverride'
     'Get-StockProofEnvironmentContent'
