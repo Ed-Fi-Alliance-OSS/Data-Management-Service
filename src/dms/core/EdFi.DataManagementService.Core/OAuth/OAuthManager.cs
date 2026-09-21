@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
@@ -164,6 +165,38 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// </summary>
     private const string LoggedContentTruncationSuffix = "...[truncated]";
 
+    /// <summary>
+    /// The <c>type</c> a CMS token-limit rejection carries. Matched exactly, and it must stay in
+    /// step with what <see cref="Response.FailureResponse.ForTooManyTokens"/> emits.
+    /// </summary>
+    private const string TooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
+
+    /// <summary>
+    /// The canonical token-limit message, whose <c>{0}</c> is the configured limit. It is both the
+    /// shape an upstream body must match to be believed and the template the returned message is
+    /// rebuilt from, so the parse and the format here cannot drift apart from one another. Staying
+    /// in step with the CMS formatter that writes the upstream body is a separate obligation, which
+    /// the round-trip fixture covers.
+    /// </summary>
+    private const string TokenLimitMessageFormat =
+        "Too many access tokens have been requested (limit is {0}). Access tokens should be reused "
+        + "until they expire.";
+
+    private const string TokenLimitMessageLimitHole = "{0}";
+
+    private static readonly int _tokenLimitMessageHoleIndex = TokenLimitMessageFormat.IndexOf(
+        TokenLimitMessageLimitHole,
+        StringComparison.Ordinal
+    );
+
+    private static readonly string _tokenLimitMessagePrefix = TokenLimitMessageFormat[
+        .._tokenLimitMessageHoleIndex
+    ];
+
+    private static readonly string _tokenLimitMessageSuffix = TokenLimitMessageFormat[
+        (_tokenLimitMessageHoleIndex + TokenLimitMessageLimitHole.Length)..
+    ];
+
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
         string grantType,
@@ -210,6 +243,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     return response;
                 case HttpStatusCode.Unauthorized:
                     return await GenerateUnauthorizedResponse(logger, traceId, response);
+                case HttpStatusCode.TooManyRequests:
+                    return await GenerateTooManyTokensResponse(logger, traceId, response);
                 default:
                     var content = await response.Content.ReadAsStringAsync();
                     logger.LogWarning(
@@ -303,6 +338,129 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 HttpStatusCode.Unauthorized,
                 FailureResponse.ForUnauthorized(traceId, error, errorDescription)
             );
+        }
+
+        // Answers an upstream 429. /oauth/token is what the Discovery document advertises, so
+        // without this arm a client that hit its token limit would fall through to the 502 branch
+        // and receive no status, no type and no reuse guidance.
+        //
+        // The upstream body is evidence, never content: the limit is parsed out of it and the
+        // message is rebuilt here, so nothing the upstream authored reaches the caller. Relaying
+        // its `errors` strings verbatim would reopen the same unauthenticated disclosure that
+        // GenerateUnauthorizedResponse's comment above was written to close.
+        static async Task<HttpResponseMessage> GenerateTooManyTokensResponse(
+            ILogger logger,
+            TraceId traceId,
+            HttpResponseMessage response
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int? limit = TokenLimitFromUpstreamBody(body);
+
+            if (limit is null)
+            {
+                // Still a 429: the upstream *status* is trustworthy even when its body is not,
+                // and the generic rate-limit contract is also the honest answer when the 429 came
+                // from a gateway limiter rather than from the token limit. The body is logged
+                // here, as the one place it is recorded at all, and never returned.
+                logger.LogWarning(
+                    "Unrecognized 429 body from upstream identity service - {TraceId} - {Content}",
+                    traceId.Value,
+                    SanitizeAndBoundForLogging(body)
+                );
+
+                return GenerateProblemDetailResponse(
+                    HttpStatusCode.TooManyRequests,
+                    FailureResponse.ForTooManyRequests(traceId)
+                );
+            }
+
+            // Rebuilt from a DMS-side template and the parsed integer alone, so the limit survives
+            // while not one character of upstream-authored text reaches the response body. The
+            // correlationId is DMS's own trace id, as on every other branch.
+            string message = string.Format(
+                CultureInfo.InvariantCulture,
+                TokenLimitMessageFormat,
+                limit.Value
+            );
+
+            return GenerateProblemDetailResponse(
+                HttpStatusCode.TooManyRequests,
+                FailureResponse.ForTooManyTokens(traceId, [message])
+            );
+        }
+
+        // The limit carried by a canonical token-limit body, or null when the body deviates from
+        // that shape in any way at all - unparseable, a different type, a mismatched status, an
+        // errors array that is missing or holds anything other than one string, a message that is
+        // not the canonical one, or a limit that is absent, non-numeric, zero, negative or too
+        // large for an int. Every one of those falls back to the generic 429 rather than being
+        // partially believed.
+        static int? TokenLimitFromUpstreamBody(string body)
+        {
+            JsonNode? parsed;
+            try
+            {
+                parsed = JsonNode.Parse(body);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+
+            if (parsed is not JsonObject obj)
+            {
+                return null;
+            }
+
+            if (!string.Equals(ScalarValueOrNull(obj["type"]), TooManyTokensType, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (
+                obj["status"] is not JsonValue statusValue
+                || !statusValue.TryGetValue(out int status)
+                || status != (int)HttpStatusCode.TooManyRequests
+            )
+            {
+                return null;
+            }
+
+            if (obj["errors"] is not JsonArray errors || errors.Count != 1)
+            {
+                return null;
+            }
+
+            // TryGetValue<string> succeeds only for a JSON string, so a number or a nested object
+            // in the errors array is rejected rather than stringified.
+            if (errors[0] is not JsonValue entry || !entry.TryGetValue(out string? message))
+            {
+                return null;
+            }
+
+            if (
+                !message.StartsWith(_tokenLimitMessagePrefix, StringComparison.Ordinal)
+                || !message.EndsWith(_tokenLimitMessageSuffix, StringComparison.Ordinal)
+                || message.Length <= _tokenLimitMessagePrefix.Length + _tokenLimitMessageSuffix.Length
+            )
+            {
+                return null;
+            }
+
+            string limitText = message[_tokenLimitMessagePrefix.Length..^_tokenLimitMessageSuffix.Length];
+
+            // NumberStyles.None rejects a sign, surrounding whitespace and group separators, and
+            // TryParse itself rejects a value that overflows int.
+            if (
+                !int.TryParse(limitText, NumberStyles.None, CultureInfo.InvariantCulture, out int limit)
+                || limit < 1
+            )
+            {
+                return null;
+            }
+
+            return limit;
         }
 
         // Splits the top-level members of an upstream 401 body into the only two things the log
