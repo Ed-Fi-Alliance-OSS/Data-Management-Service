@@ -66,8 +66,18 @@ Describe 'Stock image proof decisions' {
             $verdict.Verified | Should -BeTrue
         }
 
-        It 'accepts no container at all' {
-            (Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null).Verified | Should -BeTrue
+        It 'accepts no container at all, when the enumeration that said so succeeded' {
+            (Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null -EnumerationSucceeded $true).Verified |
+                Should -BeTrue
+        }
+
+        It 'refuses an empty status when the enumeration itself failed' {
+            # "Absent" and "unreadable" look identical in an empty result, and only one of them is
+            # evidence. A failed docker ps must not be reported as a container that never existed.
+            $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null -EnumerationSucceeded $false
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'not evidence of absence'
         }
 
         It 'refuses a container that started and then exited' {
@@ -149,73 +159,174 @@ Describe 'Stock image proof decisions' {
             $verdict.Verified | Should -BeFalse
             $verdict.Reason | Should -Match 'did not stop startup'
         }
+
+        It 'refuses a missing exit code rather than treating absent evidence as an exit' {
+            # This scenario asserts that DMS exits. Absent exit evidence usually means an inspect
+            # failed, and a failed inspect is not a container that stopped.
+            $status = New-Status -Summary $script:expectedPath
+
+            $verdict = Test-LoadPluginsFailure -StatusDocument $status -ExpectedPath $script:expectedPath -ExitCode $null
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'not proof of an exit'
+        }
+
+        It 'refuses an empty expected path, which would assert nothing about the refusal' {
+            $status = New-Status -Summary 'Loading plugins failed.'
+
+            $verdict = Test-LoadPluginsFailure -StatusDocument $status -ExpectedPath '' -ExitCode 1
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'no expected path'
+        }
     }
 
     Context 'the fixture 400 versus every other rejection' {
         BeforeAll {
+            # The fixture's own text, and the write-path 400 shape the integration scenario asserts:
+            # BOTH arms are present in every case. A path failure leaves errors empty rather than
+            # absent and a document-level failure leaves validationErrors an empty object, which is
+            # exactly why substring presence cannot say which arm reported what.
             $script:message = "This value is the custom-validation proof fixture's reserved rejection token."
+            $script:resourceMessage = "This document carries the custom-validation proof fixture's reserved document-level rejection token."
             $script:path = '$.lastSurname'
-            $script:fixtureBody = '{"validationErrors":{"$.lastSurname":["' + $script:message + '"]},"errors":[]}'
+
+            function script:New-PathArmBody {
+                param([string] $Path = $script:path, [string] $Message = $script:message, [string[]] $Errors = @())
+
+                return ([ordered]@{
+                        detail           = "Data validation failed. See 'validationErrors' for details."
+                        type             = 'urn:ed-fi:api:bad-request:data-validation-failed'
+                        title            = 'Data Validation Failed'
+                        status           = 400
+                        correlationId    = $null
+                        validationErrors = @{ $Path = @($Message) }
+                        errors           = $Errors
+                    } | ConvertTo-Json -Depth 6)
+            }
+
+            function script:New-ResourceArmBody {
+                param([string] $Message = $script:resourceMessage)
+
+                return ([ordered]@{
+                        detail           = "The request could not be processed. See 'errors' for details."
+                        type             = 'urn:ed-fi:api:bad-request'
+                        title            = 'Bad Request'
+                        status           = 400
+                        correlationId    = $null
+                        validationErrors = @{}
+                        errors           = @($Message)
+                    } | ConvertTo-Json -Depth 6)
+            }
         }
 
         It 'accepts the fixture rejection on the path arm' {
-            (Test-FixtureValidationFailure -StatusCode 400 -Body $script:fixtureBody `
+            (Test-FixtureValidationFailure -StatusCode 400 -Body (New-PathArmBody) `
                     -ExpectedMessage $script:message -ExpectedPath $script:path -Arm 'Path').Verified |
                 Should -BeTrue
         }
 
         It 'accepts the fixture rejection on the resource arm' {
-            $body = '{"validationErrors":{},"errors":["This document carries the token."]}'
-
-            (Test-FixtureValidationFailure -StatusCode 400 -Body $body `
-                    -ExpectedMessage 'This document carries the token.' -Arm 'Resource').Verified |
+            (Test-FixtureValidationFailure -StatusCode 400 -Body (New-ResourceArmBody) `
+                    -ExpectedMessage $script:resourceMessage -Arm 'Resource').Verified |
                 Should -BeTrue
         }
 
         It 'refuses a generic 400 from core validation' {
-            # Reached the pipeline but not the plugin. This is the case the ticket calls out by name.
-            $body = '{"validationErrors":{"$.birthDate":["Value could not be parsed as a date."]},"errors":[]}'
+            # Reached the pipeline but not the plugin. This is the case the ticket names.
+            $body = New-PathArmBody -Path '$.birthDate' -Message 'Value could not be parsed as a date.'
 
             $verdict = Test-FixtureValidationFailure -StatusCode 400 -Body $body `
                 -ExpectedMessage $script:message -ExpectedPath $script:path
 
             $verdict.Verified | Should -BeFalse
-            $verdict.Reason | Should -Match 'different rejection'
+            $verdict.Reason | Should -Match 'no entry for'
         }
 
-        It 'refuses HTTP <_>, which means the request never reached a validator' -ForEach @(401, 403) {
-            $verdict = Test-FixtureValidationFailure -StatusCode $_ -Body '' -ExpectedMessage $script:message
-
-            $verdict.Verified | Should -BeFalse
-            $verdict.Reason | Should -Match 'never reached a validator'
-        }
-
-        It 'refuses a success' {
-            (Test-FixtureValidationFailure -StatusCode 201 -Body '' -ExpectedMessage $script:message).Verified |
-                Should -BeFalse
-        }
-
-        It 'refuses the right message reported through the wrong arm' {
-            # A path failure surfacing under "errors" would mean the failure was mapped incorrectly.
-            $body = '{"errors":["' + $script:message + '"]}'
+        It 'refuses the fixture message sitting under the other arm while both arms exist' {
+            # The near miss substring matching accepted: the expected path is present and carries an
+            # unrelated message, and the fixture's text is in errors. Every keyword is in the body.
+            $body = New-PathArmBody -Message 'An unrelated validation message.' -Errors @($script:message)
 
             $verdict = Test-FixtureValidationFailure -StatusCode 400 -Body $body `
                 -ExpectedMessage $script:message -ExpectedPath $script:path -Arm 'Path'
 
             $verdict.Verified | Should -BeFalse
-            $verdict.Reason | Should -Match 'validationErrors'
+            $verdict.Reason | Should -Match 'exact message'
         }
 
-        It 'refuses the right message at the wrong JSON path' {
-            $body = '{"validationErrors":{"$.firstName":["' + $script:message + '"]},"errors":[]}'
+        It 'refuses the fixture message at a different path while the expected path carries another' {
+            $body = ([ordered]@{
+                    status           = 400
+                    validationErrors = @{ '$.lastSurname' = @('Another message.'); '$.firstName' = @($script:message) }
+                    errors           = @()
+                } | ConvertTo-Json -Depth 6)
 
             (Test-FixtureValidationFailure -StatusCode 400 -Body $body `
                     -ExpectedMessage $script:message -ExpectedPath $script:path).Verified |
                 Should -BeFalse
         }
 
+        It 'refuses a longer message that merely contains the expected text' {
+            # Exact membership, not containment: a different message is a different rejection.
+            $body = New-PathArmBody -Message "Prefix. $($script:message) Suffix."
+
+            (Test-FixtureValidationFailure -StatusCode 400 -Body $body `
+                    -ExpectedMessage $script:message -ExpectedPath $script:path).Verified |
+                Should -BeFalse
+        }
+
+        It 'refuses non-JSON text even when it contains every keyword' {
+            $body = "400 validationErrors errors $script:path $script:message"
+
+            $verdict = Test-FixtureValidationFailure -StatusCode 400 -Body $body `
+                -ExpectedMessage $script:message -ExpectedPath $script:path
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'not a JSON object'
+        }
+
+        It 'refuses a path-arm body whose validationErrors is an array rather than an object' {
+            $body = '{"status":400,"validationErrors":["' + $script:message + '"],"errors":[]}'
+
+            (Test-FixtureValidationFailure -StatusCode 400 -Body $body `
+                    -ExpectedMessage $script:message -ExpectedPath $script:path).Verified |
+                Should -BeFalse
+        }
+
+        It 'refuses a resource-arm body whose errors is not an array' {
+            $body = '{"status":400,"validationErrors":{},"errors":"' + $script:resourceMessage + '"}'
+
+            (Test-FixtureValidationFailure -StatusCode 400 -Body $body `
+                    -ExpectedMessage $script:resourceMessage -Arm 'Resource').Verified |
+                Should -BeFalse
+        }
+
+        It 'refuses an empty expected <_>, which would assert nothing' -ForEach @('message', 'path') {
+            $message = if ($_ -eq 'message') { '' } else { $script:message }
+            $path = if ($_ -eq 'path') { '' } else { $script:path }
+
+            $verdict = Test-FixtureValidationFailure -StatusCode 400 -Body (New-PathArmBody) `
+                -ExpectedMessage $message -ExpectedPath $path -Arm 'Path'
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'was supplied'
+        }
+
+        It 'refuses HTTP <_>, which means the request never reached a validator' -ForEach @(401, 403) {
+            $verdict = Test-FixtureValidationFailure -StatusCode $_ -Body '' -ExpectedMessage $script:message -ExpectedPath $script:path
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'never reached a validator'
+        }
+
+        It 'refuses a success' {
+            (Test-FixtureValidationFailure -StatusCode 201 -Body '' -ExpectedMessage $script:message -ExpectedPath $script:path).Verified |
+                Should -BeFalse
+        }
+
         It 'refuses a recorded response that never happened' {
-            (Test-FixtureValidationFailure -StatusCode $null -Body '' -ExpectedMessage $script:message).Verified |
+            (Test-FixtureValidationFailure -StatusCode $null -Body '' -ExpectedMessage $script:message -ExpectedPath $script:path).Verified |
                 Should -BeFalse
         }
     }
@@ -363,6 +474,26 @@ Describe 'Stock image proof decisions' {
             # Building and packing the fixture and its contracts is permitted; building DMS is not.
             (Test-BuildCommandAbsent -Command @('dotnet pack src/plugins/EdFi.Api.Plugins')).Verified |
                 Should -BeTrue
+        }
+
+        It 'accepts <Case>, where the word build is not the command' -ForEach @(
+            @{ Case = 'an explicit --no-build'; Command = 'docker compose -f published-dms.yml up -d --no-build' }
+            @{ Case = 'a compose file whose path contains build'; Command = 'docker compose -f eng/build/published-dms.yml up -d' }
+            @{ Case = 'a compose file literally named build.yml'; Command = 'docker compose -f build.yml up -d' }
+            @{ Case = 'a project directory containing build'; Command = 'docker compose --project-directory ./build up -d' }
+            @{ Case = 'a pull of an image whose tag contains build'; Command = 'docker pull edfialliance/ed-fi-api:8.0.1-build.7' }
+        ) {
+            # --no-build is the strongest correct form of a compose up, so refusing it would refuse
+            # exactly the invocation this proof wants.
+            (Test-BuildCommandAbsent -Command @($Command)).Verified | Should -BeTrue
+        }
+
+        It 'still refuses <Case>' -ForEach @(
+            @{ Case = 'a compose up that rebuilds'; Command = 'docker compose -f local-dms.yml up -d --build' }
+            @{ Case = 'a compose build with file options first'; Command = 'docker compose -f a.yml -f b.yml build dms' }
+            @{ Case = 'a buildx build with options'; Command = 'docker --context default buildx build --push src/dms' }
+        ) {
+            (Test-BuildCommandAbsent -Command @($Command)).Verified | Should -BeFalse
         }
     }
 

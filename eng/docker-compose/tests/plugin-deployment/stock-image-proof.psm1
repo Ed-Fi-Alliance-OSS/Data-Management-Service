@@ -154,13 +154,26 @@ function Test-DmsNeverStarted {
     param(
         [string] $Status,
         [string] $StartedAtRaw,
-        [Nullable[int]] $ExitCode
+        [Nullable[int]] $ExitCode,
+
+        # Whether the container list this status was read from was actually obtained. An empty
+        # status means "absent" only when a successful enumeration said so; when the enumeration
+        # itself failed it means "unknown", and the two must not collapse into the same answer.
+        [bool] $EnumerationSucceeded = $true
     )
 
     $zero = '0001-01-01T00:00:00Z'
 
+    if (-not $EnumerationSucceeded) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = 'the container list could not be read, so whether a DMS container was created is unknown; a failed enumeration is not evidence of absence'
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace($Status)) {
-        # No container at all is the strongest form of never started.
+        # No container at all is the strongest form of never started, but only because a successful
+        # enumeration above established that it is absent rather than unreadable.
         return [pscustomobject]@{ Verified = $true; Reason = 'no DMS container was created' }
     }
 
@@ -208,6 +221,23 @@ function Test-LoadPluginsFailure {
         }
     }
 
+    if ([string]::IsNullOrWhiteSpace($ExpectedPath)) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = 'no expected path was supplied, and this scenario asserts that the refusal names the path the misspelled allowlist entry pointed at'
+        }
+    }
+
+    # The scenario asserts that DMS exits, so the exit evidence is required rather than optional.
+    # Absent evidence most often means an inspect failed, and an inspect that failed is not a
+    # container that exited.
+    if ($null -eq $ExitCode) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = 'no exit code was recorded for the DMS container, so that it stopped is unestablished; a failed inspection is not proof of an exit'
+        }
+    }
+
     $phase = if ($null -ne $StatusDocument.PSObject.Properties['Phase']) { [string]$StatusDocument.Phase } else { '' }
     $state = if ($null -ne $StatusDocument.PSObject.Properties['State']) { [string]$StatusDocument.State } else { '' }
     $summary = @(
@@ -226,11 +256,11 @@ function Test-LoadPluginsFailure {
         $reason += "the status records State '$state' rather than a failure"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedPath) -and -not $summary.Contains($ExpectedPath)) {
+    if (-not $summary.Contains($ExpectedPath)) {
         $reason += "the status does not name the expected path '$ExpectedPath'"
     }
 
-    if ($null -ne $ExitCode -and $ExitCode -eq 0) {
+    if ($ExitCode -eq 0) {
         $reason += 'the DMS container exited 0, so the refusal did not stop startup'
     }
 
@@ -238,6 +268,37 @@ function Test-LoadPluginsFailure {
         Verified = ($reason.Count -eq 0)
         Reason   = ($reason -join '; ')
     }
+}
+
+function Get-JsonMember {
+    <#
+    .SYNOPSIS
+    Reads one member of a parsed JSON object, preserving its shape.
+
+    .DESCRIPTION
+    Two PowerShell behaviours make a direct read wrong here, and both turn an array into a string.
+
+    A member is read through the property collection rather than as $object.$name, because a
+    JSONPath key carries dots and member access on a variable holding one does not resolve to the
+    property whose name it is.
+
+    The value is returned comma-wrapped, because a bare return is enumerated by the pipeline and a
+    one-element array arrives at the caller as its element. An arm carrying exactly one message is
+    the ordinary case in a validation response, so this is not an edge.
+    #>
+    param($Object, [Parameter(Mandatory)] [string] $Name)
+
+    if ($null -eq $Object -or $Object -isnot [psobject]) {
+        return $null
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return , $property.Value
 }
 
 function Test-FixtureValidationFailure {
@@ -254,7 +315,7 @@ function Test-FixtureValidationFailure {
     param(
         [Nullable[int]] $StatusCode,
         [string] $Body,
-        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [string] $ExpectedMessage,
         [string] $ExpectedPath,
         [ValidateSet('Path', 'Resource')] [string] $Arm = 'Path'
     )
@@ -274,23 +335,63 @@ function Test-FixtureValidationFailure {
         return [pscustomobject]@{ Verified = $false; Reason = "the response was HTTP $StatusCode rather than 400" }
     }
 
-    $text = if ($null -eq $Body) { '' } else { $Body }
+    # An assertion with nothing to assert passes everything, so an absent expectation is a failure
+    # of the caller rather than a pass for the response.
+    if ([string]::IsNullOrWhiteSpace($ExpectedMessage)) {
+        return [pscustomobject]@{ Verified = $false; Reason = 'no expected fixture message was supplied, so this response was not checked against anything' }
+    }
+
+    if ($Arm -ceq 'Path' -and [string]::IsNullOrWhiteSpace($ExpectedPath)) {
+        return [pscustomobject]@{ Verified = $false; Reason = 'no expected JSON path was supplied, and a path-arm failure is identified by the path it is keyed under' }
+    }
+
+    # Parsed, not searched. A DMS write-path 400 carries BOTH arms every time - a path failure
+    # leaves errors empty rather than absent, and a document-level failure leaves validationErrors
+    # an empty object - so every keyword this could look for is present in either case. Substring
+    # presence therefore says nothing about which arm reported what, and a body whose expected path
+    # carries an unrelated message while the fixture's text sits under the other arm would pass.
+    $document = try { $Body | ConvertFrom-Json -ErrorAction Stop } catch { $null }
+
+    if ($null -eq $document -or $document -isnot [psobject]) {
+        return [pscustomobject]@{ Verified = $false; Reason = 'the 400 body is not a JSON object, so no arm could be read from it' }
+    }
+
     $reason = @()
 
-    if (-not $text.Contains($ExpectedMessage)) {
-        $reason += "the 400 does not carry the fixture's message, so it is a different rejection: core validation reached this document before the plugin did, or the plugin never ran"
+    # Read through Get-JsonMember below rather than with an if-expression. Assigning the result of
+    # an `if` sends it through the pipeline, which enumerates a one-element array into its element,
+    # and an arm carrying exactly one message is the ordinary case here.
+    if ($Arm -ceq 'Path') {
+        $validationErrors = Get-JsonMember -Object $document -Name 'validationErrors'
+
+        if ($null -eq $validationErrors -or $validationErrors -isnot [psobject] -or $validationErrors -is [System.Collections.IList]) {
+            $reason += "the 400 carries no validationErrors object, which is the arm a path failure is reported through"
+        }
+        else {
+            $entry = Get-JsonMember -Object $validationErrors -Name $ExpectedPath
+
+            if ($null -eq $entry) {
+                $reason += "the 400's validationErrors carries no entry for '$ExpectedPath', so nothing was rejected at the path the token sits at"
+            }
+            elseif ($entry -isnot [System.Collections.IList]) {
+                $reason += "the 400's validationErrors entry for '$ExpectedPath' is not an array of messages"
+            }
+            # Exact equality, not containment: a longer message that merely includes the fixture's
+            # text is a different message, and a substring match would accept it.
+            elseif ($ExpectedMessage -cnotin @($entry | ForEach-Object { [string]$_ })) {
+                $reason += "the 400's validationErrors entry for '$ExpectedPath' does not carry the fixture's exact message, so it is a different rejection: core validation reached this document before the plugin did, or the plugin never ran"
+            }
+        }
     }
+    else {
+        $errors = Get-JsonMember -Object $document -Name 'errors'
 
-    # The two arms are different response shapes, and a fixture rejection reported through the wrong
-    # one would mean the failure was mapped incorrectly.
-    $expectedArm = if ($Arm -ceq 'Path') { 'validationErrors' } else { 'errors' }
-
-    if (-not $text.Contains($expectedArm)) {
-        $reason += "the 400 does not carry a '$expectedArm' member, which is the arm a $Arm failure is reported through"
-    }
-
-    if ($Arm -ceq 'Path' -and -not [string]::IsNullOrWhiteSpace($ExpectedPath) -and -not $text.Contains($ExpectedPath)) {
-        $reason += "the 400 does not name the JSON path '$ExpectedPath' the rejected value sits at"
+        if ($null -eq $errors -or $errors -isnot [System.Collections.IList]) {
+            $reason += "the 400 carries no errors array, which is the arm a document-level failure is reported through"
+        }
+        elseif ($ExpectedMessage -cnotin @($errors | ForEach-Object { [string]$_ })) {
+            $reason += "the 400's errors array does not carry the fixture's exact message, so it is a different rejection"
+        }
     }
 
     return [pscustomobject]@{
@@ -458,17 +559,91 @@ function Test-BuildCommandAbsent {
     and no DMS rebuilt, so the harness must never build one. Packing the fixture and its contracts
     is permitted and is not a build of DMS; a docker build, a compose build, or build-dms.ps1's
     DockerBuild command is not.
+
+    The command is read as a command rather than searched for a word. "build" appears inside
+    --no-build, which is the strongest correct form of a compose up, and inside any file or
+    directory path that happens to contain it; treating either as a build would refuse exactly the
+    invocations this proof wants.
+
+    This covers the commands the harness itself records. It says nothing about what a process the
+    harness launches goes on to run, which is why the deployed container's image identity is the
+    evidence for the no-build claim and this is the guard on the harness's own behaviour.
     #>
     param(
         [string[]] $Command = @()
     )
 
-    $offending = @($Command | Where-Object {
-            $text = [string]$_
-            $text -match '(?i)\bdocker(\.exe)?\s+(buildx\s+)?build\b' -or
-            $text -match '(?i)\bdocker(\.exe)?\s+compose\b.*\bbuild\b' -or
-            $text -match '(?i)build-dms\.ps1.*\bDockerBuild\b'
-        })
+    # Options that take a separate value, so the token after them is that value and never a
+    # subcommand: -f build.yml must not be read as the build subcommand.
+    $valueOption = @('-f', '--file', '-p', '--project-name', '--project-directory', '--env-file', '--profile', '-c', '--context')
+
+    function Test-OneCommand([string]$Text) {
+        if ([string]::IsNullOrWhiteSpace($Text)) {
+            return $false
+        }
+
+        if ($Text -match '(?i)build-dms\.ps1.*\bDockerBuild\b') {
+            return $true
+        }
+
+        $token = @($Text -split '\s+' | Where-Object { -not [string]::IsNullOrEmpty($_) })
+        $dockerAt = -1
+
+        for ($i = 0; $i -lt $token.Count; $i++) {
+            if ($token[$i] -match '(?i)(^|[\\/])docker(\.exe)?$') {
+                $dockerAt = $i
+                break
+            }
+        }
+
+        if ($dockerAt -lt 0) {
+            return $false
+        }
+
+        # The first bare word after `docker`, skipping global options and their values, is the
+        # command: build, buildx, compose, pull and so on.
+        $next = $dockerAt + 1
+        while ($next -lt $token.Count -and $token[$next].StartsWith('-')) {
+            if ($token[$next] -in $valueOption) { $next++ }
+            $next++
+        }
+
+        if ($next -ge $token.Count) {
+            return $false
+        }
+
+        $command = $token[$next]
+
+        if ($command -ceq 'build') {
+            return $true
+        }
+
+        if ($command -ceq 'buildx') {
+            $sub = $next + 1
+            while ($sub -lt $token.Count -and $token[$sub].StartsWith('-')) { $sub++ }
+            return ($sub -lt $token.Count -and $token[$sub] -ceq 'build')
+        }
+
+        if ($command -ceq 'compose') {
+            $sub = $next + 1
+            while ($sub -lt $token.Count -and $token[$sub].StartsWith('-')) {
+                if ($token[$sub] -in $valueOption) { $sub++ }
+                $sub++
+            }
+
+            if ($sub -lt $token.Count -and $token[$sub] -ceq 'build') {
+                return $true
+            }
+
+            # `up --build` rebuilds before starting. Matched as a whole token so --no-build, which
+            # is the opposite instruction, cannot satisfy it.
+            return (@($token[($sub)..($token.Count - 1)] | Where-Object { $_ -ceq '--build' }).Count -gt 0)
+        }
+
+        return $false
+    }
+
+    $offending = @($Command | Where-Object { Test-OneCommand ([string]$_) })
 
     return [pscustomobject]@{
         Verified = ($offending.Count -eq 0)
