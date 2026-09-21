@@ -273,6 +273,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
+        url = await ReplaceIdsAsync(url);
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
