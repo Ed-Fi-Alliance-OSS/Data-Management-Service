@@ -3735,6 +3735,24 @@ public class ApplicationModuleTests
             AssertNoRawCharactersLogged();
         }
 
+        /// <summary>
+        /// Inherited by every insert fixture: no module log entry may carry the secret this
+        /// request generated, in its message or in the text of an exception logged beside it. The
+        /// captured secret is asserted non-empty first, so an arrangement that never reached the
+        /// provider cannot make the check vacuous.
+        /// </summary>
+        [Test]
+        public void It_logs_no_secret()
+        {
+            _createdClientSecret
+                .Should()
+                .NotBeNullOrEmpty("the module should have generated a secret for the provider");
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State} {entry.Exception}")
+                .Should()
+                .OnlyContain(entry => !entry.Contains(_createdClientSecret));
+        }
+
         protected void AssertNoRawCharactersLogged() =>
             _moduleLogger
                 .Entries.Select(entry => $"{entry.State}")
@@ -3749,7 +3767,9 @@ public class ApplicationModuleTests
 
     /// <summary>
     /// A provider failure during creation is answered with the structured bad-gateway contract,
-    /// and nothing is persisted or cleaned up, because no client was created.
+    /// and nothing is persisted. The module attempts no cleanup because a creation failure carries
+    /// no client identifier: whether a client was left behind, and its removal, belong to the
+    /// repository's own compensation.
     /// </summary>
     [TestFixture]
     public class Given_an_application_insert_whose_provider_creation_fails_at_the_identity_provider
