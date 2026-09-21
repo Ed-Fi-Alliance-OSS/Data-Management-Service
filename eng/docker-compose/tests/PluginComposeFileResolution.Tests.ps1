@@ -346,10 +346,11 @@ Describe 'Plugin compose file resolution' {
             $databaseOnlyStartup | Should -BeTrue
         }
 
-        It 'validates before the script reaches its first Docker invocation' {
-            # Position, measured from the parsed script: the whole compose set is built and every
-            # overlay validated before anything is handed to Docker, so a typo fails while the stack
-            # is untouched rather than halfway through a recreate.
+        It 'builds the whole compose set before the script''s own first Docker command' {
+            # Position only, measured from the parsed script, and deliberately narrow: this sees the
+            # launcher's literal `docker` commands and not the ones its imported modules make. That
+            # the launcher reaches Docker by no route at all before validating is the shim cases'
+            # claim, not this one's.
             $composeSet = Get-ComposeSetIfAst $_
             $firstDocker = (Get-ScriptAst $_).FindAll({
                     param($n) $n -is [Management.Automation.Language.CommandAst] -and
@@ -362,60 +363,131 @@ Describe 'Plugin compose file resolution' {
     }
 
     # The block-level cases above run the committed statements but not the hundreds of lines of
-    # environment resolution ahead of them, so on their own they cannot say that nothing earlier in
-    # the script has already mutated something. These run the launcher itself, as a process, with the
-    # ordinary environment file, and are the cases that make "before Docker side effects" a measured
-    # claim rather than a positional one. They are deliberately only the refusals: a run that got
-    # past validation would start a stack.
-    Context 'the whole launcher, run as a process' {
+    # environment resolution ahead of them, so on their own they cannot say whether anything earlier
+    # in the script already reached Docker. These run the launcher itself, in a child process whose
+    # only `docker` is a shim, so the question is answered without a daemon and without any risk that
+    # a regression in the hook lets a real stack come up mid-test. The shim records every invocation,
+    # answers a read-only query with an empty result, and throws on anything else.
+    Context 'the whole launcher, under a Docker shim' {
         BeforeAll {
             $script:e2eEnvironmentFile = Join-Path $script:composeRoot '.env.e2e'
+            $script:sentinel = 'DOCKER-SHIM-SENTINEL'
 
-            # The real CLI, resolved past the no-op `docker` function the block-level cases mock.
-            # These cases have to observe the actual container set, so a stub would make the
-            # comparison below prove nothing at all.
-            $script:dockerCli = (Get-Command docker -CommandType Application -ErrorAction SilentlyContinue |
-                    Select-Object -First 1)
+            # Written out rather than committed, because it is scaffolding for these cases alone.
+            # It dot-sources the real launcher, so what runs is the committed script and not a copy.
+            $script:shimWrapperBody = @'
+param(
+    [Parameter(Mandatory)] [string] $Launcher,
+    [Parameter(Mandatory)] [string] $EnvironmentFile,
+    [Parameter(Mandatory)] [string] $CallLog,
+    [Parameter(Mandatory)] [string] $ResultFile
+)
 
-            function script:Invoke-Launcher {
+$ErrorActionPreference = 'Stop'
+$global:DmsShimCallLog = $CallLog
+
+# Global scope, so module code the launcher imports resolves to it as well: a module looks up an
+# unqualified command in its own session state and then in the global one.
+function global:docker {
+    $invocation = ($args -join ' ')
+    Add-Content -LiteralPath $global:DmsShimCallLog -Value $invocation
+
+    # Fail closed. Anything not recognised as a query is treated as a mutation, so a command this
+    # list has never seen stops the launcher rather than being waved through.
+    $readOnly =
+        ($args[0] -in @('ps', 'version', 'info', 'inspect')) -or
+        ($args[0] -eq 'compose' -and $args[1] -in @('config', 'ps')) -or
+        ($args[0] -in @('image', 'volume', 'network', 'system') -and $args[1] -in @('ls', 'inspect'))
+
+    if (-not $readOnly) {
+        throw "DOCKER-SHIM-SENTINEL: $invocation"
+    }
+
+    $global:LASTEXITCODE = 0
+    return @()
+}
+
+$launcherError = '<the launcher returned without throwing>'
+try {
+    . $Launcher -EnvironmentFile $EnvironmentFile
+}
+catch {
+    $launcherError = $_.Exception.Message
+}
+
+# Read before the probe below adds to it, so the recorded calls are the launcher's alone.
+$launcherCalls = @()
+if (Test-Path -LiteralPath $CallLog) {
+    $launcherCalls = @(Get-Content -LiteralPath $CallLog)
+}
+
+# The shim has to still be the thing answering after the launcher has imported half a dozen
+# modules with -Force; if one of them had replaced it, every assertion above would be vacuous.
+$probeError = '<the probe reached no shim>'
+try {
+    docker network create shim-liveness-probe
+}
+catch {
+    $probeError = $_.Exception.Message
+}
+
+[pscustomobject]@{
+    LauncherError = $launcherError
+    LauncherCalls = $launcherCalls
+    ProbeError    = $probeError
+} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultFile -Encoding utf8
+'@
+
+            function script:Invoke-LauncherUnderShim {
                 param(
                     [Parameter(Mandatory)] [string] $Name,
-                    [Parameter(Mandatory)] [string] $PluginComposeFiles
+                    [Parameter(Mandatory)] [string] $PluginComposeFiles,
+                    [string] $MountSource
                 )
 
-                $environmentFile = Join-Path ([IO.Path]::GetTempPath()) "dms1502-$([guid]::NewGuid().ToString('N')).env"
-                $lines = @(Get-Content -LiteralPath $script:e2eEnvironmentFile)
-                $lines += "DMS_PLUGINS_COMPOSE_FILES=$PluginComposeFiles"
-                Set-Content -LiteralPath $environmentFile -Value $lines -Encoding utf8
+                $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-$([guid]::NewGuid().ToString('N'))"
+                New-Item -ItemType Directory -Path $scratch -Force | Out-Null
 
                 try {
-                    if ($null -eq $script:dockerCli) {
-                        throw 'The Docker CLI is not on PATH, so this test cannot tell whether the launcher created a container. It fails rather than skipping, because a silent skip would retire the only measured evidence that validation precedes every side effect.'
+                    $wrapper = Join-Path $scratch 'run-launcher-under-shim.ps1'
+                    Set-Content -LiteralPath $wrapper -Value $script:shimWrapperBody -Encoding utf8
+
+                    $callLog = Join-Path $scratch 'docker-calls.log'
+                    New-Item -ItemType File -Path $callLog -Force | Out-Null
+                    $resultFile = Join-Path $scratch 'result.json'
+
+                    $environmentFile = Join-Path $scratch 'launcher.env'
+                    $lines = @(Get-Content -LiteralPath $script:e2eEnvironmentFile)
+                    $lines += "DMS_PLUGINS_COMPOSE_FILES=$PluginComposeFiles"
+                    if (-not [string]::IsNullOrWhiteSpace($MountSource)) {
+                        $lines += "DMS_PLUGINS_MOUNT_SOURCE=$MountSource"
+                    }
+                    Set-Content -LiteralPath $environmentFile -Value $lines -Encoding utf8
+
+                    & pwsh -NoProfile -File $wrapper `
+                        -Launcher (Join-Path $script:composeRoot $Name) `
+                        -EnvironmentFile $environmentFile `
+                        -CallLog $callLog `
+                        -ResultFile $resultFile 2>&1 | Out-Null
+
+                    if (-not (Test-Path -LiteralPath $resultFile)) {
+                        throw "The shim wrapper produced no result for $Name, so nothing below can be asserted."
                     }
 
-                    $before = @(& $script:dockerCli ps -a --format '{{.Names}}') | Sort-Object
-                    if ($LASTEXITCODE -ne 0) {
-                        throw 'docker ps failed, so this test cannot tell whether the launcher created a container.'
-                    }
-
-                    $output = & pwsh -NoProfile -File (Join-Path $script:composeRoot $Name) -EnvironmentFile $environmentFile 2>&1
-                    $exitCode = $LASTEXITCODE
-                    $after = @(& $script:dockerCli ps -a --format '{{.Names}}') | Sort-Object
-
+                    $result = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
                     return [pscustomobject]@{
-                        ExitCode         = $exitCode
-                        Output           = ($output | Out-String)
-                        ContainersBefore = $before
-                        ContainersAfter  = $after
+                        LauncherError = [string]$result.LauncherError
+                        LauncherCalls = @($result.LauncherCalls)
+                        ProbeError    = [string]$result.ProbeError
                     }
                 }
                 finally {
-                    Remove-Item -LiteralPath $environmentFile -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
                 }
             }
         }
 
-        It '<Name> refuses <Case> before creating any container' -ForEach @(
+        It '<Name> refuses <Case> without invoking Docker at all' -ForEach @(
             foreach ($name in @('start-local-dms.ps1', 'start-published-dms.ps1')) {
                 @{
                     Name    = $name
@@ -431,16 +503,41 @@ Describe 'Plugin compose file resolution' {
                 }
             }
         ) {
-            $run = Invoke-Launcher -Name $Name -PluginComposeFiles $Value
+            $run = Invoke-LauncherUnderShim -Name $Name -PluginComposeFiles $Value
 
-            $run.ExitCode | Should -Not -Be 0
-            # The message is the launcher's own rule, not a raw Docker or Compose error surfacing
-            # after something was already attempted.
-            $run.Output | Should -Match ([regex]::Escape($Message))
-            $run.Output | Should -Not -Match 'Using plugin Docker Compose file'
-            # The whole container set, not a name filter: a launcher that had got as far as Compose
-            # would leave something behind, and this notices whatever it is.
-            Compare-Object $run.ContainersBefore $run.ContainersAfter | Should -BeNullOrEmpty
+            # The launcher's own rule, not a Docker or Compose error surfacing after an attempt.
+            $run.LauncherError | Should -Match ([regex]::Escape($Message))
+            # Not merely "no mutation": the launcher reaches Docker neither directly nor through the
+            # CDC lifecycle module it imports before the compose set is built.
+            $run.LauncherCalls | Should -HaveCount 0
+            # The shim answered afterwards, so its silence during the launcher means the launcher was
+            # silent, not that something had replaced it.
+            $run.ProbeError | Should -Match $script:sentinel
+        }
+
+        It '<_> reaches a Docker mutation once the same input validates' -ForEach @(
+            'start-local-dms.ps1', 'start-published-dms.ps1'
+        ) {
+            # The control the refusals above need. Without it, "no Docker calls" could mean the hook
+            # is doing its job or equally that the launcher never gets near Docker for some unrelated
+            # reason, and the two look identical. Here the committed overlays validate, the launcher
+            # carries on, and the shim traps the first mutation, which is what the refusal prevents.
+            $mountSource = Join-Path ([IO.Path]::GetTempPath()) "dms1502-mount-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $mountSource -Force | Out-Null
+
+            try {
+                $run = Invoke-LauncherUnderShim `
+                    -Name $_ `
+                    -PluginComposeFiles 'plugins-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml' `
+                    -MountSource $mountSource
+
+                $run.LauncherError | Should -Match $script:sentinel
+                $run.LauncherCalls.Count | Should -BeGreaterThan 0
+                $run.ProbeError | Should -Match $script:sentinel
+            }
+            finally {
+                Remove-Item -LiteralPath $mountSource -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
