@@ -171,13 +171,10 @@ public class KeycloakClientRepository(
                 );
             }
 
-            ClientCreateResult? provisioningFailure = await ProvisionServiceAccountRoleAsync(
-                createdClientUuid,
-                clientId,
-                clientRole
-            );
-
-            if (provisioningFailure is not null)
+            if (
+                await ProvisionServiceAccountRoleAsync(createdClientUuid, clientId, clientRole) is
+                { } provisioningFailure
+            )
             {
                 return await CompensateFailedProvisioningAsync(
                     createdClientUuid,

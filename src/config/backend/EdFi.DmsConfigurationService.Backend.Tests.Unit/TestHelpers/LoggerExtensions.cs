@@ -33,14 +33,25 @@ public static class LoggerExtensions
     }
 
     /// <summary>
-    /// Every formatted message the logger recorded, for assertions about what must never appear
-    /// in any entry.
+    /// Every formatted message the logger recorded, for assertions about message content.
     /// </summary>
     public static IReadOnlyList<string> LoggedMessages<T>(this ILogger<T> logger) =>
         [
             .. Fake.GetCalls(logger)
                 .Where(call => call.Method.Name == "Log")
                 .Select(call => call.Arguments.Get<object>(2)?.ToString() ?? string.Empty),
+        ];
+
+    /// <summary>
+    /// Every recorded entry as its formatted message together with the text of any exception
+    /// logged alongside it. An exception travels as its own argument, so a message-only view
+    /// cannot support a claim about what no entry may contain.
+    /// </summary>
+    public static IReadOnlyList<string> LoggedEntryTexts<T>(this ILogger<T> logger) =>
+        [
+            .. Fake.GetCalls(logger)
+                .Where(call => call.Method.Name == "Log")
+                .Select(call => $"{call.Arguments.Get<object>(2)} {call.Arguments.Get<Exception>(3)}"),
         ];
 
     private static bool IsLogEntry(

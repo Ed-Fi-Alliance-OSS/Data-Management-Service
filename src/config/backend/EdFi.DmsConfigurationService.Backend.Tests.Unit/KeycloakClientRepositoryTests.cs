@@ -1704,10 +1704,11 @@ public class KeycloakClientRepositoryTests
         }
 
         /// <summary>
-        /// No log entry may carry the client secret, whatever else it reports.
+        /// No log entry may carry the client secret, in its message or in the text of an
+        /// exception logged beside it.
         /// </summary>
         protected void AssertNoSecretLogged() =>
-            _logger.LoggedMessages().Should().OnlyContain(message => !message.Contains(ClientSecret));
+            _logger.LoggedEntryTexts().Should().OnlyContain(entry => !entry.Contains(ClientSecret));
     }
 
     [TestFixture]
@@ -2037,6 +2038,9 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     /// <summary>
@@ -2089,6 +2093,9 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     [TestFixture]
@@ -2118,6 +2125,9 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_logs_the_role_assignment_phase() => _logger.VerifyLogError("role-assignment");
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     [TestFixture]
@@ -2145,6 +2155,9 @@ public class KeycloakClientRepositoryTests
         [Test]
         public void It_logs_the_service_account_lookup_phase() =>
             _logger.VerifyLogError("service-account-lookup");
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     [TestFixture]
@@ -2215,7 +2228,16 @@ public class KeycloakClientRepositoryTests
         [SetUp]
         public async Task Act()
         {
+            // The client is already gone when the deletion runs, which is what the provider's 404
+            // reports. Cleanup is idempotent, so the request still ends in the state it wanted.
             A.CallTo(() => _keycloakClientFacade.DeleteClientAsync("edfi", A<string>.Ignored))
+                .Invokes(call =>
+                {
+                    string requested = call.GetArgument<string>(1)!;
+                    _providerClients.Remove(requested);
+                    _deletedUuids.Add(requested);
+                    _callOrder.Add("delete-client");
+                })
                 .Throws(CreateFlurlHttpException(HttpStatusCode.NotFound, HttpMethod.Delete));
 
             await ActCreateAsync();
@@ -2226,12 +2248,24 @@ public class KeycloakClientRepositoryTests
             _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
 
         [Test]
+        public void It_targets_the_client_it_created() => _deletedUuids.Should().Equal(CreatedUuid());
+
+        [Test]
+        public void It_leaves_no_client_at_the_provider() => _providerClients.Should().BeEmpty();
+
+        [Test]
         public void It_logs_the_absent_client_as_a_warning() =>
             _logger.VerifyLog(LogLevel.Warning, "was already absent during cleanup");
 
         [Test]
         public void It_reports_no_unconfirmed_cleanup() =>
             _logger.VerifyNoLog(LogLevel.Error, "Could not confirm deletion");
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     [TestFixture]
@@ -2300,6 +2334,9 @@ public class KeycloakClientRepositoryTests
         [Test]
         public void It_logs_the_unconfirmed_cleanup() =>
             _logger.VerifyLogError("Could not confirm deletion of provider client");
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     /// <summary>
@@ -2374,6 +2411,9 @@ public class KeycloakClientRepositoryTests
                 )
                 .MustHaveHappened();
         }
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     /// <summary>
@@ -2417,6 +2457,9 @@ public class KeycloakClientRepositoryTests
 
         [Test]
         public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     /// <summary>
@@ -2518,6 +2561,9 @@ public class KeycloakClientRepositoryTests
             _logger.VerifyLogError("creation outcome unconfirmed");
             _logger.VerifyNoLog(LogLevel.Error, "creation not attempted");
         }
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
     }
 
     [TestFixture]
