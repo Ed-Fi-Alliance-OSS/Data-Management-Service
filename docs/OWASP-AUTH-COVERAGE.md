@@ -93,29 +93,23 @@ provider scheme.
 
 #### A `200 OK` from `/connect/revoke` does not confirm revocation
 
-Every outcome of the revocation endpoint is an identical bodyless `200 OK` —
-success, wrong owner, unverifiable token, expired token, and (in Keycloak mode) not
-attempted at all. RFC 7009 requires this, and it is what stops the endpoint from
-becoming an oracle for token existence and ownership, but it also means the status
-code carries no confirmation. **Incident response must not treat `200 OK` as proof
-that a leaked credential was contained.**
+Every outcome of the revocation endpoint is an identical bodyless `200 OK` — success,
+wrong owner, unverifiable token, expired token, and (in Keycloak mode) not attempted at
+all. RFC 7009 requires this, and it is what stops the endpoint from becoming an oracle
+for token existence and ownership, but it also means the status code carries no
+confirmation. **Incident response must not treat `200 OK` as proof that a leaked
+credential was contained** — confirm with `POST /connect/introspect`, which reports
+`{"active": false}` only once revocation has actually taken effect.
 
-Confirm with introspection instead: `POST /connect/introspect` with the same token
-reports `{"active": false}` once revocation has taken effect, and `{"active": true}`
-if it has not. Only the introspection result is evidence.
+This is a live operational concern rather than a theoretical one, because at least one
+known defect produces a silent no-op for a legitimate client. For the full list of no-op
+conditions, the confirmation procedure, and that defect, see
+[CS-AUTH.md § Confirming that a revocation actually took effect](../reference/design/configuration-service/CS-AUTH.md#confirming-that-a-revocation-actually-took-effect),
+which is the canonical description.
 
-The gap is reachable, not hypothetical. A target token whose `client_id` differs
-from the caller's only by letter case fails the case-sensitive ownership comparison
-even though both tokens were issued to the same registered client. Such a pair is
-possible because a token carries the `client_id` casing supplied by the client at
-`/connect/token` rather than the stored canonical casing, while client lookup is
-case-insensitive under SQL Server's default collation. An operator relying on the
-`200` would wrongly believe a live credential had been revoked.
-
-Note also that an expired target token is left with its stored status untouched
-rather than being marked `revoked`, so a `revoked`/`valid` reading taken straight
-from `dmscs.OpenIddictToken` or an admin status view does not by itself indicate
-whether a token is still usable.
+Reading stored status directly is not a substitute either: an expired target token keeps
+its stored status rather than being marked `revoked`, so a `valid` reading in
+`dmscs.OpenIddictToken` or an admin status view does not mean the token is still usable.
 
 ### Keycloak / external IdP — delegated to the IdP
 
@@ -215,16 +209,30 @@ The behaviors above are exercised by automated tests:
   presentation (reusable while valid) and **rejects** expired (lifetime check, before
   the status lookup), revoked, unknown-`jti`, missing-`jti`, and malformed-`jti`
   tokens; `RevokeTokenAsync` delegates revocation for a valid `jti` owned by the
-  calling client and is a no-op — repository never called — for a missing/malformed
-  `jti`, a token owned by another client, a token carrying no `client_id`, an absent
-  caller `client_id`, and a token forged to name the caller while embedding another
-  `jti`. The owned-token case also asserts the stored status is never queried,
-  pinning revocation as idempotent for an already-revoked token.
+  calling client and is a no-op — repository never called — for every other case:
+  a missing `jti`, a malformed `jti`, a token owned by another client, a token
+  carrying no `client_id`, a token carrying an empty `client_id`, an absent caller
+  `client_id`, a token whose `client_id` differs from the caller's **only by letter
+  case** (pinning the comparison as case-sensitive), a token from **another issuer**,
+  a token for **another audience**, a token **forged** to name the caller while
+  embedding another `jti`, and an **expired** token owned by the caller. The
+  issuer and audience fixtures sign with the service's own registered key, so they
+  cannot pass on signature verification alone. The owned-token case also asserts the
+  stored status is never queried, pinning revocation as idempotent for an
+  already-revoked token. Two further fixtures assert the **log severity** split:
+  an expired token produces no `Warning` entry (Debug only), while an untrusted
+  token does, so routine expiry cannot bury forgery signal.
 - CMS — `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/Modules/IdentityModuleTests.cs`:
-  `/connect/revoke` returns `401` to an unauthenticated caller, `400` when the
-  `token` form field is missing, and `200 OK` for an owned token (revoked), a token
-  owned by another client (not revoked), a forged token (not revoked), and a
-  malformed token (not revoked).
+  `/connect/revoke` returns `401` to an unauthenticated caller and to one presenting
+  an invalid bearer token, `400` when the `token` form field is missing, and `200 OK`
+  for an owned token (revoked), a token owned by another client (not revoked), a
+  forged token (not revoked), and a malformed token (not revoked). A caller holding
+  only an ordinary client-credentials principal — `client_id` and a non-admin scope,
+  no service-role claim — still succeeds, pinning the route's authorization as a bare
+  authenticated check rather than a named policy; a companion fixture arms that one by
+  driving the same role-less principal at a genuinely `ServicePolicy`-gated route and
+  observing `403`. A final fixture asserts `/connect/register`, `/connect/token` and
+  `/connect/introspect` stayed anonymous under the same authentication harness.
 
 **End-to-end tests**
 

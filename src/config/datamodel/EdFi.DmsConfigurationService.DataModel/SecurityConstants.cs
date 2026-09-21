@@ -12,7 +12,15 @@ public static class SecurityConstants
     /// <summary>
     /// Claim type naming the OAuth client a token was issued to. Self-contained (OpenIddict) and
     /// Keycloak-issued tokens both use this name, so the revocation ownership check needs no
-    /// per-provider branching. Treat any change here as a breaking change to that check.
+    /// per-provider branching.
+    ///
+    /// Changing this value is a breaking change. It reaches the claim minted by
+    /// <c>JwtTokenGenerator</c>, the revocation ownership check, <c>GetClientId()</c> and
+    /// <c>AuditContext</c>. Two things it deliberately does not reach: the claim name in
+    /// Keycloak-issued tokens, which Keycloak controls, so a change here would break the
+    /// ownership comparison in Keycloak mode; and the <c>client_id</c> OAuth *request parameter*
+    /// read from the form body in <c>GetAccessTokenAsync</c>, which is fixed by RFC 6749 and is
+    /// kept a separate literal so that renaming the claim cannot rename the wire parameter.
     /// </summary>
     public const string ClientIdClaimType = "client_id";
 }

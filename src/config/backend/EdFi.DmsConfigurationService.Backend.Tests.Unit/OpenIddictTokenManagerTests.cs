@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -46,13 +47,24 @@ public class OpenIddictTokenManagerTests
     /// Builds a token manager configured with the test issuer/audience so that
     /// ValidateTokenAsync can verify tokens produced by the helpers below.
     /// </summary>
-    private OpenIddictTokenManager CreateConfiguredTokenManager() =>
+    private OpenIddictTokenManager CreateConfiguredTokenManager(
+        ILogger<OpenIddictTokenManager>? logger = null
+    ) =>
         new(
             Options.Create(new IdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
-            NullLogger<OpenIddictTokenManager>.Instance,
+            logger ?? NullLogger<OpenIddictTokenManager>.Instance,
             _secretHasher,
             _tokenRepository
         );
+
+    /// <summary>
+    /// Counts entries the manager wrote at a given level. The logging extension methods funnel
+    /// into <see cref="ILogger.Log{TState}"/>, whose first argument is the level, so intercepting
+    /// that one method observes every call regardless of which extension produced it.
+    /// </summary>
+    private static int LogCountAt(ILogger<OpenIddictTokenManager> logger, LogLevel level) =>
+        Fake.GetCalls(logger)
+            .Count(call => call.Method.Name == nameof(ILogger.Log) && call.GetArgument<LogLevel>(0) == level);
 
     /// <summary>
     /// Creates an RSA signing key plus the matching public key bytes (SubjectPublicKeyInfo)
@@ -453,7 +465,7 @@ public class OpenIddictTokenManagerTests
     /// Registers the supplied public key as the only active key, so tokens signed with its
     /// private half pass verification.
     /// </summary>
-    private void CreateActivePublicKey(string keyId, byte[] publicKeySpki) =>
+    private void StubActivePublicKey(string keyId, byte[] publicKeySpki) =>
         A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
             .Returns(
                 new[]
@@ -472,7 +484,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
@@ -519,7 +531,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -555,7 +567,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -591,7 +603,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, _) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             // Signed with a key the service does not know, but claiming the caller's client_id.
             // The "kid" header names the service's real key so the failure is a genuine
@@ -633,7 +645,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(signingKey, new[] { new Claim("client_id", OwnerClientId) });
 
@@ -662,7 +674,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -698,7 +710,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -737,7 +749,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -776,7 +788,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -816,7 +828,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -853,7 +865,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -894,7 +906,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            CreateActivePublicKey(keyId, publicKeySpki);
+            StubActivePublicKey(keyId, publicKeySpki);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -919,6 +931,84 @@ public class OpenIddictTokenManagerTests
         public void It_does_not_call_the_repository()
         {
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+        }
+    }
+
+    // An expired token and a forged one both fail verification, but they mean completely
+    // different things: the first is routine, the second is the attack signal this change
+    // exists to surface. These two fixtures assert the observed log levels differ, so the
+    // distinction cannot silently regress into a single undifferentiated severity.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_LoggingForAnExpiredOwnedToken : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                },
+                expired: true
+            );
+
+            await CreateConfiguredTokenManager(_fakeLogger).RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_does_not_log_a_warning()
+        {
+            LogCountAt(_fakeLogger, LogLevel.Warning).Should().Be(0);
+        }
+
+        [Test]
+        public void It_logs_at_debug_instead()
+        {
+            LogCountAt(_fakeLogger, LogLevel.Debug).Should().BeGreaterThan(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_LoggingForAnUntrustedToken : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, _) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+
+            // Signed with a key the service does not hold, but naming its real key in "kid" so
+            // the rejection comes from the signature check rather than an unresolved key id.
+            var (_, _, attackerKey) = CreateSigningKey();
+            attackerKey.KeyId = keyId;
+
+            string token = CreateSignedToken(
+                attackerKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                    new Claim("client_id", OwnerClientId),
+                }
+            );
+
+            await CreateConfiguredTokenManager(_fakeLogger).RevokeTokenAsync(token, OwnerClientId);
+        }
+
+        [Test]
+        public void It_logs_a_warning()
+        {
+            LogCountAt(_fakeLogger, LogLevel.Warning).Should().BeGreaterThan(0);
         }
     }
 }
