@@ -116333,6 +116333,7 @@
       "table_name": "Document",
       "index_name": "IX_Document_CreatedByOwnershipTokenId",
       "is_unique": false,
+      "filter": "(\u0022CreatedByOwnershipTokenId\u0022 IS NOT NULL)",
       "columns": [
         "CreatedByOwnershipTokenId"
       ]

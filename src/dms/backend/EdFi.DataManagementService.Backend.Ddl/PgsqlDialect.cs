@@ -58,6 +58,9 @@ public sealed class PgsqlDialect : SqlDialectBase
     }
 
     /// <inheritdoc />
+    public override string RenderScriptPrologue() => "";
+
+    /// <inheritdoc />
     public override string CreateSchemaIfNotExists(DbSchemaName schema)
     {
         return $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schema.Value)};";
@@ -96,7 +99,8 @@ public sealed class PgsqlDialect : SqlDialectBase
         string indexName,
         IReadOnlyList<DbColumnName> columns,
         bool isUnique = false,
-        IReadOnlyList<DbColumnName>? includeColumns = null
+        IReadOnlyList<DbColumnName>? includeColumns = null,
+        DbColumnName? notNullFilterColumn = null
     )
     {
         ArgumentNullException.ThrowIfNull(indexName);
@@ -115,7 +119,11 @@ public sealed class PgsqlDialect : SqlDialectBase
             ? $" INCLUDE ({string.Join(", ", includeColumns.Select(c => QuoteIdentifier(c.Value)))})"
             : "";
 
-        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {quotedIndex} ON {QualifyTable(table)} ({columnList}){includeClause};";
+        var filterClause = notNullFilterColumn is { } f
+            ? $" WHERE {QuoteIdentifier(f.Value)} IS NOT NULL"
+            : "";
+
+        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {quotedIndex} ON {QualifyTable(table)} ({columnList}){includeClause}{filterClause};";
     }
 
     /// <inheritdoc />

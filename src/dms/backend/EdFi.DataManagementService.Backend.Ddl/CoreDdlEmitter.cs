@@ -1039,7 +1039,8 @@ public sealed class CoreDdlEmitter
             _dialect.CreateIndexIfNotExists(
                 _documentTable,
                 "IX_Document_CreatedByOwnershipTokenId",
-                [Col("CreatedByOwnershipTokenId")]
+                [Col("CreatedByOwnershipTokenId")],
+                notNullFilterColumn: Col("CreatedByOwnershipTokenId")
             )
         );
         writer.AppendLine();
