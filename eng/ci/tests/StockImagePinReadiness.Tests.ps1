@@ -82,27 +82,126 @@ Describe 'Stock image pin readiness' {
         }
     }
 
-    Context 'the committed pin, which ships with nothing filled in' {
-        It 'reports not ready on a schedule, and says the skip is not evidence' {
-            $result = & $script:script -PinFile $script:committedPin -EventName 'schedule' -OutputPath ''
+    # Filling the real pin is a required step of this ticket, so nothing here may assume the
+    # committed document is still pending. These assert what stays true across that change: that
+    # whichever legitimate state it is in, the validator agrees with it. The pending-specific
+    # behaviour is asserted against a synthetic document below, where it belongs.
+    Context 'the committed pin document' {
+        BeforeAll {
+            $script:committed = Get-Content -LiteralPath $script:committedPin -Raw | ConvertFrom-Json
+        }
 
-            ($result | Where-Object { $_ -like 'ready=*' }) | Should -BeExactly 'ready=false'
-            ($result | Where-Object { $_ -like 'reason=*' }) | Should -Match 'not evidence'
+        It 'is in one of the two legitimate states' {
+            $script:committed.status | Should -BeIn @('pending', 'published')
+        }
+
+        It 'validates in whichever state it is actually in' {
+            if ($script:committed.status -ceq 'pending') {
+                # Pending: a schedule reports not-ready without running the proof, and a run someone
+                # asked for by hand fails rather than reporting success it did not earn.
+                $result = & $script:script -PinFile $script:committedPin -EventName 'schedule' -OutputPath ''
+                ($result | Where-Object { $_ -like 'ready=*' }) | Should -BeExactly 'ready=false'
+                ($result | Where-Object { $_ -like 'reason=*' }) | Should -Match 'not evidence'
+
+                { & $script:script -PinFile $script:committedPin -EventName 'workflow_dispatch' -OutputPath '' } |
+                    Should -Throw '*still pending*'
+
+                # The anti-fabrication property while pending: no release-specific value is guessed.
+                # The two repository names are not release-specific and are legitimately present.
+                $script:committed.edFiApi.tag | Should -BeNullOrEmpty
+                $script:committed.edFiApi.digest | Should -BeNullOrEmpty
+                $script:committed.configurationService.digest | Should -BeNullOrEmpty
+                $script:committed.release.githubRelease | Should -BeNullOrEmpty
+            }
+            else {
+                # Published: it has to satisfy every rule, in both events. No allowance is made for
+                # it being the committed document rather than a synthetic one.
+                foreach ($eventName in @('schedule', 'workflow_dispatch')) {
+                    $result = & $script:script -PinFile $script:committedPin -EventName $eventName -OutputPath ''
+                    ($result | Where-Object { $_ -like 'ready=*' }) | Should -BeExactly 'ready=true'
+                }
+            }
+        }
+
+        It 'names the two repositories this proof is about, in either state' {
+            $script:committed.edFiApi.repository | Should -BeExactly 'edfialliance/ed-fi-api'
+            $script:committed.configurationService.repository |
+                Should -BeExactly 'edfialliance/ed-fi-api-configuration-service'
+        }
+
+        It 'passes this same path once its release-specific values are filled in' {
+            # The committed document's own shape, published rather than retyped, so this proves the
+            # file on disk can reach a valid published state through the validator it ships with.
+            $filled = Get-Content -LiteralPath $script:committedPin -Raw | ConvertFrom-Json
+            $filled.status = 'published'
+            $filled.edFiApi.tag = '8.0.1-alpha.0.7'
+            $filled.edFiApi.digest = 'sha256:' + ('a' * 64)
+            $filled.configurationService.digest = 'sha256:' + ('b' * 64)
+            $filled.release.githubRelease = 'dms-pre-8.0.1-alpha.0.7'
+            $filled.release.sourceCommit = 'c' * 40
+            $filled.release.publicationRunUrl = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1'
+            $filled.provisioning.schemaToolsPackageVersion = '8.0.1-alpha.0.7'
+            $filled.provisioning.dataStandardVersion = '5.2'
+            $filled.contracts.pluginsPackageVersion = '1.0.0'
+            $filled.contracts.customValidationPackageVersion = '1.0.0'
+
+            (Invoke-Readiness -Pin $filled -EventName 'workflow_dispatch').ready | Should -BeExactly 'true'
+        }
+
+        It 'is still rejected through this path when a value is malformed' {
+            # The committed document gets no special treatment: the validator is not weakened for it.
+            $broken = Get-Content -LiteralPath $script:committedPin -Raw | ConvertFrom-Json
+            $broken.status = 'published'
+            $broken.edFiApi.tag = 'pre'
+
+            { Invoke-Readiness -Pin $broken -EventName 'schedule' } | Should -Throw
+        }
+    }
+
+    Context 'a pending pin' {
+        BeforeAll {
+            # Synthetic, so the cases below keep asserting pending behaviour after the real pin is
+            # filled in. Repository names are not release-specific and stay, as they do on disk.
+            function script:New-PendingPin {
+                return [ordered]@{
+                    status               = 'pending'
+                    edFiApi              = [ordered]@{ repository = 'edfialliance/ed-fi-api'; tag = $null; digest = $null }
+                    configurationService = [ordered]@{ repository = 'edfialliance/ed-fi-api-configuration-service'; digest = $null }
+                    release              = [ordered]@{ githubRelease = $null; sourceCommit = $null; publicationRunUrl = $null }
+                    provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; dataStandardVersion = $null }
+                    contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null }
+                }
+            }
+        }
+
+        It 'reports not ready on a schedule, and says the skip is not evidence' {
+            $result = Invoke-Readiness -Pin (New-PendingPin) -EventName 'schedule'
+
+            $result.ready | Should -BeExactly 'false'
+            $result.reason | Should -Match 'not evidence'
         }
 
         It 'fails a run someone asked for by hand rather than reporting success' {
-            { & $script:script -PinFile $script:committedPin -EventName 'workflow_dispatch' -OutputPath '' } |
+            { Invoke-Readiness -Pin (New-PendingPin) -EventName 'workflow_dispatch' } |
                 Should -Throw '*still pending*'
         }
 
-        It 'ships no fabricated tag or digest' {
-            $pin = Get-Content -LiteralPath $script:committedPin -Raw | ConvertFrom-Json
+        It 'writes ready and reason to the output file the workflow reads' {
+            $pinFile = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            $outputPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-out-$([guid]::NewGuid().ToString('N')).txt"
+            Set-Content -LiteralPath $pinFile -Value ((New-PendingPin) | ConvertTo-Json -Depth 6) -Encoding utf8
 
-            $pin.status | Should -BeExactly 'pending'
-            $pin.edFiApi.tag | Should -BeNullOrEmpty
-            $pin.edFiApi.digest | Should -BeNullOrEmpty
-            $pin.configurationService.digest | Should -BeNullOrEmpty
-            $pin.release.githubRelease | Should -BeNullOrEmpty
+            try {
+                & $script:script -PinFile $pinFile -EventName 'schedule' -OutputPath $outputPath | Out-Null
+
+                $written = Get-Content -LiteralPath $outputPath
+                $written[0] | Should -BeExactly 'ready=false'
+                $written[1] | Should -Match '^reason=.+'
+            }
+            finally {
+                Remove-Item -LiteralPath $pinFile -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
@@ -223,18 +322,21 @@ Describe 'Stock image pin readiness' {
         }
     }
 
-    Context 'the output mechanism' {
-        It 'writes ready and reason to the output file the workflow reads' {
+    Context 'the output mechanism on a published pin' {
+        It 'writes ready and the pinned reference to the output file the workflow reads' {
+            $pinFile = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
             $outputPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-out-$([guid]::NewGuid().ToString('N')).txt"
+            Set-Content -LiteralPath $pinFile -Value ((New-PublishedPin) | ConvertTo-Json -Depth 6) -Encoding utf8
 
             try {
-                & $script:script -PinFile $script:committedPin -EventName 'schedule' -OutputPath $outputPath | Out-Null
+                & $script:script -PinFile $pinFile -EventName 'schedule' -OutputPath $outputPath | Out-Null
 
                 $written = Get-Content -LiteralPath $outputPath
-                $written[0] | Should -BeExactly 'ready=false'
-                $written[1] | Should -Match '^reason=.+'
+                $written[0] | Should -BeExactly 'ready=true'
+                $written[1] | Should -Match '^reason=.*8\.0\.1-alpha\.0\.7'
             }
             finally {
+                Remove-Item -LiteralPath $pinFile -Force -ErrorAction SilentlyContinue
                 Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
             }
         }
