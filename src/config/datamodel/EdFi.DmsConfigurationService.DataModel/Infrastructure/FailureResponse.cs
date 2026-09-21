@@ -19,6 +19,7 @@ public static class FailureResponse
 
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
+    private static readonly string _tooManyTokensType = $"{_unauthorizedType}:too-many-tokens";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
@@ -67,6 +68,23 @@ public static class FailureResponse
             status: 401,
             correlationId: correlationId,
             errors: errors
+        );
+
+    /// <summary>
+    /// 429 response for a client that already holds the configured maximum number of active access
+    /// tokens. The limit is named in <c>errors</c> so the caller can see what it is up against.
+    /// </summary>
+    public static JsonNode ForTooManyTokens(int limit, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: "The caller has authenticated too many times in too short of a time period.",
+            type: _tooManyTokensType,
+            title: "Too Many Tokens",
+            status: 429,
+            correlationId: correlationId,
+            errors:
+            [
+                $"Too many access tokens have been requested (limit is {limit}). Access tokens should be reused until they expire.",
+            ]
         );
 
     public static JsonNode ForForbidden(

@@ -103,6 +103,19 @@ internal static class FailureResults
         );
     }
 
+    /// <summary>
+    /// Structured 429 <c>urn:ed-fi:api:security:authentication:too-many-tokens</c> response for a
+    /// client that already holds <paramref name="limit"/> active access tokens.
+    /// </summary>
+    public static IResult TooManyTokens(int limit, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForTooManyTokens(limit, correlationId),
+            contentType: _errorContentType,
+            statusCode: 429
+        );
+    }
+
     // invalid_client and unauthorized_client both map to the same 401 contract.
     public static IResult InvalidClient(string detail, string correlationId) =>
         Unauthorized(detail, correlationId);
