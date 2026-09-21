@@ -65,6 +65,9 @@ The default token lifetime is 30 minutes (`IdentityOptions.cs:26`), so a client 
 one token per lifetime accrues about 48 rows per day, and nothing limits how many grants a
 client may request.
 Nothing in the schema or code imposes a ceiling other than the cleanup mechanism described below.
+DMS-1459 later added a configurable per-client ceiling on active tokens, so that baseline no
+longer describes current builds; see `IdentitySettings.BearerTokenPerClientLimit` in
+`docs/CONFIGURATION.md`.
 
 ### Keycloak Mode
 

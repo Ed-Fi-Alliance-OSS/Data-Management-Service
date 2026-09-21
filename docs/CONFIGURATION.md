@@ -713,6 +713,17 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a single client may hold (self-contained only). A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement. | _(not used)_ | `5` |
+
+`BearerTokenPerClientLimit` counts active tokens per client id, not per process, so size it
+against the number of processes sharing a client id. DMS caches its own Configuration Service
+token for 1500 seconds against the default 1800-second token lifetime, so each DMS replica
+normally holds one active token, and two during the five-minute window in which a freshly
+fetched token overlaps the one it replaces. Three replicas sharing a single client id can
+therefore need six active tokens at once, which already exceeds the default of 5. Budget roughly
+two tokens per replica sharing a client id, plus headroom for restarts and rolling deployments,
+and size that budget against the effective 30-minute lifetime: a token held by a replica that is
+restarted or replaced continues to count until it expires.
 
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 
