@@ -25,6 +25,7 @@ Describe 'Stock image plugin proof lane' {
     BeforeAll {
         $script:repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         $script:workflowPath = Join-Path $script:repositoryRoot '.github/workflows/scheduled-stock-plugin-proof.yml'
+        $script:composeRoot = Join-Path $script:repositoryRoot 'eng/docker-compose'
         $script:workflow = Get-Content -LiteralPath $script:workflowPath -Raw
 
         # The two jobs, split so an assertion about one cannot be satisfied by the other.
@@ -49,16 +50,29 @@ Describe 'Stock image plugin proof lane' {
         It 'passes the event through, because a pending pin means different things on each' {
             # The readiness script fails a dispatched run on a pending pin and reports not-ready on
             # a scheduled one. Hardcoding either value here would collapse that distinction.
-            $script:readinessJob | Should -Match "-EventName '\`$\{\{ github\.event_name \}\}'"
+            $script:readinessJob | Should -Match '-EventName \$env:GITHUB_EVENT_NAME'
         }
 
         It 'reads no more than it needs to' {
             $script:workflow | Should -Match '(?m)^permissions: read-all'
         }
 
-        It 'runs on Linux, in PowerShell' {
-            @([regex]::Matches($script:workflow, '(?m)^    runs-on: ubuntu-latest')).Count | Should -Be 2
-            @([regex]::Matches($script:workflow, '(?m)^        shell: pwsh')).Count | Should -Be 2
+        It 'never puts the pin value into a script it then runs' {
+            # The pin path can come from a dispatch input. Interpolated into a run block, a value
+            # carrying a quote closes the literal and the rest executes as PowerShell, in a job
+            # holding the artifacts-feed credential. It is read from the environment instead.
+            $run = @([regex]::Matches($script:workflow, '(?ms)^        run: .*?(?=^      - |^  \S|\z)') |
+                    ForEach-Object { $_.Value })
+
+            $run | Should -Not -BeNullOrEmpty
+
+            foreach ($block in $run) {
+                $block | Should -Not -Match 'inputs\.pin-file'
+                $block | Should -Not -Match 'env\.PIN_FILE'
+                $block | Should -Not -Match 'steps\.readiness\.outputs'
+            }
+
+            $script:workflow | Should -Match '-PinFile \$env:PIN_FILE'
         }
     }
 
@@ -99,19 +113,22 @@ Describe 'Stock image plugin proof lane' {
             $script:proofJob | Should -Match "if: always\(\) && steps\.proof\.outcome == 'failure'"
         }
 
-        It 'tears down what it owns whatever happened' {
+        It 'tears down whatever happened, through the receipt-gated entry point' {
             $teardown = [regex]::Match($script:proofJob, '(?ms)^      - name: Tear down.*\z').Value
 
             $teardown | Should -Match '(?m)^        if: always\(\)'
-            $teardown | Should -Match 'bootstrap-published-dms\.ps1 -d -v'
+            $teardown | Should -Match 'Invoke-StockImageProofFallbackCleanup\.ps1'
         }
 
-        It 'removes only its own compose project, never the host at large' {
-            # The teardown is a backstop for a harness that died before its own cleanup. A prune or
-            # a name filter here would reach resources this lane did not create.
+        It 'brings nothing down on its own authority' {
+            # A step that simply brought the compose project down would remove whatever is there,
+            # including the stack the proof refused to touch at its preflight. Every removal has to
+            # go through the entry point that requires a receipt this run wrote.
+            $script:proofJob | Should -Not -Match 'bootstrap-published-dms\.ps1 -d'
+            $script:proofJob | Should -Not -Match 'docker compose'
             $script:proofJob | Should -Not -Match 'docker system prune'
             $script:proofJob | Should -Not -Match 'docker volume prune'
-            $script:proofJob | Should -Not -Match 'docker rm -f'
+            $script:proofJob | Should -Not -Match 'docker rm'
             $script:proofJob | Should -Not -Match 'network rm'
         }
     }
@@ -175,6 +192,192 @@ Describe 'Stock image plugin proof lane' {
                     'eng/ci/tests/StockImageProofWorkflow.Tests.ps1'
                 )) {
                 $pullRequest | Should -Match ([regex]::Escape($suite))
+            }
+        }
+    }
+
+    Context 'the receipt that says an outside caller may tear something down' {
+        BeforeAll {
+            $script:fallbackScript = Join-Path $script:composeRoot 'tests/plugin-deployment/Invoke-StockImageProofFallbackCleanup.ps1'
+
+            # A recording docker, so "ran no Docker command" is an observation rather than a claim.
+            # It also fails closed: anything it is asked to do exits non-zero, so a fallback that
+            # reached the daemon at all could not then report success.
+            function script:Invoke-Fallback {
+                param([string] $ReceiptPath)
+
+                $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-fallback-$([guid]::NewGuid().ToString('N'))"
+                New-Item -ItemType Directory -Path $scratch -Force | Out-Null
+
+                try {
+                    $log = Join-Path $scratch 'commands.log'
+                    New-Item -ItemType File -Path $log -Force | Out-Null
+
+                    $wrapper = Join-Path $scratch 'run.ps1'
+                    Set-Content -LiteralPath $wrapper -Encoding utf8 -Value @'
+param([string] $Script, [string] $ReceiptPath, [string] $Log, [string] $ResultFile)
+
+$global:FallbackLog = $Log
+
+function global:docker {
+    Add-Content -LiteralPath $global:FallbackLog -Value "docker $($args -join ' ')"
+    $global:LASTEXITCODE = 1
+}
+
+function global:pwsh {
+    Add-Content -LiteralPath $global:FallbackLog -Value "pwsh $($args -join ' ')"
+    $global:LASTEXITCODE = 0
+}
+
+$failure = ''
+$action = ''
+$environmentFile = ''
+
+try {
+    $outcome = & $Script -ReceiptPath $ReceiptPath -PassThru
+    if ($null -ne $outcome) {
+        $action = [string]$outcome.Action
+        $environmentFile = [string]$outcome.EnvironmentFile
+    }
+}
+catch {
+    $failure = $_.Exception.Message
+}
+
+[pscustomobject]@{ Action = $action; EnvironmentFile = $environmentFile; Failure = $failure } |
+    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultFile -Encoding utf8
+'@
+
+                    $resultFile = Join-Path $scratch 'result.json'
+                    $pwshPath = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
+                    & $pwshPath -NoProfile -File $wrapper -Script $script:fallbackScript `
+                        -ReceiptPath $ReceiptPath -Log $log -ResultFile $resultFile 2>&1 | Out-Null
+
+                    $result = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+
+                    return [pscustomobject]@{
+                        Action          = $result.Action
+                        EnvironmentFile = $result.EnvironmentFile
+                        Failure         = $result.Failure
+                        Command         = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue |
+                                Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                    }
+                }
+                finally {
+                    Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            function script:New-Receipt {
+                param([hashtable] $Override = @{})
+
+                $workspace = Join-Path ([IO.Path]::GetTempPath()) "dms1502-rw-$([guid]::NewGuid().ToString('N'))"
+                New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+                $environmentFile = Join-Path $workspace 'recipe1.env'
+                Set-Content -LiteralPath $environmentFile -Value 'DMS_HTTP_PORTS=8080' -Encoding utf8
+
+                $receipt = [ordered]@{
+                    composeProject  = 'dms-published'
+                    composeRoot     = $script:composeRoot
+                    environmentFile = $environmentFile
+                    workspaceRoot   = $workspace
+                    evidenceRoot    = (Join-Path $workspace '..' | Split-Path -Parent)
+                    writtenUtc      = [DateTimeOffset]::UtcNow.ToString('o')
+                }
+
+                foreach ($key in $Override.Keys) { $receipt[$key] = $Override[$key] }
+
+                $path = Join-Path $workspace 'receipt.json'
+                Set-Content -LiteralPath $path -Encoding utf8 -Value ($receipt | ConvertTo-Json -Depth 4)
+
+                return [pscustomobject]@{ Path = $path; Workspace = $workspace; EnvironmentFile = $environmentFile }
+            }
+        }
+
+        It 'runs no Docker command at all when there is no receipt' {
+            # The case that matters: the proof refused at its preflight because somebody else's
+            # stack was up, so it claimed nothing and wrote nothing. A teardown here would remove
+            # that stack.
+            $absent = Join-Path ([IO.Path]::GetTempPath()) "dms1502-none-$([guid]::NewGuid().ToString('N')).json"
+
+            $run = Invoke-Fallback -ReceiptPath $absent
+
+            $run.Action | Should -BeExactly 'skipped'
+            $run.Failure | Should -BeNullOrEmpty
+            $run.Command | Should -HaveCount 0
+        }
+
+        It 'tears down with the environment file the receipt recorded' {
+            $receipt = New-Receipt
+
+            try {
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                $run.Failure | Should -BeNullOrEmpty
+                $run.Action | Should -BeExactly 'cleaned'
+                $run.EnvironmentFile | Should -BeExactly $receipt.EnvironmentFile
+
+                # The recorded file, not a default: a different one composes a different set of
+                # services and brings a different stack down.
+                $teardown = @($run.Command | Where-Object { $_ -match 'bootstrap-published-dms\.ps1' })
+                $teardown | Should -HaveCount 1
+                $teardown[0] | Should -Match ([regex]::Escape($receipt.EnvironmentFile))
+                $teardown[0] | Should -Match '-d -v'
+
+                # And the permission is spent.
+                Test-Path -LiteralPath $receipt.Path | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'refuses a receipt that does not describe this proof: <Case>' -ForEach @(
+            @{ Case = 'another compose project'; Override = @{ composeProject = 'somebody-elses' } }
+            @{ Case = 'another compose directory'; Override = @{ composeRoot = 'C:/elsewhere/eng/docker-compose' } }
+            @{ Case = 'an environment file outside its workspace'; Override = @{ environmentFile = 'C:/elsewhere/recipe1.env' } }
+        ) {
+            $receipt = New-Receipt -Override $Override
+
+            try {
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                $run.Failure | Should -Match 'not permission to remove anything'
+                $run.Command | Should -HaveCount 0
+                Test-Path -LiteralPath $receipt.Path | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'refuses rather than guessing when the recorded environment file is gone' {
+            $receipt = New-Receipt
+            Remove-Item -LiteralPath $receipt.EnvironmentFile -Force
+
+            try {
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                $run.Failure | Should -Match 'no longer exists'
+                $run.Command | Should -HaveCount 0
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'refuses a receipt that is not readable rather than acting on it' {
+            $receipt = New-Receipt
+            Set-Content -LiteralPath $receipt.Path -Value '{ not json'
+
+            try {
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                $run.Failure | Should -Match 'not valid JSON'
+                $run.Command | Should -HaveCount 0
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
     }

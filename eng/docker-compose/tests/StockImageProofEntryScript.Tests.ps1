@@ -37,6 +37,7 @@ param(
     [Parameter(Mandatory)] [string] $BaseEnvironmentFile,
     [Parameter(Mandatory)] [string] $CaptureRoot,
     [Parameter(Mandatory)] [string] $BootstrapManifestPath,
+    [Parameter(Mandatory)] [string] $CleanupReceiptPath,
     [Parameter(Mandatory)] [string] $HttpLog,
     [Parameter(Mandatory)] [string] $UnmatchedLog,
     [switch] $Strict,
@@ -369,7 +370,7 @@ function global:Write-DmsRuleUse {
 
 $failure = '<the script returned without throwing>'
 try {
-    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile -BootstrapManifestPath $BootstrapManifestPath
+    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile -BootstrapManifestPath $BootstrapManifestPath -CleanupReceiptPath $CleanupReceiptPath
 }
 catch {
     $failure = $_.Exception.Message
@@ -841,6 +842,9 @@ exit 0
                 $unmatchedLog = Join-Path $scratch 'unmatched.log'
                 New-Item -ItemType File -Path $unmatchedLog -Force | Out-Null
                 $resultFile = Join-Path $scratch 'result.json'
+                # Beside the workspace, never inside it: the receipt has to survive a workspace
+                # removal that then fails, which is the case it exists for.
+                $receiptPath = Join-Path $scratch 'stock-image-proof-cleanup.json'
                 $evidenceRoot = if ([string]::IsNullOrEmpty($EvidenceOverride)) { Join-Path $scratch 'evidence' } else { $EvidenceOverride }
                 $workspace = if ($PSBoundParameters.ContainsKey('WorkspaceOverride')) { $WorkspaceOverride } else { Join-Path $scratch 'workspace' }
 
@@ -884,6 +888,7 @@ exit 0
                     '-EvidenceRoot', $evidenceRoot
                     '-CaptureRoot', $captureRoot
                     '-BootstrapManifestPath', ($ManifestOverride ? $ManifestOverride : (Join-Path $workspace 'bootstrap/bootstrap-manifest.json'))
+                    '-CleanupReceiptPath', $receiptPath
                     '-ShimPlan', $planPath
                     '-ShimLog', $shimLog
                     '-HttpLog', $httpLog
@@ -923,6 +928,8 @@ exit 0
                     Evidence         = (Test-Path -LiteralPath $evidenceFile) ? (Get-Content -LiteralPath $evidenceFile -Raw | ConvertFrom-Json) : $null
                     WorkspaceCreated = (Test-Path -LiteralPath $workspace)
                     ExitCode         = $exitCode
+                    Receipt          = (Test-Path -LiteralPath $receiptPath) ?
+                        (Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json) : $null
                     Unmatched        = @(Get-Content -LiteralPath $unmatchedLog -ErrorAction SilentlyContinue |
                             Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
                     RuleUse          = @(Get-Content -LiteralPath "$unmatchedLog.used" -ErrorAction SilentlyContinue |
@@ -2461,6 +2468,71 @@ exit 0
             foreach ($call in $student) {
                 $call.uri | Should -BeExactly "http://localhost:$($run.Port[0])$Prefix/data/ed-fi/students"
             }
+        }
+    }
+
+    Context 'the permission an outside caller needs, and when it exists' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'leaves no receipt when the run put back what it created' {
+            # A complete run tore down everything it started, so there is nothing an always() step
+            # in a scheduled job may remove.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule (Get-StrictTraversalPlan)
+
+            $run.ExitCode | Should -Be 0
+            $run.Receipt | Should -BeNullOrEmpty
+        }
+
+        It 'leaves no receipt when the preflight refused, because nothing was created' {
+            # The case the receipt exists to make safe: somebody else's container holds a name this
+            # run wanted, so it claimed nothing. An unconditional teardown would remove their stack.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) +
+                @(@{ match = 'ps -a --format'; exitCode = 0; output = 'ed-fi-api' }) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'This host is not available'
+            $run.Receipt | Should -BeNullOrEmpty
+            $run.WorkspaceCreated | Should -BeFalse
+        }
+
+        It 'leaves a receipt naming the last deployment when its own teardown failed' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) +
+                @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) |
+                ForEach-Object { $_ })
+
+            $run.ExitCode | Should -Be 1
+            $run.Receipt | Should -Not -BeNullOrEmpty
+            $run.Receipt.composeProject | Should -BeExactly 'dms-published'
+            # The environment file of the deployment that may still be up, not a default.
+            $run.Receipt.environmentFile | Should -Match 'recipe1\.env$'
+            $run.Receipt.workspaceRoot | Should -Not -BeNullOrEmpty
+        }
+
+        It 'writes the receipt before the command that could create the project' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) +
+                @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) |
+                ForEach-Object { $_ })
+
+            # The ordering is the claim. A process killed between the two would leave a stack that
+            # nothing has permission to remove.
+            $log = @($run.Evidence.commandLog)
+            $receiptAt = [array]::FindIndex($log, [Predicate[string]] { param($entry) $entry -like 'receipt *' })
+            $upAt = [array]::FindIndex($log, [Predicate[string]] { param($entry) $entry -match 'bootstrap-published-dms\.ps1 -EnvironmentFile' })
+
+            $receiptAt | Should -BeGreaterThan -1
+            $upAt | Should -BeGreaterThan -1
+            $receiptAt | Should -BeLessThan $upAt
         }
     }
 

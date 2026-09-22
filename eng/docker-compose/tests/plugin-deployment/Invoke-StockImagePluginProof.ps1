@@ -76,6 +76,11 @@ param(
     [string]
     $BaseEnvironmentFile,
 
+    # Where this run records that it has something an outside caller may tear down. The default is
+    # a fixed path beside the workspace; a test supplies its own so a run cannot disturb a real one.
+    [string]
+    $CleanupReceiptPath,
+
     # One file, read-only, and nothing else: the manifest the prepared-schema check reads. It exists
     # so a test can supply a synthetic manifest without writing into the repository. It deliberately
     # does NOT redefine the bootstrap workspace, because that path decides what the preflight
@@ -129,6 +134,23 @@ $WorkspaceRoot = [IO.Path]::GetFullPath($WorkspaceRoot)
 $EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
 
 $composeProject = 'dms-published'
+# The one thing an outside caller may act on after this process is gone.
+#
+# A caller that tears the compose project down unconditionally removes whatever is there, including
+# a stack this run refused to touch. So the receipt is the permission: it is written only after the
+# preflight has established the project is unoccupied and only immediately before the first
+# operation that can create it, it names the environment file that would tear that deployment down,
+# and it is removed when this run's own cleanup succeeds. Its absence means there is nothing an
+# outside caller may remove, and its presence means this run created something it did not get back.
+#
+# It sits beside the workspace rather than inside it, because cleanup removes the workspace and the
+# receipt has to survive a workspace removal that then fails.
+$cleanupReceiptPath = if ([string]::IsNullOrWhiteSpace($CleanupReceiptPath)) {
+    Join-Path $repositoryRoot '.ai-work/stock-image-proof-cleanup.json'
+}
+else {
+    [IO.Path]::GetFullPath($CleanupReceiptPath)
+}
 # Fixed, and not overridable by anything. bootstrap-published-dms.ps1 stages exactly here, and this
 # one value is what the host preflight inspects, what this run claims, and what cleanup is allowed
 # to remove. A caller-supplied value here would be a proof bypass and a destructive-path widening
@@ -306,6 +328,37 @@ function Remove-MountedRunDirectory {
     Remove-OwnedTree -Path $Path -AlsoOwned $AlsoOwned
 }
 
+# Written before the operation it covers, never after. Rewritten per deployment, because each one
+# composes its own environment file and the last one written is the one that could still be up.
+function Write-CleanupReceipt {
+    param([Parameter(Mandatory)] [string] $EnvironmentFile)
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $cleanupReceiptPath) -Force | Out-Null
+
+    $receipt = [ordered]@{
+        composeProject  = $composeProject
+        composeRoot     = $composeRoot
+        environmentFile = $EnvironmentFile
+        workspaceRoot   = $WorkspaceRoot
+        evidenceRoot    = $EvidenceRoot
+        writtenUtc      = [DateTimeOffset]::UtcNow.ToString('o')
+    }
+
+    Set-Content -LiteralPath $cleanupReceiptPath -Encoding utf8 -Value ($receipt | ConvertTo-Json -Depth 4)
+    Write-ProofLog "receipt $cleanupReceiptPath"
+}
+
+# Removed only when this run put everything back itself. A teardown that failed, or a process that
+# died before reaching here, leaves it, which is exactly when an outside caller has work to do.
+function Remove-CleanupReceipt {
+    if (-not (Test-Path -LiteralPath $cleanupReceiptPath)) {
+        return
+    }
+
+    Remove-Item -LiteralPath $cleanupReceiptPath -Force
+    Write-Detail 'removed the cleanup receipt, because this run put back what it created'
+}
+
 function Invoke-OwnedCleanup {
     # Wrapped: a function returning an empty collection hands back nothing, and under StrictMode
     # reading .Count off that would throw here in the finally, replacing whatever failure brought
@@ -341,6 +394,10 @@ function Invoke-OwnedCleanup {
             # and the remaining resources are still attempted so as much is released as can be.
             $script:cleanupError.Add("$($resource.Kind) $($resource.Name): $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)")
         }
+    }
+
+    if (-not $script:teardownFailed -and $script:cleanupError.Count -eq 0) {
+        Remove-CleanupReceipt
     }
 }
 
@@ -864,6 +921,10 @@ function Start-ProofDeployment {
     Add-ProofOwnership -Kind 'ComposeProject' -Name $composeProject
     Add-ProofOwnership -Kind 'Bootstrap' -Name $bootstrapPath
     $script:environmentFile = $EnvironmentFile
+
+    # Before the up, for the same reason the ownership claims are: a process killed between the two
+    # would leave a stack nobody has permission to remove.
+    Write-CleanupReceipt -EnvironmentFile $EnvironmentFile
 
     Push-Location $composeRoot
     try {

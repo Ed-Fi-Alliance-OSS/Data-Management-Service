@@ -50,19 +50,27 @@ jobs:
       # Fails the job on a malformed, unknown or incoherent pin, and on a pending pin whenever the
       # run was requested rather than scheduled. Reports ready=false and exits zero only for a
       # pending pin on a schedule, which is the one expected pre-publication state.
+      # The pin path is read out of the environment, never interpolated into this script. It can
+      # come from a dispatch input, and a value carrying a quote would otherwise close the literal
+      # and run as PowerShell in a job that holds the feed credential.
       - name: Read the pin
         id: readiness
-        run: ./eng/ci/Test-StockImagePinReadiness.ps1 -PinFile '${{ env.PIN_FILE }}' -EventName '${{ github.event_name }}'
+        run: ./eng/ci/Test-StockImagePinReadiness.ps1 -PinFile $env:PIN_FILE -EventName $env:GITHUB_EVENT_NAME
 
       # The skip has to say what it is. A green run with no proof job and no explanation is the
       # thing most likely to be read later as "the proof passed".
       - name: Say that a skip is not evidence
         if: steps.readiness.outputs.ready != 'true'
+        env:
+          # Read from the environment for the same reason the pin path is: this value is derived
+          # from a file a dispatched run can name, and nothing derived from an input belongs in
+          # PowerShell source.
+          READINESS_REASON: ${{ steps.readiness.outputs.reason }}
         run: |
           $summary = @(
             '## Stock image plugin proof: not run'
             ''
-            "The pin is not ready: ${{ steps.readiness.outputs.reason }}"
+            "The pin is not ready: $env:READINESS_REASON"
             ''
             'This run proved nothing. A skipped proof is not evidence that a published image loads'
             'third-party plugins; it only means there is no published image to run against yet.'
@@ -98,7 +106,7 @@ jobs:
 
       - name: Run the stock image plugin proof
         id: proof
-        run: ./eng/docker-compose/tests/plugin-deployment/Invoke-StockImagePluginProof.ps1 -PinFile '${{ env.PIN_FILE }}'
+        run: ./eng/docker-compose/tests/plugin-deployment/Invoke-StockImagePluginProof.ps1 -PinFile $env:PIN_FILE
 
       # Only this job writes proof evidence, and only when it ran. The readiness job has nothing to
       # upload, which is what keeps a skipped proof from leaving an artifact somebody reads as one.
@@ -112,15 +120,12 @@ jobs:
           retention-days: 10
 
       # The harness removes what it created on its way out, including when it fails. This is the
-      # backstop for a harness that died before its own cleanup ran, and it removes only this
-      # proof's compose project: no prune, no name regex, nothing belonging to anybody else.
+      # backstop for a harness that died before its own cleanup ran.
+      #
+      # It acts only on a receipt the harness wrote after its preflight found the project
+      # unoccupied and before the first operation that could create it. With no receipt it runs no
+      # Docker command at all, which is what keeps a proof that refused to touch somebody else's
+      # stack from having that stack removed by its own teardown step.
       - name: Tear down anything this proof still owns
         if: always()
-        run: |
-          Push-Location eng/docker-compose
-          try {
-            ./bootstrap-published-dms.ps1 -d -v
-          }
-          finally {
-            Pop-Location
-          }
+        run: ./eng/docker-compose/tests/plugin-deployment/Invoke-StockImageProofFallbackCleanup.ps1
