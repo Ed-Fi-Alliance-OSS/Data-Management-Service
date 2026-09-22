@@ -332,7 +332,55 @@ function E2ETests {
             Pop-Location
         }
     }
+    Invoke-Execute { PublishEffectiveRoleClaimSettings }
     Invoke-Step { RunE2E }
+}
+
+<#
+.SYNOPSIS
+    Publishes the role settings the running Configuration Service actually received, for the
+    role-claim E2E scenario to compare a token's claim against.
+.DESCRIPTION
+    Read back from the container rather than from the environment file. Compose resolves a
+    shell-provided value ahead of the file, so copying file values would make the scenario expect
+    a role the container was never given; and a key the compose files never forward to the
+    container would otherwise change the expectation without changing the provider. Only the four
+    settings the scenario depends on are read, so no unrelated container value is exported.
+#>
+function PublishEffectiveRoleClaimSettings {
+    $settingNames = @(
+        "AppSettings__IdentityProvider",
+        "IdentitySettings__RoleClaimType",
+        "IdentitySettings__ClientRole",
+        "Authentication__RoleClaimAttribute"
+    )
+
+    $containerEnvironment = docker inspect ed-fi-api-config-service `
+        --format '{{range .Config.Env}}{{println .}}{{end}}'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read the Configuration Service container environment; the role-claim scenario would otherwise compare a token against values the running stack may not have."
+    }
+
+    $effective = @{}
+    foreach ($line in $containerEnvironment) {
+        $pair = $line -split "=", 2
+        if ($pair.Count -eq 2 -and $settingNames -contains $pair[0]) {
+            $effective[$pair[0]] = $pair[1]
+        }
+    }
+
+    if (-not $effective.ContainsKey("AppSettings__IdentityProvider")) {
+        throw "The Configuration Service container reports no AppSettings__IdentityProvider; cannot determine which provider the role-claim scenario is running against."
+    }
+
+    # Published under test-only names that neither Compose nor the application reads, so the
+    # expectations never become configuration for a later run in the same shell. Assigned
+    # unconditionally so a setting the container does not carry clears a stale expectation
+    # instead of leaving the scenario comparing against an earlier lane.
+    $env:CMS_E2E_EXPECTED_IDENTITY_PROVIDER = $effective["AppSettings__IdentityProvider"]
+    $env:CMS_E2E_EXPECTED_ROLE_CLAIM_TYPE = $effective["IdentitySettings__RoleClaimType"]
+    $env:CMS_E2E_EXPECTED_CLIENT_ROLE = $effective["IdentitySettings__ClientRole"]
+    $env:CMS_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE = $effective["Authentication__RoleClaimAttribute"]
 }
 
 function RunNuGetPack {

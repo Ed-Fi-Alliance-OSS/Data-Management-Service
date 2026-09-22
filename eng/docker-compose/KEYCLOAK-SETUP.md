@@ -3,6 +3,10 @@
 The purpose of this document is to provide the basic steps for configuring
 Keycloak locally using docker-compose.
 
+> [!NOTE]
+> To remove a Keycloak client that a failed API client creation left behind, see
+> [Configuration Service: identity-provider clients left behind by failed provisioning](../../docs/OPERATIONS.md#configuration-service-identity-provider-clients-left-behind-by-failed-provisioning).
+
 > [!WARNING]
 > **NOT FOR PRODUCTION USE!** This configuration contains default
 > passwords that are exposed within the repository and should never be used in

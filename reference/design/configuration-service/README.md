@@ -10,5 +10,6 @@ Detailed design notes:
 * [Authorization in the Configuration Service](./CS-AUTH.md)
 * [Claimset Management](./CLAIMSET-MGMT.md)
 * [Expired Access Token Cleanup](./TOKEN-CLEANUP.md)
+* [Keycloak Client Provisioning Compensation (DMS-1365)](./DMS-1365-keycloak-client-provisioning-compensation.md)
 * [Secret Management](./SECRET-MANAGEMENT.md)
 * [Vendor Namespace-Prefix Update Consistency (DMS-1356)](./DMS-1356-vendor-namespace-update-consistency.md)
