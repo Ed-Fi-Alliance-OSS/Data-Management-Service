@@ -151,7 +151,7 @@ Describe 'Root CDC E2ETest launch ordering' {
         function Get-E2ETestEnvironmentContext { return $script:context }
         function RunE2E {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Production-compatible boundary stub; Pester verifies the arguments.')]
-            param($TestFilter, $E2ETestSettings)
+            param($TestFilter, $E2ETestSettings, $IdentityProvider)
         }
     }
     BeforeEach {
@@ -214,14 +214,14 @@ Describe 'Root CDC E2ETest launch ordering' {
     It 'passes explicit CDC settings through the command dispatcher before tests' {
         & $script:buildDispatch -Command E2ETest -EnableKafkaCdc -CdcSettingsPath '/selected/settings.json' `
             -CdcBindingStatePath '/selected/state' -SkipDockerBuild -UsePublishedImage -TestFilter 'Category=smoke' `
-            -Configuration Release -UsePrebuiltOutput
+            -Configuration Release -UsePrebuiltOutput -IdentityProvider keycloak
         Should -Invoke Invoke-E2ECdcSetup -Times 1 -Exactly -ParameterFilter {
             $EnvironmentFile -eq '/effective/.env' -and $OriginalEnvironmentFile -eq '/selected/.env' -and $DatabaseEngine -eq 'mssql' -and
             $DatabaseName -eq 'primary_e2e' -and $SnapshotDatabaseName -eq 'snapshot_e2e' -and
             $CdcSettingsPath -eq '/selected/settings.json' -and $CdcBindingStatePath -eq '/selected/state' -and
             $SkipDockerBuild -and $UsePublishedImage -and $UsePrebuiltTools -and $Configuration -eq 'Release'
         }
-        Should -Invoke RunE2E -Times 1 -Exactly -ParameterFilter { $E2ETestSettings -eq $script:context -and $TestFilter -eq 'Category=smoke' }
+        Should -Invoke RunE2E -Times 1 -Exactly -ParameterFilter { $E2ETestSettings -eq $script:context -and $TestFilter -eq 'Category=smoke' -and $IdentityProvider -eq 'keycloak' }
     }
     It 'does not launch API tests when setup <Failure>' -ForEach @(@{ Failure = 'fails' }, @{ Failure = 'cancels' }) {
         if ($Failure -eq 'cancels') { Mock Invoke-E2ECdcSetup { throw [OperationCanceledException]::new() } }
