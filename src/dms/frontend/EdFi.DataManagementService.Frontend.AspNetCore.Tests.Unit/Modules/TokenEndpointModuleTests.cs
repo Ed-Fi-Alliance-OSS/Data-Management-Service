@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
@@ -511,6 +512,140 @@ public class TokenEndpointModuleTests
             _jsonContent["body"]!["token"]!.ToString().Should().Be("fake_access_token");
             _jsonContent["body"]!["expires_in"]!.GetValue<int>().Should().Be(300);
             _jsonContent["body"]!["token_type"]!.ToString().Should().Be("bearer");
+        }
+    }
+
+    /// <summary>
+    /// Sends a token request through the real endpoint with <see cref="IOAuthManager"/> faked to
+    /// return a problem response exactly as <c>OAuthManager.GenerateProblemDetailResponse</c> builds it.
+    /// </summary>
+    private static HttpResponseMessage SendThroughProxy(HttpStatusCode statusCode, JsonNode problemDetails)
+    {
+        var oAuthManager = A.Fake<IOAuthManager>();
+        A.CallTo(() =>
+                oAuthManager.GetAccessTokenAsync(
+                    A<IHttpClientWrapper>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<TraceId>.Ignored
+                )
+            )
+            .Returns(
+                new HttpResponseMessage(statusCode)
+                {
+                    Content = new StringContent(
+                        problemDetails.ToString(),
+                        Encoding.UTF8,
+                        "application/problem+json"
+                    ),
+                }
+            );
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(_ => oAuthManager);
+            });
+        });
+        using var client = factory.CreateClient();
+
+        return client
+            .SendAsync(ProxyRequest("""{"grant_type":"client_credentials"}""", "application/json"))
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    [TestFixture]
+    public class Given_An_Upstream_Token_Limit_Rejection : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _response = SendThroughProxy(
+                HttpStatusCode.TooManyRequests,
+                FailureResponse.ForTooManyTokens(
+                    new TraceId("token-limit-trace"),
+                    [
+                        "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire.",
+                    ]
+                )
+            );
+            _body = JsonNode.Parse(_response.Content.ReadAsStringAsync().GetAwaiter().GetResult())!;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_too_many_requests()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        [Test]
+        public void It_keeps_the_problem_json_media_type()
+        {
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_passes_the_problem_details_body_through()
+        {
+            _body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:security:authentication:too-many-tokens");
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upstream_Lock_Contention_Answered_As_Service_Unavailable : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _response = SendThroughProxy(
+                HttpStatusCode.ServiceUnavailable,
+                FailureResponse.ForServiceUnavailable(new TraceId("lock-contention-trace"))
+            );
+            _body = JsonNode.Parse(_response.Content.ReadAsStringAsync().GetAwaiter().GetResult())!;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_service_unavailable()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+
+        [Test]
+        public void It_keeps_the_problem_json_media_type()
+        {
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_passes_the_problem_details_body_through()
+        {
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:service-unavailable");
         }
     }
 }
