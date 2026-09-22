@@ -32,7 +32,11 @@ internal sealed class RecordingConfigurationServiceApplicationProvider(
         }
     }
 
-    public Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant)
+    public Task<ApplicationContextResult> GetApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    )
     {
         lock (_lock)
         {
@@ -42,6 +46,9 @@ internal sealed class RecordingConfigurationServiceApplicationProvider(
         return Task.FromResult(resolve(clientId, tenant));
     }
 
-    public Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(string clientId, string? tenant) =>
-        GetApplicationByClientIdAsync(clientId, tenant);
+    public Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    ) => GetApplicationByClientIdAsync(clientId, tenant, cancellationToken);
 }

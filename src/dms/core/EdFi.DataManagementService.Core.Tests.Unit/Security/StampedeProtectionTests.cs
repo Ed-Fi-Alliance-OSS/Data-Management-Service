@@ -116,7 +116,13 @@ public class StampedeProtectionTests
             _factoryExecutionCount = 0;
             _mockProvider = A.Fake<IConfigurationServiceApplicationProvider>();
 
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, A<string?>.Ignored))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        A<string>.Ignored,
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .ReturnsLazily(_ => FetchApplicationContextAsync());
 
             _cachedProvider = new CachedApplicationContextProvider(
@@ -152,11 +158,29 @@ public class StampedeProtectionTests
             results
                 .Should()
                 .AllSatisfy(result => result.Should().BeOfType<ApplicationContextResult.Success>());
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("first-client", tenant: null))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        "first-client",
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("second-client", "north"))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        "second-client",
+                        "north",
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("third-client", "south"))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        "third-client",
+                        "south",
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 

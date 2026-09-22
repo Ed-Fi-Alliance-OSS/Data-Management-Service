@@ -74,7 +74,8 @@ public sealed class CdcComposeDataStoreProvider(
 
     public bool IsLoaded([AllowNull] string tenant = null!) => inner.IsLoaded(tenant);
 
-    public Task<IList<string>> LoadTenants() => inner.LoadTenants();
+    public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
+        inner.LoadTenants(cancellationToken);
 
     public bool TenantExists(string tenant) => inner.TenantExists(tenant);
 

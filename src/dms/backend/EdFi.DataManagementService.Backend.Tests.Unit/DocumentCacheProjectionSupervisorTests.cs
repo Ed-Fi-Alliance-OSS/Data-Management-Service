@@ -2138,7 +2138,8 @@ public class Given_DocumentCacheProjectionSupervisor
 
         public bool IsLoaded(string? tenant = null) => _loadedDataStores.ContainsKey(GetTenantKey(tenant));
 
-        public Task<IList<string>> LoadTenants() => Task.FromResult<IList<string>>([]);
+        public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IList<string>>([]);
 
         public bool TenantExists(string tenant) => false;
 
