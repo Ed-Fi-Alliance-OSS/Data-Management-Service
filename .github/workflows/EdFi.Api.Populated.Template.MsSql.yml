@@ -6,6 +6,16 @@
 name: Pkg EdFi.Api.Populated.Template.MsSql
 on:
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready. converted_to_draft starts a run that skips everything, which cancels the
+    # in-flight run through the concurrency group.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     # Template packages are intentionally expensive integration builds. Scope them to their
     # pipeline/orchestration, database composition, and relational-schema implementation; the
     # existing DMS/Config CI workflows own general application-source validation.
@@ -82,7 +92,7 @@ jobs:
   # docs/DATA-STANDARD-VERSIONS.md. DS 5.2 is the default.
   configure-matrix:
     name: Configure matrix
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.build-matrix.outputs.include }}
@@ -112,7 +122,7 @@ jobs:
   build-populated-template:
     name: Build Populated Template ${{ matrix.standard_version }}
     needs: configure-matrix
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) }}
     # Each leg invokes the whole reusable build/SBOM/provenance pipeline, so per-version outputs
     # stay correlated. The matrix is computed by configure-matrix (filterable on dispatch).
     strategy:

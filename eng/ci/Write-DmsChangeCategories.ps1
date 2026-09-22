@@ -22,8 +22,6 @@
         which is correct for events that never compute a diff.
     .PARAMETER DiffUnavailable
         Set when no trustworthy changed-file list could be produced, forcing the full suite.
-    .PARAMETER IsDraft
-        Set when the event is a pull request still in draft.
     .PARAMETER OutputPath
         Destination for the key=value lines. Defaults to $GITHUB_OUTPUT; when neither is set the
         lines go to standard output so the script can be run by hand.
@@ -39,9 +37,6 @@ param(
 
     [switch]
     $DiffUnavailable,
-
-    [switch]
-    $IsDraft,
 
     [string]
     $OutputPath = $env:GITHUB_OUTPUT
@@ -59,8 +54,7 @@ if (-not [string]::IsNullOrWhiteSpace($ChangedFilePath) -and (Test-Path -Literal
 $category = Get-DmsChangeCategory `
     -EventName $EventName `
     -ChangedFile $changedFile `
-    -DiffUnavailable:$DiffUnavailable `
-    -IsDraft:$IsDraft
+    -DiffUnavailable:$DiffUnavailable
 
 $lines = @(
     $category.PSObject.Properties | ForEach-Object {

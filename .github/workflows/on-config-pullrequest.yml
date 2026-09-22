@@ -12,6 +12,16 @@ on:
   # config_relevant and the heavy jobs skip when no config-relevant file changed, so idle PRs
   # stay cheap and the gate still reports (a skipped dependency counts as a pass).
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready. converted_to_draft starts a run that skips everything, which cancels the
+    # in-flight run through the concurrency group.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     branches:
       - main
 
@@ -33,6 +43,10 @@ permissions: read-all
 jobs:
   detect-fresh-build-changes:
     name: Detect Fresh Build Changes
+    # Every other job needs this one directly or transitively, so skipping it on a draft skips the
+    # whole workflow except the always() jobs, which carry the same check. pull_request is null on
+    # merge_group and workflow_dispatch, so those always run.
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -669,7 +683,8 @@ jobs:
     name: Upload Event File
     runs-on: ubuntu-latest
     needs: [verify-lock-files, run-parity-pester-tests, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
-    if: always()
+    # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
+    if: always() && github.event.pull_request.draft != true
     steps:
     - name: Upload
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -700,7 +715,9 @@ jobs:
       - run-e2e-tests-mssql
       - run-e2e-tests-mssql-multitenant
       - fresh-rebuild-docker-image
-    if: always()
+    # Reports whatever its dependencies did, except on a draft, where nothing runs. A draft cannot
+    # be merged or enqueued, and ready_for_review re-runs the workflow so the gate reports then.
+    if: always() && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -274,7 +274,7 @@ Describe "Assert-TemplateWorkflowInputs" {
             "src/dms/run.sh"
         )
         $publishGate = "publish_package: `${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
-        $forkGate = "if: `${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}"
+        $forkGate = "if: `${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) }}"
         $concurrencyGroup = "group: `${{ github.workflow }}-`${{ github.event.pull_request.number || github.run_id }}"
         $cancelInProgress = "cancel-in-progress: `${{ github.event_name == 'pull_request' }}"
 
@@ -305,7 +305,7 @@ Describe "Assert-TemplateWorkflowInputs" {
             @([regex]::Matches($workflowContent, [regex]::Escape($publishGate))).Count |
                 Should -Be 1 -Because "$($case.FileName) must never publish from a PR"
             @([regex]::Matches($workflowContent, [regex]::Escape($forkGate))).Count |
-                Should -Be $case.ForkGuardCount -Because "secret-consuming PR jobs must skip fork pull requests"
+                Should -Be $case.ForkGuardCount -Because "secret-consuming PR jobs must skip fork and draft pull requests"
             @([regex]::Matches($workflowContent, [regex]::Escape($concurrencyGroup))).Count | Should -Be 1
             @([regex]::Matches($workflowContent, [regex]::Escape($cancelInProgress))).Count |
                 Should -Be 1 -Because "new commits should cancel obsolete template builds only for the same PR"
