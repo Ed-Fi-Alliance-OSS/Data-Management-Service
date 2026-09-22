@@ -178,9 +178,11 @@ function Test-DmsNeverStarted {
         # set that produced no DMS container at all proves nothing about that: it is consistent
         # with the dependency working, and equally with the service having been dropped, renamed or
         # never composed. So this requires a container to look at and a successful look at it.
-        [bool] $EnumerationSucceeded = $true,
-        [bool] $ContainerLocated = $true,
-        [bool] $InspectSucceeded = $true
+        # All three default to false. A caller that omits one is a caller that did not establish
+        # it, and the permissive default is exactly the conflation this separation removes.
+        [bool] $EnumerationSucceeded = $false,
+        [bool] $ContainerLocated = $false,
+        [bool] $InspectSucceeded = $false
     )
 
     $zero = '0001-01-01T00:00:00Z'

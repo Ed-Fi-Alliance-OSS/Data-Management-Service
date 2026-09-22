@@ -402,6 +402,36 @@ catch {
             }
         }
 
+        It 'refuses to remove a workspace when the receipt records <Case>' -ForEach @(
+            # A relative workspaceRoot is refused earlier still, at the environment-file containment
+            # check, so that case expects no teardown at all rather than one.
+            @{ Case = 'no evidence root'; Field = 'evidenceRoot'; Value = ''; Expect = 'records no evidenceRoot'; Teardown = 1 }
+            @{ Case = 'a relative evidence root'; Field = 'evidenceRoot'; Value = 'evidence'; Expect = "evidenceRoot 'evidence' is not absolute"; Teardown = 1 }
+            @{ Case = 'a relative workspace'; Field = 'workspaceRoot'; Value = 'workspace'; Expect = 'outside the workspace'; Teardown = 0 }
+        ) {
+            # Without both boundaries, absolute, this cannot establish that removing the workspace
+            # keeps the evidence. The stack still came down; the recursive removal does not happen
+            # and the receipt survives so a later cleanup can retry.
+            $receipt = New-Receipt
+
+            try {
+                $document = Get-Content -LiteralPath $receipt.Path -Raw | ConvertFrom-Json
+                $document.$Field = $Value
+                Set-Content -LiteralPath $receipt.Path -Encoding utf8 -Value ($document | ConvertTo-Json -Depth 4)
+
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                @($run.Command | Where-Object { $_ -match 'bootstrap-published-dms\.ps1' }) | Should -HaveCount $Teardown
+                $run.Failure | Should -Match ([regex]::Escape($Expect))
+                Test-Path -LiteralPath $receipt.Path | Should -BeTrue
+                Test-Path -LiteralPath $receipt.Workspace | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It 'refuses a workspace reached through a junction rather than removing it' {
             $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-wt-$([guid]::NewGuid().ToString('N'))"
             $link = Join-Path ([IO.Path]::GetTempPath()) "dms1502-wl-$([guid]::NewGuid().ToString('N'))"

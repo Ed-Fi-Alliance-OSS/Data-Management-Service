@@ -162,30 +162,46 @@ finally {
 # The workspace, after the stack that was mounting it is down. Left behind, it makes the next run
 # refuse at Assert-PathsSafeToOwn, so a fallback that only brought the project down would not have
 # restored a host this proof can run on.
-$workspace = [IO.Path]::GetFullPath("$workspaceRoot")
 $evidenceRoot = Get-JsonMember -Object $receipt -Name 'evidenceRoot'
 
 $refusal = @()
 
-if (-not [IO.Path]::IsPathRooted($workspace)) {
-    $refusal += "'$workspace' is not absolute"
+# The raw recorded values, asked before anything normalizes them. GetFullPath turns a relative
+# path into an absolute one against whatever the working directory happens to be, and a receipt
+# that records no evidence root cannot establish that removing the workspace preserves the
+# evidence. Both are required to be present and rooted, so neither absence nor a relative spelling
+# becomes permission to delete recursively.
+foreach ($recorded in @(
+        @{ Name = 'workspaceRoot'; Value = "$workspaceRoot" }
+        @{ Name = 'evidenceRoot'; Value = "$evidenceRoot" }
+    )) {
+    if ([string]::IsNullOrWhiteSpace($recorded.Value)) {
+        $refusal += "it records no $($recorded.Name), so the boundary between what may be removed and what must be kept is unknown"
+    }
+    elseif (-not [IO.Path]::IsPathRooted($recorded.Value)) {
+        $refusal += "its $($recorded.Name) '$($recorded.Value)' is not absolute, so what it names depends on the working directory"
+    }
 }
-elseif ($workspace.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) -ieq
-    [IO.Path]::GetPathRoot($workspace).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)) {
-    $refusal += "'$workspace' is a filesystem root"
-}
-elseif (Test-OwnedDeletionPath -Path $repositoryRoot -OwnedDirectory @($workspace)) {
-    $refusal += "'$workspace' contains this repository"
-}
-elseif (Test-OwnedDeletionPath -Path $composeRoot -OwnedDirectory @($workspace)) {
-    $refusal += "'$workspace' contains the compose directory"
-}
-elseif (-not [string]::IsNullOrWhiteSpace("$evidenceRoot") -and
-    (Test-OwnedDeletionPath -Path ([IO.Path]::GetFullPath("$evidenceRoot")) -OwnedDirectory @($workspace))) {
-    $refusal += "'$workspace' contains the evidence directory '$evidenceRoot', which is the record of why the run failed"
-}
-elseif ($null -ne (Get-ReparsePointAncestor -Path $workspace)) {
-    $refusal += "'$workspace' is reached through a link or junction, so what would be removed is not the path that was checked"
+
+if ($refusal.Count -eq 0) {
+    $workspace = [IO.Path]::GetFullPath("$workspaceRoot")
+
+    if ($workspace.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) -ieq
+        [IO.Path]::GetPathRoot($workspace).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)) {
+        $refusal += "'$workspace' is a filesystem root"
+    }
+    elseif (Test-OwnedDeletionPath -Path $repositoryRoot -OwnedDirectory @($workspace)) {
+        $refusal += "'$workspace' contains this repository"
+    }
+    elseif (Test-OwnedDeletionPath -Path $composeRoot -OwnedDirectory @($workspace)) {
+        $refusal += "'$workspace' contains the compose directory"
+    }
+    elseif (Test-OwnedDeletionPath -Path ([IO.Path]::GetFullPath("$evidenceRoot")) -OwnedDirectory @($workspace)) {
+        $refusal += "'$workspace' contains the evidence directory '$evidenceRoot', which is the record of why the run failed"
+    }
+    elseif ($null -ne (Get-ReparsePointAncestor -Path $workspace)) {
+        $refusal += "'$workspace' is reached through a link or junction, so what would be removed is not the path that was checked"
+    }
 }
 
 if ($refusal.Count -gt 0) {

@@ -61,7 +61,10 @@ Describe 'Stock image proof decisions' {
 
     Context 'the wrong-digest scenario: never started versus started then stopped' {
         It 'accepts a container created but never started' {
-            $verdict = Test-DmsNeverStarted -Status 'created' -StartedAtRaw '0001-01-01T00:00:00Z' -ExitCode 0
+            # Every fact passed explicitly, here and below: the contract is what the caller
+            # established, not what a default let it omit.
+            $verdict = Test-DmsNeverStarted -Status 'created' -StartedAtRaw '0001-01-01T00:00:00Z' -ExitCode 0 `
+                -EnumerationSucceeded $true -ContainerLocated $true -InspectSucceeded $true
 
             $verdict.Verified | Should -BeTrue
         }
@@ -72,7 +75,7 @@ Describe 'Stock image proof decisions' {
             # working and equally with the service having been dropped or never composed, so it
             # establishes nothing.
             $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null `
-                -EnumerationSucceeded $true -ContainerLocated $false
+                -EnumerationSucceeded $true -ContainerLocated $false -InspectSucceeded $true
 
             $verdict.Verified | Should -BeFalse
             $verdict.Reason | Should -Match 'an absent service is not the same as a service that refused to start'
@@ -87,7 +90,8 @@ Describe 'Stock image proof decisions' {
         }
 
         It 'refuses a successful inspect that reported no status' {
-            $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null -EnumerationSucceeded $true
+            $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null `
+                -EnumerationSucceeded $true -ContainerLocated $true -InspectSucceeded $true
 
             $verdict.Verified | Should -BeFalse
             $verdict.Reason | Should -Match 'reported no status'
@@ -104,14 +108,22 @@ Describe 'Stock image proof decisions' {
 
         It 'refuses a container that started and then exited' {
             # Much weaker than never starting: the plugin root was mounted and the host ran.
-            $verdict = Test-DmsNeverStarted -Status 'exited' -StartedAtRaw '2026-09-21T10:00:00.1234567Z' -ExitCode 1
+            $verdict = Test-DmsNeverStarted -Status 'exited' -StartedAtRaw '2026-09-21T10:00:00.1234567Z' -ExitCode 1 `
+                -EnumerationSucceeded $true -ContainerLocated $true -InspectSucceeded $true
 
             $verdict.Verified | Should -BeFalse
             $verdict.Reason | Should -Match 'not the same as never starting'
         }
 
+        It 'refuses a caller that established nothing at all' {
+            # The defaults are closed, so omitting the facts is refused rather than accepted.
+            (Test-DmsNeverStarted -Status 'created' -StartedAtRaw '0001-01-01T00:00:00Z' -ExitCode 0).Verified |
+                Should -BeFalse
+        }
+
         It 'refuses a container that is still running' {
-            (Test-DmsNeverStarted -Status 'running' -StartedAtRaw '2026-09-21T10:00:00.1234567Z' -ExitCode $null).Verified |
+            (Test-DmsNeverStarted -Status 'running' -StartedAtRaw '2026-09-21T10:00:00.1234567Z' -ExitCode $null `
+                    -EnumerationSucceeded $true -ContainerLocated $true -InspectSucceeded $true).Verified |
                 Should -BeFalse
         }
     }
