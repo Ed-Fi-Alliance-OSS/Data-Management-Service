@@ -1375,6 +1375,86 @@ function Get-AmbientOverride {
     return @(Get-AmbientRefusedKey | Where-Object { $ProcessEnvironment.ContainsKey($_) })
 }
 
+function Get-ProofOutcome {
+    <#
+    .SYNOPSIS
+    What this run is, said once, out of everything that could have gone wrong in it.
+
+    .DESCRIPTION
+    A proof that exits zero because nothing rethrew is not a proof. Three independent things decide
+    whether this run proved anything, and each of them has been able to go wrong quietly:
+
+    the scenario work reaching its end, which an exception caught in a finally can hide; the
+    no-build verdict, which was recorded into evidence and then never consulted; and the cleanup of
+    what the run created, whose failure used to replace the original failure rather than join it.
+
+    So the outcome is computed from all three together, and every reason is kept. The primary
+    failure is listed first and is never dropped, because a cleanup error that arrives afterwards is
+    a second problem and not an explanation of the first.
+
+    Ordinary means: the work finished, no command that builds an image was recorded, and whatever
+    the run took responsibility for was given back. Anything else is `failed`, including a run that
+    claims to have completed while carrying a failure, which is a contradiction rather than a pass.
+    #>
+    param(
+        [bool] $RequiredWorkCompleted,
+        [string] $PrimaryFailure,
+        $NoBuildVerdict,
+        [bool] $OwnedRunStarted,
+        [bool] $CleanupAttempted,
+        [bool] $TeardownFailed,
+        [string[]] $CleanupError = @(),
+        [string] $EvidenceFailure
+    )
+
+    $failure = @()
+
+    # First and always. Everything below is something that happened after it.
+    if (-not [string]::IsNullOrWhiteSpace($PrimaryFailure)) {
+        $failure += "the run failed: $PrimaryFailure"
+    }
+    elseif (-not $RequiredWorkCompleted) {
+        $failure += 'the run did not reach the end of its scenario work, and recorded no reason for stopping'
+    }
+
+    if ($RequiredWorkCompleted -and -not [string]::IsNullOrWhiteSpace($PrimaryFailure)) {
+        $failure += 'the run recorded both a completion and a failure, so what it did is not knowable from its own record'
+    }
+
+    # Recorded and then ignored is how this one used to fail. A verdict that could not be reached at
+    # all is refused for the same reason an unverified control is: it is not a pass.
+    if ($null -eq $NoBuildVerdict) {
+        $failure += 'no no-build verdict was reached, so whether this run built an image is unknown'
+    }
+    elseif (-not $NoBuildVerdict.Verified) {
+        $reason = if ($null -ne $NoBuildVerdict.PSObject.Properties['Reason']) { [string]$NoBuildVerdict.Reason } else { '' }
+        $failure += "this run recorded a command that builds an image, so it does not prove a stock image ran anything: $reason"
+    }
+
+    if ($OwnedRunStarted -and -not $CleanupAttempted) {
+        $failure += 'this run created resources and no cleanup was attempted, so they are still on the host'
+    }
+
+    if ($TeardownFailed) {
+        $failure += 'the final teardown failed, so the stack this run started may still be up'
+    }
+
+    foreach ($entry in @($CleanupError | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        $failure += "cleanup: $entry"
+    }
+
+    # Last, because the evidence is written after cleanup and cannot describe its own failure. A run
+    # with no readable artifact is a claim nobody can check.
+    if (-not [string]::IsNullOrWhiteSpace($EvidenceFailure)) {
+        $failure += "the evidence artifact was not written: $EvidenceFailure"
+    }
+
+    return [pscustomobject]@{
+        Outcome = if ($failure.Count -eq 0) { 'passed' } else { 'failed' }
+        Failure = $failure
+    }
+}
+
 function Select-RouteUnqualifiedDataStore {
     <#
     .SYNOPSIS
@@ -1576,4 +1656,5 @@ Export-ModuleMember -Function @(
     'Test-ProofPort'
     'Get-StockProofEnvironmentContent'
     'Select-RouteUnqualifiedDataStore'
+    'Get-ProofOutcome'
 )

@@ -413,6 +413,28 @@ catch {
             )
         }
 
+        # The rule set a run needs to reach the credential contract and the fixture rejection, and
+        # a reader for the HTTP the shim recorded. Defined here rather than in one Context because
+        # more than one Context asks for them.
+        function script:Get-HappyPathRule {
+            param($DataStoreListing)
+
+            $rule = @(Get-MatchingDescriptorRule) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+            @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) + @(Get-ReadyStackRule) +
+            @(Get-FixtureRejectionRule)
+
+            if ($null -ne $DataStoreListing) {
+                $rule = @(@{ match = 'cms:dataStores'; exitCode = 0; output = $DataStoreListing }) + $rule
+            }
+
+            return @($rule | ForEach-Object { $_ })
+        }
+
+        function script:Get-HttpCall {
+            param($Run, [string] $UriPattern, [string] $Method = 'Post')
+            return @($Run.Http | Where-Object { $_.uri -match $UriPattern -and $_.method -eq $Method })
+        }
+
         function script:Invoke-EntryScript {
             param(
                 [string] $PinPath,
@@ -420,7 +442,8 @@ catch {
                 [string] $AmbientKey,
                 [string] $AmbientValue,
                 [int[]] $Port,
-                [string] $ManifestOverride
+                [string] $ManifestOverride,
+                [string] $PathBase
             )
 
             $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-entry-$([guid]::NewGuid().ToString('N'))"
@@ -458,6 +481,11 @@ catch {
                 # A value nothing else in the run produces, so "this secret never appears" is an
                 # assertion about this string rather than about a default that might be empty.
                 $baseLine += 'DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=proof-bootstrap-secret-value'
+
+                if ($PSBoundParameters.ContainsKey('PathBase')) {
+                    $baseLine = @($baseLine | Where-Object { $_ -notmatch '^PATH_BASE=' })
+                    $baseLine += "PATH_BASE=$PathBase"
+                }
                 Set-Content -LiteralPath $baseEnvironmentFile -Value $baseLine -Encoding utf8
 
                 # The fixture's own assets file, in the shape the restore writes, so the script
@@ -1112,27 +1140,6 @@ catch {
     }
 
     Context 'the client this proof posts with, and the store it is bound to' {
-        BeforeAll {
-            function script:Get-HappyPathRule {
-                param($DataStoreListing)
-
-                $rule = @(Get-MatchingDescriptorRule) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
-                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) + @(Get-ReadyStackRule) +
-                @(Get-FixtureRejectionRule)
-
-                if ($null -ne $DataStoreListing) {
-                    $rule = @(@{ match = 'cms:dataStores'; exitCode = 0; output = $DataStoreListing }) + $rule
-                }
-
-                return @($rule | ForEach-Object { $_ })
-            }
-
-            function script:Get-HttpCall {
-                param($Run, [string] $UriPattern, [string] $Method = 'Post')
-                return @($Run.Http | Where-Object { $_.uri -match $UriPattern -and $_.method -eq $Method })
-            }
-        }
-
         BeforeEach {
             $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
             New-PublishedPinFile -Path $script:pinPath
@@ -1339,6 +1346,119 @@ catch {
                 @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
 
             $run.WorkspaceCreated | Should -BeFalse
+        }
+    }
+
+    Context 'what the run says it was' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'records a mid-run failure as failed evidence, with the reason' {
+            # The tag resolving to another digest, which stops the run inside its scenario work.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @{ match = 'buildx imagetools inspect'; exitCode = 0; output = '{"digest":"sha256:' + ('9' * 64) + '"}' }
+            )
+
+            $run.Evidence | Should -Not -BeNullOrEmpty
+            $run.Evidence.outcome | Should -BeExactly 'failed'
+            $run.Evidence.primaryFailure | Should -Match 'has moved'
+            @($run.Evidence.failure)[0] | Should -Match '^the run failed:'
+            $run.Failure | Should -Match 'did not pass'
+        }
+
+        It 'does not let a cleanup failure erase the failure that came first' {
+            # Both at once: a schema set the pin does not name, and a teardown that then fails.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages @('EdFi.Wrong@9.9.9')) +
+                @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) |
+                ForEach-Object { $_ })
+
+            $run.Evidence.outcome | Should -BeExactly 'failed'
+            $run.Evidence.primaryFailure | Should -Match 'prepared schema packages the pin does not name'
+
+            # Both reasons, and the original first. The cleanup error used to replace it.
+            $failure = @($run.Evidence.failure)
+            $failure[0] | Should -Match 'prepared schema packages the pin does not name'
+            @($failure | Where-Object { $_ -match 'Tearing down' }) | Should -Not -BeNullOrEmpty
+
+            $run.Failure | Should -Match 'prepared schema packages the pin does not name'
+            $run.Failure | Should -Match 'Tearing down'
+        }
+
+        It 'records that cleanup was attempted, and whether it succeeded' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) +
+                @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) |
+                ForEach-Object { $_ })
+
+            $run.Evidence.cleanup.ownedRunStarted | Should -BeTrue
+            $run.Evidence.cleanup.attempted | Should -BeTrue
+            $run.Evidence.cleanup.succeeded | Should -BeFalse
+            $run.Evidence.cleanup.teardownFailed | Should -BeTrue
+            @($run.Evidence.cleanup.error) | Should -Not -BeNullOrEmpty
+        }
+
+        It 'fails the run on a recorded image-building command rather than recording it and stopping' {
+            # PATH_BASE reaches the command log through the URL the proof logs its requests to, so
+            # this is a build command genuinely present in the record the no-build verdict reads.
+            # See the residual note: that an env value can put tokens there at all is its own
+            # weakness, and this test is why it is visible.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -PathBase 'x docker build .' -ShimRule (Get-HappyPathRule)
+
+            $run.Evidence.buildCommandAbsent.Verified | Should -BeFalse
+            $run.Evidence.outcome | Should -BeExactly 'failed'
+            @($run.Evidence.failure | Where-Object { $_ -match 'recorded a command that builds an image' }) |
+                Should -Not -BeNullOrEmpty
+            $run.Failure | Should -Match 'recorded a command that builds an image'
+        }
+
+        It 'keeps the structured no-build verdict in the evidence either way' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            $run.Evidence.buildCommandAbsent.Verified | Should -BeTrue
+            $run.Evidence.buildCommandAbsent.Reason | Should -BeExactly 'no recorded command builds an image'
+        }
+
+        It 'computes the outcome in one place, from the verdict it recorded' {
+            # The defect this replaces was a verdict written into evidence and then never consulted.
+            $ast = [Management.Automation.Language.Parser]::ParseFile($script:entryScript, [ref]$null, [ref]$null)
+
+            $noBuild = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq 'Test-BuildCommandAbsent'
+                    }, $true))
+
+            $outcome = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq 'Get-ProofOutcome'
+                    }, $true))
+
+            $noBuild | Should -HaveCount 1
+            $outcome | Should -Not -BeNullOrEmpty
+            foreach ($call in $outcome) { $call.Extent.Text | Should -Match '-NoBuildVerdict \$noBuild' }
+        }
+
+        It 'never writes an exception record or a raw request object into evidence' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @{ match = 'buildx imagetools inspect'; exitCode = 0; output = '{"digest":"sha256:' + ('9' * 64) + '"}' }
+            )
+
+            $evidence = $run.Evidence | ConvertTo-Json -Depth 14
+
+            # The message and its exception type, not a stack trace or a bound object graph.
+            $run.Evidence.primaryFailure | Should -Not -Match 'at <ScriptBlock>'
+            $evidence | Should -Not -Match 'ScriptStackTrace'
+            $evidence | Should -Not -Match 'InvocationInfo'
         }
     }
 

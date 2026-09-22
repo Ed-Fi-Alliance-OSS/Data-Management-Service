@@ -294,6 +294,84 @@ Describe 'Stock image proof orchestration' {
         }
     }
 
+    Context 'what a finished run is allowed to call itself' {
+        BeforeAll {
+            $script:noBuild = [pscustomobject]@{ Verified = $true; Reason = 'no recorded command builds an image' }
+
+            function script:Get-Outcome {
+                param([hashtable] $Override = @{})
+
+                $argument = @{
+                    RequiredWorkCompleted = $true
+                    NoBuildVerdict        = $script:noBuild
+                    OwnedRunStarted       = $true
+                    CleanupAttempted      = $true
+                }
+
+                foreach ($key in $Override.Keys) { $argument[$key] = $Override[$key] }
+
+                return Get-ProofOutcome @argument
+            }
+        }
+
+        It 'passes only when the work finished, nothing built, and cleanup ran' {
+            $verdict = Get-Outcome
+
+            $verdict.Outcome | Should -BeExactly 'passed'
+            $verdict.Failure | Should -HaveCount 0
+        }
+
+        It 'passes a run that claimed nothing and so had nothing to clean up' {
+            # A preflight refusal owns no resources. That is a successful no-op, not a skipped step.
+            (Get-Outcome @{ OwnedRunStarted = $false; CleanupAttempted = $false }).Outcome | Should -BeExactly 'passed'
+        }
+
+        It 'fails on <Case>' -ForEach @(
+            @{ Case = 'a recorded failure'; Override = @{ RequiredWorkCompleted = $false; PrimaryFailure = 'boom' }; Expect = 'the run failed: boom' }
+            @{ Case = 'stopping with no reason'; Override = @{ RequiredWorkCompleted = $false }; Expect = 'recorded no reason for stopping' }
+            # Built inline: -ForEach data is evaluated at discovery, before any BeforeAll has run.
+            @{ Case = 'an image-building command'; Override = @{ NoBuildVerdict = ([pscustomobject]@{ Verified = $false; Reason = 'docker build .' }) }; Expect = 'recorded a command that builds an image' }
+            @{ Case = 'no no-build verdict at all'; Override = @{ NoBuildVerdict = $null }; Expect = 'whether this run built an image is unknown' }
+            @{ Case = 'cleanup never attempted'; Override = @{ CleanupAttempted = $false }; Expect = 'no cleanup was attempted' }
+            @{ Case = 'a failed teardown'; Override = @{ TeardownFailed = $true }; Expect = 'the final teardown failed' }
+            @{ Case = 'a cleanup error'; Override = @{ CleanupError = @('could not remove the workspace') }; Expect = 'cleanup: could not remove the workspace' }
+            @{ Case = 'evidence that could not be written'; Override = @{ EvidenceFailure = 'access denied' }; Expect = 'evidence artifact was not written: access denied' }
+        ) {
+            $verdict = Get-Outcome $Override
+
+            $verdict.Outcome | Should -BeExactly 'failed'
+            @($verdict.Failure | Where-Object { $_ -match [regex]::Escape($Expect) }) | Should -Not -BeNullOrEmpty
+        }
+
+        It 'fails a run that claims both a completion and a failure' {
+            # Not reconciled into one or the other: a record that says both is a record that cannot
+            # be read, and silently preferring either would be inventing the answer.
+            $verdict = Get-Outcome @{ PrimaryFailure = 'boom' }
+
+            $verdict.Outcome | Should -BeExactly 'failed'
+            @($verdict.Failure | Where-Object { $_ -match 'both a completion and a failure' }) | Should -Not -BeNullOrEmpty
+        }
+
+        It 'keeps the first failure first when a cleanup failure follows it' {
+            $verdict = Get-Outcome @{
+                RequiredWorkCompleted = $false
+                PrimaryFailure        = 'the recipe1 deployment never came up'
+                TeardownFailed        = $true
+                CleanupError          = @('could not remove the workspace')
+                EvidenceFailure       = 'access denied'
+            }
+
+            # Order is the claim: the original failure, then what happened afterwards.
+            $verdict.Failure[0] | Should -Match 'the recipe1 deployment never came up'
+            $verdict.Failure[-1] | Should -Match 'evidence artifact was not written'
+            $verdict.Failure | Should -HaveCount 4
+        }
+
+        It 'ignores blank cleanup entries rather than reporting an empty reason' {
+            (Get-Outcome @{ CleanupError = @('', '   ') }).Outcome | Should -BeExactly 'passed'
+        }
+    }
+
     Context 'the one data store a proof client may be bound to' {
         BeforeAll {
             function script:New-Store {

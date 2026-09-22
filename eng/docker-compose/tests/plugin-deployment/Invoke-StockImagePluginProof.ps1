@@ -157,6 +157,12 @@ $script:ownership = Get-StockProofOwnership
 $script:secret = @()
 $script:teardownFailed = $false
 $script:cleanupError = [System.Collections.Generic.List[string]]::new()
+# Set at the end of the scenario work, and only there. A finally that runs without it is a run that
+# stopped somewhere, whether or not anything was rethrown.
+$script:requiredWorkCompleted = $false
+# The first thing that went wrong, sanitized, kept so a later cleanup error joins it rather than
+# replacing it.
+$script:primaryFailure = ''
 
 function Write-Phase([string]$text) {
     Write-Information '' -InformationAction Continue
@@ -1418,35 +1424,83 @@ try {
         -PluginMountSource $fixture.PublishRoot -AllowedPlugins "${pluginName}1" `
         -ExpectStartFailure -Scenario { param($environmentFile) Invoke-MisspelledAllowlistCheck }
 
+    $script:requiredWorkCompleted = $true
+
     Write-Phase 'Result'
     Write-Detail 'the pulled stock image ran third-party code and returned the fixture''s custom-validation 400'
+}
+catch {
+    # Caught rather than left to propagate through the finally below, for two reasons: a throw in a
+    # finally replaces whatever was in flight, and evidence written without this says a run stopped
+    # without saying why. The message only, sanitized; an exception record carries a stack and
+    # whatever objects were bound to it.
+    $script:primaryFailure = Protect-StockProofText -Text "$($_.Exception.GetType().Name): $($_.Exception.Message)" -Secret $script:secret
 }
 finally {
     # Cleanup first, then evidence: the record has to include the teardown commands and any failure
     # they hit, and writing it beforehand omits exactly the part a failed run needs.
+    #
+    # Attempted whenever this run claimed anything. A run that refused at the preflight claimed
+    # nothing, and the plan is then empty, which is a successful no-op rather than a skip.
+    $ownedRunStarted = @($script:ownership.Resource).Count -gt 0
+    $cleanupAttempted = $false
+
     try {
+        $cleanupAttempted = $true
         Invoke-OwnedCleanup
     }
     catch {
         $script:cleanupError.Add((Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret))
     }
 
-    $result.buildCommandAbsent = Test-BuildCommandAbsent -Command @($script:commandLog)
-    $result.cleanupError = @($script:cleanupError)
-    $result.teardownFailed = $script:teardownFailed
+    # The structured verdict, kept whole. Recording it and exiting zero is the defect this replaces.
+    $noBuild = Test-BuildCommandAbsent -Command @($script:commandLog)
 
-    # Attempted after cleanup so the record includes it, and its failure is collected rather than
-    # logged: a lane that reported success without the evidence artifact would be claiming a proof
-    # nobody can read.
+    $verdict = Get-ProofOutcome `
+        -RequiredWorkCompleted $script:requiredWorkCompleted `
+        -PrimaryFailure $script:primaryFailure `
+        -NoBuildVerdict $noBuild `
+        -OwnedRunStarted $ownedRunStarted `
+        -CleanupAttempted $cleanupAttempted `
+        -TeardownFailed $script:teardownFailed `
+        -CleanupError @($script:cleanupError)
+
+    $result.outcome = $verdict.Outcome
+    $result.primaryFailure = $script:primaryFailure
+    $result.buildCommandAbsent = $noBuild
+    $result.cleanup = [ordered]@{
+        ownedRunStarted = $ownedRunStarted
+        attempted       = $cleanupAttempted
+        succeeded       = (-not $script:teardownFailed -and $script:cleanupError.Count -eq 0)
+        teardownFailed  = $script:teardownFailed
+        error           = @($script:cleanupError)
+    }
+    $result.failure = @($verdict.Failure)
+
+    # Attempted after cleanup so the record includes it. Evidence cannot describe its own write
+    # failing, so that one reason is added to the aggregate below rather than to the artifact: a
+    # lane reporting success without a readable artifact would be claiming a proof nobody can check.
+    $evidenceFailure = ''
+
     try {
         Write-Evidence -Result ([pscustomobject]$result)
     }
     catch {
-        $script:cleanupError.Add("writing evidence: $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)")
+        $evidenceFailure = Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret
     }
 
-    if ($script:cleanupError.Count -gt 0) {
-        throw ("This run did not finish cleanly:" + [Environment]::NewLine +
-            (($script:cleanupError | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+    $reported = Get-ProofOutcome `
+        -RequiredWorkCompleted $script:requiredWorkCompleted `
+        -PrimaryFailure $script:primaryFailure `
+        -NoBuildVerdict $noBuild `
+        -OwnedRunStarted $ownedRunStarted `
+        -CleanupAttempted $cleanupAttempted `
+        -TeardownFailed $script:teardownFailed `
+        -CleanupError @($script:cleanupError) `
+        -EvidenceFailure $evidenceFailure
+
+    if ($reported.Outcome -cne 'passed') {
+        throw ("This stock-image proof did not pass:" + [Environment]::NewLine +
+            (($reported.Failure | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
     }
 }
