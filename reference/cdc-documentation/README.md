@@ -2,7 +2,7 @@
 
 This is the shared PostgreSQL and SQL Server operator reference set for relational
 CDC. Delivery is in progress under [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
-PostgreSQL setup, its DMS E2E opt-in variant, deployment-state preservation, managed
+PostgreSQL and SQL Server setup, their DMS E2E opt-in variants, deployment-state preservation, managed
 lifecycle, connector restart/resume, recovery classification and the projection
 administration/history handoff are documented.
 Remaining procedure bodies and live qualification are **pending**. A reserved procedure or snippet ID is not an executable procedure
@@ -74,8 +74,9 @@ restricted SQL login during managed initial setup. Durable provider completion s
 retries to validation-only; missing users and conflicting SIDs then fail without repair.
 [DMS-1326's T29 evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29) records
 provider/controller qualification and wrapper ordering checks for this former setup gap.
-T03 still owns the SQL Server operator procedure and T17 the exact public runbook-snippet
-qualification; those procedures remain pending.
+The [SQL Server operator procedure](operations-runbook.md#sql-server-setup) and
+[E2E variant](operations-runbook.md#sql-server-e2e-variant) are documented in T03.
+T17 still owns their exact public runbook-snippet qualification; live results remain pending.
 
 If a later procedure needs a missing capability, record the command/fixture, expected
 surface, and observed gap here. Required runtime integration work belongs to DMS-1326,

@@ -2,8 +2,8 @@
 
 [Entry point](README.md) · [Evidence index](cdc-inv-evidence.md)
 
-This shared PostgreSQL/SQL Server runbook is under construction. PostgreSQL setup
-and its E2E opt-in variant, state preservation, managed lifecycle, recovery and
+This shared PostgreSQL/SQL Server runbook is under construction. Both providers’ setup
+and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
 projection handoffs are documented; live qualification remains pending. Other
 records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
@@ -14,8 +14,8 @@ for current command details and the linked design owners for support boundaries.
 | Need | Procedure | Documentation task |
 | --- | --- | --- |
 | PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 exercise pending |
-| SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — pending |
-| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL documented; SQL Server pending T03 |
+| SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 exercise pending |
+| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | Both providers documented; T16/T17 exercises pending |
 | Preserve deployment state | [deployment-state](#deployment-state) | T04 — documented; T18/T19 exercise pending |
 | Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; T18/T19 exercise pending |
 | Established validation and restart preflight | [established-validation](#established-validation) | T04 — documented; T18/T19 exercise pending |
@@ -411,9 +411,8 @@ an unsampled recovery interval. These boundaries belong to
 [managed/native recovery](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
 For an interrupted initial workflow follow [initial retry](#initial-enable-retry);
 for an admitted deployment follow [established validation](#established-validation)
-and [managed stop/start](#managed-lifecycle). Those detailed records remain pending
-T04/T05; the delivered [SchemaTools managed lifecycle reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#managed-stack-lifecycle)
-is the current command handoff. Never substitute raw Connect mutation, state deletion,
+and [managed stop/start](#managed-lifecycle). The delivered [SchemaTools managed lifecycle reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#managed-stack-lifecycle)
+also lists the shipped commands. Never substitute raw Connect mutation, state deletion,
 or another provisioning run for those controller operations. Ordinary API routing
 is not gated by CDC status; see [readiness scope](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-readiness-scope).
 
@@ -421,25 +420,280 @@ is not gated by CDC status; see [readiness scope](../design/backend-redesign/des
 
 ## SQL Server local setup
 
-**Pending T03; exercise T17.** Scope to deliver: Projection RCSI/nested-trigger correction separately from Agent, capture/cleanup, snapshot isolation and history prerequisites.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
+**Documented in T03; exact public snippets await T17 live exercise.** Use the same
+[owned local profile](README.md#supported-deployment), Linux/Docker/toolchain,
+private-file protections, writer/seed exclusion, complete normal DMS settings and
+CMS-selection rules in [shared preparation](#prepare-the-owned-deployment). Follow
+the [SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
+and [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Dedicated initial database and CMS-selected target/generation. |
-| Authority/offline window | Pending T03: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Shared setup inputs plus restricted login/user; wrapper mssql versus CDC sqlserver tokens. Exact paths and substitutions pending T03. |
-| Invocation | Reserved IDs: `cdc-sqlserver-settings`, `cdc-sqlserver-bootstrap-local`, `cdc-sqlserver-bootstrap-published`. Commands and fixture substitutions pending T03. |
-| JSON/exit status | Pending T03: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T03: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T03: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Default tenant, SQL Server, fresh CMS-selected target `1` / `datastore-1`, generation `1`, dedicated new `edfi_cdc`. The original managed CREATE supplies source identity and receipt. |
+| Authority/offline window | Deployment owner controls the entire local server/network, CMS and all writers; setup administrator `sa` has database creation, CDC, principal-metadata and owned-local server prerequisite authority. Keep every writer/seed offline until matching writer-publication authorization. Connector login has no such authority. |
+| Retained inputs | Full `.local/cdc/sqlserver.json`, protected base/effective environment, matching staged core/extensions, original `.local/cdc/state-sqlserver`, emitted `.bootstrap/cdc-runtime` settings/Compose override, `.cdc-deployments` inventory and `broker-size.json`. Retain these after failure too. |
+| Invocation | `cdc-sqlserver-infrastructure`, deployment-owned restricted login preparation, `cdc-sqlserver-settings`, exactly one of `cdc-sqlserver-bootstrap-local` / `cdc-sqlserver-bootstrap-published`, then `cdc-sqlserver-status` / `cdc-sqlserver-watch`. Repository root throughout. |
+| JSON/exit status | Wrapper progress is text. Internal `enable` requires exit `0`, `operation: "enable"`, `succeeded: true`, `exitCode: 0`, matching `data.workflowId`, non-default `data.authorizedAt`. Status/watch use the shared observation envelope/codes below. |
+| Postcondition | Temporary projector stopped and matching writer publication authorized; wrapper starts DMS unless local `-InfraOnly`; optional seed follows admission and DMS startup. Database-user mapping alone does not complete admission. |
+| Rejection/timeout action | Keep writers excluded; preserve original state, effective settings, sanitized diagnostics. Use the failure table below, [initial retry](#initial-enable-retry), or [unsupported provenance](#unsupported-provenance); do not recreate the database, remap a user, or delete history to retry. |
+
+### Prepare SQL Server infrastructure and login
+
+Use [mssql.yml](../../eng/docker-compose/mssql.yml)'s SQL Server **2025** Developer
+image (`mcr.microsoft.com/mssql/server:2025-latest`), not an old 2022 volume/container.
+The immutable SQL Server and Connect images actually exercised for initial mapping
+are recorded in [T29 evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
+and its [image manifest](evidence/t29-sqlserver-initial-user-mapping.json).
+The Compose SQL Server tag is mutable; retain the resolved image identity in each
+qualification result rather than treating the tag as proof of the tested digest.
+Use the qualified Connect image in [kafka-cdc.yml](../../eng/docker-compose/kafka-cdc.yml)
+and the same broker/worker endpoints, profile and heap as shared preparation.
+The shipped [mssql-cdc.yml](../../eng/docker-compose/mssql-cdc.yml) overlay enables
+SQL Server Agent when `-CdcDatabaseInfrastructure` or CDC bootstrap is selected.
+A successful SQL connection or container/HTTP health check does not prove Agent,
+projection prerequisites, capture progress or CDC readiness.
+
+Prepare the protected `eng/docker-compose/.env` with effective `MSSQL_PORT=1435`,
+`MSSQL_DB_NAME=edfi_datamanagementservice` and a private `MSSQL_SA_PASSWORD`, plus
+normal CMS/identity settings and the connector's `CDC_DATABASE_PASSWORD`.
+The shipped [engine resolver](../../eng/docker-compose/env-utility.psm1) applies
+[.env.mssql](../../eng/docker-compose/.env.mssql), preserving nonblank custom MSSQL
+credentials/names/ports and producing an effective file under `.derived` when needed.
+Reconcile ambient overrides before preparation. Retain base and effective files;
+all phases must use the same resolved values. SQL Server hosts CMS too; use
+`-SeparateConfigDatabase` so the dedicated CMS database differs from the new CDC
+source. `edfi_cdc` must not exist or alias any infrastructure/CMS/system database.
+Keep the fresh CMS/no-prior-inserts condition for the example ID `1`; the shared
+CMS selection instructions explain authenticated inspection and rejection before
+provisioning. Do not pre-register a store just to discover an ID.
+
+PowerShell, repository root; starts owned infrastructure with DMS excluded. Requires
+protected environment and exclusive ownership from shared preparation. Substitutions:
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `./eng/docker-compose/.env` | Protected selected SQL Server environment above | Owned fixture environment, same effective values in every phase |
+| `start-local-dms.ps1` | Local build choice; published alternative uses `start-published-dms.ps1` with the same switches in its own fresh workspace | Corresponding shipped wrapper |
+| `mssql`, `self-contained` | Wrapper database token and chosen identity provider | Keep provider token; matching supported identity settings |
+
+<!-- cdc-snippet: cdc-sqlserver-infrastructure -->
+```powershell
+$environmentFile = (Resolve-Path './eng/docker-compose/.env').Path
+pwsh ./eng/docker-compose/start-local-dms.ps1 -InfraOnly -EnableConfig `
+    -SeparateConfigDatabase -CdcDatabaseInfrastructure -DatabaseEngine mssql `
+    -IdentityProvider self-contained -EnvironmentFile $environmentFile
+if ($LASTEXITCODE -ne 0) { throw 'Infrastructure preparation failed; keep writers stopped.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-infrastructure -->
+
+Before bootstrap, have the deployment's SQL Server administrator prepare an enabled
+SQL login named `cdc_reader` on this server using its protected credential tooling.
+Its password must match the worker's `CDC_DATABASE_PASSWORD`. Grant no server-role
+membership, ownership, elevated server permissions or document writes. Login creation
+and password rotation are deployment-owned; neither wrapper nor provider performs them.
+Do **not** create the target database or a target database user ahead of bootstrap.
+During managed initial provider setup, the provider creates the same-name user for
+this existing login, verifies the SID/type and applies narrow source/CDC/heartbeat
+access. Set both `Cdc.DatabaseConnectorPrincipal` and connector `database.user` to
+`cdc_reader`; arbitrary different login/user mappings are not supported by this path.
+No operator pause or callback between provisioning and admission is required.
+
+### Prepare complete SQL Server settings
+
+Prepare `.local/cdc/dms-base.json` with full normal DMS settings and this deployment's
+CMS client credentials, encryption key, authentication and projector options, as in
+shared preparation. CMS is host-reachable at `http://127.0.0.1:8081` in this example.
+The settings construction below retains those normal settings; it is not a partial
+`Cdc` file. Local and published examples both select Data Standard `5.2`; stage the
+same core/extensions that the eventual DMS host uses.
+
+PowerShell, repository root; requires protected base settings, environment, existing
+restricted login and owner-only `.local/cdc` directory. Creates new settings/state;
+use retained inputs for retries. The masked setup connection has the shape
+`Server=127.0.0.1,1435;Database=edfi_cdc;User Id=sa;Password=…;Encrypt=true;TrustServerCertificate=true;Command Timeout=180`.
+Use a connection-string builder for escaped values. The 180-second SQL command and
+controller call budgets match; the bounded admission wait is 600 seconds.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `.local/cdc/dms-base.json`, `.local/cdc/sqlserver.json`, `.local/cdc/state-sqlserver` | Complete private normal settings, new wrapper input and original state root | Owned fixture full settings/paths; never fabricated receipts |
+| `1`, `datastore-1`, `local`, generation `1` | Fresh CMS expectation and initial deployment identity | Actual selected fixture identity in both target settings |
+| `edfi_cdc`, `sa`, `cdc_reader`, masked connection | Dedicated new database, setup administrator and prepared same-name login/user | Matching owned database/principals/host port |
+| Endpoints, worker values, environment path | Same local profile as shared preparation; host SQL port `1435`, worker `dms-mssql:1433` | Matching host/container fixture endpoints and environment |
+| `5000`, `10000000`, timing values | Example lag policy (ms), record ceiling (bytes), bounded timeouts (ms); no scale claim | Supported fixture policy/budgets |
+
+<!-- cdc-snippet: cdc-sqlserver-settings -->
+```powershell
+$ErrorActionPreference = 'Stop'
+$repoRoot = (Get-Location).Path
+$settingsPath = Join-Path $repoRoot '.local/cdc/sqlserver.json'
+$statePath = Join-Path $repoRoot '.local/cdc/state-sqlserver'
+if (Test-Path -LiteralPath $settingsPath) { throw 'Use retained settings; do not overwrite an existing deployment.' }
+$settings = Get-Content './.local/cdc/dms-base.json' -Raw | ConvertFrom-Json -AsHashtable
+$settings.AppSettings.Datastore = 'mssql'
+$settings.AppSettings.MultiTenancy = $false
+$settings.AppSettings.RouteQualifierSegments = ''
+$settings.DataManagement.DocumentCache.Targets = @(@{ DataStoreId = 1 })
+$settings.Cdc = @{
+    Provider = 'sqlserver'; DeploymentKey = 'local'; TenantKey = ''
+    DataStoreId = '1'; InstanceKey = 'datastore-1'; Generation = 1
+    TopicPrefix = 'edfi'; PartitionCount = 1
+    Schemas = @() # Bootstrap replaces with all staged core/extension schema paths.
+    SetupPrincipal = 'sa'; DatabaseConnectorPrincipal = 'cdc_reader'
+    SetupConnectionString = Read-Host 'Setup connection string for edfi_cdc' -MaskInput
+    ConnectEndpoint = 'http://127.0.0.1:8083'
+    WorkerMetricsEndpoint = 'http://127.0.0.1:9404/metrics'
+    KafkaBootstrapServers = 'dms-kafka1:9092'
+    KafkaAdminBootstrapServers = '127.0.0.1:9092'
+    MaxRecordBytes = 10000000; LagThresholdMilliseconds = 5000
+    DurabilityProfile = 'LocalSingleBroker'
+    AuthorizationProfile = 'AuthorizationDisabledLocal'
+    Worker = @{
+        Key = 'local-worker'; OffsetStorageTopic = 'dms-connect-offsets'
+        HeapBytes = 536870912; Principal = 'worker'
+        ConnectorPrincipal = 'connector'; AdministratorPrincipal = 'administrator'
+    }
+    Consumers = @()
+    ProviderConnectionProperties = @{
+        'database.hostname' = 'dms-mssql'; 'database.port' = '1433'
+        'database.names' = 'edfi_cdc'; 'database.user' = 'cdc_reader'
+        'database.password' = '${env:CDC_DATABASE_PASSWORD}'
+        'driver.encrypt' = 'true'; 'driver.trustServerCertificate' = 'true'
+    }
+    KafkaClientSecurityProperties = @{}; KafkaAdminProperties = @{}
+    Compose = @{
+        File = Join-Path $repoRoot 'eng/docker-compose/kafka-cdc.yml'
+        EnvironmentFile = (Resolve-Path './eng/docker-compose/.env').Path
+        Project = 'dms-local'; BrokerSizeOverrideFile = Join-Path $statePath 'broker-size.json'
+    }
+    Timing = @{
+        CallMilliseconds = 180000; WaitMilliseconds = 600000
+        PollMilliseconds = 1000; MaximumObservationAgeMilliseconds = 10000
+    }
+}
+$null = New-Item -ItemType Directory -Path $statePath -Force
+& chmod 700 $statePath
+if ($LASTEXITCODE -ne 0) { throw 'Cannot protect state directory.' }
+$settings | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $settingsPath
+& chmod 600 $settingsPath
+if ($LASTEXITCODE -ne 0) { throw 'Cannot protect settings file.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-settings -->
+
+The wrapper/application token is `mssql`; `Cdc.Provider` is `sqlserver`.
+`database.names` contains exactly the one selected database, not `database.dbname`
+or a multi-database list. Setup credentials use the host's published SQL port;
+connector credentials use the container's `1433`. The certificate trust setting is
+for this local self-signed container. `${env:CDC_DATABASE_PASSWORD}` is a literal
+worker-resolved secret reference, not a PowerShell expansion. Keep it externalized.
+Generated capture/key/snapshot/schema-history properties belong to the shipped
+[connector contract](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands);
+do not hand-render them here.
+
+As in PostgreSQL setup, `Schemas = @()` is a **wrapper input** placeholder. Bootstrap
+stages all core/extensions and emits private runtime settings, including the resolved
+Compose environment/project and host port. Subsequent CLI commands must use the
+emitted settings and original state root, not this un-staged input. Wrappers reject
+`DMS_CDC__*` overrides; direct CLI override support does not change that rule.
+Preserve the full [deployment-state inventory](#deployment-state).
+
+### Enable SQL Server and observe
+
+PowerShell, repository root; requires all preceding preparation with no target
+database/user and every writer excluded. Choose local **or** published, never both
+on the same source. Substitutions: the settings/state/environment/database/identity
+inputs above and matching `5.2` schema overlay in every phase. Both commands perform
+managed CREATE, initial provider mapping/admission, then DMS startup.
+
+<!-- cdc-snippet: cdc-sqlserver-bootstrap-local -->
+```powershell
+pwsh ./eng/docker-compose/bootstrap-local-dms.ps1 -DatabaseEngine mssql `
+    -EnableKafkaCdc -SeparateConfigDatabase -DataStoreDatabaseName edfi_cdc `
+    -CdcSettingsPath './.local/cdc/sqlserver.json' -CdcBindingStatePath './.local/cdc/state-sqlserver' `
+    -EnvironmentFile (Resolve-Path './eng/docker-compose/.env').Path `
+    -DataStandardVersion '5.2' -IdentityProvider self-contained
+if ($LASTEXITCODE -ne 0) { throw 'CDC bootstrap failed; retain state and keep writers excluded.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-bootstrap-local -->
+
+PowerShell, repository root; same substitutions, but requires published infrastructure
+and matching published application/schema-tool inputs in its own fresh workspace.
+The wrapper selects project `dms-published` in the emitted settings.
+
+<!-- cdc-snippet: cdc-sqlserver-bootstrap-published -->
+```powershell
+pwsh ./eng/docker-compose/bootstrap-published-dms.ps1 -DatabaseEngine mssql `
+    -EnableKafkaCdc -SeparateConfigDatabase -DataStoreDatabaseName edfi_cdc `
+    -CdcSettingsPath './.local/cdc/sqlserver.json' -CdcBindingStatePath './.local/cdc/state-sqlserver' `
+    -EnvironmentFile (Resolve-Path './eng/docker-compose/.env').Path `
+    -DataStandardVersion '5.2' -IdentityProvider self-contained
+if ($LASTEXITCODE -ne 0) { throw 'CDC bootstrap failed; retain state and keep writers excluded.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-bootstrap-published -->
+
+Local `-InfraOnly` completes admission and leaves DMS offline; published bootstrap
+has no `-InfraOnly`. An IDE continuation must use the same CMS target/staged schema
+and wait for writer authorization. Optional `-LoadSeedData` runs only after admission
+and DMS startup. The shared exclusions (`-NoDataStore`, `-DmsBaseUrl`, route-qualified
+or multiple targets) also apply here.
+
+Copy exact settings/state paths from the wrapper's printed `Inspect CDC` command.
+PowerShell, repository root; matching `api-schema-tools` executable and retained
+handoff required. Substitutions: `<retained-settings-path>` / `<original-state-root>`
+are actual wrapper-emitted paths; a fixture must use its own emitted paths. `20` is
+a positive watch-pass bound, not a readiness deadline. These observations may persist
+incidents and stop connectors. Keep any unfinished initial writer exclusion in place.
+
+<!-- cdc-snippet: cdc-sqlserver-status -->
+```powershell
+api-schema-tools cdc status --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-sqlserver-status -->
+
+PowerShell, repository root; same retained inputs, substitutions and effects as status.
+
+<!-- cdc-snippet: cdc-sqlserver-watch -->
+```powershell
+api-schema-tools cdc watch --settings '<retained-settings-path>' --state-path '<original-state-root>' --maximum-passes 20 --json
+```
+<!-- /cdc-snippet: cdc-sqlserver-watch -->
+
+Use the [shared output and exit-code table](#enable-and-observe): `status`/`watch`
+exit `0` means current/final `data.aggregate.readiness: "Ready"`; it cannot release
+initial writers. Inspect target `observedAt`, `details`, `diagnostics`,
+`incidentPersistence`, `containment` and `recovery`. Keep final stdout JSON and stderr
+passes/diagnostics separately and privately. Exit `1` covers rejection/not-ready/timeout,
+`2` invalid input and `130` cancellation. The local profile still reports
+`deploymentProfile.aclIsolationProven: false`.
+After admission, use [established validation](#established-validation) and
+[managed stop/start](#managed-lifecycle). Stop/resume retains offsets and internal
+schema history; raw Connect mutation is not the managed handoff.
+
+### SQL Server prerequisite and failure handoffs
+
+| Boundary or symptom | Required action and completion |
+| --- | --- |
+| Projection initialization / activation | RCSI and server `nested triggers` are projection prerequisites. Owned-local managed creation prepares them before schema/source admission; retained-schema retry inspects without repair. See [managed prerequisite tests](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcProjectionPrerequisiteTests.cs). A CREATE receipt followed by failed schema preparation is retained evidence, not permission to provision again. |
+| `sqlServerPrerequisiteFailed` at target initialization with lifecycle `Disabled` | Keep writers excluded; use E18 [SQL Server prerequisite correction](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction), restart the target context and retry activation only under that procedure's authority. Do not turn it into a CDC-state reset. |
+| Activation preflight rejection | Preflight changes no lifecycle/cache/work/latch/provider setting; the E18 owner permits correction and retry. Failed initial CDC workflow still needs its original [retry classification](#initial-enable-retry). |
+| Prerequisite failure in `Tracking`, `Resetting` or `Rebuilding`; change after successful active validation | `unsupportedPrerequisiteIncident`: no supported correction-and-restart workflow or renewed projection-health/CDC-readiness guarantee. Contain/escalate through [projection handoff](#projection-handoff); post-validation prerequisite changes are outside v1 support. |
+| Agent, capture/cleanup jobs, retained LSN range | These are separate CDC prerequisites. The selected infrastructure enables Agent; initial provider setup owns expected capture artifacts/jobs and validates their state/progress. A running SQL service proves none of these. Preserve provider diagnostics and use [monitoring/retention](#monitoring-retention) (T07 detail pending); do not drop/recreate captures or reset offsets. |
+| Snapshot isolation / row versions | New-database provisioning enables `ALLOW_SNAPSHOT_ISOLATION` as well as RCSI. CDC requires snapshot isolation for its initial snapshot; RCSI alone is insufficient. `CDC_SQLSERVER_SNAPSHOT_ISOLATION_OFF` rejects readiness. Preserve state and resolve the prerequisite under the initial/established boundary rather than forcing admission. |
+| Internal schema history unavailable/inconsistent or LSN history lost | Internal Kafka schema history is required even with public schema-change events disabled. Retain it with offsets on ordinary stop/start. Established source-history incidents route to [unsupported provenance](#unsupported-provenance); no silent history recreation or same-binding resnapshot. |
+| `CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING`, `CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED`, `CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED` | Deployment owner reviews the prepared login, type and effective server access; keep writers excluded. No automatic login/credential management or access broadening. Retry only if original workflow classification permits it. |
+| `CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH`, elevated database-access rejection, or `CDC_SQLSERVER_CONNECTOR_USER_MISSING` | Preserve identity/access evidence privately and escalate. Existing users must match login SID/type and narrow effective access. Once provider completion is durable, even pre-registration retry is validation-only and must not recreate or remap a missing/conflicting user. |
+| `CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE` | Setup administrator needs principal-definition visibility (`VIEW ANY DEFINITION`, implied by `sa` here), user-creation and provider setup authority. Correct setup authority without elevating the connector; retain state and follow initial retry classification. |
+
+The owning [SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
+and [T29 implementation evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
+define the mapping/retry boundary. T17 still must exercise these exact public commands,
+including E2E variants, from a restricted login with no precreated target user.
 
 <a id="dms-e2e-setup"></a>
 
 ## DMS E2E opt-in
 
-**PostgreSQL documented in T02; SQL Server substitutions pending T03. Live exercises
-pending T16/T17.** These alternatives qualify setup wiring. API-driven message
+**PostgreSQL documented in T02; SQL Server in T03. Live exercises pending T16/T17.** These alternatives qualify setup wiring. API-driven message
 scenarios remain [DMS-1325](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md).
 [Local bootstrap/CI owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
 This is the DMS E2E suite, not Instance Management E2E.
@@ -447,9 +701,9 @@ This is the DMS E2E suite, not Instance Management E2E.
 | Record | Value |
 | --- | --- |
 | Target/generation | One fresh CMS-selected target for `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Separate `E2E_SNAPSHOT_DATABASE_NAME` is not the CDC source. |
-| Authority/offline window | Same exclusive deployment and initial writer/seed exclusion as PostgreSQL setup; test processes start only after controller admission and DMS startup. |
+| Authority/offline window | Same exclusive deployment and initial writer/seed exclusion as the selected provider setup; test processes start only after controller admission and DMS startup. |
 | Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; `.cdc-diagnostics` on failure. |
-| Invocation | PostgreSQL: `cdc-pg-e2e-setup` then optional `cdc-pg-e2e-test`, **or** `cdc-pg-e2e-build` on a separate fresh workspace. SQL Server IDs `cdc-sqlserver-e2e-setup` / `cdc-sqlserver-e2e-build` remain reserved. |
+| Invocation | PostgreSQL: `cdc-pg-e2e-setup` then optional `cdc-pg-e2e-test`, **or** `cdc-pg-e2e-build` on a separate fresh workspace. SQL Server: `cdc-sqlserver-e2e-setup` or `cdc-sqlserver-e2e-build` with the SQL Server variant below. |
 | JSON/exit status | Wrappers print progress, not a CLI JSON envelope. Internal admission requires the same matching `enable` publication result as local setup. On failure, the sanitized `e2e-setup` artifact includes `operation`, `succeeded`, `cancelled`, `cleanup`, `provider`, `failureCodes`. |
 | Postcondition | Managed primary receipt retained, separate snapshot prepared with matching schema, CDC admitted before DMS/tests; selected setup-smoke tests pass without source-reset hooks. This does not qualify message scenarios. |
 | Rejection/timeout action | Do not launch tests. Retain `.cdc-diagnostics` and original settings/state. `cleanup: "Stopped"` means governed stop completed; `"RetainedForReconciliation"` means stop failed and infrastructure remains for reconciliation; `"NotStarted"` is not proof of shutdown. Use status/initial-retry handoffs above and governed teardown below. |
@@ -457,8 +711,9 @@ This is the DMS E2E suite, not Instance Management E2E.
 ### Prepare the E2E variant
 
 Use a fresh owned stack/workspace, not the already admitted `edfi_cdc` example. Reuse
-[PostgreSQL preparation](#postgresql-setup) with **all** substitutions below, including
-the infrastructure/role preparation before the E2E entry point. Neither E2E wrapper
+[PostgreSQL preparation](#postgresql-setup) with **all** substitutions below, or use
+the [SQL Server variant](#sql-server-e2e-variant) for that provider. Complete the selected
+provider's infrastructure/login preparation before the E2E entry point. Neither E2E wrapper
 creates the restricted connector login for you. The initial ID `1` assumption requires
 the same brand-new CMS/no-prior-inserts condition; actual selected ID is checked before
 provisioning. Keep DMS and test processes offline during preparation.
@@ -567,6 +822,94 @@ protected retained workspace; finish retirement and archive its configuration/hi
 before preparing another one. Do not bypass that guard by deleting `.bootstrap` or
 `.cdc-deployments`. The governing cleanup/continuity boundary is
 [deployment-owned binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+
+### SQL Server E2E variant
+
+Use a **fresh owned workspace**, with the [common E2E requirements](#prepare-the-e2e-variant)
+for primary/snapshot isolation, schemas, CMS selection, environment resolution and
+retained state. Apply [SQL Server preparation](#sql-server-setup) using every
+substitution below. Infrastructure and the restricted login must exist first; the
+primary database and its database user must not. The provider creates the primary
+user during managed admission. The E2E wrapper's snapshot preparation is separate
+and must not be used to insert a manual primary-user creation step.
+
+| Input in SQL Server preparation | E2E value/source | Permitted fixture replacement |
+| --- | --- | --- |
+| `./eng/docker-compose/.env` everywhere, including infrastructure and `Cdc.Compose.EnvironmentFile` | Protected `./eng/docker-compose/.env.e2e`, with effective MSSQL/CMS/worker credentials and `MSSQL_PORT` | Owned E2E environment with matching effective endpoints/secrets |
+| Complete base settings | Full normal DMS settings for this E2E deployment, including CMS credentials and self-contained identity | Fixture complete normal settings, not a standalone `Cdc` fragment |
+| `.local/cdc/sqlserver.json`, `.local/cdc/state-sqlserver` | `.local/cdc/sqlserver-e2e.json`, original `.local/cdc/state-sqlserver-e2e` | Owned fixture settings/state roots |
+| `edfi_cdc` in masked setup connection and `database.names` | Effective `E2E_DATABASE_NAME`, default `edfi_datamanagementservice_e2e` | Same dedicated primary in CMS registration, provisioner, connector and tests |
+| Snapshot | Effective `E2E_SNAPSHOT_DATABASE_NAME`, default `edfi_datamanagementservice_e2e_snapshot`; distinct from primary/CMS/system databases | Fixture snapshot; never the CDC target |
+| `1` / `datastore-1`, generation `1` | Fresh CMS-selected identity in `DocumentCache.Targets` and `Cdc.DataStoreId` | Actual selected fixture identity; same fresh-CMS rules |
+| Host port `1435`, worker `dms-mssql:1433`, setup `sa`, connector `cdc_reader` | Effective SQL Server environment and existing restricted login; both connector-principal settings match | Same owned fixture server and principal |
+| `5.2` local bootstrap overlay | Omitted in the E2E commands: effective E2E `SCHEMA_PACKAGES` with Sample/Homograph extensions owns primary/snapshot/runtime schemas | Matching E2E core/extensions; inspect optional overlays before use |
+
+Run `cdc-sqlserver-settings` with these substitutions; this constructs full executable
+wrapper input for E2E. Keep application `AppSettings.Datastore = 'mssql'`,
+`Cdc.Provider = 'sqlserver'`, connector `database.names` and `driver.*` TLS settings.
+Use the host SQL port in the setup connection (including `Command Timeout=180`)
+and the worker's internal `1433` in connector properties.
+
+Both entry points use the shipped `.env.mssql` composition after any Data Standard
+overlay; build additionally applies its optional `-EnvironmentOverlayFile` first.
+The resolver preserves custom nonblank MSSQL credentials/ports/names, replaces
+PostgreSQL-shaped database connection strings and forces both datastore tokens to
+`mssql`. Ambient values still take precedence in Compose: clear stale PostgreSQL
+connection-string overrides before starting. Use the wrapper's retained effective
+file, staged E2E schemas and selected CMS target together. Do not apply the local
+`5.2` overlay if it would replace required test extensions.
+
+PowerShell, repository root; direct setup alternative after SQL Server E2E preparation
+above. Substitutions are exactly the table. Creates primary/snapshot and admits CDC
+before DMS; optional `-SkipDockerBuild` requires matching local images.
+
+<!-- cdc-snippet: cdc-sqlserver-e2e-setup -->
+```powershell
+pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 `
+    -DatabaseEngine mssql -EnableKafkaCdc `
+    -CdcSettingsPath './.local/cdc/sqlserver-e2e.json' `
+    -CdcBindingStatePath './.local/cdc/state-sqlserver-e2e' `
+    -EnvironmentFile (Resolve-Path './eng/docker-compose/.env.e2e').Path
+if ($LASTEXITCODE -ne 0) { throw 'CDC E2E setup failed; do not launch tests.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-e2e-setup -->
+
+For direct testing after successful setup, use the shared `cdc-pg-e2e-test` command
+with the same effective primary database, and first configure the test process for
+SQL Server: `AppSettings__DatabaseEngine=mssql`, host-side
+`AppSettings__DataStoreAdminConnectionString`, container-side
+`AppSettings__DataStoreConnectionString` and `AppSettings__DataStoreSnapshotConnectionString`,
+plus matching API/CMS URLs, credentials and container selection. Supply connection
+strings privately, never as shell arguments. The default E2E appsettings is PostgreSQL
+and cannot be used unchanged. Preserve `Given_CdcE2ESetup` as the smoke filter and
+clear unsupported `NODE_OPTIONS`; this procedure does not qualify reset-based message
+tests or Instance Management E2E.
+
+PowerShell, repository root; **alternative** full setup/test command on another fresh
+workspace after the same SQL Server preparation. Do not run after direct setup.
+Substitutions: the table above plus `Release` build configuration. The build entry
+point propagates resolved database/provider/connection settings to the test process
+and clears unsupported `NODE_OPTIONS`. `-UsePublishedImage` requires corresponding
+published infrastructure preparation; `-SkipDockerBuild` requires matching images.
+
+<!-- cdc-snippet: cdc-sqlserver-e2e-build -->
+```powershell
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -DatabaseEngine mssql `
+    -IdentityProvider self-contained -EnableKafkaCdc `
+    -CdcSettingsPath './.local/cdc/sqlserver-e2e.json' `
+    -CdcBindingStatePath './.local/cdc/state-sqlserver-e2e' `
+    -EnvironmentFile (Resolve-Path './eng/docker-compose/.env.e2e').Path `
+    -TestFilter 'FullyQualifiedName~Given_CdcE2ESetup'
+if ($LASTEXITCODE -ne 0) { throw 'CDC E2E setup/test failed; preserve the retained deployment.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-e2e-build -->
+
+Admission/output/failure rules are the common E2E record above: preserve
+`.cdc-diagnostics`, original state and retained settings; failed containment is not
+successful cleanup. Use SQL Server status/watch with emitted paths, and the wrapper's
+printed `mssql` teardown command for [governed teardown](#stack-teardown). Ordinary
+[managed stop/start](#managed-lifecycle) preserves the admitted source. T17 qualifies
+these setup commands; DMS-1325 owns API-driven message scenarios.
 
 <a id="deployment-state"></a>
 
