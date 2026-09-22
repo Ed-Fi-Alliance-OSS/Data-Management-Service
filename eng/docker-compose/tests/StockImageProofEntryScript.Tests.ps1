@@ -89,6 +89,17 @@ function global:Invoke-DmsShim {
                 }
             }
 
+            # A junction inside the workspace, created at a command boundary rather than up front,
+            # because the workspace does not exist until the run creates it. This is how a link can
+            # appear after the path was first checked.
+            if ($rule.PSObject.Properties.Name -contains 'link') {
+                foreach ($link in @($rule.link)) {
+                    $at = Join-Path $global:DmsWorkspaceRoot $link.path
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $at) -Force | Out-Null
+                    New-Item -ItemType Junction -Path $at -Target $link.target | Out-Null
+                }
+            }
+
             # What the workspace looked like AT this command, copied out before cleanup removes it.
             # Without this the generated NuGet configuration would never be observed by anything:
             # the shim does not restore, so a wrong feed or a missing mapping would leave every
@@ -860,6 +871,38 @@ catch {
 
             @($enclosing | Where-Object { $_ -ne 'Get-BootstrapManifestPath' }) | Should -BeNullOrEmpty
             $enclosing | Should -Contain 'Get-BootstrapManifestPath'
+        }
+
+        It 'refuses an override reached through a junction created after the workspace was' {
+            # Lexical containment cannot see this: the override sits under the workspace by name,
+            # and the junction only appears once the run has created the workspace, so the preflight
+            # walk finds nothing. The read is where it has to be caught, and what lies on the other
+            # side is a manifest that would otherwise have been accepted.
+            $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-external-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $external -Force | Out-Null
+
+            try {
+                Set-Content -LiteralPath (Join-Path $external 'bootstrap-manifest.json') -Encoding utf8 `
+                    -Value (@{ schema = @{ selectedPackages = @($script:pinnedIdentity) } } | ConvertTo-Json -Depth 6 -Compress)
+
+                $junction = @{
+                    match    = 'bootstrap-published-dms\.ps1 -EnvironmentFile'
+                    exitCode = 0
+                    link     = @(@{ path = 'bootstrap'; target = $external })
+                }
+
+                $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                    @($junction) | ForEach-Object { $_ })
+
+                $run.Failure | Should -Match 'is a link or junction'
+                $run.Failure | Should -Not -Match 'DMS container could not be located'
+            }
+            finally {
+                # Only this test's own temp tree, and the junction itself lives in the run
+                # workspace, which the run removes.
+                Remove-Item -LiteralPath $external -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
 
         It 'accepts a deployment that staged exactly the pinned set' {

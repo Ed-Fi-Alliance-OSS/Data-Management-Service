@@ -857,10 +857,19 @@ function Start-ProofDeployment {
 # about this one. The expected-negative scenarios are checked too - the prepare phase stages the
 # manifest before the stack is started, so a wrong schema set there would otherwise be invisible
 # behind the failure the scenario is looking for.
-# The manifest file to read, and the only place the override is honoured. An override is resolved
-# first, so a link or a "..\" segment cannot walk out of the workspace and then be approved by its
-# spelling, and it is refused unless it sits inside the workspace this run created. It is never
-# passed to ownership, to the host preflight, or to cleanup.
+# The manifest file to read, and the only place the override is honoured. It is never passed to
+# ownership, to the host preflight, or to cleanup.
+#
+# Two separate refusals, because either alone is bypassable. Containment is about the spelling, and
+# a "..\" segment is normalized away before it is asked. Reparse ancestry is about where that
+# spelling actually leads: resolving a provider path does not follow a junction or a symbolic link
+# to its target, so a junction under the workspace could otherwise point at an external directory
+# holding a matching manifest and the proof would validate a file this run's deployment never
+# staged.
+#
+# Called at preflight and again at the read. The first call is what keeps a bad override from
+# costing a deployment; the second is the one that matters, because nothing on this path exists yet
+# at preflight and a link can appear in between.
 function Get-BootstrapManifestPath {
     if ([string]::IsNullOrWhiteSpace($BootstrapManifestPath)) {
         return Join-Path $bootstrapPath 'bootstrap-manifest.json'
@@ -868,14 +877,17 @@ function Get-BootstrapManifestPath {
 
     $resolved = [IO.Path]::GetFullPath($BootstrapManifestPath)
 
-    if (Test-Path -LiteralPath $resolved) {
-        $resolved = (Resolve-Path -LiteralPath $resolved).ProviderPath
-    }
-
     if (-not (Test-OwnedDeletionPath -Path $resolved -OwnedDirectory @($WorkspaceRoot))) {
         throw ("The bootstrap manifest override '$BootstrapManifestPath' resolves to '$resolved', " +
             "which is outside the run workspace '$WorkspaceRoot'. This override reads one file and " +
             'may only name a file this run created.')
+    }
+
+    $link = Get-ReparsePointAncestor -Path $resolved
+
+    if ($null -ne $link) {
+        throw ("The bootstrap manifest override '$resolved' passes through '$link', which is a link " +
+            'or junction, so the file it reaches is not the file its name was checked against.')
     }
 
     return $resolved

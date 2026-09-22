@@ -958,6 +958,38 @@ function Test-LocalPortAvailable {
     }
 }
 
+function Get-ReparsePointAncestor {
+    <#
+    .SYNOPSIS
+    The first link or junction at or above a path, or $null when there is none.
+
+    .DESCRIPTION
+    Resolving a provider path does not follow a junction or a symbolic link to its target, so a
+    containment answer about a name says nothing about the directory that name reaches. Every
+    caller that decides something from a path's spelling walks it with this first and refuses the
+    ancestry, rather than claiming a canonicalization PowerShell does not perform.
+
+    Only existing components can be inspected, so a path that does not exist yet answers $null.
+    That is why callers ask again at the moment they use the path.
+    #>
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $walk = $Path
+
+    while (-not [string]::IsNullOrEmpty($walk)) {
+        if ((Test-Path -LiteralPath $walk) -and
+            ((Get-Item -LiteralPath $walk -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            return $walk
+        }
+
+        $parent = Split-Path -Parent $walk
+        if ($parent -ieq $walk) { break }
+        $walk = $parent
+    }
+
+    return $null
+}
+
 function Test-ProofPathSafety {
     <#
     .SYNOPSIS
@@ -1037,24 +1069,14 @@ function Test-ProofPathSafety {
 
     # A reparse point anywhere above either path means the name checked here and the directory
     # written to can be different places, and every containment answer above is about the name.
-    # Resolving a provider path does not follow a junction or a symbolic link to its target, so this
-    # refuses the ancestry rather than claiming a canonicalization it does not perform.
     foreach ($candidate in @(
             @{ Path = $WorkspacePath; What = 'workspace' }
             @{ Path = $EvidencePath; What = 'evidence directory' }
         )) {
-        $walk = $candidate.Path
+        $link = Get-ReparsePointAncestor -Path $candidate.Path
 
-        while (-not [string]::IsNullOrEmpty($walk)) {
-            if ((Test-Path -LiteralPath $walk) -and
-                ((Get-Item -LiteralPath $walk -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-                $blocker += "the $($candidate.What) path passes through '$walk', which is a link or junction; what this run would delete is then not the path it checked"
-                break
-            }
-
-            $parent = Split-Path -Parent $walk
-            if ($parent -ieq $walk) { break }
-            $walk = $parent
+        if ($null -ne $link) {
+            $blocker += "the $($candidate.What) path passes through '$link', which is a link or junction; what this run would delete is then not the path it checked"
         }
     }
 
@@ -1451,6 +1473,7 @@ Export-ModuleMember -Function @(
     'Get-SchemaToolInstallArgument'
     'Test-ProofPathSafety'
     'Test-OwnedDeletionPath'
+    'Get-ReparsePointAncestor'
     'Test-PreparedSchemaIdentity'
     'Get-NetworkAttachmentInventory'
     'Test-LocalPortAvailable'
