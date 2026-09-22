@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.IdentityModel.Tokens.Jwt;
 using EdFi.DmsConfigurationService.DataModel;
-using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
@@ -42,6 +41,23 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
         Untrusted,
     }
 
+    /// <summary>
+    /// The outcome of one verification attempt. <see cref="Token"/> is non-null exactly when
+    /// <see cref="Failure"/> is <see cref="TokenVerificationFailure.None"/>.
+    /// </summary>
+    /// <param name="Token">The parsed token, or <c>null</c> when verification failed.</param>
+    /// <param name="Failure">Why verification failed, or <c>None</c> on success.</param>
+    /// <param name="Detail">
+    /// Sanitized diagnostic text for the caller to log, empty on success. Already passed through
+    /// <see cref="LoggingUtility.SanitizeForLog(string?)"/>, because it is built from exception
+    /// messages that embed claim values taken from the token — attacker input on this path.
+    /// </param>
+    public sealed record TokenVerification(
+        JwtSecurityToken? Token,
+        TokenVerificationFailure Failure,
+        string Detail
+    );
+
     public static class JwtTokenValidator
     {
         /// <summary>
@@ -59,31 +75,24 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
         /// <param name="publicKeys">Dictionary of KeyId to SecurityKey</param>
         /// <param name="issuer">Expected issuer</param>
         /// <param name="audience">Expected audience</param>
-        /// <param name="jwtToken">Out: parsed JwtSecurityToken</param>
-        /// <param name="failure">Out: why verification failed, or <c>None</c> on success</param>
-        /// <param name="logger">Optional logger for diagnostic information</param>
-        /// <returns>True if valid, false otherwise</returns>
+        /// <returns>The parsed token on success, or the category and detail of the failure.</returns>
         /// <remarks>
-        /// Failures are reported in three categories on purpose, because they are operationally
-        /// distinct. An expired token is logged at Debug, since any client will produce one
-        /// eventually. An issuer or audience mismatch is logged at Warning against its own
-        /// message, since it usually means the deployment's Authority/Audience is wrong and will
-        /// affect every token at once. Everything else — unparseable, unknown <c>kid</c>, bad
-        /// signature — is logged at Warning as potential forgery. Collapsing these into one
-        /// level and message lets routine expiry and misconfiguration bury real signal.
+        /// Deliberately silent: it categorizes failures but never logs them. Whoever calls this
+        /// knows which operation was being attempted and logs once with that context, which is
+        /// the only way the same failure does not appear twice at two severities.
+        ///
+        /// Failures are categorized rather than collapsed because they are operationally
+        /// distinct — routine expiry, a deployment-wide Authority/Audience mismatch, and a
+        /// genuinely untrusted token each call for a different response, and one shared
+        /// category lets the first two bury the third.
         /// </remarks>
-        public static bool ValidateToken(
+        public static TokenVerification ValidateToken(
             string token,
             IDictionary<string, SecurityKey> publicKeys,
             string issuer,
-            string audience,
-            out JwtSecurityToken? jwtToken,
-            out TokenVerificationFailure failure,
-            ILogger? logger = null
+            string audience
         )
         {
-            jwtToken = null;
-            failure = TokenVerificationFailure.None;
             try
             {
                 var tokenHandler = new JwtSecurityTokenHandler();
@@ -92,13 +101,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 if (string.IsNullOrEmpty(kid) || !publicKeys.TryGetValue(kid, out var signingKey))
                 {
                     // No kid or key not found
-                    failure = TokenVerificationFailure.Untrusted;
-                    logger?.LogWarning(
-                        "JWT validation failed: Missing or invalid 'kid' header. Kid: {Kid}, Available keys: {AvailableKeys}",
-                        LoggingUtility.SanitizeForLog(kid),
-                        string.Join(", ", publicKeys.Keys)
+                    return new TokenVerification(
+                        null,
+                        TokenVerificationFailure.Untrusted,
+                        $"missing or unknown 'kid' header ({LoggingUtility.SanitizeForLog(kid)}); "
+                            + $"available keys: {string.Join(", ", publicKeys.Keys)}"
                     );
-                    return false;
                 }
                 var validationParameters = new TokenValidationParameters
                 {
@@ -112,32 +120,22 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     ClockSkew = TokenValidationClockSkew,
                 };
                 tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
-                jwtToken = validatedToken as JwtSecurityToken;
-                // Issuer and audience are logged unsanitized deliberately: validation has just
-                // proved them equal to the configured ValidIssuer/ValidAudience, so what is
-                // written is a server-controlled configuration value, not caller input. Subject
-                // is different — nothing constrains it to a known value, and it originates from
-                // a client id supplied at registration — so it is sanitized.
-                logger?.LogDebug(
-                    "JWT token validated successfully. Issuer: {Issuer}, Audience: {Audience}, Subject: {Subject}",
-                    jwtToken?.Issuer,
-                    jwtToken?.Audiences?.FirstOrDefault(),
-                    LoggingUtility.SanitizeForLog(jwtToken?.Subject)
+                return new TokenVerification(
+                    validatedToken as JwtSecurityToken,
+                    TokenVerificationFailure.None,
+                    string.Empty
                 );
-                return true;
             }
             catch (SecurityTokenExpiredException ex)
             {
                 // Routine: the token was genuinely issued by this service and simply aged out.
                 // A not-yet-valid ("nbf" in the future) token is deliberately NOT treated as
                 // routine and falls through to the forgery-suspicious branch below.
-                failure = TokenVerificationFailure.Expired;
-                logger?.LogDebug(
-                    ex,
-                    "JWT token rejected as expired: {ErrorMessage}",
+                return new TokenVerification(
+                    null,
+                    TokenVerificationFailure.Expired,
                     LoggingUtility.SanitizeForLog(ex.Message)
                 );
-                return false;
             }
             catch (Exception ex)
                 when (ex is SecurityTokenInvalidIssuerException or SecurityTokenInvalidAudienceException)
@@ -146,32 +144,23 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 // trusts; only the issuer or audience is unacceptable. That is usually an
                 // Authority/Audience misconfiguration, which fails every token at once, so it is
                 // reported separately to keep the forgery bucket below meaningful.
-                failure = TokenVerificationFailure.UntrustedIssuerOrAudience;
-                logger?.LogWarning(
-                    ex,
-                    "JWT token rejected: issuer or audience not accepted. Check the configured "
-                        + "Authority and Audience if this affects every token. {ErrorMessage}",
+                return new TokenVerification(
+                    null,
+                    TokenVerificationFailure.UntrustedIssuerOrAudience,
                     LoggingUtility.SanitizeForLog(ex.Message)
                 );
-                return false;
             }
             catch (Exception ex)
             {
-                // Exception messages embed claim values taken from the token, which is attacker
-                // input on exactly this path, so they are sanitized before logging. Corollary:
-                // do not pass the raw `ex` into the logger — most sinks render its unsanitized
-                // Message/ToString() independently of the sanitized template arguments below,
-                // which is exactly the leak this sanitizes against.
-                failure = TokenVerificationFailure.Untrusted;
-#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
-                logger?.LogWarning(
-                    "JWT token validation failed: ({ExceptionType}, {ErrorMessage}\n{StackTrace})",
-                    LoggingUtility.SanitizeForLog(ex.GetType().Name),
-                    LoggingUtility.SanitizeForLog(ex.Message),
-                    LoggingUtility.SanitizeForLog(ex.StackTrace)
+                // The type and stack trace are carried too, because this bucket is where an
+                // unanticipated failure lands and the category alone would not identify it.
+                return new TokenVerification(
+                    null,
+                    TokenVerificationFailure.Untrusted,
+                    $"{LoggingUtility.SanitizeForLog(ex.GetType().Name)}, "
+                        + $"{LoggingUtility.SanitizeForLog(ex.Message)}\n"
+                        + LoggingUtility.SanitizeForLog(ex.StackTrace)
                 );
-#pragma warning restore S6667
-                return false;
             }
         }
     }

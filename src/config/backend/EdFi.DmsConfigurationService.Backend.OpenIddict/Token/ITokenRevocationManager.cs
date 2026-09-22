@@ -31,7 +31,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
         /// </summary>
         /// <param name="clientId">The client_id presented by the caller.</param>
         /// <param name="clientSecret">The client_secret presented by the caller.</param>
-        /// <returns>True if the credentials identify an approved application, false otherwise.</returns>
-        Task<bool> ValidateClientCredentialsAsync(string clientId, string clientSecret);
+        /// <returns>
+        /// The client's stored canonical <c>client_id</c> when the credentials identify an
+        /// approved application, otherwise <c>null</c>. The canonical value is returned rather
+        /// than a bare <c>true</c> because tokens are minted from it: passing the caller's own
+        /// spelling into <see cref="RevokeTokenAsync"/> would fail the ownership comparison
+        /// wherever an engine authenticated a mis-cased id, which SQL Server's default collation
+        /// does.
+        /// </returns>
+        Task<string?> AuthenticateClientAsync(string clientId, string clientSecret);
     }
 }

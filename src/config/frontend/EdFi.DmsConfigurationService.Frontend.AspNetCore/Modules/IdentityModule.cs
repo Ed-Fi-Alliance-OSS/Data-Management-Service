@@ -38,8 +38,8 @@ public class IdentityModule : IEndpointModule
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. RevokeToken authenticates the caller itself via
-        // ITokenRevocationManager.ValidateClientCredentialsAsync before deciding whether it owns
-        // the token being revoked, so the ASP.NET Core auth pipeline is not involved at all.
+        // ITokenRevocationManager.AuthenticateClientAsync before deciding whether it owns the
+        // token being revoked, so the ASP.NET Core auth pipeline is not involved at all.
         endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
     }
 
@@ -135,6 +135,15 @@ public class IdentityModule : IEndpointModule
         return FailureResults.Authorization(httpContext.TraceIdentifier, ["Registration is disabled."]);
     }
 
+    private const string BasicAuthScheme = "basic ";
+
+    /// <summary>
+    /// Protection space named in the <c>WWW-Authenticate</c> challenge. A single value covers
+    /// client-credential authentication service-wide, since one registered client uses the same
+    /// secret wherever it authenticates.
+    /// </summary>
+    private const string ClientCredentialRealm = "EdFi.DmsConfigurationService";
+
     /// <summary>
     /// Parses HTTP Basic auth credentials (client_id:client_secret) from the Authorization
     /// header, shared by /connect/token and /connect/revoke since both authenticate the caller
@@ -153,7 +162,7 @@ public class IdentityModule : IEndpointModule
         httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
         if (
             string.IsNullOrEmpty(authHeader.ToString())
-            || !authHeader.ToString().StartsWith("basic ", StringComparison.OrdinalIgnoreCase)
+            || !authHeader.ToString().StartsWith(BasicAuthScheme, StringComparison.OrdinalIgnoreCase)
         )
         {
             return;
@@ -161,7 +170,7 @@ public class IdentityModule : IEndpointModule
 
         try
         {
-            var base64Credentials = authHeader.ToString().Substring(6); // Remove "basic "
+            var base64Credentials = authHeader.ToString()[BasicAuthScheme.Length..];
             var credentialBytes = Convert.FromBase64String(base64Credentials);
             var credentials = System.Text.Encoding.UTF8.GetString(credentialBytes);
             var parts = credentials.Split(':', 2);
@@ -420,25 +429,25 @@ public class IdentityModule : IEndpointModule
         // requires hiding whether a *token* is valid/owned, not whether the *caller* authenticated.
         if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
         {
-            return FailureResults.InvalidClient(
-                "Client authentication is required.",
-                httpContext.TraceIdentifier
-            );
+            return InvalidClient(httpContext, "Client authentication is required.");
         }
 
-        if (!await revocationManager.ValidateClientCredentialsAsync(clientId, clientSecret))
+        // Authentication hands back the client's stored canonical client_id rather than a bare
+        // success flag, and that is what the ownership check must be given. Tokens are minted
+        // from the canonical value, so passing the caller's own spelling would silently fail
+        // the comparison wherever the engine authenticated a mis-cased id — SQL Server's default
+        // collation does — leaving the caller with 200 OK and a still-live token.
+        string? canonicalClientId = await revocationManager.AuthenticateClientAsync(clientId, clientSecret);
+        if (canonicalClientId is null)
         {
-            return FailureResults.InvalidClient(
-                "Invalid client or Invalid client credentials",
-                httpContext.TraceIdentifier
-            );
+            return InvalidClient(httpContext, "Invalid client or Invalid client credentials");
         }
 
         try
         {
             // A token belonging to another client is left alone by the manager and still
             // reported as 200 OK, so nothing is leaked about whether it exists or who owns it.
-            await revocationManager.RevokeTokenAsync(model.Token, clientId);
+            await revocationManager.RevokeTokenAsync(model.Token, canonicalClientId);
             return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
         }
         catch (Exception ex)
@@ -448,10 +457,35 @@ public class IdentityModule : IEndpointModule
             logger.LogError(
                 ex,
                 "Revocation failed for client {ClientId}; returning 200 OK per RFC 7009",
-                LoggingUtility.SanitizeForLog(clientId)
+                LoggingUtility.SanitizeForLog(canonicalClientId)
             );
             return Results.Ok();
         }
+    }
+
+    /// <summary>
+    /// The RFC 6749 §5.2 response for a revocation caller that failed client authentication:
+    /// the OAuth <c>invalid_client</c> code and description, plus the <c>WWW-Authenticate</c>
+    /// challenge §5.2 requires when the client attempted to authenticate through the
+    /// Authorization header. The description is wrapped in the provider-error JSON shape that
+    /// <c>FailureResults</c> parses; a bare sentence fails that parse and is replaced by the
+    /// generic "unexpected response" message, which tells the client nothing about what to fix.
+    /// </summary>
+    private static IResult InvalidClient(HttpContext httpContext, string errorDescription)
+    {
+        if (
+            httpContext
+                .Request.Headers.Authorization.ToString()
+                .StartsWith(BasicAuthScheme, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
+        }
+
+        return FailureResults.InvalidClient(
+            JsonSerializer.Serialize(new { error = "invalid_client", error_description = errorDescription }),
+            httpContext.TraceIdentifier
+        );
     }
 
     public class IntrospectionRequest

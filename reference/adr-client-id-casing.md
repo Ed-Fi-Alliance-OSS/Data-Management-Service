@@ -18,11 +18,15 @@ The decision is narrow:
 
 1. Tokens are minted from the **stored canonical** client id, so every token issued to a client
    carries one identity regardless of how the caller cased its credentials.
-2. Client lookup stays **case-sensitive**, per RFC 6749.
-3. The ownership comparison in `RevokeTokenAsync` stays **case-sensitive**
+2. Client authentication returns that same stored canonical id, so the caller's side of the
+   ownership comparison is canonical too.
+3. Client lookup stays **case-sensitive**, per RFC 6749.
+4. The ownership comparison in `RevokeTokenAsync` stays **case-sensitive**
    (`StringComparison.Ordinal`).
 
-Point 1 alone closes the revocation defect. Points 2 and 3 record deliberate non-changes.
+Points 1 and 2 are both required to close the revocation defect; either alone leaves a
+mis-cased caller comparing two different spellings. Points 3 and 4 record deliberate
+non-changes.
 
 ## Context
 
@@ -67,10 +71,27 @@ fix is applied at the call site rather than inside the generator.
 If a stored row somehow carries an empty `ClientId`, the request value is used instead. Minting an
 empty subject would be worse than minting a non-canonical one.
 
-**This change alone closes the revocation defect, on both database engines.** Even where an engine
-lets a client authenticate with non-canonical casing, the token it receives now carries the
-canonical `client_id`, so the ownership comparison matches the client's other tokens and revocation
-succeeds. No change to lookup behaviour is required to fix it.
+This makes the **token's** side of the ownership comparison canonical on both database
+engines: even where an engine lets a client authenticate with non-canonical casing, the token
+it receives now carries the canonical `client_id`. No change to lookup behaviour is required.
+
+### Authenticate the caller to a canonical client id
+
+`/connect/revoke` authenticates its caller with client credentials rather than a bearer token,
+so the caller's `client_id` arrives as a request parameter — a string the caller typed — not as
+a claim from a token this service minted. `ITokenRevocationManager.AuthenticateClientAsync`
+therefore returns the stored `ApplicationInfo.ClientId` instead of a bare success flag, and the
+handler passes *that* into `RevokeTokenAsync`.
+
+This is the caller-side counterpart to canonical minting, and the two are not
+interchangeable. Where an engine authenticates a mis-cased id, returning only "yes, valid"
+leaves the handler nothing to compare but the caller's own spelling — which is exactly the
+value the minting fix took care to keep off the token. The comparison then fails a legitimate
+client against its own token, and the silent `200 OK` no-op returns in a new place.
+
+The fallback matches minting: an application row with an empty `ClientId` yields the requested
+spelling, because authenticating a caller to an empty id no token can match would be worse than
+authenticating it to a non-canonical one.
 
 ### Client lookup stays case-sensitive for PostgreSQL
 
@@ -110,9 +131,10 @@ therefore behave differently for the same request, and the SQL Server behaviour 
 RFC 6749 case-sensitivity rule quoted above.
 
 This is an RFC-conformance and cross-engine-consistency issue, **not** a revocation
-hazard: canonical minting means a client that authenticates on SQL Server with non-canonical
-casing still receives a token bearing the canonical `client_id`, so ownership-checked revocation
-works correctly for it. Nothing about this divergence reopens the silent no-op.
+hazard: a client that authenticates on SQL Server with non-canonical casing receives a token
+bearing the canonical `client_id` and is itself authenticated to that same canonical id, so
+both sides of the ownership comparison agree and revocation works correctly for it. Nothing
+about this divergence reopens the silent no-op.
 
 The RFC-conformance issue may be reconsidered at a later date, at which time this ADR should be amended.
 

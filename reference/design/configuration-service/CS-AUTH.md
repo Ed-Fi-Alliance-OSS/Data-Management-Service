@@ -47,11 +47,15 @@ it just establishes who is asking. It is deliberately **not** a bearer access
 token: the token named in the `token` field is the one being revoked, so it
 cannot double as proof of the caller's identity without letting a client revoke
 itself using the very credential that gets invalidated by the call, and RFC 7009
-does not permit it regardless. `ValidateClientCredentialsAsync` on
+does not permit it regardless. `AuthenticateClientAsync` on
 `ITokenRevocationManager` authenticates the pair by reusing the same
 application lookup and secret-hash comparison `/connect/token` uses, so the two
-call sites cannot drift on what counts as a valid secret. Missing or invalid
-client credentials return `401 Unauthorized` with `invalid_client` — this is
+call sites cannot drift on what counts as a valid secret. It returns the
+client's **stored** `client_id` rather than a bare success flag; see
+[Client id casing](#client-id-casing) for why that distinction is load-bearing.
+Missing or invalid client credentials return `401 Unauthorized` carrying the
+OAuth `invalid_client` code, plus a `WWW-Authenticate: Basic` challenge when the
+caller used the `Authorization` header, as RFC 6749 §5.2 requires. This is
 reported, not masked as `200 OK`, because RFC 7009's "always 200" guarantee
 covers whether a *token* is valid or owned, not whether the *caller*
 authenticated.
@@ -59,9 +63,9 @@ authenticated.
 Once authenticated, a caller may only revoke a token that belongs to it. The
 token named in the `token` form field is first verified for signature, issuer,
 audience and lifetime, and its `client_id` claim is then compared to the
-authenticated caller's own `client_id`. Verification comes first on purpose:
-trusting an unverified `client_id` would let a caller forge a token naming
-itself while embedding another client's `jti`.
+canonical `client_id` that authentication resolved for the caller. Verification
+comes first on purpose: trusting an unverified `client_id` would let a caller
+forge a token naming itself while embedding another client's `jti`.
 
 Two distinct credentials are in play on every revocation request, which is easy
 to conflate. The **caller's** `client_id`/`client_secret` (Basic auth or form
@@ -127,15 +131,23 @@ containment as incomplete until introspection confirms it.
 
 ### Client id casing
 
-Tokens are minted with the **stored canonical** `client_id`, not the casing the caller
-supplied at `/connect/token`. Every token issued to one registered client therefore
-carries one identity, whatever casing that client used on a given call, so the
-case-sensitive ownership comparison above always matches a client's own tokens.
+Both sides of the ownership comparison are derived from the **stored canonical**
+`client_id`, never from the casing a caller happened to type:
+
+- Tokens are minted with the stored value, not the casing supplied at
+  `/connect/token`, so every token issued to one registered client carries one
+  identity whatever casing that client used on a given call.
+- The caller's id is the stored value that `AuthenticateClientAsync` resolved, not the
+  one it sent in its credentials.
+
+Either half alone leaves the defect open. Where an engine authenticates a mis-cased
+`client_id` — SQL Server's default collation does — passing the caller's own spelling
+into the case-sensitive comparison would fail it against the client's own canonically
+minted token: a silent `200 OK` no-op on a legitimate revocation.
 
 This was previously a live defect: a token minted under one casing could not be
 revoked by a caller authenticated under another, and the mismatch surfaced as the
-silent `200 OK` no-op described above. Canonical minting closes it on **both**
-database engines. See
+silent `200 OK` no-op described above. It is closed on **both** database engines. See
 [ADR: Canonical `client_id` casing in minted tokens](../../adr-client-id-casing.md)
 for the decision record, including why the ownership comparison itself deliberately
 remains case-sensitive.
@@ -145,9 +157,9 @@ PostgreSQL, which matches RFC 6749's rule that protocol parameter values are cas
 sensitive. SQL Server's default collation makes its lookup case-insensitive, so the
 two engines currently differ and SQL Server departs from the RFC; that is a known
 issue tracked separately and out of scope here. It is a conformance and consistency
-concern only — because minting is canonical, a client that authenticates on SQL
-Server with non-canonical casing still receives a canonical token and can revoke
-normally.
+concern only — because both the minted claim and the authenticated caller's id are
+canonical, a client that authenticates on SQL Server with non-canonical casing still
+receives a canonical token and can revoke normally.
 
 One residue remains: tokens minted **before** this change still carry the requested
 casing, so such a token may resist revocation by a canonically-cased caller until it

@@ -231,14 +231,16 @@ public class OpenIddictTokenManagerTests
                 );
     }
 
-    // ValidateClientCredentialsAsync authenticates an RFC 7009 revocation caller using the same
+    // AuthenticateClientAsync authenticates an RFC 7009 revocation caller using the same
     // application lookup and secret-hash comparison as GetAccessTokenAsync above, so these
     // fixtures pin that it agrees with those three on what counts as a valid client secret.
+    // It returns the stored canonical client id rather than a bare flag, because that is the
+    // value tokens are minted from and therefore the only value the ownership check can use.
 
     [TestFixture]
-    public class Given_ValidateClientCredentialsAsync_WithValidCredentials : OpenIddictTokenManagerTests
+    public class Given_AuthenticateClientAsync_WithValidCredentials : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private string? _result;
 
         [SetUp]
         public async Task Act()
@@ -254,17 +256,79 @@ public class OpenIddictTokenManagerTests
                 );
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
 
-            _result = await _tokenManager.ValidateClientCredentialsAsync("known-client", "plain-secret");
+            _result = await _tokenManager.AuthenticateClientAsync("known-client", "plain-secret");
         }
 
         [Test]
-        public void It_returns_true() => _result.Should().BeTrue();
+        public void It_returns_the_client_id() => _result.Should().Be("known-client");
+    }
+
+    // The case that motivated returning a client id instead of a flag: SQL Server's default
+    // collation resolves a mis-cased client id, so the caller authenticates under a spelling
+    // that was never stored. Handing that spelling to the ownership check would compare it
+    // against the canonical value the token was minted from and find a stranger.
+    [TestFixture]
+    public class Given_AuthenticateClientAsync_WithNonCanonicalCasing : OpenIddictTokenManagerTests
+    {
+        private string? _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // Stands in for a case-insensitive collation: the lookup resolves the mis-cased id
+            // to the application registered under the canonical one.
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("KNOWN-Client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "known-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+
+            _result = await _tokenManager.AuthenticateClientAsync("KNOWN-Client", "plain-secret");
+        }
+
+        [Test]
+        public void It_returns_the_canonical_client_id_not_the_requested_one() =>
+            _result.Should().Be("known-client");
+    }
+
+    // A stored row with no client id cannot yield a canonical value, and returning an empty
+    // one would authenticate a caller into an ownership check no token can ever match. The
+    // requested spelling is used instead, matching what minting does in the same situation.
+    [TestFixture]
+    public class Given_AuthenticateClientAsync_WhenTheStoredClientIdIsEmpty : OpenIddictTokenManagerTests
+    {
+        private string? _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = string.Empty,
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+
+            _result = await _tokenManager.AuthenticateClientAsync("known-client", "plain-secret");
+        }
+
+        [Test]
+        public void It_falls_back_to_the_requested_client_id() => _result.Should().Be("known-client");
     }
 
     [TestFixture]
-    public class Given_ValidateClientCredentialsAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
+    public class Given_AuthenticateClientAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private string? _result;
 
         [SetUp]
         public async Task Act()
@@ -272,17 +336,17 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("unknown-client"))
                 .Returns((ApplicationInfo?)null);
 
-            _result = await _tokenManager.ValidateClientCredentialsAsync("unknown-client", "plain-secret");
+            _result = await _tokenManager.AuthenticateClientAsync("unknown-client", "plain-secret");
         }
 
         [Test]
-        public void It_returns_false() => _result.Should().BeFalse();
+        public void It_returns_null() => _result.Should().BeNull();
     }
 
     [TestFixture]
-    public class Given_ValidateClientCredentialsAsync_WhenSecretIsInvalid : OpenIddictTokenManagerTests
+    public class Given_AuthenticateClientAsync_WhenSecretIsInvalid : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private string? _result;
 
         [SetUp]
         public async Task Act()
@@ -298,17 +362,17 @@ public class OpenIddictTokenManagerTests
                 );
             A.CallTo(() => _secretHasher.VerifySecretAsync("wrong-secret", "hashed-secret")).Returns(false);
 
-            _result = await _tokenManager.ValidateClientCredentialsAsync("known-client", "wrong-secret");
+            _result = await _tokenManager.AuthenticateClientAsync("known-client", "wrong-secret");
         }
 
         [Test]
-        public void It_returns_false() => _result.Should().BeFalse();
+        public void It_returns_null() => _result.Should().BeNull();
     }
 
     [TestFixture]
-    public class Given_ValidateClientCredentialsAsync_WhenApiClientIsNotApproved : OpenIddictTokenManagerTests
+    public class Given_AuthenticateClientAsync_WhenApiClientIsNotApproved : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private string? _result;
 
         [SetUp]
         public async Task Act()
@@ -324,24 +388,24 @@ public class OpenIddictTokenManagerTests
                 );
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
 
-            _result = await _tokenManager.ValidateClientCredentialsAsync("disabled-client", "plain-secret");
+            _result = await _tokenManager.AuthenticateClientAsync("disabled-client", "plain-secret");
         }
 
         [Test]
-        public void It_returns_false() => _result.Should().BeFalse();
+        public void It_returns_null() => _result.Should().BeNull();
     }
 
     [TestFixture]
-    public class Given_ValidateClientCredentialsAsync_WithMissingCredentials : OpenIddictTokenManagerTests
+    public class Given_AuthenticateClientAsync_WithMissingCredentials : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private string? _result;
 
         [SetUp]
         public async Task Act() =>
-            _result = await _tokenManager.ValidateClientCredentialsAsync(string.Empty, string.Empty);
+            _result = await _tokenManager.AuthenticateClientAsync(string.Empty, string.Empty);
 
         [Test]
-        public void It_returns_false() => _result.Should().BeFalse();
+        public void It_returns_null() => _result.Should().BeNull();
 
         [Test]
         public void It_does_not_query_the_repository() =>

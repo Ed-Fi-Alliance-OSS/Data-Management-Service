@@ -1579,8 +1579,7 @@ public class RevocationOwnershipTests
         }
 
         [Test]
-        public void It_returns_400_not_401() =>
-            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        public void It_returns_400_not_401() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     /// <summary>
@@ -1711,6 +1710,72 @@ public class RevocationOwnershipTests
     }
 
     /// <summary>
+    /// The casing defect at the HTTP level, where it actually bites. SQL Server's default
+    /// collation resolves a mis-cased <c>client_id</c>, so a caller can authenticate under a
+    /// spelling that was never stored while holding a token minted from the stored one. The
+    /// faked repository stands in for that collation by resolving the mis-cased lookup.
+    ///
+    /// Carrying the caller's own spelling into the ownership comparison — rather than the
+    /// canonical id authentication resolved — makes this the silent no-op the whole change
+    /// exists to prevent: the caller is told <c>200 OK</c> while its own token stays live.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_authenticated_with_non_canonical_casing
+    {
+        private const string NonCanonicalClientId = "REVOKE-Owner-Client";
+
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+
+            // The mis-cased lookup resolves to the application registered under the canonical
+            // spelling, which is what a case-insensitive collation does.
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(NonCanonicalClientId))
+                .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = true });
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, NonCanonicalClientId, TestClientSecret);
+
+            // The token carries the canonical client_id, because that is what minting stamps on
+            // it no matter which spelling the client authenticated with.
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, _jti));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
     /// Guards the RFC 7009 §2.1 requirement itself: with no client credentials presented at all,
     /// the caller is rejected before the target token is even looked at.
     /// </summary>
@@ -1722,6 +1787,7 @@ public class RevocationOwnershipTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
+        private string _body = string.Empty;
 
         [SetUp]
         public async Task Setup()
@@ -1730,6 +1796,7 @@ public class RevocationOwnershipTests
             _client = _factory.CreateClient(); // No Authorization header and no client_id/secret form fields.
 
             _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await _response.Content.ReadAsStringAsync();
         }
 
         [TearDown]
@@ -1741,6 +1808,18 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_reports_the_oauth_error_code() => _body.Should().Contain("invalid_client");
+
+        /// <summary>
+        /// RFC 6749 §5.2 conditions the challenge on the client having attempted to authenticate
+        /// through the Authorization header. This caller sent no such header, so offering it a
+        /// Basic challenge would invite a scheme it did not choose.
+        /// </summary>
+        [Test]
+        public void It_does_not_send_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
 
         [Test]
         public void It_does_not_attempt_revocation() =>
@@ -1761,6 +1840,7 @@ public class RevocationOwnershipTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
+        private string _body = string.Empty;
 
         [SetUp]
         public async Task Setup()
@@ -1777,6 +1857,7 @@ public class RevocationOwnershipTests
             _client = CreateClientWithCredentials(_factory, "unregistered-client", TestClientSecret);
 
             _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await _response.Content.ReadAsStringAsync();
         }
 
         [TearDown]
@@ -1788,6 +1869,23 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        /// <summary>
+        /// The OAuth error code has to survive into the response body. A bare sentence would
+        /// fail the structured-provider-error parse in FailureResults and be replaced by its
+        /// "unexpected response" fallback, which tells the client nothing about what to fix.
+        /// </summary>
+        [Test]
+        public void It_reports_the_oauth_error_code() =>
+            _body.Should().Contain("invalid_client. Invalid client or Invalid client credentials");
+
+        /// <summary>
+        /// RFC 6749 §5.2 requires a challenge matching the scheme the client used, and this
+        /// caller authenticated through the Authorization header.
+        /// </summary>
+        [Test]
+        public void It_sends_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().ContainSingle(header => header.Scheme == "Basic");
 
         [Test]
         public void It_does_not_attempt_revocation() =>
