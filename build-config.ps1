@@ -373,12 +373,14 @@ function PublishEffectiveRoleClaimSettings {
         throw "The Configuration Service container reports no AppSettings__IdentityProvider; cannot determine which provider the role-claim scenario is running against."
     }
 
-    # Assigned unconditionally so a setting the container does not carry clears a stale value
+    # Published under test-only names that neither Compose nor the application reads, so the
+    # expectations never become configuration for a later run in the same shell. Assigned
+    # unconditionally so a setting the container does not carry clears a stale expectation
     # instead of leaving the scenario comparing against an earlier lane.
-    $env:DMS_CONFIG_IDENTITY_PROVIDER = $effective["AppSettings__IdentityProvider"]
-    $env:DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE = $effective["IdentitySettings__RoleClaimType"]
-    $env:DMS_CONFIG_IDENTITY_CLIENT_ROLE = $effective["IdentitySettings__ClientRole"]
-    $env:Authentication__RoleClaimAttribute = $effective["Authentication__RoleClaimAttribute"]
+    $env:CMS_E2E_EXPECTED_IDENTITY_PROVIDER = $effective["AppSettings__IdentityProvider"]
+    $env:CMS_E2E_EXPECTED_ROLE_CLAIM_TYPE = $effective["IdentitySettings__RoleClaimType"]
+    $env:CMS_E2E_EXPECTED_CLIENT_ROLE = $effective["IdentitySettings__ClientRole"]
+    $env:CMS_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE = $effective["Authentication__RoleClaimAttribute"]
 }
 
 function RunNuGetPack {

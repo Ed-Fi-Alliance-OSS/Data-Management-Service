@@ -13,17 +13,19 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Management;
 /// <remarks>
 /// <c>build-config.ps1</c> publishes these values by reading them back from the Configuration
 /// Service container, so they are what the running service actually received rather than what an
-/// environment file requested. The fallbacks below match the checked-in environment files, so a
-/// bare <c>dotnet test</c> against a standard stack still compares against the right values.
+/// environment file requested. It publishes them under test-only <c>CMS_E2E_EXPECTED_*</c> names
+/// that neither Compose nor the service reads, so an expectation never configures a later run.
+/// The fallbacks below match the checked-in environment files, so a bare <c>dotnet test</c>
+/// against a standard stack still compares against the right values.
 /// </remarks>
 public static class RoleClaimConfiguration
 {
-    private const string IdentityProviderVariable = "DMS_CONFIG_IDENTITY_PROVIDER";
+    private const string IdentityProviderVariable = "CMS_E2E_EXPECTED_IDENTITY_PROVIDER";
 
     /// <summary>
     /// Keycloak emits the claim named by <c>IdentitySettings:RoleClaimType</c>.
     /// </summary>
-    private const string KeycloakClaimTypeVariable = "DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE";
+    private const string KeycloakClaimTypeVariable = "CMS_E2E_EXPECTED_ROLE_CLAIM_TYPE";
 
     /// <summary>
     /// The self-contained provider emits the claim named by
@@ -32,12 +34,12 @@ public static class RoleClaimConfiguration
     /// today by default rather than by configuration; reading each provider's own setting keeps a
     /// customized lane honest instead of comparing against the other provider's value.
     /// </summary>
-    private const string SelfContainedClaimTypeVariable = "Authentication__RoleClaimAttribute";
+    private const string SelfContainedClaimTypeVariable = "CMS_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE";
 
     private const string DefaultRoleClaimType =
         "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
 
-    private const string ClientRoleVariable = "DMS_CONFIG_IDENTITY_CLIENT_ROLE";
+    private const string ClientRoleVariable = "CMS_E2E_EXPECTED_CLIENT_ROLE";
 
     private const string DefaultClientRole = "dms-client";
 
