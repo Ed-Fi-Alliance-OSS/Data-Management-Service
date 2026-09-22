@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FluentAssertions;
 
@@ -11,6 +12,54 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Model.ClaimSets;
 [TestFixture]
 public class ResourceClaimActionRequestValidatorTests
 {
+    [TestFixture]
+    public class Given_json_null_collection_elements
+    {
+        private const string ActionsJson = """
+            { "claimSetId": 1, "resourceClaimId": 2,
+              "resourceClaimActions": [null, { "name": "Read", "enabled": true }] }
+            """;
+
+        [Test]
+        public async Task It_rejects_null_action_elements_on_grant()
+        {
+            var request = JsonSerializer.Deserialize<AddResourceClaimActionsOnClaimSetRequest>(
+                ActionsJson, JsonSerializerOptions.Web
+            )!;
+
+            var result = await new AddResourceClaimActionsOnClaimSetRequest.Validator().ValidateAsync(request);
+
+            result.Errors.Should().Contain(error => error.PropertyName == "ResourceClaimActions[0]");
+        }
+
+        [Test]
+        public async Task It_rejects_null_action_elements_on_modify()
+        {
+            var request = JsonSerializer.Deserialize<EditResourceClaimActionsOnClaimSetRequest>(
+                ActionsJson, JsonSerializerOptions.Web
+            )!;
+
+            var result = await new EditResourceClaimActionsOnClaimSetRequest.Validator().ValidateAsync(request);
+
+            result.Errors.Should().Contain(error => error.PropertyName == "ResourceClaimActions[0]");
+        }
+
+        [Test]
+        public async Task It_rejects_null_authorization_strategy_elements()
+        {
+            var request = JsonSerializer.Deserialize<OverrideAuthStategyOnClaimSetRequest>(
+                """
+                { "claimSetId": 1, "resourceClaimId": 2, "actionName": "Read",
+                  "authorizationStrategies": [null, "NamespaceBased"] }
+                """, JsonSerializerOptions.Web
+            )!;
+
+            var result = await new OverrideAuthStategyOnClaimSetRequest.Validator().ValidateAsync(request);
+
+            result.Errors.Should().Contain(error => error.PropertyName == "AuthorizationStrategies[0]");
+        }
+    }
+
     [Test]
     public async Task It_rejects_empty_action_collections()
     {

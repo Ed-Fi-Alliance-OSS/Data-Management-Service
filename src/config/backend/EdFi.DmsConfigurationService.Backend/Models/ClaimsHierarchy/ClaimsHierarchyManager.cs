@@ -133,7 +133,9 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
             .. enabledActionNames.Select(actionName => new ClaimSetAction
             {
                 Name = actionName,
-                AuthorizationStrategyOverrides = [],
+                AuthorizationStrategyOverrides = claimSet.Actions.Find(existing =>
+                    existing.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+                )?.AuthorizationStrategyOverrides ?? [],
             }),
         ];
 

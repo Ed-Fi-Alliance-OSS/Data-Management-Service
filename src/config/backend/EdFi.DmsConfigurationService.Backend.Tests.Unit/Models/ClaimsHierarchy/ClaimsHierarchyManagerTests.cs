@@ -12,6 +12,54 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Models.ClaimsHierarchy
 [TestFixture]
 public class ClaimsHierarchyManagerTests
 {
+    [TestFixture]
+    public class Given_replacing_actions_with_existing_overrides
+    {
+        private List<Claim> _claims = [];
+
+        [SetUp]
+        public void SetUp()
+        {
+            _claims =
+            [
+                new()
+                {
+                    Name = "claim-a",
+                    ClaimSets =
+                    [
+                        new()
+                        {
+                            Name = "SIS Vendor",
+                            Actions =
+                            [
+                                new() { Name = "read", AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }] },
+                                new() { Name = "Update", AuthorizationStrategyOverrides = [new() { Name = "NoFurtherAuthorizationRequired" }] },
+                            ],
+                        },
+                    ],
+                },
+            ];
+
+            new ClaimsHierarchyManager().ReplaceClaimSetResourceActions(
+                "SIS Vendor", "claim-a", ["Create", "Read"], true, _claims
+            ).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_preserves_overrides_for_retained_actions_case_insensitively() =>
+            _claims[0].ClaimSets[0].Actions.Single(action => action.Name == "Read")
+                .AuthorizationStrategyOverrides.Select(strategy => strategy.Name).Should().Equal("NamespaceBased");
+
+        [Test]
+        public void It_removes_omitted_actions_and_their_overrides() =>
+            _claims[0].ClaimSets[0].Actions.Select(action => action.Name).Should().Equal("Create", "Read");
+
+        [Test]
+        public void It_does_not_copy_removed_overrides_to_new_actions() =>
+            _claims[0].ClaimSets[0].Actions.Single(action => action.Name == "Create")
+                .AuthorizationStrategyOverrides.Should().BeEmpty();
+    }
+
     private ClaimsHierarchyManager _claimsHierarchyManager;
 
     [SetUp]

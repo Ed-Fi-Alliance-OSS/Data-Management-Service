@@ -56,6 +56,7 @@ public sealed class OverrideAuthStategyOnClaimSetRequest
             RuleFor(request => request.ResourceClaimId).NotEmpty();
             RuleFor(request => request.ActionName).NotEmpty();
             RuleFor(request => request.AuthorizationStrategies).NotNull().NotEmpty();
+            RuleForEach(request => request.AuthorizationStrategies).NotNull();
         }
     }
 }
@@ -68,17 +69,18 @@ public abstract class ResourceClaimActionsOnClaimSetRequestValidator<T> : Abstra
         RuleFor(request => request.ClaimSetId).NotEmpty();
         RuleFor(request => request.ResourceClaimId).NotEmpty();
         RuleFor(request => request.ResourceClaimActions).NotNull().NotEmpty();
+        RuleForEach(request => request.ResourceClaimActions).NotNull();
         RuleFor(request => request.ResourceClaimActions)
-            .Must(actions => actions is not null && actions.Exists(action => action.Enabled))
+            .Must(actions => actions is not null && actions.Exists(action => action is { Enabled: true }))
             .WithMessage("At least one resource claim action must be enabled.");
         RuleFor(request => request.ResourceClaimActions)
             .Must(actions =>
                 actions is null
                 || actions
-                    .Where(action => !string.IsNullOrWhiteSpace(action.Name))
+                    .Where(action => action is not null && !string.IsNullOrWhiteSpace(action.Name))
                     .Select(action => action.Name!)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Count() == actions.Count(action => !string.IsNullOrWhiteSpace(action.Name))
+                    .Count() == actions.Count(action => action is not null && !string.IsNullOrWhiteSpace(action.Name))
             )
             .WithMessage("Resource claim action names must not be duplicated.");
     }

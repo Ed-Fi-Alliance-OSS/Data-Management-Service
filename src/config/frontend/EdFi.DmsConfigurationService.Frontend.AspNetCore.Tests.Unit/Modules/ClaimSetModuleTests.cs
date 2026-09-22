@@ -1601,6 +1601,45 @@ public class ClaimSetModuleTests
     }
 
     [TestFixture]
+    public class Given_requests_containing_disabled_actions : ClaimSetModuleTests
+    {
+        [TestCase("POST")]
+        [TestCase("PUT")]
+        public async Task It_passes_disabled_action_names_to_repository_validation(string method)
+        {
+            var commands = new List<ResourceClaimActionMutationCommand>();
+            A.CallTo(() => _claimSetRepository.GrantResourceClaimActions(A<ResourceClaimActionMutationCommand>.Ignored))
+                .Invokes((ResourceClaimActionMutationCommand command) => commands.Add(command))
+                .Returns(new ClaimSetResourceActionMutationResult.FailureInvalidAction("NotAnAction"));
+            A.CallTo(() => _claimSetRepository.ModifyResourceClaimActions(A<ResourceClaimActionMutationCommand>.Ignored))
+                .Invokes((ResourceClaimActionMutationCommand command) => commands.Add(command))
+                .Returns(new ClaimSetResourceActionMutationResult.FailureInvalidAction("NotAnAction"));
+            using var client = SetUpClient();
+            using var request = new HttpRequestMessage(new HttpMethod(method),
+                method == "POST" ? "/v3/claimSets/1/resourceClaimActions" : "/v3/claimSets/1/resourceClaimActions/2")
+            {
+                Content = JsonContent.Create(new
+                {
+                    claimSetId = 1,
+                    resourceClaimId = 2,
+                    resourceClaimActions = new[]
+                    {
+                        new { name = "Create", enabled = true },
+                        new { name = "NotAnAction", enabled = false },
+                    },
+                }),
+            };
+
+            using var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            commands.Should().ContainSingle();
+            commands[0].SuppliedActionNames.Should().Equal("Create", "NotAnAction");
+            commands[0].EnabledActionNames.Should().Equal("Create");
+        }
+    }
+
+    [TestFixture]
     public class ResourceActionMutationTests : ClaimSetModuleTests
     {
         [Test]

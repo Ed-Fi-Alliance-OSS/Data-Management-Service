@@ -44,7 +44,10 @@ public sealed record ResourceClaimActionMutationCommand(
     int ClaimSetId,
     int ResourceClaimId,
     IReadOnlyList<string> EnabledActionNames
-);
+)
+{
+    public IReadOnlyList<string> SuppliedActionNames { get; init; } = EnabledActionNames;
+}
 
 public sealed record AuthorizationStrategyOverrideCommand(
     int ClaimSetId,
