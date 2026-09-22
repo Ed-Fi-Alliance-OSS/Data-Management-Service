@@ -60,11 +60,13 @@ Describe 'DMS prerelease image tags' {
             $result.DMSTAGS | Should -BeExactly 'someone/else:pre,someone/else:8.0.1-alpha.0.7'
         }
 
-        It 'refuses a prerelease ref that does not carry the dms-pre- prefix' {
-            # A ref like this used to produce only a mislabelled build argument. It would now
-            # produce a pushed tag, which is published state nobody can take back.
-            { script:Invoke-TagScript -ReleaseRef 'cs-pre-8.0.1-alpha.0.7' } |
-                Should -Throw "*does not start with 'dms-pre-'*"
+        It 'publishes only the moving tag for a prerelease ref without the dms-pre- prefix' {
+            # What the shell published for such a ref. No version-specific tag is derived from a
+            # value that is not a version, and the publication is not refused either.
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-8.0.1-alpha.0.7'
+
+            $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:pre'
+            $result.VERSION | Should -BeExactly '1-alpha.0.7'
         }
 
         It 'treats Alpha as a release, because the shell it replaces matched case-sensitively' {

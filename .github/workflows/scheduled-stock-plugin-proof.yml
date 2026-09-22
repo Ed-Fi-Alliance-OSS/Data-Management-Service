@@ -42,7 +42,6 @@ jobs:
         shell: pwsh
     outputs:
       ready: ${{ steps.readiness.outputs.ready }}
-      reason: ${{ steps.readiness.outputs.reason }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,10 +107,12 @@ jobs:
         id: proof
         run: ./eng/docker-compose/tests/plugin-deployment/Invoke-StockImagePluginProof.ps1 -PinFile $env:PIN_FILE
 
-      # Only this job writes proof evidence, and only when it ran. The readiness job has nothing to
-      # upload, which is what keeps a skipped proof from leaving an artifact somebody reads as one.
+      # Only this job writes proof evidence, and only when the proof step ran, whatever it
+      # concluded. A passing run's evidence is the record that the pinned image passed; a failing
+      # run's is the record of why. The readiness job has nothing to upload, which is what keeps a
+      # skipped proof from leaving an artifact somebody reads as one.
       - name: Upload the proof evidence
-        if: always() && steps.proof.outcome == 'failure'
+        if: always() && steps.proof.outcome != 'skipped'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: stock-image-plugin-proof-evidence

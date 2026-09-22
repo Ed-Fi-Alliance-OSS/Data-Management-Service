@@ -58,14 +58,15 @@ $legacyStripLength = 8
 # PowerShell's -match is neither case-sensitive nor a substring test by default.
 $isPrerelease = $ReleaseRef.Contains('alpha', [System.StringComparison]::Ordinal)
 
-if ($isPrerelease) {
-    # Guarding the prefix only on the branch this change alters. The stripped value used to reach
-    # one build argument, where a wrong result produced a mislabelled image; it now also reaches a
-    # tag that is pushed to Docker Hub, and a malformed tag is published state nobody can take back.
-    if (-not $ReleaseRef.StartsWith($prereleasePrefix, [System.StringComparison]::Ordinal)) {
-        throw "Release ref '$ReleaseRef' is a prerelease but does not start with '$prereleasePrefix', so no version-specific image tag can be derived from it."
-    }
-
+if ($isPrerelease -and -not $ReleaseRef.StartsWith($prereleasePrefix, [System.StringComparison]::Ordinal)) {
+    # A prerelease ref without the prefix gets what the shell gave it: the moving tag and the
+    # fixed-offset strip. No version-specific tag is derived, because the stripped value is not a
+    # version and a pushed tag is published state nobody can take back. Refusing instead would stop
+    # a publication the shell used to complete.
+    $version = if ($ReleaseRef.Length -gt $legacyStripLength) { $ReleaseRef.Substring($legacyStripLength) } else { '' }
+    $tags = @("${ImageName}:pre")
+}
+elseif ($isPrerelease) {
     # No empty-remainder guard: reaching here means the ref contains "alpha" and starts with a
     # prefix that does not, so the remainder cannot be empty.
     $version = $ReleaseRef.Substring($prereleasePrefix.Length)

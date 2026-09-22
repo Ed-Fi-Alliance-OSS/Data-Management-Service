@@ -16,6 +16,20 @@
 
 Describe 'Stock image proof entry script' {
     BeforeAll {
+        # A junction on Windows, a symbolic link elsewhere. New-Item -ItemType Junction is a silent
+        # no-op on POSIX: no error and no link, so a refusal asserted against it passes by never
+        # being asked. Failing here when the link is absent is what keeps these tests honest.
+        function script:New-DirectoryLink {
+            param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [string] $Target)
+
+            New-Item -ItemType ($IsWindows ? 'Junction' : 'SymbolicLink') -Path $Path -Target $Target | Out-Null
+            $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+
+            if ($null -eq $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "The test could not create the directory link '$Path', so it would assert against a path containing no link."
+            }
+        }
+
         $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $script:entryScript = Join-Path $script:composeRoot 'tests/plugin-deployment/Invoke-StockImagePluginProof.ps1'
         Import-Module (Join-Path $PSScriptRoot 'plugin-deployment/stock-image-proof.psm1') -Force
@@ -123,14 +137,19 @@ function global:Invoke-DmsShim {
                 }
             }
 
-            # A junction inside the workspace, created at a command boundary rather than up front,
-            # because the workspace does not exist until the run creates it. This is how a link can
-            # appear after the path was first checked.
+            # A directory link inside the workspace, created at a command boundary rather than up
+            # front, because the workspace does not exist until the run creates it. This is how a
+            # link can appear after the path was first checked. A junction on Windows, a symbolic
+            # link elsewhere: New-Item -ItemType Junction is a silent no-op on POSIX, and a missing
+            # link would let the refusal under test pass by never being asked.
             if ($rule.PSObject.Properties.Name -contains 'link') {
                 foreach ($link in @($rule.link)) {
                     $at = Join-Path $global:DmsWorkspaceRoot $link.path
                     New-Item -ItemType Directory -Path (Split-Path -Parent $at) -Force | Out-Null
-                    New-Item -ItemType Junction -Path $at -Target $link.target | Out-Null
+                    New-Item -ItemType ($IsWindows ? 'Junction' : 'SymbolicLink') -Path $at -Target $link.target | Out-Null
+                    if (-not ((Get-Item -LiteralPath $at -Force -ErrorAction SilentlyContinue).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                        throw "The shim could not create the directory link '$at'."
+                    }
                 }
             }
 
@@ -450,6 +469,8 @@ exit 0
                 }
                 provisioning         = [ordered]@{
                     schemaToolsPackageVersion = '8.0.1-alpha.0.7'
+                    # Three different feeds, so a consumer that borrowed another's is caught.
+                    schemaToolsFeedUrl        = 'https://tools.example.org/v3/index.json'
                     dataStandardVersion       = '5.2'
                     schemaPackages            = @(
                         [ordered]@{
@@ -462,6 +483,7 @@ exit 0
                 contracts            = [ordered]@{
                     pluginsPackageVersion          = '1.0.0'
                     customValidationPackageVersion = '1.0.0'
+                    feedUrl                        = 'https://contracts.example.org/v3/index.json'
                 }
             }
 
@@ -488,8 +510,8 @@ exit 0
                 edFiApi              = [ordered]@{ repository = 'edfialliance/ed-fi-api'; tag = $null; digest = $null }
                 configurationService = [ordered]@{ repository = 'edfialliance/ed-fi-api-configuration-service'; digest = $null }
                 release              = [ordered]@{ githubRelease = $null; sourceCommit = $null; publicationRunUrl = $null }
-                provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; dataStandardVersion = $null; schemaPackages = $null }
-                contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null }
+                provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; schemaToolsFeedUrl = $null; dataStandardVersion = $null; schemaPackages = $null }
+                contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null; feedUrl = $null }
             }
 
             Set-Content -LiteralPath $Path -Value ($pin | ConvertTo-Json -Depth 8) -Encoding utf8
@@ -932,7 +954,8 @@ exit 0
 
                 $captured = @{}
                 if (Test-Path -LiteralPath $captureRoot) {
-                    foreach ($file in (Get-ChildItem -LiteralPath $captureRoot -File)) {
+                    # -Force: a capture key that starts with '..' flattens to a dot-file, hidden on POSIX.
+                    foreach ($file in (Get-ChildItem -LiteralPath $captureRoot -File -Force)) {
                         $captured[$file.Name] = Get-Content -LiteralPath $file.FullName -Raw
                     }
                 }
@@ -1258,13 +1281,13 @@ exit 0
             Test-Path -LiteralPath $objDirectory | Should -BeFalse
         }
 
-        It 'restores both contracts only from the pinned published feed' {
+        It 'restores both contracts only from the pinned contracts feed' {
             # The shim does not restore, so nothing else here would notice if this file kept the
             # committed local-fixture-feed mapping, named the wrong feed, dropped a contract or left
             # an inherited source active. It is observed at the publish boundary instead.
             $pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
             New-PublishedPinFile -Path $pinPath
-            $pinnedFeed = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            $pinnedFeed = 'https://contracts.example.org/v3/index.json'
 
             try {
                 $run = Invoke-EntryScript -PinPath $pinPath -ShimRule @(
@@ -1762,6 +1785,8 @@ exit 0
             $install | Should -Not -BeNullOrEmpty
             $install[0] | Should -Match '--version 8\.0\.1-alpha\.0\.7'
             $install[0] | Should -Match '--tool-path'
+            # The tool's own feed, not the first schema package's.
+            $install[0] | Should -Match '--add-source https://tools\.example\.org/v3/index\.json'
         }
 
         It 'runs no command that builds an image, across the whole traversal' {
@@ -2466,7 +2491,7 @@ exit 0
             New-Item -ItemType Directory -Path $external -Force | Out-Null
 
             try {
-                New-Item -ItemType Junction -Path $link -Target $external | Out-Null
+                New-DirectoryLink -Path $link -Target $external
                 $workspace = & $script:freshWorkspace
 
                 $run = Invoke-EntryScript -WorkspaceOverride $workspace -EvidenceOverride (Join-Path $link 'evidence')
@@ -2503,7 +2528,7 @@ exit 0
             New-Item -ItemType Directory -Path $external -Force | Out-Null
 
             try {
-                New-Item -ItemType Junction -Path $link -Target $external | Out-Null
+                New-DirectoryLink -Path $link -Target $external
 
                 (Invoke-WithPath -Workspace (Join-Path $link 'workspace') -Evidence (& $script:freshEvidence)) |
                     Should -Match 'which is a link or junction'

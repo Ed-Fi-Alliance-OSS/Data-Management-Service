@@ -529,6 +529,14 @@ Describe 'Stock image proof decisions' {
         ) {
             (Test-BuildCommandAbsent -Command @($Command)).Verified | Should -BeFalse
         }
+
+        It 'answers for a compose command that carries only options' {
+            # Nothing after the options, so no subcommand. This used to index past the end of the
+            # token list, and it runs in the entry script's finally, where a throw would replace
+            # the run's real outcome.
+            (Test-BuildCommandAbsent -Command @('docker compose --help')).Verified | Should -BeTrue
+            (Test-BuildCommandAbsent -Command @('docker compose -f a.yml')).Verified | Should -BeTrue
+        }
     }
 
     Context 'redaction of evidence and command logs' {
@@ -562,6 +570,35 @@ Describe 'Stock image proof decisions' {
 
         It 'handles empty input without throwing' {
             Protect-StockProofText -Text '' | Should -BeExactly ''
+        }
+
+        It 'keeps a serialized evidence document parseable when a value carries an Authorization line' {
+            # Serialized JSON escapes the newline, so the whole value is one physical line. Redacting
+            # that text would run the Authorization rule past the closing quote and the members that
+            # follow. Redacting the values first keeps each rule inside its own value.
+            $result = [pscustomobject]@{
+                primaryFailure = "GET /x`nAuthorization: Basic dXNlcjpwYXNz`nmore"
+                kept           = 'kept'
+                commandLog     = @('docker pull x', "Authorization: Bearer abc`ntrailing")
+                nested         = [ordered]@{ header = 'Authorization: ***REDACTED***' }
+            }
+
+            $json = Protect-StockProofValue -Value $result | ConvertTo-Json -Depth 10
+            $parsed = $json | ConvertFrom-Json
+
+            $json | Should -Not -Match 'dXNlcjpwYXNz'
+            $json | Should -Not -Match 'Bearer abc'
+            $parsed.kept | Should -BeExactly 'kept'
+            $parsed.primaryFailure | Should -BeExactly "GET /x`nAuthorization: ***REDACTED***`nmore"
+            $parsed.commandLog | Should -HaveCount 2
+            $parsed.commandLog[1] | Should -BeExactly "Authorization: ***REDACTED***`ntrailing"
+            $parsed.nested.header | Should -BeExactly 'Authorization: ***REDACTED***'
+        }
+
+        It 'redacts a declared secret inside a nested value' {
+            $redacted = Protect-StockProofValue -Value ([pscustomobject]@{ list = @('a sekret-value-123 b') }) -Secret @('sekret-value-123')
+
+            $redacted.list[0] | Should -BeExactly 'a ***REDACTED*** b'
         }
     }
 

@@ -23,6 +23,20 @@ $script:pinIsPending = ((Get-Content -LiteralPath $script:pinPath -Raw | Convert
 
 Describe 'Stock image plugin proof lane' {
     BeforeAll {
+        # A junction on Windows, a symbolic link elsewhere. New-Item -ItemType Junction is a silent
+        # no-op on POSIX: no error and no link, so a refusal asserted against it passes by never
+        # being asked. Failing here when the link is absent is what keeps these tests honest.
+        function script:New-DirectoryLink {
+            param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [string] $Target)
+
+            New-Item -ItemType ($IsWindows ? 'Junction' : 'SymbolicLink') -Path $Path -Target $Target | Out-Null
+            $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+
+            if ($null -eq $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "The test could not create the directory link '$Path', so it would assert against a path containing no link."
+            }
+        }
+
         $script:repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         $script:workflowPath = Join-Path $script:repositoryRoot '.github/workflows/scheduled-stock-plugin-proof.yml'
         $script:composeRoot = Join-Path $script:repositoryRoot 'eng/docker-compose'
@@ -109,8 +123,10 @@ Describe 'Stock image plugin proof lane' {
             $script:proofJob | Should -Match 'stock-image-plugin-proof\.json'
         }
 
-        It 'uploads that evidence only when the proof failed' {
-            $script:proofJob | Should -Match "if: always\(\) && steps\.proof\.outcome == 'failure'"
+        It 'uploads that evidence whenever the proof ran, passing or failing' {
+            # A passing run's evidence is what records the pass. Only a proof step that never ran
+            # has nothing to upload.
+            $script:proofJob | Should -Match "if: always\(\) && steps\.proof\.outcome != 'skipped'"
         }
 
         It 'tears down whatever happened, through the receipt-gated entry point' {
@@ -461,7 +477,7 @@ catch {
             $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-wt-$([guid]::NewGuid().ToString('N'))"
             $link = Join-Path ([IO.Path]::GetTempPath()) "dms1502-wl-$([guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $external -Force | Out-Null
-            New-Item -ItemType Junction -Path $link -Target $external | Out-Null
+            New-DirectoryLink -Path $link -Target $external
             $receipt = New-Receipt
 
             try {

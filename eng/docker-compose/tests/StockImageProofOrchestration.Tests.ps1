@@ -11,6 +11,20 @@
 
 Describe 'Stock image proof orchestration' {
     BeforeAll {
+        # A junction on Windows, a symbolic link elsewhere. New-Item -ItemType Junction is a silent
+        # no-op on POSIX: no error and no link, so a refusal asserted against it passes by never
+        # being asked. Failing here when the link is absent is what keeps these tests honest.
+        function script:New-DirectoryLink {
+            param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [string] $Target)
+
+            New-Item -ItemType ($IsWindows ? 'Junction' : 'SymbolicLink') -Path $Path -Target $Target | Out-Null
+            $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+
+            if ($null -eq $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "The test could not create the directory link '$Path', so it would assert against a path containing no link."
+            }
+        }
+
         Import-Module (Join-Path $PSScriptRoot 'plugin-deployment/stock-image-proof.psm1') -Force
         # After the module above, whose own nested import would otherwise unload this one from the
         # caller's session. ReadValuesFromEnvFile is how the phase commands read the file, so the
@@ -220,6 +234,15 @@ Describe 'Stock image proof orchestration' {
             $verdict.Blocker -join ' ' | Should -Match 'filesystem root'
         }
 
+        It 'walks a path up to its root without throwing' {
+            # Split-Path -Parent '/' throws on POSIX. The walk has to stop at the root on every
+            # platform, or the root refusal above is discarded by the exception.
+            $root = [IO.Path]::GetPathRoot([IO.Path]::GetTempPath())
+
+            { Get-ReparsePointAncestor -Path $root } | Should -Not -Throw
+            Get-ReparsePointAncestor -Path (Join-Path $root 'dms1502-absent/child') | Should -BeNullOrEmpty
+        }
+
         It 'refuses a relative path, whose meaning depends on the working directory' {
             (Test-Safety -Workspace 'scratch').Safe | Should -BeFalse
         }
@@ -273,14 +296,8 @@ Describe 'Stock image proof orchestration' {
 
             $linkCreated = $false
             try {
-                try {
-                    New-Item -ItemType Junction -Path $link -Target $target -ErrorAction Stop | Out-Null
-                    $linkCreated = $true
-                }
-                catch {
-                    Set-ItResult -Inconclusive -Because 'this machine does not permit creating a junction'
-                    return
-                }
+                New-DirectoryLink -Path $link -Target $target
+                $linkCreated = $true
 
                 $verdict = Test-Safety -Workspace (Join-Path $link 'workspace')
 

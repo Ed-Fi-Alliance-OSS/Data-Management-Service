@@ -28,7 +28,9 @@
         "SchemaTools package that provisions the database the pinned runtime validates, and the two",
         "published contract packages the fixture plugin compiles against. Building the fixture from",
         "this branch against this branch's contracts would test version skew rather than plugin",
-        "loading, and would stop working the moment either contract surface moved.",
+        "loading, and would stop working the moment either contract surface moved. Each of the two",
+        "carries its own feed address: the SchemaTools package and the contract packages are separate",
+        "publications, and neither may borrow the feed a schema package entry happens to name.",
         "",
         "schemaPackages is the whole of what selects schema content, and dataStandardVersion is only",
         "a label. eng/docker-compose/.env.bootstrap.ds52 sets DMS_CONFIG_DATA_STANDARD_VERSION to",
@@ -57,12 +59,14 @@
     },
     "provisioning": {
         "schemaToolsPackageVersion": null,
+        "schemaToolsFeedUrl": null,
         "dataStandardVersion": null,
         "schemaPackages": null
     },
     "contracts": {
         "pluginsPackageVersion": null,
-        "customValidationPackageVersion": null
+        "customValidationPackageVersion": null,
+        "feedUrl": null
     },
     "requires": [
         "DMS-1499 LoadPlugins startup phase",

@@ -84,8 +84,22 @@ $packageNamePattern = '^[A-Za-z0-9][A-Za-z0-9._-]*\z'
 # This pattern records identity. It does not by itself make a restore resolve that exact version -
 # NuGet reads a bare version in a PackageReference as a floor - so the harness brackets the value
 # when it writes a reference and verifies the restored version against the pin afterwards.
-$exactVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?\z'
-$feedUrlPattern = '^https://[^\s]+\z'
+#
+# SemVer 2.0's own grammar: no leading zero in a numeric part, and no empty dot-separated
+# identifier. NuGet normalizes "01.00.000" and "1.0.0" to one package, so accepting both would give
+# one pin two spellings; "1.0.0-alpha..3" is not a version at all.
+$semVerNumber = '(0|[1-9][0-9]*)'
+$semVerPrerelease = '(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+$semVerBuild = '[0-9A-Za-z-]+'
+$exactVersionPattern = "^$semVerNumber\.$semVerNumber\.$semVerNumber(-$semVerPrerelease(\.$semVerPrerelease)*)?(\+$semVerBuild(\.$semVerBuild)*)?\z"
+
+# An https address with a real host, and a path drawn only from characters that need no escaping
+# in XML or a line-oriented file. The feed addresses are written into a generated nuget.config and
+# handed to dotnet, so a quote, an ampersand or an angle bracket that passed here would produce a
+# malformed document after this gate had already said ready. No query or fragment: a feed address
+# does not need one, and a publication run URL does not carry one.
+$hostLabel = '[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
+$httpsUrlPattern = "^https://$hostLabel(\.$hostLabel)*(:[0-9]{1,5})?(/[A-Za-z0-9._~%!`$()*+,;=:@-]*)*\z"
 
 if (-not (Test-Path -LiteralPath $PinFile -PathType Leaf)) {
     throw "The stock image pin file does not exist: $PinFile"
@@ -155,7 +169,13 @@ function Assert-PinValue {
         throw "The stock image pin is published but $name is missing. A published pin must carry every field; publication is not partially recordable."
     }
 
-    $text = [string]$value
+    # A JSON string, not something that casts to one. A one-element array casts to its element, so
+    # ["sha256:..."] would otherwise validate as the digest it contains.
+    if ($value -isnot [string]) {
+        throw "The stock image pin's $name is a $($value.GetType().Name) rather than a string."
+    }
+
+    $text = $value
 
     if ($PSBoundParameters.ContainsKey('MustEqual') -and $text -cne $MustEqual) {
         throw "The stock image pin's $name is '$text', but this proof is only about '$MustEqual'."
@@ -187,13 +207,21 @@ $requiredPath = @(
     , @('release', 'sourceCommit')
     , @('release', 'publicationRunUrl')
     , @('provisioning', 'schemaToolsPackageVersion')
+    , @('provisioning', 'schemaToolsFeedUrl')
     , @('provisioning', 'dataStandardVersion')
     , @('provisioning', 'schemaPackages')
     , @('contracts', 'pluginsPackageVersion')
     , @('contracts', 'customValidationPackageVersion')
+    , @('contracts', 'feedUrl')
 )
 
-$status = [string](Get-PinValue -Path @('status'))
+$statusValue = Get-PinValue -Path @('status')
+
+if ($null -ne $statusValue -and $statusValue -isnot [string]) {
+    throw "The stock image pin's status is a $($statusValue.GetType().Name) rather than a string. It has to be 'pending' or 'published'."
+}
+
+$status = [string]$statusValue
 
 if ($status -cnotin @('pending', 'published')) {
     throw "The stock image pin's status is '$status'. It has to be 'pending' or 'published'; an unrecognized status is not a reason to skip the proof."
@@ -290,11 +318,17 @@ else {
     }
 
     Assert-PinValue -Path @('release', 'sourceCommit') -Pattern $commitPattern | Out-Null
-    Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern $feedUrlPattern | Out-Null
+    Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern $httpsUrlPattern | Out-Null
     Assert-PinValue -Path @('provisioning', 'schemaToolsPackageVersion') -Pattern $exactVersionPattern | Out-Null
     Assert-PinValue -Path @('provisioning', 'dataStandardVersion') -Pattern $dataStandardPattern | Out-Null
     Assert-PinValue -Path @('contracts', 'pluginsPackageVersion') -Pattern $exactVersionPattern | Out-Null
     Assert-PinValue -Path @('contracts', 'customValidationPackageVersion') -Pattern $exactVersionPattern | Out-Null
+
+    # Each consumer names its own feed. The released SchemaTools package and the two contract
+    # packages are separate publications, and borrowing either feed from a schema package entry
+    # would let reordering that array move where they restore from without anything checking it.
+    Assert-PinValue -Path @('provisioning', 'schemaToolsFeedUrl') -Pattern $httpsUrlPattern | Out-Null
+    Assert-PinValue -Path @('contracts', 'feedUrl') -Pattern $httpsUrlPattern | Out-Null
 
     # The schema package set, which is what actually selects schema content: dataStandardVersion
     # above is only the label the container reports. Each entry has to name the package, an exact
@@ -337,6 +371,10 @@ else {
                 [string]::IsNullOrWhiteSpace([string]$package.$field)) {
                 throw "The stock image pin's $where is missing $field. A schema package is identified by its name, an exact version and the feed it came from."
             }
+
+            if ($package.$field -isnot [string]) {
+                throw "The stock image pin's $where.$field is a $($package.$field.GetType().Name) rather than a string."
+            }
         }
 
         if ([string]$package.name -cnotmatch $packageNamePattern) {
@@ -347,7 +385,7 @@ else {
             throw "The stock image pin's $where.version is '$($package.version)', which is not an exact version identity. A range or a wildcard names a set of packages rather than one."
         }
 
-        if ([string]$package.feedUrl -cnotmatch $feedUrlPattern) {
+        if ([string]$package.feedUrl -cnotmatch $httpsUrlPattern) {
             throw "The stock image pin's $where.feedUrl is '$($package.feedUrl)', which is not an https feed address."
         }
     }

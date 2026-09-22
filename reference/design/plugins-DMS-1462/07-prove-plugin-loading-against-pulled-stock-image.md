@@ -44,8 +44,8 @@ Moving it to `published` means filling all of:
 | `edFiApi.tag`, `edFiApi.digest` | The version-specific tag **and** the digest it resolved to. Both, because a tag alone moves |
 | `configurationService.digest` | Digest alone. This ticket adds version-specific tags to the Ed-Fi API publication only, so the Configuration Service still carries nothing but the moving `pre` tag, and a bare digest is honest about that |
 | `release.githubRelease`, `release.sourceCommit`, `release.publicationRunUrl` | The release that produced the tag, the commit it was cut from, and the run that published it |
-| `provisioning.schemaToolsPackageVersion`, `provisioning.dataStandardVersion`, `provisioning.schemaPackages` | The released SchemaTools version, the data-standard label, and the exact schema package identities with their feed. `schemaPackages` is the whole of what selects schema content; `dataStandardVersion` is only a label |
-| `contracts.pluginsPackageVersion`, `contracts.customValidationPackageVersion` | The two published contract packages the fixture compiles against, restored rather than built |
+| `provisioning.schemaToolsPackageVersion`, `provisioning.schemaToolsFeedUrl`, `provisioning.dataStandardVersion`, `provisioning.schemaPackages` | The released SchemaTools version and the feed it installs from, the data-standard label, and the exact schema package identities with their feed. `schemaPackages` is the whole of what selects schema content; `dataStandardVersion` is only a label |
+| `contracts.pluginsPackageVersion`, `contracts.customValidationPackageVersion`, `contracts.feedUrl` | The two published contract packages the fixture compiles against, restored rather than built, and the feed they restore from. Neither the tool nor the contracts borrow a schema package's feed |
 
 A release qualifies when it carries DMS-1499's loader and DMS-1433's fan-in step, when it was cut after this ticket's version-specific image tagging merged, and when it follows DMS-1501's publication of `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` together with that story's external-consumer restore and compile evidence.
 
@@ -107,7 +107,9 @@ Evidence is written to `.ai-work/verification/stock-image-plugin-proof.json` aft
 - `cleanup` records whether the run owned anything, whether cleanup was attempted, whether it succeeded, and every sanitized error.
 - Each scenario record carries the acquisition path it composed, the image reference, the schema packages that deployment staged, and the observations behind its conclusions rather than only the conclusions.
 
-The workflow uploads that artifact **only when the proof step failed**, and only from the job that ran the harness. A skipped proof produces no artifact.
+Every value is redacted before the document is serialized, not after. A rule run over serialized JSON could consume the closing quote and the members after the value it matched.
+
+The workflow uploads that artifact **whenever the proof step ran**, passing or failing, and only from the job that ran the harness. A passing run's artifact is the record of the pass. A skipped proof produces no artifact.
 
 ### Cleanup, and its ownership boundary
 

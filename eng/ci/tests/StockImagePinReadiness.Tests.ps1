@@ -31,6 +31,7 @@ Describe 'Stock image pin readiness' {
                 }
                 provisioning         = [ordered]@{
                     schemaToolsPackageVersion = '8.0.1-alpha.0.7'
+                    schemaToolsFeedUrl        = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
                     dataStandardVersion       = '5.2'
                     schemaPackages            = @(
                         [ordered]@{
@@ -43,6 +44,7 @@ Describe 'Stock image pin readiness' {
                 contracts            = [ordered]@{
                     pluginsPackageVersion          = '1.0.0'
                     customValidationPackageVersion = '1.0.0'
+                    feedUrl                        = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
                 }
             }
 
@@ -148,6 +150,7 @@ Describe 'Stock image pin readiness' {
             $filled.release.sourceCommit = 'c' * 40
             $filled.release.publicationRunUrl = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1'
             $filled.provisioning.schemaToolsPackageVersion = '8.0.1-alpha.0.7'
+            $filled.provisioning.schemaToolsFeedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
             $filled.provisioning.dataStandardVersion = '5.2'
             $filled.provisioning.schemaPackages = @([pscustomobject]@{
                     name    = 'EdFi.DataStandard52.ApiSchema'
@@ -156,6 +159,7 @@ Describe 'Stock image pin readiness' {
                 })
             $filled.contracts.pluginsPackageVersion = '1.0.0'
             $filled.contracts.customValidationPackageVersion = '1.0.0'
+            $filled.contracts.feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
 
             (Invoke-Readiness -Pin $filled -EventName 'workflow_dispatch').ready | Should -BeExactly 'true'
         }
@@ -184,8 +188,8 @@ Describe 'Stock image pin readiness' {
                     edFiApi              = [ordered]@{ repository = 'edfialliance/ed-fi-api'; tag = $null; digest = $null }
                     configurationService = [ordered]@{ repository = 'edfialliance/ed-fi-api-configuration-service'; digest = $null }
                     release              = [ordered]@{ githubRelease = $null; sourceCommit = $null; publicationRunUrl = $null }
-                    provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; dataStandardVersion = $null; schemaPackages = $null }
-                    contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null }
+                    provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; schemaToolsFeedUrl = $null; dataStandardVersion = $null; schemaPackages = $null }
+                    contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null; feedUrl = $null }
                 }
 
                 foreach ($key in $Override.Keys) {
@@ -389,10 +393,12 @@ Describe 'Stock image pin readiness' {
             'release.sourceCommit'
             'release.publicationRunUrl'
             'provisioning.schemaToolsPackageVersion'
+            'provisioning.schemaToolsFeedUrl'
             'provisioning.dataStandardVersion'
             'provisioning.schemaPackages'
             'contracts.pluginsPackageVersion'
             'contracts.customValidationPackageVersion'
+            'contracts.feedUrl'
         ) {
             $pin = New-PublishedPin -Override @{ $_ = $null }
 
@@ -456,6 +462,76 @@ Describe 'Stock image pin readiness' {
             # one spelling here.
             { Invoke-Readiness -Pin (New-PublishedPin -Override @{ $Field = $Value }) } |
                 Should -Throw '*does not match*'
+        }
+
+        It 'refuses a version that is not SemVer: <Case>' -ForEach @(
+            @{ Case = 'leading zeros'; Value = '01.00.000' }
+            @{ Case = 'an empty prerelease identifier'; Value = '1.0.0-alpha..3' }
+            @{ Case = 'a leading-zero numeric prerelease identifier'; Value = '1.0.0-alpha.03' }
+            @{ Case = 'a trailing dot'; Value = '1.0.0-alpha.' }
+        ) {
+            # NuGet normalizes "01.00.000" to "1.0.0", so accepting it would give one pin two
+            # spellings. The others are not versions at all.
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'contracts.pluginsPackageVersion' = $Value }) } |
+                Should -Throw '*does not match*'
+        }
+
+        It 'refuses <Field> that is not a well-formed https address: <Case>' -ForEach @(
+            foreach ($field in @('provisioning.schemaToolsFeedUrl', 'contracts.feedUrl', 'release.publicationRunUrl')) {
+                @{ Field = $field; Case = 'no host'; Value = 'https:///' }
+                @{ Field = $field; Case = 'markup'; Value = 'https://a"/><evil/>' }
+                @{ Field = $field; Case = 'an ampersand'; Value = 'https://feed.example.org/index.json?a=1&b=2' }
+                @{ Field = $field; Case = 'plain http'; Value = 'http://feed.example.org/index.json' }
+                @{ Field = $field; Case = 'a local folder'; Value = '../local-folder-feed' }
+            }
+        ) {
+            # These are written into a generated nuget.config or handed to dotnet. A value that
+            # passed here and then broke that document would fail the proof after the gate had
+            # already said ready.
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ $Field = $Value }) } |
+                Should -Throw '*does not match*'
+        }
+
+        It 'refuses a schema package feed carrying markup' {
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://a"/><evil/>'
+            }
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($package) }) } |
+                Should -Throw '*not an https feed address*'
+        }
+
+        It 'refuses <Field> recorded as a one-element array' -ForEach @(
+            @{ Field = 'edFiApi.digest'; Value = 'sha256:' + ('a' * 64) }
+            @{ Field = 'edFiApi.tag'; Value = '8.0.1-alpha.0.7' }
+            @{ Field = 'contracts.feedUrl'; Value = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json' }
+        ) {
+            # A one-element array casts to its element, so it would otherwise validate as the value
+            # it contains. The field is a string, and its shape is checked like every other.
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ $Field = @($Value) }) } |
+                Should -Throw '*rather than a string*'
+        }
+
+        It 'refuses a status recorded as a one-element array' {
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ status = @('published') }) } |
+                Should -Throw '*status is a*rather than a string*'
+        }
+
+        It 'refuses a schema package <Field> that is not a string' -ForEach @(
+            @{ Field = 'version'; Value = @('1.0.335') }
+            @{ Field = 'feedUrl'; Value = @('https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json') }
+        ) {
+            $package = [ordered]@{
+                name    = 'EdFi.DataStandard52.ApiSchema'
+                version = '1.0.335'
+                feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+            }
+            $package[$Field] = $Value
+
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'provisioning.schemaPackages' = @($package) }) } |
+                Should -Throw "*$Field is a*rather than a string*"
         }
 
         It 'accepts a bare exact version, which is the identity form' {

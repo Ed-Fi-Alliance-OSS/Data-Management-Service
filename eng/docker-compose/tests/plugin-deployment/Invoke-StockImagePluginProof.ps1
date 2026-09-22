@@ -13,7 +13,8 @@
     DESTRUCTIVE TO THE PUBLISHED LOCAL STACK, and it refuses to start rather than being destructive
     to anything it did not create. It deploys under the ordinary published Compose project,
     dms-published, whose compose files hard-code container names that no project name can move:
-    dms-postgresql, ed-fi-api-config-service, ed-fi-api-swagger-ui and dms-keycloak. It also uses the
+    dms-postgresql, ed-fi-api-config-service, ed-fi-api-swagger-ui and dms-keycloak, and the
+    preflight also reserves ed-fi-api, the name local-dms.yml gives DMS. It also uses the
     one shared eng/docker-compose/.bootstrap path. So the preflight refuses when any of those, or a
     leftover container or volume of that project, or a foreign container on the shared external
     network, or a required host port, is already in use. There is no override switch: when something
@@ -284,7 +285,9 @@ function Write-Evidence {
     $Result | Add-Member -NotePropertyName commandLog -NotePropertyValue @($script:commandLog) -Force
     $Result | Add-Member -NotePropertyName completedUtc -NotePropertyValue ([DateTimeOffset]::UtcNow.ToString('o')) -Force
 
-    $json = Protect-StockProofText -Text ($Result | ConvertTo-Json -Depth 10) -Secret $script:secret
+    # Redacted value by value and then serialized, never the other way round: a rule run over the
+    # serialized text can reach past the end of the value it matched and break the document.
+    $json = Protect-StockProofValue -Value $Result -Secret $script:secret | ConvertTo-Json -Depth 10
     Set-Content -LiteralPath $path -Value $json -Encoding utf8
     Write-Detail "wrote $path"
 }
@@ -294,8 +297,9 @@ function Write-Evidence {
 # a stack somebody else is using. Pulled images are deliberately not removed: they are a shared
 # cache this run did not create.
 # Recursive removal, permitted only inside something this run claimed. The path is resolved first,
-# so a link or a "..\" segment cannot walk out of the owned tree and then be approved by its
-# spelling.
+# so a "..\" segment cannot walk out of the owned tree and then be approved by its spelling.
+# Resolve-Path normalizes segments and does not follow links; link ancestry is refused where the
+# paths are first checked, by Test-ProofPathSafety.
 function Remove-OwnedTree {
     param([Parameter(Mandatory)] [string] $Path, [string[]] $AlsoOwned = @())
 
@@ -438,7 +442,7 @@ function Assert-NoAmbientOverride {
 }
 
 function Assert-PathsSafeToOwn {
-    Write-Phase 'Phase 0c: the paths this run would own'
+    Write-Phase 'Phase 0b: the paths this run would own'
 
     $verdict = Test-ProofPathSafety -WorkspacePath $WorkspaceRoot -EvidencePath $EvidenceRoot `
         -RepositoryRoot $repositoryRoot -ComposeRoot $composeRoot `
@@ -458,7 +462,7 @@ function Assert-PathsSafeToOwn {
 }
 
 function Get-ValidatedPin {
-    Write-Phase 'Phase 0b: the pin'
+    Write-Phase 'Phase 0c: the pin'
 
     # The same validator the scheduled lane runs, in its deliberate form: a pending or malformed pin
     # throws here rather than reporting a skip, because somebody asked for this proof.
@@ -597,7 +601,7 @@ function Install-ReleasedSchemaTool {
     $toolPath = Join-Path $WorkspaceRoot 'schema-tools'
     Add-ProofOwnership -Kind 'Directory' -Name $toolPath
 
-    $feed = @($Pin.provisioning.schemaPackages)[0].feedUrl
+    $feed = $Pin.provisioning.schemaToolsFeedUrl
 
     Invoke-Recorded -FilePath 'dotnet' -ArgumentList (Get-SchemaToolInstallArgument `
             -Version $Pin.provisioning.schemaToolsPackageVersion -ToolPath $toolPath -FeedUrl $feed) | Out-Null
@@ -677,7 +681,9 @@ function Build-ProofFixture {
     # stock proof must consume the PUBLISHED packages the pin names instead, so a restore against
     # that mapping would either fail or resolve a stale local nupkg - the version skew the pin
     # exists to prevent.
-    $feedUrl = @($Pin.provisioning.schemaPackages)[0].feedUrl
+    # The contracts' own feed, never a schema package's. Escaped for XML as well as validated by the
+    # readiness gate, because this is the one place the value becomes markup.
+    $feedUrl = [Security.SecurityElement]::Escape([string]$Pin.contracts.feedUrl)
     Set-Content -LiteralPath (Join-Path $fixtureSourceCopy 'nuget.config') -Encoding utf8 -Value @"
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>

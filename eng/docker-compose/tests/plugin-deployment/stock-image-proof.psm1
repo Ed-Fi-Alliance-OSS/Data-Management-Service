@@ -96,6 +96,60 @@ function Protect-StockProofText {
     return $redacted
 }
 
+function Protect-StockProofValue {
+    <#
+    .SYNOPSIS
+    Redacts every string inside an object graph, before the graph is serialized.
+
+    .DESCRIPTION
+    Protect-StockProofText works on text, and serialized JSON is the wrong text to give it. JSON
+    escapes a newline, so a whole multi-line value is one physical line, and the Authorization rule
+    redacts to end of line: it would consume the closing quote, the comma and every member after
+    it, and the evidence file would no longer parse. Redacting each string value where it sits
+    keeps every rule inside the value it was written for, whatever serialization follows.
+
+    Dictionaries, custom objects and lists are rebuilt with their values redacted; any other value
+    is returned as it is.
+    #>
+    param(
+        [AllowNull()] $Value,
+        [string[]] $Secret = @()
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [string]) {
+        return Protect-StockProofText -Text $Value -Secret $Secret
+    }
+
+    if ($Value -is [System.Collections.IDictionary]) {
+        $copy = [ordered]@{}
+        foreach ($key in $Value.Keys) {
+            $copy[$key] = Protect-StockProofValue -Value $Value[$key] -Secret $Secret
+        }
+
+        return $copy
+    }
+
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        $copy = [ordered]@{}
+        foreach ($property in $Value.PSObject.Properties) {
+            $copy[$property.Name] = Protect-StockProofValue -Value $property.Value -Secret $Secret
+        }
+
+        return [pscustomobject]$copy
+    }
+
+    if ($Value -is [System.Collections.IEnumerable]) {
+        # Comma-wrapped so the caller receives the list rather than its enumerated elements.
+        return , @(foreach ($item in $Value) { Protect-StockProofValue -Value $item -Secret $Secret })
+    }
+
+    return $Value
+}
+
 function Test-FetchFailedOnChecksum {
     <#
     .SYNOPSIS
@@ -669,7 +723,13 @@ function Test-BuildCommandAbsent {
                 $sub++
             }
 
-            if ($sub -lt $token.Count -and $token[$sub] -ceq 'build') {
+            # Every token after `compose` was an option, as in `docker compose --help`. There is no
+            # subcommand to build with, and the slice below would index past the end.
+            if ($sub -ge $token.Count) {
+                return $false
+            }
+
+            if ($token[$sub] -ceq 'build') {
                 return $true
             }
 
@@ -707,7 +767,8 @@ function Get-OccupiedHostResource {
     The published stack claims resources whose names are fixed, so a project rename buys nothing:
     postgresql.yml declares container_name dms-postgresql, published-config.yml declares
     ed-fi-api-config-service, swagger-ui.yml declares ed-fi-api-swagger-ui and keycloak.yml declares
-    dms-keycloak. It also claims a compose project, that project's named volumes, host ports, the
+    dms-keycloak. ed-fi-api is reserved as well: local-dms.yml gives DMS that name, and it is not in
+    the published set, but a local stack holding it is a live neighbour. It also claims a compose project, that project's named volumes, host ports, the
     shared external dms network, and eng/docker-compose/.bootstrap, which is one fixed path shared
     with the local stack.
 
@@ -716,7 +777,8 @@ function Get-OccupiedHostResource {
     to stop, name the thing, and let a human decide.
 
     The external network is deliberately NOT refused for existing. It is shared infrastructure that
-    other stacks join and that this run neither creates nor removes. What is refused is a container
+    other stacks join. start-published-dms.ps1 creates it when it is absent, and nothing here removes
+    it, because another stack may have joined it since. What is refused is a container
     attached to it that this run did not create, because that is a live neighbour rather than an
     empty network.
     #>
@@ -1013,8 +1075,11 @@ function Get-ReparsePointAncestor {
             return $walk
         }
 
-        $parent = Split-Path -Parent $walk
-        if ($parent -ieq $walk) { break }
+        # GetDirectoryName rather than Split-Path: it answers $null for a root on every platform,
+        # where Split-Path -Parent '/' throws on POSIX and would discard every blocker the caller
+        # has already found.
+        $parent = [IO.Path]::GetDirectoryName($walk)
+        if ([string]::IsNullOrEmpty($parent) -or $parent -ieq $walk) { break }
         $walk = $parent
     }
 
@@ -1652,6 +1717,7 @@ Export-ModuleMember -Function @(
     # Decisions about recorded evidence.
     'Get-StockProofRepository'
     'Protect-StockProofText'
+    'Protect-StockProofValue'
     'Test-FetchFailedOnChecksum'
     'Test-DmsNeverStarted'
     'Test-LoadPluginsFailure'
