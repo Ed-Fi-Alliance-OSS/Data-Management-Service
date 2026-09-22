@@ -38,6 +38,8 @@ param(
     [Parameter(Mandatory)] [string] $CaptureRoot,
     [Parameter(Mandatory)] [string] $BootstrapManifestPath,
     [Parameter(Mandatory)] [string] $HttpLog,
+    [Parameter(Mandatory)] [string] $UnmatchedLog,
+    [switch] $Strict,
     [string] $AmbientKey,
     [string] $AmbientValue
 )
@@ -49,6 +51,17 @@ $global:DmsWorkspaceRoot = $WorkspaceRoot
 $global:DmsCaptureRoot = $CaptureRoot
 $global:DmsRuleHits = @{}
 $global:DmsHttpLog = $HttpLog
+$global:DmsUnmatchedLog = $UnmatchedLog
+# Which deployment the run is in. 0 is everything before the first stack comes up; the counter
+# advances on the command that brings one up, so a rule written for deployment 3 cannot answer for
+# deployment 1 and an answer that arrives in the wrong order is a failure rather than a pass.
+$global:DmsPhase = 0
+$global:DmsStrict = [bool]$Strict
+
+function global:Write-DmsUnmatched {
+    param([string] $Kind, [string] $Detail)
+    Add-Content -LiteralPath $global:DmsUnmatchedLog -Value "$Kind`tphase=$($global:DmsPhase)`t$Detail"
+}
 
 function global:Invoke-DmsShim {
     param([string] $Tool, [string[]] $ShimArgs)
@@ -56,16 +69,34 @@ function global:Invoke-DmsShim {
     $line = "$Tool $($ShimArgs -join ' ')"
     Add-Content -LiteralPath $global:DmsShimLog -Value $line
 
+    # Advanced before the rules are consulted, so the command that brings a stack up is itself part
+    # of the deployment it starts.
+    if ($line -match 'bootstrap-published-dms\.ps1 -EnvironmentFile') {
+        $global:DmsPhase = $global:DmsPhase + 1
+    }
+
     for ($ruleIndex = 0; $ruleIndex -lt @($global:DmsShimPlan).Count; $ruleIndex++) {
         $rule = @($global:DmsShimPlan)[$ruleIndex]
+        $hits = if ($global:DmsRuleHits.ContainsKey($ruleIndex)) { $global:DmsRuleHits[$ruleIndex] } else { 0 }
+
+        # A rule pinned to a deployment answers only in it. A rule with no phase answers anywhere,
+        # which is how the setup commands and the invariant docker questions are written.
+        if ($rule.PSObject.Properties.Name -contains 'phase' -and [int]$rule.phase -ne $global:DmsPhase) {
+            continue
+        }
+
+        # A rule that may answer a fixed number of times, so a second identical call is not silently
+        # served by an answer that was meant for the first.
+        if ($rule.PSObject.Properties.Name -contains 'limit' -and $hits -ge [int]$rule.limit) {
+            continue
+        }
 
         if ($line -match $rule.match) {
-            # A rule may answer differently on successive matches, which is how a run with four
-            # deployments can be given a good manifest first and a bad one later. The last entry
-            # repeats once the sequence is exhausted.
+            $global:DmsRuleHits[$ruleIndex] = $hits + 1
+
+            # A rule may answer differently on successive matches. The last entry repeats once the
+            # sequence is exhausted.
             if ($rule.PSObject.Properties.Name -contains 'sequence') {
-                $hits = if ($global:DmsRuleHits.ContainsKey($ruleIndex)) { $global:DmsRuleHits[$ruleIndex] } else { 0 }
-                $global:DmsRuleHits[$ruleIndex] = $hits + 1
                 $step = @($rule.sequence)
                 $rule = $step[[Math]::Min($hits, $step.Count - 1)]
             }
@@ -127,6 +158,15 @@ function global:Invoke-DmsShim {
         }
     }
 
+    # Nothing answered. Under a strict plan that is a failure that names the call: a permissive
+    # default success is how a traversal passes on commands nobody planned for, which is the thing
+    # this plan exists to rule out.
+    if ($global:DmsStrict) {
+        Write-DmsUnmatched -Kind 'unmatched' -Detail $line
+        $global:LASTEXITCODE = 125
+        return "the strict plan has no answer for: $line"
+    }
+
     $global:LASTEXITCODE = 0
     return @()
 }
@@ -186,6 +226,10 @@ function global:Get-DmsCmsResponse {
 
     if ($Uri -match '/oauth/token') { return [pscustomobject]@{ access_token = $global:DmsDmsToken } }
 
+    if ($global:DmsStrict) {
+        Write-DmsUnmatched -Kind 'unmatched-cms' -Detail $Uri
+    }
+
     return [pscustomobject]@{ }
 }
 
@@ -207,18 +251,53 @@ function global:Invoke-WebRequest {
         return [pscustomobject]@{ StatusCode = 201; Content = '{}'; Headers = @{ Location = '/v3/vendors/3' } }
     }
 
-    foreach ($rule in $global:DmsShimPlan) {
-        if ($rule.match -like 'http:*' -and "$Body" -match ($rule.match -replace '^http:', '')) {
+    # Indexed, so an HTTP answer counts towards the same rule-use accounting as a command answer.
+    for ($i = 0; $i -lt @($global:DmsShimPlan).Count; $i++) {
+        $rule = @($global:DmsShimPlan)[$i]
+
+        if ($rule.match -like 'http:*' -and $rule.match -ne 'http:control' -and
+            "$Body" -match ($rule.match -replace '^http:', '')) {
+            if ($rule.PSObject.Properties.Name -contains 'phase' -and [int]$rule.phase -ne $global:DmsPhase) {
+                Write-DmsUnmatched -Kind 'http-wrong-phase' -Detail "$Method $Uri"
+                continue
+            }
+
+            $seen = if ($global:DmsRuleHits.ContainsKey($i)) { $global:DmsRuleHits[$i] } else { 0 }
+            $global:DmsRuleHits[$i] = $seen + 1
             return [pscustomobject]@{ StatusCode = [int]$rule.exitCode; Content = $rule.output; Headers = @{} }
         }
     }
 
-    # An ordinary document: the passing control.
+    # The passing control. Under a strict plan it must be planned for, because "any document this
+    # run did not name is accepted" is exactly the permissive default that makes a control vacuous.
+    for ($i = 0; $i -lt @($global:DmsShimPlan).Count; $i++) {
+        if (@($global:DmsShimPlan)[$i].match -eq 'http:control') {
+            $control = @($global:DmsShimPlan)[$i]
+            $seen = if ($global:DmsRuleHits.ContainsKey($i)) { $global:DmsRuleHits[$i] } else { 0 }
+            $global:DmsRuleHits[$i] = $seen + 1
+            return [pscustomobject]@{ StatusCode = [int]$control.exitCode; Content = $control.output; Headers = @{} }
+        }
+    }
+
+    if ($global:DmsStrict) {
+        Write-DmsUnmatched -Kind 'unmatched-http' -Detail "$Method $Uri $Body"
+        return [pscustomobject]@{ StatusCode = 599; Content = '{}'; Headers = @{} }
+    }
+
     return [pscustomobject]@{ StatusCode = 201; Content = '{}'; Headers = @{} }
 }
 
 if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
     Set-Item -Path "Env:$AmbientKey" -Value $AmbientValue
+}
+
+# Which plan entries actually answered something. A rule the plan declared required and nothing
+# ever reached is a plan that does not describe this run, so the harness fails on it rather than
+# passing because the missing answer happened not to matter.
+function global:Write-DmsRuleUse {
+    $used = @()
+    foreach ($key in $global:DmsRuleHits.Keys) { $used += "$key=$($global:DmsRuleHits[$key])" }
+    Set-Content -LiteralPath "$global:DmsUnmatchedLog.used" -Value ($used -join "`n")
 }
 
 $failure = '<the script returned without throwing>'
@@ -229,7 +308,14 @@ catch {
     $failure = $_.Exception.Message
 }
 
+Write-DmsRuleUse
 [pscustomobject]@{ Failure = $failure } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultFile -Encoding utf8
+
+# The child's exit code is the run's, so "it exited successfully" is a thing a test can assert
+# rather than infer from the absence of a message.
+if ($failure -ne '<the script returned without throwing>') { exit 1 }
+
+exit 0
 '@
 
         function script:New-PublishedPinFile {
@@ -413,6 +499,152 @@ catch {
             )
         }
 
+        # ---------------------------------------------------------------------------------------
+        # The strict plan: every command the four-deployment run makes, written per deployment.
+        #
+        # Nothing here is permissive. A call the plan does not answer fails with exit 125 and is
+        # recorded, and a rule pinned to a deployment cannot answer in another one, so an answer
+        # arriving out of order is a failure rather than a pass. That is the point of the plan: a
+        # traversal that is allowed to invent successes for unplanned commands proves nothing about
+        # the sequence it claims to have walked.
+        # ---------------------------------------------------------------------------------------
+        $script:proofImageId = 'sha256:' + ('c' * 64)
+
+        function script:New-StatusDocument {
+            param([string] $State = 'Ready', [string] $Phase = 'LoadPlugins', [string] $Summary = '', [string] $ErrorMessage = '')
+
+            return (@{ State = $State; Phase = $Phase; Summary = $Summary; ErrorMessage = $ErrorMessage } |
+                ConvertTo-Json -Depth 4 -Compress)
+        }
+
+        # A deployment that comes up and serves: recipe1 and recipe2.
+        function script:Get-ServingDeploymentRule {
+            param([int] $Phase, [string] $SelectedPackage)
+
+            $package = if ([string]::IsNullOrWhiteSpace($SelectedPackage)) { $script:pinnedIdentity[0] } else { $SelectedPackage }
+
+            return @(
+                @{ phase = $Phase; match = 'bootstrap-published-dms\.ps1 -EnvironmentFile'; exitCode = 0
+                    create = @(@{ path = 'bootstrap/bootstrap-manifest.json'
+                            content = (@{ schema = @{ selectedPackages = @($package) } } | ConvertTo-Json -Depth 6 -Compress)
+                        })
+                }
+                @{ phase = $Phase; match = 'ps -a --filter label=com\.docker\.compose\.project=dms-published --filter label=com\.docker\.compose\.service=dms '
+                    exitCode = 0; output = 'dms-published-dms-1'
+                }
+                @{ phase = $Phase; match = 'exec dms-published-dms-1 cat /tmp/dms-startup-status\.json'
+                    exitCode = 0; output = (New-StatusDocument)
+                }
+                @{ phase = $Phase; match = 'inspect dms-published-dms-1 --format'
+                    exitCode = 0; output = "running|2026-09-21T09:00:00Z|0|$script:proofImageId|false"
+                }
+                @{ phase = $Phase; match = 'image inspect edfialliance/ed-fi-api@sha256:a{64} --format'
+                    exitCode = 0; output = $script:proofImageId
+                }
+                @{ phase = $Phase; match = 'exec dms-published-dms-1 sh -c cat /proc/mounts'
+                    exitCode = 0; output = "overlay / overlay rw,relatime 0 0`n/dev/sda1 /app/plugins ext4 ro,relatime 0 0"
+                }
+                @{ phase = $Phase; match = 'exec dms-published-dms-1 sh -c touch /app/plugins'
+                    exitCode = 1; output = 'touch: /app/plugins/.stock-proof-write-probe: Read-only file system'
+                }
+            )
+        }
+
+        # Deployment 3: the fetch refuses on the digest comparison and DMS is never started.
+        function script:Get-WrongDigestDeploymentRule {
+            param([string] $FetchLog = "sha256sum: WARNING: 1 of 1 computed checksums did NOT match", [int] $FetchExit = 1,
+                [string] $DmsStartedAt = '0001-01-01T00:00:00Z', [string] $DmsStatus = 'created')
+
+            return @(
+                @{ phase = 3; match = 'bootstrap-published-dms\.ps1 -EnvironmentFile'; exitCode = 1
+                    output = 'dependency failed to start'
+                    create = @(@{ path = 'bootstrap/bootstrap-manifest.json'
+                            content = (@{ schema = @{ selectedPackages = @($script:pinnedIdentity[0]) } } | ConvertTo-Json -Depth 6 -Compress)
+                        })
+                }
+                @{ phase = 3; match = 'service=fetch-plugins '; exitCode = 0; output = 'dms-published-fetch-plugins-1' }
+                @{ phase = 3; match = 'inspect dms-published-fetch-plugins-1 --format'
+                    exitCode = 0; output = "exited|2026-09-21T09:00:00Z|$FetchExit|$script:proofImageId|false"
+                }
+                @{ phase = 3; match = 'logs dms-published-fetch-plugins-1'; exitCode = 0; output = $FetchLog }
+                @{ phase = 3; match = 'service=dms '; exitCode = 0; output = 'dms-published-dms-1' }
+                @{ phase = 3; match = 'inspect dms-published-dms-1 --format'
+                    exitCode = 0; output = "$DmsStatus|$DmsStartedAt|0|$script:proofImageId|false"
+                }
+            )
+        }
+
+        # Deployment 4: DMS refuses to start, records the refusal, and stays stopped.
+        function script:Get-MisspelledDeploymentRule {
+            # $Status untyped on purpose: a [string] parameter defaults to '', and '' is the case
+            # that means "the container wrote nothing", which is one of the mutations below.
+            param($Status, [string] $ContainerState = 'exited', [int] $ExitCode = 1, [switch] $NoDocument)
+
+            $document = if ($null -eq $Status) {
+                New-StatusDocument -State 'Failed' -Phase 'LoadPlugins' `
+                    -ErrorMessage 'The allowlisted plugin directory /app/plugins/Acme.CustomValidationProof1 does not exist.'
+            }
+            else { $Status }
+
+            $rule = @(
+                @{ phase = 4; match = 'bootstrap-published-dms\.ps1 -EnvironmentFile'; exitCode = 1
+                    output = 'dms exited with code 1'
+                    create = @(@{ path = 'bootstrap/bootstrap-manifest.json'
+                            content = (@{ schema = @{ selectedPackages = @($script:pinnedIdentity[0]) } } | ConvertTo-Json -Depth 6 -Compress)
+                        })
+                }
+                @{ phase = 4; match = 'service=dms '; exitCode = 0; output = 'dms-published-dms-1' }
+                @{ phase = 4; match = 'inspect dms-published-dms-1 --format'
+                    exitCode = 0; output = "$ContainerState|2026-09-21T09:00:00Z|$ExitCode|$script:proofImageId|false"
+                }
+            )
+
+            if (-not $NoDocument) {
+                $rule += @{ phase = 4; match = 'cp dms-published-dms-1:/tmp/dms-startup-status\.json'; exitCode = 0
+                    create = @(@{ path = 'dms-startup-status.json'; content = $document })
+                }
+            }
+            else {
+                $rule += @{ phase = 4; match = 'cp dms-published-dms-1:/tmp/dms-startup-status\.json'; exitCode = 1; output = 'no such file' }
+            }
+
+            return $rule
+        }
+
+        # Everything before the first stack comes up, and the answers that are the same in every
+        # deployment.
+        function script:Get-StrictSetupRule {
+            return @(
+                @(Get-MatchingDescriptorRule) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) |
+                    ForEach-Object { $_ }
+                @{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 0; output = 'down' }
+                # The host preflight, answered as a clear host: no container, no project container,
+                # no project volume, no shared network, and nothing publishing a port.
+                @{ match = 'ps -a --format \{\{\.Names\}\}'; exitCode = 0; output = '' }
+                @{ match = 'ps -a --filter label=com\.docker\.compose\.project=dms-published --format'; exitCode = 0; output = '' }
+                @{ match = 'volume ls'; exitCode = 0; output = '' }
+                @{ match = 'network inspect'; exitCode = 1; output = 'Error: No such network: dms' }
+                @{ match = 'network ls'; exitCode = 0; output = '' }
+                @{ match = 'ps --format \{\{\.Ports\}\}'; exitCode = 0; output = '' }
+                # The fixture rejection arms and the control, all three planned for.
+                @(Get-FixtureRejectionRule) | ForEach-Object { $_ }
+                @{ match = 'http:control'; exitCode = 201; output = '{"id":"stock-proof"}' }
+            )
+        }
+
+        function script:Get-StrictTraversalPlan {
+            param($Deployment3, $Deployment4, [string] $SecondSelectedPackage)
+
+            $three = if ($null -ne $Deployment3) { $Deployment3 } else { Get-WrongDigestDeploymentRule }
+            $four = if ($null -ne $Deployment4) { $Deployment4 } else { Get-MisspelledDeploymentRule }
+
+            return @(
+                @(Get-ServingDeploymentRule -Phase 1) +
+                @(Get-ServingDeploymentRule -Phase 2 -SelectedPackage $SecondSelectedPackage) +
+                @($three) + @($four) + @(Get-StrictSetupRule) | ForEach-Object { $_ }
+            )
+        }
+
         # The rule set a run needs to reach the credential contract and the fixture rejection, and
         # a reader for the HTTP the shim recorded. Defined here rather than in one Context because
         # more than one Context asks for them.
@@ -443,7 +675,11 @@ catch {
                 [string] $AmbientValue,
                 [int[]] $Port,
                 [string] $ManifestOverride,
-                [string] $PathBase
+                [string] $PathBase,
+                [string] $HttpPortOverride,
+                [string] $WorkspaceOverride,
+                [string] $EvidenceOverride,
+                [switch] $Strict
             )
 
             $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-entry-$([guid]::NewGuid().ToString('N'))"
@@ -462,9 +698,11 @@ catch {
                 New-Item -ItemType File -Path $shimLog -Force | Out-Null
                 $httpLog = Join-Path $scratch 'http.log'
                 New-Item -ItemType File -Path $httpLog -Force | Out-Null
+                $unmatchedLog = Join-Path $scratch 'unmatched.log'
+                New-Item -ItemType File -Path $unmatchedLog -Force | Out-Null
                 $resultFile = Join-Path $scratch 'result.json'
-                $evidenceRoot = Join-Path $scratch 'evidence'
-                $workspace = Join-Path $scratch 'workspace'
+                $evidenceRoot = if ([string]::IsNullOrEmpty($EvidenceOverride)) { Join-Path $scratch 'evidence' } else { $EvidenceOverride }
+                $workspace = if ($PSBoundParameters.ContainsKey('WorkspaceOverride')) { $WorkspaceOverride } else { Join-Path $scratch 'workspace' }
 
                 # A base environment file whose ports are free on this machine, so a scenario about
                 # the host is not also about whatever else happens to be listening here. The entry
@@ -481,6 +719,13 @@ catch {
                 # A value nothing else in the run produces, so "this secret never appears" is an
                 # assertion about this string rather than about a default that might be empty.
                 $baseLine += 'DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=proof-bootstrap-secret-value'
+
+                if ($PSBoundParameters.ContainsKey('HttpPortOverride')) {
+                    $baseLine = @($baseLine | Where-Object { $_ -notmatch '^DMS_HTTP_PORTS=' })
+                    if (-not [string]::IsNullOrEmpty($HttpPortOverride)) {
+                        $baseLine += "DMS_HTTP_PORTS=$HttpPortOverride"
+                    }
+                }
 
                 if ($PSBoundParameters.ContainsKey('PathBase')) {
                     $baseLine = @($baseLine | Where-Object { $_ -notmatch '^PATH_BASE=' })
@@ -502,6 +747,7 @@ catch {
                     '-ShimPlan', $planPath
                     '-ShimLog', $shimLog
                     '-HttpLog', $httpLog
+                    '-UnmatchedLog', $unmatchedLog
                     '-ResultFile', $resultFile
                 )
 
@@ -509,9 +755,14 @@ catch {
                     $argument += @('-AmbientKey', $AmbientKey, '-AmbientValue', $AmbientValue)
                 }
 
+                if ($Strict) {
+                    $argument += '-Strict'
+                }
+
                 # The real pwsh, resolved past the shim this session does not have but the child will.
                 $pwshPath = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
                 & $pwshPath @argument 2>&1 | Out-Null
+                $exitCode = $LASTEXITCODE
 
                 $evidenceFile = Join-Path $evidenceRoot 'stock-image-plugin-proof.json'
 
@@ -531,6 +782,11 @@ catch {
                             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_ | ConvertFrom-Json })
                     Evidence         = (Test-Path -LiteralPath $evidenceFile) ? (Get-Content -LiteralPath $evidenceFile -Raw | ConvertFrom-Json) : $null
                     WorkspaceCreated = (Test-Path -LiteralPath $workspace)
+                    ExitCode         = $exitCode
+                    Unmatched        = @(Get-Content -LiteralPath $unmatchedLog -ErrorAction SilentlyContinue |
+                            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                    RuleUse          = @(Get-Content -LiteralPath "$unmatchedLog.used" -ErrorAction SilentlyContinue |
+                            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
                 }
             }
             finally {
@@ -1459,6 +1715,504 @@ catch {
             $run.Evidence.primaryFailure | Should -Not -Match 'at <ScriptBlock>'
             $evidence | Should -Not -Match 'ScriptStackTrace'
             $evidence | Should -Not -Match 'InvocationInfo'
+        }
+    }
+
+    Context 'the whole run, walked under a plan that answers nothing it was not asked' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+            $script:strict = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule (Get-StrictTraversalPlan)
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'exits successfully and says it passed' {
+            $script:strict.ExitCode | Should -Be 0
+            $script:strict.Failure | Should -BeExactly '<the script returned without throwing>'
+            $script:strict.Evidence.outcome | Should -BeExactly 'passed'
+            @($script:strict.Evidence.failure) | Should -HaveCount 0
+        }
+
+        It 'asked nothing the plan had no answer for' {
+            # The claim this makes possible: every command and every request in the run above was
+            # one the plan named. A permissive default would make the rest of this Context vacuous.
+            $script:strict.Unmatched | Should -HaveCount 0
+        }
+
+        It 'records four deployments, in order, each distinguishable from the others' {
+            $name = @($script:strict.Evidence.PSObject.Properties.Name |
+                    Where-Object { $_ -in @('recipe1', 'recipe2', 'wrongDigest', 'misspelledAllowlist') })
+
+            $name | Should -Be @('recipe1', 'recipe2', 'wrongDigest', 'misspelledAllowlist')
+        }
+
+        It 'proves recipe1 through the committed bind-mount recipe, unedited' {
+            $recipe = $script:strict.Evidence.recipe1
+
+            # The committed file, by name, first in the list, with only test-owned overlays after
+            # it. A copy edited for the test would show up here as a different path.
+            $recipe.pluginComposeFiles | Should -BeExactly 'plugins-dms.yml;tests/plugin-deployment/stock-image-pin-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml'
+            $recipe.dmsImage | Should -BeExactly ('edfialliance/ed-fi-api:8.0.1-alpha.0.7@sha256:' + ('a' * 64))
+            $recipe.readyState | Should -BeExactly 'Ready'
+            $recipe.dmsImageId | Should -BeExactly $script:proofImageId
+            $recipe.pluginRootReadOnly | Should -BeTrue
+            $recipe.http.controlStatus | Should -Be 201
+            $recipe.http.pathStatus | Should -Be 400
+        }
+
+        It 'proves recipe2 through the committed fetch recipe, unedited' {
+            $recipe = $script:strict.Evidence.recipe2
+
+            $recipe.pluginComposeFiles | Should -BeExactly 'plugins-fetch-dms.yml;tests/plugin-deployment/plugins-feed-dms.yml;tests/plugin-deployment/stock-image-pin-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml'
+            $recipe.dmsImage | Should -BeExactly ('edfialliance/ed-fi-api:8.0.1-alpha.0.7@sha256:' + ('a' * 64))
+            $recipe.readyState | Should -BeExactly 'Ready'
+            $recipe.dmsImageId | Should -BeExactly $script:proofImageId
+            $recipe.pluginRootReadOnly | Should -BeTrue
+            $recipe.http.controlStatus | Should -Be 201
+            $recipe.http.resourceStatus | Should -Be 400
+        }
+
+        It 'proves the wrong digest failed on the comparison, with DMS never started' {
+            $recipe = $script:strict.Evidence.wrongDigest
+
+            $recipe.fetchExitCode | Should -Be 1
+            $recipe.dmsNeverStarted | Should -BeTrue
+        }
+
+        It 'proves the misspelled allowlist refused, naming the path it looked for' {
+            $recipe = $script:strict.Evidence.misspelledAllowlist
+
+            $recipe.state | Should -BeExactly 'Failed'
+            $recipe.phase | Should -BeExactly 'LoadPlugins'
+            $recipe.dmsStatus | Should -BeExactly 'exited'
+            $recipe.dmsExitCode | Should -Be 1
+        }
+
+        It 'checks the prepared schema of all four deployments, not one of them' {
+            foreach ($name in @('recipe1', 'recipe2', 'wrongDigest', 'misspelledAllowlist')) {
+                @($script:strict.Evidence.$name.preparedSchemaPackages.observed) |
+                    Should -Be @('EdFi.DataStandard52.ApiSchema@1.0.335') -Because "$name was checked"
+            }
+        }
+
+        It 'ran no command that builds an image, across the whole traversal' {
+            $script:strict.Evidence.buildCommandAbsent.Verified | Should -BeTrue
+            @($script:strict.ShimCall | Where-Object { $_ -match '(?i)docker (compose .*)?build\b' }) | Should -BeNullOrEmpty
+        }
+
+        It 'used every answer the plan carried, so the plan describes this run and no other' {
+            # A rule nothing reached is an answer the run did not need, which means the plan is
+            # describing something else. Reported by index against the plan it was built from.
+            $plan = @(Get-StrictTraversalPlan)
+            $used = @{}
+            foreach ($entry in $script:strict.RuleUse) {
+                $part = $entry -split '='
+                $used[[int]$part[0]] = [int]$part[1]
+            }
+
+            $unused = @(0..($plan.Count - 1) | Where-Object { -not $used.ContainsKey($_) } |
+                    ForEach-Object { "$_ $($plan[$_].match)" })
+
+            $unused | Should -HaveCount 0
+        }
+
+        It 'gave every deployment back' {
+            $script:strict.Evidence.cleanup.attempted | Should -BeTrue
+            $script:strict.Evidence.cleanup.succeeded | Should -BeTrue
+            $script:strict.WorkspaceCreated | Should -BeFalse
+        }
+    }
+
+    Context 'a later deployment may not be answered by an earlier one' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'fails at the deployment whose prepared schema does not match, having accepted the first' {
+            # R9B behaviourally: deployment 1 stages the pinned set and passes, deployment 2 stages
+            # something else. A check hoisted out of the per-deployment path would pass this.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict `
+                -ShimRule (Get-StrictTraversalPlan -SecondSelectedPackage 'EdFi.Wrong@9.9.9')
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.outcome | Should -BeExactly 'failed'
+            $run.Evidence.primaryFailure | Should -Match 'The recipe2 deployment prepared schema packages the pin does not name'
+            $run.Evidence.primaryFailure | Should -Match 'EdFi\.Wrong@9\.9\.9'
+
+            # And the first deployment was accepted, which is what makes this a later-deployment
+            # failure rather than a run that never started.
+            @($run.Evidence.recipe1.preparedSchemaPackages.observed) |
+                Should -Be @('EdFi.DataStandard52.ApiSchema@1.0.335')
+        }
+
+        It 'refuses a call once the answer meant for it has been used up' {
+            # The teardown runs before and after every deployment. Capped at one, the second call
+            # has no answer, and that is a failure rather than a silent success.
+            $plan = @(Get-StrictTraversalPlan | ForEach-Object {
+                    if ($_.match -eq 'bootstrap-published-dms\.ps1 -d -v') { $_['limit'] = 1 }
+                    $_
+                })
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+
+            $run.ExitCode | Should -Be 1
+            @($run.Unmatched | Where-Object { $_ -match 'bootstrap-published-dms\.ps1 -d -v' }) | Should -Not -BeNullOrEmpty
+        }
+
+        It 'refuses an answer meant for another deployment rather than accepting it' {
+            # The wrong-digest answers, offered while deployment 1 is running. Under the phase rule
+            # they cannot answer, so the run fails and the call is recorded as unanswered.
+            # Hashtables, so ContainsKey rather than a PSObject property lookup: the latter finds
+            # nothing on a hashtable and would quietly leave the plan whole.
+            $plan = @(Get-StrictTraversalPlan | Where-Object { -not ($_.ContainsKey('phase') -and $_['phase'] -eq 1) })
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+
+            $run.ExitCode | Should -Be 1
+            @($run.Unmatched | Where-Object { $_ -match 'phase=1' }) | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'evidence that was altered, refused one mutation at a time' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        function script:Invoke-Mutated {
+            param([scriptblock] $Mutate)
+
+            $plan = @(Get-StrictTraversalPlan | ForEach-Object { $_ })
+            $plan = @(& $Mutate $plan)
+
+            return Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+        }
+
+        function script:Set-Rule {
+            param($Plan, [string] $Match, [int] $Phase, [hashtable] $Change)
+
+            foreach ($rule in $Plan) {
+                if ($rule.match -eq $Match -and $rule.phase -eq $Phase) {
+                    foreach ($key in $Change.Keys) { $rule[$key] = $Change[$key] }
+                }
+            }
+
+            return $Plan
+        }
+
+        It 'refuses an inspect that failed, rather than reading it as an absent container' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'inspect dms-published-dms-1 --format' -Phase 3 -Change @{ exitCode = 1; output = 'Error: No such object' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'could not be read, so whether a DMS container was created is unknown'
+        }
+
+        It 'refuses a container enumeration that failed in the wrong-digest deployment' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'service=dms ' -Phase 3 -Change @{ exitCode = 1; output = 'boom' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'a failed enumeration is not evidence of absence'
+        }
+
+        It 'refuses a generic 400 that is not the fixture''s rejection' {
+            $run = Invoke-Mutated {
+                param($p)
+                foreach ($rule in $p) {
+                    if ($rule.match -eq 'http:custom-validation-proof-reject-path') {
+                        $rule['output'] = '{"validationErrors":{"$.lastSurname":["lastSurname is required."]},"errors":[]}'
+                    }
+                }
+                return $p
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'does not carry the fixture''s exact message'
+        }
+
+        It 'refuses the fixture message when it arrives under the wrong arm' {
+            # Both arms are present in every DMS write-path 400, so the message sitting under the
+            # other one is exactly the confusion the arm check exists for.
+            $run = Invoke-Mutated {
+                param($p)
+                foreach ($rule in $p) {
+                    if ($rule.match -eq 'http:custom-validation-proof-reject-path') {
+                        $rule['output'] = '{"validationErrors":{},"errors":["This value is the custom-validation proof fixture''s reserved rejection token."]}'
+                    }
+                }
+                return $p
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'carries no validationErrors object|no entry for'
+        }
+
+        It 'refuses a control document that did not succeed' {
+            $run = Invoke-Mutated {
+                param($p)
+                foreach ($rule in $p) {
+                    if ($rule.match -eq 'http:control') { $rule['exitCode'] = 500 }
+                }
+                return $p
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'passing control POST returned HTTP 500'
+        }
+
+        It 'refuses a fetch that failed for transport reasons rather than the checksum' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'logs dms-published-fetch-plugins-1' -Phase 3 -Change @{ output = 'wget: bad address plugin-feed' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'carries no checksum comparison failure'
+            $run.Evidence.primaryFailure | Should -Match 'transport failure'
+        }
+
+        It 'refuses a fetch that succeeded in the wrong-digest deployment' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'inspect dms-published-fetch-plugins-1 --format' -Phase 3 -Change @{ output = "exited|2026-09-21T09:00:00Z|0|x|false" } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'exited 0, so the wrong digest was accepted'
+        }
+
+        It 'refuses a DMS that started and then exited in the wrong-digest deployment' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'inspect dms-published-dms-1 --format' -Phase 3 -Change @{ output = "exited|2026-09-21T09:00:00Z|1|x|false" } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'started at .* and then exited, which is not the same as never starting'
+        }
+
+        It 'refuses a Ready status where a refusal was required' {
+            $run = Invoke-Mutated {
+                param($p)
+                Set-Rule -Plan $p -Match 'cp dms-published-dms-1:/tmp/dms-startup-status\.json' -Phase 4 -Change @{
+                    create = @(@{ path = 'dms-startup-status.json'; content = (New-StatusDocument -State 'Ready' -Phase 'LoadPlugins') })
+                }
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match "State 'Ready'"
+        }
+
+        It 'refuses a missing startup document rather than falling back to the log' {
+            $run = Invoke-Mutated {
+                param($p)
+                @($p | Where-Object { -not ($_.match -eq 'cp dms-published-dms-1:/tmp/dms-startup-status\.json' -and $_.phase -eq 4) })
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'wrote no readable startup status'
+        }
+
+        It 'refuses a DMS that exited 0 where a refusal was required' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'inspect dms-published-dms-1 --format' -Phase 4 -Change @{ output = "exited|2026-09-21T09:00:00Z|0|x|false" } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'exited 0, so the refusal did not stop startup'
+        }
+
+        It 'refuses a plugin mount that is not read-only' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'exec dms-published-dms-1 sh -c cat /proc/mounts' -Phase 1 -Change @{ output = '/dev/sda1 /app/plugins ext4 rw,relatime 0 0' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'not read-only; its options are'
+        }
+
+        It 'refuses a write probe that failed for a reason other than a read-only file system' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'exec dms-published-dms-1 sh -c touch /app/plugins' -Phase 1 -Change @{ output = 'touch: Permission denied' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'failed for a reason other than a read-only file system'
+        }
+
+        It 'refuses a write probe that succeeded' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'exec dms-published-dms-1 sh -c touch /app/plugins' -Phase 1 -Change @{ exitCode = 0; output = '' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'a write into /app/plugins succeeded'
+        }
+
+        It 'refuses a mount table that could not be read' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'exec dms-published-dms-1 sh -c cat /proc/mounts' -Phase 1 -Change @{ exitCode = 1; output = '' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'this control was not verified rather than verified as holding'
+        }
+
+        It 'refuses a container running an image other than the pinned digest''s' {
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'image inspect edfialliance/ed-fi-api@sha256:a{64} --format' -Phase 1 -Change @{ output = 'sha256:' + ('d' * 64) } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'not the pinned digest'
+        }
+    }
+
+    Context 'every path this run would own, refused through the script' {
+        BeforeAll {
+            # The same runner every other Context uses, with the two paths varied. A bespoke runner
+            # here would be testing a second harness rather than the script.
+            function script:Invoke-WithPath {
+                param([string] $Workspace, [string] $Evidence)
+
+                return (Invoke-EntryScript -WorkspaceOverride $Workspace -EvidenceOverride $Evidence).Failure
+            }
+
+            $script:freshWorkspace = { Join-Path ([IO.Path]::GetTempPath()) "dms1502-ws-$([guid]::NewGuid().ToString('N'))" }
+            $script:freshEvidence = { Join-Path ([IO.Path]::GetTempPath()) "dms1502-ev-$([guid]::NewGuid().ToString('N'))" }
+        }
+
+        It 'refuses a workspace that already exists, rather than emptying it' {
+            $existing = & $script:freshWorkspace
+            New-Item -ItemType Directory -Path $existing -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $existing 'somebody-elses-file.txt') -Value 'x'
+
+            try {
+                $failure = Invoke-WithPath -Workspace $existing -Evidence (& $script:freshEvidence)
+
+                $failure | Should -Match 'already exists'
+                # And it is still there.
+                Test-Path -LiteralPath (Join-Path $existing 'somebody-elses-file.txt') | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $existing -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'judges a relative path by where it resolves, not by its spelling' {
+            # '..' from the working directory is the directory above this worktree, which contains
+            # the repository. The refusal proves both halves: the path was made absolute first, and
+            # what it resolved to is what was judged. A relative path that resolves somewhere
+            # ordinary is not refused, which is why this one has to resolve somewhere that is not.
+            $failure = Invoke-WithPath -Workspace '..' -Evidence (& $script:freshEvidence)
+
+            $failure | Should -Match 'contains the repository'
+        }
+
+        It 'refuses a workspace at a filesystem root' {
+            $root = [IO.Path]::GetPathRoot([IO.Path]::GetTempPath())
+
+            (Invoke-WithPath -Workspace $root -Evidence (& $script:freshEvidence)) | Should -Match 'not ones this run may own'
+        }
+
+        It 'refuses a workspace that contains the repository' {
+            $failure = Invoke-WithPath -Workspace (Split-Path -Parent $script:composeRoot) -Evidence (& $script:freshEvidence)
+
+            $failure | Should -Match 'not ones this run may own'
+        }
+
+        It 'refuses an evidence directory inside the workspace' {
+            # Cleanup removes the workspace, and the evidence is the record of why the run failed.
+            $workspace = & $script:freshWorkspace
+
+            (Invoke-WithPath -Workspace $workspace -Evidence (Join-Path $workspace 'evidence')) |
+                Should -Match 'inside the workspace'
+        }
+
+        It 'refuses a workspace inside the evidence directory' {
+            $evidence = & $script:freshEvidence
+
+            (Invoke-WithPath -Workspace (Join-Path $evidence 'workspace') -Evidence $evidence) |
+                Should -Match 'contains the evidence directory'
+        }
+
+        It 'refuses a workspace whose ancestry passes through a junction' {
+            $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-target-$([guid]::NewGuid().ToString('N'))"
+            $link = Join-Path ([IO.Path]::GetTempPath()) "dms1502-link-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $external -Force | Out-Null
+
+            try {
+                New-Item -ItemType Junction -Path $link -Target $external | Out-Null
+
+                (Invoke-WithPath -Workspace (Join-Path $link 'workspace') -Evidence (& $script:freshEvidence)) |
+                    Should -Match 'which is a link or junction'
+            }
+            finally {
+                Remove-Item -LiteralPath $link -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $external -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context 'nothing ambient, and ports that are actually usable' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'refuses an ambient <_>, whichever key it is' -ForEach @(
+            'DMS_STOCK_IMAGE_REFERENCE', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG',
+            'DMS_CONFIG_DATA_STANDARD_VERSION', 'SCHEMA_PACKAGES', 'DMS_PLUGINS_COMPOSE_FILES',
+            'DMS_PLUGINS_ALLOWED', 'DMS_PLUGINS_MOUNT_SOURCE', 'PLUGIN_FEED_SOURCE',
+            'PLUGIN_PACKAGE_URL', 'PLUGIN_PACKAGE_SHA256', 'PLUGIN_NAME',
+            'DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
+        ) {
+            # Every key Get-AmbientRefusedKey names, through the script, including the three port
+            # keys, which are refused ambiently without being rewritten in the file.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -AmbientKey $_ -AmbientValue '9'
+
+            $run.Failure | Should -Match ([regex]::Escape($_))
+            $run.ShimCall | Should -HaveCount 0
+            $run.WorkspaceCreated | Should -BeFalse
+        }
+
+        It 'covers every key the module refuses, with no test-only list of its own' {
+            # The -ForEach above is a literal list, so this is what keeps it honest when the module
+            # gains a key.
+            $covered = @(
+                'DMS_STOCK_IMAGE_REFERENCE', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG',
+                'DMS_CONFIG_DATA_STANDARD_VERSION', 'SCHEMA_PACKAGES', 'DMS_PLUGINS_COMPOSE_FILES',
+                'DMS_PLUGINS_ALLOWED', 'DMS_PLUGINS_MOUNT_SOURCE', 'PLUGIN_FEED_SOURCE',
+                'PLUGIN_PACKAGE_URL', 'PLUGIN_PACKAGE_SHA256', 'PLUGIN_NAME',
+                'DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
+            )
+
+            @(Get-AmbientRefusedKey | Sort-Object) | Should -Be @($covered | Sort-Object)
+        }
+
+        It 'refuses a port that is <Case>' -ForEach @(
+            @{ Case = 'missing'; Value = '' ; Expect = 'declares no DMS_HTTP_PORTS' }
+            @{ Case = 'zero'; Value = '0'; Expect = 'is 0, which is not a usable TCP port' }
+            @{ Case = 'out of range'; Value = '70000'; Expect = 'is 70000, which is not a usable TCP port' }
+            @{ Case = 'not a number'; Value = 'eighty'; Expect = "is 'eighty', which is not a number" }
+        ) {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -HttpPortOverride $Value
+
+            $run.Failure | Should -Match ([regex]::Escape($Expect))
+            $run.WorkspaceCreated | Should -BeFalse
+        }
+
+        It 'sends its requests to the base the environment file declares: <Case>' -ForEach @(
+            @{ Case = 'no path base'; PathBase = ''; Prefix = '' }
+            @{ Case = 'a path base'; PathBase = 'api'; Prefix = '/api' }
+        ) {
+            # UsePathBase serves every route at both the root and the prefix, so an empty PATH_BASE
+            # is correct rather than missing. What matters is that the guarded port and the address
+            # the requests actually went to are the same place.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -PathBase $PathBase -Strict -ShimRule (Get-StrictTraversalPlan)
+
+            $run.ExitCode | Should -Be 0
+
+            $student = @($run.Http | Where-Object { $_.uri -match '/data/ed-fi/students' })
+            $student | Should -Not -BeNullOrEmpty
+
+            foreach ($call in $student) {
+                $call.uri | Should -BeExactly "http://localhost:$($run.Port[0])$Prefix/data/ed-fi/students"
+            }
         }
     }
 

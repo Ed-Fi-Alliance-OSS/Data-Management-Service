@@ -117,11 +117,15 @@ $composeProject = 'dms-published'
 # to remove. A caller-supplied value here would be a proof bypass and a destructive-path widening
 # at the same time.
 $bootstrapPath = Join-Path $composeRoot '.bootstrap'
-$pluginName = 'Acme.CustomValidationProof'
+# $script:, not a bare name. Invoke-ProofScenario takes a -PluginName parameter, and
+# PowerShell resolves an unqualified name through the calling scope chain, so a scenario body
+# running inside that function reads its empty parameter instead of this value. That is how the
+# misspelled-allowlist assertion came to look for /app/plugins/1.
+$script:pluginName = 'Acme.CustomValidationProof'
 # Read from, never written to. The publish below runs against a copy in the run workspace, for
 # two reasons: this tree belongs to DMS-1436 and its integration tier, and its nuget.config binds
 # the two contract ids to a local folder feed that the stock proof must not resolve from.
-$fixtureSourceDirectory = Join-Path $repositoryRoot "eng/fixtures/plugins/$pluginName"
+$fixtureSourceDirectory = Join-Path $repositoryRoot "eng/fixtures/plugins/$script:pluginName"
 
 if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
     $BaseEnvironmentFile = Join-Path $composeRoot '.env.e2e'
@@ -551,9 +555,9 @@ function Build-ProofFixture {
     Write-Phase 'Phase 3b: the fixture, against the published contracts'
 
     $publishRoot = Join-Path $WorkspaceRoot 'plugins'
-    $publishTarget = Join-Path $publishRoot $pluginName
+    $publishTarget = Join-Path $publishRoot $script:pluginName
     $nugetCache = Join-Path $WorkspaceRoot 'nuget-cache'
-    $fixtureSourceCopy = Join-Path $WorkspaceRoot "fixture-src/$pluginName"
+    $fixtureSourceCopy = Join-Path $WorkspaceRoot "fixture-src/$script:pluginName"
     $intermediatePath = Join-Path $WorkspaceRoot 'fixture-obj'
     $outputPath = Join-Path $WorkspaceRoot 'fixture-bin'
 
@@ -600,7 +604,7 @@ function Build-ProofFixture {
 </configuration>
 "@
 
-    $fixtureProject = Join-Path $fixtureSourceCopy "$pluginName.csproj"
+    $fixtureProject = Join-Path $fixtureSourceCopy "$script:pluginName.csproj"
 
     # BARE identities, not bracketed. Acme.CustomValidationProof.csproj already writes
     # Version="[$(PluginsPackageVersion)]" for both contracts, so passing a bracketed value here
@@ -679,7 +683,7 @@ function Build-ProofFixture {
         PublishRoot       = $publishRoot
         PublishedDirectory = $publishTarget
         FileDigest        = $digest
-        EntryAssembly     = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $publishTarget "$pluginName.dll")).Version.ToString()
+        EntryAssembly     = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $publishTarget "$script:pluginName.dll")).Version.ToString()
     }
 }
 
@@ -695,15 +699,15 @@ function Build-ProofPackage {
     Add-ProofOwnership -Kind 'Directory' -Name $stage
     Add-ProofOwnership -Kind 'Directory' -Name $feedRoot
 
-    $contentRoot = Join-Path $stage "contentFiles/any/any/$pluginName"
+    $contentRoot = Join-Path $stage "contentFiles/any/any/$script:pluginName"
     New-Item -ItemType Directory -Path $contentRoot -Force | Out-Null
     Copy-Item -Path (Join-Path $Fixture.PublishedDirectory '*') -Destination $contentRoot -Recurse -Force
 
-    Set-Content -LiteralPath (Join-Path $stage "$pluginName.nuspec") -Encoding utf8 -Value @"
+    Set-Content -LiteralPath (Join-Path $stage "$script:pluginName.nuspec") -Encoding utf8 -Value @"
 <?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
-    <id>$pluginName</id>
+    <id>$script:pluginName</id>
     <version>$Version</version>
     <authors>Ed-Fi Alliance, LLC and contributors</authors>
     <description>Test fixture plugin for the DMS stock image plugin proof. Asset-only.</description>
@@ -721,7 +725,7 @@ function Build-ProofPackage {
 </Types>
 "@
 
-    $lowerId = $pluginName.ToLowerInvariant()
+    $lowerId = $script:pluginName.ToLowerInvariant()
     $packageDirectory = Join-Path $feedRoot "$lowerId/$Version"
     New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
     $packagePath = Join-Path $packageDirectory "$lowerId.$Version.nupkg"
@@ -1122,6 +1126,21 @@ function Assert-FixtureRejection {
 # One deployment: compose its environment file, tear down first, start, run the scenario body, and
 # tear down again whether the body held or not. Each scenario gets a fresh deployment because the two
 # recipes both end at the single /app/plugins mount target and cannot share one.
+# One value out of a composed env file, as Compose would read it: the last assignment wins.
+function Get-EnvFileValue {
+    param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [string] $Name)
+
+    $value = ''
+
+    foreach ($line in @(Get-Content -LiteralPath $Path)) {
+        if ($line -cmatch "^\s*$([regex]::Escape($Name))=(.*)$") {
+            $value = $Matches[1].Trim()
+        }
+    }
+
+    return $value
+}
+
 function Invoke-ProofScenario {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -1167,6 +1186,11 @@ function Invoke-ProofScenario {
 
         if ($record -is [System.Collections.IDictionary]) {
             $record['preparedSchemaPackages'] = $preparedSchema
+            # The acquisition path this deployment actually composed, read back out of the file it
+            # was given rather than from the argument, so the evidence shows which committed
+            # overlays were in play and that none of them was a copy.
+            $record['pluginComposeFiles'] = (Get-EnvFileValue -Path $environmentFile -Name 'DMS_PLUGINS_COMPOSE_FILES')
+            $record['dmsImage'] = (Get-EnvFileValue -Path $environmentFile -Name 'DMS_STOCK_IMAGE_REFERENCE')
         }
     }
     catch {
@@ -1334,7 +1358,7 @@ function Invoke-MisspelledAllowlistCheck {
     $settled = Wait-ForRecordedStartupFailure -Container $dms.Name -ExpectedPhase 'LoadPlugins'
 
     $verdict = Test-LoadPluginsFailure -StatusDocument $settled.Status `
-        -ExpectedPath "/app/plugins/${pluginName}1" -ExitCode $settled.Fact.ExitCode
+        -ExpectedPath "/app/plugins/${script:pluginName}1" -ExitCode $settled.Fact.ExitCode
 
     if (-not $verdict.Verified) {
         throw "The misspelled allowlist did not produce the expected refusal: $($verdict.Reason)"
@@ -1398,7 +1422,7 @@ try {
     # Recipe 1: the committed plugins-dms.yml, run unedited, with the plugin bind-mounted.
     $result.recipe1 = Invoke-ProofScenario -Name 'recipe1' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
-        -PluginMountSource $fixture.PublishRoot -AllowedPlugins $pluginName `
+        -PluginMountSource $fixture.PublishRoot -AllowedPlugins $script:pluginName `
         -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
 
     # Recipe 2: the committed plugins-fetch-dms.yml, run unedited, fetching over HTTP from the
@@ -1406,7 +1430,7 @@ try {
     $result.recipe2 = Invoke-ProofScenario -Name 'recipe2' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
-        -PluginPackageSha256 $package.Sha256 -PluginName $pluginName -AllowedPlugins $pluginName `
+        -PluginPackageSha256 $package.Sha256 -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
         -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
 
     # A digest that does not match the served package: the fetch must fail on the comparison
@@ -1414,14 +1438,14 @@ try {
     $result.wrongDigest = Invoke-ProofScenario -Name 'wrong-digest' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
-        -PluginPackageSha256 ('0' * 64) -PluginName $pluginName -AllowedPlugins $pluginName `
+        -PluginPackageSha256 ('0' * 64) -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
         -ExpectStartFailure -Scenario { param($environmentFile) Invoke-WrongDigestCheck }
 
     # One allowlisted name misspelled: DMS must exit with a failed LoadPlugins phase naming the path
     # it looked for.
     $result.misspelledAllowlist = Invoke-ProofScenario -Name 'misspelled-allowlist' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
-        -PluginMountSource $fixture.PublishRoot -AllowedPlugins "${pluginName}1" `
+        -PluginMountSource $fixture.PublishRoot -AllowedPlugins "${script:pluginName}1" `
         -ExpectStartFailure -Scenario { param($environmentFile) Invoke-MisspelledAllowlistCheck }
 
     $script:requiredWorkCompleted = $true
