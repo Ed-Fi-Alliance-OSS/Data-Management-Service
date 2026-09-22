@@ -60,14 +60,16 @@ latent observation below).
 A deletion predicate is already index-supported on both engines: `IX_OpenIddictToken_ExpirationDate`
 exists in both engines' DDL, in `0016_Create_openiddict_Token_Table.sql`.
 
-Growth was unbounded by default.
+Growth is rate-limited, but the table is still unbounded without cleanup.
 The default token lifetime is 30 minutes (`IdentityOptions.cs:26`), so a client that requests
-one token per lifetime accrues about 48 rows per day, and nothing limits how many grants a
-client may request.
-Nothing in the schema or code imposes a ceiling other than the cleanup mechanism described below.
-DMS-1459 later added a configurable per-client ceiling on active tokens, so that baseline no
-longer describes current builds; see `IdentitySettings.BearerTokenPerClientLimit` in
-`docs/CONFIGURATION.md`.
+one token per lifetime accrues about 48 rows per day.
+`IdentitySettings.BearerTokenPerClientLimit`, added in DMS-1459 and documented in
+`docs/CONFIGURATION.md`, caps how many simultaneously active tokens one client may hold, so a
+client requesting a token per request can no longer accrue rows without limit: it may mint a new
+one only as fast as its existing ones expire. A grant refused by that ceiling writes no row.
+That ceiling does not bound the table, though. Expired rows stop counting toward it but remain
+stored, so nothing in the schema or code removes them other than the cleanup mechanism described
+below.
 
 ### Keycloak Mode
 
