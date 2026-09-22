@@ -105,8 +105,7 @@ try {
         $images = @($broker) + @($required | Where-Object { $_ -like '*_IMAGE' } | ForEach-Object { [Environment]::GetEnvironmentVariable($_) })
         foreach ($image in $images | Select-Object -Unique) {
             if ($PullImages) {
-                & docker pull $image *> (Join-Path $raw 'pull.log')
-                if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: required image pull failed.' }
+                Invoke-CdcQualificationImagePull -Image $image -RawDirectory $raw -Destination $destination
             }
             & docker image inspect $image --format '{{.Id}}' *> (Join-Path $raw 'inspect.log')
             if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: required image is unavailable locally.' }
