@@ -4,7 +4,7 @@
 
 This shared PostgreSQL/SQL Server runbook is under construction. Both providers’ setup
 and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
-projection handoffs are documented; live qualification remains pending. Other
+projection handoffs, monitoring and retention inspections are documented; live qualification remains pending. Other
 records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
@@ -24,7 +24,7 @@ for current command details and the linked design owners for support boundaries.
 | Intact connector restart and resume | [intact-restart](#intact-restart) | T05 — documented; live exercise pending |
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — documented; live exercise pending |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
-| Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — pending |
+| Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — pending |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — pending |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — pending |
@@ -677,7 +677,7 @@ schema history; raw Connect mutation is not the managed handoff.
 | `sqlServerPrerequisiteFailed` at target initialization with lifecycle `Disabled` | Keep writers excluded; use E18 [SQL Server prerequisite correction](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction), restart the target context and retry activation only under that procedure's authority. Do not turn it into a CDC-state reset. |
 | Activation preflight rejection | Preflight changes no lifecycle/cache/work/latch/provider setting; the E18 owner permits correction and retry. Failed initial CDC workflow still needs its original [retry classification](#initial-enable-retry). |
 | Prerequisite failure in `Tracking`, `Resetting` or `Rebuilding`; change after successful active validation | `unsupportedPrerequisiteIncident`: no supported correction-and-restart workflow or renewed projection-health/CDC-readiness guarantee. Contain/escalate through [projection handoff](#projection-handoff); post-validation prerequisite changes are outside v1 support. |
-| Agent, capture/cleanup jobs, retained LSN range | These are separate CDC prerequisites. The selected infrastructure enables Agent; initial provider setup owns expected capture artifacts/jobs and validates their state/progress. A running SQL service proves none of these. Preserve provider diagnostics and use [monitoring/retention](#monitoring-retention) (T07 detail pending); do not drop/recreate captures or reset offsets. |
+| Agent, capture/cleanup jobs, retained LSN range | These are separate CDC prerequisites. The selected infrastructure enables Agent; initial provider setup owns expected capture artifacts/jobs and validates their state/progress. A running SQL service proves none of these. Preserve provider diagnostics and use [monitoring/retention](#monitoring-retention); do not drop/recreate captures or reset offsets. |
 | Snapshot isolation / row versions | New-database provisioning enables `ALLOW_SNAPSHOT_ISOLATION` as well as RCSI. CDC requires snapshot isolation for its initial snapshot; RCSI alone is insufficient. `CDC_SQLSERVER_SNAPSHOT_ISOLATION_OFF` rejects readiness. Preserve state and resolve the prerequisite under the initial/established boundary rather than forcing admission. |
 | Internal schema history unavailable/inconsistent or LSN history lost | Internal Kafka schema history is required even with public schema-change events disabled. Retain it with offsets on ordinary stop/start. Established source-history incidents route to [unsupported provenance](#unsupported-provenance); no silent history recreation or same-binding resnapshot. |
 | `CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING`, `CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED`, `CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED` | Deployment owner reviews the prepared login, type and effective server access; keep writers excluded. No automatic login/credential management or access broadening. Retry only if original workflow classification permits it. |
@@ -1532,18 +1532,373 @@ V1 new-generation cutover remains [deferred](../design/backend-redesign/design-d
 
 ## Monitoring and provider retention
 
-**Pending T07; exercise T27/T28.** Scope to deliver: Metric names/units/freshness, absent fields, current lag versus percentiles; WAL/disk, capture/cleanup/LSN/version store, offsets/progress/history, cleaner health and bounded overhead evidence.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations).
+**Documented T07; exact live snippets pending T27/T28.** Use the
+[operations owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
+[telemetry owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry),
+and [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
+for the behavioral contract. These observations diagnose one retained deployment;
+they neither repair provider artifacts nor establish consumer correctness.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Selected target/generation plus provider and shared-worker scope. |
-| Authority/offline window | Pending T07: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Timestamped sanitized controller, projection and exporter observations. Exact paths and substitutions pending T07. |
-| Invocation | Reserved IDs: `cdc-status`, `cdc-watch`, `cdc-telemetry-inspect`, `cdc-pg-retention-inspect`, `cdc-sqlserver-retention-inspect`. Commands and fixture substitutions pending T07. |
-| JSON/exit status | Pending T07: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T07: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T07: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Select the CMS target, physical-source fingerprint and binding generation from the original retained settings/state. Match provider queries to that database and artifact; worker and storage observations can also affect peer bindings. |
+| Authority/offline window | Controller authority includes original state-root write/lock access and connector stop/read-back. Provider inspections use a separate DBA/monitoring identity with catalog/DMV access; never enlarge the restricted connector principal for monitoring. Ordinary inspection needs no offline window. Preserve any existing writer fence; containment or prerequisite correction follows its linked procedure. |
+| Retained inputs | Original settings/state plus timestamped status stdout, watch stderr, projection status and private provider/exporter observations. Retain exit status and missing/denied evidence as well as successes; sanitize physical identifiers before sharing. |
+| Invocation | `cdc-status`, `cdc-watch`, `cdc-telemetry-inspect`, `cdc-pg-retention-inspect`, `cdc-provider-disk-inspect`, `cdc-sqlserver-retention-inspect` below. Projection status invocation remains in the [E18 command reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md). |
+| JSON/exit status | `status/watch` return the final envelope on stdout; watch passes/diagnostics use stderr. Exit `0` means the current/final aggregate is `Ready`; `1` is rejected/not-ready/unavailable/timeout, `2` invalid input, `130` cancelled. Inspect each target even on failure. SQL/exporter/disk commands have native output/exits, not the CDC JSON envelope. A successful query is only an observation. |
+| Postcondition | The selected symptom has an identified owner and fresh, attributable evidence of resolution: e.g., advancing capture with retained history, drain progress with bounded oldest work, or restored current telemetry plus a fresh controller pass. Completion never rests on absent data, an HTTP health check, or a raw offset comparison. |
+| Rejection/timeout action | Missing permissions, rows, metrics, stale identity or timeout means unavailable evidence. Correct monitoring access/connectivity through its owner and recollect; do not classify as zero. For terminal/possible-publication incidents or failed persistence/stop use [native recovery](#native-recovery); for missing provenance/source mismatch use [unsupported provenance](#unsupported-provenance). |
+
+### Collect and interpret current observations
+
+PowerShell, repository root; matching `api-schema-tools` on PATH, intact retained
+paths from setup. These commands may persist incidents and stop connectors. No new
+writer authority is granted by either command.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>`, `<original-state-root>` | Wrapper-emitted paths for this deployment | Actual fixture-emitted paths |
+| `3` | Example maximum watch passes, using retained polling/deadline settings | Positive bounded fixture count |
+
+<!-- cdc-snippet: cdc-status -->
+```powershell
+api-schema-tools cdc status --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-status -->
+
+PowerShell, repository root; same prerequisites and substitutions as `cdc-status`.
+Three passes are a deployment observation choice, not a DMS alerting default.
+
+<!-- cdc-snippet: cdc-watch -->
+```powershell
+api-schema-tools cdc watch --settings '<retained-settings-path>' --state-path '<original-state-root>' --maximum-passes 3 --json
+```
+<!-- /cdc-snippet: cdc-watch -->
+
+Read the [production CDC result fields](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcControllerStatus.Contracts.cs)
+and [projection status fields](../../src/dms/core/EdFi.DataManagementService.Core/DocumentCache/DocumentCacheStatusContracts.cs)
+in their own envelopes. The CLI uses camel-case property names with CDC enum values
+such as `Ready`, `Unknown`, `Failed`; projection enums use values such as `tracking`
+and `notEmpty`. Null optional CLI properties may be omitted; explicit null is also
+unavailable, not zero. Do not require percentile fields to exist.
+
+| Observation | Names, units and scope | Freshness/absence and use |
+| --- | --- | --- |
+| Projection status (`GET /health/document-cache` or Admin `status`) | Select `targets[].targetKey`, `targetGeneration`, `provider`, `physicalSourceFingerprint`; inspect `lifecycle`, `cacheAhead`, `operationalHealth`, `caughtUp`, `queueSummary.presence`. `queueSummary.oldestWorkAgeSeconds` is seconds; `backlogEstimate.kind` qualifies its optional `value` (rows). | Compare envelope `observedAt`, target `processObservedAt`, `durableObservedAt` and component timestamps. Process execution/diagnostics are local to that host, not a cluster inventory. Unavailable durable facts cannot be replaced with older process health. E18 [status interpretation](../document-cache-documentation/operations-runbook.md#status-interpretation) owns classification. |
+| CDC status | `data.targets[].observedAt`, `.status`, `.details`, `.diagnostics`, `.recovery`, `.incidentPersistence`, `.containment`; aggregate readiness is `data.aggregate.readiness`. | Historical observation for this pass. `incidentPersistence: "Failed"` and `containment: "Failed"` are independent failures. Later readiness cannot certify an unsampled recovery interval; use [recovery](#native-recovery). |
+| Current connector lag | `details.lagMilliseconds`, `details.lagThresholdMilliseconds`: integer milliseconds; `details.p50LagMilliseconds`, `p95LagMilliseconds`, `p99LagMilliseconds` are optional. | Only current lag decides lag threshold satisfaction. Percentiles are diagnostic, may be absent/null and are discarded if inconsistent. A low current value does not prove projection catch-up, provider history or consumer progress. |
+| Provider continuity | `details.providerArtifactState`, `retainedRangeState`, `schemaHistoryState`, optional `incidentFailureCategory`; `status.sourceHistory.continuity` and `status.sourceHistory.incidentLatched`. | Categorized evidence with `status.sourceHistory.observedAt`, not a numeric retention-margin metric or reusable last-good proof. `details.positions` has safe `lsnProc`, `commitLsn`, `changeLsn`, optional `eventSerialNo`, `retainedRangeStart`, `retainedRangeEnd`, `unavailableFacts`. Do not subtract these into a time margin or treat raw positions as continuity proof. |
+| Shared worker/rollout | `hasSharedOffsetStoreIssue`, `hasPendingRecordSizeIncrease` on each target. | A shared-store fault propagates to selected peers sharing the deployment/worker. Inspect the complete retained worker inventory; one target's success does not clear the others. |
+| Consumer progress | Consumer-owner partition barriers, checkpoint commits, deadline/renewal evidence. | No field above measures this. Use the [public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap) and [consumer checklist](#security-consumer-evidence) (T08 pending). |
+
+Projection backlog counts coalesced document work, not queued API operations or Kafka
+records. Keep oldest-work age, current source lag, retained-history headroom, and
+consumer progress as separate signals under the
+[projection/readiness owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness).
+Choose alert thresholds, consecutive-sample rules and sample intervals for the
+deployment's measured write rate, storage headroom and response time. The example
+bounds below are inspection choices, not DMS capacity or alert defaults.
+
+### Inspect the qualified worker exporter
+
+The [production adapter](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTelemetryAdapter.cs)
+reads the configured worker directly, with worker/process and sole-running-task
+identity checks before and after the scrape. `Cdc:Timing:MaximumObservationAgeMilliseconds` defaults to
+10000 milliseconds (10 seconds); age starts before HTTP collection and is rechecked when evaluated.
+Required evidence is not cached for another pass. `jmx_scrape_error` must be zero;
+HTTP 200 alone is insufficient. Missing/duplicate/misattributed/malformed current
+lag, lag `-1`, failed collection, changed worker/task or expired evidence cannot
+establish readiness. Optional min/max/average/percentiles may be unavailable without
+invalidating valid current lag. These are the
+[qualified metric rules](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry),
+not assumptions that a manual scrape can certify.
+
+| Exported gauge | Unit and scope | Interpretation |
+| --- | --- | --- |
+| `edfi_cdc_source_lag_current_milliseconds` | Milliseconds; exactly the bound `connector` plus `provider="postgres"` or `provider="sql_server"` labels | Required finite nonnegative current source lag; fractional values round upward in controller integer output. A fresh scrape is Debezium's report, not a last-source-event timestamp. |
+| `edfi_cdc_source_lag_min_milliseconds`, `edfi_cdc_source_lag_max_milliseconds`, `edfi_cdc_source_lag_average_milliseconds` | Milliseconds, same labels | Optional runtime statistics. Min/max/average are adapter diagnostics, not fields in `CdcControllerStatusDetails`. |
+| `edfi_cdc_source_lag_p50_milliseconds`, `edfi_cdc_source_lag_p95_milliseconds`, `edfi_cdc_source_lag_p99_milliseconds` | Milliseconds, same labels | Optional historical statistics; absence is expected on runtimes without those beans. Do not fabricate quantiles from current lag. |
+| `edfi_cdc_worker_start_time_seconds` | Unix epoch seconds, worker-wide scalar | Qualified image identity aid; a new worker process requires fresh evidence for all bindings. |
+| `edfi_cdc_worker_heap_max_bytes` | Bytes, worker-wide scalar | Capacity diagnostic qualified with the image; compare with retained worker policy, not a per-connector budget. |
+| `jmx_scrape_error` | Dimensionless scrape-error indicator | Nonzero/absent is failed or unavailable collection. |
+
+PowerShell, repository root; `curl` 8.4+ is the native executable (no PowerShell alias).
+Use the private endpoint from `Cdc:WorkerMetricsEndpoint`, not a public proxy, and a
+pre-created restricted directory. This single read has a 10-second timeout and
+4 MiB response cap. It writes private raw metrics; inspect only the gauge families
+above and the selected connector locally. No fixture substitutes a previously saved
+scrape for live evidence. This is diagnostic collection, without controller identity
+bracketing or readiness authority.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<worker-metrics-url>` | Retained configured single worker `/metrics` URI | Live fixture worker URI |
+| `<private-metrics-file>` | New file in operator-owned directory (0700, umask 0077 on Linux) | Private fixture artifact path |
+
+<!-- cdc-snippet: cdc-telemetry-inspect -->
+```powershell
+curl --fail --silent --show-error --connect-timeout 5 --max-time 10 --max-filesize 4194304 --header 'Cache-Control: no-cache, no-store' --output '<private-metrics-file>' '<worker-metrics-url>'
+if ($LASTEXITCODE -ne 0) { throw 'Metrics unavailable; do not use a partial file.' }
+```
+<!-- /cdc-snippet: cdc-telemetry-inspect -->
+
+Denied/redirected/unavailable access or an invalid body requires correction of the
+private management endpoint and a fresh controller pass. Do not upload the raw
+worker scrape, raw offsets, schema history or document bodies as incident evidence.
+Use the [sanitized evidence convention](cdc-inv-evidence.md#recording-results).
+
+### PostgreSQL slot, WAL and disk inspection
+
+Use the [PostgreSQL provider owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql)
+and the controller's provider-artifact/retained-range classification first. For
+storage diagnosis, the following reads one exact managed slot and server settings;
+it does not scan source/work tables. A missing slot is not an empty/healthy result.
+
+PowerShell, repository root; PostgreSQL `psql` on PATH. Prepare a private libpq
+service/passfile for the selected database and monitoring role, with
+`connect_timeout=5`; no password in command text. The slot name comes from original
+managed binding/artifact evidence, not a reconstructed name. Each statement has a
+5-second timeout and a 1-second lock wait bound. Feed the script on stdin so psql
+substitutes the quoted variable safely; do not change this to `psql -c`.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<pg-monitor-service>` | Protected libpq service selecting the exact target and monitor identity | Fixture service/passfile |
+| `<managed-slot>` | Original managed PostgreSQL slot identity | Actual fixture slot |
+
+<!-- cdc-snippet: cdc-pg-retention-inspect -->
+```powershell
+@'
+\set ON_ERROR_STOP on
+SET statement_timeout = '5s';
+SET lock_timeout = '1s';
+SELECT clock_timestamp() AS observed_at, active, wal_status,
+       pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn) AS retained_wal_bytes,
+       pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) AS unconfirmed_wal_bytes,
+       safe_wal_size AS remaining_slot_budget_bytes,
+       to_jsonb(s)->>'invalidation_reason' AS invalidation_reason
+FROM pg_catalog.pg_replication_slots AS s
+WHERE slot_name = :'slot' AND database = current_database()
+LIMIT 1;
+SELECT name, setting, unit
+FROM pg_catalog.pg_settings
+WHERE name IN ('max_slot_wal_keep_size', 'max_wal_size', 'wal_keep_size')
+ORDER BY name;
+'@ | psql --no-psqlrc --dbname 'service=<pg-monitor-service>' --set 'slot=<managed-slot>'
+if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL retention observation unavailable.' }
+```
+<!-- /cdc-snippet: cdc-pg-retention-inspect -->
+
+`retained_wal_bytes` is a WAL-position distance, not filesystem usage or a time
+lag. `safe_wal_size` is nullable, including unlimited slot retention and a lost
+slot; null never means unlimited disk. `extended` means WAL exceeds `max_wal_size`
+but is still retained; `unreserved` needs urgent diagnosis and `lost` cannot be
+repaired by resuming the old stream. See PostgreSQL's
+[slot column definitions](https://www.postgresql.org/docs/17/view-pg-replication-slots.html).
+Use fresh controller classification for the continuity decision; do not drop or
+advance a slot to reclaim space. Reducing retention can destroy needed history.
+
+PowerShell on the Linux Docker host, repository root; Docker authority, native
+`timeout` on the host and `df` in the provider container. Select actual data/WAL mounts from
+deployment inventory (SQL Server data/log paths for that variant); WAL may be on
+a different filesystem. One invocation, two explicit paths, 10-second wall bound.
+The output includes mount paths: keep it private and export only sanitized capacity
+values. Also inspect host backing-volume capacity through its storage owner.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<provider-container>`, `<data-path>`, `<wal-or-log-path>` | Owned container and mounted provider paths | Owned fixture container/mount paths |
+
+<!-- cdc-snippet: cdc-provider-disk-inspect -->
+```powershell
+timeout 10s docker exec '<provider-container>' df -Pk -- '<data-path>' '<wal-or-log-path>'
+if ($LASTEXITCODE -ne 0) { throw 'Provider filesystem capacity unavailable.' }
+```
+<!-- /cdc-snippet: cdc-provider-disk-inspect -->
+
+`df -Pk` reports 1024-byte blocks, used/available capacity and percent use, not WAL
+budget. On pressure, have the storage/database owner restore headroom and investigate
+stalled connector progress; preserve the slot and original state. Repeat the bounded
+checks after correction, then collect controller status. A stopped connector can
+continue pinning WAL while other database writes continue; a verified stop alone
+is not a disk-pressure resolution. Missing tooling/access is unavailable capacity
+evidence, not a reason to remove managed volumes.
+
+### SQL Server capture, cleanup, LSN and version-store inspection
+
+[SQL Server provider setup](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
+owns Agent, capture/cleanup, snapshot isolation and schema-history requirements.
+RCSI and `nested triggers` are separate projection prerequisites; their lifecycle
+correction belongs to [E18](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction).
+Do not change them on an active target as monitoring remediation.
+
+PowerShell, repository root; `sqlcmd` on PATH, SQL Server 2025 qualified target.
+The DBA supplies a monitoring principal with catalog/CDC/msdb visibility and required
+DMV permissions (including server performance/security state for these views), using
+`SQLCMDPASSWORD` from a protected session. This is not the connector login. Retain the
+normal deployment TLS trust configuration; the example does not bypass certificate
+validation. Login timeout is 5 seconds, batch query timeout 10 seconds, lock timeout
+1 second; all multirow results are capped, scoped or catalog aggregates. Execute once
+per sample; `TOP` bounds output, not execution time. Missing required rows, denied
+access and NULL facts remain unavailable unless explicitly inapplicable. An empty
+active-transaction result with verified visibility simply means none were observed.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<sqlserver-host,port>`, `<target-database>`, `<monitor-login>` | Selected database and deployment monitoring connection | Owned fixture endpoint/database/monitor |
+| `SQLCMDPASSWORD` | Protected monitor credential environment input, never logged | Fixture-injected monitor secret |
+
+<!-- cdc-snippet: cdc-sqlserver-retention-inspect -->
+```powershell
+sqlcmd -S '<sqlserver-host,port>' -d '<target-database>' -U '<monitor-login>' -b -l 5 -t 10 -Q @'
+SET NOCOUNT ON;
+SET LOCK_TIMEOUT 1000;
+SELECT SYSUTCDATETIME() AS observed_at, is_cdc_enabled,
+       snapshot_isolation_state_desc, is_read_committed_snapshot_on,
+       is_accelerated_database_recovery_on, log_reuse_wait_desc
+FROM sys.databases WHERE database_id = DB_ID();
+SELECT value_in_use AS nested_triggers
+FROM sys.configurations WHERE name = N'nested triggers';
+SELECT TOP (1) status_desc AS agent_status, last_startup_time
+FROM sys.dm_server_services WHERE servicename LIKE N'SQL Server Agent%';
+SELECT TOP (2) c.job_type, j.enabled, c.continuous, c.pollinginterval,
+       c.retention AS retention_minutes, c.threshold,
+       a.start_execution_date, a.stop_execution_date
+FROM msdb.dbo.cdc_jobs AS c
+JOIN msdb.dbo.sysjobs AS j ON j.job_id = c.job_id
+OUTER APPLY (SELECT TOP (1) start_execution_date, stop_execution_date
+             FROM msdb.dbo.sysjobactivity WHERE job_id = c.job_id
+               AND session_id = (SELECT MAX(session_id) FROM msdb.dbo.syssessions)) AS a
+WHERE c.database_id = DB_ID() ORDER BY c.job_type;
+SELECT TOP (10) c.job_type, h.run_status, h.run_date, h.run_time, h.run_duration
+FROM msdb.dbo.cdc_jobs AS c
+JOIN msdb.dbo.sysjobhistory AS h ON h.job_id = c.job_id
+WHERE c.database_id = DB_ID() AND h.step_id = 0
+ORDER BY h.instance_id DESC;
+SELECT TOP (5) session_id, start_time, end_time, scan_phase, error_count, latency
+FROM sys.dm_cdc_log_scan_sessions WHERE session_id <> 0 ORDER BY session_id DESC;
+SELECT TOP (3) OBJECT_NAME(source_object_id) AS source_table,
+       sys.fn_varbintohexstr(sys.fn_cdc_get_min_lsn(capture_instance)) AS retained_min_lsn,
+       sys.fn_varbintohexstr(sys.fn_cdc_get_max_lsn()) AS captured_max_lsn
+FROM cdc.change_tables
+WHERE source_object_id IN
+    (OBJECT_ID(N'dms.Document'), OBJECT_ID(N'dms.DocumentCache'), OBJECT_ID(N'dms.CdcHeartbeat'))
+ORDER BY source_object_id;
+SELECT reserved_space_kb AS tempdb_version_store_kb
+FROM sys.dm_tran_version_store_space_usage WHERE database_id = DB_ID();
+SELECT persistent_version_store_size_kb AS adr_off_row_version_store_kb
+FROM sys.dm_tran_persistent_version_store_stats WHERE database_id = DB_ID();
+SELECT TOP (10) s.session_id, s.elapsed_time_seconds
+FROM sys.dm_tran_active_snapshot_database_transactions AS s
+WHERE EXISTS (SELECT 1 FROM sys.dm_tran_database_transactions AS d
+              WHERE d.transaction_id = s.transaction_id AND d.database_id = DB_ID())
+ORDER BY s.elapsed_time_seconds DESC;
+SELECT SUM(CONVERT(bigint, unallocated_extent_page_count)) * 8 AS tempdb_free_kb,
+       SUM(CONVERT(bigint, version_store_reserved_page_count)) * 8 AS tempdb_version_store_kb
+FROM tempdb.sys.dm_db_file_space_usage;
+'@
+if ($LASTEXITCODE -ne 0) { throw 'SQL Server retention observation incomplete or unavailable.' }
+```
+<!-- /cdc-snippet: cdc-sqlserver-retention-inspect -->
+
+This inspects three source captures without reading change payloads. Unexpected or
+missing captures require controller provider validation; the bounded query does not
+prove capture inventory matches. A zero/null LSN or missing capture cannot establish
+retention. Min/max LSNs delimit observed retained/captured positions, not seconds of
+remaining outage tolerance. The controller compares committed source evidence under
+the [continuity contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
+Do not reset offsets, resnapshot, recreate capture instances or manually run cleanup
+to make these observations look current.
+
+Capture scan `latency` is seconds; session history resets at server restart/failover,
+and the running continuous job may have no completed job-history row. Interpret job
+schedule/configuration, latest outcomes and repeat capture progress together;
+`run_duration` uses SQL Agent's HHMMSS representation, not milliseconds. Numeric
+errors should be escalated with sanitized diagnostics, not raw job-message dumps.
+See Microsoft's [capture scan DMV](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/change-data-capture-sys-dm-cdc-log-scan-sessions?view=azuresqldb-current).
+
+Monitor `tempdb` version-store KiB and available file space together with underlying
+disk capacity; long snapshot transactions can retain versions. The aggregated
+[version-store view](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-version-store-space-usage?view=sql-server-ver17)
+avoids traversing individual version records. With ADR enabled, include the database's
+[persistent version store](https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-views/sys-dm-tran-persistent-version-store-stats?view=sql-server-ver17);
+its off-row KiB excludes in-row versions and does not represent total storage use.
+A DBA resolves capacity/long-transaction issues, confirms capture and cleanup resume
+with required history still retained, then obtains fresh controller status. Do not
+kill sessions or alter isolation/retention from this inspection recipe.
+
+### Symptom to owner and completion
+
+These handoffs implement the [operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
+[shared offset-store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup),
+and [recovery](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+boundaries. For topic-policy/access examples use [T08's checklist](#security-consumer-evidence)
+when delivered; status already performs authoritative policy observations. No raw
+Connect lifecycle mutation or new monitoring service is needed here.
+
+| Symptom / observation | Action and owning procedure | Observation that ends diagnosis |
+| --- | --- | --- |
+| Growing oldest work, backlog, `targetBackoff`, poison or enqueue failures | [Projection handoff](#projection-handoff); distinguish unavailable enqueue (canonical writes roll back) from processing outage (work accumulates). | Corrected failing component plus fresh E18 health/queue observations and sustained drain; CDC readiness additionally needs its own checks. |
+| Current lag unavailable/exceeded, optional statistics absent | Inspect bound worker gauges and identity; follow [native recovery](#native-recovery) for restart evidence. Optional absence alone needs no repair. | Fresh attributable current lag within the configured threshold; no outstanding recovery/history blocker. |
+| PostgreSQL WAL growth or low free capacity | Slot/disk snippets; database/storage owner restores headroom and diagnoses inactive/stalled progress. `lost` or missing slot goes to history incident handling. | Capacity headroom and advancing progress demonstrated in repeat samples, with fresh controller continuity evidence. A manual slot observation alone cannot clear a latch. |
+| SQL Server capture stalls/cleanup fails | Agent/job/scan/LSN snippet; DBA checks service, job outcomes, storage and permissions. Distinguish transient unavailable evidence from lost history. | Capture advances, cleanup operates within required history retention, capacity is available and controller evidence is fresh. |
+| Version-store growth, long snapshots | SQL Server version-store plus provider disk observations; DBA investigates transactions/capacity under the projection [prerequisite boundary](#sql-server-setup). | Capacity and version-retention pressure resolved without unsupported active-target prerequisite changes. |
+| `hasSharedOffsetStoreIssue`, `status.connectOffsetStore` not satisfied/unknown | Platform owner inspects the configured shared topic and worker policy via controller diagnostics: compact-only cleanup, partition/durability requirements, effective worker-only access, intact committed offsets. Use [managed lifecycle](#managed-lifecycle) before any worker operation. | Fresh authoritative validation for every affected retained target; unavailable evidence stays blocking. Never delete/recreate the shared topic or reset offsets; per-binding retirement cannot clean this store. |
+| Progress topic unavailable; initial admission barrier not reached | Inspect sanitized Kafka/Connect/provider diagnostics and the binding-owned progress topic's policy/access; verify heartbeat/capture and committed source progress. Follow [established validation](#established-validation) or [initial retry](#initial-enable-retry) as appropriate. | Initial admission must reach its captured barrier. Established status instead checks current component/history evidence: `status.providerBarrier.state` is `NotApplicable`, and status captures no new barrier. Raw progress records/offsets are private, not proof by themselves. |
+| SQL Server `details.schemaHistoryState` unknown/lost/invalid | Platform owner checks the original binding's history topic: one partition, delete-only policy, unlimited time/size retention and effective private access; use [SQL Server owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server). Topic existence alone is insufficient. | Fresh authoritative schema-history/continuity validation, or preserved terminal incident and verified containment. Never compact, recreate or seed history by hand. |
+| Public topic retained volume grows, cleaner stalls | Platform owner checks effective compact-only policy, explicit tombstone retention, broker cleaner/compaction errors and backlog, partition earliest/end offsets and retained bytes using its existing broker tooling. Compare repeat samples and storage headroom; inspect no payloads. [Topic owner](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) governs retention. | Cleaner progress and storage headroom plus measured retained-log scan capacity; topic-policy success alone proves no cleaner health, consumer completion or purge. Local Redpanda and other brokers use their own metrics; the Connect gauges above expose none of these cleaner measures. |
+| Incident persistence or connector stop fails | [Native recovery/incomplete shutdown](#native-recovery); preserve original state and escalate authority/availability failures. | Independently verified persistence and containment outcomes. Later healthy telemetry cannot certify earlier publication or clear terminal state. |
+
+### Projection tuning and evidence limits
+
+Use [shipped settings/defaults](../../docs/CONFIGURATION.md#datamanagementdocumentcache)
+and `effectiveSettings.projector` from the selected projection status. The baseline
+is `PollInterval=00:00:05`, `PageSize=100`, `FailureBackoff=00:00:30`,
+`MaxConcurrentTargets=2`, `BaselineHighWaterMark=1000`. These are execution settings,
+not capacity promises. Tune one setting at a time, retaining input rate, oldest-work
+age, queue estimate kind, drain outcomes, transaction waits and provider storage
+observations before/after. Apply changes through the normal retained-settings/host
+workflow; a shared worker restart still uses [managed lifecycle](#managed-lifecycle).
+
+| Setting | What to observe before changing it |
+| --- | --- |
+| Poll interval | Shorter idle polling can reduce pickup delay but adds provider observations; compare idle cost and oldest-work trend under real writes. |
+| Page size | More work per dispatch changes batch duration/resource use; inspect page/drain duration, poison traversal and fairness before raising it. |
+| Failure backoff | Diagnose the provider/materializer failure first; shorter retry delays increase pressure on a failing target. |
+| Target concurrency | Process-local target slots do not remove same-document write/acknowledgement contention; include all projector replicas and provider load when sizing. |
+| Baseline high-water mark | Bounds baseline seeding pressure, not normal outage accumulation; use the [E18 rebuild workflow](../document-cache-documentation/operations-runbook.md#online-rebuild) and observe drain alongside seeding. |
+
+The [.NET projection instruments](../../src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheProjectionTelemetry.cs)
+include `edfi.dms.document_cache.projection.dispatch.duration` (histogram, ms),
+`projection.dispatch.items` (full prefix `edfi.dms.document_cache.`, histogram,
+items per dispatch) and `projection.item.outcomes` (same prefix, counter).
+[Enqueue counters](../../src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheEnqueueTelemetry.cs)
+are `edfi.dms.document_cache.enqueue.successes` and `.failures`.
+[Writer histograms](../../src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheWriterTelemetry.cs)
+include `edfi.dms.document_cache.writer.transaction.duration`,
+`.cache_dml.duration`, `.acknowledgement.duration` and `.same_document_wait`, all in
+milliseconds with the same writer prefix. These are .NET instrument names, not
+promises of identically named Prometheus series on the Connect endpoint. Rates and
+histograms need a chosen observation window; process restart resets local counters.
+Keep the shipped bounded provider/target/outcome labels; never add document IDs,
+bodies or raw tenant names as metric labels.
+
+[E18 CDC-INV-03/04/09/10/15 evidence](../document-cache-documentation/cdc-inv-evidence.md#matrix)
+covers transactional enqueue rollback, same-document acknowledgement contention
+without blocking unrelated documents, bounded provider writer scenarios, functional
+queue drain/restart and indexed status. The PostgreSQL and SQL Server
+`DocumentCacheWriterPerformanceEvidence_it_compares_projector_and_direct_fill_workload_modes`
+fixtures invoke the writer directly in `DurableWorkProjection` and `DirectFill`
+modes with candidate/no-candidate, retries and contention cases; they are explicit
+component evidence, not a production workload or measured API overhead guarantee.
+No numeric result from an unexecuted fixture is claimed here. Canonical enqueue
+and projection acknowledgement both add transactional work; projector downtime
+allows durable work to accumulate while enqueue works. Coalescing limits repeated
+work for one document, not total outage storage. Recovery requires demonstrated
+drain under continuing writes and adequate WAL/CDC/version-store capacity.
+[Production-scale performance qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
+remains deferred; this task adds neither a benchmark harness nor throughput/latency
+thresholds.
 
 <a id="security-consumer-evidence"></a>
 
