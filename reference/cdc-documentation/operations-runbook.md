@@ -4,8 +4,8 @@
 
 This shared PostgreSQL/SQL Server runbook is under construction. Both providers’ setup
 and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
-projection handoffs, monitoring, retention, security and consumer-evidence checklists are
-documented; live qualification remains pending. Other
+projection handoffs, monitoring, retention, security, consumer-evidence checklists and
+coordinated record-size increases are documented; live qualification remains pending. Other
 records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
@@ -27,7 +27,7 @@ for current command details and the linked design owners for support boundaries.
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
-| Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — pending |
+| Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 exercise pending |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — pending |
 | Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — pending |
 | Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — pending |
@@ -2092,18 +2092,209 @@ results and their simulated-store limitation, not an inferred consumer conforman
 
 ## Coordinated record-size increase
 
-**Pending T09; exercise T23/T24.** Scope to deliver: Renewed invocation confirmation, interrupted rollout retry and coordinated ceilings.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase).
+**Documented in T09; exact live snippets pending T23/T24.** Use the
+[in-place increase owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
+and [ADR sizing contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size).
+The [SchemaTools reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
+owns the acknowledgement schema and command options. This procedure applies to an
+established, intact generation in either provider's qualified local deployment.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Explicit binding generation and stable increase operation ID. |
-| Authority/offline window | Pending T09: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Previous settings, acknowledgement and complete consumer-owner capacity evidence or explicit no-consumers inventory. Exact paths and substitutions pending T09. |
-| Invocation | Reserved IDs: `cdc-size-no-consumers`, `cdc-size-increase`, `cdc-size-retry`. Commands and fixture substitutions pending T09. |
-| JSON/exit status | Pending T09: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T09: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T09: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Exact complete binding identity from the controller result, including physical source, connector, public topic and generation; one stable increase `operationId`. No new generation or offset reset. |
+| Authority/offline window | Deployment operator controls the original state, database validation access, Connect and Kafka administration and broker recreation; obtains every consumer owner's capacity evidence. Plan a CDC publication interruption and possible shared-broker disruption. No DMS writer-offline fence is imposed by this size operation; projection remains caller-owned and must run to drain queued work. Readiness does not gate ordinary API routing or authorize writers. |
+| Retained inputs | Original full runtime settings at the previous ceilings, state root, binding/history/journal, shared `Cdc:Compose:BrokerSizeOverrideFile`, protected acknowledgement file, complete consumer inventory and private evidence. Preserve partial changes and all invocation results. |
+| Invocation | Prepare `cdc-size-no-consumers` only after establishing an empty inventory (otherwise use the consumer variant below); run `cdc-size-increase`. Resume an interrupted pending operation with `cdc-size-retry`, renewing confirmation every time. |
+| JSON/exit status | `operation: "increase-record-size"`; exit `0` requires envelope `succeeded: true`, `exitCode: 0`, `data.succeeded: true`, `data.ready: true`, and the matching `data.operationId`. Exit `1` is operational rejection/not-ready/timeout; `2` invalid command/configuration/input; `130` caller cancellation. Inspect sanitized `diagnostics`; `data.observation` is optional, not a success prerequisite. |
+| Postcondition | Fresh live broker/topic/producer, worker, provider/offset, projection and lag evidence passes, the acknowledged operation is durably completed, and a final ordinary publication-readiness pass succeeds. Only then update retained normal settings to the new ceilings. |
+| Rejection/timeout action | Keep the target classified not ready while intent is pending; preserve previous settings, acknowledgement scope and broker override. Reconcile the actual diagnostic, renew evidence and retry the original pending operation. Lost provenance/terminal history follows [unsupported provenance](#unsupported-provenance); do not roll back limits or clear the journal. |
+
+### Choose capacity and collect the acknowledgement
+
+`MaxRecordBytes` bounds the pinned producer's local per-record estimate after the
+key and value converters serialize the UUID key and public UTF-8 envelope, including
+the producer's record-batch estimate. It is not `DocumentCache` payload length, the
+HTTP body limit, or the complete wire request. Projection can inject links and the
+envelope adds metadata. Compression stays `none`; a producer rejection fails the
+task with no partial public record. The existing
+[message-size fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractRecordSizeTests.cs)
+and [rollout/replay fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Producer.cs)
+qualify this boundary for their pinned runtime and workload, not every valid document
+or production throughput. Their procedure-level live evidence remains
+[pending](cdc-inv-evidence.md#procedure-evidence).
+
+Choose a strictly larger record ceiling and a producer buffer at least that large
+and no smaller than the previous effective buffer (default: greater of `33554432`
+and the previous ceiling). Check worker heap headroom separately; the buffer is not
+a total-memory cap. Each consumer owner must attest that deployed
+`max.partition.fetch.bytes` and `fetch.max.bytes` meet the requested ceiling and
+that deserialization at that ceiling was tested. Maintain this capacity through
+rollout and subsequent consumption. Apply the
+[consumer-owner checklist](#consumer-owner-proof-and-invalidation-handoff); an omitted inventory never
+means no consumers, and the controller does not discover or certify them.
+
+The local broker deployment adapter preserves stronger limits and ensures replica
+fetch/response capacity and `socket.request.max.bytes >= requestedMaxRecordBytes +
+1048576`. That extra MiB is minimum operational headroom, not a protocol-size
+calculation. Requalify deployment request capacity when an increase or batching
+change exceeds previously qualified capacity. Retain the same shared broker override
+path and file for partial retries and all later worker starts; do not recreate it
+from old settings. Coordinate shared-worker peers through the
+[retained deployment inventory](#deployment-state).
+
+JSON input, repository root: save the substituted block as a new owner-only file at
+`<acknowledgement-path>` in a protected directory, retaining it for this operation.
+Obtain `binding` from a retained controller JSON result for this exact managed target
+(for example [setup observation](#postgresql-setup) or [established inspection](#established-validation)).
+Copy just the nine identity fields below, preserving JSON types and exact values;
+do not copy the full binding's version, partition or contract fields into this strict
+input schema. This is input selection, never recreated provenance; the controller
+independently exact-matches it. Missing/untrusted binding evidence stops this procedure.
+No deployment mutation occurs when preparing this file.
+
+| Literal placeholder/value | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<increase-operation-uuid>` | Generate one nonempty UUID once for this new operation; retain on every retry | New fixture UUID retained across its interruption |
+| `<binding-deployment-key>`, `<binding-tenant-key>`, `<binding-data-store-id>`, `<binding-instance-key>` | Corresponding strings in the actual result's `binding` | Actual controller-returned fixture identity, including an empty tenant string where applicable |
+| `generation: 1` | Replace `1` with the exact numeric `binding.generation` | Fixture's actual admitted generation |
+| `<binding-provider>`, `<binding-physical-source-fingerprint>`, `<binding-connector-name>`, `<binding-topic-name>` | Exact `binding.provider`, `physicalSourceFingerprint`, `connectorName`, `topicName`; do not derive names or invent a fingerprint | Actual fixture binding; provider typically `Postgresql` or `SqlServer`, not the wrapper's `mssql` token |
+| `10000000`, `20000000`, `33554432` | Example previous record ceiling, requested ceiling and requested buffer in bytes. Confirm effective retained settings use the first value and capacity supports the latter two; otherwise substitute all three consistently | Fixture's measured previous and qualified requested limits; include previous effective buffer in preconditions |
+| `<operator-token>` | Credential-free opaque identity of the authorized operator | Fixture operator identity |
+| `noConsumers: true`, `consumers: []` | Explicit complete empty inventory, renewed at invocation time | Isolated fixture with no affected independent consumers |
+
+<!-- cdc-snippet: cdc-size-no-consumers -->
+```json
+{
+  "operationId": "<increase-operation-uuid>",
+  "bindingIdentity": {
+    "deploymentKey": "<binding-deployment-key>",
+    "tenantKey": "<binding-tenant-key>",
+    "dataStoreId": "<binding-data-store-id>",
+    "instanceKey": "<binding-instance-key>",
+    "generation": 1,
+    "provider": "<binding-provider>",
+    "physicalSourceFingerprint": "<binding-physical-source-fingerprint>",
+    "connectorName": "<binding-connector-name>",
+    "topicName": "<binding-topic-name>"
+  },
+  "previousMaxRecordBytes": 10000000,
+  "requestedMaxRecordBytes": 20000000,
+  "requestedProducerBufferBytes": 33554432,
+  "operatorIdentity": "<operator-token>",
+  "noConsumers": true,
+  "consumers": []
+}
+```
+<!-- /cdc-snippet: cdc-size-no-consumers -->
+
+For a nonempty inventory, keep the same complete envelope, set `noConsumers` to
+`false`, and replace `consumers` with one entry per distinct deployment containing
+all four fields: `deploymentIdentity`, `revision`, `confirmingOwner`, and
+`evidenceReference`. For example, the illustrative entry
+`{"deploymentIdentity":"consumer-a","revision":"revision-2","confirmingOwner":"owner-a","evidenceReference":"capacity-20000000-v2"}`
+requires real owner evidence behind each substituted token; it is not an attestation
+to copy unchanged. Operator and consumer fields use lowercase ASCII letters, digits,
+dot, underscore and hyphen, without leading, trailing or consecutive separators.
+Use opaque evidence IDs, not URLs, credentials or raw private reports. Keep the
+acknowledgement at most 1 MiB. Unknown/duplicate fields and omitted required fields
+are rejected. Do not add `invocationId` or `confirmedAt`: the CLI creates these anew
+under the controller lock for each confirmed invocation.
+
+### Execute the coordinated rollout
+
+PowerShell, repository root; `api-schema-tools` is available as in setup. The file
+above is fully substituted, consumer capacity is confirmed for this invocation,
+projection is running, and original dependencies are reachable. This command can
+stop/resume the connector, recreate the local broker while preserving its state,
+and raise topic/producer limits. Keep other lifecycle operations serialized. Direct
+CLI accepts `DMS_CDC__` overrides: eliminate conflicting process overrides and retain
+the previous effective settings throughout a pending rollout. If broker recreation
+needs longer than the configured deadline, use invocation-local timing overrides
+`DMS_CDC__Cdc__Timing__CallMilliseconds` (up to `300000`) and
+`DMS_CDC__Cdc__Timing__WaitMilliseconds`, recording the chosen values with the result.
+Keep the retained settings file unchanged: wrapper identity hashing includes timing.
+Remove these temporary overrides before invoking a wrapper, which rejects `DMS_CDC__`
+overrides. Do not change identity or requested limits as a timeout workaround.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Original bootstrap-emitted full runtime settings at previous operational ceilings | Actual fixture settings at its previous ceilings |
+| `<original-state-root>` | Original managed provisioning/controller root | Same fixture root, never recreated provenance |
+| `<acknowledgement-path>` | Protected, substituted acknowledgement prepared above | Exact marked input with declared fixture identity/limits/evidence substitutions |
+
+<!-- cdc-snippet: cdc-size-increase -->
+```powershell
+api-schema-tools cdc increase-record-size --settings '<retained-settings-path>' --state-path '<original-state-root>' --acknowledgement '<acknowledgement-path>' --confirm-consumer-capacity --json
+```
+<!-- /cdc-snippet: cdc-size-increase -->
+
+The [shipped rollout](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcRecordSizeIncrease.cs)
+persists intent plus the fresh acknowledgement, verifies connector stop, raises and
+reads back broker limits, then the public-topic limit, then producer buffer, then
+producer request size last. Each producer configuration update requires validated
+stopped/task-free evidence before advancement. The controller resumes only after
+these checks, waits within the deadline for usable fresh lag and projection catch-up,
+and requires publication readiness before completion plus a final ordinary fresh
+pass afterward. Lost mutation responses are reconciled from live state; a REST
+acknowledgement alone does not establish success. No manual broker change, raw
+Connect PUT/resume, offset reset or source projection repair is part of this procedure.
+
+Capture the single JSON stdout result and stderr separately. The host writes sanitized
+diagnostic text to stderr; process exit and envelope `exitCode` must agree. A successful
+`data` contains `succeeded`, `ready`, `operationId` and `diagnostics: []`; it normally
+omits `observation`. Failed results can include `data.observation` with the last target
+status and diagnostics; failures before request construction can omit `data`, `binding`
+and `deploymentProfile`. The local result still reports `aclIsolationProven: false`.
+Do not require a fabricated writer-publication receipt or treat a status pass as a
+replacement for the increase result. Packaged
+[stdout/exit fixtures](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcPackagedCommandTests.cs)
+cover the host contract; they do not themselves exercise a live increase.
+
+After confirmed success, preserve the previous settings copy for investigation and
+update only `Cdc:MaxRecordBytes` and `Cdc:ProducerBufferBytes` in the retained runtime
+settings to the requested values (`20000000` and `33554432` in this example). Keep
+all other retained settings and wrapper inventory identities unchanged. Preserve the
+controller-written broker override; never hand-edit it or the journals. Use these
+updated ceilings for subsequent [status/validation](#established-validation) and
+[managed startup](#managed-lifecycle); the wrapper excludes only these two operational
+settings from its identity comparison and revalidates their live effectiveness. No
+new enablement or generation is needed.
+
+### Interrupted rollout and rejection actions
+
+PowerShell, repository root, with the same dependencies, mutation scope and placeholder
+substitutions as `cdc-size-increase`. Use this only for the original **pending**
+operation after reconciling the failure. Preserve previous settings and the same
+operation UUID, complete binding, previous/requested ceilings and requested buffer.
+Recheck the entire consumer inventory now; update consumer evidence when deployments
+changed, retaining earlier evidence privately. The explicit flag renews confirmation
+even for `noConsumers: true`; the saved file alone grants no retry authority.
+
+<!-- cdc-snippet: cdc-size-retry -->
+```powershell
+api-schema-tools cdc increase-record-size --settings '<retained-settings-path>' --state-path '<original-state-root>' --acknowledgement '<acknowledgement-path>' --confirm-consumer-capacity --json
+```
+<!-- /cdc-snippet: cdc-size-retry -->
+
+| Observation/rejection | Required action and completion boundary |
+| --- | --- |
+| Missing flag, malformed/missing/oversized file, duplicate/unknown fields, binding mismatch or previous ceiling inconsistent with settings | Input rejection (`Request` / `InvalidInput`, exit `2` for these parser/input cases). Correct the supplied input from retained evidence; never change state to match it. A pending intent remains pending. |
+| Empty inventory without `noConsumers: true`, nonempty inventory with `true`, duplicate deployments or invalid evidence tokens | Acknowledgement validation rejects before advancing effects. Supply the complete truthful inventory and renewed flag. Inspect the actual diagnostic rather than assuming every acknowledgement rejection is a parser exit `2`. |
+| Consumer revision/confirming owner changes, deployment is replaced/renamed, or a later operation requests a larger ceiling | Obtain a new evidence reference for the changed capacity scope. Journal validation rejects reusing the old reference in these cases. Unchanged consumers may renew the same applicable evidence on the same pending operation; the controller does not verify external truth. |
+| Different operation ID, binding/source/topic or previous/requested record ceiling while an increase is pending | Scope mismatch rejects; restore the original request. Do not start another increase to bypass pending intent. After completion, a further increase needs a new UUID, the last completed ceiling as previous, and new higher-capacity evidence. |
+| Lost response/cancellation/timeout after some effects, even if all live limits now align | Retain state and previous settings. Pending intent keeps ordinary status/start/restart from restoring readiness. Retry with renewed confirmation; the controller reads back live partial stages and resumes only eligible ordered work. No automatic rollback or lowering occurs. |
+| Unknown intermediate limit or out-of-order topic/buffer/request change | Reject and preserve evidence; do not manually lower/repair values or change the requested buffer to fit drift. Escalate if the original acknowledged sequence cannot reconcile it. |
+| Known lag/backlog after authorized resume | The same invocation can wait within its bounded deadline. Unknown/stale telemetry is not zero lag. Timeout retains pending intent; restore projection/telemetry dependencies via [monitoring](#monitoring-retention), then renew confirmation for retry. |
+| Lost response after durable completion, or final observation fails after completion | Do not assume every nonzero exit means pending intent. Preserve result/state and inspect the original journal's operation/completion through deployment authority. A completed operation cannot be reopened; confirm its scope and reconcile fresh validation at the completed ceilings. Never edit completion records or infer completion from aligned live limits alone. |
+| Provider/offset/provenance/worker loss, terminal incident, failed containment | Keep the incident and route to [unsupported provenance](#unsupported-provenance) or [native recovery](#native-recovery). Attempted stop is not verified containment; size changes cannot repair continuity. |
+
+The [acknowledgement fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeAcknowledgementTests.cs)
+cover renewal and changed-consumer evidence; the
+[rollout fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeIncreaseTests.cs)
+cover interruption boundaries, lost responses, not-ready gating and ordered effective
+limits for both providers. T23/T24 must exercise these exact marked inputs/commands
+through the live fixtures and record artifacts; this documentation does not claim
+those runs have occurred.
 
 <a id="generation-retirement"></a>
 
