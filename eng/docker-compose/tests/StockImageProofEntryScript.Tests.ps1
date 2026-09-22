@@ -35,6 +35,7 @@ param(
     [Parameter(Mandatory)] [string] $ShimLog,
     [Parameter(Mandatory)] [string] $ResultFile,
     [Parameter(Mandatory)] [string] $BaseEnvironmentFile,
+    [Parameter(Mandatory)] [string] $CaptureRoot,
     [string] $AmbientKey,
     [string] $AmbientValue
 )
@@ -43,6 +44,7 @@ $ErrorActionPreference = 'Stop'
 $global:DmsShimPlan = Get-Content -LiteralPath $ShimPlan -Raw | ConvertFrom-Json
 $global:DmsShimLog = $ShimLog
 $global:DmsWorkspaceRoot = $WorkspaceRoot
+$global:DmsCaptureRoot = $CaptureRoot
 
 function global:Invoke-DmsShim {
     param([string] $Tool, [string[]] $ShimArgs)
@@ -69,6 +71,21 @@ function global:Invoke-DmsShim {
                     else {
                         $body = if ($artifact.PSObject.Properties.Name -contains 'content') { [string]$artifact.content } else { 'shim' }
                         Set-Content -LiteralPath $produced -Value $body -Encoding utf8
+                    }
+                }
+            }
+
+            # What the workspace looked like AT this command, copied out before cleanup removes it.
+            # Without this the generated NuGet configuration would never be observed by anything:
+            # the shim does not restore, so a wrong feed or a missing mapping would leave every
+            # other assertion green.
+            if ($rule.PSObject.Properties.Name -contains 'capture') {
+                foreach ($wanted in @($rule.capture)) {
+                    $source = Join-Path $global:DmsWorkspaceRoot $wanted
+                    if (Test-Path -LiteralPath $source) {
+                        $destination = Join-Path $global:DmsCaptureRoot ($wanted -replace '[\\/]', '_')
+                        New-Item -ItemType Directory -Path $global:DmsCaptureRoot -Force | Out-Null
+                        Copy-Item -LiteralPath $source -Destination $destination -Force
                     }
                 }
             }
@@ -236,6 +253,7 @@ catch {
                 @{
                     match    = 'dotnet publish'
                     exitCode = 0
+                    capture  = @('fixture-src/Acme.CustomValidationProof/nuget.config')
                     create   = @(
                         @{ path = 'plugins/Acme.CustomValidationProof/Acme.CustomValidationProof.dll'; asAssembly = $true }
                         @{ path = 'fixture-obj/project.assets.json'; content = $assets }
@@ -264,6 +282,7 @@ catch {
                 Set-Content -LiteralPath $planPath -Encoding utf8 -Value (
                     ConvertTo-Json -Depth 5 -InputObject @($ShimRule | ForEach-Object { [pscustomobject]$_ }))
 
+                $captureRoot = Join-Path $scratch 'captured'
                 $shimLog = Join-Path $scratch 'shim.log'
                 New-Item -ItemType File -Path $shimLog -Force | Out-Null
                 $resultFile = Join-Path $scratch 'result.json'
@@ -293,6 +312,7 @@ catch {
                     '-PinFile', ($PinPath ? $PinPath : $script:committedPin)
                     '-WorkspaceRoot', $workspace
                     '-EvidenceRoot', $evidenceRoot
+                    '-CaptureRoot', $captureRoot
                     '-ShimPlan', $planPath
                     '-ShimLog', $shimLog
                     '-ResultFile', $resultFile
@@ -308,7 +328,15 @@ catch {
 
                 $evidenceFile = Join-Path $evidenceRoot 'stock-image-plugin-proof.json'
 
+                $captured = @{}
+                if (Test-Path -LiteralPath $captureRoot) {
+                    foreach ($file in (Get-ChildItem -LiteralPath $captureRoot -File)) {
+                        $captured[$file.Name] = Get-Content -LiteralPath $file.FullName -Raw
+                    }
+                }
+
                 return [pscustomobject]@{
+                    Captured         = $captured
                     Port             = $Port
                     Failure          = (Test-Path -LiteralPath $resultFile) ? ((Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json).Failure) : '<no result>'
                     ShimCall         = @(Get-Content -LiteralPath $shimLog -ErrorAction SilentlyContinue)
@@ -617,6 +645,78 @@ catch {
             }
 
             Test-Path -LiteralPath $objDirectory | Should -BeFalse
+        }
+
+        It 'restores both contracts only from the pinned published feed' {
+            # The shim does not restore, so nothing else here would notice if this file kept the
+            # committed local-fixture-feed mapping, named the wrong feed, dropped a contract or left
+            # an inherited source active. It is observed at the publish boundary instead.
+            $pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $pinPath
+            $pinnedFeed = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+
+            try {
+                $run = Invoke-EntryScript -PinPath $pinPath -ShimRule @(
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+
+                $generated = $run.Captured['fixture-src_Acme.CustomValidationProof_nuget.config']
+                $generated | Should -Not -BeNullOrEmpty -Because 'the publish must run against a generated configuration'
+
+                $xml = [xml]$generated
+
+                # Nothing inherited from a machine or user level configuration. Counted through
+                # SelectNodes: an absent element reads as $null, and @($null) has one element, so a
+                # missing <clear /> would satisfy a naive count.
+                $xml.SelectNodes('/configuration/packageSources/clear').Count | Should -Be 1
+
+                $source = @{}
+                foreach ($entry in $xml.configuration.packageSources.add) { $source[$entry.key] = $entry.value }
+
+                $source.Keys | Should -Contain 'published-edfi'
+                $source['published-edfi'] | Should -BeExactly $pinnedFeed
+                $source.Keys | Should -Not -Contain 'local-fixture-feed'
+                # Public dependencies still need somewhere to come from.
+                $source.Keys | Should -Contain 'nuget.org'
+
+                # Every source whose patterns match a contract id, and how specific that match is.
+                $mapping = @{}
+                foreach ($packageSource in $xml.configuration.packageSourceMapping.packageSource) {
+                    $mapping[$packageSource.key] = @($packageSource.package | ForEach-Object { $_.pattern })
+                }
+
+                foreach ($contract in @('EdFi.Api.Plugins', 'EdFi.Api.CustomValidation')) {
+                    $mapping['published-edfi'] | Should -Contain $contract -Because "$contract must be mapped to the pinned feed"
+
+                    # Under source mapping the most specific matching pattern wins, and an exact id
+                    # is the most specific there is. No other source may declare one for these ids,
+                    # or the contract could resolve from somewhere the pin does not name.
+                    foreach ($key in $mapping.Keys) {
+                        if ($key -eq 'published-edfi') { continue }
+                        $mapping[$key] | Should -Not -Contain $contract -Because "$key must not be able to serve $contract"
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $pinPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'leaves the committed fixture nuget.config byte-for-byte unchanged' {
+            $committed = Join-Path $script:fixtureTree 'nuget.config'
+            $before = (Get-FileHash -Algorithm SHA256 -LiteralPath $committed).Hash
+
+            $pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $pinPath
+
+            try {
+                Invoke-EntryScript -PinPath $pinPath -ShimRule @(
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ }) | Out-Null
+            }
+            finally {
+                Remove-Item -LiteralPath $pinPath -Force -ErrorAction SilentlyContinue
+            }
+
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $committed).Hash | Should -BeExactly $before
         }
 
         It 'publishes a copy, with run-owned intermediate and output paths' {
