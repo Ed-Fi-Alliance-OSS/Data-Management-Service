@@ -5,7 +5,8 @@ CDC. Delivery is in progress under [DMS-1326](../design/backend-redesign/epics/1
 PostgreSQL and SQL Server setup, their DMS E2E opt-in variants, deployment-state preservation, managed
 lifecycle, connector restart/resume, recovery classification and the projection
 administration/history handoff, monitoring, provider-retention troubleshooting,
-security and consumer-evidence checklists, and coordinated record-size increases are documented.
+security and consumer-evidence checklists, coordinated record-size increases, guarded
+generation retirement and destructive stack teardown are documented.
 Remaining procedure bodies and live qualification are **pending**. A reserved procedure or snippet ID is not an executable procedure
 or evidence of a successful deployment.
 

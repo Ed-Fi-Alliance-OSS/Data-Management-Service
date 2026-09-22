@@ -28,8 +28,8 @@ for current command details and the linked design owners for support boundaries.
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 exercise pending |
-| Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — pending |
-| Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — pending |
+| Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; live exercise T25/T26 pending |
+| Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; live exercise T25/T26 pending |
 | Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — pending |
 | Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) | T11 — pending |
 
@@ -813,11 +813,12 @@ is rejected. On success or failure, use the retained settings/state for the obse
 commands above. Retain sanitized failure artifacts under
 `eng/docker-compose/.cdc-diagnostics`; an attempted stop is not a verified stop.
 
-Finish with [governed stack/E2E teardown](#stack-teardown) (T10 detail pending).
+Finish with [governed stack/E2E teardown](#stack-teardown).
 Use the setup wrapper's printed teardown command with its exact resolved environment
 and provider, or the existing [managed lifecycle command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#managed-stack-lifecycle).
 Governed retirement must complete while infrastructure is reachable before volume
-deletion. Retain source history and CDC settings afterward. Ordinary stop/start uses
+deletion. Source history survives; the teardown procedure distinguishes protected/custom
+settings from eligible generated runtime files. Ordinary stop/start uses
 [managed lifecycle](#managed-lifecycle), not teardown. Subsequent E2E setup refuses a
 protected retained workspace; finish retirement and archive its configuration/history
 before preparing another one. Do not bypass that guard by deleting `.bootstrap` or
@@ -2300,35 +2301,217 @@ those runs have occurred.
 
 ## Guarded generation retirement
 
-**Pending T10; exercise T25/T26.** Scope to deliver: Partial-cleanup retry, controller result and retained source history; separate platform purge evidence.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+Use this procedure only to permanently retire one explicitly selected generation.
+[Managed stop/start](#managed-lifecycle) preserves the generation and its artifacts.
+The [binding and cleanup owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+defines the authority and state-last deletion contract; the
+[continuity boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
+still applies to failed initial setups and terminal generations.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Explicit binding generation and destructive cleanup intent. |
-| Authority/offline window | Pending T10: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Original state/settings, reachable infrastructure and cleanup evidence. Exact paths and substitutions pending T10. |
-| Invocation | Reserved IDs: `cdc-retire`. Commands and fixture substitutions pending T10. |
-| JSON/exit status | Pending T10: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T10: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T10: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Original complete binding identity: deployment, normalized tenant/data-store target, instance, provider, opaque physical-source fingerprint, connector/topic and positive generation. `--generation` must equal the retained settings/binding generation. |
+| Authority/offline window | Explicit `--destructive-cleanup` plus independently sufficient original provenance, exact binding/retirement journal and source history. Deployment owners authorize destruction and coordinate the affected writers/consumers; for disclosure, use the offline/access fence below. Keep database, Connect, Kafka and protected controller state reachable until governed cleanup completes. |
+| Retained inputs | Original emitted runtime settings, matching schema inputs, controller root, provisioning receipt, workflow/source history, incident evidence and wrapper inventory from [state preservation](#deployment-state). Preserve credentials and endpoint access needed for authoritative inspections and cleanup. |
+| Invocation | `cdc-retire` below. Repeat with the same settings, root, identity and generation after a partial cleanup; no caller-supplied replacement operation ID or artifact list. Stack-wide destruction uses the separate wrapper procedure below. |
+| JSON/exit status | Require process exit `0`, `operation: "retire"`, `succeeded: true`, `exitCode: 0`, the expected `binding`, and `data.succeeded: true` with nonempty `data.operationId`. `data.diagnostics` and top-level `diagnostics` are empty on success. This operation has no `ready`, publication receipt, artifact inventory or platform-purge field. Local `deploymentProfile.aclIsolationProven` remains `false`. |
+| Postcondition | Controller verified the governed artifact scope absent and completed binding/incident removal last; journal and source-lifetime publication history remain. An interrupted retirement can retain partially deleted artifacts and binding/incident state until reconciliation completes. |
+| Rejection/timeout action | Exit `1` means rejected/unavailable/timed-out operation; `2` means invalid input; `130` means cancellation. Preserve all surviving inputs and infrastructure. Inspect diagnostics and follow the failure table below; no volume deletion or reuse of the generation on an unverified result. |
+
+### Retire one retained generation
+
+PowerShell, repository root; use the installed/built `api-schema-tools` from setup.
+This is destructive: it removes the selected generation's governed artifacts, not
+just its connector process. Require the independent cleanup authority above; a
+missing binding, configuration removal or suspected rollback is not authorization.
+For shared stack teardown, use `cdc-stack-teardown` instead: it invokes this
+controller for every retained entry with that entry's generation and cleanup flag.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Original emitted runtime settings for the affected generation | Owned fixture's original full settings; PostgreSQL or SQL Server without changing its binding |
+| `<original-state-root>` | Original managed provisioning/controller root, including custom roots | Same fixture's intact root and durable cleanup checkpoints |
+| `<binding-generation>` | Positive generation in the original settings and retained binding/inventory | Same fixture's generation; never increment it to bypass rejection |
+
+<!-- cdc-snippet: cdc-retire -->
+```powershell
+api-schema-tools cdc retire --settings '<retained-settings-path>' --state-path '<original-state-root>' --generation '<binding-generation>' --destructive-cleanup --json
+```
+<!-- /cdc-snippet: cdc-retire -->
+
+Retain stdout JSON, stderr diagnostics and the process exit separately in protected
+operator evidence. Early rejection/cancellation can omit `binding` and `data`;
+absence is not completion. The host writes sanitized diagnostics to stderr and
+one result envelope to stdout. Do not treat a successful `status`, connector HTTP
+404 or delete acknowledgement as a retirement result.
+
+The [retirement controller](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcBindingRetirement.cs)
+holds the original workflow lock and records the exact retirement scope before
+cleanup. It verifies stopped connector/tasks, removes and verifies source offsets
+before connector deletion, then reconciles provider artifacts, binding-local ACLs
+and topics. It freshly reconciles the governed scope again beside state deletion.
+A lost delete response can succeed only when authoritative inspection proves the
+effect. Once retirement intent exists, enable/start/restart/resume cannot reuse the
+generation. Retrying retirement preserves its operation ID and checkpoints; even
+a completed retirement can be reconciled again while its infrastructure and inputs
+remain available. Never-reserved initial failures use controller-proven absence,
+not an operator assumption that nothing was created.
+
+| Artifact scope | Governed retirement result and retained boundary |
+| --- | --- |
+| Connector and source offsets | Removes the exact connector's offsets before deleting the connector. Missing connector metadata alone cannot prove offset absence; the controller requires independent evidence or its own verified offset-removal checkpoint. The shared worker offset topic and peer connector namespaces survive. |
+| PostgreSQL | Removes the exact inactive logical slot and exact publication after live source/ownership checks. Shared, broadened or unsafe artifacts reject cleanup; do not repair or drop them manually to make retirement pass. |
+| SQL Server | Removes the three governed capture instances and gating role. Removes only owned, unused current-database capture/cleanup jobs with durable ownership evidence; peer captures or unproven/orphaned jobs block that step. Database, source tables and deployment-managed connector login/user remain. |
+| Kafka | Removes generation-local public/progress topics and ACLs, plus SQL Server schema-history topic/ACLs. Shared worker configuration/status/offset topics, peer topics, shared principals and consumer-group grants are outside per-binding deletion. Local authorization-disabled success supplies no ACL-isolation proof. |
+| State and configuration | Binding and terminal incident are removed only after verified cleanup. Original provisioning/workflow journal and source history survive. Direct CLI retirement removes neither retained CDC settings nor wrapper inventory, generated runtime inputs, database or stack volumes. |
+
+These scopes are exercised by the
+[provider cleanup cases](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs)
+and [interrupted-retirement fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs).
+They do not authorize deleting shared artifacts outside the binding.
+
+### Partial cleanup and rejection actions
+
+Diagnostics use `component`, `failure` and sanitized `message`; codes below are
+[production classifications](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcDeploymentResults.cs),
+not finer-grained invented incident names. A timeout can occur before an operation
+ID is returned; retained controller state, rather than a recreated response, owns retry.
+
+| Observation | Action and completion boundary |
+| --- | --- |
+| `Request` / `InvalidInput`, missing destructive flag, zero or mismatched generation | Compare the invocation with the originally selected identity. Correct only an invocation error; never edit binding identity or change generation. No cleanup completion is established. |
+| `WorkflowState` / `ValidationFailed`, absent/corrupt/contradictory provenance or missing binding before the controller's durable state-deletion intent | Preserve evidence and use [unsupported provenance](#unsupported-provenance). Stop/escalate; no state recreation, history deletion, force/import operation or independent provisioning as recovery. |
+| `Connect`, `Kafka`, `ProviderSetup` or `Worker` / `Unavailable`, `AuthenticationFailed`, `Timeout`, `Conflict` or `ValidationFailed` | Keep services reachable and preserve surviving artifacts. Owner corrects availability/access for the original scope, then repeats the same retirement. Unverified stop, retained offsets, wrong physical source, shared provider artifacts or unsupported ownership cannot be bypassed by raw Connect calls or manual SQL. |
+| Nonzero result after some artifacts were removed, or lost response/cancellation | Preserve root/settings and retry the same invocation only when independent cleanup prerequisites can again be met. Controller reobserves effects and retains its original operation; missing connector, partially absent topics or an old checkpoint alone is insufficient. Require the full successful result before proceeding to later cleanup. |
+| Verified retirement of a formerly exposed source | Exposure history remains historical and the target cannot become initial/internal-only again. [Projection administration gates](#projection-handoff) still reject exposed history. Retirement does not establish migration continuity or support source replacement, a fresh binding on the surviving source, or terminal-generation restart. |
+
+If retirement is part of a sensitive-data incident, follow the
+[disclosure contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
+and [response handoff](#sensitive-data-response) (full T11 procedure pending):
+coordinate not-ready status, verified fencing of every connector task and consumer
+access revocation before corrected state can publish; keep the data store offline
+for correction. Record containment time, affected generation/topic, operation/restamp
+ID, deletion request and platform purge confirmation. Controller absence checks,
+volume deletion, corrective records and compaction do not prove physical byte purge.
+Platform-governed remote/tiered copies and independently operated consumer stores/exports
+need their owners' evidence; without it the incident remains open. Do not recreate
+the old binding/topic. CDC remains unavailable; new-generation cutover is deferred.
 
 <a id="stack-teardown"></a>
 
 ## Destructive stack teardown
 
-**Pending T10; exercise T25/T26.** Scope to deliver: Per-binding retirement before shared-volume deletion; document surviving state and sensitive-data handoff.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding).
+This procedure destroys the selected stack's data volumes after retiring **every**
+managed generation. It is separate from direct per-binding retirement and ordinary
+[managed stop/start](#managed-lifecycle), which retains artifacts. The
+[local bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci)
+and [cleanup owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+govern its ordering; use the original wrapper/inventory, not raw Compose teardown.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | All registered generations and shared stack volumes. |
-| Authority/offline window | Pending T10: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Deployment inventory, original roots/settings and retirement results. Exact paths and substitutions pending T10. |
-| Invocation | Reserved IDs: `cdc-stack-teardown`, `cdc-e2e-teardown`. Commands and fixture substitutions pending T10. |
-| JSON/exit status | Pending T10: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T10: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T10: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | All entries in the retained `dms-local` or `dms-published` deployment inventory, including peers with different state roots. E2E teardown attempts both projects. Authorize destruction of every affected project/database/volume. |
+| Authority/offline window | Explicit `-d -v`; original inventory and every generation's independently sufficient retirement authority. Exclude external/IDE writers and coordinate affected consumers for the destructive window. Preserve live infrastructure until all retirements and the empty-worker inventory check succeed. |
+| Retained inputs | Entire [state inventory](#deployment-state), original effective environment, Compose inputs, runtime settings/schema inputs, shared broker-size override and custom roots. Inherit original selection; clear direct-CLI `DMS_CDC__` overrides before wrapper invocation. |
+| Invocation | `cdc-stack-teardown` or, for the owned DMS E2E environment, `cdc-e2e-teardown`. The wrapper supplies each retained generation and destructive flag; do not substitute an empty state root or remove a target from configuration. |
+| JSON/exit status | Wrappers emit operational output, not a single CDC JSON envelope. Require successful wrapper process completion (exit `0`); each internal `retire` result must match operation, binding deployment/instance/data-store/generation and connector, with both success flags, exit `0` and a nonempty operation ID. The wrapper also requires an authoritative empty Connect inventory. |
+| Postcondition | All selected governed retirements completed, worker inventory verified empty, project-scoped Compose volume removal completed and eligible generated runtime cleanup reconciled. Protected source history/settings may remain as described below; success is neither purge proof nor permission to reuse a source. |
+| Rejection/timeout action | Nonzero exit/exception is incomplete teardown. Retain surviving infrastructure, inventory and files; repeat the same wrapper after correcting the reported prerequisite. Use its durable phase to distinguish partial retirement, partial infrastructure removal and partial generated-file cleanup. Do not erase checkpoints or invoke a broader prune. |
+
+### Select the destructive wrapper
+
+PowerShell, repository root; requires the retained deployment from setup and the
+authority above. Destructive intent applies to all selected project volumes. Omit
+provider/environment/settings/root overrides to inherit the original selection,
+including custom roots. No fault injection.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `eng/docker-compose/bootstrap-local-dms.ps1` | Original local bootstrap (`dms-local`) | `eng/docker-compose/bootstrap-published-dms.ps1` only for a deployment/fixture created by the published wrapper |
+
+<!-- cdc-snippet: cdc-stack-teardown -->
+```powershell
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v
+```
+<!-- /cdc-snippet: cdc-stack-teardown -->
+
+Both bootstrap wrappers request protected bootstrap-workspace cleanup after their
+project teardown. The underlying `start-local-dms.ps1` / `start-published-dms.ps1`
+`-d -v` entry points also use the shared lifecycle controller; without
+`-RemoveBootstrap` they do not request removal of the whole staged workspace.
+Do not use optional workspace removal to bypass protected state.
+
+For **DMS E2E**, use the setup wrapper's printed teardown command and resolved
+environment path. PowerShell, repository root; destructive to both `dms-local` and
+`dms-published`, so require authority over both, not just the last test run. Both
+projects must agree with the selected engine/environment if present. The wrapper
+attempts each project even if another fails, then reports combined failures; a
+failure does not mean no project was removed. Instance Management CDC is out of scope.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `postgresql` | Engine selected at E2E setup | `mssql` for the SQL Server variant; never CDC's `sqlserver` token |
+| `<original-e2e-environment-path>` | Resolved original environment file printed by setup | Owned fixture's original file; relative names resolve under `eng/docker-compose`, so prefer the emitted absolute path |
+
+<!-- cdc-snippet: cdc-e2e-teardown -->
+```powershell
+pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine postgresql -EnvironmentFile '<original-e2e-environment-path>'
+```
+<!-- /cdc-snippet: cdc-e2e-teardown -->
+
+E2E teardown removes the shared staged workspace only after both project teardowns
+succeed and CDC workspace protection permits it. It then removes only the two
+known local images, `ed-fi-api-local` and `ed-fi-api-config-local`. It does not prune
+unrelated resources, published images or the external shared `dms` network. See
+[the shipped E2E teardown module](../../eng/docker-compose/e2e-teardown.psm1).
+
+### Verify ordering and retained state
+
+The [lifecycle implementation](../../eng/docker-compose/cdc-lifecycle.psm1) persists
+`Retiring`, runs governed retirement for every retained entry, verifies the worker
+inventory is empty, then persists `Retired` before destructive Compose removal.
+An unknown extra connector or unavailable inventory blocks volume deletion even
+when individual retirement calls succeeded. From a verified `Stopped` deployment,
+it restores database/worker infrastructure for inspection and retirement without
+resuming connectors or starting DMS writers. A proven early initial failure may
+also use controller-managed inspection startup; operators do not start workers
+independently to bypass provenance checks.
+
+| Durable phase / symptom | Retained authority and retry |
+| --- | --- |
+| `Retiring`, controller failure, nonempty/unavailable worker inventory | Infrastructure remains for reconciliation. Repeat the same destructive wrapper; all entries are reconciled again before volume removal. One successful peer does not authorize shared cleanup. |
+| `Retired`, Compose removal failed or process exited after removing some/all services | Every retirement and the empty inventory were already verified. Repeat `-d -v`; wrapper resumes infrastructure removal from this checkpoint without requiring already removed services to be recreated. Ordinary startup/stop is rejected at this phase. |
+| `RuntimeCleanup`, interrupted generated-file removal | Compose removal completed and exact generated-file paths/hashes were durably recorded. Repeat destructive teardown to finish eligible file cleanup; wrapper does not reread already removed settings or repeat controller/Compose operations. Changed files, peer references and source-state protection still block deletion. |
+| Missing/changed/unreadable inventory, original settings or effective environment | Preserve remaining resources and escalate through [provenance handling](#unsupported-provenance); configuration removal supplies no authority. Do not manufacture a `Retired`/`RuntimeCleanup` checkpoint. |
+| `surviving protected source-state root` or `runtime cleanup is incomplete` | Keep inventory, custom/nested roots and remaining configuration. Protection may reject workspace removal after volume removal already succeeded. Resolve retention with the deployment owner; no recursive-delete workaround and no continuity recovery by moving/restoring state. |
+
+Direct retirement retains all settings. Successful **stack** teardown can remove
+only the inventoried generated `bootstrap-<id>.settings.json` and
+`bootstrap-<id>.dms.json` immediately under `.bootstrap/cdc-runtime`, after hash and
+peer/state checks. An empty runtime directory can then be removed nonrecursively.
+Custom/external settings are not that generated-file cleanup scope. Unrelated files
+in `cdc-runtime`, generated files referenced by another deployment, and any files
+inside protected source roots are retained or block cleanup. The project inventory
+can be removed after eligible cleanup only when no surviving source root intersects
+`.bootstrap`; otherwise it remains to protect that root on subsequent attempts.
+
+All controller roots, including external custom roots, retain their provisioning
+journals and source history. Roots nested in or encompassing `.bootstrap` block
+recursive workspace deletion even after generation retirement. A peer inventory or
+remaining `cdc-runtime` directory also retains the workspace. When no protection
+remains, bootstrap/E2E workspace cleanup can remove other staged inputs there;
+archive required incident/configuration evidence before the destructive command.
+A new E2E setup still rejects a protected retained workspace. Do not delete history
+to release it. Preserve the shared broker-size override for surviving peers; direct
+per-binding cleanup is not authority to remove shared files or volumes.
+
+[Lifecycle wrapper fixtures](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1)
+cover peer ordering, interrupted retirement/Compose/file cleanup, settings conflicts
+and nested state. [Provider-specific evidence rows](cdc-inv-evidence.md#procedure-evidence)
+map these procedures to T25/T26; exact live snippet exercises remain pending. Neither
+wrapper exit `0` nor removed local volumes supplies platform byte-purge evidence,
+initial eligibility, migration continuity or a supported new-generation cutover.
+Use the [sensitive-data handoff](#sensitive-data-response) for disclosure evidence.
 
 <a id="representation-restamp"></a>
 
