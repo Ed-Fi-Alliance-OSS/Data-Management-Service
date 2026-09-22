@@ -67,6 +67,12 @@ public class AppSettings
     public bool EnableClaimsetReload { get; set; }
 
     /// <summary>
+    /// If true, maps the DMS-owned Identity HTTP surface under /identity/v2. Defaults to false so
+    /// every identity route falls through to the fallback 404 until an operator opts in.
+    /// </summary>
+    public bool EnableIdentityManagement { get; set; }
+
+    /// <summary>
     /// Comma-separated list of domain names to exclude from OpenAPI documentation generation.
     /// Domains listed here will not appear in the generated OpenAPI specifications.
     /// </summary>
