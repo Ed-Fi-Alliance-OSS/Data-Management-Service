@@ -162,7 +162,11 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
             Headers: [],
             TraceId: new TraceId("mssql-no-profile-storage-collapsed"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);

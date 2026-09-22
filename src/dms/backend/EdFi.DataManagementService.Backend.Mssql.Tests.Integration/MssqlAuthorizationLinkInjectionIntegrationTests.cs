@@ -308,7 +308,11 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             Headers: [],
             TraceId: new TraceId("mssql-32-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -334,7 +338,11 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             Headers: [],
             TraceId: new TraceId("mssql-32-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

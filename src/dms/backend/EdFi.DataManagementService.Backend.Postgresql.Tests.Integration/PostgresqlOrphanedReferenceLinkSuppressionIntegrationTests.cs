@@ -296,7 +296,11 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             Headers: [],
             TraceId: new TraceId("pg-30-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -322,7 +326,11 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
             Headers: [],
             TraceId: new TraceId("pg-30-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

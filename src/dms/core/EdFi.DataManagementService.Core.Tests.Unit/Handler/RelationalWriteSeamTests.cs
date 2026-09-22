@@ -717,7 +717,8 @@ actual: {requestInfo.FrontendResponse.Body}
         private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
         {
             public Task<UpsertResult> HandlePostAsync(
-                DescriptorWriteRequest request,
+                DescriptorWriteRequest postRequest,
+                UpsertActionAuthorization actionAuthorization,
                 CancellationToken cancellationToken = default
             ) => throw new AssertionException("Descriptor POST was not expected.");
 
@@ -838,6 +839,8 @@ actual: {requestInfo.FrontendResponse.Body}
                 ParsedBody = parsedBody,
                 MappingSet = mappingSet,
                 BackendProfileWriteContext = backendProfileWriteContext,
+                AuthorizationStrategyEvaluators =
+                    method == RequestMethod.POST ? TestHelper.NoFurtherAuthorizationRequiredEvaluators : [],
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("students"),

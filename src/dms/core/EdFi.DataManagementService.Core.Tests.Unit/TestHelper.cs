@@ -9,6 +9,8 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -42,6 +44,29 @@ public static class TestHelper
             .CreateSupportedMappingSet(SqlDialect.Pgsql);
         return requestInfo;
     }
+
+    /// <summary>
+    /// A relational request that has passed resource action authorization for a POST, which always leaves
+    /// at least one strategy in place; <c>NoFurtherAuthorizationRequired</c> keeps it free of record checks.
+    /// </summary>
+    internal static RequestInfo UpsertRequestInfoWithRelationalMappingSet(
+        string traceId = "",
+        IServiceProvider? serviceProvider = null
+    )
+    {
+        var requestInfo = RequestInfoWithRelationalMappingSet(traceId, serviceProvider);
+        requestInfo.AuthorizationStrategyEvaluators = NoFurtherAuthorizationRequiredEvaluators;
+        return requestInfo;
+    }
+
+    internal static AuthorizationStrategyEvaluator[] NoFurtherAuthorizationRequiredEvaluators =>
+        [
+            new AuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                [],
+                FilterOperator.Or
+            ),
+        ];
 
     /// <summary>
     /// A scoped service provider carrying the one service the paging middlewares resolve off the

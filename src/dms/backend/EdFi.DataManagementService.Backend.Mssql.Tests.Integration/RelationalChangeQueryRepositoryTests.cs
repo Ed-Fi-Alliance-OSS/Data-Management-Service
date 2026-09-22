@@ -579,6 +579,10 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     TraceId: new TraceId("mssql-change-query-seed-school"),
                     DocumentUuid: SchoolDocumentUuid
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             )
         );
     }
@@ -602,6 +606,10 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                     TraceId: new TraceId("mssql-change-query-seed-academicweek"),
                     DocumentUuid: AcademicWeekDocumentUuid
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             )
         );
     }

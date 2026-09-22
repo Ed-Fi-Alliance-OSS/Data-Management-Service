@@ -158,7 +158,11 @@ public class Given_A_Mssql_Relational_Write_Full_Surface_Collection_Reorder_With
             Headers: [],
             TraceId: new TraceId("mssql-full-surface-reorder-create"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private UpdateRequest CreateUpdateRequest() =>
         new(

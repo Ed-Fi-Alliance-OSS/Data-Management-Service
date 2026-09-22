@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -60,7 +61,10 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {
-                        AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
+                        // Core still resolves one action list for POST, so both branches receive it.
+                        ActionAuthorization = UpsertActionAuthorization.SamePolicyForCreateAndUpdate(
+                            requestInfo.AuthorizationStrategyEvaluators
+                        ),
                         AuthorizationContext = RelationalAuthorizationContext.Create(
                             requestInfo.ClientAuthorizations,
                             requestInfo.ApplicationContext?.CreatorOwnershipTokenId,

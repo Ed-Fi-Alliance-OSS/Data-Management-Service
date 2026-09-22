@@ -154,7 +154,11 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
             Headers: [],
             TraceId: new TraceId("pgsql-no-profile-storage-collapsed"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);

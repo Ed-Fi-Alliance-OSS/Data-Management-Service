@@ -2,6 +2,7 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -10,17 +11,17 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
-/// An upsert request to a document repository. It carries a policy for each of the Create and Update
-/// actions rather than one evaluator list, because whether the upsert creates or updates is known only
-/// once the write observes its target.
+/// The members shared by requests that write a whole document to a document repository. Authorization
+/// strategies are not among them: a PUT carries its Update evaluators, while a POST carries a policy per
+/// action because it learns which action it performs only once the write observes its target.
 /// </summary>
-internal record UpsertRequest(
+internal abstract record DocumentWriteRequest(
     /// <summary>
-    /// The ResourceInfo of the document to upsert
+    /// The ResourceInfo of the document to write
     /// </summary>
     ResourceInfo ResourceInfo,
     /// <summary>
-    /// The DocumentInfo of the document to upsert
+    /// The DocumentInfo of the document to write
     /// </summary>
     DocumentInfo DocumentInfo,
     /// <summary>
@@ -28,7 +29,7 @@ internal record UpsertRequest(
     /// </summary>
     MappingSet MappingSet,
     /// <summary>
-    /// The EdfiDoc of the document to upsert, as a JsonNode
+    /// The EdfiDoc of the document to write, as a JsonNode
     /// </summary>
     JsonNode EdfiDoc,
     /// <summary>
@@ -40,8 +41,7 @@ internal record UpsertRequest(
     /// </summary>
     TraceId TraceId,
     /// <summary>
-    /// A candidate DocumentUuid of the document to upsert, used only
-    /// if the upsert happens as an insert
+    /// The DocumentUuid of the document to write
     /// </summary>
     DocumentUuid DocumentUuid,
     /// <summary>
@@ -52,25 +52,10 @@ internal record UpsertRequest(
     /// The normalized request tenant key.
     /// </summary>
     string TenantKey = ""
-)
-    : DocumentWriteRequest(
-        ResourceInfo,
-        DocumentInfo,
-        MappingSet,
-        EdfiDoc,
-        Headers,
-        TraceId,
-        DocumentUuid,
-        BackendProfileWriteContext,
-        TenantKey
-    ),
-        IUpsertRequest
+) : IDocumentWriteRequest
 {
-    private readonly UpsertActionAuthorization _actionAuthorization = null!;
+    public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
 
-    public required UpsertActionAuthorization ActionAuthorization
-    {
-        get => _actionAuthorization;
-        init => _actionAuthorization = value ?? throw new ArgumentNullException(nameof(value));
-    }
+    public RelationalAuthorizationContext AuthorizationContext { get; init; } =
+        new RelationalAuthorizationContext([]);
 }

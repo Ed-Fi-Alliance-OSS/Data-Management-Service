@@ -235,7 +235,11 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
     }
 
     public static UpdateRequest CreateUpdateRequest(
@@ -486,7 +490,11 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     public static UpdateRequest CreateUpdateRequestWithDescriptor(
         MappingSet mappingSet,

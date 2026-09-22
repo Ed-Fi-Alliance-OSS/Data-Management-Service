@@ -933,7 +933,8 @@ public class Given_A_Host_Using_The_Relational_Backend
     private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
     {
         public Task<UpsertResult> HandlePostAsync(
-            DescriptorWriteRequest request,
+            DescriptorWriteRequest postRequest,
+            UpsertActionAuthorization actionAuthorization,
             CancellationToken cancellationToken = default
         ) => throw new AssertionException("Descriptor POST was not expected.");
 

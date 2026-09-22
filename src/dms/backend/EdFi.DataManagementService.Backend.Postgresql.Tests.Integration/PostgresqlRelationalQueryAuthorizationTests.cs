@@ -1964,14 +1964,15 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 creatorOwnershipTokenId,
                 []
             ),
-            AuthorizationStrategyEvaluators =
-            [
-                .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
-                    strategyName,
-                    [],
-                    FilterOperator.And
-                )),
-            ],
+            ActionAuthorization = strategyNames is null or { Count: 0 }
+                ? UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate
+                : UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                        strategyName,
+                        [],
+                        FilterOperator.And
+                    )),
+                ]),
         };
 
         return await scope

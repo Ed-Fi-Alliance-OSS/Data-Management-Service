@@ -296,7 +296,11 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             Headers: [],
             TraceId: new TraceId("pg-delete-setup"),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
     }
 
     private DeleteRequest CreateDeleteRequest(ResourceInfo resourceInfo, DocumentUuid documentUuid)

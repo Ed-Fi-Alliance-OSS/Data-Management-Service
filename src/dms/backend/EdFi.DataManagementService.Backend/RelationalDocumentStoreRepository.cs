@@ -171,17 +171,22 @@ public sealed class RelationalDocumentStoreRepository(
                         upsertRequest.DocumentUuid,
                         upsertRequest.DocumentInfo.ReferentialId,
                         upsertRequest.TraceId,
-                        upsertRequest.AuthorizationStrategyEvaluators,
+                        authorizationStrategyEvaluators: [],
                         upsertRequest.AuthorizationContext,
                         upsertRequest.TenantKey
                     )
                     {
                         WritePrecondition = writePrecondition,
                         ProfileName = upsertRequest.BackendProfileWriteContext?.ProfileName,
-                    }
+                    },
+                    upsertRequest.ActionAuthorization
                 )
                 .ConfigureAwait(false);
         }
+
+        var postAuthorizationStrategyEvaluators = PostActionPolicySupport.RequireSharedPolicy(
+            upsertRequest.ActionAuthorization
+        );
 
         var profileWriteContext = upsertRequest.BackendProfileWriteContext;
         var selectedBody = profileWriteContext?.Request.WritableRequestBody ?? upsertRequest.EdfiDoc;
@@ -232,7 +237,13 @@ public sealed class RelationalDocumentStoreRepository(
                     },
                 profileWriteContext,
                 writePlan =>
-                    AuthorizePostRelationshipIfRequired(upsertRequest, mappingSet, resource, writePlan),
+                    AuthorizePostRelationshipIfRequired(
+                        upsertRequest.AuthorizationContext,
+                        postAuthorizationStrategyEvaluators,
+                        mappingSet,
+                        resource,
+                        writePlan
+                    ),
                 // Stamped onto dms.Document when this POST resolves to a create, and ignored when it
                 // resolves to an upsert-as-update. Supplied unconditionally: stamping never consults the
                 // resource's configured authorization strategies, which is what lets a claim set later
@@ -2963,15 +2974,15 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostRelationshipIfRequired(
-        IUpsertRequest relationalUpsertRequest,
+        RelationalAuthorizationContext authorizationContext,
+        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ResourceWritePlan writePlan
     )
     {
-        var authorizationContext = relationalUpsertRequest.AuthorizationContext;
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
-            relationalUpsertRequest.AuthorizationStrategyEvaluators
+            authorizationStrategyEvaluators
         );
 
         // A POST may resolve to create or upsert-as-update in-session, so plan both the stored and

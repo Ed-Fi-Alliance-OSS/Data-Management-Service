@@ -76,19 +76,37 @@ internal sealed class DescriptorWriteHandler(
     private const string EnqueueOutcomeAlreadySatisfiedParameterName = "@enqueueOutcomeAlreadySatisfied";
 
     public async Task<UpsertResult> HandlePostAsync(
-        DescriptorWriteRequest request,
+        DescriptorWriteRequest postRequest,
+        UpsertActionAuthorization actionAuthorization,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(postRequest);
+        ArgumentNullException.ThrowIfNull(actionAuthorization);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (request.ReferentialId is null)
+        // A POST's authorization arrives as a policy per action, never as the request's single list.
+        if (postRequest.AuthorizationStrategyEvaluators.Length != 0)
+        {
+            throw new ArgumentException(
+                "Descriptor POST authorization must be supplied as an action policy pair, not as request evaluators.",
+                nameof(postRequest)
+            );
+        }
+
+        if (postRequest.ReferentialId is null)
         {
             throw new InvalidOperationException(
                 "Descriptor POST requires a ReferentialId for target context resolution."
             );
         }
+
+        var request = postRequest with
+        {
+            AuthorizationStrategyEvaluators = PostActionPolicySupport.RequireSharedPolicy(
+                actionAuthorization
+            ),
+        };
 
         // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
         // unsupported strategies resolve before any session opens, so a denial issues no DB roundtrip.

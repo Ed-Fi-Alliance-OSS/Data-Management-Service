@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 internal sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
 {
     public Task<UpsertResult> HandlePostAsync(
-        DescriptorWriteRequest request,
+        DescriptorWriteRequest postRequest,
+        UpsertActionAuthorization actionAuthorization,
         CancellationToken cancellationToken = default
     ) => throw new AssertionException("Descriptor POST was not expected.");
 

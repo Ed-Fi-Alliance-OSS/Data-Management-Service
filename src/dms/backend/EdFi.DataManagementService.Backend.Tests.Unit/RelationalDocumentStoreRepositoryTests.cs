@@ -8439,13 +8439,15 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Missing People binding"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
-                ),
-                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                    ),
+                    CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901L]));
 
@@ -9809,6 +9811,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -9877,6 +9881,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -10070,6 +10076,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     {
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
 
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
@@ -10081,8 +10089,10 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         if (authorizationStrategyEvaluators is not null)
         {
-            A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-                .Returns(authorizationStrategyEvaluators);
+            A.CallTo(() => upsertRequest.ActionAuthorization)
+                .Returns(
+                    UpsertActionAuthorization.SamePolicyForCreateAndUpdate(authorizationStrategyEvaluators)
+                );
         }
 
         return upsertRequest;
@@ -10105,13 +10115,15 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
         A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-auth-deferred"));
         A.CallTo(() => upsertRequest.WritePrecondition).Returns(writePrecondition);
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901], [], null, [11]));
 
@@ -10145,13 +10157,15 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no claims with ownership"));
         // Empty claim EducationOrganizationIds make the relationship strategy resolve to NoClaims; the
         // ownership tokens keep an ownership check planned alongside it.
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], [], null, [11]));
 
@@ -10183,10 +10197,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post over the ownership cap"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(
                 new RelationalAuthorizationContext(
@@ -10235,11 +10251,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unknown strategy over cap"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("AnUnknownAuthorizationStrategy"),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("AnUnknownAuthorizationStrategy"),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
 
@@ -10304,13 +10322,15 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
         A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-custom-auth"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                    CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
@@ -10343,13 +10363,15 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post relationship 500"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
@@ -10415,11 +10437,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unknown strategy"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                    CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
@@ -10481,11 +10505,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no usable root"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
 
@@ -10553,11 +10579,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no join path"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath"),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                    CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath"),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
 
         var result = await _sut.UpsertDocument(upsertRequest);
@@ -10619,8 +10647,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post child collection basis"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([CreateAuthorizationStrategyEvaluator("StudentWithCTECourseEnrollments")]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("StudentWithCTECourseEnrollments"),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
 
         var result = await _sut.UpsertDocument(upsertRequest);
@@ -10640,11 +10672,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Security config"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                    CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
@@ -10676,12 +10710,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("No claims"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
 
         var result = await _sut.UpsertDocument(upsertRequest);
@@ -10910,10 +10946,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Custom View"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                .. (strategyNames ?? [CustomViewStrategyName]).Select(CreateAuthorizationStrategyEvaluator),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    .. (strategyNames ?? [CustomViewStrategyName]).Select(
+                        CreateAuthorizationStrategyEvaluator
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(
                 new RelationalAuthorizationContext(
@@ -10972,13 +11012,15 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Mixed"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                ])
+            );
         // Empty claim EducationOrganizationIds make the relationship strategy resolve to NoClaims; the
         // configured namespace prefixes make a proposed namespace check participate. With both planned,
         // preflight must defer the NoClaims denial to the executor instead of short-circuiting, so the
@@ -11079,12 +11121,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Authorized High"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
@@ -11147,12 +11191,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Authorized Existing High"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
@@ -11220,15 +11266,17 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                     """{"studentReference":{"studentUniqueId":"604822"},"name":"Authorized People"}"""
                 )!
             );
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
-                ),
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901L]));
 
@@ -11295,12 +11343,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc)
             .Returns(JsonNode.Parse("""{"studentUniqueId":"604822","firstName":"Self"}""")!);
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901L]));
 
@@ -11363,12 +11413,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("No Further High"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
-                ),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
 
         var result = await _sut.UpsertDocument(upsertRequest);
@@ -11405,10 +11457,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Namespaced"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
 
@@ -11446,10 +11500,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("No prefixes"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], []));
 
@@ -11475,10 +11531,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("No usable column"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
 
@@ -11506,10 +11564,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Prefix cap"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
-            ]);
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ])
+            );
         A.CallTo(() => upsertRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([], tooManyPrefixes));
 
@@ -12031,6 +12091,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -12173,6 +12235,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
@@ -12262,6 +12326,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
@@ -12329,6 +12395,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
@@ -12370,17 +12438,57 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_fails_closed_before_any_write_for_a_resource_post_whose_create_and_update_policies_differ()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Roosevelt High"));
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted([
+                        CreateAuthorizationStrategyEvaluator(
+                            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                        ),
+                    ]),
+                    new UpsertActionPolicy.Permitted([
+                        CreateAuthorizationStrategyEvaluator(
+                            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                        ),
+                    ])
+                )
+            );
+
+        var act = () => _sut.UpsertDocument(upsertRequest);
+
+        await act.Should().ThrowAsync<NotSupportedException>();
+        _capturedExecutorRequests.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_routes_descriptor_post_requests_to_the_descriptor_write_handler()
     {
         var expectedResult = new UpsertResult.UnknownFailure(
             "Descriptor POST write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
         );
         var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
             .Returns(expectedResult);
         UseDescriptorWriteHandler(descriptorHandler);
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -12390,7 +12498,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpsertDocument(upsertRequest);
 
         result.Should().BeEquivalentTo(expectedResult);
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
             .MustHaveHappenedOnceExactly();
         _capturedExecutorRequests.Should().BeEmpty();
     }
@@ -12451,10 +12565,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateDescriptorRequestBody();
         var descriptorResponseEtag = ComposedWriteResultEtag;
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
             .Returns(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -12466,7 +12588,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
         ((UpsertResult.InsertSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
             .MustHaveHappenedOnceExactly();
     }
 
@@ -12479,7 +12607,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         DescriptorWriteRequest capturedRequest = null!;
         var documentUuid = new DocumentUuid(Guid.NewGuid());
 
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
             .Invokes(call => capturedRequest = call.GetArgument<DescriptorWriteRequest>(0)!)
             .Returns(new UpsertResult.InsertSuccess(documentUuid, "\"descriptor-etag\""));
 
@@ -12507,6 +12641,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -12624,7 +12760,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_forwards_authorization_strategies_and_relational_authorization_context_to_the_descriptor_post_handler()
+    public async Task It_forwards_the_action_policy_pair_and_relational_authorization_context_to_the_descriptor_post_handler()
     {
         var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
         var expectedDocumentUuid = new DocumentUuid(Guid.NewGuid());
@@ -12635,10 +12771,24 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
         ];
         var expectedAuthorizationContext = new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]);
+        var expectedActionAuthorization = UpsertActionAuthorization.SamePolicyForCreateAndUpdate(
+            expectedAuthorizationStrategyEvaluators
+        );
         DescriptorWriteRequest capturedRequest = null!;
+        UpsertActionAuthorization capturedActionAuthorization = null!;
 
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
-            .Invokes(call => capturedRequest = call.GetArgument<DescriptorWriteRequest>(0)!)
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+            {
+                capturedRequest = call.GetArgument<DescriptorWriteRequest>(0)!;
+                capturedActionAuthorization = call.GetArgument<UpsertActionAuthorization>(1)!;
+            })
             .Returns(new UpsertResult.InsertSuccess(expectedDocumentUuid, "\"descriptor-etag\""));
 
         _sut = new RelationalDocumentStoreRepository(
@@ -12672,8 +12822,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateDescriptorRequestBody());
         A.CallTo(() => upsertRequest.TraceId).Returns(expectedTraceId);
         A.CallTo(() => upsertRequest.WritePrecondition).Returns(new WritePrecondition.None());
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns(expectedAuthorizationStrategyEvaluators);
+        A.CallTo(() => upsertRequest.ActionAuthorization).Returns(expectedActionAuthorization);
         A.CallTo(() => upsertRequest.AuthorizationContext).Returns(expectedAuthorizationContext);
 
         var result = await _sut.UpsertDocument(upsertRequest);
@@ -12682,11 +12831,16 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         capturedRequest.MappingSet.Should().BeSameAs(expectedMappingSet);
         capturedRequest.DocumentUuid.Should().Be(expectedDocumentUuid);
         capturedRequest.TraceId.Value.Should().Be(expectedTraceId.Value);
-        capturedRequest
-            .AuthorizationStrategyEvaluators.Should()
-            .BeSameAs(expectedAuthorizationStrategyEvaluators);
+        capturedRequest.AuthorizationStrategyEvaluators.Should().BeEmpty();
+        capturedActionAuthorization.Should().BeSameAs(expectedActionAuthorization);
         capturedRequest.RelationalAuthorizationContext.Should().BeSameAs(expectedAuthorizationContext);
-        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                descriptorHandler.HandlePostAsync(
+                    A<DescriptorWriteRequest>._,
+                    A<UpsertActionAuthorization>._,
+                    A<CancellationToken>._
+                )
+            )
             .MustHaveHappenedOnceExactly();
     }
 
@@ -14162,6 +14316,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
     {
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
@@ -14217,6 +14373,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             + "but no entry was found. This indicates an internal compilation/selection bug.";
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
@@ -14243,6 +14401,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             + "but no entry was found. This indicates an internal compilation/selection bug.";
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
@@ -14269,6 +14429,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Throws(internalFailure);
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());

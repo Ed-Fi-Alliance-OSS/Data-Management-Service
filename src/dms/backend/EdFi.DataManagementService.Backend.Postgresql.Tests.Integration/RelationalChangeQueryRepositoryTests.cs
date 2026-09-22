@@ -568,6 +568,10 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     TraceId: new TraceId("pg-change-query-seed-school"),
                     DocumentUuid: SchoolDocumentUuid
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             )
         );
     }
@@ -591,6 +595,10 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
                     TraceId: new TraceId("pg-change-query-seed-academicweek"),
                     DocumentUuid: AcademicWeekDocumentUuid
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             )
         );
     }

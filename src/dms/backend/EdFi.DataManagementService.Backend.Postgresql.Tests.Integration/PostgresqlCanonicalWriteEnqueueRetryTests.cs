@@ -139,6 +139,10 @@ public class Given_Postgresql_Canonical_Write_Enqueue_Retry
                 TraceId: new TraceId("pg-canonical-enqueue-retry-create"),
                 DocumentUuid: SchoolDocumentUuid
             )
+            {
+                ActionAuthorization =
+                    UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+            }
         );
 
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
@@ -163,6 +167,10 @@ public class Given_Postgresql_Canonical_Write_Enqueue_Retry
                     TraceId: new TraceId("pg-canonical-enqueue-retry-post"),
                     DocumentUuid: SchoolDocumentUuid
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             ),
             CanonicalRepositoryWriteKind.Put => await repository.UpdateDocumentById(
                 new UpdateRequest(

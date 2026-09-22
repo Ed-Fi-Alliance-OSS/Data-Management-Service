@@ -569,7 +569,9 @@ public class Given_A_Mssql_Relational_Write_With_Ownership_Stamping
                     creatorOwnershipTokenId,
                     ownershipTokenIds
                 ),
-                AuthorizationStrategyEvaluators = OwnershipStrategyEvaluators,
+                ActionAuthorization = UpsertActionAuthorization.SamePolicyForCreateAndUpdate(
+                    OwnershipStrategyEvaluators
+                ),
             }
         );
     }
@@ -633,6 +635,8 @@ public class Given_A_Mssql_Relational_Write_With_Ownership_Stamping
                 DocumentUuid: SchoolDocumentUuid
             )
             {
+                ActionAuthorization =
+                    UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
                 AuthorizationContext = CreateAuthorizationContext(creatorOwnershipTokenId),
             }
         );

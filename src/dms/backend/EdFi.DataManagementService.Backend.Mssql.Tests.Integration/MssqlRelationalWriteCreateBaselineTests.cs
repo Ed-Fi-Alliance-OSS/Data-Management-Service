@@ -156,7 +156,11 @@ public class Given_A_Mssql_Relational_Write_Create_Baseline_With_A_Focused_Stabl
             Headers: [],
             TraceId: new TraceId("no-profile-create-baseline"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private static ServiceProvider CreateServiceProvider()
     {

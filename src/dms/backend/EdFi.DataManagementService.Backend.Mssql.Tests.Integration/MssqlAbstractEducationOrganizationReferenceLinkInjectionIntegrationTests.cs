@@ -296,7 +296,11 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             Headers: [],
             TraceId: new TraceId("mssql-29b-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -322,7 +326,11 @@ public class Given_A_Mssql_Course_With_Abstract_EducationOrganization_Reference
             Headers: [],
             TraceId: new TraceId("mssql-29b-seed-course"),
             DocumentUuid: CourseDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

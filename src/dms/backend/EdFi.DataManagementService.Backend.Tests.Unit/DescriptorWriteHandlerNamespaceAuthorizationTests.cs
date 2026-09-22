@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -55,6 +56,45 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             ConfiguredNamespacePrefixes: ["uri://ed-fi.org/"]
         );
 
+    [Test]
+    public async Task It_rejects_a_descriptor_post_whose_request_carries_its_own_evaluators()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
+
+        var act = () =>
+            sut.HandlePostAsync(
+                CreatePostRequest(
+                    namespacePrefixes: ["uri://ed-fi.org/"],
+                    authorizationStrategy: NamespaceStrategy()
+                ),
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([NamespaceStrategy()])
+            );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("postRequest");
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_fails_closed_for_a_descriptor_post_whose_create_and_update_policies_differ()
+    {
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory, targetLookupService);
+
+        var act = () =>
+            sut.HandlePostAsync(
+                CreatePostRequest(namespacePrefixes: ["uri://ed-fi.org/"], authorizationStrategies: []),
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted([NamespaceStrategy()]),
+                    UpsertActionPolicy.NotPermitted.Instance
+                )
+            );
+
+        await act.Should().ThrowAsync<NotSupportedException>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
     [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_post_with_an_unsupported_strategy_without_executing_sql(
@@ -65,7 +105,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: UnsupportedStrategy(authorizationStrategyName)
@@ -88,7 +128,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: UnsupportedStrategy(unknownStrategyName)
@@ -160,7 +200,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(namespacePrefixes: [], authorizationStrategy: NamespaceStrategy())
         );
 
@@ -204,7 +244,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy(),
@@ -239,7 +279,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy()
@@ -271,7 +311,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy()
@@ -395,7 +435,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             authorizationContext
         );
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         return sessionFactory;
@@ -433,7 +473,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
         result
@@ -474,7 +514,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
         result
@@ -510,7 +550,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy()
@@ -553,7 +593,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy(),
@@ -598,7 +638,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy(),
@@ -765,7 +805,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
         sessionFactory
@@ -830,7 +870,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy()
@@ -875,7 +915,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy(),
@@ -913,7 +953,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy(),
@@ -975,7 +1015,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: [],
                 authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()]
@@ -1002,7 +1042,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: [],
                 authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()]
@@ -1050,7 +1090,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: [],
                 authorizationStrategies: [CustomViewStrategy("StudentWithATag"), NamespaceStrategy()],
@@ -1083,7 +1123,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [DeleteCustomViewStrategy(), CustomViewStrategy("MeetingWithATag")]
@@ -1108,7 +1148,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [DeleteCustomViewStrategy(), CustomViewStrategy("StudentWithATag")],
@@ -1144,7 +1184,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: [],
                 authorizationStrategies: [CustomViewStrategy("StudentWithATag")],
@@ -1185,7 +1225,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             customViewValidationCommandExecutor: validationExecutor
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()],
@@ -1225,7 +1265,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             customViewValidationCommandExecutor: validationExecutor
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()],
@@ -1264,7 +1304,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             customViewValidationCommandExecutor: validationExecutor
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()]
@@ -1297,7 +1337,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             customViewValidationCommandExecutor: validationExecutor
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()]
@@ -1331,7 +1371,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             customViewValidationCommandExecutor: validationExecutor
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(namespacePrefixes: [], authorizationStrategies: [DeleteCustomViewStrategy()])
         );
 
@@ -1849,7 +1889,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: [],
                 authorizationStrategies:

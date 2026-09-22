@@ -173,7 +173,11 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
             Headers: [],
             TraceId: new TraceId("no-profile-update-semantics-create"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private UpdateRequest CreateUpdateRequest() =>
         new(

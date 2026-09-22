@@ -105,7 +105,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -137,7 +137,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -195,7 +195,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -252,7 +252,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
         private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
         [
@@ -302,11 +302,23 @@ public class UpsertHandlerTests
         }
 
         [Test]
-        public void It_passes_raw_strategy_evaluators_to_the_repository()
+        public void It_passes_the_raw_strategy_evaluators_as_the_create_policy()
         {
             _repository
-                .CapturedRequest.AuthorizationStrategyEvaluators.Should()
-                .BeSameAs(_authorizationStrategyEvaluators);
+                .CapturedRequest.ActionAuthorization.Create.Should()
+                .BeOfType<UpsertActionPolicy.Permitted>()
+                .Which.Evaluators.Should()
+                .Equal(_authorizationStrategyEvaluators);
+        }
+
+        [Test]
+        public void It_passes_the_raw_strategy_evaluators_as_the_update_policy()
+        {
+            _repository
+                .CapturedRequest.ActionAuthorization.Update.Should()
+                .BeOfType<UpsertActionPolicy.Permitted>()
+                .Which.Evaluators.Should()
+                .Equal(_authorizationStrategyEvaluators);
         }
 
         [Test]
@@ -341,7 +353,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
         private ContentTypeDefinition _readContentType = null!;
         private JsonNode _writableRequestBody = null!;
@@ -471,7 +483,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -538,7 +550,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -621,7 +633,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -680,7 +692,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -712,7 +724,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -762,7 +774,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet();
         private Repository _repository = null!;
 
         [SetUp]
@@ -821,7 +833,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
 
         [SetUp]
@@ -879,7 +891,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet("trace-id");
 
         [SetUp]
         public async Task Setup()
@@ -927,7 +939,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet("trace-id");
 
         [SetUp]
         public async Task Setup()
@@ -972,7 +984,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet("trace-id");
 
         [SetUp]
         public async Task Setup()
@@ -1019,7 +1031,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet(
             "relationship-post-403"
         );
 
@@ -1098,7 +1110,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _customViewTraceId = "custom-view-post-403";
-        private readonly RequestInfo _customViewRequestInfo = RequestInfoWithRelationalMappingSet(
+        private readonly RequestInfo _customViewRequestInfo = UpsertRequestInfoWithRelationalMappingSet(
             _customViewTraceId
         );
 
@@ -1161,7 +1173,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _ownershipTraceId = "ownership-post-403";
-        private readonly RequestInfo _ownershipRequestInfo = RequestInfoWithRelationalMappingSet(
+        private readonly RequestInfo _ownershipRequestInfo = UpsertRequestInfoWithRelationalMappingSet(
             _ownershipTraceId
         );
 
@@ -1220,7 +1232,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "namespace-post-403";
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -1264,7 +1276,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet(
             "relationship-post-501"
         );
 
@@ -1324,7 +1336,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "relationship-post-500";
-        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -1378,7 +1390,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -1414,7 +1426,7 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
         public async Task Setup()
@@ -1452,7 +1464,7 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet(_traceId);
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet(_traceId);
 
         [SetUp]
         public async Task Setup()
