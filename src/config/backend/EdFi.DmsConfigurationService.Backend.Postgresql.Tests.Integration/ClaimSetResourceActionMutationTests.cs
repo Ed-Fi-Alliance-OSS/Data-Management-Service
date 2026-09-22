@@ -279,6 +279,34 @@ public class ClaimSetResourceActionMutationTests
         }
     }
 
+    public class Given_modifying_resource_claim_actions_idempotency_coverage : ClaimSetMutationTestBase
+    {
+        [Test]
+        public async Task It_is_idempotent_when_modifying_to_the_same_actions()
+        {
+            int claimSetId = await CreateVendorClaimSet();
+            await GrantRead(claimSetId, StudentResourceClaimId);
+            var command = new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"]);
+
+            (await Repository.ModifyResourceClaimActions(command)).Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await Repository.ModifyResourceClaimActions(command)).Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
+        }
+
+        [Test]
+        public async Task It_rejects_an_unresolved_claim_set_without_mutating_an_existing_claim_set()
+        {
+            int claimSetId = await CreateVendorClaimSet();
+            await GrantRead(claimSetId, StudentResourceClaimId);
+
+            var result = await Repository.ModifyResourceClaimActions(
+                new ResourceClaimActionMutationCommand(int.MaxValue, StudentResourceClaimId, ["Create"])
+            );
+
+            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureClaimSetNotFound());
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Read");
+        }
+    }
     public class Given_revoking_resource_claim_actions : ClaimSetMutationTestBase
     {
         [Test]
