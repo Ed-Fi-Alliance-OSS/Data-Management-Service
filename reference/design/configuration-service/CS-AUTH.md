@@ -91,7 +91,10 @@ carries no `client_id`, or belongs to a different client, nothing is revoked and
 the response is still `200 OK`. Per RFC 7009 this is indistinguishable from
 revoking an unknown token, so the response reveals nothing about whether the
 token exists or who owns it. Only a missing `token` form field returns
-`400 Bad Request`.
+`400 Bad Request`. This request-shape check runs before client authentication
+and before the provider-mode branch, so it applies even to an unauthenticated
+caller or in `keycloak` mode: a caller with no credentials and no `token` field
+gets `400`, not `401`.
 
 Because verification includes the lifetime check, a target token already past its
 `exp` (plus the validator's clock-skew allowance) is also a no-op. This is a

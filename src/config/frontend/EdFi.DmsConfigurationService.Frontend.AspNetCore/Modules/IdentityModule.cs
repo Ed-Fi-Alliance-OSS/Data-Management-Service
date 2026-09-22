@@ -173,7 +173,19 @@ public class IdentityModule : IEndpointModule
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to parse Basic Auth credentials");
+            // The Authorization header is attacker-controlled input, and Convert.FromBase64String
+            // / UTF8-decoding exceptions can embed fragments of the invalid input in ex.Message.
+            // Passing the raw exception to the logger risks leaking that content, since most
+            // sinks render its unsanitized Message/ToString() independently of the sanitized
+            // template arguments below, so log sanitized fields instead.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Failed to parse Basic Auth credentials: ({ExceptionType}, {ErrorMessage}\n{StackTrace})",
+                LoggingUtility.SanitizeForLog(ex.GetType().Name),
+                LoggingUtility.SanitizeForLog(ex.Message),
+                LoggingUtility.SanitizeForLog(ex.StackTrace)
+            );
+#pragma warning restore S6667
         }
     }
 
@@ -385,6 +397,12 @@ public class IdentityModule : IEndpointModule
             }
         }
 
+        // This request-shape check deliberately runs before client authentication and before the
+        // provider-mode branch below: a structurally invalid request — missing the required
+        // `token` parameter — always gets 400, regardless of who is asking or which identity
+        // provider is configured, mirroring how GetClientAccessToken validates `grant_type` before
+        // authenticating. One consequence: an unauthenticated caller who also omits `token` gets
+        // 400, not 401 — the malformed request is reported before authentication is attempted.
         if (string.IsNullOrEmpty(model.Token))
         {
             return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
