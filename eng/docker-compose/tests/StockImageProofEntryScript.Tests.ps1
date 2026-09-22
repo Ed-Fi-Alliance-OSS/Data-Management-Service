@@ -355,6 +355,17 @@ function global:Invoke-WebRequest {
     return [pscustomobject]@{ StatusCode = 201; Content = '{}'; Headers = @{} }
 }
 
+# This child decides its own ambient state rather than inheriting the runner's. The Pester lane
+# runs every suite in one process, and another suite in it leaves SCHEMA_PACKAGES set; the entry
+# script's own guard would then refuse every run here before it reached the case under test, so a
+# test about the pin or the preflight would fail for a reason it never set up. Cleared from the
+# module's own list, so a key added there is cleared here without a second list to maintain.
+Import-Module (Join-Path (Split-Path -Parent $EntryScript) 'stock-image-proof.psm1') -Force -DisableNameChecking
+
+foreach ($governed in @(Get-AmbientRefusedKey)) {
+    Remove-Item -Path "Env:$governed" -ErrorAction SilentlyContinue
+}
+
 if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
     Set-Item -Path "Env:$AmbientKey" -Value $AmbientValue
 }
