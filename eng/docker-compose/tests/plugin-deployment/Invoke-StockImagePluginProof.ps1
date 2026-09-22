@@ -1201,9 +1201,15 @@ function Assert-FixtureRejection {
     }
 }
 
-# One deployment: compose its environment file, tear down first, start, run the scenario body, and
-# tear down again whether the body held or not. Each scenario gets a fresh deployment because the two
-# recipes both end at the single /app/plugins mount target and cannot share one.
+# One deployment: compose its environment file, start, run the scenario body, and tear down whether
+# the body held or not. Each scenario gets a fresh deployment because the two recipes both end at the
+# single /app/plugins mount target and cannot share one.
+#
+# There is no teardown before the start, deliberately. The first deployment starts clean because the
+# host preflight refused to begin at all unless the project was unoccupied, and every later one
+# starts clean because the preceding scenario's teardown is checked and a failure there fails the
+# run. A down issued here would remove whatever was there instead, which is the thing the preflight
+# exists to refuse.
 # One value out of a composed env file, as Compose would read it: the last assignment wins.
 function Get-EnvFileValue {
     param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [string] $Name)

@@ -72,8 +72,11 @@ These are different answers and the readiness script keeps them apart.
 
 ### The four deployments
 
-Each is a separate deployment with its own composed environment file, torn down before and after.
-The committed recipe files are run **unedited**; the two test-owned overlays (`stock-image-pin-dms.yml`, which pins the image and sets `restart: "no"`, and `plugins-allowed-dms.yml`) are added with their own `-f`.
+Each is a separate deployment with its own composed environment file, torn down after the scenario body whether it held or not.
+Nothing is torn down before a start: the first deployment begins clean because the host preflight refused to begin at all unless the compose project was unoccupied, and every later one begins clean because the preceding scenario's teardown is checked and a failure there fails the run.
+
+The committed recipe files are run **unedited**.
+Three test-owned overlays are added with their own `-f`: `stock-image-pin-dms.yml`, which pins the image and sets `restart: "no"`, and `plugins-allowed-dms.yml`, both in every deployment; and `plugins-feed-dms.yml`, which serves the packed nupkg over HTTP and is used only by the two fetch deployments.
 
 | Evidence key | Composed from | What it asserts |
 | --- | --- | --- |
