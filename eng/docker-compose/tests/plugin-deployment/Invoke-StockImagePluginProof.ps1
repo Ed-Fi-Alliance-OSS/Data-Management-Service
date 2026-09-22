@@ -331,11 +331,19 @@ function Remove-MountedRunDirectory {
 # Written before the operation it covers, never after. Rewritten per deployment, because each one
 # composes its own environment file and the last one written is the one that could still be up.
 function Write-CleanupReceipt {
-    param([Parameter(Mandatory)] [string] $EnvironmentFile)
+    param(
+        [Parameter(Mandatory)] [ValidateSet('workspace', 'deployment')] [string] $State,
+        [string] $EnvironmentFile = ''
+    )
+
+    if ($State -ceq 'deployment' -and [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
+        throw 'A deployment receipt names the environment file that would tear that deployment down.'
+    }
 
     New-Item -ItemType Directory -Path (Split-Path -Parent $cleanupReceiptPath) -Force | Out-Null
 
     $receipt = [ordered]@{
+        state           = $State
         composeProject  = $composeProject
         composeRoot     = $composeRoot
         environmentFile = $EnvironmentFile
@@ -345,7 +353,7 @@ function Write-CleanupReceipt {
     }
 
     Set-Content -LiteralPath $cleanupReceiptPath -Encoding utf8 -Value ($receipt | ConvertTo-Json -Depth 4)
-    Write-ProofLog "receipt $cleanupReceiptPath"
+    Write-ProofLog "receipt $State $cleanupReceiptPath"
 }
 
 # Removed only when this run put everything back itself. A teardown that failed, or a process that
@@ -396,6 +404,11 @@ function Invoke-OwnedCleanup {
         }
     }
 
+    # The only spend, and only once everything this run claimed is back: the stack, the bootstrap
+    # workspace and every owned directory. Spending it after a scenario teardown instead left the
+    # run-owned workspace standing with nothing recording that it may be removed, and the next run
+    # then refuses at its own path check. A receipt naming an already-downed deployment costs
+    # nothing, because a down against an absent project is a successful no-op.
     if (-not $script:teardownFailed -and $script:cleanupError.Count -eq 0) {
         Remove-CleanupReceipt
     }
@@ -566,6 +579,13 @@ function New-ProofWorkspace {
     # cleared here: an existing workspace was refused by the safety gate, because naming a directory
     # does not make its contents this run's to delete.
     Add-ProofOwnership -Kind 'Directory' -Name $WorkspaceRoot
+
+    # Written before the directory exists, for the same reason the claim is: from here until this
+    # run's own cleanup removes it, there is host state that belongs to this run, and the receipt is
+    # the only thing that gives an outside caller permission to remove it. It names no environment
+    # file yet, because no deployment has started and there is nothing to bring down.
+    Write-CleanupReceipt -State 'workspace'
+
     New-Item -ItemType Directory -Path $WorkspaceRoot | Out-Null
 }
 
@@ -926,7 +946,7 @@ function Start-ProofDeployment {
 
     # Before the up, for the same reason the ownership claims are: a process killed between the two
     # would leave a stack nobody has permission to remove.
-    Write-CleanupReceipt -EnvironmentFile $EnvironmentFile
+    Write-CleanupReceipt -State 'deployment' -EnvironmentFile $EnvironmentFile
 
     Push-Location $composeRoot
     try {
@@ -1286,10 +1306,6 @@ function Invoke-ProofScenario {
         try {
             Stop-ProofDeployment -EnvironmentFile $environmentFile
 
-            # Spent as soon as this deployment is down, so there is no window in which a receipt
-            # names a stack that is no longer up. The next deployment writes a fresh one immediately
-            # before its own start.
-            Remove-CleanupReceipt
         }
         catch {
             if ($null -eq $failure) { throw }

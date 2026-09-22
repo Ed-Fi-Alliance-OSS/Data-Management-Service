@@ -24,6 +24,13 @@
         the proof never ran, it refused before creating anything, or it cleaned up after itself.
         This script runs no Docker command at all in that case.
 
+        A receipt records which state the run reached, and the state is read rather than inferred
+        from whether an environment file happens to be recorded. A "workspace" receipt means the run
+        had claimed a workspace but had not started a deployment: there is nothing to bring down, so
+        no Docker command runs and only the workspace is removed. A "deployment" receipt names the
+        environment file of the deployment that may still be up, and the checked down runs before
+        the workspace is removed.
+
         A receipt is honoured only when it describes this repository's proof: the fixed compose
         project, this compose directory, and an environment file inside the workspace it records.
         Anything else is refused rather than acted on, because a receipt that does not describe this
@@ -105,6 +112,7 @@ catch {
     throw "The cleanup receipt at $ReceiptPath is not valid JSON, so what it permits cannot be read: $($_.Exception.Message)"
 }
 
+$state = Get-JsonMember -Object $receipt -Name 'state'
 $project = Get-JsonMember -Object $receipt -Name 'composeProject'
 $recordedComposeRoot = Get-JsonMember -Object $receipt -Name 'composeRoot'
 $environmentFile = Get-JsonMember -Object $receipt -Name 'environmentFile'
@@ -121,14 +129,33 @@ if ([string]::IsNullOrWhiteSpace("$recordedComposeRoot") -or
     $blocker += "it was written for compose directory '$recordedComposeRoot' rather than this one"
 }
 
-if ([string]::IsNullOrWhiteSpace("$environmentFile") -or [string]::IsNullOrWhiteSpace("$workspaceRoot")) {
-    $blocker += 'it does not name both an environment file and the workspace that produced it'
+if ("$state" -cnotin @('workspace', 'deployment')) {
+    $blocker += "it records state '$state', which is neither 'workspace' nor 'deployment'"
 }
-elseif (-not (Test-OwnedDeletionPath -Path ([IO.Path]::GetFullPath("$environmentFile")) -OwnedDirectory @([IO.Path]::GetFullPath("$workspaceRoot")))) {
-    $blocker += "its environment file '$environmentFile' is outside the workspace '$workspaceRoot' it records"
+
+if ([string]::IsNullOrWhiteSpace("$workspaceRoot")) {
+    $blocker += 'it does not name the workspace it covers'
 }
-elseif ($null -ne (Get-ReparsePointAncestor -Path ([IO.Path]::GetFullPath("$environmentFile")))) {
-    $blocker += "its environment file '$environmentFile' is reached through a link or junction"
+
+if ("$state" -ceq 'workspace') {
+    # No deployment had started, so there is nothing to bring down and nothing to name.
+    if (-not [string]::IsNullOrWhiteSpace("$environmentFile")) {
+        $blocker += "it records state 'workspace' but also names an environment file, so what it covers is ambiguous"
+    }
+}
+elseif ("$state" -ceq 'deployment') {
+    if ([string]::IsNullOrWhiteSpace("$environmentFile")) {
+        $blocker += "it records state 'deployment' but names no environment file, and a different file composes a different set of services"
+    }
+    elseif ([string]::IsNullOrWhiteSpace("$workspaceRoot")) {
+        $blocker += 'it names an environment file but not the workspace that produced it'
+    }
+    elseif (-not (Test-OwnedDeletionPath -Path ([IO.Path]::GetFullPath("$environmentFile")) -OwnedDirectory @([IO.Path]::GetFullPath("$workspaceRoot")))) {
+        $blocker += "its environment file '$environmentFile' is outside the workspace '$workspaceRoot' it records"
+    }
+    elseif ($null -ne (Get-ReparsePointAncestor -Path ([IO.Path]::GetFullPath("$environmentFile")))) {
+        $blocker += "its environment file '$environmentFile' is reached through a link or junction"
+    }
 }
 
 if ($blocker.Count -gt 0) {
@@ -137,26 +164,33 @@ if ($blocker.Count -gt 0) {
         (($blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
 }
 
-if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
-    throw ("The cleanup receipt at $ReceiptPath names environment file '$environmentFile', which no longer exists. " +
-        'Tearing the project down without it would compose different services than the run did, so this stops here.')
-}
+if ("$state" -ceq 'deployment') {
+    if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
+        throw ("The cleanup receipt at $ReceiptPath names environment file '$environmentFile', which no longer exists. " +
+            'Tearing the project down without it would compose different services than the run did, so this stops here.')
+    }
 
-Write-Line "Tearing down $composeProject with the environment file the run recorded."
+    Write-Line "Tearing down $composeProject with the environment file the run recorded."
 
-Push-Location $composeRoot
-try {
-    # The recorded environment file, not a default: the deployment that may still be up composed
-    # its overlays from that file, and a different one brings a different set of services down.
-    & pwsh -NoProfile -File (Join-Path $composeRoot 'bootstrap-published-dms.ps1') `
-        -EnvironmentFile $environmentFile -d -v
+    Push-Location $composeRoot
+    try {
+        # The recorded environment file, not a default: the deployment that may still be up composed
+        # its overlays from that file, and a different one brings a different set of services down.
+        & pwsh -NoProfile -File (Join-Path $composeRoot 'bootstrap-published-dms.ps1') `
+            -EnvironmentFile $environmentFile -d -v
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "Tearing down $composeProject exited $LASTEXITCODE."
+        if ($LASTEXITCODE -ne 0) {
+            throw "Tearing down $composeProject exited $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
-finally {
-    Pop-Location
+else {
+    # A workspace receipt: the run claimed a workspace and never started a deployment, so there is
+    # no project to bring down and no reason to contact the daemon at all.
+    Write-Line "The receipt records state 'workspace', so no deployment was started and nothing is brought down."
 }
 
 # The workspace, after the stack that was mounting it is down. Left behind, it makes the next run
@@ -224,5 +258,8 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     Remove-Item -LiteralPath $ReceiptPath -Force
 }
 
+$did = if ("$state" -ceq 'deployment') { "tore down $composeProject, removed the run workspace" }
+else { 'removed the run workspace' }
+
 return Get-Outcome -Action 'cleaned' -Emit ([bool]$PassThru) -EnvironmentFile $environmentFile `
-    -Reason "tore down $composeProject, removed the run workspace, and removed the receipt"
+    -Reason "$did, and removed the receipt"

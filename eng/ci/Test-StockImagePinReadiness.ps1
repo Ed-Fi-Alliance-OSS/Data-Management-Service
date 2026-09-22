@@ -52,9 +52,28 @@ $ErrorActionPreference = 'Stop'
 
 $edFiApiRepository = 'edfialliance/ed-fi-api'
 $configurationServiceRepository = 'edfialliance/ed-fi-api-configuration-service'
-$digestPattern = '^sha256:[0-9a-f]{64}$'
-$commitPattern = '^[0-9a-f]{40}$'
+# Every pattern here anchors with \z rather than $. In .NET, $ also matches immediately before a
+# trailing newline, so "sha256:<64 hex>`n" would satisfy ^...$ and then be written into a
+# line-oriented environment file or a GitHub output line as two lines. Each of these values names
+# one identity, and an identity does not span lines.
+$digestPattern = '^sha256:[0-9a-f]{64}\z'
+$commitPattern = '^[0-9a-f]{40}\z'
 $movingTag = @('pre', 'latest')
+
+# The Docker reference grammar for a tag: a separator may not lead, and nothing outside this set is
+# a tag. This is the value written as DMS_STOCK_IMAGE_REFERENCE and handed to the daemon.
+$tagPattern = '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\z'
+
+# The release ref the version-specific tag rule actually acts on. Get-DmsPrereleaseImageTag.ps1
+# emits a version-specific tag only for a "dms-pre-" ref that carries "alpha", so a pin naming any
+# other shape names a release whose publication produced no version-specific tag to pin.
+$releasePattern = '^dms-pre-[0-9A-Za-z][0-9A-Za-z.+-]*\z'
+
+# An env-safe single-line label. This one is written as DMS_CONFIG_DATA_STANDARD_VERSION.
+$dataStandardPattern = '^[A-Za-z0-9._-]+\z'
+
+# A package id as NuGet writes it, single line.
+$packageNamePattern = '^[A-Za-z0-9][A-Za-z0-9._-]*\z'
 
 # One version identity and nothing else: "1.0.0" or "1.0.0-alpha.3", which is the form that names a
 # single package. A range like "[1.0.0,2.0.0)" and a wildcard like "1.0.*" name a set rather than a
@@ -65,8 +84,8 @@ $movingTag = @('pre', 'latest')
 # This pattern records identity. It does not by itself make a restore resolve that exact version -
 # NuGet reads a bare version in a PackageReference as a floor - so the harness brackets the value
 # when it writes a reference and verifies the restored version against the pin afterwards.
-$exactVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$'
-$feedUrlPattern = '^https://'
+$exactVersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?\z'
+$feedUrlPattern = '^https://[^\s]+\z'
 
 if (-not (Test-Path -LiteralPath $PinFile -PathType Leaf)) {
     throw "The stock image pin file does not exist: $PinFile"
@@ -81,6 +100,24 @@ catch {
 
 # Reads a nested value without throwing on an absent parent, so a document missing a whole section
 # produces the same named diagnostic as one missing a single field.
+# Whether the document actually carries this path, which is a different question from what the
+# value is. A pending pin has to carry every release-specific field AS null; an absent field records
+# nothing and is a differently malformed document, not a pending one.
+function Test-PinPathPresent {
+    param([Parameter(Mandatory)] [string[]] $Path)
+
+    $node = $pin
+    foreach ($segment in $Path) {
+        if ($null -eq $node -or $null -eq $node.PSObject.Properties[$segment]) {
+            return $false
+        }
+
+        $node = $node.$segment
+    }
+
+    return $true
+}
+
 function Get-PinValue {
     param([Parameter(Mandatory)] [string[]] $Path)
 
@@ -168,12 +205,53 @@ $reason = ''
 if ($status -ceq 'pending') {
     # A pending pin carrying values is not pending, it is a half-recorded publication, and skipping
     # on it would hide whichever half is wrong.
-    $populated = @($requiredPath | Where-Object { -not [string]::IsNullOrWhiteSpace([string](Get-PinValue -Path $_)) })
+    #
+    # Decided by null identity and by presence, never by casting to string. An empty array, an empty
+    # object and an empty string all cast to "", so a string test reads a half-recorded pin as an
+    # untouched one; and a missing field is not the same as a field recorded as null.
+    #
+    # ReferenceEquals rather than `$null -ne`: Get-PinValue returns its value comma-wrapped to keep
+    # arrays intact, and comparing an array with -ne is an element-wise filter that yields a
+    # collection rather than a boolean.
+    $missing = @()
+    $carried = @()
 
-    if ($populated.Count -gt 0) {
-        $names = ($populated | ForEach-Object { Get-PinName $_ }) -join ', '
-        throw "The stock image pin's status is 'pending' but it already carries $names. Set status to 'published' once the release is recorded, or clear those fields."
+    # The same one-element-array idiom $requiredPath uses: a bare @(@('a','b'), @('c','d')) is
+    # flattened by the [string[]] parameter into a single mangled path.
+    $fixedPath = @(
+        , @('edFiApi', 'repository')
+        , @('configurationService', 'repository')
+    )
+
+    foreach ($path in $fixedPath) {
+        if (-not (Test-PinPathPresent -Path $path)) {
+            $missing += Get-PinName $path
+        }
     }
+
+    foreach ($path in $requiredPath) {
+        if (-not (Test-PinPathPresent -Path $path)) {
+            $missing += Get-PinName $path
+            continue
+        }
+
+        if (-not [object]::ReferenceEquals((Get-PinValue -Path $path), $null)) {
+            $carried += Get-PinName $path
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        throw "The stock image pin's status is 'pending' but it does not carry $($missing -join ', '). A pending pin records every field as null; a field that is absent altogether records nothing and is not a pending pin."
+    }
+
+    if ($carried.Count -gt 0) {
+        throw "The stock image pin's status is 'pending' but it already carries $($carried -join ', '). Set status to 'published' once the release is recorded, or set those fields back to null."
+    }
+
+    # The two repository names are not release-specific, so a pending pin still has to name the
+    # artifacts it will one day pin.
+    Assert-PinValue -Path @('edFiApi', 'repository') -MustEqual $edFiApiRepository | Out-Null
+    Assert-PinValue -Path @('configurationService', 'repository') -MustEqual $configurationServiceRepository | Out-Null
 
     if ($EventName -cne 'schedule') {
         throw "The stock image pin is still pending, so there is no published image to prove anything against. This run was requested deliberately, so it fails rather than reporting success without running the proof."
@@ -195,11 +273,26 @@ else {
         throw "The stock image pin's edFiApi.tag is '$tag', which carries a digest. The tag and the digest are separate fields."
     }
 
-    $release = Assert-PinValue -Path @('release', 'githubRelease')
+    # After the digest check, not before it: '@' is outside the tag grammar, so a pattern-first
+    # order would answer a tag-plus-digest with the generic message and leave the specific one
+    # unreachable.
+    if ($tag -cnotmatch $tagPattern) {
+        throw "The stock image pin's edFiApi.tag is '$tag', which is not a Docker tag. It does not match $tagPattern."
+    }
+
+    $release = Assert-PinValue -Path @('release', 'githubRelease') -Pattern $releasePattern
+
+    # The same ordinal containment Get-DmsPrereleaseImageTag.ps1 applies. A release that does not
+    # carry "alpha" takes the other branch there and never produces the version-specific tag this
+    # pin exists to name.
+    if (-not $release.Contains('alpha', [StringComparison]::Ordinal)) {
+        throw "The stock image pin's release.githubRelease is '$release', which is not an alpha prerelease. Only an alpha prerelease publishes the version-specific tag this pin names."
+    }
+
     Assert-PinValue -Path @('release', 'sourceCommit') -Pattern $commitPattern | Out-Null
-    Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern '^https://' | Out-Null
+    Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern $feedUrlPattern | Out-Null
     Assert-PinValue -Path @('provisioning', 'schemaToolsPackageVersion') -Pattern $exactVersionPattern | Out-Null
-    Assert-PinValue -Path @('provisioning', 'dataStandardVersion') | Out-Null
+    Assert-PinValue -Path @('provisioning', 'dataStandardVersion') -Pattern $dataStandardPattern | Out-Null
     Assert-PinValue -Path @('contracts', 'pluginsPackageVersion') -Pattern $exactVersionPattern | Out-Null
     Assert-PinValue -Path @('contracts', 'customValidationPackageVersion') -Pattern $exactVersionPattern | Out-Null
 
@@ -244,6 +337,10 @@ else {
                 [string]::IsNullOrWhiteSpace([string]$package.$field)) {
                 throw "The stock image pin's $where is missing $field. A schema package is identified by its name, an exact version and the feed it came from."
             }
+        }
+
+        if ([string]$package.name -cnotmatch $packageNamePattern) {
+            throw "The stock image pin's $where.name is '$($package.name)', which is not a single-line package id. It is written out verbatim as part of SCHEMA_PACKAGES."
         }
 
         if ([string]$package.version -cnotmatch $exactVersionPattern) {

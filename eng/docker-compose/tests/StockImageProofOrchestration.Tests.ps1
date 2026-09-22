@@ -795,6 +795,26 @@ Describe 'Stock image proof orchestration' {
             Remove-Item -LiteralPath $script:effectiveFile -Force -ErrorAction SilentlyContinue
         }
 
+        It 'declares each governed key exactly once, on one line' {
+            # A pin value carrying CR or LF would add or truncate a line here, so the count is the
+            # thing to assert rather than the presence. The readiness gate refuses such a value, and
+            # this is the assertion that notices if a future field reaches the writer unchecked.
+            $line = @($script:content -split "`r?`n")
+
+            foreach ($key in @(Get-GovernedEnvironmentKey)) {
+                $declared = @($line | Where-Object { $_ -cmatch "^$([regex]::Escape($key))=" })
+                $declared.Count | Should -BeLessOrEqual 1 -Because "$key is declared at most once"
+            }
+
+            # And nothing the writer emitted is a continuation of a value that broke across lines.
+            $written = @($line[($line.IndexOf('# Written by Invoke-StockImagePluginProof.ps1 from the stock image pin. Do not edit.'))..($line.Count - 1)] |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notmatch '^\s*#' })
+
+            foreach ($entry in $written) {
+                $entry | Should -Match '^[A-Za-z_][A-Za-z0-9_]*='
+            }
+        }
+
         It 'keeps what the base file said about everything it does not govern' {
             $script:effective['POSTGRES_DB_NAME'] | Should -Not -BeNullOrEmpty
             $script:effective.ContainsKey('ROUTE_QUALIFIER_SEGMENTS') | Should -BeTrue

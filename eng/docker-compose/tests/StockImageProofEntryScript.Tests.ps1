@@ -1529,6 +1529,30 @@ exit 0
             $call[0].Extent.StartOffset | Should -BeGreaterThan $deployment[0].Extent.EndOffset
         }
 
+        It 'spends the receipt in exactly one place, the run-level cleanup' {
+            # F1 was a second spend, in the per-scenario finally, which released the permission
+            # while the workspace it covered was still on disk.
+            $ast = [Management.Automation.Language.Parser]::ParseFile($script:entryScript, [ref]$null, [ref]$null)
+
+            $spend = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq 'Remove-CleanupReceipt'
+                    }, $true))
+
+            $spend | Should -HaveCount 1
+
+            $enclosing = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Extent.StartOffset -le $spend[0].Extent.StartOffset -and
+                        $node.Extent.EndOffset -ge $spend[0].Extent.EndOffset
+                    }, $true))
+
+            $enclosing.Name | Should -Contain 'Invoke-OwnedCleanup'
+            $enclosing.Name | Should -Not -Contain 'Invoke-ProofScenario'
+        }
+
         It 'reaches that per-deployment path once for every scenario' {
             $ast = [Management.Automation.Language.Parser]::ParseFile($script:entryScript, [ref]$null, [ref]$null)
 
@@ -2504,6 +2528,29 @@ exit 0
             $run.Receipt | Should -BeNullOrEmpty
         }
 
+        It 'writes a workspace receipt as soon as it claims the workspace, before any deployment' {
+            # Captured at the first command after the workspace is claimed, because a run whose
+            # own cleanup then succeeds correctly spends the receipt before returning: the end
+            # state of a tidy run is no receipt, and the thing under test is that one existed while
+            # the workspace did. It names no environment file, because nothing has been brought up.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) +
+                @(Get-InstalledToolRule -Version '9.9.9-wrong' | ForEach-Object {
+                        if ($_.match -eq 'dotnet tool list') { $_['capture'] = @('../stock-image-proof-cleanup.json') }
+                        $_
+                    }) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'not the pinned one'
+
+            $captured = $run.Captured['.._stock-image-proof-cleanup.json']
+            $captured | Should -Not -BeNullOrEmpty
+
+            $receipt = $captured | ConvertFrom-Json
+            $receipt.state | Should -BeExactly 'workspace'
+            $receipt.environmentFile | Should -BeNullOrEmpty
+            $receipt.workspaceRoot | Should -Not -BeNullOrEmpty
+        }
+
         It 'leaves no receipt when the preflight refused, because nothing was created' {
             # The case the receipt exists to make safe: somebody else's container holds a name this
             # run wanted, so it claimed nothing. An unconditional teardown would remove their stack.
@@ -2525,10 +2572,37 @@ exit 0
 
             $run.ExitCode | Should -Be 1
             $run.Receipt | Should -Not -BeNullOrEmpty
+            $run.Receipt.state | Should -BeExactly 'deployment'
             $run.Receipt.composeProject | Should -BeExactly 'dms-published'
             # The environment file of the deployment that may still be up, not a default.
             $run.Receipt.environmentFile | Should -Match 'recipe1\.env$'
             $run.Receipt.workspaceRoot | Should -Not -BeNullOrEmpty
+        }
+
+        It 'still holds a receipt when the run-level cleanup begins, after scenarios have torn down' {
+            # The window F1 was about. Each scenario tears its deployment down, and the run-owned
+            # workspace stands until the run-level cleanup removes it. The receipt is captured at
+            # the run-level teardown command, which is after every scenario teardown has happened,
+            # so a per-scenario spend would leave nothing to capture.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule @(
+                @(Get-StrictTraversalPlan | ForEach-Object {
+                        if ($_.match -eq 'bootstrap-published-dms\.ps1 -d -v') {
+                            $_['capture'] = @('../stock-image-proof-cleanup.json')
+                        }
+                        $_
+                    }))
+
+            $run.ExitCode | Should -Be 0
+
+            $captured = $run.Captured['.._stock-image-proof-cleanup.json']
+            $captured | Should -Not -BeNullOrEmpty
+
+            $receipt = $captured | ConvertFrom-Json
+            $receipt.state | Should -BeExactly 'deployment'
+            $receipt.environmentFile | Should -Not -BeNullOrEmpty
+
+            # And by the end there is nothing left to act on.
+            $run.Receipt | Should -BeNullOrEmpty
         }
 
         It 'writes the receipt before the command that could create the project' {

@@ -175,16 +175,168 @@ Describe 'Stock image pin readiness' {
             # Synthetic, so the cases below keep asserting pending behaviour after the real pin is
             # filled in. Repository names are not release-specific and stay, as they do on disk.
             function script:New-PendingPin {
-                return [ordered]@{
+                param([hashtable] $Override = @{}, [string[]] $Drop = @())
+
+                # Every release-specific field present and null, which is what pending means. An
+                # absent field records nothing, which is a differently malformed document.
+                $pin = [ordered]@{
                     status               = 'pending'
                     edFiApi              = [ordered]@{ repository = 'edfialliance/ed-fi-api'; tag = $null; digest = $null }
                     configurationService = [ordered]@{ repository = 'edfialliance/ed-fi-api-configuration-service'; digest = $null }
                     release              = [ordered]@{ githubRelease = $null; sourceCommit = $null; publicationRunUrl = $null }
-                    provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; dataStandardVersion = $null }
+                    provisioning         = [ordered]@{ schemaToolsPackageVersion = $null; dataStandardVersion = $null; schemaPackages = $null }
                     contracts            = [ordered]@{ pluginsPackageVersion = $null; customValidationPackageVersion = $null }
                 }
+
+                foreach ($key in $Override.Keys) {
+                    $segment = $key.Split('.')
+                    $pin[$segment[0]][$segment[1]] = $Override[$key]
+                }
+
+                foreach ($key in $Drop) {
+                    $segment = $key.Split('.')
+                    if ($segment.Count -eq 1) { $pin.Remove($segment[0]) }
+                    else { $pin[$segment[0]].Remove($segment[1]) }
+                }
+
+                return $pin
             }
         }
+
+    Context 'an identity that would not survive a line' {
+        # Every one of these values is written into a line-oriented environment file or a GitHub
+        # output line, or handed to the daemon as a reference. A value carrying CR or LF adds or
+        # truncates a line there, so the refusal belongs at the pin boundary rather than downstream.
+        #
+        # The patterns anchor with \z rather than $, because .NET's $ also matches immediately
+        # before a trailing newline; the trailing-LF cases below are what prove that.
+
+        It 'accepts the forms a real publication produces' {
+            (Invoke-Readiness -Pin (New-PublishedPin) -EventName 'schedule').ready | Should -BeExactly 'true'
+        }
+
+        It 'accepts a longer real-world release and tag pair' {
+            $pin = New-PublishedPin @{
+                'edFiApi.tag'                            = '8.1.0-alpha.0.152'
+                'release.githubRelease'                  = 'dms-pre-8.1.0-alpha.0.152'
+                'provisioning.schemaToolsPackageVersion' = '8.1.0-alpha.0.152'
+            }
+
+            (Invoke-Readiness -Pin $pin -EventName 'schedule').ready | Should -BeExactly 'true'
+        }
+
+        It 'refuses an edFiApi.tag carrying <Case>' -ForEach @(
+            @{ Case = 'a trailing line feed'; Value = "8.0.1-alpha.0.7`n" }
+            @{ Case = 'an embedded line feed'; Value = "8.0.1-alpha.0.7`nINJECTED=1" }
+            @{ Case = 'a carriage return'; Value = "8.0.1-alpha.0.7`r" }
+            @{ Case = 'a leading separator'; Value = '.8.0.1-alpha.0.7' }
+            @{ Case = 'a slash'; Value = '8.0.1/alpha' }
+            @{ Case = 'a space'; Value = '8.0.1 alpha' }
+        ) {
+            { Invoke-Readiness -Pin (New-PublishedPin @{ 'edFiApi.tag' = $Value }) -EventName 'schedule' } |
+                Should -Throw '*edFiApi.tag*'
+        }
+
+        It 'refuses a release.githubRelease carrying <Case>' -ForEach @(
+            @{ Case = 'an embedded line feed'; Value = "dms-pre-8.0.1-alpha.0.7`nINJECTED=1" }
+            @{ Case = 'a trailing line feed'; Value = "dms-pre-8.0.1-alpha.0.7`n" }
+            @{ Case = 'no dms-pre prefix'; Value = 'v8.0.1-alpha.0.7' }
+        ) {
+            { Invoke-Readiness -Pin (New-PublishedPin @{ 'release.githubRelease' = $Value }) -EventName 'schedule' } |
+                Should -Throw '*release.githubRelease*'
+        }
+
+        It 'refuses a release that is not an alpha prerelease' {
+            # The version-specific tag this pin names is only produced for an alpha ref, so a
+            # non-alpha release publishes no tag to pin.
+            $pin = New-PublishedPin @{
+                'release.githubRelease' = 'dms-pre-8.0.1'
+                'edFiApi.tag'           = '8.0'
+            }
+
+            { Invoke-Readiness -Pin $pin -EventName 'schedule' } | Should -Throw '*not an alpha prerelease*'
+        }
+
+        It 'refuses a <Case> carrying a trailing line feed' -ForEach @(
+            @{ Case = 'digest'; Key = 'edFiApi.digest'; Value = "sha256:$('a' * 64)`n" }
+            @{ Case = 'configuration service digest'; Key = 'configurationService.digest'; Value = "sha256:$('b' * 64)`n" }
+            @{ Case = 'source commit'; Key = 'release.sourceCommit'; Value = "$('c' * 40)`n" }
+            @{ Case = 'schema tools version'; Key = 'provisioning.schemaToolsPackageVersion'; Value = "8.0.1-alpha.0.7`n" }
+            @{ Case = 'plugins contract version'; Key = 'contracts.pluginsPackageVersion'; Value = "1.0.0`n" }
+        ) {
+            { Invoke-Readiness -Pin (New-PublishedPin @{ $Key = $Value }) -EventName 'schedule' } |
+                Should -Throw "*$($Key.Split('.')[-1])*"
+        }
+
+        It 'refuses a data standard label that is not env-safe: <Case>' -ForEach @(
+            @{ Case = 'an embedded line feed'; Value = "5.2`nINJECTED=1" }
+            @{ Case = 'a space'; Value = '5.2 label' }
+            @{ Case = 'an equals sign'; Value = '5.2=x' }
+        ) {
+            { Invoke-Readiness -Pin (New-PublishedPin @{ 'provisioning.dataStandardVersion' = $Value }) -EventName 'schedule' } |
+                Should -Throw '*dataStandardVersion*'
+        }
+
+        It 'refuses a schema package name that is not a single-line id' {
+            $pin = New-PublishedPin @{
+                'provisioning.schemaPackages' = @(
+                    [ordered]@{ name = "EdFi.Api`nX=1"; version = '1.0.335'; feedUrl = 'https://example.invalid/index.json' }
+                )
+            }
+
+            { Invoke-Readiness -Pin $pin -EventName 'schedule' } | Should -Throw '*name*'
+        }
+
+        It 'refuses a feed url carrying a line feed' {
+            $pin = New-PublishedPin @{
+                'provisioning.schemaPackages' = @(
+                    [ordered]@{ name = 'EdFi.Api'; version = '1.0.335'; feedUrl = "https://example.invalid/index.json`n" }
+                )
+            }
+
+            { Invoke-Readiness -Pin $pin -EventName 'schedule' } | Should -Throw '*feedUrl*'
+        }
+    }
+
+    Context 'a pending pin is every field present and exactly null' {
+        It 'refuses a pending pin whose <Case> is empty rather than null' -ForEach @(
+            @{ Case = 'schema package set'; Key = 'provisioning.schemaPackages'; Value = @() }
+            @{ Case = 'schema package object'; Key = 'provisioning.schemaPackages'; Value = @{} }
+            @{ Case = 'tag, as an empty string'; Key = 'edFiApi.tag'; Value = '' }
+            @{ Case = 'tag, as whitespace'; Key = 'edFiApi.tag'; Value = '   ' }
+        ) {
+            # An empty array, an empty object and an empty string all cast to "", so a string test
+            # reads a half-recorded pin as an untouched one and skips the proof on it.
+            { Invoke-Readiness -Pin (New-PendingPin -Override @{ $Key = $Value }) -EventName 'schedule' } |
+                Should -Throw '*already carries*'
+        }
+
+        It 'refuses a pending pin carrying a real value' {
+            { Invoke-Readiness -Pin (New-PendingPin -Override @{ 'edFiApi.tag' = '8.0.1-alpha.0.7' }) -EventName 'schedule' } |
+                Should -Throw '*already carries*'
+        }
+
+        It 'refuses a pending pin missing <Case>' -ForEach @(
+            @{ Case = 'a leaf field'; Drop = 'edFiApi.tag' }
+            @{ Case = 'the schema package set'; Drop = 'provisioning.schemaPackages' }
+            @{ Case = 'a whole section'; Drop = 'contracts' }
+        ) {
+            # Absence records nothing. A pending pin says "this is not published yet" by carrying
+            # every field as null, and a document that simply lacks them says something else.
+            { Invoke-Readiness -Pin (New-PendingPin -Drop @($Drop)) -EventName 'schedule' } |
+                Should -Throw '*does not carry*'
+        }
+
+        It 'refuses a pending pin whose repository is <Case>' -ForEach @(
+            @{ Case = 'missing'; Override = @{}; Drop = @('edFiApi.repository'); Expect = '*does not carry*' }
+            @{ Case = 'someone else''s'; Override = @{ 'edFiApi.repository' = 'someone/else' }; Drop = @(); Expect = '*only about*' }
+        ) {
+            # The two repository names are not release-specific, so a pending pin still has to name
+            # the artifacts it will one day pin.
+            { Invoke-Readiness -Pin (New-PendingPin -Override $Override -Drop $Drop) -EventName 'schedule' } |
+                Should -Throw $Expect
+        }
+    }
 
         It 'reports not ready on a schedule, and says the skip is not evidence' {
             $result = Invoke-Readiness -Pin (New-PendingPin) -EventName 'schedule'

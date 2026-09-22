@@ -277,6 +277,7 @@ catch {
                 Set-Content -LiteralPath $environmentFile -Value 'DMS_HTTP_PORTS=8080' -Encoding utf8
 
                 $receipt = [ordered]@{
+                    state           = 'deployment'
                     composeProject  = 'dms-published'
                     composeRoot     = $script:composeRoot
                     environmentFile = $environmentFile
@@ -343,6 +344,9 @@ catch {
             @{ Case = 'another compose project'; Override = @{ composeProject = 'somebody-elses' } }
             @{ Case = 'another compose directory'; Override = @{ composeRoot = 'C:/elsewhere/eng/docker-compose' } }
             @{ Case = 'an environment file outside its workspace'; Override = @{ environmentFile = 'C:/elsewhere/recipe1.env' } }
+            @{ Case = 'an unknown state'; Override = @{ state = 'halfway' } }
+            @{ Case = 'a deployment state with no environment file'; Override = @{ environmentFile = '' } }
+            @{ Case = 'a workspace state that also names an environment file'; Override = @{ state = 'workspace' } }
         ) {
             $receipt = New-Receipt -Override $Override
 
@@ -425,6 +429,27 @@ catch {
                 $run.Failure | Should -Match ([regex]::Escape($Expect))
                 Test-Path -LiteralPath $receipt.Path | Should -BeTrue
                 Test-Path -LiteralPath $receipt.Workspace | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'removes the workspace and spends the receipt without contacting the daemon, on a workspace receipt' {
+            # The state the run reaches between claiming its workspace and starting its first
+            # deployment. There is no project to bring down, so a Docker command here would be
+            # acting on something this run never created.
+            $receipt = New-Receipt -Override @{ state = 'workspace'; environmentFile = '' }
+
+            try {
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                $run.Failure | Should -BeNullOrEmpty
+                $run.Action | Should -BeExactly 'cleaned'
+                $run.Command | Should -HaveCount 0
+                Test-Path -LiteralPath $receipt.Workspace | Should -BeFalse
+                Test-Path -LiteralPath $receipt.Path | Should -BeFalse
             }
             finally {
                 Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
