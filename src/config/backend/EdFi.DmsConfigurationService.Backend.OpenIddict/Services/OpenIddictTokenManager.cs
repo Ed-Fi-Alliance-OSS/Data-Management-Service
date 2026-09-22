@@ -205,33 +205,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     return new TokenResult.FailureUnknown("Missing client_id or client_secret");
                 }
 
-                // First, get the application by client ID to retrieve the stored (potentially hashed) secret
-                var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
+                var (applicationInfo, credentialErrorCode) = await ValidateClientSecretAsync(
+                    clientId,
+                    clientSecret
+                );
 
                 if (applicationInfo == null)
                 {
                     return new TokenResult.FailureAuthentication(
-                        "invalid_client",
-                        "Invalid client or Invalid client credentials"
-                    );
-                }
-                // Verify the client secret using the hasher
-                var isValidSecret = await _secretHasher.VerifySecretAsync(
-                    clientSecret,
-                    applicationInfo.ClientSecret ?? string.Empty
-                );
-                if (!isValidSecret)
-                {
-                    return new TokenResult.FailureAuthentication(
-                        "unauthorized_client",
-                        "Invalid client or Invalid client credentials"
-                    );
-                }
-
-                if (!applicationInfo.IsApproved)
-                {
-                    return new TokenResult.FailureAuthentication(
-                        "invalid_client",
+                        credentialErrorCode,
                         "Invalid client or Invalid client credentials"
                     );
                 }
@@ -359,6 +341,55 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 _logger.LogError(ex, "Unknown error while retrieving access token");
                 return new TokenResult.FailureUnknown(ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Authenticates a client_id/client_secret pair for RFC 7009 revocation requests, using
+        /// the same lookup and hash comparison as <see cref="GetAccessTokenAsync"/> so the two
+        /// call sites can never drift on what counts as a valid client secret.
+        /// </summary>
+        public async Task<bool> ValidateClientCredentialsAsync(string clientId, string clientSecret)
+        {
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            {
+                return false;
+            }
+
+            var (applicationInfo, _) = await ValidateClientSecretAsync(clientId, clientSecret);
+            return applicationInfo != null;
+        }
+
+        /// <summary>
+        /// Looks up the application by client id and verifies the secret against the stored
+        /// (potentially hashed) value. Returns a null application on failure along with the OAuth
+        /// error code that describes why.
+        /// </summary>
+        private async Task<(ApplicationInfo? Application, string ErrorCode)> ValidateClientSecretAsync(
+            string clientId,
+            string clientSecret
+        )
+        {
+            var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
+            if (applicationInfo == null)
+            {
+                return (null, "invalid_client");
+            }
+
+            var isValidSecret = await _secretHasher.VerifySecretAsync(
+                clientSecret,
+                applicationInfo.ClientSecret ?? string.Empty
+            );
+            if (!isValidSecret)
+            {
+                return (null, "unauthorized_client");
+            }
+
+            if (!applicationInfo.IsApproved)
+            {
+                return (null, "invalid_client");
+            }
+
+            return (applicationInfo, string.Empty);
         }
 
         /// <summary>

@@ -23,5 +23,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
         /// </param>
         /// <returns>True if the token was successfully revoked, false otherwise</returns>
         Task<bool> RevokeTokenAsync(string token, string callerClientId);
+
+        /// <summary>
+        /// Authenticates a client_id/client_secret pair, the way RFC 7009 §2.1 requires a
+        /// revocation caller to authenticate (per RFC 6749 §2.3) — the same credentials used at
+        /// the token endpoint, not a bearer access token.
+        /// </summary>
+        /// <param name="clientId">The client_id presented by the caller.</param>
+        /// <param name="clientSecret">The client_secret presented by the caller.</param>
+        /// <returns>True if the credentials identify an approved application, false otherwise.</returns>
+        Task<bool> ValidateClientCredentialsAsync(string clientId, string clientSecret);
     }
 }

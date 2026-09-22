@@ -20,6 +20,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 {
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
+
+    // The client_id/client_secret last used to obtain _token, so a step revoking "the current
+    // token" can authenticate to /connect/revoke with client credentials (RFC 7009 §2.1), not
+    // the bearer token itself.
+    private string _lastClientId = string.Empty;
+    private string _lastClientSecret = string.Empty;
     private string _location = string.Empty;
     private readonly Dictionary<string, string> _ids = new();
     private string _applicationKey = string.Empty;
@@ -68,6 +74,9 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
     private async Task GetClientAccessToken(string key, string secret, string scope)
     {
+        _lastClientId = key;
+        _lastClientSecret = secret;
+
         var urlEncodedData = new Dictionary<string, string>
         {
             { "client_id", key },
@@ -363,15 +372,19 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task WhenTheCurrentTokenIsRevoked()
     {
         var content = new FormUrlEncodedContent(new Dictionary<string, string> { { "token", _token } });
+        // /connect/revoke authenticates the caller with client credentials (RFC 7009 §2.1), not
+        // the bearer token being revoked, and only revokes tokens carrying the caller's own
+        // client_id. Here the caller authenticates as the same client that owns _token, so
+        // revocation proceeds.
+        var basicAuth = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{_lastClientId}:{_lastClientSecret}")
+        );
         APIRequestContextOptions options = new()
         {
-            // /connect/revoke requires an authenticated caller and only revokes tokens carrying
-            // the caller's own client_id. Here the caller revokes the very token it is
-            // presenting, so it is the owner and revocation proceeds.
             Headers = new Dictionary<string, string>
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
-                { "Authorization", $"Bearer {_token}" },
+                { "Authorization", $"Basic {basicAuth}" },
             },
             Data = await content.ReadAsStringAsync(),
         };

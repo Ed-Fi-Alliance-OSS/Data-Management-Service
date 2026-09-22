@@ -231,6 +231,123 @@ public class OpenIddictTokenManagerTests
                 );
     }
 
+    // ValidateClientCredentialsAsync authenticates an RFC 7009 revocation caller using the same
+    // application lookup and secret-hash comparison as GetAccessTokenAsync above, so these
+    // fixtures pin that it agrees with those three on what counts as a valid client secret.
+
+    [TestFixture]
+    public class Given_ValidateClientCredentialsAsync_WithValidCredentials : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "known-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+
+            _result = await _tokenManager.ValidateClientCredentialsAsync("known-client", "plain-secret");
+        }
+
+        [Test]
+        public void It_returns_true() => _result.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_ValidateClientCredentialsAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("unknown-client"))
+                .Returns((ApplicationInfo?)null);
+
+            _result = await _tokenManager.ValidateClientCredentialsAsync("unknown-client", "plain-secret");
+        }
+
+        [Test]
+        public void It_returns_false() => _result.Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_ValidateClientCredentialsAsync_WhenSecretIsInvalid : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "known-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("wrong-secret", "hashed-secret")).Returns(false);
+
+            _result = await _tokenManager.ValidateClientCredentialsAsync("known-client", "wrong-secret");
+        }
+
+        [Test]
+        public void It_returns_false() => _result.Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_ValidateClientCredentialsAsync_WhenApiClientIsNotApproved : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("disabled-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "disabled-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = false,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+
+            _result = await _tokenManager.ValidateClientCredentialsAsync("disabled-client", "plain-secret");
+        }
+
+        [Test]
+        public void It_returns_false() => _result.Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_ValidateClientCredentialsAsync_WithMissingCredentials : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act() =>
+            _result = await _tokenManager.ValidateClientCredentialsAsync(string.Empty, string.Empty);
+
+        [Test]
+        public void It_returns_false() => _result.Should().BeFalse();
+
+        [Test]
+        public void It_does_not_query_the_repository() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
     // The self-contained provider re-checks token status by jti on every request after
     // standard validation, so a revoked token is rejected on reuse. This is the platform's
     // strongest replay control. The fixtures below pin that behavior.

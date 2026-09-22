@@ -159,14 +159,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             {
                 // Exception messages embed claim values taken from the token, which is attacker
                 // input on exactly this path, so they are sanitized before logging. Corollary:
-                // do not pass the raw `ex` into the logger.
+                // do not pass the raw `ex` into the logger — most sinks render its unsanitized
+                // Message/ToString() independently of the sanitized template arguments below,
+                // which is exactly the leak this sanitizes against.
                 failure = TokenVerificationFailure.Untrusted;
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
                 logger?.LogWarning(
                     "JWT token validation failed: ({ExceptionType}, {ErrorMessage}\n{StackTrace})",
                     LoggingUtility.SanitizeForLog(ex.GetType().Name),
                     LoggingUtility.SanitizeForLog(ex.Message),
                     LoggingUtility.SanitizeForLog(ex.StackTrace)
                 );
+#pragma warning restore S6667
                 return false;
             }
         }
