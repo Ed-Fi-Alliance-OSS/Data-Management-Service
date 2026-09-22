@@ -28,9 +28,11 @@ public enum TokenStoreOutcome
     ClientNotFound,
 
     /// <summary>
-    /// Nothing was written because the wait for another grant's lock on this client's application
-    /// row ran out. Contention, not a limit rejection: the client may have been nowhere near its
-    /// limit, and retrying is the right answer.
+    /// Nothing was written because a database lock wait during the store ran out. Usually that is
+    /// another grant holding this client's application row, but on SQL Server the active-token
+    /// count can also wait behind another writer on the token table, such as the expired-token
+    /// sweep. Contention, not a limit rejection: the client may have been nowhere near its limit,
+    /// and retrying is the right answer.
     /// </summary>
     LockTimeout,
 }

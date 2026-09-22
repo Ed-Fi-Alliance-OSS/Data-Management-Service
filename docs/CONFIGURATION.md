@@ -743,7 +743,12 @@ after a crash loop for instance, has to wait for them to expire.
 
 When DMS crosses the limit on its own Configuration Service client, it logs an error carrying the
 429 status and the `urn:ed-fi:api:security:authentication:too-many-tokens` response body, and the
-metadata lookup that triggered the fetch fails until the next successful one. Raising the limit,
+metadata lookup that triggered the fetch fails until the next successful one. During startup the
+rejected fetch is fatal instead: DMS cannot load its data stores and exits. Because DMS keeps its
+token only in process memory, every restart of a DMS that is crash-looping at startup spends one
+slot, so after `BearerTokenPerClientLimit` restarts within the token lifetime DMS cannot start at
+all until the oldest of those tokens expires, even once the fault behind the crash loop is fixed.
+A deployment that starts DMS before its data stores are registered hits this. Raising the limit,
 or giving DMS a client id it does not share, is the fix; the symptom is a sizing problem, not a
 Configuration Service outage.
 

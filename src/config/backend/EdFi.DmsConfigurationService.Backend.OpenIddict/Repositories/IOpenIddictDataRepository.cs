@@ -127,8 +127,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at
         /// least <paramref name="maxActiveTokens"/> active tokens,
         /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
-        /// <see cref="TokenStoreOutcome.LockTimeout"/> when the wait for a competing grant's lock
-        /// on this application ran out.
+        /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
+        /// out, whether behind a competing grant for this application or another writer such as the
+        /// expired-token sweep.
         /// </returns>
         Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,

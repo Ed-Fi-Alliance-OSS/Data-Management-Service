@@ -406,27 +406,31 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 VALUES
                 (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
+            // One parameter set for both inserts, so the enforcing and non-enforcing paths cannot
+            // drift apart in the row they write.
+            DynamicParameters parameters = new();
+            parameters.Add("Id", tokenId);
+            parameters.Add("ApplicationId", applicationId);
+            parameters.Add("Subject", subject);
+            parameters.Add("Type", "access_token");
+            parameters.Add("CreationDate", DateTimeOffset.UtcNow);
+            parameters.Add("ExpirationDate", expiration);
+            parameters.Add("Status", "valid");
+            parameters.Add("ReferenceId", tokenId.ToString("N"));
+
             // Enforcement disabled: the unconditional insert that ran before the limit existed,
             // with no transaction and no lock.
             if (maxActiveTokens < 1)
             {
-                await connection.ExecuteAsync(
-                    insertSql,
-                    new
-                    {
-                        Id = tokenId,
-                        ApplicationId = applicationId,
-                        Subject = subject,
-                        Type = "access_token",
-                        CreationDate = DateTimeOffset.UtcNow,
-                        ExpirationDate = expiration,
-                        Status = "valid",
-                        ReferenceId = tokenId.ToString("N"),
-                    }
-                );
+                await connection.ExecuteAsync(insertSql, parameters);
 
                 return TokenStoreOutcome.Stored;
             }
+
+            // Passed exactly as ExpirationDate is, so the count and the stored value take the
+            // identical session-time-zone conversion path.
+            parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow);
+            parameters.Add("MaxActiveTokens", maxActiveTokens);
 
             // Grants for one client serialize on that client's OpenIddictApplication row, which
             // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
@@ -455,21 +459,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
 
                 int rowsAffected = await connection.ExecuteAsync(
                     ConditionalInsertSql,
-                    new
-                    {
-                        Id = tokenId,
-                        ApplicationId = applicationId,
-                        Subject = subject,
-                        Type = "access_token",
-                        CreationDate = DateTimeOffset.UtcNow,
-                        ExpirationDate = expiration,
-                        Status = "valid",
-                        ReferenceId = tokenId.ToString("N"),
-                        // Passed exactly as ExpirationDate is, so the count and the stored value
-                        // take the identical session-time-zone conversion path.
-                        ActiveAsOf = DateTimeOffset.UtcNow,
-                        MaxActiveTokens = maxActiveTokens,
-                    },
+                    parameters,
                     transaction
                 );
 
