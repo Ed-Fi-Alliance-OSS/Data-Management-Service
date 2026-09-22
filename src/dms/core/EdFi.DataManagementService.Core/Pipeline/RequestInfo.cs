@@ -10,8 +10,10 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Identity;
 
 namespace EdFi.DataManagementService.Core.Pipeline;
 
@@ -249,4 +251,52 @@ internal class RequestInfo(
         get => _requestCancellationToken;
         set => _requestCancellationToken = value;
     }
+
+    /// <summary>
+    /// The fixed identity operation this request performs, set by the facade before the identity
+    /// pipeline runs. Null on every non-identity pipeline.
+    /// </summary>
+    public IdentityOperation? IdentityOperation { get; set; }
+
+    /// <summary>
+    /// The identity provider instance resolved once per request by
+    /// <see cref="Middleware.IdentityOperationCapabilityMiddleware"/> through
+    /// <see cref="Identity.IdentityProviderBoundary"/>, immediately after activation succeeds.
+    /// Null on every non-identity pipeline and on an identity request whose activation failed - in
+    /// that case a provider-configuration 500 is already on <see cref="FrontendResponse"/> and no
+    /// operation runs. <see cref="Handler.IdentityHandler"/> invokes the requested operation against
+    /// this same instance, so a provider can never observe a <see cref="IdentityCapabilities"/> value
+    /// that differs from the one its call was gated on.
+    /// </summary>
+    public IIdentityService? IdentityProvider { get; set; }
+
+    /// <summary>
+    /// The identity provider's <c>Capabilities</c>, captured exactly once by
+    /// <see cref="Middleware.IdentityOperationCapabilityMiddleware"/> immediately after
+    /// <see cref="IdentityProvider"/> is resolved. <see cref="IdentityCapabilities.None"/> (the
+    /// default) on every non-identity pipeline and on an identity request whose capability read
+    /// failed. <see cref="Handler.IdentityHandler"/> reads this captured value rather than the
+    /// provider's getter again, so the gate and the results-token invariant always agree.
+    /// </summary>
+    public IdentityCapabilities IdentityCapabilities { get; set; }
+
+    /// <summary>
+    /// The identity route value the facade extracted for this request: the UniqueId for
+    /// <see cref="Core.Identity.IdentityOperation.GetById"/>, or the request token for
+    /// <see cref="Core.Identity.IdentityOperation.Results"/>. Null for Create, Find, and Search, which
+    /// carry no route value, and on every non-identity pipeline.
+    /// <see cref="Handler.IdentityHandler"/> rejects a present-but-blank value with 400 before
+    /// building <see cref="IdentityRequestContext"/>.
+    /// </summary>
+    public string? IdentityRouteValue { get; set; }
+
+    /// <summary>
+    /// The route-qualified <c>.../identity/v2/identities/results</c> path (no trailing slash, no
+    /// token), set by the facade for every identity operation. <see cref="Handler.IdentityHandler"/>
+    /// appends the escaped request token to this prefix to compose the <c>Location</c> header for an
+    /// accepted asynchronous find/search and for an in-progress results poll, and passes it to
+    /// <see cref="Identity.IdentityRequestTokenRule.Evaluate"/> as the composed-path budget check's
+    /// prefix. Empty string on every non-identity pipeline.
+    /// </summary>
+    public string IdentityPollPathPrefix { get; set; } = string.Empty;
 }
