@@ -714,10 +714,6 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// The opt-out an operator configures with a value below 1. It stores unconditionally however
-    /// many active tokens the client already holds.
-    /// </summary>
-    /// <summary>
     /// The limit travelling the production path rather than a direct repository call. Every other
     /// fixture here calls <c>OpenIddictDataRepository</c> itself, but the token manager reaches it
     /// through <c>OpenIddictTokenRepository</c>, and nothing else exercises that wrapper against a
@@ -775,6 +771,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(Limit);
     }
 
+    /// <summary>
+    /// The opt-out an operator configures with a value below 1. It stores unconditionally however
+    /// many active tokens the client already holds.
+    /// </summary>
     [TestFixture]
     public class Given_Enforcement_Is_Disabled : OpenIddictDataRepositoryTests
     {

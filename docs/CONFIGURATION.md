@@ -717,7 +717,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 
 > **Before upgrading an existing deployment:** the limit takes effect immediately, so a client
 > already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
-> next grant. Deployments running more than two DMS replicas against a single Configuration
+> next grant. Deployments running two or more DMS replicas against a single Configuration
 > Service client id must raise this value before upgrading — see the sizing arithmetic below.
 > Leave `TokenCleanupEnabled` on as well: every grant counts the client's active tokens, and
 > expired tokens the sweep has not yet removed still sit in the table it counts over, so a
