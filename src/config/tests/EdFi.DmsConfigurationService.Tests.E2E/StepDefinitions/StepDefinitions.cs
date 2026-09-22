@@ -524,6 +524,53 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         content.Should().NotContain(text);
     }
 
+    [Then("the response body contains a non-empty authorization strategy override")]
+    public async Task ThenTheResponseBodyContainsANonEmptyAuthorizationStrategyOverride()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? response = JsonNode.Parse(content);
+        response.Should().NotBeNull("response body should be JSON");
+        ContainsNonEmptyArray(response!, "authorizationStrategyOverrides").Should().BeTrue();
+    }
+
+    [Then("the response body contains no non-empty authorization strategy overrides")]
+    public async Task ThenTheResponseBodyContainsNoNonEmptyAuthorizationStrategyOverrides()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? response = JsonNode.Parse(content);
+        response.Should().NotBeNull("response body should be JSON");
+        ContainsNonEmptyArray(response!, "authorizationStrategyOverrides").Should().BeFalse();
+    }
+
+    private static bool ContainsNonEmptyArray(JsonNode node, string propertyName)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            foreach (KeyValuePair<string, JsonNode?> property in jsonObject)
+            {
+                if (
+                    property.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+                    && property.Value is JsonArray array
+                    && array.Count > 0
+                )
+                {
+                    return true;
+                }
+
+                if (property.Value is not null && ContainsNonEmptyArray(property.Value, propertyName))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (node is JsonArray jsonArray)
+        {
+            return jsonArray.Any(item => item is not null && ContainsNonEmptyArray(item, propertyName));
+        }
+
+        return false;
+    }
+
     [Then(@"the response body is an array with more than one object where each object")]
     public async Task ThenTheResponseBodyIsAnArrayWithMoreThanOneObjectWhere(Table table)
     {
