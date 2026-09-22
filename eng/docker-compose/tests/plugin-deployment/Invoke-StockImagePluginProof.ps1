@@ -1183,10 +1183,75 @@ function Invoke-ProofScenario {
     return $record
 }
 
+# The client this proof posts with, and the one data store it is bound to.
+#
+# Created here rather than read from disk. configure-local-data-store.ps1's
+# -AddSmokeTestCredentials calls Get-SmokeTestCredential and pipes the result to Out-Null: the key
+# and secret are RETURNED to the caller and never written to a file, so there is nothing on disk for
+# this harness to read. Calling the same module directly is how a caller obtains them.
+#
+# The data store is chosen, not taken. Get-SmokeTestCredential with no -DataStoreIds falls back to
+# the first store the Configuration Service lists, which in a stack holding more than one binds the
+# client to whichever CMS happened to return first. This run's own stack holds exactly one
+# route-unqualified store, so anything else means the state is not what the proof assumes, and the
+# selector refuses rather than picking a survivor.
+function New-ProofSmokeClient {
+    param(
+        [Parameter(Mandatory)] [string] $ConfigurationServiceUrl,
+        [Parameter(Mandatory)] [string] $EnvironmentFile
+    )
+
+    # SmokeTest.psm1 imports Dms-Management.psm1, which is where Get-CmsToken and Get-DataStore come
+    # from. One import, and the same helper the configure phase uses.
+    Import-Module (Join-Path $repositoryRoot 'eng/smoke_test/modules/SmokeTest.psm1') -Force
+
+    # The env file this deployment actually ran with, so the admin client is the one CMS was
+    # started with rather than the module default.
+    $envValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
+    $admin = Resolve-BootstrapAdminClient -EnvValues $envValues
+
+    # Registered before the call that could fail with it in a message.
+    $script:secret += @($admin.ClientSecret)
+
+    Write-ProofLog "Get-CmsToken $ConfigurationServiceUrl"
+    $configToken = Get-CmsToken -CmsUrl $ConfigurationServiceUrl `
+        -ClientId $admin.ClientId -ClientSecret $admin.ClientSecret
+
+    if ([string]::IsNullOrWhiteSpace($configToken)) {
+        throw 'The Configuration Service returned no admin access token, so the data stores this run created cannot be read.'
+    }
+
+    $script:secret += @($configToken)
+
+    Write-ProofLog "Get-DataStore $ConfigurationServiceUrl"
+    $store = @(Get-DataStore -CmsUrl $ConfigurationServiceUrl -AccessToken $configToken)
+
+    $verdict = Select-RouteUnqualifiedDataStore -DataStore $store
+
+    if (-not $verdict.Selected) {
+        throw "This run's Configuration Service does not offer one data store to bind a client to: $($verdict.Reason)"
+    }
+
+    Write-Detail $verdict.Reason
+
+    # The id is passed explicitly. Without it the helper takes the first store.
+    Write-ProofLog "Get-SmokeTestCredential $ConfigurationServiceUrl dataStoreIds=$($verdict.Id)"
+    $client = Get-SmokeTestCredential -ConfigServiceUrl $ConfigurationServiceUrl -DataStoreIds @([long]$verdict.Id)
+
+    if ($null -eq $client -or [string]::IsNullOrWhiteSpace($client.Key) -or [string]::IsNullOrWhiteSpace($client.Secret)) {
+        throw 'The Configuration Service returned no usable client key and secret for the proof application.'
+    }
+
+    $script:secret += @($client.Secret)
+
+    return [pscustomobject]@{ Client = $client; DataStoreId = $verdict.Id }
+}
+
 function Invoke-HappyPath {
     param(
         [Parameter(Mandatory)] [string] $BaseUrl,
         [Parameter(Mandatory)] [string] $ConfigurationServiceUrl,
+        [Parameter(Mandatory)] [string] $EnvironmentFile,
         [Parameter(Mandatory)] $Pin
     )
 
@@ -1211,20 +1276,15 @@ function Invoke-HappyPath {
 
     Assert-PluginRootReadOnly -Container $dms.Name
 
-    # Created here rather than read from disk. configure-local-data-store.ps1's
-    # -AddSmokeTestCredentials calls Get-SmokeTestCredential and pipes the result to Out-Null: the
-    # key and secret are RETURNED to the caller and never written to a file, so there is nothing on
-    # disk for this harness to read. Calling the same module directly is how a caller obtains them.
-    Import-Module (Join-Path $repositoryRoot 'eng/smoke_test/modules/SmokeTest.psm1') -Force
-    Write-ProofLog "Get-SmokeTestCredential $ConfigurationServiceUrl"
-    $smokeClient = Get-SmokeTestCredential -ConfigServiceUrl $ConfigurationServiceUrl
+    $smoke = New-ProofSmokeClient -ConfigurationServiceUrl $ConfigurationServiceUrl -EnvironmentFile $EnvironmentFile
 
-    $http = Assert-FixtureRejection -BaseUrl $BaseUrl -SmokeClient $smokeClient
+    $http = Assert-FixtureRejection -BaseUrl $BaseUrl -SmokeClient $smoke.Client
 
     return [ordered]@{
         readyState  = $status.State
         dmsImageId  = $facts.ImageId
         pluginRootReadOnly = $true
+        dataStoreId = $smoke.DataStoreId
         http        = $http
     }
 }
@@ -1333,7 +1393,7 @@ try {
     $result.recipe1 = Invoke-ProofScenario -Name 'recipe1' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
         -PluginMountSource $fixture.PublishRoot -AllowedPlugins $pluginName `
-        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -Pin $pin }
+        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
 
     # Recipe 2: the committed plugins-fetch-dms.yml, run unedited, fetching over HTTP from the
     # digest-pinned static-file container in the test-owned feed overlay.
@@ -1341,7 +1401,7 @@ try {
         -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 $package.Sha256 -PluginName $pluginName -AllowedPlugins $pluginName `
-        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -Pin $pin }
+        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
 
     # A digest that does not match the served package: the fetch must fail on the comparison
     # specifically, and DMS must never start.

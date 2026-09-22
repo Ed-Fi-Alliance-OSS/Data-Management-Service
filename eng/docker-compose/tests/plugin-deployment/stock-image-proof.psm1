@@ -5,6 +5,11 @@
 
 #Requires -Version 7
 
+# Format-LogSafeText, taken from the module that owns it. Data store names and ids come back from
+# the Configuration Service, so every one of them that reaches a message is sanitized there rather
+# than by a second whitelist maintained here.
+Import-Module (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'bootstrap-manifest.psm1') -Force -DisableNameChecking
+
 <#
     The decisions the stock-image plugin proof makes, separated from the deployment that gathers
     what they decide about.
@@ -1370,6 +1375,94 @@ function Get-AmbientOverride {
     return @(Get-AmbientRefusedKey | Where-Object { $ProcessEnvironment.ContainsKey($_) })
 }
 
+function Select-RouteUnqualifiedDataStore {
+    <#
+    .SYNOPSIS
+    The one data store this proof may bind its client to, or the reason there is none.
+
+    .DESCRIPTION
+    The proof posts to /data/ed-fi/students, the bare route. A client bound to a route-qualified
+    store reaches its data only under the qualifier, so binding to one would produce a failure that
+    says nothing about plugin loading. The stack this runs against was created by this run and holds
+    exactly one route-unqualified store; anything else means the CMS state is not what the proof
+    assumes, and guessing which store was meant is how a proof quietly measures the wrong thing.
+
+    So: exactly one, unqualified, with an id that is a whole positive number. Zero, several, a
+    qualified one, a missing or non-numeric id, and a dataStoreContexts that is not an array are all
+    refused rather than narrowed to a survivor. This is the same contract configure-local-data-store
+    .ps1 applies for -NoDataStore, with the id check added and with a malformed contexts value
+    refused instead of read as "no contexts".
+
+    The caller passes @(Get-DataStore ...), so a single store arrives as a one-element array.
+    #>
+    param($DataStore)
+
+    function Get-SelectionVerdict {
+        param([switch] $Selected, $Id, [Parameter(Mandatory)] [string] $Reason)
+        return [pscustomobject]@{ Selected = [bool]$Selected; Id = $Id; Reason = $Reason }
+    }
+
+    if ($null -eq $DataStore -or $DataStore -is [string] -or $DataStore -isnot [System.Array]) {
+        $what = if ($null -eq $DataStore) { 'nothing' } else { $DataStore.GetType().Name }
+        return Get-SelectionVerdict -Reason "the Configuration Service data store listing is $what rather than an array"
+    }
+
+    $present = @($DataStore | Where-Object { $null -ne $_ })
+
+    if ($present.Count -ne $DataStore.Count) {
+        return Get-SelectionVerdict -Reason 'the Configuration Service data store listing contains a null entry'
+    }
+
+    if ($present.Count -eq 0) {
+        return Get-SelectionVerdict -Reason 'the Configuration Service returned no data stores, so there is nothing for this run to bind a client to'
+    }
+
+    if ($present.Count -gt 1) {
+        $listing = ($present | ForEach-Object {
+                "id=$(Format-LogSafeText (Get-JsonMember -Object $_ -Name 'id')) name=$(Format-LogSafeText (Get-JsonMember -Object $_ -Name 'name'))"
+            }) -join ', '
+
+        return Get-SelectionVerdict -Reason ("the Configuration Service returned $($present.Count) data stores and this proof requires exactly one: $listing")
+    }
+
+    $store = $present[0]
+    $context = Get-JsonMember -Object $store -Name 'dataStoreContexts'
+
+    if ($null -ne $context -and ($context -is [string] -or $context -isnot [System.Array])) {
+        return Get-SelectionVerdict -Reason "the data store's dataStoreContexts is $($context.GetType().Name) rather than an array, so whether it is route-qualified cannot be read"
+    }
+
+    $qualifier = @($context | Where-Object { $null -ne $_ })
+
+    if ($qualifier.Count -gt 0) {
+        $listing = ($qualifier | ForEach-Object {
+                "$(Format-LogSafeText (Get-JsonMember -Object $_ -Name 'contextKey'))=$(Format-LogSafeText (Get-JsonMember -Object $_ -Name 'contextValue'))"
+            }) -join ', '
+
+        return Get-SelectionVerdict -Reason ("the one data store is route-qualified ($listing), and this proof posts to the bare route")
+    }
+
+    $raw = Get-JsonMember -Object $store -Name 'id'
+
+    if ($null -eq $raw) {
+        return Get-SelectionVerdict -Reason 'the one data store carries no id'
+    }
+
+    # Parsed, not coerced. [long]'12abc' throws and [long]1.5 rounds, and either would bind the
+    # client to something other than what CMS reported.
+    $id = [long]0
+
+    if ($raw -is [bool] -or -not [long]::TryParse([string]$raw, [ref]$id)) {
+        return Get-SelectionVerdict -Reason "the one data store's id '$(Format-LogSafeText $raw)' is not a whole number"
+    }
+
+    if ($id -le 0) {
+        return Get-SelectionVerdict -Reason "the one data store's id '$(Format-LogSafeText $raw)' is not a positive number"
+    }
+
+    return Get-SelectionVerdict -Selected -Id $id -Reason "the run's own Configuration Service holds one route-unqualified data store, id $id"
+}
+
 function Get-StockProofEnvironmentContent {
     <#
     .SYNOPSIS
@@ -1482,4 +1575,5 @@ Export-ModuleMember -Function @(
     'Get-AmbientOverride'
     'Test-ProofPort'
     'Get-StockProofEnvironmentContent'
+    'Select-RouteUnqualifiedDataStore'
 )

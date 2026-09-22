@@ -37,6 +37,7 @@ param(
     [Parameter(Mandatory)] [string] $BaseEnvironmentFile,
     [Parameter(Mandatory)] [string] $CaptureRoot,
     [Parameter(Mandatory)] [string] $BootstrapManifestPath,
+    [Parameter(Mandatory)] [string] $HttpLog,
     [string] $AmbientKey,
     [string] $AmbientValue
 )
@@ -47,6 +48,7 @@ $global:DmsShimLog = $ShimLog
 $global:DmsWorkspaceRoot = $WorkspaceRoot
 $global:DmsCaptureRoot = $CaptureRoot
 $global:DmsRuleHits = @{}
+$global:DmsHttpLog = $HttpLog
 
 function global:Invoke-DmsShim {
     param([string] $Tool, [string[]] $ShimArgs)
@@ -133,32 +135,86 @@ function global:docker { Invoke-DmsShim -Tool 'docker' -ShimArgs $args }
 function global:dotnet { Invoke-DmsShim -Tool 'dotnet' -ShimArgs $args }
 function global:pwsh { Invoke-DmsShim -Tool 'pwsh' -ShimArgs $args }
 
-# The credential helper and the two HTTP verbs the proof uses. Shimming them keeps the traversal
-# entirely off the network while still running the script's own request and assertion logic.
-function global:Get-SmokeTestCredential {
-    param([string] $ConfigServiceUrl, [long[]] $DataStoreIds, [string] $Tenant)
-    Add-Content -LiteralPath $global:DmsShimLog -Value "smoke-credential $ConfigServiceUrl"
-    return @{ Key = 'stock-proof-key'; Secret = 'stock-proof-secret'; VendorId = 1; ApplicationName = 'Stock Proof' }
+# Only the network. Get-SmokeTestCredential and everything under it - Add-CmsClient, Get-CmsToken,
+# Get-DataStore, Add-Vendor, Add-Application - are the real functions from the real modules, so the
+# contract under test is the one the proof will run against. Invoke-RestMethod and
+# Invoke-WebRequest are defined globally, which is where module code looks when a command is not
+# defined in its own module, so Invoke-Api inside Dms-Management.psm1 reaches these.
+$global:DmsCmsToken = 'cms-admin-token-value'
+$global:DmsClientKey = 'proof-client-key'
+$global:DmsClientSecret = 'proof-client-secret-value'
+$global:DmsDmsToken = 'dms-access-token-value'
+
+function global:Write-DmsHttp {
+    param([string] $Method, [string] $Uri, $Headers, $Body)
+
+    $record = [ordered]@{
+        method  = $Method
+        uri     = $Uri
+        headers = @{}
+        body    = "$Body"
+    }
+
+    if ($null -ne $Headers) {
+        foreach ($key in $Headers.Keys) { $record.headers[[string]$key] = [string]$Headers[$key] }
+    }
+
+    Add-Content -LiteralPath $global:DmsHttpLog -Value ($record | ConvertTo-Json -Depth 5 -Compress)
+}
+
+# What the Configuration Service answers. The data store listing is the one part a test varies, so
+# it comes from the plan; everything else is the ordinary response the helpers need to proceed.
+function global:Get-DmsCmsResponse {
+    param([string] $Uri)
+
+    if ($Uri -match '/connect/register') { return [pscustomobject]@{ } }
+    if ($Uri -match '/connect/token') { return [pscustomobject]@{ access_token = $global:DmsCmsToken } }
+
+    if ($Uri -match '/v3/dataStores') {
+        $listing = @($global:DmsShimPlan | Where-Object { $_.match -eq 'cms:dataStores' })
+
+        if ($listing.Count -gt 0) {
+            return ($listing[0].output | ConvertFrom-Json)
+        }
+
+        return @([pscustomobject]@{ id = 7; name = 'Stock Proof Data Store'; dataStoreContexts = @() })
+    }
+
+    if ($Uri -match '/v3/applications') {
+        return [pscustomobject]@{ id = 11; key = $global:DmsClientKey; secret = $global:DmsClientSecret }
+    }
+
+    if ($Uri -match '/oauth/token') { return [pscustomobject]@{ access_token = $global:DmsDmsToken } }
+
+    return [pscustomobject]@{ }
 }
 
 function global:Invoke-RestMethod {
     param([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $ContentType, $Body)
     Add-Content -LiteralPath $global:DmsShimLog -Value "rest $Method $Uri"
-    return [pscustomobject]@{ access_token = 'stock-proof-token' }
+    Write-DmsHttp -Method $Method -Uri $Uri -Headers $Headers -Body $Body
+
+    return Get-DmsCmsResponse -Uri $Uri
 }
 
 function global:Invoke-WebRequest {
     param([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $ContentType, $Body, [switch] $SkipHttpErrorCheck)
     Add-Content -LiteralPath $global:DmsShimLog -Value "http $Method $Uri"
+    Write-DmsHttp -Method $Method -Uri $Uri -Headers $Headers -Body $Body
+
+    # Add-Vendor reads the new vendor's id out of the Location header.
+    if ($Uri -match '/v3/vendors') {
+        return [pscustomobject]@{ StatusCode = 201; Content = '{}'; Headers = @{ Location = '/v3/vendors/3' } }
+    }
 
     foreach ($rule in $global:DmsShimPlan) {
         if ($rule.match -like 'http:*' -and "$Body" -match ($rule.match -replace '^http:', '')) {
-            return [pscustomobject]@{ StatusCode = [int]$rule.exitCode; Content = $rule.output }
+            return [pscustomobject]@{ StatusCode = [int]$rule.exitCode; Content = $rule.output; Headers = @{} }
         }
     }
 
     # An ordinary document: the passing control.
-    return [pscustomobject]@{ StatusCode = 201; Content = '{}' }
+    return [pscustomobject]@{ StatusCode = 201; Content = '{}'; Headers = @{} }
 }
 
 if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
@@ -293,6 +349,44 @@ catch {
             )
         }
 
+        # Everything Invoke-HappyPath asks the daemon between locating the DMS container and
+        # obtaining a client, so a test can reach the credential contract without a stack: the
+        # container name, a Ready startup document, an inspect whose image id matches the pinned
+        # digest's, and a read-only /app/plugins observed from inside.
+        # The two rejections the fixture is supposed to produce, keyed off the reserved token in
+        # the request body, so the happy path can run to its end.
+        function script:Get-FixtureRejectionRule {
+            return @(
+                @{ match = 'http:custom-validation-proof-reject-path'; exitCode = 400
+                    output = '{"validationErrors":{"$.lastSurname":["This value is the custom-validation proof fixture''s reserved rejection token."]},"errors":[]}'
+                }
+                @{ match = 'http:custom-validation-proof-reject-resource'; exitCode = 400
+                    output = '{"validationErrors":{},"errors":["This document carries the custom-validation proof fixture''s reserved document-level rejection token."]}'
+                }
+            )
+        }
+
+        function script:Get-ReadyStackRule {
+            $imageId = 'sha256:' + ('c' * 64)
+
+            return @(
+                @{ match = 'label=com\.docker\.compose\.service=dms '; exitCode = 0; output = 'dms-published-dms-1' }
+                @{ match = 'exec dms-published-dms-1 cat /tmp/dms-startup-status\.json'; exitCode = 0
+                    output = '{"State":"Ready","Phase":"LoadPlugins","Summary":"","ErrorMessage":""}'
+                }
+                @{ match = 'inspect dms-published-dms-1 --format'; exitCode = 0
+                    output = "running|2026-09-21T00:00:00Z|0|$imageId|false"
+                }
+                @{ match = 'image inspect .*--format'; exitCode = 0; output = $imageId }
+                @{ match = 'exec dms-published-dms-1 sh -c cat /proc/mounts'; exitCode = 0
+                    output = "/dev/sda1 /app/plugins ext4 ro,relatime 0 0"
+                }
+                @{ match = 'exec dms-published-dms-1 sh -c touch /app/plugins'; exitCode = 1
+                    output = "touch: /app/plugins/.stock-proof-write-probe: Read-only file system"
+                }
+            )
+        }
+
         function script:Get-PublishedFixtureRule {
             param([string] $AssetsVersion = '1.0.0')
 
@@ -343,6 +437,8 @@ catch {
                 $captureRoot = Join-Path $scratch 'captured'
                 $shimLog = Join-Path $scratch 'shim.log'
                 New-Item -ItemType File -Path $shimLog -Force | Out-Null
+                $httpLog = Join-Path $scratch 'http.log'
+                New-Item -ItemType File -Path $httpLog -Force | Out-Null
                 $resultFile = Join-Path $scratch 'result.json'
                 $evidenceRoot = Join-Path $scratch 'evidence'
                 $workspace = Join-Path $scratch 'workspace'
@@ -359,6 +455,9 @@ catch {
                 $baseLine += "DMS_HTTP_PORTS=$($Port[0])"
                 $baseLine += "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=$($Port[1])"
                 $baseLine += "POSTGRES_PORT=$($Port[2])"
+                # A value nothing else in the run produces, so "this secret never appears" is an
+                # assertion about this string rather than about a default that might be empty.
+                $baseLine += 'DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=proof-bootstrap-secret-value'
                 Set-Content -LiteralPath $baseEnvironmentFile -Value $baseLine -Encoding utf8
 
                 # The fixture's own assets file, in the shape the restore writes, so the script
@@ -374,6 +473,7 @@ catch {
                     '-BootstrapManifestPath', ($ManifestOverride ? $ManifestOverride : (Join-Path $workspace 'bootstrap/bootstrap-manifest.json'))
                     '-ShimPlan', $planPath
                     '-ShimLog', $shimLog
+                    '-HttpLog', $httpLog
                     '-ResultFile', $resultFile
                 )
 
@@ -399,6 +499,8 @@ catch {
                     Port             = $Port
                     Failure          = (Test-Path -LiteralPath $resultFile) ? ((Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json).Failure) : '<no result>'
                     ShimCall         = @(Get-Content -LiteralPath $shimLog -ErrorAction SilentlyContinue)
+                    Http             = @(Get-Content -LiteralPath $httpLog -ErrorAction SilentlyContinue |
+                            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_ | ConvertFrom-Json })
                     Evidence         = (Test-Path -LiteralPath $evidenceFile) ? (Get-Content -LiteralPath $evidenceFile -Raw | ConvertFrom-Json) : $null
                     WorkspaceCreated = (Test-Path -LiteralPath $workspace)
                 }
@@ -1006,6 +1108,156 @@ catch {
                     }, $true))
 
             $scenario | Should -HaveCount 4
+        }
+    }
+
+    Context 'the client this proof posts with, and the store it is bound to' {
+        BeforeAll {
+            function script:Get-HappyPathRule {
+                param($DataStoreListing)
+
+                $rule = @(Get-MatchingDescriptorRule) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) + @(Get-ReadyStackRule) +
+                @(Get-FixtureRejectionRule)
+
+                if ($null -ne $DataStoreListing) {
+                    $rule = @(@{ match = 'cms:dataStores'; exitCode = 0; output = $DataStoreListing }) + $rule
+                }
+
+                return @($rule | ForEach-Object { $_ })
+            }
+
+            function script:Get-HttpCall {
+                param($Run, [string] $UriPattern, [string] $Method = 'Post')
+                return @($Run.Http | Where-Object { $_.uri -match $UriPattern -and $_.method -eq $Method })
+            }
+        }
+
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'binds the application to the one route-unqualified data store, by id' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            $application = Get-HttpCall -Run $run -UriPattern '/v3/applications'
+
+            $application | Should -Not -BeNullOrEmpty
+            $body = $application[0].body | ConvertFrom-Json
+            # The exact value, not "some store": the whole point is that it is chosen rather than
+            # taken from the head of a listing.
+            @($body.dataStoreIds) | Should -Be @(7)
+        }
+
+        It 'reaches Add-Application through the real helper, not a stand-in' {
+            # The vendor POST and the client registration are Dms-Management's work. If the proof
+            # were calling a shim of Get-SmokeTestCredential, none of these would be on the wire.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            Get-HttpCall -Run $run -UriPattern '/connect/register' | Should -Not -BeNullOrEmpty
+            Get-HttpCall -Run $run -UriPattern '/connect/token' | Should -Not -BeNullOrEmpty
+            Get-HttpCall -Run $run -UriPattern '/v3/dataStores' -Method 'Get' | Should -Not -BeNullOrEmpty
+            Get-HttpCall -Run $run -UriPattern '/v3/vendors' | Should -Not -BeNullOrEmpty
+        }
+
+        It 'reads the data stores with the bootstrap admin token this deployment was started with' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            $listing = Get-HttpCall -Run $run -UriPattern '/v3/dataStores' -Method 'Get'
+
+            $listing[0].headers.Authorization | Should -BeExactly 'Bearer cms-admin-token-value'
+
+            # Once per deployment, by this script. Get-SmokeTestCredential lists the stores itself
+            # only when it was given no -DataStoreIds, so a second listing per deployment is what
+            # "the id was not passed explicitly" looks like from outside.
+            $deployment = @(Get-HttpCall -Run $run -UriPattern '/connect/register').Count
+            $deployment | Should -BeGreaterThan 0
+            $listing.Count | Should -Be $deployment
+        }
+
+        It 'exchanges the key and secret it was given for the DMS token' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            $expected = 'Basic ' + [Convert]::ToBase64String(
+                [Text.Encoding]::UTF8.GetBytes('proof-client-key:proof-client-secret-value'))
+
+            $token = Get-HttpCall -Run $run -UriPattern '/oauth/token'
+
+            $token | Should -Not -BeNullOrEmpty
+            $token[0].headers.Authorization | Should -BeExactly $expected
+        }
+
+        It 'sends every Student request with that DMS token as its bearer' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            $student = Get-HttpCall -Run $run -UriPattern '/data/ed-fi/students'
+
+            # The control and both rejection arms.
+            $student.Count | Should -BeGreaterOrEqual 3
+            @($student | Where-Object { $_.headers.Authorization -cne 'Bearer dms-access-token-value' }) |
+                Should -BeNullOrEmpty
+        }
+
+        It 'refuses <Case> rather than binding to whichever store came first' -ForEach @(
+            @{ Case    = 'several data stores'
+                Listing = '[{"id":7,"name":"One","dataStoreContexts":[]},{"id":8,"name":"Two","dataStoreContexts":[]}]'
+                Expect  = 'requires exactly one'
+            }
+            @{ Case    = 'a route-qualified store'
+                Listing = '[{"id":7,"name":"One","dataStoreContexts":[{"contextKey":"schoolYear","contextValue":"2024"}]}]'
+                Expect  = 'route-qualified'
+            }
+            @{ Case    = 'no data stores'
+                Listing = '[]'
+                Expect  = 'returned no data stores'
+            }
+            @{ Case    = 'a store with no id'
+                Listing = '[{"name":"One","dataStoreContexts":[]}]'
+                Expect  = 'carries no id'
+            }
+            @{ Case    = 'a store whose id is not a number'
+                Listing = '[{"id":"12abc","name":"One","dataStoreContexts":[]}]'
+                Expect  = 'not a whole number'
+            }
+            @{ Case    = 'a store whose contexts are malformed'
+                Listing = '[{"id":7,"name":"One","dataStoreContexts":"none"}]'
+                Expect  = 'rather than an array'
+            }
+        ) {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule -DataStoreListing $Listing)
+
+            $run.Failure | Should -Match 'does not offer one data store to bind a client to'
+            $run.Failure | Should -Match $Expect
+
+            # And nothing was created on the back of a guess.
+            Get-HttpCall -Run $run -UriPattern '/v3/applications' | Should -BeNullOrEmpty
+            Get-HttpCall -Run $run -UriPattern '/data/ed-fi/students' | Should -BeNullOrEmpty
+        }
+
+        It 'keeps every secret out of the evidence and the command log' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule (Get-HappyPathRule)
+
+            $evidence = $run.Evidence | ConvertTo-Json -Depth 14
+
+            foreach ($secret in @(
+                    'proof-bootstrap-secret-value'
+                    'cms-admin-token-value'
+                    'proof-client-secret-value'
+                    'dms-access-token-value'
+                )) {
+                $evidence | Should -Not -Match ([regex]::Escape($secret))
+                @($run.ShimCall | Where-Object { $_ -match [regex]::Escape($secret) }) | Should -BeNullOrEmpty
+            }
+
+            # A vacuous pass would satisfy the above, so prove the evidence was written and that the
+            # secrets really were in play on the wire.
+            $evidence | Should -Match 'dataStoreId'
+            Get-HttpCall -Run $run -UriPattern '/oauth/token' | Should -Not -BeNullOrEmpty
         }
     }
 

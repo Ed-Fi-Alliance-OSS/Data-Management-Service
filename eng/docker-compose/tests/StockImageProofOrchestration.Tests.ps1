@@ -294,6 +294,107 @@ Describe 'Stock image proof orchestration' {
         }
     }
 
+    Context 'the one data store a proof client may be bound to' {
+        BeforeAll {
+            function script:New-Store {
+                param([object] $Id = 7, [string] $Name = 'Stock Proof Data Store', $Context = @())
+
+                $store = [pscustomobject]@{ name = $Name; dataStoreContexts = $Context }
+
+                if ($null -ne $Id) {
+                    $store | Add-Member -NotePropertyName id -NotePropertyValue $Id
+                }
+
+                return $store
+            }
+        }
+
+        It 'selects the single route-unqualified store' {
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @(New-Store)
+
+            $verdict.Selected | Should -BeTrue
+            $verdict.Id | Should -Be 7
+            $verdict.Id | Should -BeOfType [long]
+        }
+
+        It 'refuses an empty listing' {
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @()
+
+            $verdict.Selected | Should -BeFalse
+            $verdict.Id | Should -BeNullOrEmpty
+            $verdict.Reason | Should -Match 'returned no data stores'
+        }
+
+        It 'refuses more than one, and names them all rather than choosing' {
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @((New-Store), (New-Store -Id 8 -Name 'Second'))
+
+            $verdict.Selected | Should -BeFalse
+            $verdict.Reason | Should -Match 'requires exactly one'
+            $verdict.Reason | Should -Match 'id=7'
+            $verdict.Reason | Should -Match 'id=8'
+        }
+
+        It 'refuses a route-qualified store and reports the qualifier' {
+            $qualifier = @([pscustomobject]@{ contextKey = 'schoolYear'; contextValue = '2024' })
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @(New-Store -Context $qualifier)
+
+            $verdict.Selected | Should -BeFalse
+            $verdict.Reason | Should -Match 'route-qualified \(schoolYear=2024\)'
+        }
+
+        It 'refuses <Case>' -ForEach @(
+            @{ Case = 'a missing id'; Id = $null; Expect = 'carries no id' }
+            @{ Case = 'a non-numeric id'; Id = '12abc'; Expect = 'not a whole number' }
+            @{ Case = 'an empty id'; Id = ''; Expect = 'not a whole number' }
+            @{ Case = 'a fractional id'; Id = '1.5'; Expect = 'not a whole number' }
+            @{ Case = 'a boolean id'; Id = $true; Expect = 'not a whole number' }
+            @{ Case = 'a zero id'; Id = 0; Expect = 'not a positive number' }
+            @{ Case = 'a negative id'; Id = -3; Expect = 'not a positive number' }
+        ) {
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @(New-Store -Id $Id)
+
+            $verdict.Selected | Should -BeFalse
+            $verdict.Reason | Should -Match $Expect
+        }
+
+        It 'accepts a numeric id that arrived as a string, because JSON is untyped' {
+            (Select-RouteUnqualifiedDataStore -DataStore @(New-Store -Id '7')).Id | Should -Be 7
+        }
+
+        It 'refuses a listing that is not an array' {
+            # A single object rather than a one-element array means the caller did not wrap the
+            # response, and "how many were there" is then unanswerable.
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore (New-Store)
+
+            $verdict.Selected | Should -BeFalse
+            $verdict.Reason | Should -Match 'rather than an array'
+        }
+
+        It 'refuses a null listing and a null entry separately' {
+            (Select-RouteUnqualifiedDataStore -DataStore $null).Reason | Should -Match 'is nothing rather than an array'
+            (Select-RouteUnqualifiedDataStore -DataStore @($null)).Reason | Should -Match 'contains a null entry'
+        }
+
+        It 'refuses malformed contexts rather than reading them as no contexts' {
+            # configure-local-data-store.ps1 reads a string here as "unqualified". For a proof that
+            # is the wrong way to be wrong: it would bind a client to a store whose qualification
+            # could not be determined.
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @(New-Store -Context 'none')
+
+            $verdict.Selected | Should -BeFalse
+            $verdict.Reason | Should -Match 'dataStoreContexts is String rather than an array'
+        }
+
+        It 'strips control characters out of a name it reports back' {
+            # The name comes from the Configuration Service, and it reaches a log line.
+            $verdict = Select-RouteUnqualifiedDataStore -DataStore @(
+                (New-Store -Name "One`nFAKE LOG LINE"), (New-Store -Id 8))
+
+            $verdict.Reason | Should -Not -Match "`n"
+            $verdict.Reason | Should -Match 'OneFAKE LOG LINE'
+        }
+    }
+
     Context 'the schema packages a bootstrap actually staged' {
         BeforeAll {
             $script:pinnedSchema = @(
