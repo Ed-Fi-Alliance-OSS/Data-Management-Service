@@ -32,23 +32,39 @@ public class ClaimsHierarchyManagerTests
                             Name = "SIS Vendor",
                             Actions =
                             [
-                                new() { Name = "read", AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }] },
-                                new() { Name = "Update", AuthorizationStrategyOverrides = [new() { Name = "NoFurtherAuthorizationRequired" }] },
+                                new()
+                                {
+                                    Name = "read",
+                                    AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }],
+                                },
+                                new()
+                                {
+                                    Name = "Update",
+                                    AuthorizationStrategyOverrides =
+                                    [
+                                        new() { Name = "NoFurtherAuthorizationRequired" },
+                                    ],
+                                },
                             ],
                         },
                     ],
                 },
             ];
 
-            new ClaimsHierarchyManager().ReplaceClaimSetResourceActions(
-                "SIS Vendor", "claim-a", ["Create", "Read"], true, _claims
-            ).Should().BeTrue();
+            new ClaimsHierarchyManager()
+                .ReplaceClaimSetResourceActions("SIS Vendor", "claim-a", ["Create", "Read"], true, _claims)
+                .Should()
+                .BeTrue();
         }
 
         [Test]
         public void It_preserves_overrides_for_retained_actions_case_insensitively() =>
-            _claims[0].ClaimSets[0].Actions.Single(action => action.Name == "Read")
-                .AuthorizationStrategyOverrides.Select(strategy => strategy.Name).Should().Equal("NamespaceBased");
+            _claims[0]
+                .ClaimSets[0]
+                .Actions.Single(action => action.Name == "Read")
+                .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+                .Should()
+                .Equal("NamespaceBased");
 
         [Test]
         public void It_removes_omitted_actions_and_their_overrides() =>
@@ -56,8 +72,11 @@ public class ClaimsHierarchyManagerTests
 
         [Test]
         public void It_does_not_copy_removed_overrides_to_new_actions() =>
-            _claims[0].ClaimSets[0].Actions.Single(action => action.Name == "Create")
-                .AuthorizationStrategyOverrides.Should().BeEmpty();
+            _claims[0]
+                .ClaimSets[0]
+                .Actions.Single(action => action.Name == "Create")
+                .AuthorizationStrategyOverrides.Should()
+                .BeEmpty();
     }
 
     private ClaimsHierarchyManager _claimsHierarchyManager;
@@ -722,5 +741,19 @@ public class ClaimsHierarchyManagerTests
             .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
             .Should()
             .Equal("Preserve");
+    }
+
+    [Test]
+    public void ResetClaimSetResourceActionStrategies_ShouldReturnFalseWhenTargetAssociationIsMissing()
+    {
+        List<Claim> claims = [new() { Name = "claim-a" }];
+
+        bool changed = _claimsHierarchyManager.ResetClaimSetResourceActionStrategies(
+            "SIS Vendor",
+            "claim-a",
+            claims
+        );
+
+        changed.Should().BeFalse();
     }
 }

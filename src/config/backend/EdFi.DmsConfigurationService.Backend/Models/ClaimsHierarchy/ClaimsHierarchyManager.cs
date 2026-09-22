@@ -146,9 +146,13 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
             .. enabledActionNames.Select(actionName => new ClaimSetAction
             {
                 Name = actionName,
-                AuthorizationStrategyOverrides = claimSet.Actions.Find(existing =>
-                    existing.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
-                )?.AuthorizationStrategyOverrides ?? [],
+                AuthorizationStrategyOverrides =
+                    claimSet
+                        .Actions.Find(existing =>
+                            existing.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+                        )
+                        ?.AuthorizationStrategyOverrides
+                    ?? [],
             }),
         ];
 
@@ -217,8 +221,8 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         }
 
         return claimSet.Actions.Exists(action =>
-                action.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
-            )
+            action.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+        )
             ? ClaimSetResourceActionStatus.Enabled
             : ClaimSetResourceActionStatus.Disabled;
     }
@@ -230,7 +234,12 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
     )
     {
         Claim? claim = FindClaim(resourceClaimName, claims);
-        ClaimSet? claimSet = claim is null ? null : FindClaimSet(claim, claimSetName);
+        if (claim is null)
+        {
+            return false;
+        }
+
+        ClaimSet? claimSet = FindClaimSet(claim, claimSetName);
         if (claimSet is null)
         {
             return false;

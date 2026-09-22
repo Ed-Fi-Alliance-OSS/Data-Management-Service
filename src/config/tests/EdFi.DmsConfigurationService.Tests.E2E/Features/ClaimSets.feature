@@ -376,3 +376,72 @@ Feature: ClaimSets endpoints
              When a GET request is made to "/v3/claimSets/{claimSetId}"
              Then it should respond with 200
               And the response body contains no non-empty authorization strategy overrides
+
+        Scenario: Ensure clients can modify and revoke resource claim actions
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853-resource-action-modify-revoke-{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true },
+                          { "name": "Create", "enabled": false }
+                      ]
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+             When a DELETE request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233"
+             Then it should respond with 204
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+
+        Scenario: Ensure resource claim action routes reject mismatched body IDs
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853-resource-action-mismatch-{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 234,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 400
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 234,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 400

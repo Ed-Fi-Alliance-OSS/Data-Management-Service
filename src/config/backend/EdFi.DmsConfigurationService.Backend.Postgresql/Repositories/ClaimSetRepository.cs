@@ -1059,7 +1059,7 @@ public class ClaimSetRepository(
             OpenConnection,
             LoadClaimSetForMutation,
             LoadResourceClaimMetadata,
-            LoadAuthorizationStrategyLookup,
+            GetAuthorizationStrategies,
             logger
         );
 
@@ -1097,29 +1097,13 @@ public class ClaimSetRepository(
     )
     {
         const string sql =
-            "SELECT \"Id\", \"ResourceName\", \"ClaimName\" FROM \"dmscs\".\"ResourceClaim\" WHERE \"TenantId\" IS NULL";
+            "SELECT \"Id\", \"ClaimName\" FROM \"dmscs\".\"ResourceClaim\" WHERE \"TenantId\" IS NULL";
 
         return (
             await connection.QueryAsync<ResourceClaimMetadataRow>(sql, transaction: transaction)
         ).ToList();
     }
 
-    private async Task<List<ClaimSetResourceActionMutationWorkflow.AuthorizationStrategyLookup>> LoadAuthorizationStrategyLookup()
-    {
-        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
-        string sql = $"""
-            SELECT "Id", "AuthorizationStrategyName"
-            FROM "dmscs"."AuthorizationStrategy"
-            WHERE {TenantContext.TenantWhereClause()};
-            """;
-
-        return (
-            await connection.QueryAsync<ClaimSetResourceActionMutationWorkflow.AuthorizationStrategyLookup>(
-                sql,
-                new { TenantId }
-            )
-        ).ToList();
-    }
 
     private static ClaimSetResponse CreateClaimSetResponse(dynamic row, List<Claim> hierarchy)
     {

@@ -7,7 +7,7 @@ using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
-public sealed record ResourceClaimMetadataRow(int Id, string ResourceName, string ClaimName);
+public sealed record ResourceClaimMetadataRow(int Id, string ClaimName);
 
 public abstract record ResourceClaimMetadataResolveResult
 {
@@ -44,16 +44,16 @@ public static class ResourceClaimMetadataResolver
             }
         }
 
-        foreach (string claimName in claimNames)
+        ResourceClaimMetadataRow? metadataRow = metadata.FirstOrDefault(row => row.Id == resourceClaimId);
+        if (metadataRow is null)
         {
-            ResourceClaimMetadataRow metadataRow = metadataByClaimName[claimName];
-            if (metadataRow.Id == resourceClaimId)
-            {
-                return new ResourceClaimMetadataResolveResult.Success(claimName);
-            }
+            return new ResourceClaimMetadataResolveResult.FailureResourceClaimNotFound();
         }
 
-        return new ResourceClaimMetadataResolveResult.FailureResourceClaimNotFound();
+        return FlattenClaims(claims)
+            .Any(claim => claim.Name.Equals(metadataRow.ClaimName, StringComparison.Ordinal))
+            ? new ResourceClaimMetadataResolveResult.Success(metadataRow.ClaimName)
+            : new ResourceClaimMetadataResolveResult.FailureResourceClaimNotFound();
     }
 
     private static IEnumerable<Claim> FlattenClaims(IEnumerable<Claim> claims)

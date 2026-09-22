@@ -75,6 +75,12 @@ public abstract class ResourceClaimActionsOnClaimSetRequestValidator<T> : Abstra
             .WithMessage("At least one resource claim action must be enabled.");
         RuleFor(request => request.ResourceClaimActions)
             .Must(actions =>
+                actions is not null
+                && actions.All(action => action is not null && !string.IsNullOrWhiteSpace(action.Name))
+            )
+            .WithMessage("Every resource claim action must have a name.");
+        RuleFor(request => request.ResourceClaimActions)
+            .Must(actions =>
                 actions is null
                 || actions
                     .Where(action => action is not null && !string.IsNullOrWhiteSpace(action.Name))
