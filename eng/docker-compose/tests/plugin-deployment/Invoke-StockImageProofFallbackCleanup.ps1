@@ -29,7 +29,14 @@
         Anything else is refused rather than acted on, because a receipt that does not describe this
         proof is not permission to remove anything.
 
-        Evidence is never touched. It lives outside the workspace for that reason.
+        A successful teardown is followed by removing the run workspace the receipt records, because
+        leaving it behind would make the next scheduled run refuse at its own path check: the proof
+        will not empty a workspace that already exists. The workspace is validated before it is
+        removed, with the same containment and reparse rules the proof applies to its own paths, and
+        the receipt is removed last so a failure here can be retried.
+
+        Evidence is never touched. It lives outside the workspace for that reason, and a workspace
+        that overlaps the recorded evidence directory is refused rather than removed.
     .PARAMETER ReceiptPath
         The receipt to act on. Defaults to the path the proof writes.
     .PARAMETER PassThru
@@ -152,7 +159,54 @@ finally {
     Pop-Location
 }
 
-Remove-Item -LiteralPath $ReceiptPath -Force
+# The workspace, after the stack that was mounting it is down. Left behind, it makes the next run
+# refuse at Assert-PathsSafeToOwn, so a fallback that only brought the project down would not have
+# restored a host this proof can run on.
+$workspace = [IO.Path]::GetFullPath("$workspaceRoot")
+$evidenceRoot = Get-JsonMember -Object $receipt -Name 'evidenceRoot'
+
+$refusal = @()
+
+if (-not [IO.Path]::IsPathRooted($workspace)) {
+    $refusal += "'$workspace' is not absolute"
+}
+elseif ($workspace.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) -ieq
+    [IO.Path]::GetPathRoot($workspace).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)) {
+    $refusal += "'$workspace' is a filesystem root"
+}
+elseif (Test-OwnedDeletionPath -Path $repositoryRoot -OwnedDirectory @($workspace)) {
+    $refusal += "'$workspace' contains this repository"
+}
+elseif (Test-OwnedDeletionPath -Path $composeRoot -OwnedDirectory @($workspace)) {
+    $refusal += "'$workspace' contains the compose directory"
+}
+elseif (-not [string]::IsNullOrWhiteSpace("$evidenceRoot") -and
+    (Test-OwnedDeletionPath -Path ([IO.Path]::GetFullPath("$evidenceRoot")) -OwnedDirectory @($workspace))) {
+    $refusal += "'$workspace' contains the evidence directory '$evidenceRoot', which is the record of why the run failed"
+}
+elseif ($null -ne (Get-ReparsePointAncestor -Path $workspace)) {
+    $refusal += "'$workspace' is reached through a link or junction, so what would be removed is not the path that was checked"
+}
+
+if ($refusal.Count -gt 0) {
+    # The receipt stays. The stack is down, and a later cleanup can retry the workspace once
+    # whatever made the path unsafe is dealt with.
+    throw ("The cleanup receipt at $ReceiptPath records a workspace this script may not remove, and the receipt " +
+        'has been left in place:' + [Environment]::NewLine +
+        (($refusal | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+}
+
+if (Test-Path -LiteralPath $workspace) {
+    Write-Line "Removing the run workspace $workspace."
+    Remove-Item -LiteralPath $workspace -Recurse -Force
+}
+
+# Last, so that a failure above leaves the permission in place rather than spending it. The receipt
+# normally sits beside the workspace rather than inside it, but a caller that put it inside has
+# already had it removed, and the end state wanted here is that there is no receipt.
+if (Test-Path -LiteralPath $ReceiptPath) {
+    Remove-Item -LiteralPath $ReceiptPath -Force
+}
 
 return Get-Outcome -Action 'cleaned' -Emit ([bool]$PassThru) -EnvironmentFile $environmentFile `
-    -Reason "tore down $composeProject and removed the receipt"
+    -Reason "tore down $composeProject, removed the run workspace, and removed the receipt"

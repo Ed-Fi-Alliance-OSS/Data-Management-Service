@@ -2131,11 +2131,14 @@ exit 0
             return $Plan
         }
 
-        It 'refuses an inspect that failed, rather than reading it as an absent container' {
+        It 'refuses an inspect that failed, naming that rather than an absent container' {
+            # Three facts that used to be one. A failed inspect is not a failed enumeration and
+            # neither is an absent container, and the message has to say which happened.
             $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'inspect dms-published-dms-1 --format' -Phase 3 -Change @{ exitCode = 1; output = 'Error: No such object' } }
 
             $run.ExitCode | Should -Be 1
-            $run.Evidence.primaryFailure | Should -Match 'could not be read, so whether a DMS container was created is unknown'
+            $run.Evidence.primaryFailure | Should -Match 'located but could not be inspected'
+            $run.Evidence.primaryFailure | Should -Not -Match 'container list could not be read'
         }
 
         It 'refuses a container enumeration that failed in the wrong-digest deployment' {
@@ -2194,6 +2197,17 @@ exit 0
 
             $run.ExitCode | Should -Be 1
             $run.Evidence.primaryFailure | Should -Match 'exited 0, so the wrong digest was accepted'
+        }
+
+        It 'refuses a wrong-digest deployment that produced no DMS container at all' {
+            # The checksum half is correct. What is missing is the container the claim is about:
+            # a project that composed no DMS service is consistent with the dependency working and
+            # equally with the service having been dropped, so it establishes nothing.
+            $run = Invoke-Mutated { param($p) Set-Rule -Plan $p -Match 'service=dms ' -Phase 3 -Change @{ output = '' } }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'returned no DMS container'
+            $run.Evidence.primaryFailure | Should -Not -Match 'failed enumeration'
         }
 
         It 'refuses a DMS that started and then exited in the wrong-digest deployment' {

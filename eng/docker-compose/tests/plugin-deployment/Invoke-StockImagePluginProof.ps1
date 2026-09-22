@@ -839,7 +839,9 @@ function Get-ComposeContainerName([string]$service) {
 
 function Get-ContainerFact([string]$name) {
     if ([string]::IsNullOrWhiteSpace($name)) {
-        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = ''; Restarting = $false; InspectSucceeded = $true; Absent = $true }
+        # No inspect was attempted, so it did not succeed. Reporting success here made an
+        # unattempted look indistinguishable from a look that found a stopped container.
+        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = ''; Restarting = $false; InspectSucceeded = $false; Absent = $true }
     }
 
     $result = Invoke-Docker -AllowFailure -ArgumentList @(
@@ -1283,6 +1285,11 @@ function Invoke-ProofScenario {
     finally {
         try {
             Stop-ProofDeployment -EnvironmentFile $environmentFile
+
+            # Spent as soon as this deployment is down, so there is no window in which a receipt
+            # names a stack that is no longer up. The next deployment writes a fresh one immediately
+            # before its own start.
+            Remove-CleanupReceipt
         }
         catch {
             if ($null -eq $failure) { throw }
@@ -1417,11 +1424,14 @@ function Invoke-WrongDigestCheck {
     $dms = Get-ComposeContainerName 'dms'
     $dmsFacts = Get-ContainerFact $dms.Name
 
-    # A container that exists but could not be inspected is not one that never started, and the
-    # earlier successful ps says nothing about this inspect.
+    # Three facts, passed separately. A container that exists but could not be inspected is not one
+    # that never started, a project that returned no DMS container proves nothing about one that
+    # refused to start, and the earlier successful ps says nothing about this inspect.
     $neverStarted = Test-DmsNeverStarted -Status $dmsFacts.Status -StartedAtRaw $dmsFacts.StartedAtRaw `
         -ExitCode $dmsFacts.ExitCode `
-        -EnumerationSucceeded ($dms.EnumerationSucceeded -and $dmsFacts.InspectSucceeded)
+        -EnumerationSucceeded $dms.EnumerationSucceeded `
+        -ContainerLocated (-not [string]::IsNullOrWhiteSpace($dms.Name)) `
+        -InspectSucceeded $dmsFacts.InspectSucceeded
 
     if (-not $neverStarted.Verified) {
         throw "The wrong-digest deployment started DMS: $($neverStarted.Reason)"
@@ -1436,6 +1446,7 @@ function Invoke-WrongDigestCheck {
         checksumVerified        = $checksum.Verified
         fetchLogExcerpt         = (Format-LogSafeText ((($fetchLog -split "`r?`n") | Where-Object { $_ -match 'did NOT match|FAILED' } | Select-Object -First 1)))
         dmsEnumerationSucceeded = $dms.EnumerationSucceeded
+        dmsContainerLocated     = (-not [string]::IsNullOrWhiteSpace($dms.Name))
         dmsInspectSucceeded     = $dmsFacts.InspectSucceeded
         dmsStatus               = $dmsFacts.Status
         dmsStartedAtRaw         = $dmsFacts.StartedAtRaw

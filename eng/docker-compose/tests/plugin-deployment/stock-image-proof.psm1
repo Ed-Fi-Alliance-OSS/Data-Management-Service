@@ -168,10 +168,19 @@ function Test-DmsNeverStarted {
         [string] $StartedAtRaw,
         [Nullable[int]] $ExitCode,
 
-        # Whether the container list this status was read from was actually obtained. An empty
-        # status means "absent" only when a successful enumeration said so; when the enumeration
-        # itself failed it means "unknown", and the two must not collapse into the same answer.
-        [bool] $EnumerationSucceeded = $true
+        # Three separate facts, none of which stands in for another.
+        #
+        # EnumerationSucceeded: the container list was actually obtained. ContainerLocated: that
+        # list named a DMS container. InspectSucceeded: that container was actually inspected.
+        #
+        # Absence is not evidence here, however reliably it was established. What service_completed
+        # _successfully buys is that a DMS container is created and never started, and a compose
+        # set that produced no DMS container at all proves nothing about that: it is consistent
+        # with the dependency working, and equally with the service having been dropped, renamed or
+        # never composed. So this requires a container to look at and a successful look at it.
+        [bool] $EnumerationSucceeded = $true,
+        [bool] $ContainerLocated = $true,
+        [bool] $InspectSucceeded = $true
     )
 
     $zero = '0001-01-01T00:00:00Z'
@@ -183,10 +192,25 @@ function Test-DmsNeverStarted {
         }
     }
 
+    if (-not $ContainerLocated) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = 'the compose project returned no DMS container, so there is nothing to establish that one was created and never started; an absent service is not the same as a service that refused to start'
+        }
+    }
+
+    if (-not $InspectSucceeded) {
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = 'the DMS container was located but could not be inspected, so whether it ever started is unknown'
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace($Status)) {
-        # No container at all is the strongest form of never started, but only because a successful
-        # enumeration above established that it is absent rather than unreadable.
-        return [pscustomobject]@{ Verified = $true; Reason = 'no DMS container was created' }
+        return [pscustomobject]@{
+            Verified = $false
+            Reason   = 'the DMS container was inspected and reported no status, so whether it ever started cannot be read'
+        }
     }
 
     if ($StartedAtRaw -ceq $zero) {

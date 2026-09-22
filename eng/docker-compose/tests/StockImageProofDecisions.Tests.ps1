@@ -66,9 +66,31 @@ Describe 'Stock image proof decisions' {
             $verdict.Verified | Should -BeTrue
         }
 
-        It 'accepts no container at all, when the enumeration that said so succeeded' {
-            (Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null -EnumerationSucceeded $true).Verified |
-                Should -BeTrue
+        It 'refuses no container at all, however reliably the absence was established' {
+            # What service_completed_successfully buys is a DMS container created and never
+            # started. A project that produced no DMS container is consistent with that dependency
+            # working and equally with the service having been dropped or never composed, so it
+            # establishes nothing.
+            $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null `
+                -EnumerationSucceeded $true -ContainerLocated $false
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'an absent service is not the same as a service that refused to start'
+        }
+
+        It 'refuses a container it could not inspect' {
+            $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null `
+                -EnumerationSucceeded $true -ContainerLocated $true -InspectSucceeded $false
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'could not be inspected'
+        }
+
+        It 'refuses a successful inspect that reported no status' {
+            $verdict = Test-DmsNeverStarted -Status '' -StartedAtRaw '' -ExitCode $null -EnumerationSucceeded $true
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'reported no status'
         }
 
         It 'refuses an empty status when the enumeration itself failed' {

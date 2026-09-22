@@ -281,13 +281,17 @@ catch {
                     composeRoot     = $script:composeRoot
                     environmentFile = $environmentFile
                     workspaceRoot   = $workspace
-                    evidenceRoot    = (Join-Path $workspace '..' | Split-Path -Parent)
+                    # A sibling of the workspace, as the proof's own default is: cleanup removes
+                    # the workspace and the evidence is the record of why the run failed.
+                    evidenceRoot    = Join-Path ([IO.Path]::GetTempPath()) "dms1502-re-$([guid]::NewGuid().ToString('N'))"
                     writtenUtc      = [DateTimeOffset]::UtcNow.ToString('o')
                 }
 
                 foreach ($key in $Override.Keys) { $receipt[$key] = $Override[$key] }
 
-                $path = Join-Path $workspace 'receipt.json'
+                # Beside the workspace, not inside it, which is where the proof writes its own:
+                # the receipt has to survive a workspace removal that then fails.
+                $path = "$workspace-receipt.json"
                 Set-Content -LiteralPath $path -Encoding utf8 -Value ($receipt | ConvertTo-Json -Depth 4)
 
                 return [pscustomobject]@{ Path = $path; Workspace = $workspace; EnvironmentFile = $environmentFile }
@@ -324,11 +328,14 @@ catch {
                 $teardown[0] | Should -Match ([regex]::Escape($receipt.EnvironmentFile))
                 $teardown[0] | Should -Match '-d -v'
 
-                # And the permission is spent.
+                # And the host is runnable again: the workspace that would have made the next run
+                # refuse at its own path check is gone, and the permission is spent.
+                Test-Path -LiteralPath $receipt.Workspace | Should -BeFalse
                 Test-Path -LiteralPath $receipt.Path | Should -BeFalse
             }
             finally {
                 Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
             }
         }
 
@@ -348,6 +355,7 @@ catch {
             }
             finally {
                 Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
             }
         }
 
@@ -363,6 +371,65 @@ catch {
             }
             finally {
                 Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'leaves the receipt when it may not remove the workspace the receipt records' {
+            # The stack is down but the workspace is not something this may delete. Spending the
+            # receipt here would lose the only record that there is still work to do.
+            $receipt = New-Receipt
+            $outside = Join-Path ([IO.Path]::GetTempPath()) "dms1502-ev-$([guid]::NewGuid().ToString('N'))"
+
+            try {
+                $document = Get-Content -LiteralPath $receipt.Path -Raw | ConvertFrom-Json
+                $document.evidenceRoot = Join-Path $receipt.Workspace 'evidence'
+                Set-Content -LiteralPath $receipt.Path -Encoding utf8 -Value ($document | ConvertTo-Json -Depth 4)
+
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                # The teardown happened; the workspace removal is what was refused.
+                @($run.Command | Where-Object { $_ -match 'bootstrap-published-dms\.ps1' }) | Should -HaveCount 1
+                $run.Failure | Should -Match 'contains the evidence directory'
+                $run.Failure | Should -Match 'left in place'
+                Test-Path -LiteralPath $receipt.Path | Should -BeTrue
+                Test-Path -LiteralPath $receipt.Workspace | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $outside -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'refuses a workspace reached through a junction rather than removing it' {
+            $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-wt-$([guid]::NewGuid().ToString('N'))"
+            $link = Join-Path ([IO.Path]::GetTempPath()) "dms1502-wl-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $external -Force | Out-Null
+            New-Item -ItemType Junction -Path $link -Target $external | Out-Null
+            $receipt = New-Receipt
+
+            try {
+                $environmentFile = Join-Path $link 'recipe1.env'
+                Set-Content -LiteralPath $environmentFile -Value 'DMS_HTTP_PORTS=8080' -Encoding utf8
+
+                $document = Get-Content -LiteralPath $receipt.Path -Raw | ConvertFrom-Json
+                $document.workspaceRoot = $link
+                $document.environmentFile = $environmentFile
+                Set-Content -LiteralPath $receipt.Path -Encoding utf8 -Value ($document | ConvertTo-Json -Depth 4)
+
+                $run = Invoke-Fallback -ReceiptPath $receipt.Path
+
+                # Refused before the teardown, because the environment file is reached through it.
+                $run.Failure | Should -Match 'link or junction'
+                $run.Command | Should -HaveCount 0
+                Test-Path -LiteralPath $external | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $link -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $external -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
             }
         }
 
@@ -378,6 +445,7 @@ catch {
             }
             finally {
                 Remove-Item -LiteralPath $receipt.Workspace -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $receipt.Path -Force -ErrorAction SilentlyContinue
             }
         }
     }
