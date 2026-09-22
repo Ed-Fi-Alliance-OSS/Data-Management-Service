@@ -1546,6 +1546,20 @@ public class RevocationOwnershipTests
         );
 
     /// <summary>
+    /// Parses the response body as the RFC 6749 §5.2 error object. Returns the root object so
+    /// the fixtures can assert on <c>error</c> and <c>error_description</c> as the top-level
+    /// members a conforming OAuth client reads, rather than matching substrings — a substring
+    /// match passes just as happily when the code is buried inside a problem+json
+    /// <c>errors</c> array, which is the shape this contract exists to rule out.
+    /// </summary>
+    private static async Task<JsonObject> ReadOAuthError(HttpResponseMessage response)
+    {
+        string body = await response.Content.ReadAsStringAsync();
+        JsonNode.Parse(body).Should().BeOfType<JsonObject>($"the body should be a JSON object: {body}");
+        return (JsonObject)JsonNode.Parse(body)!;
+    }
+
+    /// <summary>
     /// Pins the check-ordering documented on RevokeToken: a request with no credentials at all
     /// AND no <c>token</c> field gets 400 (structurally invalid request), not 401 (authentication
     /// failure) — the missing-token check runs before client authentication is even attempted.
@@ -1787,7 +1801,7 @@ public class RevocationOwnershipTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
-        private string _body = string.Empty;
+        private JsonObject _body = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1796,7 +1810,7 @@ public class RevocationOwnershipTests
             _client = _factory.CreateClient(); // No Authorization header and no client_id/secret form fields.
 
             _response = await PostRevocation(_client, "irrelevant-token");
-            _body = await _response.Content.ReadAsStringAsync();
+            _body = await ReadOAuthError(_response);
         }
 
         [TearDown]
@@ -1810,7 +1824,16 @@ public class RevocationOwnershipTests
         public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         [Test]
-        public void It_reports_the_oauth_error_code() => _body.Should().Contain("invalid_client");
+        public void It_answers_in_the_oauth_error_format() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_reports_error_as_a_top_level_member() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_reports_error_description_as_a_top_level_member() =>
+            _body["error_description"]!.GetValue<string>().Should().Be("Client authentication is required.");
 
         /// <summary>
         /// RFC 6749 §5.2 conditions the challenge on the client having attempted to authenticate
@@ -1840,7 +1863,7 @@ public class RevocationOwnershipTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
-        private string _body = string.Empty;
+        private JsonObject _body = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1857,7 +1880,7 @@ public class RevocationOwnershipTests
             _client = CreateClientWithCredentials(_factory, "unregistered-client", TestClientSecret);
 
             _response = await PostRevocation(_client, "irrelevant-token");
-            _body = await _response.Content.ReadAsStringAsync();
+            _body = await ReadOAuthError(_response);
         }
 
         [TearDown]
@@ -1871,13 +1894,25 @@ public class RevocationOwnershipTests
         public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         /// <summary>
-        /// The OAuth error code has to survive into the response body. A bare sentence would
-        /// fail the structured-provider-error parse in FailureResults and be replaced by its
-        /// "unexpected response" fallback, which tells the client nothing about what to fix.
+        /// An OAuth client reads <c>error</c> off the root of the response body, so the
+        /// endpoint answers in the OAuth error format rather than the Management API's
+        /// <c>application/problem+json</c> contract, which would flatten the code into a
+        /// sentence inside an <c>errors</c> array where no such client will look for it.
         /// </summary>
         [Test]
-        public void It_reports_the_oauth_error_code() =>
-            _body.Should().Contain("invalid_client. Invalid client or Invalid client credentials");
+        public void It_answers_in_the_oauth_error_format() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_reports_error_as_a_top_level_member() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_reports_error_description_as_a_top_level_member() =>
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid client or Invalid client credentials");
 
         /// <summary>
         /// RFC 6749 §5.2 requires a challenge matching the scheme the client used, and this

@@ -53,12 +53,24 @@ application lookup and secret-hash comparison `/connect/token` uses, so the two
 call sites cannot drift on what counts as a valid secret. It returns the
 client's **stored** `client_id` rather than a bare success flag; see
 [Client id casing](#client-id-casing) for why that distinction is load-bearing.
-Missing or invalid client credentials return `401 Unauthorized` carrying the
-OAuth `invalid_client` code, plus a `WWW-Authenticate: Basic` challenge when the
-caller used the `Authorization` header, as RFC 6749 §5.2 requires. This is
-reported, not masked as `200 OK`, because RFC 7009's "always 200" guarantee
-covers whether a *token* is valid or owned, not whether the *caller*
-authenticated.
+Missing or invalid client credentials return `401 Unauthorized` in the RFC 6749
+§5.2 **OAuth error format** — `application/json` with `error` and
+`error_description` as top-level members — plus a `WWW-Authenticate: Basic`
+challenge when the caller used the `Authorization` header:
+
+```json
+{ "error": "invalid_client", "error_description": "Invalid client or Invalid client credentials" }
+```
+
+This is the one place CMS does not answer in its usual
+`application/problem+json` contract, and the departure is deliberate:
+`/connect/revoke` is an OAuth endpoint, and an OAuth client reads `error` off the
+root of the body. Flattening the code into a sentence inside a problem-details
+`errors` array would put it somewhere no conforming client looks.
+
+The failure is reported rather than masked as `200 OK` because RFC 7009's
+"always 200" guarantee covers whether a *token* is valid or owned, not whether
+the *caller* authenticated.
 
 Once authenticated, a caller may only revoke a token that belongs to it. The
 token named in the `token` form field is first verified for signature, issuer,

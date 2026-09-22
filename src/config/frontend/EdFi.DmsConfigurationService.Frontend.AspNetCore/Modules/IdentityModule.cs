@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
@@ -464,12 +465,17 @@ public class IdentityModule : IEndpointModule
     }
 
     /// <summary>
-    /// The RFC 6749 §5.2 response for a revocation caller that failed client authentication:
-    /// the OAuth <c>invalid_client</c> code and description, plus the <c>WWW-Authenticate</c>
-    /// challenge §5.2 requires when the client attempted to authenticate through the
-    /// Authorization header. The description is wrapped in the provider-error JSON shape that
-    /// <c>FailureResults</c> parses; a bare sentence fails that parse and is replaced by the
-    /// generic "unexpected response" message, which tells the client nothing about what to fix.
+    /// The RFC 6749 §5.2 error response for a revocation caller that failed client
+    /// authentication: a JSON object whose <c>error</c> and <c>error_description</c> are
+    /// top-level members, plus the <c>WWW-Authenticate</c> challenge §5.2 requires when the
+    /// client attempted to authenticate through the Authorization header.
+    ///
+    /// Deliberately not routed through <c>FailureResults</c>, which is the right contract for
+    /// the Management API's own endpoints but the wrong one here: it emits
+    /// <c>application/problem+json</c> and flattens the code into a sentence inside an
+    /// <c>errors</c> array, where a conforming OAuth client — which reads <c>error</c> off the
+    /// root object — cannot find it. <c>/connect/revoke</c> is an OAuth endpoint and answers in
+    /// the OAuth error format.
     /// </summary>
     private static IResult InvalidClient(HttpContext httpContext, string errorDescription)
     {
@@ -482,11 +488,22 @@ public class IdentityModule : IEndpointModule
             httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
         }
 
-        return FailureResults.InvalidClient(
-            JsonSerializer.Serialize(new { error = "invalid_client", error_description = errorDescription }),
-            httpContext.TraceIdentifier
+        return Results.Json(
+            new OAuthErrorResponse("invalid_client", errorDescription),
+            contentType: "application/json",
+            statusCode: StatusCodes.Status401Unauthorized
         );
     }
+
+    /// <summary>
+    /// An RFC 6749 §5.2 error response body. The property names are the wire names the
+    /// specification fixes, so they are spelled that way rather than renamed by a serializer
+    /// policy that a future configuration change could alter.
+    /// </summary>
+    private sealed record OAuthErrorResponse(
+        [property: JsonPropertyName("error")] string Error,
+        [property: JsonPropertyName("error_description")] string ErrorDescription
+    );
 
     public class IntrospectionRequest
     {

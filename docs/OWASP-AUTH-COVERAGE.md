@@ -78,10 +78,13 @@ the stored status is `valid`. CMS exposes:
   conflated: the **caller's**, established by those credentials, and the **target
   token's**, read from its `client_id` claim. A caller may revoke only a token whose
   claim matches its own, so one client cannot revoke another's. Failed client
-  authentication is reported as `401` with the OAuth `invalid_client` code — and, when
-  the caller used the Authorization header, a `WWW-Authenticate: Basic` challenge per
-  RFC 6749 §5.2 — because RFC 7009's uniform-`200` rule covers whether a *token* is
-  valid or owned, not whether the *caller* authenticated.
+  authentication is reported as `401` in the RFC 6749 §5.2 OAuth error format —
+  `application/json` carrying top-level `error` and `error_description` members rather
+  than this API's usual `application/problem+json`, since an OAuth client reads `error`
+  off the root of the body — and, when the caller used the Authorization header, a
+  `WWW-Authenticate: Basic` challenge. It is reported rather than hidden because
+  RFC 7009's uniform-`200` rule covers whether a *token* is valid or owned, not whether
+  the *caller* authenticated.
 
   The caller's `client_id` is the client's stored canonical spelling, not the one it
   typed, which matters because tokens are minted from the canonical value too: a
