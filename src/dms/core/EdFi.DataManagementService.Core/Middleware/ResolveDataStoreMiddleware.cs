@@ -228,7 +228,7 @@ internal class ResolveDataStoreMiddleware(
             }
 
             // Check if this instance's route context matches the request qualifiers
-            bool isMatch = IsRouteContextMatch(dataStore.RouteContext, requestQualifiers);
+            bool isMatch = RouteContextMatcher.IsMatch(dataStore.RouteContext, requestQualifiers);
 
             if (isMatch)
             {
@@ -258,46 +258,5 @@ internal class ResolveDataStoreMiddleware(
         }
 
         return Task.FromResult(matchedInstance);
-    }
-
-    /// <summary>
-    /// Checks if the data store's route context matches the request's route qualifiers
-    /// </summary>
-    private static bool IsRouteContextMatch(
-        Dictionary<RouteQualifierName, RouteQualifierValue> instanceRouteContext,
-        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers
-    )
-    {
-        // Both must have same number of qualifiers
-        if (instanceRouteContext.Count != requestQualifiers.Count)
-        {
-            return false;
-        }
-
-        // If no qualifiers, it's a match (both empty)
-        if (instanceRouteContext.Count == 0)
-        {
-            return true;
-        }
-
-        // All qualifier names must match
-        if (!instanceRouteContext.Keys.All(requestQualifiers.ContainsKey))
-        {
-            return false;
-        }
-
-        // All qualifier values must match
-        foreach (KeyValuePair<RouteQualifierName, RouteQualifierValue> kvp in instanceRouteContext)
-        {
-            if (
-                !requestQualifiers.TryGetValue(kvp.Key, out RouteQualifierValue requestValue)
-                || !kvp.Value.Value.Equals(requestValue.Value, StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

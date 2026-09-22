@@ -66,6 +66,7 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<ITenantValidator, TenantValidator>()
+            .AddTransient<IMetadataRouteValidator, MetadataRouteValidator>()
             .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<Frontend.AspNetCore.Configuration.AppSettings>(
