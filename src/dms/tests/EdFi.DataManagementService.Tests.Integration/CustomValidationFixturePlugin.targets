@@ -177,12 +177,15 @@
             project's committed lock file, which a restore could rewrite for a story that has no
             business editing them.
 
-            PackageVersion rather than Version, so only the nupkg's version moves. Both trees
-            set AssemblyVersion and FileVersion explicitly - 8.0.0 under src/dms and 1.0.0 under
-            src/plugins - and the loader's newer-plugin-on-older-host preflight compares contract
-            AssemblyVersions, so a local repack must not move them. Under host-first resolution the
-            host serves the plugin its own copies of both assemblies at run time, and identical
-            assembly versions are what keeps that from being recorded as a substitution.
+            PackageVersion rather than Version, so only the nupkg's version moves. Both contracts
+            declare AssemblyVersion and FileVersion explicitly - the custom-validation contract in
+            its own csproj and the plugin contract in src/plugins/Directory.Build.props, 1.0.0 in
+            both today - and the loader's newer-plugin-on-older-host preflight compares contract
+            AssemblyVersions, so a local repack must not move them. The configuration-specific
+            package version here is fixture isolation, not the contract's published version. Under
+            host-first resolution the host serves the plugin its own copies of both assemblies at
+            run time, and identical assembly versions are what keeps that from being recorded as a
+            substitution.
         -->
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(CustomValidationContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(CustomValidationFixtureFeed)&quot; -p:PackageVersion=$(CustomValidationFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"

@@ -29,9 +29,11 @@
     removed one means a type in the shipped signatures no longer resolves for them. A check that
     only looked for surprises would pass on the second.
 
-    Only the per-PR lane calls this today, because the package is deliberately built and never
-    published. Whoever wires the publishing lane calls it there too: it is the check that decides
-    what the first published version contains, and once published that content cannot be taken back.
+    The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
+    path, and unconditionally in the merge queue, which is the recovery path for everything the
+    per-PR gates skip. The prerelease pack job calls it on the packed artifact before that artifact
+    is uploaded for publication: it is the check that decides what a published version contains, and
+    once published that content cannot be taken back.
 #>
 [CmdletBinding()]
 param(

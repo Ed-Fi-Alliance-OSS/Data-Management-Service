@@ -24,9 +24,17 @@
     records no shared-framework assembly at all, and it is one of the two in the plugin contract's own
     hook signature. Its absence is what a regression to that approach looks like.
 
-    The application section must list EdFi.Api.Plugins at the version src/plugins/Directory.Build.props
-    declares. That is the contract a plugin binds to, and the loader's skew preflight compares exactly
-    this value, so a manifest stating a different one would send an implementer to the wrong target.
+    EdFi.Api.Plugins and EdFi.DataManagementService.CustomValidation must be listed at the version
+    their own project declares, and in **both** the application section and the contract section.
+    Those are the published contracts a plugin takes a PackageReference on, and the loader's skew
+    preflight compares exactly these values, so a manifest stating a different one would send an
+    implementer to the wrong target. EdFi.DataManagementService.Identity is a third contract
+    assembly in the image as of DMS-1514 and is deliberately not published yet, so it is asserted
+    here only as one of the application rows; adding it to the contract section is part of
+    publishing it. The contract section is a filtered view of the
+    application section rather than an independent sweep, so a row that appeared in one and not the
+    other, or with a different version in each, means the generator's filter and its source have
+    diverged; that is checked here rather than assumed.
 
     No section may list EdFi.DataManagementService.ApiSchemaDownloader. That is the entry assembly of
     the second application packed into the image as /app/ApiSchemaDownloader/, so it exists in every
@@ -36,10 +44,10 @@
     grounds. Which third-party assemblies the application carries is a property of its dependency
     closure and is free to change; only the downloader's own entry assembly is a fixed tell.
 
-    EdFi.DataManagementService.CustomValidation's version is deliberately not asserted. That project
-    declares no Version, AssemblyVersion or FileVersion, so it carries the Data Management Service
-    release version and there is no project-declared contract version to compare against. The story
-    that gives it one extends this script in the same pass.
+    EdFi.DataManagementService.CustomValidation is asserted the same way as its sibling. It declares
+    its own Version, AssemblyVersion and FileVersion, so there is a project-declared contract version
+    to compare against; before that declaration existed the assembly carried the Data Management
+    Service release version and this assertion could not be made.
 #>
 [CmdletBinding()]
 param(
@@ -53,7 +61,13 @@ param(
     # instead of re-deriving one and agreeing with itself.
     [Parameter(Mandatory)]
     [string]
-    $ExpectedPluginsVersion
+    $ExpectedPluginsVersion,
+
+    # The second contract's own declared version, read by callers with
+    # Get-CustomValidationContractVersion for the same reason.
+    [Parameter(Mandatory)]
+    [string]
+    $ExpectedCustomValidationVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -142,26 +156,82 @@ foreach ($name in $sections.Keys) {
 }
 
 # AssemblyVersion is a four-part value while the package version is semantic, so the expected value
-# is the package version's major.minor.patch with a zero revision. This is the same derivation
-# Assert-PluginsPackage.ps1 makes against the packed assembly, and the two have to agree: the loader
-# compares this value, so the manifest and the package must state the same one.
-$expectedAssemblyVersion = [version] "$(($ExpectedPluginsVersion -split '-', 2)[0]).0"
+# is the package version's major.minor.patch with a zero revision. This is the same derivation the
+# package verifiers make against the packed assembly, and the two have to agree: the loader compares
+# this value, so the manifest and the package must state the same one.
+function Assert-ContractRow {
+    [CmdletBinding()]
+    [OutputType([version])]
+    param(
+        # The assembly whose row is being read, named as the manifest lists it.
+        [Parameter(Mandatory)][string] $Assembly,
 
-$pluginsRow = @($sections[$applicationSection] | Where-Object { $_.Key -eq "EdFi.Api.Plugins" })
+        # The contract's declared package version, semantic.
+        [Parameter(Mandatory)][string] $DeclaredVersion,
 
-if ($pluginsRow.Count -ne 1) {
-    throw "$ManifestPath lists EdFi.Api.Plugins $($pluginsRow.Count) time(s) in '$applicationSection'. The contract a plugin binds to has to appear exactly once."
+        # The manifest section the row must appear in.
+        [Parameter(Mandatory)][string] $Section,
+
+        # Where the declared version comes from, so a failure says which file to look at.
+        [Parameter(Mandatory)][string] $DeclarationSource
+    )
+
+    $expected = [version] "$(($DeclaredVersion -split '-', 2)[0]).0"
+    $rows = @($sections[$Section] | Where-Object { $_.Key -eq $Assembly })
+
+    if ($rows.Count -ne 1) {
+        throw "$ManifestPath lists $Assembly $($rows.Count) time(s) in '$Section'. A contract a plugin binds to has to appear exactly once in each section that carries it."
+    }
+
+    $actual = [version] "0.0.0.0"
+    if (-not [version]::TryParse($rows[0].Value, [ref] $actual)) {
+        throw "$ManifestPath states $Assembly at '$($rows[0].Value)' in '$Section', which does not parse as a version."
+    }
+
+    if ($actual -ne $expected) {
+        throw "$ManifestPath states $Assembly at $actual in '$Section'; $DeclarationSource declares $DeclaredVersion, so the manifest should state $expected. The loader's skew preflight compares this value."
+    }
+
+    return $actual
 }
 
-$actualAssemblyVersion = [version] "0.0.0.0"
-if (-not [version]::TryParse($pluginsRow[0].Value, [ref] $actualAssemblyVersion)) {
-    throw "$ManifestPath states EdFi.Api.Plugins at '$($pluginsRow[0].Value)', which does not parse as a version."
-}
+# Both contracts, and both sections for each. The contract section is a filter over the application
+# section, so a version present in one and absent or different in the other means the generator's
+# filter and its source have parted company.
+$contracts = @(
+    [pscustomobject]@{
+        Assembly          = "EdFi.Api.Plugins"
+        DeclaredVersion   = $ExpectedPluginsVersion
+        DeclarationSource = "src/plugins/Directory.Build.props"
+    },
+    [pscustomobject]@{
+        Assembly          = "EdFi.DataManagementService.CustomValidation"
+        DeclaredVersion   = $ExpectedCustomValidationVersion
+        DeclarationSource = "EdFi.DataManagementService.CustomValidation.csproj"
+    }
+)
 
-if ($actualAssemblyVersion -ne $expectedAssemblyVersion) {
-    throw "$ManifestPath states EdFi.Api.Plugins at $actualAssemblyVersion; src/plugins/Directory.Build.props declares $ExpectedPluginsVersion, so the manifest should state $expectedAssemblyVersion. The loader's skew preflight compares this value."
+$verified = [ordered] @{}
+
+foreach ($contract in $contracts) {
+    $observed = @()
+
+    foreach ($section in @($applicationSection, $contractSection)) {
+        $observed += Assert-ContractRow `
+            -Assembly $contract.Assembly `
+            -DeclaredVersion $contract.DeclaredVersion `
+            -Section $section `
+            -DeclarationSource $contract.DeclarationSource
+    }
+
+    if ($observed[0] -ne $observed[1]) {
+        throw "$ManifestPath states $($contract.Assembly) at $($observed[0]) in '$applicationSection' and at $($observed[1]) in '$contractSection'. One assembly in one image has one version."
+    }
+
+    $verified[$contract.Assembly] = $observed[0]
 }
 
 $frameworkSummary = ($frameworkSections | ForEach-Object { "$_ ($($sections[$_].Count))" }) -join "; "
+$contractSummary = ($verified.Keys | ForEach-Object { "$_ at $($verified[$_])" }) -join ", "
 
-Write-Output "Verified $([System.IO.Path]::GetFileName($ManifestPath)): EdFi.Api.Plugins at $actualAssemblyVersion, $($sections[$applicationSection].Count) application assemblies, $sharedFrameworkRequired present, no $downloaderSentinel row, $frameworkSummary."
+Write-Output "Verified $([System.IO.Path]::GetFileName($ManifestPath)): $contractSummary in both '$applicationSection' and '$contractSection', $($sections[$applicationSection].Count) application assemblies, $sharedFrameworkRequired present, no $downloaderSentinel row, $frameworkSummary."

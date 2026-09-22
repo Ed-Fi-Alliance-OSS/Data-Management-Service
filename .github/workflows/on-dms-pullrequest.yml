@@ -463,6 +463,11 @@ jobs:
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
+          # -DMSVersion is passed deliberately, and it is deliberately the wrong version for this
+          # package. The contract is versioned on its own public surface, so the release version on
+          # this command line must not reach the artifact; the assertion below reads the csproj's
+          # declared version instead and would fail if it did. Removing this argument would remove
+          # the only thing being disproved here.
           ./build-dms.ps1 Package `
             -DMSVersion $packageVersion `
             -Configuration ${{ env.CONFIGURATION }} `
@@ -472,25 +477,34 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-CustomValidationContractVersion
 
-          # Asserts on what is inside the artifact, not that a file appeared. The package is not
-          # published yet, so this is the only thing standing between a broken csproj and a broken
-          # first release.
+          # Asserts on what is inside the artifact, not that a file appeared. The prerelease pack
+          # job runs this same assertion on the artifact before it is uploaded for publication;
+          # running it here catches a broken csproj before it reaches a release. This job is gated
+          # on a non-draft pull request touching a DMS-relevant path, and runs unconditionally in
+          # the merge queue, so nothing merges without it.
           ./eng/verification/Assert-CustomValidationPackage.ps1 `
-            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$packageVersion.nupkg" `
+            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$contractVersion.nupkg" `
             -ExtractTo (Join-Path $env:RUNNER_TEMP "custom-validation-nupkg") `
-            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}"
+            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion $contractVersion
 
       - name: Compile Scratch Consumer
         run: |
           $ErrorActionPreference = "Stop"
 
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-CustomValidationContractVersion
 
+          # The contract version is fixed at its own surface version rather than moving with every
+          # build, so the same version string extracts to the same cache path on every run. A fresh
+          # global-packages folder per run is what stops a previously extracted copy satisfying this
+          # restore in place of the package just packed.
           ./eng/verification/Invoke-CustomValidationConsumerCheck.ps1 `
-            -PackageVersion $packageVersion `
-            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation")
+            -PackageVersion $contractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation-$([guid]::NewGuid().ToString('N'))")
 
       - name: Create Plugins NuGet Package
         run: |
@@ -570,14 +584,15 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           Import-Module ./package-helpers.psm1
-          $contractVersion = Get-PluginsContractVersion
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          $pluginsContractVersion = Get-PluginsContractVersion
+          $customValidationContractVersion = Get-CustomValidationContractVersion
 
-          # Two versions from two sources, deliberately: the custom-validation package is still
-          # release-stamped, and the plugin contract is versioned on its own public surface.
+          # Two versions from two sources, deliberately: each contract declares its own version in
+          # its own file and neither moves with the release, so neither is derived from the other
+          # or from the release version. These are the versions the two pack steps above produced.
           ./eng/verification/Invoke-CustomValidatorPluginConsumerCheck.ps1 `
-            -CustomValidationPackageVersion $packageVersion `
-            -PluginsPackageVersion $contractVersion `
+            -CustomValidationPackageVersion $customValidationContractVersion `
+            -PluginsPackageVersion $pluginsContractVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-validator-plugin-$([guid]::NewGuid().ToString('N'))")
 
       # Not preinstalled on the runner image, and this is the only Pester use in this job. The

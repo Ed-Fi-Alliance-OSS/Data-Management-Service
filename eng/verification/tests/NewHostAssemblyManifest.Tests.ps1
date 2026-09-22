@@ -25,15 +25,19 @@ BeforeAll {
 
     Import-Module (Join-Path $script:repositoryRoot "package-helpers.psm1") -Force
     $script:contractVersion = Get-PluginsContractVersion
+    $script:customValidationVersion = Get-CustomValidationContractVersion
 
     $script:entryAssemblyName = "TestHost"
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1500-manifest-tests-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $script:fixtureRoot -Force | Out-Null
 
-    # The repository's own contract assembly, which the fixtures put at the top level of app/ so that
-    # the declared-version assertion is made against a real build rather than a hand-written row.
+    # The repository's own contract assemblies, which the fixtures put at the top level of app/ so
+    # that the declared-version assertions are made against real builds rather than hand-written
+    # rows. Both contracts are here because the verifier asserts both, in both sections.
     $script:contractAssembly = Join-Path $script:repositoryRoot "src/plugins/EdFi.Api.Plugins/bin/Release/net10.0/EdFi.Api.Plugins.dll"
-    $script:contractAssemblyAvailable = Test-Path -LiteralPath $script:contractAssembly
+    $script:customValidationAssembly = Join-Path $script:repositoryRoot "src/dms/core/EdFi.DataManagementService.CustomValidation/bin/Release/net10.0/EdFi.DataManagementService.CustomValidation.dll"
+    $script:contractAssemblyAvailable = (Test-Path -LiteralPath $script:contractAssembly) -and
+        (Test-Path -LiteralPath $script:customValidationAssembly)
 
     # Real shared-framework assemblies from the installed runtime. The fixture's directory names, not
     # these files' versions, are what selection reads, so any installed 10.0.x serves for any name.
@@ -151,6 +155,7 @@ BeforeAll {
         $app = Join-Path $root "app"
         New-Item -ItemType Directory -Path $app -Force | Out-Null
         Copy-Item -LiteralPath $script:contractAssembly -Destination $app
+        Copy-Item -LiteralPath $script:customValidationAssembly -Destination $app
 
         if (-not $OmitDownloaderSentinel) {
             $downloader = Join-Path $app "ApiSchemaDownloader"
@@ -264,6 +269,58 @@ BeforeAll {
         param()
 
         return $script:fixturesAvailable
+    }
+
+    # Rewrites rows inside one named section and leaves every other section alone. A whole-file
+    # replace cannot express "the contract section lost this row while the application section kept
+    # it", which is the disagreement the both-sections assertions exist to catch. Sections are
+    # tracked with the same heading pattern the verifier parses with.
+    function Edit-ManifestSection {
+        [CmdletBinding(SupportsShouldProcess)]
+        param(
+            [Parameter(Mandatory)][string] $ManifestPath,
+            [Parameter(Mandatory)][string] $Heading,
+
+            # Rows whose first cell equals this are dropped from the section.
+            [string] $DropRowFor,
+
+            # Rows whose first cell equals this have their second cell set to this value.
+            [string] $SetVersionFor,
+            [string] $Version
+        )
+
+        if (-not $PSCmdlet.ShouldProcess($ManifestPath, "Edit section '$Heading'")) {
+            return
+        }
+
+        $lines = [System.IO.File]::ReadAllText($ManifestPath).Replace("`r`n", "`n") -split "`n"
+        $current = $null
+        $output = @()
+
+        foreach ($line in $lines) {
+            if ($line -match '^#{1,6}\s+(.+?)\s*$') {
+                $current = $Matches[1]
+                $output += $line
+                continue
+            }
+
+            if ($current -eq $Heading -and $line.StartsWith("|")) {
+                $cells = @(($line.Trim().Trim("|") -split "\|") | ForEach-Object { $_.Trim() })
+
+                if ($cells.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace($DropRowFor) -and $cells[0] -eq $DropRowFor) {
+                    continue
+                }
+
+                if ($cells.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace($SetVersionFor) -and $cells[0] -eq $SetVersionFor) {
+                    $output += "| $($cells[0]) | $Version |"
+                    continue
+                }
+            }
+
+            $output += $line
+        }
+
+        [System.IO.File]::WriteAllText($ManifestPath, ($output -join "`n"))
     }
 }
 
@@ -787,7 +844,8 @@ Describe "Assert-HostAssemblyManifest" {
         $fixture = New-ManifestFixture -Name "assert-happy"
         Invoke-Generator -Fixture $fixture | Out-Null
 
-        & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion |
+        & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion |
             Should -BeLike "*Microsoft.Extensions.Configuration.Abstractions present*"
     }
 
@@ -800,8 +858,112 @@ Describe "Assert-HostAssemblyManifest" {
         Invoke-Generator -Fixture $fixture | Out-Null
 
         {
-            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion "9.9.9"
+            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion "9.9.9" -ExpectedCustomValidationVersion $script:customValidationVersion
         } | Should -Throw -ExpectedMessage "*The loader's skew preflight compares this value*"
+    }
+
+    It "names both contracts and both sections in what it verified" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of both contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-both-contracts"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        $output = & $script:verifier `
+            -ManifestPath $fixture.OutputPath `
+            -ExpectedPluginsVersion $script:contractVersion `
+            -ExpectedCustomValidationVersion $script:customValidationVersion
+
+        $output | Should -BeLike "*EdFi.Api.Plugins at*"
+        $output | Should -BeLike "*EdFi.DataManagementService.CustomValidation at*"
+        $output | Should -BeLike "*Application assemblies*"
+        $output | Should -BeLike "*Contract assemblies*"
+    }
+
+    It "refuses a manifest stating a custom-validation version other than the declared one" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of both contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-cv-version"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion "9.9.9"
+        } | Should -Throw -ExpectedMessage "*EdFi.DataManagementService.CustomValidation*9.9.9*"
+    }
+
+    # The contract section is a filter over the application section. A row present in one and absent
+    # from the other means the filter and its source have parted company, and a check that read only
+    # the section it expected to find the row in would call that manifest correct.
+    It "refuses a manifest whose contract section lost a row the application section kept" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of both contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-cv-missing-contract-row"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        Edit-ManifestSection `
+            -ManifestPath $fixture.OutputPath `
+            -Heading "Contract assemblies" `
+            -DropRowFor "EdFi.DataManagementService.CustomValidation"
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
+        } | Should -Throw -ExpectedMessage "*0 time(s) in 'Contract assemblies'*"
+    }
+
+    It "refuses a manifest whose application section lost a row the contract section kept" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of both contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-plugins-missing-application-row"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        Edit-ManifestSection `
+            -ManifestPath $fixture.OutputPath `
+            -Heading "Application assemblies" `
+            -DropRowFor "EdFi.Api.Plugins"
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
+        } | Should -Throw -ExpectedMessage "*0 time(s) in 'Application assemblies'*"
+    }
+
+    It "refuses a manifest whose two sections disagree about one contract's version" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of both contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-section-disagreement"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        # Only the contract section is rewritten, so the application section still states the
+        # declared version and every single-section assertion would pass.
+        Edit-ManifestSection `
+            -ManifestPath $fixture.OutputPath `
+            -Heading "Contract assemblies" `
+            -SetVersionFor "EdFi.DataManagementService.CustomValidation" `
+            -Version "7.7.7.0"
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
+        } | Should -Throw -ExpectedMessage "*7.7.7.0*Contract assemblies*"
     }
 
     It "refuses a manifest whose shared-framework section lost Configuration.Abstractions" {
@@ -818,7 +980,8 @@ Describe "Assert-HostAssemblyManifest" {
         [System.IO.File]::WriteAllText($fixture.OutputPath, $manifest)
 
         {
-            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion
+            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
         } | Should -Throw -ExpectedMessage "*would omit it*"
     }
 
@@ -838,7 +1001,8 @@ Describe "Assert-HostAssemblyManifest" {
         [System.IO.File]::WriteAllText($fixture.OutputPath, $manifest)
 
         {
-            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion
+            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
         } | Should -Throw -ExpectedMessage "*reaching below the top level of /app*"
     }
 
@@ -859,7 +1023,8 @@ Describe "Assert-HostAssemblyManifest" {
         Invoke-Generator -Fixture $fixture | Out-Null
 
         {
-            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion
+            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
         } | Should -Throw -ExpectedMessage "*shared-framework section(s)*"
     }
 }

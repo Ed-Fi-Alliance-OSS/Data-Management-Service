@@ -24,7 +24,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are published by the release workflows; the custom-validation abstractions, plugin contract, and identity contract packages are built and verified only, and are deliberately not published yet. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are packed at -DMSVersion; the custom-validation, plugin contract, and identity contract packages are packed at the version each declares in its own project and ignore -DMSVersion. The identity contract package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -2144,21 +2144,33 @@ function BuildSchemaToolsPackage {
 
 function BuildCustomValidationPackage {
     $projectPath = "$coreRoot/$customValidationProjectName/$customValidationProjectName.csproj"
-    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$DMSVersion.nupkg"
 
-    Write-Info "Building $customValidationPackageName package"
+    # Deliberately NOT $DMSVersion, for the reason its sibling below records: the plugin loader's
+    # newer-plugin-on-older-host preflight compares AssemblyVersions across contract packages, so a
+    # contract's version must move with its public surface and only with it. The csproj declares
+    # Version, AssemblyVersion and FileVersion, and this reads the same declaration the compiler does.
+    $packageVersion = Get-CustomValidationContractVersion
+    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$packageVersion.nupkg"
+
+    Write-Info "Building $customValidationPackageName package version $packageVersion"
 
     Invoke-Execute {
+        # The contract version is fixed for the life of a surface rather than moving with every
+        # build, so a stale nupkg of the very same version is the normal state of a developer's
+        # working copy rather than a rare collision, and the verification lane downstream would
+        # happily assert against it.
         if (Test-Path $expectedPackagePath) {
             Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
         }
 
+        # No -p:PackageVersion. A command-line global property overrides the csproj, so passing one
+        # here would put the release version back on the package and make the existence check below
+        # a restatement of an argument just passed in rather than an assertion.
         dotnet pack $projectPath `
             -c $Configuration `
             --no-build `
             --no-restore `
-            --output $PSScriptRoot `
-            -p:PackageVersion=$DMSVersion
+            --output $PSScriptRoot
 
         if (-not (Test-Path $expectedPackagePath)) {
             throw "Expected custom-validation package was not created: $expectedPackagePath"

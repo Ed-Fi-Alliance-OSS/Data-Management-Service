@@ -6,6 +6,41 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <ImplicitUsings>enable</ImplicitUsings>
         <PackageId>EdFi.Api.CustomValidation</PackageId>
+        <!--
+            Declared here rather than inherited from src/dms/Directory.Build.props, which the build
+            script regenerates with the DMS release version on every BuildAndPublish. A csproj
+            property overrides the imported one, so these three are what the pack target and the
+            compiler use.
+
+            The plugin loader's newer-plugin-on-older-host preflight compares AssemblyVersions
+            across contract assemblies, so this contract's version has to move when its public
+            surface moves and must not move when it does not. Under the release-stamped scheme a
+            validator built against one release's contract would be refused by an adjacent release
+            whose contract surface was identical, naming two versions that differ in nothing an
+            implementer can act on.
+
+            1.0.0 is the surface DMS-1432 shipped.
+
+            VersionPrefix rather than Version, matching EdFi.Api.Identity and
+            src/plugins/Directory.Build.props: Get-DeclaredVersionElement (package-helpers.psm1)
+            reads one element name for every contract, so a fork here would mean a second reader
+            for an identical job. With no VersionSuffix anywhere, Version resolves to this.
+
+            InformationalVersion is declared because without it the packed DLL's ProductVersion
+            falls back to the committed Directory.Build.props value, currently 8.0.0, and an
+            operator reading the deployment results would see AssemblyVersion 1.0.0.0 beside
+            ProductVersion 8.0.x for this contract while the sibling contract matched.
+
+            None of this holds inside a Docker-built image: the Dockerfile passes global
+            /p:Version and /p:InformationalVersion when a release VERSION is supplied, and a global
+            property wins over one declared in a referenced project. AssemblyVersion and
+            FileVersion are deliberately not passed there, which is what the host assembly manifest
+            and the loader's skew preflight read.
+        -->
+        <VersionPrefix>1.0.0</VersionPrefix>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <InformationalVersion>1.0.0</InformationalVersion>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
         <Title>Ed-Fi API Custom Validation Abstractions</Title>

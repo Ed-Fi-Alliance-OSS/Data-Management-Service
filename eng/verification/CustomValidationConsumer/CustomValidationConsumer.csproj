@@ -9,15 +9,19 @@
     <!--
     Declared as a property so CI can point this at the version it just packed
     (-p:CustomValidationPackageVersion=<v>) without editing a tracked file. Nothing
-    produces this default on its own - build-dms.ps1's own -DMSVersion default is
-    8.0.0 - so a developer building this project locally first packs one. The
-    Package command packs without building, so it needs a prior build in the same
-    -Configuration:
+    produces this default on its own, which is the point: a developer who builds
+    this project without packing first gets a restore failure naming a version that
+    does not exist, rather than a quiet success against whatever
+    EdFi.Api.CustomValidation happened to be lying around. The Package command packs
+    without building, so it needs a prior build in the same -Configuration:
 
       ./build-dms.ps1 Build -Configuration Release
-      ./build-dms.ps1 Package -PackageTarget CustomValidation -DMSVersion 0.0.0-local -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget CustomValidation -Configuration Release
 
-    Or pass -p:CustomValidationPackageVersion for whatever version they did pack.
+    Then pass the contract's own declared version, which
+    Get-CustomValidationContractVersion reads out of the contract's csproj. The pack
+    takes no -DMSVersion: the contract declares its own Version, and a release
+    version passed on the command line is ignored by that target.
 
     The version is pinned exactly, in [brackets]. A bare version is a floor, not
     a pin, so with more than one nupkg in the local folder feed NuGet resolves a

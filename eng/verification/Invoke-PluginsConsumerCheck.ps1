@@ -14,9 +14,11 @@
     so a contract that packed a signature without the dependency closure that signature needs would
     fail here rather than at an implementer's desk.
 
-    Only the per-PR lane calls this today, because the package is deliberately built and never
-    published. Whoever wires the publishing lane calls it there too, so that no version can reach a
-    feed without an outside project having compiled against it first.
+    The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
+    path, and unconditionally in the merge queue; the prerelease lane does not. A contract change is
+    DMS-relevant, and a change that is not still meets this in the queue, so what this proves about a
+    contract version is proven before the pull request that produced that version merges, not in the
+    job that publishes it.
 #>
 [CmdletBinding()]
 param(
