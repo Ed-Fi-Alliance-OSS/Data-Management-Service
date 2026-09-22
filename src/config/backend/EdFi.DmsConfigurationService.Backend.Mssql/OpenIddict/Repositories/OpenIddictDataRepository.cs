@@ -35,9 +35,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             "SELECT Id FROM dmscs.OpenIddictApplication WITH (UPDLOCK, HOLDLOCK) WHERE Id = @ApplicationId";
 
         /// <summary>
-        /// Inserts the token only while the client holds fewer than @MaxActiveTokens active
-        /// tokens, where active means not revoked and not yet expired. Counting and inserting in
-        /// one statement leaves no window between the two.
+        /// Inserts the token only while the client holds fewer than @MaxActiveTokens active access
+        /// tokens, where active means not revoked and not yet expired. The count is scoped to
+        /// access tokens so that another token type stored in this table cannot consume the budget
+        /// this setting describes. Counting and inserting in one statement leaves no window between
+        /// the two.
         /// </summary>
         private const string ConditionalInsertSql =
             @"
@@ -48,6 +50,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                     SELECT COUNT(*)
                     FROM dmscs.OpenIddictToken
                     WHERE ApplicationId = @ApplicationId
+                      AND Type = 'access_token'
                       AND Status = 'valid'
                       AND ExpirationDate > @ActiveAsOf
                 ) < @MaxActiveTokens";

@@ -101,6 +101,34 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         );
     }
 
+    /// <summary>
+    /// Writes active token rows of an arbitrary type directly. <c>StoreTokenAsync</c> cannot seed
+    /// these: it always writes <c>access_token</c>.
+    /// </summary>
+    protected static async Task SeedTokenOfTypeAsync(Guid applicationId, string type, int count)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        for (int i = 0; i < count; i++)
+        {
+            Guid tokenId = Guid.NewGuid();
+            await connection.ExecuteAsync(
+                @"INSERT INTO dmscs.OpenIddictToken
+                  (Id, ApplicationId, Subject, Type, CreationDate, ExpirationDate, Status, ReferenceId)
+                  VALUES (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, 'valid', @ReferenceId)",
+                new
+                {
+                    Id = tokenId,
+                    ApplicationId = applicationId,
+                    Subject = $"{type}-{i}",
+                    Type = type,
+                    CreationDate = DateTime.UtcNow,
+                    ExpirationDate = FarFuture.UtcDateTime,
+                    ReferenceId = tokenId.ToString("N"),
+                }
+            );
+        }
+    }
+
     protected static async Task DeleteApplicationRowAsync(Guid applicationId)
     {
         await using SqlConnection connection = await OpenConnectionAsync();
@@ -571,6 +599,19 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     }
                 },
                 "revoked-rows"
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        // Nothing writes a non-access token today, so the row has to be seeded directly. Revert the
+        // Type predicate in ConditionalInsertSql and this grant is refused instead of stored.
+        [Test]
+        public async Task It_ignores_rows_of_another_token_type()
+        {
+            TokenStoreOutcome outcome = await GrantAfter(
+                applicationId => SeedTokenOfTypeAsync(applicationId, "refresh_token", 3),
+                "other-token-type"
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);

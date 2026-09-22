@@ -175,8 +175,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// The canonical token-limit message, whose <c>{0}</c> is the configured limit. It is both the
     /// shape an upstream body must match to be believed and the template the returned message is
     /// rebuilt from, so the parse and the format here cannot drift apart from one another. Staying
-    /// in step with the CMS formatter that writes the upstream body is a separate obligation, which
-    /// the round-trip fixture covers.
+    /// in step with the CMS formatter that writes the upstream body is a separate obligation that no
+    /// test covers: this project cannot reference <c>src/config</c>, so the fixtures here pin a local
+    /// copy of the sentence rather than the one CMS emits. A reworded CMS message silently degrades
+    /// every token-limit rejection to the generic 429, and nothing fails.
     /// </summary>
     private const string TokenLimitMessageFormat =
         "Too many access tokens have been requested (limit is {0}). Access tokens should be reused "
