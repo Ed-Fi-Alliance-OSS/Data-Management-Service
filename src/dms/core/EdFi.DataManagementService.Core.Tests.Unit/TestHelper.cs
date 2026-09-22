@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -19,6 +20,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -131,6 +133,20 @@ public static class TestHelper
     {
         services.AddSingleton<ICollectionPagingTelemetry>(NoOpCollectionPagingTelemetry.Instance);
     }
+
+    /// <summary>
+    /// A real IdentityTenantSnapshot backed entirely by fakes, for the many ApiService construction
+    /// sites where the identity pipelines' tenant-existence coordinator is not itself under test.
+    /// IdentityTenantSnapshot has no interface to fake directly - it is the single process-wide
+    /// coordinator instance - so this builds a harmless real one instead.
+    /// </summary>
+    internal static IdentityTenantSnapshot CreateNoOpIdentityTenantSnapshot() =>
+        new(
+            A.Fake<IDataStoreProvider>(),
+            TimeProvider.System,
+            A.Fake<IHostApplicationLifetime>(),
+            NullLogger<IdentityTenantSnapshot>.Instance
+        );
 
     /// <summary>
     /// Asserts that a 401 response body matches the design-doc / ODS authentication

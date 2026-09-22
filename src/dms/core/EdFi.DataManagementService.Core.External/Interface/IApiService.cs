@@ -157,4 +157,53 @@ public interface IApiService
         string? tenantId,
         JsonArray servers
     );
+
+    /// <summary>
+    /// DMS entry point for the identity create request: POST /identity/v2/identities
+    /// </summary>
+    Task<IFrontendResponse> IdentityCreate(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity get-by-id request: GET /identity/v2/identities/{id}
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="uniqueId">The UniqueId route value</param>
+    /// <param name="cancellationToken">Cancellation token for the request</param>
+    Task<IFrontendResponse> IdentityGetById(
+        FrontendRequest frontendRequest,
+        string uniqueId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity find request: POST /identity/v2/identities/find
+    /// </summary>
+    Task<IFrontendResponse> IdentityFind(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity search request: POST /identity/v2/identities/search
+    /// </summary>
+    Task<IFrontendResponse> IdentitySearch(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity asynchronous job results poll request:
+    /// GET /identity/v2/identities/results/{token}
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="requestToken">The request token route value, passed through unchanged</param>
+    /// <param name="cancellationToken">Cancellation token for the request</param>
+    Task<IFrontendResponse> IdentityResults(
+        FrontendRequest frontendRequest,
+        string requestToken,
+        CancellationToken cancellationToken
+    );
 }

@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.OpenApi;
@@ -53,6 +54,27 @@ internal class ApiService : IApiService
     private readonly CachedClaimSetProvider _cachedClaimSetProvider;
     private readonly IResourceDependencyGraphMLFactory _resourceDependencyGraphMLFactory;
     private readonly IProfileService _profileService;
+    private readonly IdentityTenantSnapshot _identityTenantSnapshot;
+    private readonly ILogger<ValidateTenantExistsMiddleware> _validateTenantExistsLogger;
+    private readonly ILogger<ValidateClientTenantBindingMiddleware> _validateClientTenantBindingLogger;
+    private readonly ILogger<ServiceClaimAuthorizationMiddleware> _serviceClaimAuthorizationLogger;
+    private readonly ILogger<IdentityOperationCapabilityMiddleware> _identityOperationCapabilityLogger;
+    private readonly ILogger<IdentityHandler> _identityHandlerLogger;
+
+    /// <summary>
+    /// The sanitized identity provider-execution boundary (design.md D9), shared by both identity
+    /// pipelines' capability gate and terminal handler. Stateless beyond its logger, so one instance
+    /// safely serves every identity request for the process lifetime.
+    /// </summary>
+    private readonly IdentityProviderBoundary _identityProviderBoundary;
+
+    /// <summary>
+    /// The fallback maximum HTTP request-line size for <see cref="IdentityHandler"/>, used only when a
+    /// request's <see cref="FrontendRequest.MaxRequestLineSize"/> is null. This is the documented .NET
+    /// default for Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>, re-verified at runtime
+    /// against a live host rather than assumed (Finding 24).
+    /// </summary>
+    private const int DefaultMaxRequestLineSize = 8192;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -125,6 +147,16 @@ internal class ApiService : IApiService
     /// </summary>
     private readonly Lazy<JsonNode?> _changeQueriesOpenApiSpecification;
 
+    /// <summary>
+    /// The pipeline steps to satisfy the three JSON-body identity operations (create, find, search)
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _identityJsonBodySteps;
+
+    /// <summary>
+    /// The pipeline steps to satisfy the two body-less identity operations (get-by-id, results)
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _identityBodylessSteps;
+
     public ApiService(
         IApiSchemaProvider apiSchemaProvider,
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
@@ -146,7 +178,11 @@ internal class ApiService : IApiService
         // Registered by AddDmsDefaultConfiguration. Required rather than optional so the break
         // duration behind the circuit-open 503's Retry-After is always the one the breaker was
         // actually built with, rather than whatever a defaulted instance happens to carry.
-        CircuitBreakerSettings circuitBreakerSettings
+        CircuitBreakerSettings circuitBreakerSettings,
+        // The process-wide tenant-existence coordinator for the identity pipeline (D4, D9). Deliberately
+        // not IIdentityService - identity behavior itself is resolved per request from the scope, not
+        // injected here.
+        IdentityTenantSnapshot identityTenantSnapshot
     )
     {
         _circuitBreakerSettings =
@@ -171,6 +207,17 @@ internal class ApiService : IApiService
         _cachedClaimSetProvider = cachedClaimSetProvider;
         _resourceDependencyGraphMLFactory = resourceDependencyGraphMLFactory;
         _profileService = profileService;
+        _identityTenantSnapshot = identityTenantSnapshot;
+        _validateTenantExistsLogger = loggerFactory.CreateLogger<ValidateTenantExistsMiddleware>();
+        _validateClientTenantBindingLogger =
+            loggerFactory.CreateLogger<ValidateClientTenantBindingMiddleware>();
+        _serviceClaimAuthorizationLogger = loggerFactory.CreateLogger<ServiceClaimAuthorizationMiddleware>();
+        _identityOperationCapabilityLogger =
+            loggerFactory.CreateLogger<IdentityOperationCapabilityMiddleware>();
+        _identityHandlerLogger = loggerFactory.CreateLogger<IdentityHandler>();
+        _identityProviderBoundary = new IdentityProviderBoundary(
+            loggerFactory.CreateLogger<IdentityProviderBoundary>()
+        );
 
         // Initialize Lazy instances - pipelines are built once since schema is now stable
         _upsertSteps = new Lazy<PipelineProvider>(CreateUpsertPipeline);
@@ -191,6 +238,8 @@ internal class ApiService : IApiService
         _resourceOpenApiSpecification = new Lazy<JsonNode>(CreateResourceOpenApiSpecification);
         _descriptorOpenApiSpecification = new Lazy<JsonNode>(CreateDescriptorOpenApiSpecification);
         _changeQueriesOpenApiSpecification = new Lazy<JsonNode?>(CreateChangeQueriesOpenApiSpecification);
+        _identityJsonBodySteps = new Lazy<PipelineProvider>(CreateIdentityJsonBodyPipeline);
+        _identityBodylessSteps = new Lazy<PipelineProvider>(CreateIdentityBodylessPipeline);
     }
 
     private List<IPipelineStep> GetCommonInitialSteps()
@@ -649,6 +698,86 @@ internal class ApiService : IApiService
     }
 
     /// <summary>
+    /// The first eight steps shared by both identity pipelines (design.md D9): request/exception
+    /// logging, tenant syntax validation, JWT authentication, tenant existence, client-to-tenant
+    /// binding, service-claim authorization, and the identity operation-capability gate. Deliberately
+    /// not GetCommonInitialSteps(): the identity pipelines never resolve a physical data store or parse
+    /// a resource path, so ResolveDataStoreMiddleware and ParsePathMiddleware are absent, and every
+    /// identity-specific step below is unique to this route family.
+    /// </summary>
+    private List<IPipelineStep> GetIdentityCommonSteps() =>
+        [
+            new RequestResponseLoggingMiddleware(_requestResponseLogger),
+            new CoreExceptionLoggingMiddleware(
+                _logger,
+                TimeSpan.FromSeconds(_circuitBreakerSettings.BreakDurationSeconds)
+            ),
+            new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
+            _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
+            new ValidateTenantExistsMiddleware(
+                _appSettings.Value.MultiTenancy,
+                _identityTenantSnapshot,
+                _validateTenantExistsLogger
+            ),
+            new ValidateClientTenantBindingMiddleware(_validateClientTenantBindingLogger),
+            new ServiceClaimAuthorizationMiddleware(_claimSetProvider, _serviceClaimAuthorizationLogger),
+            new IdentityOperationCapabilityMiddleware(
+                _identityProviderBoundary,
+                _identityOperationCapabilityLogger
+            ),
+        ];
+
+    /// <summary>
+    /// The pipeline for the three JSON-body identity operations: create, find, and search. The first
+    /// eight steps from GetIdentityCommonSteps(), then content-type, body parsing, and duplicate-property
+    /// checks - all gated behind the capability check, so a request for an unsupported operation never
+    /// reaches content-type or body validation (A13) - and finally IdentityHandler (design.md D9).
+    /// </summary>
+    private PipelineProvider CreateIdentityJsonBodyPipeline()
+    {
+        var steps = GetIdentityCommonSteps();
+        steps.AddRange([
+            new ValidateContentTypeMiddleware(_logger, ContentTypePolicy.BaselineJsonOnly),
+            new ParseBodyMiddleware(_logger),
+            new DuplicatePropertiesMiddleware(_logger),
+            new IdentityHandler(_identityProviderBoundary, DefaultMaxRequestLineSize, _identityHandlerLogger),
+        ]);
+
+        return new PipelineProvider(steps);
+    }
+
+    /// <summary>
+    /// The pipeline for the two body-less identity operations: get-by-id and results polling. The same
+    /// first eight steps as the JSON-body pipeline, with no content-type or body parsing since neither
+    /// operation carries a request body, then IdentityHandler (design.md D9).
+    /// </summary>
+    private PipelineProvider CreateIdentityBodylessPipeline()
+    {
+        var steps = GetIdentityCommonSteps();
+        steps.Add(
+            new IdentityHandler(_identityProviderBoundary, DefaultMaxRequestLineSize, _identityHandlerLogger)
+        );
+
+        return new PipelineProvider(steps);
+    }
+
+    /// <summary>
+    /// The route-qualified `.../identity/v2/identities/results` path (no trailing slash, no token) for
+    /// the current request, derived from the incoming request's own path so tenant and route-qualifier
+    /// segments carry through unchanged regardless of which of the five identity routes was called.
+    /// Falls back to the unqualified segment when the fixed identity route text is not found, which
+    /// only happens in a test double that does not model real routing.
+    /// </summary>
+    private static string ComputeIdentityPollPathPrefix(string requestPath)
+    {
+        const string identitiesSegment = "/identity/v2/identities";
+        int segmentIndex = requestPath.IndexOf(identitiesSegment, StringComparison.Ordinal);
+        string routeQualifiedBase =
+            segmentIndex >= 0 ? requestPath[..(segmentIndex + identitiesSegment.Length)] : identitiesSegment;
+        return $"{routeQualifiedBase}/results";
+    }
+
+    /// <summary>
     /// Parses the excluded domains configuration setting into an array of domain names
     /// </summary>
     private string[] GetExcludedDomainsFromConfiguration()
@@ -891,6 +1020,126 @@ internal class ApiService : IApiService
             UnsupportedMethodName = requestMethodName,
         };
         await _trackedChangeMethodNotAllowedSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the identity create request: POST /identity/v2/identities
+    /// </summary>
+    public async Task<IFrontendResponse> IdentityCreate(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.POST,
+            scope.ServiceProvider,
+            cancellationToken
+        )
+        {
+            IdentityOperation = Identity.IdentityOperation.Create,
+            IdentityPollPathPrefix = ComputeIdentityPollPathPrefix(frontendRequest.Path),
+        };
+        await _identityJsonBodySteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the identity get-by-id request: GET /identity/v2/identities/{id}
+    /// </summary>
+    public async Task<IFrontendResponse> IdentityGetById(
+        FrontendRequest frontendRequest,
+        string uniqueId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            scope.ServiceProvider,
+            cancellationToken
+        )
+        {
+            IdentityOperation = Identity.IdentityOperation.GetById,
+            IdentityRouteValue = uniqueId,
+            IdentityPollPathPrefix = ComputeIdentityPollPathPrefix(frontendRequest.Path),
+        };
+        await _identityBodylessSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the identity find request: POST /identity/v2/identities/find
+    /// </summary>
+    public async Task<IFrontendResponse> IdentityFind(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.POST,
+            scope.ServiceProvider,
+            cancellationToken
+        )
+        {
+            IdentityOperation = Identity.IdentityOperation.Find,
+            IdentityPollPathPrefix = ComputeIdentityPollPathPrefix(frontendRequest.Path),
+        };
+        await _identityJsonBodySteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the identity search request: POST /identity/v2/identities/search
+    /// </summary>
+    public async Task<IFrontendResponse> IdentitySearch(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.POST,
+            scope.ServiceProvider,
+            cancellationToken
+        )
+        {
+            IdentityOperation = Identity.IdentityOperation.Search,
+            IdentityPollPathPrefix = ComputeIdentityPollPathPrefix(frontendRequest.Path),
+        };
+        await _identityJsonBodySteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the identity asynchronous job results poll request:
+    /// GET /identity/v2/identities/results/{token}
+    /// </summary>
+    public async Task<IFrontendResponse> IdentityResults(
+        FrontendRequest frontendRequest,
+        string requestToken,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            scope.ServiceProvider,
+            cancellationToken
+        )
+        {
+            IdentityOperation = Identity.IdentityOperation.Results,
+            IdentityRouteValue = requestToken,
+            IdentityPollPathPrefix = ComputeIdentityPollPathPrefix(frontendRequest.Path),
+        };
+        await _identityBodylessSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 
