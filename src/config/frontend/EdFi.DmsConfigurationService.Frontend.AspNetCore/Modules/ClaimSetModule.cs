@@ -125,6 +125,9 @@ public class ClaimSetModule : IEndpointModule
                     .Select(action => action.Name!)
                     .ToList()
             )
+            {
+                SuppliedActionNames = request.ResourceClaimActions!.Select(action => action.Name!).ToList(),
+            }
         );
 
         return result switch
@@ -165,6 +168,9 @@ public class ClaimSetModule : IEndpointModule
                     .Select(action => action.Name!)
                     .ToList()
             )
+            {
+                SuppliedActionNames = request.ResourceClaimActions!.Select(action => action.Name!).ToList(),
+            }
         );
 
         return result switch

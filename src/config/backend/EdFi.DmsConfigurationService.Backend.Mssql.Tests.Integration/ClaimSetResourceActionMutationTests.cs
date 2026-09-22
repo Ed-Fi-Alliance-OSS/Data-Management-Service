@@ -135,6 +135,50 @@ public abstract class ClaimSetMutationTestBase : DatabaseTest
 
 public class ClaimSetResourceActionMutationTests
 {
+    public class Given_replacing_actions_with_disabled_entries : ClaimSetMutationTestBase
+    {
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_rejects_invalid_disabled_actions_without_mutating_the_hierarchy(bool modify)
+        {
+            int claimSetId = await CreateVendorClaimSet();
+            await GrantRead(claimSetId, StudentResourceClaimId);
+            await GrantRead(claimSetId, SchoolResourceClaimId);
+            const string hierarchySql = """SELECT Hierarchy FROM dmscs.ClaimsHierarchy""";
+            string before = await Connection!.QuerySingleAsync<string>(hierarchySql);
+            var command = new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"])
+            {
+                SuppliedActionNames = ["Create", "NotAnAction"],
+            };
+
+            var result = modify
+                ? await Repository.ModifyResourceClaimActions(command)
+                : await Repository.GrantResourceClaimActions(command);
+
+            (await Connection.QuerySingleAsync<string>(hierarchySql)).Should().Be(before);
+            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureInvalidAction("NotAnAction"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_persists_only_enabled_actions_when_disabled_names_are_valid(bool modify)
+        {
+            int claimSetId = await CreateVendorClaimSet();
+            await GrantRead(claimSetId, StudentResourceClaimId);
+            var command = new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["create"])
+            {
+                SuppliedActionNames = ["create", "Read"],
+            };
+
+            var result = modify
+                ? await Repository.ModifyResourceClaimActions(command)
+                : await Repository.GrantResourceClaimActions(command);
+
+            result.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
+        }
+    }
+
     public class Given_granting_resource_claim_actions : ClaimSetMutationTestBase
     {
         [Test]

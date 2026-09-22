@@ -1025,7 +1025,7 @@ public class ClaimSetRepository(
     )
     {
         ClaimSetResourceActionMutationResult? validationResult = ResolveActionNames(
-            command.EnabledActionNames,
+            command,
             out List<string> actionNames
         );
         if (validationResult is not null)
@@ -1054,7 +1054,7 @@ public class ClaimSetRepository(
     )
     {
         ClaimSetResourceActionMutationResult? validationResult = ResolveActionNames(
-            command.EnabledActionNames,
+            command,
             out List<string> actionNames
         );
         if (validationResult is not null)
@@ -1265,6 +1265,16 @@ public class ClaimSetRepository(
             """;
 
         return (await connection.QueryAsync<AuthorizationStrategyLookup>(sql, new { TenantId })).ToList();
+    }
+
+    private ClaimSetResourceActionMutationResult? ResolveActionNames(
+        ResourceClaimActionMutationCommand command,
+        out List<string> canonicalActionNames
+    )
+    {
+        canonicalActionNames = [];
+        return ResolveActionNames(command.SuppliedActionNames, out _)
+            ?? ResolveActionNames(command.EnabledActionNames, out canonicalActionNames);
     }
 
     private ClaimSetResourceActionMutationResult? ResolveActionNames(
