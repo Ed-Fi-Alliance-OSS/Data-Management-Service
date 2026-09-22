@@ -5,6 +5,63 @@
 
 Set-StrictMode -Version Latest
 
+function Invoke-CdcQualificationImagePull {
+    <# .SYNOPSIS
+    Retries an image pull and retains safe per-attempt evidence, including recovered failures.
+    #>
+    param([string] $Image, [string] $RawDirectory, [string] $Destination)
+
+    # A nonzero native exit must reach the retry/evidence path even for callers that opt
+    # into PowerShell native-command errors. Do not change the caller's preference.
+    $PSNativeCommandUseErrorActionPreference = $false
+    $safeImage = if ($Image -cmatch '\A[a-zA-Z0-9][a-zA-Z0-9._/:-]*(?:@sha256:[a-f0-9]{64})?\z') {
+        ConvertTo-CdcSafeEvidence $Image
+    }
+    else { '[redacted]' }
+    $pullId = [guid]::NewGuid().ToString('N')
+    $retryDelays = @(5, 15)
+    $maxAttempts = $retryDelays.Count + 1
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        $logName = "pull-$pullId-$attempt.log"
+        $logPath = Join-Path $RawDirectory $logName
+        $started = [DateTimeOffset]::UtcNow
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        & docker pull -- $Image *> $logPath
+        $exitCode = $LASTEXITCODE
+        $timer.Stop()
+        $failureCategory = 'None'
+        if ($exitCode -ne 0) {
+            # Never copy arbitrary Docker prose, registry URLs or credentials into the
+            # public artifact. Keep the full output privately and publish known categories.
+            [string] $output = Get-Content -LiteralPath $logPath -Raw
+            $failureCategory = switch -Regex ($output) {
+                '(?i)toomanyrequests|too many requests|rate.?limit|\b429\b' { 'RateLimited'; break }
+                '(?i)unauthorized|authentication required|access denied|denied:|\b401\b|\b403\b' { 'Authorization'; break }
+                '(?i)manifest unknown|manifest.*not found|name unknown|\b404\b' { 'ImageNotFound'; break }
+                '(?i)no space left on device' { 'DiskFull'; break }
+                '(?i)no such host|temporary failure in name resolution' { 'Dns'; break }
+                '(?i)x509|certificate|tls handshake' { 'Tls'; break }
+                '(?i)timeout|timed out|context deadline exceeded' { 'Timeout'; break }
+                '(?i)connection reset|connection refused|unexpected EOF|network is unreachable' { 'Connection'; break }
+                '(?i)\b50[0234]\b|internal server error|bad gateway|service unavailable|gateway timeout' { 'RegistryUnavailable'; break }
+                default { 'Unknown' }
+            }
+        }
+        $retrySeconds = if ($exitCode -ne 0 -and $attempt -lt $maxAttempts) { $retryDelays[$attempt - 1] } else { 0 }
+        $outcome = if ($exitCode -eq 0) { 'Succeeded' } else { 'Failed' }
+        [ordered]@{
+            Image = $safeImage; Attempt = $attempt; MaxAttempts = $maxAttempts
+            StartedAtUtc = $started.ToString('O'); DurationMs = $timer.ElapsedMilliseconds
+            ExitCode = $exitCode; Outcome = $outcome; FailureCategory = $failureCategory
+            RetryDelaySeconds = $retrySeconds; PrivateLog = $logName
+        } | ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $Destination 'image-pulls.jsonl')
+        Write-Output "CDC image pull $safeImage attempt $attempt/$maxAttempts`: $outcome (exit=$exitCode, category=$failureCategory, retrySeconds=$retrySeconds)."
+        if ($exitCode -eq 0) { return }
+        if ($retrySeconds -gt 0) { Start-Sleep -Seconds $retrySeconds }
+    }
+    throw "EnvironmentUnavailable: required image pull failed for $safeImage after $maxAttempts attempts (exit=$exitCode, category=$failureCategory); see image-pulls.jsonl."
+}
+
 function Get-CdcQualificationReport {
     <# .SYNOPSIS
     Classifies complete TRX results without treating skipped or unavailable cases as evidence.
@@ -169,4 +226,4 @@ function Get-CdcQualificationProviderSuite {
     return $filters
 }
 
-Export-ModuleMember -Function Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite

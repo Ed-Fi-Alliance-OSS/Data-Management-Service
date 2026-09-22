@@ -3,6 +3,167 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+Describe 'CDC qualification image pulls' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+        function docker { }
+    }
+    BeforeEach {
+        $caseRoot = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid().ToString('N')))
+        $script:raw = New-Item -ItemType Directory (Join-Path $caseRoot 'private')
+        $script:destination = New-Item -ItemType Directory (Join-Path $caseRoot 'published')
+        $script:image = 'registry.example.test/team/image@sha256:' + ('a' * 64)
+        $script:exitCodes = [System.Collections.Generic.Queue[int]]::new()
+        $script:commands = [System.Collections.Generic.List[string]]::new()
+        $script:events = [System.Collections.Generic.List[string]]::new()
+        $script:failure = 'Error response from daemon: unexpected EOF https://user:private-token@registry.example.test/path'
+        $script:savedExitCode = $global:LASTEXITCODE
+        Mock -ModuleName cdc-qualification docker {
+            $script:commands.Add(($args -join ' '))
+            $script:events.Add('pull')
+            $global:LASTEXITCODE = $script:exitCodes.Dequeue()
+            if ($global:LASTEXITCODE -ne 0) { Write-Output $script:failure }
+            else { Write-Output 'Status: Image is up to date' }
+        }
+        Mock -ModuleName cdc-qualification Start-Sleep {
+            param($Seconds)
+            $script:events.Add("sleep:$Seconds")
+        }
+    }
+    AfterEach {
+        $global:LASTEXITCODE = $script:savedExitCode
+    }
+    It 'pulls once on immediate success and records the exact pinned image without sleeping' {
+        $script:exitCodes.Enqueue(0)
+        Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination
+        $script:commands | Should -Be @("pull $script:image")
+        $script:events | Should -Be @('pull')
+        $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records.Count | Should -Be 1
+        $records[0].Image | Should -Be $script:image
+        $records[0].Attempt | Should -Be 1
+        $records[0].ExitCode | Should -Be 0
+        $records[0].Outcome | Should -Be 'Succeeded'
+        $records[0].FailureCategory | Should -Be 'None'
+        $records[0].RetryDelaySeconds | Should -Be 0
+        [DateTimeOffset]::Parse($records[0].StartedAtUtc) | Should -BeLessOrEqual ([DateTimeOffset]::UtcNow)
+        $records[0].DurationMs | Should -BeGreaterOrEqual 0
+    }
+    It 'recovers on the third attempt with bounded backoff and retains earlier failures' {
+        foreach ($code in @(1, 7, 0)) { $script:exitCodes.Enqueue($code) }
+        $output = Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination
+        $script:commands | Should -Be @("pull $script:image", "pull $script:image", "pull $script:image")
+        $script:events | Should -Be @('pull', 'sleep:5', 'pull', 'sleep:15', 'pull')
+        $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records.Attempt | Should -Be @(1, 2, 3)
+        $records.MaxAttempts | Should -Be @(3, 3, 3)
+        $records.ExitCode | Should -Be @(1, 7, 0)
+        $records.Outcome | Should -Be @('Failed', 'Failed', 'Succeeded')
+        $records.FailureCategory | Should -Be @('Connection', 'Connection', 'None')
+        $records.RetryDelaySeconds | Should -Be @(5, 15, 0)
+        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 3
+        (Get-Content (Join-Path $script:raw $records[0].PrivateLog) -Raw) | Should -Match 'private-token'
+        ($output -join '') | Should -Not -Match 'private-token|https://'
+        (Get-Content (Join-Path $script:destination 'image-pulls.jsonl') -Raw) | Should -Not -Match 'private-token|https://'
+        @(Get-ChildItem $script:destination).Count | Should -Be 1
+    }
+    It 'fails closed after three failed attempts with retained diagnostics and no final sleep' {
+        foreach ($code in @(1, 1, 23)) { $script:exitCodes.Enqueue($code) }
+        $script:failure = 'toomanyrequests: rate limit exceeded; private-token'
+        { Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination } |
+            Should -Throw 'EnvironmentUnavailable:*after 3 attempts (exit=23, category=RateLimited)*image-pulls.jsonl*'
+        $script:events | Should -Be @('pull', 'sleep:5', 'pull', 'sleep:15', 'pull')
+        $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records.ExitCode | Should -Be @(1, 1, 23)
+        $records.Outcome | Should -Be @('Failed', 'Failed', 'Failed')
+        $records.RetryDelaySeconds | Should -Be @(5, 15, 0)
+        $records.FailureCategory | Should -Be @('RateLimited', 'RateLimited', 'RateLimited')
+    }
+    It 'appends attempts across images without overwriting evidence or private logs' {
+        foreach ($code in @(0, 1, 0)) { $script:exitCodes.Enqueue($code) }
+        Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination
+        Invoke-CdcQualificationImagePull 'postgres:16' $script:raw $script:destination
+        $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records.Image | Should -Be @($script:image, 'postgres:16', 'postgres:16')
+        $records.Attempt | Should -Be @(1, 1, 2)
+        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 3
+        @(Get-ChildItem $script:raw).Count | Should -Be 3
+    }
+    It 'classifies <Category> without publishing raw Docker output' -ForEach @(
+        @{ ErrorText = 'unauthorized: authentication required'; Category = 'Authorization' }
+        @{ ErrorText = 'manifest unknown'; Category = 'ImageNotFound' }
+        @{ ErrorText = 'no space left on device'; Category = 'DiskFull' }
+        @{ ErrorText = 'dial tcp: lookup registry: no such host'; Category = 'Dns' }
+        @{ ErrorText = 'x509: certificate signed by unknown authority'; Category = 'Tls' }
+        @{ ErrorText = 'net/http: request canceled (Client.Timeout exceeded while awaiting headers)'; Category = 'Timeout' }
+        @{ ErrorText = 'received unexpected HTTP status: 503 Service Unavailable'; Category = 'RegistryUnavailable' }
+        @{ ErrorText = 'unrecognized private-token'; Category = 'Unknown' }
+        @{ ErrorText = ''; Category = 'Unknown' }
+    ) {
+        foreach ($code in @(1, 0)) { $script:exitCodes.Enqueue($code) }
+        $script:failure = $ErrorText
+        Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination
+        $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records[0].FailureCategory | Should -Be $Category
+        (Get-Content (Join-Path $script:destination 'image-pulls.jsonl') -Raw) | Should -Not -Match 'private-token'
+    }
+    It 'redacts unsafe image identities from both evidence and the failure message' -ForEach @(
+        @{ UnsafeImage = "registry/image:tag`n::error::injected" }
+        @{ UnsafeImage = 'user:private-token@registry.example.test/image' }
+        @{ UnsafeImage = 'https://registry/image?token=private-token' }
+    ) {
+        foreach ($code in @(1, 1, 1)) { $script:exitCodes.Enqueue($code) }
+        { Invoke-CdcQualificationImagePull $UnsafeImage $script:raw $script:destination } |
+            Should -Throw 'EnvironmentUnavailable:*for `[redacted`] after 3 attempts*'
+        $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records.Image | Should -Be @('[redacted]', '[redacted]', '[redacted]')
+        (Get-Content (Join-Path $script:destination 'image-pulls.jsonl') -Raw) | Should -Not -Match 'private-token|::error::'
+    }
+}
+
+Describe 'CDC qualification image-pull runner boundary' {
+    It 'retains pull evidence and reports unavailable prerequisites without starting tests after retries are exhausted' {
+        # Run the real entry point in a child process because it deliberately exits nonzero.
+        # Docker and sleep shims keep this deterministic and independent of a live registry.
+        $harness = Join-Path $TestDrive 'runner-harness.ps1'
+        $destination = Join-Path $TestDrive 'runner-evidence'
+        $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
+        Set-Content -LiteralPath $harness -Value @'
+param([string] $Runner, [string] $Destination)
+$ErrorActionPreference = 'Stop'
+$repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Runner) '../..'))
+$qualified = Get-Content (Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
+$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
+function global:docker {
+    $global:LASTEXITCODE = 0
+    if ($args[0] -eq 'pull' -and $args[-1] -eq $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE) {
+        $global:LASTEXITCODE = 17
+        'Error response from daemon: toomanyrequests: private-token'
+    }
+    else { 'fixture-docker-success' }
+}
+function global:Start-Sleep { }
+function global:dotnet { throw 'The test suite must not start after a failed pull.' }
+& $Runner -Lane Kafka -ResultsDirectory $Destination -PullImages
+exit $LASTEXITCODE
+'@
+        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 1
+        $output | Should -Not -Match 'private-token|The test suite must not start'
+        $report = Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $report.Count | Should -Be 1
+        $report[0].Status | Should -Be 'EnvironmentUnavailable'
+        $report[0].Total | Should -Be 0
+        $report[0].Reason | Should -Match 'after 3 attempts \(exit=17, category=RateLimited\)'
+        $records = @(Get-Content (Join-Path $destination 'image-pulls.jsonl') | ConvertFrom-Json)
+        $records.ExitCode | Should -Be @(0, 17, 17, 17)
+        $records.Attempt | Should -Be @(1, 1, 2, 3)
+        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 4
+        @(Get-ChildItem $destination -Name | Sort-Object) | Should -Be @('image-pulls.jsonl', 'qualification.json')
+        (Get-ChildItem $destination -File | Get-Content -Raw) -join '' | Should -Not -Match 'private-token'
+    }
+}
+
 Describe 'CDC qualification result boundary' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
