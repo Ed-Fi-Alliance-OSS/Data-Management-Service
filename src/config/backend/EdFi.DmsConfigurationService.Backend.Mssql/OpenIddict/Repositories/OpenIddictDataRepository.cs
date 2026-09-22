@@ -24,12 +24,19 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
 
         /// <summary>
         /// How long a token grant waits for another grant's row lock on the same client before
-        /// failing. Matches the default <c>ApplicationLockOptions.AcquireTimeout</c> so the two
-        /// lock paths in this service bound their waits alike.
+        /// failing. Matches the shipped default of <c>ApplicationLockOptions.AcquireTimeout</c>,
+        /// so the two lock paths bound their waits alike out of the box. This one is a constant:
+        /// it does not follow an operator override of <c>ApplicationLockSettings:AcquireTimeout</c>.
         /// </summary>
         private const string LockTimeoutMilliseconds = "5000";
 
         private const string SetLockTimeoutSql = $"SET LOCK_TIMEOUT {LockTimeoutMilliseconds}";
+
+        /// <summary>
+        /// "Lock request time out period exceeded", the error SQL Server raises when a statement
+        /// waits longer than <c>SET LOCK_TIMEOUT</c> allows.
+        /// </summary>
+        private const int LockRequestTimeoutErrorNumber = 1222;
 
         private const string LockApplicationSql =
             "SELECT Id FROM dmscs.OpenIddictApplication WITH (UPDLOCK, HOLDLOCK) WHERE Id = @ApplicationId";
@@ -469,32 +476,47 @@ UPDATE dmscs.OpenIddictApplication
             // dies with this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 
-            await connection.ExecuteAsync(SetLockTimeoutSql, transaction: transaction);
-
-            Guid? lockedApplicationId = await connection.QuerySingleOrDefaultAsync<Guid?>(
-                LockApplicationSql,
-                new { ApplicationId = applicationId },
-                transaction
-            );
-
-            // Without this guard a client deleted mid-request would receive a freshly minted,
-            // storable token that stays usable until it expires: GetApplicationByClientIdAsync ran
-            // on a different connection, and OpenIddictToken has no foreign key to
-            // OpenIddictApplication.
-            if (lockedApplicationId is null)
+            try
             {
-                await transaction.RollbackAsync();
-                return TokenStoreOutcome.ClientNotFound;
+                await connection.ExecuteAsync(SetLockTimeoutSql, transaction: transaction);
+
+                Guid? lockedApplicationId = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                    LockApplicationSql,
+                    new { ApplicationId = applicationId },
+                    transaction
+                );
+
+                // Without this guard a client deleted mid-request would receive a freshly minted,
+                // storable token that stays usable until it expires: GetApplicationByClientIdAsync
+                // ran on a different connection, and OpenIddictToken has no foreign key to
+                // OpenIddictApplication.
+                if (lockedApplicationId is null)
+                {
+                    await transaction.RollbackAsync();
+                    return TokenStoreOutcome.ClientNotFound;
+                }
+
+                int rowsAffected = await connection.ExecuteAsync(
+                    ConditionalInsertSql,
+                    parameters,
+                    transaction
+                );
+
+                await transaction.CommitAsync();
+
+                // Zero rows can only mean the count predicate was false. A deadlock victim (1205),
+                // or any other fault, throws from the statements above and is never reported here
+                // as a limit rejection; only the lock-wait timeout below is answered as an outcome.
+                return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
-
-            int rowsAffected = await connection.ExecuteAsync(ConditionalInsertSql, parameters, transaction);
-
-            await transaction.CommitAsync();
-
-            // Zero rows can only mean the count predicate was false. A lock-wait timeout (error
-            // 1222), a deadlock victim (1205), or any other fault throws from the statements above
-            // and is never reported here as a limit rejection.
-            return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
+            catch (SqlException exception) when (exception.Number == LockRequestTimeoutErrorNumber)
+            {
+                // Waiting out SetLockTimeoutSql is contention, not a fault, and not a limit
+                // rejection either - the client may hold no tokens at all. Reported as its own
+                // outcome so the caller can answer it as retriable rather than as a server error.
+                // The transaction is rolled back by its disposal on the way out.
+                return TokenStoreOutcome.LockTimeout;
+            }
         }
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)

@@ -248,6 +248,9 @@ public class IdentityModule : IEndpointModule
                 tokenLimitExceeded.Limit,
                 httpContext.TraceIdentifier
             ),
+            TokenResult.FailureLockTimeout => FailureResults.ConcurrentModification(
+                httpContext.TraceIdentifier
+            ),
             TokenResult.FailureIdentityProvider failureIdentityProvider =>
                 failureIdentityProvider.IdentityProviderError switch
                 {

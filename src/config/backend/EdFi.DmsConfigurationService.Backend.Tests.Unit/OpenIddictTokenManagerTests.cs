@@ -753,6 +753,27 @@ public class OpenIddictTokenManagerTests
             _result.Should().NotBeOfType<TokenResult.FailureTokenLimitExceeded>();
     }
 
+    // The arm has to sit ahead of the catch-all: without it the repository's contention outcome
+    // would fall through to FailureUnknown and answer a transient queue with a server error.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheGrantCouldNotBeSerialized : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.LockTimeout, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_lock_timeout_failure() =>
+            _result.Should().BeOfType<TokenResult.FailureLockTimeout>();
+    }
+
     // Disabling is the repository's job, not the manager's: the manager forwards whatever is
     // configured, so a manager-side shortcut cannot quietly diverge from the disable semantics.
     [TestFixture]

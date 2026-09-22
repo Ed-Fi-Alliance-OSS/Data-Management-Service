@@ -31,5 +31,12 @@ public record TokenResult
     /// </summary>
     public record FailureTokenLimitExceeded(int Limit) : TokenResult;
 
+    /// <summary>
+    /// The grant could not be serialized against the other grants in flight for the same client
+    /// before the identity provider's contention budget ran out. Nothing is wrong with the request
+    /// and the client may be nowhere near its token limit, so this is retriable as it stands.
+    /// </summary>
+    public record FailureLockTimeout : TokenResult;
+
     public record FailureUnknown(string FailureMessage) : TokenResult;
 }

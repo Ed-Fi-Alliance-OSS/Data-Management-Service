@@ -34,8 +34,10 @@ public interface IOpenIddictTokenRepository
     /// <returns>
     /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
     /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at least
-    /// <paramref name="maxActiveTokens"/> active tokens, or
-    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists.
+    /// <paramref name="maxActiveTokens"/> active tokens,
+    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+    /// <see cref="TokenStoreOutcome.LockTimeout"/> when the wait for a competing grant's lock on
+    /// this application ran out.
     /// </returns>
     Task<TokenStoreOutcome> StoreTokenAsync(
         Guid tokenId,

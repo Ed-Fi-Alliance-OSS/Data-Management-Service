@@ -301,6 +301,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     return new TokenResult.FailureTokenLimitExceeded(bearerTokenPerClientLimit);
                 }
 
+                if (outcome == TokenStoreOutcome.LockTimeout)
+                {
+                    // Not routed through the catch below: contention is a retriable concurrency
+                    // condition, and reporting it as an unknown failure would answer a transient
+                    // queue with a server error.
+                    _logger.LogWarning(
+                        "Timed out waiting to serialize a token grant for client {ClientId}",
+                        LoggingUtility.SanitizeForLog(clientId)
+                    );
+                    return new TokenResult.FailureLockTimeout();
+                }
+
                 if (outcome == TokenStoreOutcome.ClientNotFound)
                 {
                     // The application row was deleted between the lookup above and the store, so

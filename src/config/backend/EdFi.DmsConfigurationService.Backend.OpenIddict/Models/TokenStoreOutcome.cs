@@ -26,4 +26,11 @@ public enum TokenStoreOutcome
     /// store was attempted, so the client was deleted mid-request.
     /// </summary>
     ClientNotFound,
+
+    /// <summary>
+    /// Nothing was written because the wait for another grant's lock on this client's application
+    /// row ran out. Contention, not a limit rejection: the client may have been nowhere near its
+    /// limit, and retrying is the right answer.
+    /// </summary>
+    LockTimeout,
 }

@@ -902,6 +902,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     [TestFixture]
     public class Given_A_Held_Application_Row_Lock : OpenIddictDataRepositoryTests
     {
+        /// <summary>
+        /// How long these fixtures wait to observe the grant blocked on the holder's lock. It has
+        /// to stay comfortably under the repository's own lock timeout - 5000 ms, in
+        /// <c>OpenIddictDataRepository.LockTimeoutMilliseconds</c> - because once that elapses the
+        /// grant stops waiting and completes with <see cref="TokenStoreOutcome.LockTimeout"/>.
+        /// The "still blocked" assertions below would then fail naming the lock, which is not what
+        /// went wrong. Lowering the repository constant means lowering this one too.
+        /// </summary>
         private static readonly TimeSpan _blockedObservationTimeout = TimeSpan.FromSeconds(4);
 
         private OpenIddictDataRepository _repository = null!;
@@ -1001,10 +1009,11 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         /// <summary>
         /// Contention is not a limit rejection. Held past the repository's LOCK_TIMEOUT, the grant
-        /// throws, which reaches the caller as a sanitized 500 rather than "Too Many Tokens".
+        /// reports <see cref="TokenStoreOutcome.LockTimeout"/>, which reaches the caller as a
+        /// retriable 409 rather than as "Too Many Tokens" or as a server error.
         /// </summary>
         [Test]
-        public async Task It_throws_rather_than_reporting_a_limit_rejection_when_the_wait_times_out()
+        public async Task It_reports_a_lock_timeout_rather_than_a_limit_rejection_when_the_wait_times_out()
         {
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
@@ -1014,19 +1023,17 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             RowLockHolder holder = await RowLockHolder.TakeAsync(applicationId);
             try
             {
-                Func<Task> grant = () =>
-                    _repository.StoreTokenAsync(
-                        Guid.NewGuid(),
-                        applicationId,
-                        "subject-lock-timeout",
-                        FarFuture,
-                        5
-                    );
+                // The limit is 5 and the client holds nothing, so a LimitExceeded here could only
+                // come from the timeout being mistaken for one.
+                TokenStoreOutcome outcome = await _repository.StoreTokenAsync(
+                    Guid.NewGuid(),
+                    applicationId,
+                    "subject-lock-timeout",
+                    FarFuture,
+                    5
+                );
 
-                // 1222 is "Lock request time out period exceeded", which SET LOCK_TIMEOUT raises.
-                (await grant.Should().ThrowAsync<SqlException>())
-                    .Which.Number.Should()
-                    .Be(1222);
+                outcome.Should().Be(TokenStoreOutcome.LockTimeout);
 
                 (await TokenRowCountAsync(applicationId)).Should().Be(0);
             }
