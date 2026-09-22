@@ -383,6 +383,7 @@ public static class DmsCoreServiceExtensions
         );
         services.TryAddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
         services.TryAddSingleton<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
+        services.TryAddSingleton<IdentityTenantSnapshot>();
 
         return services;
     }
