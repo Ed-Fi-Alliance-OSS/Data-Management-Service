@@ -27,15 +27,20 @@ public class ConfigurationServiceClaimSetProvider(
     /// into the internal ClaimSet model used by the DMS authorization pipeline.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios.</param>
-    public async Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+    /// <param name="cancellationToken">Cancellation token for the Configuration Service request.</param>
+    public async Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         /// Get token for the Configuration Service API
         string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
             configurationServiceContext.clientId,
             configurationServiceContext.clientSecret,
-            configurationServiceContext.scope
+            configurationServiceContext.scope,
+            cancellationToken
         );
-        return (await FetchAuthorizationMetadata(configurationServiceToken, tenant))
+        return (await FetchAuthorizationMetadata(configurationServiceToken, tenant, cancellationToken))
             .Select(CreateClaimSet)
             .ToList();
     }
@@ -46,7 +51,8 @@ public class ConfigurationServiceClaimSetProvider(
     /// </summary>
     private async Task<IList<ClaimSetMetadata>> FetchAuthorizationMetadata(
         string? configurationServiceToken,
-        string? tenant
+        string? tenant,
+        CancellationToken cancellationToken
     )
     {
         // Retrieve all claim sets with their authorization metadata in one call by omitting claimSetName
@@ -68,9 +74,12 @@ public class ConfigurationServiceClaimSetProvider(
             request.Headers.Add(TenantHeaderName, tenant);
         }
 
-        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
+            request,
+            cancellationToken
+        );
 
-        string claimSetMetadataJson = await response.Content.ReadAsStringAsync();
+        string claimSetMetadataJson = await response.Content.ReadAsStringAsync(cancellationToken);
         return JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(claimSetMetadataJson, _jsonOptions) ?? [];
     }
 

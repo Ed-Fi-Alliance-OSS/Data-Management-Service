@@ -217,7 +217,9 @@ public class ApplicationContextRequirementMiddlewareTests
     public async Task It_resolves_not_found_for_a_profile_with_one_configuration_lookup()
     {
         var configurationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-        A.CallTo(() => configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant))
+        A.CallTo(() =>
+                configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant, A<CancellationToken>._)
+            )
             .Returns(new ApplicationContextResult.NotFound());
         var cachedProvider = new CachedApplicationContextProvider(
             configurationProvider,
@@ -261,7 +263,9 @@ public class ApplicationContextRequirementMiddlewareTests
             requestInfo.FrontendResponse,
             "Unable to resolve application context for the authenticated client."
         );
-        A.CallTo(() => configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant))
+        A.CallTo(() =>
+                configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant, A<CancellationToken>._)
+            )
             .MustHaveHappenedOnceExactly();
     }
 

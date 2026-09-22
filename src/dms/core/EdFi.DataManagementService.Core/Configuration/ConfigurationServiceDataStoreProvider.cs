@@ -351,7 +351,7 @@ public class ConfigurationServiceDataStoreProvider(
     public IReadOnlyList<string> GetLoadedTenantKeys() => _instancesByTenant.Keys.ToList().AsReadOnly();
 
     /// <inheritdoc />
-    public async Task<IList<string>> LoadTenants()
+    public async Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
             "Requesting authentication token from Configuration Service at {BaseUrl}",
@@ -364,12 +364,13 @@ public class ConfigurationServiceDataStoreProvider(
             string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
                 configurationServiceContext.clientId,
                 configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
+                configurationServiceContext.scope,
+                cancellationToken
             );
 
             logger.LogInformation("Fetching tenants from Configuration Service");
 
-            IList<string> tenants = await FetchTenants(configurationServiceToken);
+            IList<string> tenants = await FetchTenants(configurationServiceToken, cancellationToken);
 
             logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
 
@@ -382,6 +383,10 @@ public class ConfigurationServiceDataStoreProvider(
             }
 
             return tenants;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (HttpRequestException ex)
         {
@@ -414,7 +419,10 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches tenant names from the Configuration Service API
     /// </summary>
-    private async Task<IList<string>> FetchTenants(string configurationServiceToken)
+    private async Task<IList<string>> FetchTenants(
+        string configurationServiceToken,
+        CancellationToken cancellationToken
+    )
     {
         const string TenantsEndpoint = "v3/tenants/";
 
@@ -423,7 +431,10 @@ public class ConfigurationServiceDataStoreProvider(
         using var request = new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
         // No tenant header needed for tenants endpoint
-        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
+            request,
+            cancellationToken
+        );
 
         if (!response.IsSuccessStatusCode)
         {
@@ -435,7 +446,7 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string tenantsJson = await response.Content.ReadAsStringAsync();
+        string tenantsJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
         logger.LogDebug(
             "Received response from Configuration Service, deserializing {ByteCount} bytes",
@@ -449,8 +460,19 @@ public class ConfigurationServiceDataStoreProvider(
 
         if (tenantResponses == null)
         {
-            logger.LogWarning("Deserialization returned null - treating as empty tenant list");
-            return [];
+            throw new JsonException(
+                $"Configuration Service {TenantsEndpoint} response deserialized to null."
+            );
+        }
+
+        foreach (TenantResponse? tenantResponse in tenantResponses)
+        {
+            if (tenantResponse == null || string.IsNullOrWhiteSpace(tenantResponse.Name))
+            {
+                throw new JsonException(
+                    $"Configuration Service {TenantsEndpoint} response contained a null entry or a tenant with a null or blank name."
+                );
+            }
         }
 
         return tenantResponses.Select(t => t.Name).ToList();

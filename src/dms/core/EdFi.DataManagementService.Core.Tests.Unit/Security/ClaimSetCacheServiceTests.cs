@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
@@ -414,6 +415,67 @@ public class ClaimSetCacheServiceTests
                     ]
                 ))
                 .ToList();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Aborted_Waiter_On_The_Per_Key_Lock : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task It_Stops_Waiting_On_The_Lock_While_A_Live_Waiter_Still_Completes()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var gate = new TaskCompletionSource();
+            var liveClaims = new List<ClaimSet> { new("LiveClaimSet", []) };
+
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .ReturnsLazily(async () =>
+                {
+                    await gate.Task;
+                    return (IList<ClaimSet>)liveClaims;
+                });
+
+            var service = new CachedClaimSetProvider(
+                securityMetadataProvider,
+                CreateMemoryCache(),
+                CreateCacheSettings(),
+                NullLogger<CachedClaimSetProvider>.Instance
+            );
+
+            // Holder: acquires the per-key lock and blocks inside the factory until the gate opens.
+            Task<IList<ClaimSet>> holderTask = service.GetAllClaimSets();
+            await Task.Delay(50);
+
+            // Aborted waiter: queues behind the lock and never acquires it.
+            using var abortedCts = new CancellationTokenSource();
+            Task<IList<ClaimSet>> abortedWaiterTask = service.GetAllClaimSets(
+                cancellationToken: abortedCts.Token
+            );
+            await Task.Delay(50);
+
+            // Live waiter: also queues behind the lock, without cancelling.
+            Task<IList<ClaimSet>> liveWaiterTask = service.GetAllClaimSets();
+            await Task.Delay(50);
+
+            var stopwatch = Stopwatch.StartNew();
+            await abortedCts.CancelAsync();
+
+            Func<Task> act = async () => await abortedWaiterTask;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+
+            // The live waiter is still queued behind the holder - the aborted waiter leaving the
+            // queue does not let it skip ahead of the holder still fetching.
+            liveWaiterTask.IsCompleted.Should().BeFalse();
+
+            gate.SetResult();
+
+            IList<ClaimSet> liveResult = await liveWaiterTask;
+            liveResult.Should().BeEquivalentTo(liveClaims);
+            await holderTask;
         }
     }
 }

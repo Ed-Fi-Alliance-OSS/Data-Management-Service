@@ -656,7 +656,10 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class AllowAllWidgetClaimSetProvider : IClaimSetProvider
     {
-        public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+        public Task<IList<ClaimSet>> GetAllClaimSets(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             return Task.FromResult<IList<ClaimSet>>([
                 new ClaimSet(
