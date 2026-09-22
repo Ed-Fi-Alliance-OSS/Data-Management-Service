@@ -157,7 +157,7 @@ public class ClaimSetResourceActionMutationTests
                 ? await Repository.ModifyResourceClaimActions(command)
                 : await Repository.GrantResourceClaimActions(command);
 
-            (await Connection.QuerySingleAsync<string>(hierarchySql)).Should().Be(before);
+            (await Connection!.QuerySingleAsync<string>(hierarchySql)).Should().Be(before);
             result.Should().Be(new ClaimSetResourceActionMutationResult.FailureInvalidAction("NotAnAction"));
         }
 
@@ -229,7 +229,7 @@ public class ClaimSetResourceActionMutationTests
                 new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"])
             );
 
-            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureInvalidAction("Create"));
+            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound());
             (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
             (await Repository.Export(claimSetId)).Should().BeOfType<ClaimSetExportResult.Success>();
             ((ClaimSetExportResult.Success)await Repository.Export(claimSetId))
@@ -364,10 +364,28 @@ public class ClaimSetResourceActionMutationTests
                 )
             );
 
-            result.Should().BeOfType<ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound>();
+            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureInvalidAction("Create"));
             (await ExportResourceClaim(claimSetId, StudentClaimName))
                 .AuthorizationStrategyOverrides.Should()
                 .BeEmpty();
+        }
+
+        [Test]
+        public async Task It_returns_not_found_for_a_valid_action_on_a_missing_association()
+        {
+            int claimSetId = await CreateVendorClaimSet();
+
+            var result = await Repository.OverrideAuthorizationStrategy(
+                new AuthorizationStrategyOverrideCommand(
+                    claimSetId,
+                    StudentResourceClaimId,
+                    "Read",
+                    [NoFurtherAuthorizationRequired],
+                    []
+                )
+            );
+
+            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound());
         }
 
         [Test]
