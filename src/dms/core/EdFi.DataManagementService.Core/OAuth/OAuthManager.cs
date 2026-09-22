@@ -172,32 +172,17 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     private const string TooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
     /// <summary>
-    /// The canonical token-limit message, whose <c>{0}</c> is the configured limit. It is both the
-    /// shape an upstream body must match to be believed and the template the returned message is
-    /// rebuilt from, so the parse and the format here cannot drift apart from one another. Staying
-    /// in step with the CMS formatter that writes the upstream body is a separate obligation that no
-    /// test covers: this project cannot reference <c>src/config</c>, so the fixtures here pin a local
-    /// copy of the sentence rather than the one CMS emits. A reworded CMS message silently degrades
-    /// every token-limit rejection to the generic 429, and nothing fails.
+    /// The canonical token-limit message, split either side of the limit it carries. Each half is
+    /// used twice - as the shape an upstream body must match to be believed, and as a piece the
+    /// returned message is rebuilt from - so the parse and the format cannot drift apart from one
+    /// another. Staying in step with the CMS formatter that writes the upstream body is a separate
+    /// obligation that no test covers: this project cannot reference <c>src/config</c>, so the
+    /// fixtures here pin a local copy of the sentence rather than the one CMS emits. A reworded CMS
+    /// message silently degrades every token-limit rejection to the generic 429, and nothing fails.
     /// </summary>
-    private const string TokenLimitMessageFormat =
-        "Too many access tokens have been requested (limit is {0}). Access tokens should be reused "
-        + "until they expire.";
+    private const string TokenLimitMessagePrefix = "Too many access tokens have been requested (limit is ";
 
-    private const string TokenLimitMessageLimitHole = "{0}";
-
-    private static readonly int _tokenLimitMessageHoleIndex = TokenLimitMessageFormat.IndexOf(
-        TokenLimitMessageLimitHole,
-        StringComparison.Ordinal
-    );
-
-    private static readonly string _tokenLimitMessagePrefix = TokenLimitMessageFormat[
-        .._tokenLimitMessageHoleIndex
-    ];
-
-    private static readonly string _tokenLimitMessageSuffix = TokenLimitMessageFormat[
-        (_tokenLimitMessageHoleIndex + TokenLimitMessageLimitHole.Length)..
-    ];
+    private const string TokenLimitMessageSuffix = "). Access tokens should be reused until they expire.";
 
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
@@ -380,11 +365,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // Rebuilt from a DMS-side template and the parsed integer alone, so the limit survives
             // while not one character of upstream-authored text reaches the response body. The
             // correlationId is DMS's own trace id, as on every other branch.
-            string message = string.Format(
-                CultureInfo.InvariantCulture,
-                TokenLimitMessageFormat,
-                limit.Value
-            );
+            string message =
+                TokenLimitMessagePrefix
+                + limit.Value.ToString(CultureInfo.InvariantCulture)
+                + TokenLimitMessageSuffix;
 
             return GenerateProblemDetailResponse(
                 HttpStatusCode.TooManyRequests,
@@ -442,15 +426,15 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             }
 
             if (
-                !message.StartsWith(_tokenLimitMessagePrefix, StringComparison.Ordinal)
-                || !message.EndsWith(_tokenLimitMessageSuffix, StringComparison.Ordinal)
-                || message.Length <= _tokenLimitMessagePrefix.Length + _tokenLimitMessageSuffix.Length
+                !message.StartsWith(TokenLimitMessagePrefix, StringComparison.Ordinal)
+                || !message.EndsWith(TokenLimitMessageSuffix, StringComparison.Ordinal)
+                || message.Length <= TokenLimitMessagePrefix.Length + TokenLimitMessageSuffix.Length
             )
             {
                 return null;
             }
 
-            string limitText = message[_tokenLimitMessagePrefix.Length..^_tokenLimitMessageSuffix.Length];
+            string limitText = message[TokenLimitMessagePrefix.Length..^TokenLimitMessageSuffix.Length];
 
             // NumberStyles.None rejects a sign, surrounding whitespace and group separators, and
             // TryParse itself rejects a value that overflows int.
