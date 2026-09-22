@@ -93,6 +93,8 @@ $repositoryRoot = Split-Path -Parent (Split-Path -Parent $composeRoot)
 
 Import-Module (Join-Path $PSScriptRoot 'stock-image-proof.psm1') -Force
 Import-Module (Join-Path $composeRoot 'env-utility.psm1') -DisableNameChecking
+# Format-LogSafeText, for the container-supplied text that reaches the evidence.
+Import-Module (Join-Path $composeRoot 'bootstrap-manifest.psm1') -DisableNameChecking
 
 if ([string]::IsNullOrWhiteSpace($PinFile)) {
     $PinFile = Join-Path $PSScriptRoot 'stock-image-pin.json'
@@ -106,8 +108,23 @@ if ([string]::IsNullOrWhiteSpace($EvidenceRoot)) {
     $EvidenceRoot = Join-Path $repositoryRoot '.ai-work/verification'
 }
 
-# Absolute before anything reads them: a relative path names a different directory after a
-# Push-Location, and every safety check below is about a specific place on disk.
+# Refused before normalization, not after. GetFullPath would turn a relative path into an absolute
+# one silently, and every check below would then be about a directory chosen by whatever the working
+# directory happened to be when the run started. The defaults above are already absolute, so this
+# only ever refuses a caller-supplied value.
+foreach ($candidate in @(
+        @{ Name = 'WorkspaceRoot'; Value = $WorkspaceRoot }
+        @{ Name = 'EvidenceRoot'; Value = $EvidenceRoot }
+    )) {
+    if (-not [IO.Path]::IsPathRooted($candidate.Value)) {
+        throw ("-$($candidate.Name) '$($candidate.Value)' is not absolute, so what it names depends on " +
+            'the working directory at the moment it is read. This run owns and removes these paths, ' +
+            'so it requires a rooted one.')
+    }
+}
+
+# Absolute before anything reads them: a "..\" segment names a different directory once the working
+# directory changes, and every safety check below is about a specific place on disk.
 $WorkspaceRoot = [IO.Path]::GetFullPath($WorkspaceRoot)
 $EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
 
@@ -1345,7 +1362,19 @@ function Invoke-WrongDigestCheck {
 
     Write-Detail 'the fetch failed on the checksum and DMS never started'
 
-    return [ordered]@{ fetchExitCode = $fetchFacts.ExitCode; dmsNeverStarted = $true }
+    # The observations the two verdicts were reached from, not only the verdicts. A later reader
+    # asking "how was this established" has to be able to answer it from the artifact.
+    return [ordered]@{
+        fetchExitCode           = $fetchFacts.ExitCode
+        checksumVerified        = $checksum.Verified
+        fetchLogExcerpt         = (Format-LogSafeText ((($fetchLog -split "`r?`n") | Where-Object { $_ -match 'did NOT match|FAILED' } | Select-Object -First 1)))
+        dmsEnumerationSucceeded = $dms.EnumerationSucceeded
+        dmsInspectSucceeded     = $dmsFacts.InspectSucceeded
+        dmsStatus               = $dmsFacts.Status
+        dmsStartedAtRaw         = $dmsFacts.StartedAtRaw
+        dmsNeverStarted         = $true
+        dmsNeverStartedReason   = $neverStarted.Reason
+    }
 }
 
 function Invoke-MisspelledAllowlistCheck {
@@ -1357,8 +1386,10 @@ function Invoke-MisspelledAllowlistCheck {
 
     $settled = Wait-ForRecordedStartupFailure -Container $dms.Name -ExpectedPhase 'LoadPlugins'
 
+    $expectedPath = "/app/plugins/${script:pluginName}1"
+
     $verdict = Test-LoadPluginsFailure -StatusDocument $settled.Status `
-        -ExpectedPath "/app/plugins/${script:pluginName}1" -ExitCode $settled.Fact.ExitCode
+        -ExpectedPath $expectedPath -ExitCode $settled.Fact.ExitCode
 
     if (-not $verdict.Verified) {
         throw "The misspelled allowlist did not produce the expected refusal: $($verdict.Reason)"
@@ -1366,11 +1397,18 @@ function Invoke-MisspelledAllowlistCheck {
 
     Write-Detail 'DMS refused to start, recording a failed LoadPlugins phase naming the expected path'
 
+    # The path asserted against and what the host actually said, both in the record. Without them
+    # the artifact says a refusal happened but not that it was about the misspelled entry.
     return [ordered]@{
-        dmsExitCode = $settled.Fact.ExitCode
-        dmsStatus   = $settled.Fact.Status
-        phase       = $settled.Status.Phase
-        state       = $settled.Status.State
+        dmsExitCode  = $settled.Fact.ExitCode
+        dmsStatus    = $settled.Fact.Status
+        phase        = $settled.Status.Phase
+        state        = $settled.Status.State
+        expectedPath = $expectedPath
+        refusal      = (Format-LogSafeText (@(
+                    (Get-JsonMember -Object $settled.Status -Name 'Summary')
+                    (Get-JsonMember -Object $settled.Status -Name 'ErrorMessage')
+                ) -join ' '))
     }
 }
 

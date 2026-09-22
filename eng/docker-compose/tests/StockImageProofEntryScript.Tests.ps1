@@ -233,10 +233,64 @@ function global:Get-DmsCmsResponse {
     return [pscustomobject]@{ }
 }
 
+# Under a strict plan every request is answered from an indexed rule, exactly as a command is, so
+# the same phase, limit and cardinality accounting applies to the network. The hardcoded answers
+# below it remain for the non-strict Contexts, which are about the script's own sequencing and not
+# about the shape of a run.
+#
+# A rule is 'req:<METHOD> <uri regex>' with an optional body regex, which is what tells the three
+# Student posts apart.
+function global:Resolve-DmsRequestRule {
+    param([string] $Method, [string] $Uri, $Body)
+
+    $nearMiss = @()
+
+    for ($i = 0; $i -lt @($global:DmsShimPlan).Count; $i++) {
+        $rule = @($global:DmsShimPlan)[$i]
+
+        if ($rule.match -notlike 'req:*') { continue }
+
+        $spec = ($rule.match -replace '^req:', '') -split ' ', 2
+
+        if ($spec[0] -cne $Method -or $Uri -notmatch $spec[1]) { continue }
+
+        if ($rule.PSObject.Properties.Name -contains 'body' -and "$Body" -notmatch $rule.body) { continue }
+
+        $hits = if ($global:DmsRuleHits.ContainsKey($i)) { $global:DmsRuleHits[$i] } else { 0 }
+
+        # A near miss is only a failure if nothing else answers. Recording it here would make a
+        # second deployment's copy of a rule look like a failed call every time the first one
+        # answered correctly.
+        if ($rule.PSObject.Properties.Name -contains 'phase' -and [int]$rule.phase -ne $global:DmsPhase) {
+            $nearMiss += "request-wrong-phase for '$($rule.match)'"
+            continue
+        }
+
+        if ($rule.PSObject.Properties.Name -contains 'limit' -and $hits -ge [int]$rule.limit) {
+            $nearMiss += "request-exhausted for '$($rule.match)'"
+            continue
+        }
+
+        $global:DmsRuleHits[$i] = $hits + 1
+        return $rule
+    }
+
+    Write-DmsUnmatched -Kind 'unmatched-request' -Detail "$Method $Uri ($($nearMiss -join '; '))"
+    return $null
+}
+
 function global:Invoke-RestMethod {
     param([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $ContentType, $Body)
     Add-Content -LiteralPath $global:DmsShimLog -Value "rest $Method $Uri"
     Write-DmsHttp -Method $Method -Uri $Uri -Headers $Headers -Body $Body
+
+    if ($global:DmsStrict) {
+        $rule = Resolve-DmsRequestRule -Method $Method -Uri $Uri -Body $Body
+
+        if ($null -eq $rule) { return [pscustomobject]@{ } }
+
+        return ($rule.output | ConvertFrom-Json)
+    }
 
     return Get-DmsCmsResponse -Uri $Uri
 }
@@ -245,6 +299,19 @@ function global:Invoke-WebRequest {
     param([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $ContentType, $Body, [switch] $SkipHttpErrorCheck)
     Add-Content -LiteralPath $global:DmsShimLog -Value "http $Method $Uri"
     Write-DmsHttp -Method $Method -Uri $Uri -Headers $Headers -Body $Body
+
+    if ($global:DmsStrict) {
+        $rule = Resolve-DmsRequestRule -Method $Method -Uri $Uri -Body $Body
+
+        if ($null -eq $rule) {
+            return [pscustomobject]@{ StatusCode = 599; Content = '{}'; Headers = @{} }
+        }
+
+        $header = @{}
+        if ($rule.PSObject.Properties.Name -contains 'location') { $header['Location'] = $rule.location }
+
+        return [pscustomobject]@{ StatusCode = [int]$rule.exitCode; Content = $rule.output; Headers = $header }
+    }
 
     # Add-Vendor reads the new vendor's id out of the Location header.
     if ($Uri -match '/v3/vendors') {
@@ -309,6 +376,38 @@ catch {
 }
 
 Write-DmsRuleUse
+
+# The plan's own verdict, reached in the child rather than by an assertion afterwards. A run that
+# made a call nobody planned for, used an answer more or fewer times than the plan said, or left a
+# required answer untouched did not walk the sequence the plan describes, whatever the script
+# itself concluded.
+if ($Strict) {
+    $planFailure = @()
+
+    foreach ($entry in @(Get-Content -LiteralPath $global:DmsUnmatchedLog -ErrorAction SilentlyContinue |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        $planFailure += "the plan had no answer for: $entry"
+    }
+
+    for ($i = 0; $i -lt @($global:DmsShimPlan).Count; $i++) {
+        $rule = @($global:DmsShimPlan)[$i]
+        $hits = if ($global:DmsRuleHits.ContainsKey($i)) { $global:DmsRuleHits[$i] } else { 0 }
+
+        if ($rule.PSObject.Properties.Name -contains 'expect' -and $hits -ne [int]$rule.expect) {
+            $planFailure += "the plan expected '$($rule.match)' to answer $([int]$rule.expect) time(s) and it answered $hits"
+        }
+        elseif ($rule.PSObject.Properties.Name -contains 'required' -and $rule.required -and $hits -eq 0) {
+            $planFailure += "the plan required '$($rule.match)' and nothing reached it"
+        }
+    }
+
+    if ($planFailure.Count -gt 0) {
+        $failure = "The run did not walk the planned sequence:" + [Environment]::NewLine +
+            (($planFailure | ForEach-Object { "  - $_" }) -join [Environment]::NewLine) +
+            [Environment]::NewLine + "The script itself reported: $failure"
+    }
+}
+
 [pscustomobject]@{ Failure = $failure } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultFile -Encoding utf8
 
 # The child's exit code is the run's, so "it exited successfully" is a thing a test can assert
@@ -611,6 +710,49 @@ exit 0
             return $rule
         }
 
+        # Every request one serving deployment makes, each answerable exactly once, in that
+        # deployment only. A duplicate, a call in the wrong deployment, or a call nobody planned for
+        # therefore fails rather than being served again.
+        function script:Get-DeploymentRequestRule {
+            param([int] $Phase, [string] $DataStoreListing = '[{"id":7,"name":"Stock Proof Data Store","dataStoreContexts":[]}]')
+
+            $reject = "This value is the custom-validation proof fixture's reserved rejection token."
+            $document = "This document carries the custom-validation proof fixture's reserved document-level rejection token."
+
+            return @(
+                @{ phase = $Phase; match = 'req:Post /connect/register'; exitCode = 200; output = '{}'; limit = 1; expect = 1 }
+                # Twice per deployment, deliberately: this script asks for a bootstrap-admin token to
+                # read the data stores, and Get-SmokeTestCredential asks for one of its own after
+                # registering its client. Both are the same endpoint and neither is a duplicate.
+                @{ phase = $Phase; match = 'req:Post /connect/token'; exitCode = 200; limit = 2; expect = 2
+                    output = '{"access_token":"cms-admin-token-value"}'
+                }
+                @{ phase = $Phase; match = 'req:Get /v3/dataStores'; exitCode = 200; limit = 1; expect = 1
+                    output = $DataStoreListing
+                }
+                @{ phase = $Phase; match = 'req:Post /v3/vendors'; exitCode = 201; output = '{}'; limit = 1; expect = 1
+                    location = '/v3/vendors/3'
+                }
+                @{ phase = $Phase; match = 'req:Post /v3/applications'; exitCode = 201; limit = 1; expect = 1
+                    output = '{"id":11,"key":"proof-client-key","secret":"proof-client-secret-value"}'
+                }
+                @{ phase = $Phase; match = 'req:Post /oauth/token'; exitCode = 200; limit = 1; expect = 1
+                    output = '{"access_token":"dms-access-token-value"}'
+                }
+                @{ phase = $Phase; match = 'req:Post /data/ed-fi/students'; body = 'stock-proof-control'
+                    exitCode = 201; output = '{"id":"stock-proof"}'; limit = 1; expect = 1
+                }
+                @{ phase = $Phase; match = 'req:Post /data/ed-fi/students'; body = 'custom-validation-proof-reject-path'
+                    exitCode = 400; limit = 1; expect = 1
+                    output = (@{ validationErrors = @{ '$.lastSurname' = @($reject) }; errors = @() } | ConvertTo-Json -Depth 5 -Compress)
+                }
+                @{ phase = $Phase; match = 'req:Post /data/ed-fi/students'; body = 'custom-validation-proof-reject-resource'
+                    exitCode = 400; limit = 1; expect = 1
+                    output = (@{ validationErrors = @{}; errors = @($document) } | ConvertTo-Json -Depth 5 -Compress)
+                }
+            )
+        }
+
         # Everything before the first stack comes up, and the answers that are the same in every
         # deployment.
         function script:Get-StrictSetupRule {
@@ -626,9 +768,6 @@ exit 0
                 @{ match = 'network inspect'; exitCode = 1; output = 'Error: No such network: dms' }
                 @{ match = 'network ls'; exitCode = 0; output = '' }
                 @{ match = 'ps --format \{\{\.Ports\}\}'; exitCode = 0; output = '' }
-                # The fixture rejection arms and the control, all three planned for.
-                @(Get-FixtureRejectionRule) | ForEach-Object { $_ }
-                @{ match = 'http:control'; exitCode = 201; output = '{"id":"stock-proof"}' }
             )
         }
 
@@ -639,8 +778,9 @@ exit 0
             $four = if ($null -ne $Deployment4) { $Deployment4 } else { Get-MisspelledDeploymentRule }
 
             return @(
-                @(Get-ServingDeploymentRule -Phase 1) +
+                @(Get-ServingDeploymentRule -Phase 1) + @(Get-DeploymentRequestRule -Phase 1) +
                 @(Get-ServingDeploymentRule -Phase 2 -SelectedPackage $SecondSelectedPackage) +
+                @(Get-DeploymentRequestRule -Phase 2) +
                 @($three) + @($four) + @(Get-StrictSetupRule) | ForEach-Object { $_ }
             )
         }
@@ -1780,6 +1920,18 @@ exit 0
 
             $recipe.fetchExitCode | Should -Be 1
             $recipe.dmsNeverStarted | Should -BeTrue
+
+            # The controls the conclusions were reached from, so a later reader can ask how rather
+            # than only what. A failed enumeration and an absent container reach the same boolean.
+            $recipe.checksumVerified | Should -BeTrue
+            $recipe.fetchLogExcerpt | Should -Match 'did NOT match'
+            $recipe.dmsEnumerationSucceeded | Should -BeTrue
+            $recipe.dmsInspectSucceeded | Should -BeTrue
+            # Compared as an instant, not as text: this test's own ConvertFrom-Json turns the
+            # recorded string into a DateTime. The script keeps it as raw text for exactly the
+            # reason that conversion exists, and compares it there.
+            ([datetime]$recipe.dmsStartedAtRaw) | Should -Be ([datetime]::MinValue)
+            $recipe.dmsNeverStartedReason | Should -Match 'never started'
         }
 
         It 'proves the misspelled allowlist refused, naming the path it looked for' {
@@ -1789,6 +1941,11 @@ exit 0
             $recipe.phase | Should -BeExactly 'LoadPlugins'
             $recipe.dmsStatus | Should -BeExactly 'exited'
             $recipe.dmsExitCode | Should -Be 1
+
+            # In the artifact, not only inside the harness that checked it. Without these the record
+            # says a refusal happened but not that it was about the misspelled entry.
+            $recipe.expectedPath | Should -BeExactly '/app/plugins/Acme.CustomValidationProof1'
+            $recipe.refusal | Should -Match 'Acme\.CustomValidationProof1'
         }
 
         It 'checks the prepared schema of all four deployments, not one of them' {
@@ -1867,6 +2024,49 @@ exit 0
             @($run.Unmatched | Where-Object { $_ -match 'bootstrap-published-dms\.ps1 -d -v' }) | Should -Not -BeNullOrEmpty
         }
 
+        It 'fails when a known request is made more often than the plan allows' {
+            # This script asks for a bootstrap-admin token and Get-SmokeTestCredential asks for one
+            # of its own, so two is correct. Told to expect one, the child fails on the second: the
+            # plan counts calls rather than merely recognising them.
+            $plan = @(Get-StrictTraversalPlan | ForEach-Object {
+                    if ($_.match -eq 'req:Post /connect/token' -and $_['phase'] -eq 1) {
+                        $_['limit'] = 1
+                        $_['expect'] = 1
+                    }
+                    $_
+                })
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+
+            $run.ExitCode | Should -Be 1
+            $run.Failure | Should -Match 'did not walk the planned sequence'
+            $run.Failure | Should -Match 'no answer for: unmatched-request.*connect/token'
+        }
+
+        It 'fails when a request is answered from another deployment''s entry' {
+            # The control POST of deployment 1, offered only for deployment 2.
+            $plan = @(Get-StrictTraversalPlan | ForEach-Object {
+                    if ($_.ContainsKey('body') -and $_['body'] -eq 'stock-proof-control' -and $_['phase'] -eq 1) {
+                        $_['phase'] = 2
+                    }
+                    $_
+                })
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+
+            $run.ExitCode | Should -Be 1
+            $run.Failure | Should -Match 'request-wrong-phase'
+        }
+
+        It 'fails when the plan carries an answer nothing reaches' {
+            $plan = @(Get-StrictTraversalPlan) + @{ match = 'req:Post /v3/claimSets'; exitCode = 200; output = '{}'; required = $true }
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+
+            $run.ExitCode | Should -Be 1
+            $run.Failure | Should -Match "required 'req:Post /v3/claimSets' and nothing reached it"
+        }
+
         It 'refuses an answer meant for another deployment rather than accepting it' {
             # The wrong-digest answers, offered while deployment 1 is running. Under the phase rule
             # they cannot answer, so the run fails and the call is recorded as unanswered.
@@ -1900,6 +2100,18 @@ exit 0
             return Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
         }
 
+        function script:Set-RequestRule {
+            param($Plan, [string] $Body, [int] $Phase, [hashtable] $Change)
+
+            foreach ($rule in $Plan) {
+                if ($rule.ContainsKey('body') -and $rule['body'] -eq $Body -and $rule['phase'] -eq $Phase) {
+                    foreach ($key in $Change.Keys) { $rule[$key] = $Change[$key] }
+                }
+            }
+
+            return $Plan
+        }
+
         function script:Set-Rule {
             param($Plan, [string] $Match, [int] $Phase, [hashtable] $Change)
 
@@ -1929,12 +2141,9 @@ exit 0
         It 'refuses a generic 400 that is not the fixture''s rejection' {
             $run = Invoke-Mutated {
                 param($p)
-                foreach ($rule in $p) {
-                    if ($rule.match -eq 'http:custom-validation-proof-reject-path') {
-                        $rule['output'] = '{"validationErrors":{"$.lastSurname":["lastSurname is required."]},"errors":[]}'
-                    }
+                Set-RequestRule -Plan $p -Body 'custom-validation-proof-reject-path' -Phase 1 -Change @{
+                    output = '{"validationErrors":{"$.lastSurname":["lastSurname is required."]},"errors":[]}'
                 }
-                return $p
             }
 
             $run.ExitCode | Should -Be 1
@@ -1946,12 +2155,9 @@ exit 0
             # other one is exactly the confusion the arm check exists for.
             $run = Invoke-Mutated {
                 param($p)
-                foreach ($rule in $p) {
-                    if ($rule.match -eq 'http:custom-validation-proof-reject-path') {
-                        $rule['output'] = '{"validationErrors":{},"errors":["This value is the custom-validation proof fixture''s reserved rejection token."]}'
-                    }
+                Set-RequestRule -Plan $p -Body 'custom-validation-proof-reject-path' -Phase 1 -Change @{
+                    output = '{"validationErrors":{},"errors":["This value is the custom-validation proof fixture''s reserved rejection token."]}'
                 }
-                return $p
             }
 
             $run.ExitCode | Should -Be 1
@@ -1961,10 +2167,7 @@ exit 0
         It 'refuses a control document that did not succeed' {
             $run = Invoke-Mutated {
                 param($p)
-                foreach ($rule in $p) {
-                    if ($rule.match -eq 'http:control') { $rule['exitCode'] = 500 }
-                }
-                return $p
+                Set-RequestRule -Plan $p -Body 'stock-proof-control' -Phase 1 -Change @{ exitCode = 500 }
             }
 
             $run.ExitCode | Should -Be 1
@@ -2089,12 +2292,12 @@ exit 0
             }
         }
 
-        It 'judges a relative path by where it resolves, not by its spelling' {
-            # '..' from the working directory is the directory above this worktree, which contains
-            # the repository. The refusal proves both halves: the path was made absolute first, and
-            # what it resolved to is what was judged. A relative path that resolves somewhere
-            # ordinary is not refused, which is why this one has to resolve somewhere that is not.
-            $failure = Invoke-WithPath -Workspace '..' -Evidence (& $script:freshEvidence)
+        It 'judges a rooted path by where it resolves, not by its spelling' {
+            # Rooted, so it is not refused for being relative, but carrying '..' segments that
+            # resolve to the directory above the repository. Normalization happens first and the
+            # resolved location is what is judged.
+            $repositoryRoot = Split-Path -Parent (Split-Path -Parent $script:composeRoot)
+            $failure = Invoke-WithPath -Workspace (Join-Path $repositoryRoot 'eng/../..') -Evidence (& $script:freshEvidence)
 
             $failure | Should -Match 'contains the repository'
         }
@@ -2106,9 +2309,54 @@ exit 0
         }
 
         It 'refuses a workspace that contains the repository' {
-            $failure = Invoke-WithPath -Workspace (Split-Path -Parent $script:composeRoot) -Evidence (& $script:freshEvidence)
+            # The repository's parent. <repo>/eng is inside the repository, not around it, and would
+            # have been refused for a different reason or not at all.
+            $repositoryRoot = Split-Path -Parent (Split-Path -Parent $script:composeRoot)
+            $failure = Invoke-WithPath -Workspace (Split-Path -Parent $repositoryRoot) -Evidence (& $script:freshEvidence)
 
-            $failure | Should -Match 'not ones this run may own'
+            $failure | Should -Match 'contains the repository'
+        }
+
+        It 'refuses a <Case> that is relative, even when it names somewhere safe' -ForEach @(
+            @{ Case = 'workspace' }
+            @{ Case = 'evidence directory' }
+        ) {
+            # The companion path is absolute and safe, so the refusal is about this one. GetFullPath
+            # would have made it absolute against whatever the working directory was, which is a
+            # different directory on a different day.
+            $relative = "dms1502-relative-$([guid]::NewGuid().ToString('N'))"
+
+            $failure = if ($Case -eq 'workspace') {
+                Invoke-WithPath -Workspace $relative -Evidence (& $script:freshEvidence)
+            }
+            else {
+                Invoke-WithPath -Workspace (& $script:freshWorkspace) -Evidence $relative
+            }
+
+            $failure | Should -Match 'is not absolute'
+            Test-Path -LiteralPath (Join-Path $script:composeRoot $relative) | Should -BeFalse
+        }
+
+        It 'refuses an evidence directory whose ancestry passes through a junction' {
+            $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-etarget-$([guid]::NewGuid().ToString('N'))"
+            $link = Join-Path ([IO.Path]::GetTempPath()) "dms1502-elink-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $external -Force | Out-Null
+
+            try {
+                New-Item -ItemType Junction -Path $link -Target $external | Out-Null
+                $workspace = & $script:freshWorkspace
+
+                $run = Invoke-EntryScript -WorkspaceOverride $workspace -EvidenceOverride (Join-Path $link 'evidence')
+
+                $run.Failure | Should -Match 'which is a link or junction'
+                $run.ShimCall | Should -HaveCount 0
+                $run.WorkspaceCreated | Should -BeFalse
+                Test-Path -LiteralPath (Join-Path $external 'evidence') | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $link -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $external -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
 
         It 'refuses an evidence directory inside the workspace' {
@@ -2126,7 +2374,7 @@ exit 0
                 Should -Match 'contains the evidence directory'
         }
 
-        It 'refuses a workspace whose ancestry passes through a junction' {
+        It 'refuses a workspace whose ancestry passes through a junction, creating nothing' {
             $external = Join-Path ([IO.Path]::GetTempPath()) "dms1502-target-$([guid]::NewGuid().ToString('N'))"
             $link = Join-Path ([IO.Path]::GetTempPath()) "dms1502-link-$([guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $external -Force | Out-Null
