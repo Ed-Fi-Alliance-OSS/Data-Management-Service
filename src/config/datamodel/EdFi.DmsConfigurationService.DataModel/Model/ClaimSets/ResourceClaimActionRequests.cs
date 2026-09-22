@@ -11,14 +11,14 @@ public interface IResourceClaimActionsOnClaimSetRequest
 {
     int ClaimSetId { get; set; }
     int ResourceClaimId { get; set; }
-    List<ResourceClaimActionRequest>? ResourceClaimActions { get; set; }
+    List<ResourceClaimActionRequest> ResourceClaimActions { get; set; }
 }
 
 public sealed class AddResourceClaimActionsOnClaimSetRequest : IResourceClaimActionsOnClaimSetRequest
 {
-    public int ClaimSetId { get; set; }
-    public int ResourceClaimId { get; set; }
-    public List<ResourceClaimActionRequest>? ResourceClaimActions { get; set; } = [];
+    public required int ClaimSetId { get; set; }
+    public required int ResourceClaimId { get; set; }
+    public required List<ResourceClaimActionRequest> ResourceClaimActions { get; set; } = [];
 
     public sealed class Validator
         : ResourceClaimActionsOnClaimSetRequestValidator<AddResourceClaimActionsOnClaimSetRequest>;
@@ -26,9 +26,9 @@ public sealed class AddResourceClaimActionsOnClaimSetRequest : IResourceClaimAct
 
 public sealed class EditResourceClaimActionsOnClaimSetRequest : IResourceClaimActionsOnClaimSetRequest
 {
-    public int ClaimSetId { get; set; }
-    public int ResourceClaimId { get; set; }
-    public List<ResourceClaimActionRequest>? ResourceClaimActions { get; set; } = [];
+    public required int ClaimSetId { get; set; }
+    public required int ResourceClaimId { get; set; }
+    public required List<ResourceClaimActionRequest> ResourceClaimActions { get; set; } = [];
 
     public sealed class Validator
         : ResourceClaimActionsOnClaimSetRequestValidator<EditResourceClaimActionsOnClaimSetRequest>;
@@ -42,11 +42,11 @@ public sealed class ResourceClaimActionRequest
 
 public sealed class OverrideAuthStategyOnClaimSetRequest
 {
-    public int ClaimSetId { get; set; }
-    public int ResourceClaimId { get; set; }
-    public string? ActionName { get; set; }
+    public required int ClaimSetId { get; set; }
+    public required int ResourceClaimId { get; set; }
+    public required string ActionName { get; set; } = string.Empty;
     public List<int>? AuthStrategyIds { get; set; } = [];
-    public List<string>? AuthorizationStrategies { get; set; } = [];
+    public required List<string> AuthorizationStrategies { get; set; } = [];
 
     public sealed class Validator : AbstractValidator<OverrideAuthStategyOnClaimSetRequest>
     {

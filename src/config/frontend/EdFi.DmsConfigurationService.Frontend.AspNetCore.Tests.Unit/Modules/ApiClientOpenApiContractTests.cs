@@ -227,4 +227,32 @@ public class Given_the_served_openapi_document
     {
         Schema(schemaName)["properties"]!.AsObject().Should().ContainKeys(propertyNames);
     }
+
+    [TestCase(
+        "AddResourceClaimActionsOnClaimSetRequest",
+        "claimSetId",
+        "resourceClaimId",
+        "resourceClaimActions"
+    )]
+    [TestCase(
+        "EditResourceClaimActionsOnClaimSetRequest",
+        "claimSetId",
+        "resourceClaimId",
+        "resourceClaimActions"
+    )]
+    [TestCase(
+        "OverrideAuthStategyOnClaimSetRequest",
+        "claimSetId",
+        "resourceClaimId",
+        "actionName",
+        "authorizationStrategies"
+    )]
+    public void It_documents_the_required_resource_claim_action_request_fields(
+        string schemaName,
+        params string[] requiredPropertyNames
+    )
+    {
+        Schema(schemaName)["required"]!.AsArray().Select(value => value!.GetValue<string>()).Should()
+            .BeEquivalentTo(requiredPropertyNames);
+    }
 }

@@ -85,7 +85,7 @@ public class ResourceClaimActionRequestValidatorTests
         {
             ClaimSetId = 1,
             ResourceClaimId = 2,
-            ResourceClaimActions = null,
+            ResourceClaimActions = null!,
         };
 
         var result = await validator.ValidateAsync(request);
@@ -136,7 +136,13 @@ public class ResourceClaimActionRequestValidatorTests
     public async Task It_rejects_missing_override_fields()
     {
         var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
-        var request = new OverrideAuthStategyOnClaimSetRequest();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 0,
+            ResourceClaimId = 0,
+            ActionName = string.Empty,
+            AuthorizationStrategies = [],
+        };
 
         var result = await validator.ValidateAsync(request);
 
@@ -150,8 +156,19 @@ public class ResourceClaimActionRequestValidatorTests
     [Test]
     public void It_defaults_request_action_and_strategy_collections()
     {
-        var actionsRequest = new AddResourceClaimActionsOnClaimSetRequest();
-        var overrideRequest = new OverrideAuthStategyOnClaimSetRequest();
+        var actionsRequest = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 1,
+            ResourceClaimActions = [],
+        };
+        var overrideRequest = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 1,
+            ActionName = "Read",
+            AuthorizationStrategies = [],
+        };
 
         actionsRequest.ResourceClaimActions.Should().BeEmpty();
         overrideRequest.AuthStrategyIds.Should().BeEmpty();
