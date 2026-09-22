@@ -3,7 +3,7 @@
 [Entry point](README.md) · [Evidence index](cdc-inv-evidence.md)
 
 This shared PostgreSQL/SQL Server runbook is under construction. PostgreSQL setup
-and its E2E opt-in variant, state preservation and recovery classification are
+and its E2E opt-in variant, state preservation, managed lifecycle and recovery are
 documented; live qualification remains pending. Other records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
@@ -19,9 +19,9 @@ for current command details and the linked design owners for support boundaries.
 | Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; T18/T19 exercise pending |
 | Established validation and restart preflight | [established-validation](#established-validation) | T04 — documented; T18/T19 exercise pending |
 | Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | T04 — documented; T18/T19 exercise pending |
-| Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | T05 — pending |
-| Intact connector restart and resume | [intact-restart](#intact-restart) | T05 — pending |
-| Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — pending |
+| Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | T05 — documented; live exercise pending |
+| Intact connector restart and resume | [intact-restart](#intact-restart) | T05 — documented; live exercise pending |
+| Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — documented; live exercise pending |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — pending |
@@ -689,7 +689,7 @@ barrier or metrics stage only while its original evidence remains eligible.
 Provider/offset loss instead enters terminal containment. Retain **all** diagnostics:
 `WorkflowState/Unavailable` and `Connect/Unavailable` can coexist when incident
 persistence and connector containment both fail. Neither attempt means containment
-completed. Use the [containment handoff](#native-recovery); T05 owns its detailed steps.
+completed. Use the [containment handoff](#native-recovery); The procedure distinguishes each failed action.
 
 <a id="established-validation"></a>
 
@@ -799,7 +799,7 @@ connectors. In `data.targets[]`, distinguish `incidentPersistence: "Persisted"` 
 expose `details.incidentFailureCategory` when available. Missing historical evidence
 can prevent these operations too. Use [managed stop](#managed-lifecycle) and
 [incomplete-containment handling](#native-recovery) with reachable original
-infrastructure; detailed wrapper procedures remain T05 work.
+infrastructure; the wrapper procedure requires fresh evidence for every peer.
 
 The [DMS-1323 provenance/source fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs)
 restore deliberately damaged test files only to isolate test cases. That cleanup is
@@ -813,52 +813,232 @@ state supplies none and retirement does not erase source publication history.
 
 ## Managed shutdown and startup
 
-**Pending T05; exercise T18/T19.** Scope to deliver: Wrapper-managed shutdown/startup, complete worker inventory, narrow start-worker building block.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
+**Documented in T05; live exercise pending T18/T19.** Use the
+[managed/native recovery owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+and the shipped [lifecycle wrapper](../../eng/docker-compose/cdc-lifecycle.psm1).
+These operations retain the generation; [destructive teardown](#stack-teardown)
+is a separate procedure.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Every registered binding on the shared worker. |
-| Authority/offline window | Pending T05: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Deployment inventory, original roots/settings, shutdown checkpoint and broker-size override. Exact paths and substitutions pending T05. |
-| Invocation | Reserved IDs: `cdc-managed-stop`, `cdc-managed-start`. Commands and fixture substitutions pending T05. |
-| JSON/exit status | Pending T05: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T05: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T05: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Every registered binding on the selected project's shared worker, with each original target, physical source, generation and state root. A selected settings/root argument does not narrow this inventory to one peer. |
+| Authority/offline window | Deployment owner controls the entire worker/stack and coordinates all peer owners. Arrange the DMS outage, stop external IDE writers and seed jobs, and keep them excluded through startup. Managed `start` runs temporary projection processing with the HTTP host offline; the wrapper launches DMS only after every target passes. |
+| Retained inputs | Original `eng/docker-compose/.cdc-deployments/<project>.json`, per-entry settings and state roots, `.bootstrap/cdc-runtime` inputs, effective environment/Compose selections and broker-size override, plus all [deployment-state evidence](#deployment-state). |
+| Invocation | `cdc-managed-stop`, then `cdc-managed-start`, from repository root with PowerShell 7.5+ (including empty environment-value preservation), Docker and the original SchemaTools build/package available. Published and local alternatives are declared below. |
+| JSON/exit status | Wrappers emit progress text, not a JSON envelope; a nonzero exit is failure. They require each internal CLI envelope's matching `operation`/binding, `succeeded: true`, `exitCode: 0`, and actual native exit `0`. Stop additionally requires `data.succeeded: true`, `data.targetShutdownVerified: true`, `data.boundary: "VerifiedManagedStop"`; start requires `data.succeeded: true` and `data.ready: true`. |
+| Postcondition | Stop: fresh verified shutdown for all bindings, complete STOPPED/no-task worker inventory, durable deployment `Phase: "Stopped"`, then successful infrastructure stop with containers/volumes retained. Start: retained stopped state read back, original provenance/history/offset evidence validated, every eligible connector ready, `Phase: "Active"`, then DMS launched unless local `-InfraOnly`. |
+| Rejection/timeout action | Preserve the original files and reachable infrastructure. A failed peer or incomplete inventory forbids worker shutdown; failed startup forbids DMS launch. Inspect and reconcile with a fresh managed stop before retrying startup. Use [incomplete-shutdown handling](#native-recovery) and [unsupported provenance](#unsupported-provenance) when applicable. |
+
+### Select the retained deployment
+
+Choose the wrapper that created the deployment: local uses `dms-local`, published
+uses `dms-published`. Omit provider, identity-provider, environment, settings and
+state arguments to inherit the retained selection, including custom state roots.
+Explicit arguments must match the inventory; the original base environment path is
+also accepted, but the wrapper uses the retained effective snapshot. Do not compose
+new overlays or supply a new root. The wrapper checks original settings/environment
+and selected Compose-file hashes, identity, endpoints and worker policy, rejects
+`DMS_CDC__` overrides, and applies retained process-environment values during its
+infrastructure calls. Preserve the shared broker-size override after a size rollout;
+only the acknowledged operational ceilings have the documented settings-update
+exception in the [command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands).
+
+The inventory accounts for all registered peers even if their state roots differ.
+The wrapper serializes deployment operations and each controller holds its own
+state lock. Automatic shared DMS startup requires compatible DMS host settings and
+combines the explicit projection targets. A mismatch requires reconciliation by
+the owners, not deleting a peer or bypassing the wrapper. Local `-InfraOnly` can
+complete the managed CDC sequence without launching an HTTP host; retain the IDE
+writer exclusion until that sequence succeeds. Partial startup/seed switches
+(`-DbOnly`, `-DmsOnly`, `-DmsBaseUrl`, `-LoadSeedData`) are rejected for retained startup.
+
+### Stop without deleting the deployment
+
+PowerShell, repository root; initial enablement must already have produced the
+retained deployment. This interrupts all selected stack services and preserves
+containers, volumes, Connect configuration/target state, committed offsets, provider
+artifacts and controller history. No fault injection or destructive cleanup.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `eng/docker-compose/bootstrap-local-dms.ps1` | Wrapper used for original setup | `eng/docker-compose/bootstrap-published-dms.ps1` only for a fixture/deployment originally published; no project switch on an existing deployment |
+
+<!-- cdc-snippet: cdc-managed-stop -->
+```powershell
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d
+```
+<!-- /cdc-snippet: cdc-managed-stop -->
+
+The wrapper records `Transition`, invokes controller `stop` for **every** binding,
+then independently checks the live connector names equal the retained inventory
+and each connector is `STOPPED` with zero tasks. Only then does it persist `Stopped`
+and stop infrastructure. A REST acknowledgement, one successful target, or an old
+shutdown receipt cannot satisfy this condition. If infrastructure stop fails while
+the worker remains running, repeating this same stop performs fresh target and
+inventory checks. If a previously verified deployment is already stopped with no
+running worker, the wrapper can finish infrastructure stop using that checkpoint.
+Do not add `-v` or `-RemoveBootstrap` to resolve a stop failure.
+
+### Start from verified shutdown
+
+PowerShell, repository root; require successful managed shutdown and all retained
+inputs above. No destructive operation or new admission is requested.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `eng/docker-compose/bootstrap-local-dms.ps1` | Same wrapper as stop | `eng/docker-compose/bootstrap-published-dms.ps1` for the original published deployment |
+
+<!-- cdc-snippet: cdc-managed-start -->
+```powershell
+pwsh eng/docker-compose/bootstrap-local-dms.ps1
+```
+<!-- /cdc-snippet: cdc-managed-start -->
+
+The wrapper requires `Stopped` and no running worker, consumes that checkpoint by
+writing `Transition`, restores database/CMS infrastructure, then invokes
+`cdc start-worker`. This narrower building block exposes worker REST after verified
+shutdown and observational shared-offset-store checks; it neither resumes connectors
+nor supplies complete shared-worker shutdown authority. Use the wrapper for the
+full operation, rather than invoking `start-worker` independently.
+
+Startup waits within retained `Cdc.Timing` bounds for REST and the **complete**
+STOPPED/no-task inventory. Transient startup connection failures or temporarily
+missing retained connector names can be polled; extra/unmanaged connectors,
+malformed evidence, or a running task reject startup. It then invokes guarded
+`cdc start` for each entry. Each start checks fresh provenance and source history,
+uses the retained offsets, starts its temporary selected projector only after
+preflight, and can drain retained work before returning fresh readiness. It disposes
+that projector on every exit. Only after all starts succeed does the wrapper record
+`Active` and launch DMS. This does not repeat initial admission or certify an exact
+baseline. A failure after some peers resume can leave those peers running; there is
+no whole-stack rollback. Keep external writers fenced and follow the recovery table.
 
 <a id="intact-restart"></a>
 
 ## Intact connector restart and resume
 
-**Pending T05; exercise T18/T19.** Scope to deliver: Guarded connector operations, distinct from shared stack startup and native recovery.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
+**Documented in T05; live exercise pending T18/T19.** These are selected-connector
+operations on reachable existing infrastructure. For a stopped **stack**, use
+[managed startup](#managed-lifecycle). The
+[recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+applies even when the resulting connector is healthy.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Selected intact established generation. |
-| Authority/offline window | Pending T05: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Original settings, provenance and fresh controller observations. Exact paths and substitutions pending T05. |
-| Invocation | Reserved IDs: `cdc-intact-restart`, `cdc-intact-resume`. Commands and fixture substitutions pending T05. |
-| JSON/exit status | Pending T05: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T05: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T05: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | One selected established binding with original physical source and generation; no connector registration/replacement or peer mutation is authorized. |
+| Authority/offline window | Controller/deployment owner authorizes interruption/resumption of that connector. Restart/resume require no new API writer-offline window, but preserve any existing incident/offline fence and coordinate dependent consumers. Ordinary DMS routing is not gated by projection/CDC readiness. |
+| Retained inputs | Emitted full runtime settings, original state root, intact provisioning/source history and binding/journal, original services and fresh provider/offset/worker/telemetry evidence. |
+| Invocation | Choose `cdc-intact-restart` for restart, or `cdc-intact-resume` for resume; do not run them as a mandatory pair. |
+| JSON/exit status | Matching envelope `operation: "restart"` / `"resume"`, native exit `0`, `succeeded: true`, `exitCode: 0`; `data.operation` is `"Restart"` / `"Resume"`, `data.succeeded: true`, `data.ready: true`. Inspect `data.observation`, `data.boundary`, `data.recovery` and diagnostics; `data.targetShutdownVerified` is not the completion criterion for these operations. |
+| Postcondition | Guarded mutation and running-state readback reconciled, followed by a fresh ready observation for this target. No first-enable writer receipt or unsampled-interval certification. |
+| Rejection/timeout action | Exit `1`: retain effects/state, inspect all diagnostics and current status before retry. Exit `2`: correct input discrepancy within original scope. Exit `130`: reconcile cancellation effects. Unknown/lost provenance or history prevents authorization; route to [unsupported provenance](#unsupported-provenance) or containment below. |
+
+PowerShell, repository root, `api-schema-tools` on PATH as in setup; the worker,
+broker, source and observation endpoints must be reachable. Direct CLI accepts
+`DMS_CDC__` overrides, so privately verify no conflicting override changes the
+retained selection. Both blocks share these explicit substitutions:
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Full runtime settings emitted for the selected binding | Same established fixture settings; not a new configuration |
+| `<original-state-root>` | Original managed provisioning/controller root | Same established fixture root and provenance |
+
+<!-- cdc-snippet: cdc-intact-restart -->
+```powershell
+api-schema-tools cdc restart --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-intact-restart -->
+
+<!-- cdc-snippet: cdc-intact-resume -->
+```powershell
+api-schema-tools cdc resume --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-intact-resume -->
+
+Both operations require fresh affirmative pre-start evidence before the Connect
+mutation, then fresh readiness after durable completion. A prior ready status or
+successful `validate` is not reusable authorization. Unlike `start`, restart/resume
+do not require a verified managed stop; they can report `data.boundary: "NativeRecovery"` and still later become ready. That field is a recovery classification,
+not a claim the command bypassed preflight. Lost replies are reconciled by the
+controller; unchanged running status alone does not prove a requested restart
+occurred. Keep the result and inspect before issuing another operation.
 
 <a id="native-recovery"></a>
 
 ## Native recovery and incomplete shutdown
 
-**Pending T05; exercise T21/T22.** Scope to deliver: Containment result, unavailable evidence, failed incident persistence or failed stop; later health does not certify the unsampled interval.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
+**Documented in T05; live exercise pending T21/T22.** Native worker recovery, task
+reassignment/internal recovery and incomplete shutdown follow the
+[design-owned recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
+Records may be consumed and published **before** controller revalidation. Later
+health and eventual containment cannot certify continuity, absence of publication
+in that interval, or an exact baseline. A task restart entirely between observations
+on the same worker can be unobservable; polling is not a consumption fence.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Affected generation and worker/task incarnation. |
-| Authority/offline window | Pending T05: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Retained incidents, shutdown evidence and fresh observations. Exact paths and substitutions pending T05. |
-| Invocation | Reserved IDs: `cdc-native-recovery-watch`, `cdc-incomplete-shutdown-status`. Commands and fixture substitutions pending T05. |
-| JSON/exit status | Pending T05: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T05: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T05: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Affected original generation and observed worker/task assignment; inspect every affected peer on a shared worker. |
+| Authority/offline window | Deployment/incident owner preserves any existing writer or consumer fence and coordinates response. Status/watch do not create an API routing fence. After failed managed startup, keep external writers excluded and do not launch DMS. |
+| Retained inputs | Original settings/state/inventory, lifecycle intents/completions, incident files, sanitized operation diagnostics/timestamps, and fresh provider/offset/connector/task/metrics observations. |
+| Invocation | `cdc-incomplete-shutdown-status` for bounded inspection; `cdc-native-recovery-watch` for bounded repeated observations. Both may persist incidents and attempt connector containment; they are not guaranteed read-only. |
+| JSON/exit status | `status`/`watch` stdout is the final envelope; watch pass JSON goes to stderr. Exit `0` requires final `data.aggregate.readiness: "Ready"`; `1` includes not-ready, rejection, unavailable evidence or timeout; `2` invalid input; `130` cancellation. Use `data.targets[]` fields listed below, when present; early failures may omit `data`. |
+| Postcondition | Fresh observation classifies current readiness and reports persistence/containment separately. A recoverable observation can become ready only after a fresh pass; a terminal incident remains terminal. Neither outcome verifies whole-worker shutdown. |
+| Rejection/timeout action | Follow the table below. Keep original infrastructure/evidence available; escalate failed persistence or stop and missing provenance. Never infer containment from an attempted action or a generic nonzero/zero exit. |
+
+PowerShell, repository root; same CLI prerequisites and protected retained selection
+as restart/resume. No raw Connect mutation or fault injection. These substitutions
+apply to both marked blocks:
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Affected binding's emitted runtime settings | Same affected fixture settings |
+| `<original-state-root>` | Original root including incident/lifecycle history | Same affected fixture root; do not reconstruct history |
+| `3` | Bounded observation count for this example | Same three passes; timing comes from retained settings, not an alert threshold |
+
+<!-- cdc-snippet: cdc-incomplete-shutdown-status -->
+```powershell
+api-schema-tools cdc status --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-incomplete-shutdown-status -->
+
+<!-- cdc-snippet: cdc-native-recovery-watch -->
+```powershell
+api-schema-tools cdc watch --settings '<retained-settings-path>' --state-path '<original-state-root>' --maximum-passes 3 --json
+```
+<!-- /cdc-snippet: cdc-native-recovery-watch -->
+
+Inspect each target's `observedAt`, `status.readiness`, `status.sourceHistory`,
+`details`, `diagnostics` and `recovery`. Recovery includes `boundary`,
+`requiresFreshPass` and `unobservedIntervalCertified` (always `false`). An observed
+recovery invalidates prior readiness/telemetry; the controller recollects provenance,
+provider history, committed offsets, worker/task state and metrics. Missing telemetry
+or provider/offset evidence is unavailable, not zero lag or proof of continuity.
+Watch retains identity comparisons across its passes, not earlier readiness.
+
+| Observation/diagnostic | Action and completion criterion |
+| --- | --- |
+| Stop acknowledgement but `targetShutdownVerified: false`, delayed tasks, missing/additional connector, or unavailable inventory | Do not stop the shared worker. Preserve all peers' inputs, restore observation access and repeat `cdc-managed-stop`. Completion requires every fresh verified target stop plus the complete STOPPED/no-task inventory. |
+| `CDC startup-readiness timed out` or startup interrupted after checkpoint consumption (`Transition`) | Retain reachable infrastructure and inspect affected targets. Do not replay startup using the earlier checkpoint. Reconcile through a fresh wrapper-managed stop, then retry managed startup only from its verified `Stopped` outcome. |
+| `CDC worker recovered outside managed startup` or `CDC managed worker startup requires complete verified shutdown` | Treat the interval as native recovery. Inspect/contain, perform fresh managed stop, then retry only when eligible. Do not relabel the inventory phase manually. |
+| One peer started, later peer failed, or DMS launch failed | Keep the outage fence; do not assume rollback. Inspect all peers and use fresh managed stop before repeating the startup sequence. |
+| Settings/selection/identity-provider mismatch, unreadable inventory, or surviving infrastructure without inventory | Retain files and infrastructure; use [state/provenance diagnosis](#unsupported-provenance). Correct caller selection to the original retained values only when that evidence is intact; no new defaults, backup rollback, or recreated inventory supplies continuity. |
+| `recovery.requiresFreshPass: true` or current evidence unavailable | Discard earlier readiness. Resolve observation access to the same services and obtain a fresh bounded pass. Missing/unknown history cannot authorize restart/resume. Three watch passes are not a guaranteed recovery deadline. |
+| Terminal history loss or retained incident | Generation stays terminal even after provider/offset/metrics become healthy. Status/watch attempt durable incident persistence and connector stop; retain both results and escalate under [unsupported provenance](#unsupported-provenance). No deletion/restoration or replacement workflow is supplied here. |
+| `incidentPersistence: "Persisted"`, `containment: "Stopped"` | Incident was durably recorded and affected connector stop was verified for that observation. This neither clears terminal status nor verifies every peer or purges previously published data. |
+| `incidentPersistence: "Failed"` with `WorkflowState/Unavailable` | Preserve the failure report externally and escalate durable-state access; even `containment: "Stopped"` does not provide durable incident protection. Keep the generation fenced; later healthy status cannot resolve the missing persistence. |
+| `containment: "Failed"` with `Connect/Unavailable` (or another reported Connect failure) | Stop/readback failed or is unverified; publication may continue. Escalate immediately to deployment/incident authority, preserve reachable infrastructure and diagnostics, and use governed stop only with sufficient original evidence. Successful persistence alone is not containment. |
+| Both persistence and containment fail | Retain **both** diagnostic dimensions; neither action completed. Do not report eventual healthy status as resolution of the interval. |
+
+`NotRequired` in either action field means that action was not required by that pass;
+it does not prove persistence or stop. A command deadline can end watch before its maximum
+pass count; timeout handling may still return terminal containment evidence,
+while caller cancellation is honored. Capture the actual result rather than assuming
+that timeout cancelled every effect. These distinctions are exercised in the
+[command containment fixtures](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandContainmentTests.cs)
+and [native recovery fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs).
+Projection/CDC status never gates ordinary DMS API routing; any incident fence is
+maintained by the deployment owner. Sensitive-data incidents additionally require
+the [disclosure-response handoff](#sensitive-data-response); connector stop is not purge.
 
 <a id="projection-handoff"></a>
 
