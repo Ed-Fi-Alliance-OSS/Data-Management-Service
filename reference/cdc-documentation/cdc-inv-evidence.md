@@ -1,0 +1,87 @@
+# CDC Procedure Evidence Index
+
+[Entry point](README.md) · [Runbook](operations-runbook.md)
+
+## Scope and Ownership
+
+DMS-1326 owns exercised runbooks and documentation checks contributing to
+[CDC-INV-14 and CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
+This index starts with **pending** rows. Existing test fixtures are reuse candidates;
+their presence is not proof that a runbook snippet ran. No live deployment, secured
+Kafka exercise or documentation-snippet test is claimed by T01.
+
+Projection evidence remains in the [E18 matrix](../document-cache-documentation/cdc-inv-evidence.md).
+For other invariants, follow the [design's contract-to-evidence map](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability)
+and sibling-owned acceptance evidence:
+[binding/readiness](../design/backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md),
+[provider DDL](../design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md),
+[templates](../design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md),
+[transform](../design/backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md),
+[lifecycle/controller](../design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md),
+[message/consumer conformance](../design/backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md),
+and [API E2E](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md).
+Controller-only exercises do not complete DMS-1325 API-driven scenarios.
+
+## Recording Results
+
+For each exercise, retain the exact snippet ID, repository revision, stable fixture
+and method identifier with provider/case arguments, qualification lane/profile,
+resolved image tag and digest, sanitized artifact reference, and actual outcome.
+Use the existing [qualification entry point](../../eng/ci/Invoke-CdcQualification.ps1)
+and [matrix](../../eng/ci/Get-CdcQualificationMatrix.ps1); documentation checks join
+Contract/PR in T13–T15, and live cases reuse provider/nightly and secured Kafka lanes.
+
+Split each `Both` placeholder into separate PostgreSQL and SQL Server result rows
+when evidence arrives. Also split local and authorization-enabled Kafka evidence.
+Record `pending`, `passed`, `failed`, `skipped`, or `blocked` with the actual reason;
+missing prerequisites and skipped cases cannot count as passing acceptance. A parser
+or mocked-result test does not qualify a live operator procedure. Destructive/fault
+cases must identify the fixture-owned disposable artifacts. Unsupported workflows
+remain unsupported even if a lower-level fixture can mutate the underlying state.
+
+Keep credentials, connection strings, document bodies and response payloads out of
+this index and its artifacts. Use sanitized controller results and the existing
+qualification exporter under the [security/diagnostics owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations).
+Record a bounded result, not an inference of continuity, purge, consumer correctness
+or production capacity from a narrower success.
+
+## Procedure Evidence
+
+`Both` means PostgreSQL and SQL Server, each still pending. Image/profile values
+remain pending until an actual run captures them; the supported local profile is
+described in the [entry point](README.md#supported-deployment).
+
+| Procedure | Design link / invariant contribution | Provider | Stable test identifiers (reuse candidates; method/case wiring pending) | Snippet ID (reserved) | Qualification profile/image | Sanitized artifact reference | Actual result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [PostgreSQL local setup](operations-runbook.md#postgresql-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | PostgreSQL | [Given_Cdc_command_contract](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandTests.cs); exact snippet case pending | `cdc-pg-settings`, `cdc-pg-bootstrap-local`, `cdc-pg-bootstrap-published` | Pending | Pending — no artifact | Pending T16 |
+| [SQL Server local setup](operations-runbook.md#sql-server-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_Cdc_command_contract](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandTests.cs); exact snippet case pending | `cdc-sqlserver-settings`, `cdc-sqlserver-bootstrap-local`, `cdc-sqlserver-bootstrap-published` | Pending | Pending — no artifact | Pending T17 |
+| [DMS E2E opt-in](operations-runbook.md#dms-e2e-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | Both | [Given_Cdc_command_contract](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandTests.cs); exact snippet case pending | `cdc-pg-e2e-setup`, `cdc-pg-e2e-build`, `cdc-sqlserver-e2e-setup`, `cdc-sqlserver-e2e-build` | Pending | Pending — no artifact | Pending T16/T17 |
+| [Preserve deployment state](operations-runbook.md#deployment-state) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral) | Both | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs); exact snippet case pending | `cdc-state-inventory` | Pending | Pending — no artifact | Pending T18/T19 |
+| [Interrupted initial-enable retry](operations-runbook.md#initial-enable-retry) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | Both | [Given_Cdc_command_enable_retry](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandEnableRetryTests.cs), [Given_Cdc_Controller_Native_Recovery](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs); exact snippet case pending | `cdc-enable-retry` | Pending | Pending — no artifact | Pending T18/T19 |
+| [Established validation and restart preflight](operations-runbook.md#established-validation) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity) | Both | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs); exact snippet case pending | `cdc-validate` | Pending | Pending — no artifact | Pending T18/T19 |
+| [Missing provenance and source mismatch](operations-runbook.md#unsupported-provenance) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral) | Both | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs); exact snippet case pending | `cdc-provenance-rejection` | Pending | Pending — no artifact | Pending T18/T19 |
+| [Managed shutdown and startup](operations-runbook.md#managed-lifecycle) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | Both | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs); exact snippet case pending | `cdc-managed-stop`, `cdc-managed-start` | Pending | Pending — no artifact | Pending T18/T19 |
+| [Intact connector restart and resume](operations-runbook.md#intact-restart) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | Both | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs); exact snippet case pending | `cdc-intact-restart`, `cdc-intact-resume` | Pending | Pending — no artifact | Pending T18/T19 |
+| [Native recovery and incomplete shutdown](operations-runbook.md#native-recovery) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | Both | [Given_Cdc_Controller_Native_Recovery](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs); exact snippet case pending | `cdc-native-recovery-watch`, `cdc-incomplete-shutdown-status` | Pending | Pending — no artifact | Pending T21/T22 |
+| [Projection troubleshooting and administration handoff](operations-runbook.md#projection-handoff) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration) | Both | [Given_CdcPublicationHistory_packaged_administration](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs); exact snippet case pending | `cdc-history-internal-only`, `cdc-history-rejected` | Pending | Pending — no artifact | Pending T25/T26 |
+| [Monitoring and provider retention](operations-runbook.md#monitoring-retention) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations) | Both | [Given_CdcConnectorTelemetryQualification](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs); exact snippet case pending | `cdc-status`, `cdc-watch`, `cdc-telemetry-inspect`, `cdc-pg-retention-inspect`, `cdc-sqlserver-retention-inspect` | Pending | Pending — no artifact | Pending T27/T28 |
+| [Security, topic retention and consumer evidence](operations-runbook.md#security-consumer-evidence) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations) | Both | [CdcKafkaPolicyTests](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.cs), [consumer broker tests](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs); method/case pending | `cdc-access-inspect`, `cdc-topic-policy-inspect`, `cdc-consumer-evidence` | Pending | Pending — no artifact | Pending T20 |
+| [Coordinated record-size increase](operations-runbook.md#record-size-increase) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase) | Both | [Given_Cdc_Controller_Record_Size_Increase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.cs); exact snippet case pending | `cdc-size-no-consumers`, `cdc-size-increase`, `cdc-size-retry` | Pending | Pending — no artifact | Pending T23/T24 |
+| [Guarded generation retirement](operations-runbook.md#generation-retirement) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding) | Both | [Given_CdcArtifactCleanupProviderDatabase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs); exact snippet case pending | `cdc-retire` | Pending | Pending — no artifact | Pending T25/T26 |
+| [Destructive stack teardown](operations-runbook.md#stack-teardown) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding) | Both | [Given_CdcArtifactCleanupProviderDatabase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs); exact snippet case pending | `cdc-stack-teardown`, `cdc-e2e-teardown` | Pending | Pending — no artifact | Pending T25/T26 |
+| [Compatible representation-restamp handoff](operations-runbook.md#representation-restamp) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction) | Both | [Given_CdcPublicationHistory_packaged_administration](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs); exact snippet case pending | `cdc-restamp-handoff-status` | Pending | Pending — no artifact | Pending T25/T26 |
+| [Sensitive-data disclosure response](operations-runbook.md#sensitive-data-response) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction) | Both | [Given_CdcArtifactCleanupProviderDatabase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs); exact snippet case pending | `cdc-disclosure-containment-result` | Pending | Pending — no artifact | Pending T25/T26 |
+
+## Documentation Verification
+
+| Check | Owner task | Actual result |
+| --- | --- | --- |
+| Structure against every DMS-1326 subsection; deployment/ownership claims against shipped source | T01 | Passed source/structure review; 172 relative links/anchors, 18 procedure records and 38 unique reserved IDs checked. No live qualification implied. |
+| Exact marked command/configuration examples through production host/configuration paths | T13 | Pending |
+| Serialized output, packaged stdout/stderr and exit codes, touched links/anchors | T14 | Pending |
+| Wrapper Pester examples and Contract/PR qualification wiring | T15 | Pending |
+
+E18 owns projection performance and lifecycle evidence; link its workload limits
+when adding tuning guidance. [Production-scale qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
+is not assigned to this runbook. Consumer conformance examples likewise remain
+DMS-1324 evidence, not certification of third-party consumer stores.
