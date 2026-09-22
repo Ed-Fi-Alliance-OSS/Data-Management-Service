@@ -1770,18 +1770,22 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// Drives an upstream 429 and returns the parsed response body.
+    /// Drives an upstream 429 and returns the parsed response body, plus the logger, because the
+    /// fallback branch's warning is the only record a deviating body leaves anywhere.
     /// </summary>
-    private static async Task<(HttpStatusCode Status, string Raw, JsonNode Body)> UpstreamRejectsWith(
-        string upstreamBody
-    )
+    private static async Task<(
+        HttpStatusCode Status,
+        string Raw,
+        JsonNode Body,
+        RecordingLogger<OAuthManager> Logger
+    )> UpstreamRejectsWith(string upstreamBody)
     {
-        (HttpResponseMessage response, _) = await UpstreamResponds(
+        (HttpResponseMessage response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
             HttpStatusCode.TooManyRequests,
             upstreamBody
         );
         string raw = await response.Content.ReadAsStringAsync();
-        return (response.StatusCode, raw, JsonNode.Parse(raw)!);
+        return (response.StatusCode, raw, JsonNode.Parse(raw)!, logger);
     }
 
     /// <summary>
@@ -1808,7 +1812,7 @@ public class OAuthManagerTests
         [SetUp]
         public async Task Setup()
         {
-            (_status, _, _body) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("5"));
+            (_status, _, _body, _) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("5"));
         }
 
         [Test]
@@ -1867,7 +1871,7 @@ public class OAuthManagerTests
         [SetUp]
         public async Task Setup()
         {
-            (_, _, _body) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("37"));
+            (_, _, _body, _) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("37"));
         }
 
         [Test]
@@ -1890,12 +1894,15 @@ public class OAuthManagerTests
 
         private string _raw = default!;
         private JsonNode _body = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
 
         [SetUp]
         public async Task Setup()
         {
             string tampered = TooManyTokensUpstream.MessageWithLimit("5") + " " + Sentinel;
-            (_, _raw, _body) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithMessage(tampered));
+            (_, _raw, _body, _logger) = await UpstreamRejectsWith(
+                TooManyTokensUpstream.BodyWithMessage(tampered)
+            );
         }
 
         [Test]
@@ -1904,11 +1911,66 @@ public class OAuthManagerTests
             _raw.Should().NotContain(Sentinel);
         }
 
+        // The other half of the same decision, and the reason the branch is safe to keep quiet:
+        // the text withheld from the caller is written to the log instead, where an operator can
+        // see what the upstream actually said. Asserting only the response would leave a silent
+        // deletion of the LogWarning indistinguishable from correct behavior.
+        [Test]
+        public void It_records_the_withheld_text_in_the_log()
+        {
+            LoggedUpstreamContent(_logger).Should().Contain(Sentinel);
+        }
+
         // A trailing suffix makes the message non-canonical, so the limit is not believed either.
         [Test]
         public void It_falls_back_to_the_generic_rate_limit_contract()
         {
             ShouldBeTheGenericRateLimitContract(_body);
+        }
+    }
+
+    /// <summary>
+    /// The fallback branch's warning is held to the same treatment every other upstream body gets
+    /// before it reaches a log sink: newline-sanitized so it cannot forge log lines, and capped so
+    /// one hostile response cannot flood the log.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unrecognized_429_Body_Reaching_The_Log
+    {
+        private static string DeviatingBodyContaining(string injected) =>
+            $$"""
+                {
+                  "type": "urn:ed-fi:api:too-many-requests",
+                  "status": 429,
+                  "errors": [{{System.Text.Json.JsonSerializer.Serialize(injected)}}]
+                }
+                """;
+
+        [Test]
+        public async Task It_does_not_log_raw_newlines_from_the_upstream_body()
+        {
+            (_, _, _, RecordingLogger<OAuthManager> logger) = await UpstreamRejectsWith(
+                DeviatingBodyContaining("first line\r\nWARN forged second line")
+            );
+
+            string logged = LoggedUpstreamContent(logger);
+            logged.Should().NotContain("\r");
+            logged.Should().NotContain("\n");
+            logged.Should().Contain("forged second line");
+        }
+
+        [Test]
+        public async Task It_caps_an_over_long_body_at_the_documented_bound()
+        {
+            (_, _, _, RecordingLogger<OAuthManager> logger) = await UpstreamRejectsWith(
+                new string('a', 5000)
+            );
+
+            LoggedUpstreamContent(logger)
+                .Should()
+                .HaveLength(ExpectedMaxLoggedContentLength + ExpectedTruncationSuffix.Length)
+                .And.EndWith(ExpectedTruncationSuffix);
         }
     }
 
@@ -1989,7 +2051,7 @@ public class OAuthManagerTests
         [TestCaseSource(nameof(DeviatingBodies))]
         public async Task It_falls_back_to_the_generic_rate_limit_contract(string upstreamBody)
         {
-            (HttpStatusCode status, _, JsonNode body) = await UpstreamRejectsWith(upstreamBody);
+            (HttpStatusCode status, _, JsonNode body, _) = await UpstreamRejectsWith(upstreamBody);
 
             status.Should().Be(HttpStatusCode.TooManyRequests);
             ShouldBeTheGenericRateLimitContract(body);

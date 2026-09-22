@@ -6,6 +6,7 @@
 using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using FluentAssertions;
 using Npgsql;
@@ -624,6 +625,64 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// The opt-out an operator configures with a value below 1. It stores unconditionally however
     /// many active tokens the client already holds.
     /// </summary>
+    /// <summary>
+    /// The limit travelling the production path rather than a direct repository call. Every other
+    /// fixture here calls <c>OpenIddictDataRepository</c> itself, but the token manager reaches it
+    /// through <c>OpenIddictTokenRepository</c>, and nothing else exercises that wrapper against a
+    /// real database: it carries @MaxActiveTokens down and the TokenStoreOutcome back, so a wrapper
+    /// that dropped either would break enforcement with every existing test still green.
+    /// </summary>
+    [TestFixture]
+    public class Given_Grants_Through_The_Token_Repository_Wrapper : OpenIddictDataRepositoryTests
+    {
+        private const int Limit = 2;
+
+        private IOpenIddictTokenRepository _tokenRepository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _firstOutcome;
+        private TokenStoreOutcome _secondOutcome;
+        private TokenStoreOutcome _thirdOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository dataRepository = new(Configuration.DatabaseOptions);
+            _tokenRepository = new OpenIddictTokenRepository(dataRepository);
+            _applicationId = await RegisterApplicationAsync(
+                dataRepository,
+                $"wrapper-limit-{Guid.NewGuid():N}"
+            );
+
+            _firstOutcome = await GrantAsync();
+            _secondOutcome = await GrantAsync();
+            _thirdOutcome = await GrantAsync();
+        }
+
+        private async Task<TokenStoreOutcome> GrantAsync() =>
+            await _tokenRepository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "wrapper-subject",
+                FarFuture,
+                Limit
+            );
+
+        [Test]
+        public void It_admits_grants_up_to_the_limit()
+        {
+            _firstOutcome.Should().Be(TokenStoreOutcome.Stored);
+            _secondOutcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        [Test]
+        public void It_refuses_the_grant_that_would_exceed_the_limit() =>
+            _thirdOutcome.Should().Be(TokenStoreOutcome.LimitExceeded);
+
+        [Test]
+        public async Task It_stores_exactly_the_limit() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(Limit);
+    }
+
     [TestFixture]
     public class Given_Enforcement_Is_Disabled : OpenIddictDataRepositoryTests
     {
