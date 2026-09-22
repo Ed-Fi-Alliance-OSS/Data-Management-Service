@@ -5,9 +5,9 @@
 This shared PostgreSQL/SQL Server runbook is under construction. Both providers’ setup
 and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
 projection handoffs, monitoring, retention, security, consumer-evidence checklists and
-coordinated record-size increases are documented; live qualification remains pending. Other
-records reserve stable destinations and are **pending** their named tasks; do not
-execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
+coordinated record-size increases, retirement/teardown and restamp/disclosure handoffs
+are documented. Exact live snippet qualification remains **pending** its named tasks.
+Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
 
 ## Procedure Navigation
@@ -30,8 +30,8 @@ for current command details and the linked design owners for support boundaries.
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 exercise pending |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; live exercise T25/T26 pending |
 | Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; live exercise T25/T26 pending |
-| Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — pending |
-| Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) | T11 — pending |
+| Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — documented; T25/T26 exercise pending |
+| Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) | T11 — documented; T25/T26 exercise pending |
 
 ## Procedure Record
 
@@ -2385,17 +2385,10 @@ ID is returned; retained controller state, rather than a recreated response, own
 | Nonzero result after some artifacts were removed, or lost response/cancellation | Preserve root/settings and retry the same invocation only when independent cleanup prerequisites can again be met. Controller reobserves effects and retains its original operation; missing connector, partially absent topics or an old checkpoint alone is insufficient. Require the full successful result before proceeding to later cleanup. |
 | Verified retirement of a formerly exposed source | Exposure history remains historical and the target cannot become initial/internal-only again. [Projection administration gates](#projection-handoff) still reject exposed history. Retirement does not establish migration continuity or support source replacement, a fresh binding on the surviving source, or terminal-generation restart. |
 
-If retirement is part of a sensitive-data incident, follow the
-[disclosure contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
-and [response handoff](#sensitive-data-response) (full T11 procedure pending):
-coordinate not-ready status, verified fencing of every connector task and consumer
-access revocation before corrected state can publish; keep the data store offline
-for correction. Record containment time, affected generation/topic, operation/restamp
-ID, deletion request and platform purge confirmation. Controller absence checks,
-volume deletion, corrective records and compaction do not prove physical byte purge.
-Platform-governed remote/tiered copies and independently operated consumer stores/exports
-need their owners' evidence; without it the incident remains open. Do not recreate
-the old binding/topic. CDC remains unavailable; new-generation cutover is deferred.
+For a sensitive-data incident, use the ordered [disclosure response](#sensitive-data-response)
+before retirement. It requires verified connector and consumer fencing, offline
+correction, protected audit and independent platform purge evidence. Governed
+cleanup alone cannot close that incident or authorize re-enablement.
 
 <a id="stack-teardown"></a>
 
@@ -2517,34 +2510,204 @@ Use the [sensitive-data handoff](#sensitive-data-response) for disclosure eviden
 
 ## Compatible representation-restamp handoff
 
-**Pending T11; exercise T25/T26.** Scope to deliver: E18 owns execution; distinguish canonical completion, queued work and later publication without a purge or exact-baseline claim.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
+Use this handoff only for a compatible representation correction whose previously
+published bytes do **not** require purging. The
+[offline correction owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction)
+and [v1 compatibility owner](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes)
+keep the same key, topic, fields, types and ordering semantics. If superseded
+sensitive bytes require removal, go directly to [disclosure response](#sensitive-data-response);
+same-topic correction is unavailable. E18 owns the actual
+[offline prerequisites, preview, execute/resume and verification commands](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp).
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Restamp operation, target, physical source and affected generation. |
-| Authority/offline window | Pending T11: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Offline E18 manifest/result plus CDC observations. Exact paths and substitutions pending T11. |
-| Invocation | Reserved IDs: `cdc-restamp-handoff-status`. Commands and fixture substitutions pending T11. |
-| JSON/exit status | Pending T11: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T11: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T11: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | E18 normalized tenant/data-store target and physical-source fingerprint must match the affected CDC binding. Retain the original generation and topic; this handoff neither creates nor replaces them. |
+| Authority/offline window | Deployment owner stops and verifies every DMS replica, API reader/writer, projector, direct-fill writer, bulk/seed loader, administrative peer and external writer. Mark the CDC target not ready in deployment operations. Hold the full fence through preview, execute and every retry; only corrected instances may start afterward. The utility's offline confirmation does not establish the fence. |
+| Retained inputs | Original full runtime settings, schema inputs and controller root from [state preservation](#deployment-state); E18 durable manifest, immutable scope/mode/reason/boundary, operation ID and result in the deployment's protected audit store. Do not recreate a manifest or mutate CDC state to resume. |
+| Invocation | Follow E18's linked restamp procedure. Only after its successful completion and corrected-instance startup, run `cdc-restamp-handoff-status` below for Tracking with an existing CDC binding; follow [monitoring](#monitoring-retention) for projection observations. No CDC observation is required to claim Disabled canonical-only completion. |
+| JSON/exit status | E18 execute exit `0` with `result.state: "completed"` and `result.claimLevel: "projectionWorkQueued"` means Tracking canonical work finished and projection work queued; `"canonicalOnlyComplete"` means Disabled canonical-only completion. CDC `status` uses a different envelope: exit `0`, `operation: "status"`, `succeeded: true`, `exitCode: 0`, `data.aggregate.readiness: "Ready"` report only current readiness. |
+| Postcondition | Tracking: corrected projection/connector processing may eventually replace affected public state with higher `contentVersion` and changed `document._etag`; verification of those records is separate from restamp/status completion. Disabled: verify E18 relational API validators and Change Query visibility, with no projection or Kafka publication expectation. |
+| Rejection/timeout action | Keep the full fence for incomplete/rejected restamp; use the E18 retry rules below. After corrected startup, non-ready/unavailable CDC observations route to [projection handoff](#projection-handoff), [native recovery](#native-recovery) or [provenance diagnosis](#unsupported-provenance); never reset offsets, force readiness or substitute a new generation. |
 
-Execution remains in the [DocumentCacheAdmin restamp procedure](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp); compatibility is owned by [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
+### Preserve the fence through the E18 handoff
+
+1. Confirm compatibility and absence of a purge requirement with the incident and
+   consumer owners. The deployment owner marks the target not ready and verifies
+   the full offline fence before the E18 preview. CDC status does not gate ordinary
+   API routing, and SchemaTools has no manual `mark-not-ready` command. Do not edit
+   a binding or manufacture a terminal incident to represent this operational hold.
+2. Deploy the corrected materializer/composer while offline. Use the E18 procedure
+   with explicit affected-document scope and the mode matching durable lifecycle:
+   `tracking` for `Tracking`, or `disabled` for `Disabled`, with a clear cache-ahead
+   latch. `Resetting`, `Rebuilding`, a set latch or mismatched mode reject restamp;
+   do not use an internal-only reset or manual SQL to bypass the guard. The
+   [projection/history gate](#projection-handoff) still applies to its three commands.
+3. Preserve the E18 manifest and operation ID across interruption. Exit `12`,
+   `status: "incompleteRetryable"` or `result.state: "incomplete"` requires the same
+   execute target/operation, renewed offline confirmation and reacquired mutex as
+   described by [E18 execute/resume](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#execute-or-resume).
+   Keep the fence; do not preview a replacement operation or retry a completed ID.
+   For rejection, configuration or pre-mutation failure, use
+   [E18 exit classifications](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#exit-codes)
+   and retain the diagnostic before correcting the original inputs.
+4. After successful completion, start only corrected DMS/projector instances for
+   Tracking, or corrected DMS API instances for Disabled, following
+   [E18 verification](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#verify-and-restore-service).
+   For compatible Tracking, the existing connector may remain registered against
+   the same binding/topic. If it was deliberately stopped, the original-generation
+   [managed lifecycle](#managed-lifecycle) guards still govern startup; restamp is
+   not restart authorization. Never follow this startup step during disclosure.
+
+PowerShell, repository root; built/installed `api-schema-tools` as in setup, with
+original services reachable. Run only at step 4 for Tracking and an existing
+binding, after corrected instances start. Inspect conflicting `DMS_CDC__` overrides
+privately before use. Status may persist incidents and attempt containment.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Original complete runtime settings for the affected binding | Owned PostgreSQL/SQL Server fixture's retained settings for the same restamped source |
+| `<original-state-root>` | Original managed provisioning/controller root | Same fixture's intact root, binding and history |
+
+<!-- cdc-snippet: cdc-restamp-handoff-status -->
+```powershell
+api-schema-tools cdc status --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-restamp-handoff-status -->
+
+Retain sanitized stdout JSON, stderr diagnostics and process exit separately. Exit
+`1` includes not-ready/unavailable observations or rejection; `2` is invalid input;
+`130` is cancellation. Early failures may omit `data`. When present, inspect
+`data.targets[].observedAt`, `status`, `details`, `diagnostics`, `containment` and
+`incidentPersistence` using [monitoring](#monitoring-retention) and
+[native recovery](#native-recovery). Later `Ready` is not retrospective certification.
+
+Under the [correction contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction),
+restamp does not drain the projection queue, publish Kafka records, verify connector
+or broker delivery, reset offsets, purge older bytes, or certify an exact replacement
+baseline. Use authorized consumer-owner inspection to verify eventual affected
+record versions/ETags without copying payloads into evidence. The existing
+[real-restamp publication fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/RepresentationRestampCdcStateTests.cs)
+checks this separate projection-and-publication outcome for both providers; it is
+not purge evidence or a live exercise of this marked status command. Exact snippet
+qualification remains [pending T25/T26](cdc-inv-evidence.md#procedure-evidence).
 
 <a id="sensitive-data-response"></a>
 
 ## Sensitive-data disclosure response
 
-**Pending T11; exercise T25/T26.** Scope to deliver: Shipped containment/retirement results, consumer access and independently operated stores; deferred re-enablement remains unsupported.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction).
+Follow the [disclosure owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
+when prior Kafka values contain sensitive information that must be removed.
+Containment takes priority over continued CDC availability. A higher-version upsert,
+tombstone, compaction request or successful restamp establishes at most eventual
+current state; none proves destruction of superseded bytes.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Incident, affected generations/topics and downstream copies. |
-| Authority/offline window | Pending T11: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Containment time, restamp ID, cleanup requests and platform purge confirmation. Exact paths and substitutions pending T11. |
-| Invocation | Reserved IDs: `cdc-disclosure-containment-result`. Commands and fixture substitutions pending T11. |
-| JSON/exit status | Pending T11: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T11: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T11: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Incident inventory of every affected original binding generation, public topic and physical source, plus platform remote/tiered copies and independent consumer stores/exports. Privately reconcile identity from retained settings/bindings; do not reconstruct names. |
+| Authority/offline window | Incident/deployment owner maintains the not-ready hold and full E18 offline fence. Controller authority stops every affected connector/task; Kafka/platform security authority revokes effective consumer access. Keep publication and consumer access fenced through correction, retirement and purge verification. |
+| Retained inputs | Original settings, state roots, provisioning/source history and wrapper inventory; protected incident audit record with containment observations/times, restamp manifest/result if used, retirement operation ID, deletion requests and independent platform purge confirmations. Keep cleanup infrastructure and original authority available. |
+| Invocation | Ordered steps below: deployment hold, `cdc-disclosure-containment-result` for each affected binding and deployment-owned consumer revocation, E18 offline correction if needed, then existing `cdc-retire`. No public manual not-ready, access-revocation, purge-certification or new-generation command exists in SchemaTools. |
+| JSON/exit status | For `stop`, require exit `0`, `operation: "stop"`, `succeeded: true`, `exitCode: 0`, expected `binding`, `data.operation: "Stop"`, `data.succeeded: true`, `data.targetShutdownVerified: true`, `data.ready: false`, `data.boundary: "VerifiedManagedStop"`. This verifies only that target's stop. Retirement uses the distinct [retire result](#generation-retirement); neither result attests consumer revocation or physical purge. |
+| Postcondition | Affected generation remains unavailable and is governed-retired; incident closure additionally requires the platform's purge evidence and independently owned downstream response evidence. There is no old-topic restart or supported replacement-generation workflow. |
+| Rejection/timeout action | Stop exit `1`/missing verification means containment is unproven; `2` invalid input, `130` cancellation. Preserve evidence and escalate under the failure table below. Partial retirement retries retain original identity/state. Missing platform confirmation leaves the incident open. |
+
+### Contain, correct and retire in order
+
+1. **Establish the operational hold.** The incident/deployment owner marks the
+   affected target not ready in deployment operations, excludes all writers and
+   API readers named in the E18 offline prerequisites, and prevents automated
+   start/restart/resume of affected connectors. This is an explicit deployment
+   authority handoff, not a new CLI command or a state-file edit. Current CDC health
+   cannot override the hold; it does not gate ordinary API traffic.
+2. **Verify connector fencing and revoke consumer access before corrected publication.**
+   Run the marked stop below for each affected retained binding; require verified
+   stopped connector/tasks, not just a REST acknowledgement. The security/platform
+   owner revokes and verifies effective consumer access to every affected public
+   topic through that deployment's access controls, covering existing consumers
+   and alternate identities/access paths. Record both boundaries and their times.
+   The local `AuthorizationDisabledLocal` profile reports
+   `aclIsolationProven: false`; it cannot demonstrate ACL revocation. Its owner
+   must use deployment network/process isolation and evidence, or leave containment
+   unverified and escalate. Do not present local stop as consumer isolation.
+3. **Correct while offline.** After both connector fencing and consumer-access
+   exclusion are verified, deploy the corrected materializer and, when needed,
+   follow [E18 restamp](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+   with the full writer fence intact. Do not follow the compatible handoff's
+   service/connector startup step. Queued corrected work is not authorization to
+   publish to the old topic or to reopen access.
+4. **Retire the original affected generation.** Use [guarded generation retirement](#generation-retirement)
+   and its `cdc-retire` snippet with explicit generation and destructive intent.
+   Keep database, Connect, broker and controller state reachable. Let the controller
+   enforce cleanup order: verified stop, source offsets before connector deletion,
+   governed provider/topic/ACL cleanup including public/progress topics and SQL
+   Server schema history, then binding/incident removal last. Retain the external
+   disclosure audit even when controller incident files are removed. Shared-volume
+   teardown is a separate procedure and cannot substitute for retirement or purge proof.
+5. **Obtain purge and downstream evidence.** The broker/managed-platform owner
+   supplies the confirmation required by its deletion guarantee for the public
+   topic and covered remote/tiered copies. Consumer owners account for independent
+   stores, caches, exports and their copies under the deployment's disclosure
+   response. Keep the incident open if required confirmation is unavailable.
+   Never recreate/restart the old binding or topic. CDC remains unavailable;
+   [new-generation topic, consumer namespace, fresh snapshot and publication-barrier cutover](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover)
+   remain deferred, not an executable re-enablement procedure.
+
+PowerShell, repository root; built/installed `api-schema-tools` and original retained
+settings/state, reachable worker/Connect, and deployment-owned hold from step 1.
+This stops publication for one affected binding without deleting artifacts. It does
+not establish the writer fence or revoke consumer access. Check conflicting
+`DMS_CDC__` overrides privately before invoking; repeat separately for every affected
+binding using that binding's original inputs.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Original full runtime settings of the affected generation | Same owned fixture's retained settings; faults only in explicitly selected containment cases |
+| `<original-state-root>` | Original controller root with retained identity/authority | Same fixture's root; no reconstructed binding or incident |
+
+<!-- cdc-snippet: cdc-disclosure-containment-result -->
+```powershell
+api-schema-tools cdc stop --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-disclosure-containment-result -->
+
+Retain the sanitized JSON, stderr and process exit independently. Successful stop
+keeps offsets, binding and other artifacts; `data.ready: false` is expected. It
+neither latches a disclosure incident nor fences future deployment actions. Hold
+restart authority externally. Do not stop a shared worker based on one target's
+result; [managed shutdown](#managed-lifecycle) requires every managed target and a
+complete fresh worker inventory. Preserve services needed for governed retirement.
+
+| Observation | Required action and completion boundary |
+| --- | --- |
+| Stop rejected/unavailable/timed out/cancelled; absent `data` or `targetShutdownVerified: false` | Treat connector containment as unverified; publication may continue. Keep the offline/access hold, preserve original state and diagnostics, and escalate immediately to deployment authority for infrastructure fencing. Retry governed stop only with sufficient original authority and fresh readback. No raw Connect mutation or recreated state bypass. |
+| Status reports `containment: "Failed"` or `incidentPersistence: "Failed"` | Apply [native recovery](#native-recovery) to each failed dimension. Persist sanitized failure evidence in the protected external incident record; attempted stop/persistence is not completion. Later healthy status cannot certify the unsampled interval. |
+| Consumer-access exclusion cannot be verified, including authorization-disabled local tooling | Keep the incident open and escalate to the security/platform owner; do not restamp/rebuild into possible publication or claim isolation from connector stop. |
+| Restamp rejects or returns incomplete | Keep all fences, retain the same E18 manifest and operation ID, and follow E18 rejection/resume rules. No new preview, forced latch/lifecycle change or old-topic startup. |
+| Retirement partially succeeds or rejects | Preserve infrastructure and surviving evidence; follow [partial cleanup](#partial-cleanup-and-rejection-actions) with the same generation/operation. Never manually remove provenance, remaining artifacts or shared volumes to manufacture success. |
+| Retire succeeds but purge confirmation is missing | Governed artifact cleanup completed, physical purge remains unproven. Keep access closed and incident open pending platform evidence. Delete success, absent metadata, configuration removal, corrective upsert, tombstone, compaction or volume removal is insufficient. |
+
+### Protected audit and closure evidence
+
+The [disclosure contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
+and [security owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations)
+govern the audit record. Retain these in protected incident storage; link sanitized
+artifact references from the [evidence index](cdc-inv-evidence.md#recording-results):
+
+| Evidence | Owner and scope |
+| --- | --- |
+| Incident, target, physical source, binding generation and public topic | Incident owner reconciles original identities and affected downstream copies. Keep the exact identities private; use sanitized references in shared evidence. |
+| Containment time and verification | Deployment/controller owner records not-ready hold, each connector/task fence, full offline writer fence; security owner records effective consumer-access revocation and time. Distinguish partial attempts from the time all required fences were verified. |
+| Restamp operation ID and immutable manifest, if used | E18 owner retains scope, reason, mode, affected UUIDs and bounded completion/retry result. Record when restamp was unnecessary rather than inventing an operation ID. |
+| Retirement operation ID, generation/topic and deletion request | Controller/deployment owner retains the scoped command result and request reference/time even after binding/incident cleanup. |
+| Broker/managed-platform purge confirmation | Platform owner supplies the evidence required by its deletion guarantee, including covered remote/tiered copies; no controller field provides this attestation. |
+| Independent consumer stores/exports | Each owner records disclosure-response completion for its copies; Kafka retirement does not erase independent data. |
+
+Manifest identities, scopes, reasons and UUIDs are operational audit data, not
+metric labels or unsanitized log values. Do not put credentials, connection strings,
+document bodies or API/stream response payloads into manifests, reasons, examples,
+diagnostics, telemetry or shared artifacts. Retain only necessary protected identity
+and sanitized administrative outcomes; verify record differences without copying
+sensitive content. Neither restamp's bounded claim nor controller cleanup authorizes
+restoring Kafka access or closing the incident. Exact marked command exercises remain
+[pending T25/T26](cdc-inv-evidence.md#procedure-evidence); platform/consumer attestations
+remain deployment-owned even after those fixtures pass.
