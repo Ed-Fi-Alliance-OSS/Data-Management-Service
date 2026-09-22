@@ -45,6 +45,36 @@ The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
 and `AppSettings:ApiSchemaPath=<workspace>` only when the run must use an external
 bootstrap workspace with `bootstrap-api-schema-manifest.json`.
 
+For history-gated offline administration, add this **fragment to the complete settings**;
+it is not a standalone DMS configuration. Replace the state path with the original
+protected controller root and the deployment key with its original namespace. Keep normal
+CMS/target/provider/schema settings intact. The root must contain the original managed
+CREATE receipt, workflow and source history; creating an empty directory or choosing a
+new key does not establish ownership or internal-only history.
+
+```json
+{
+  "Cdc": {
+    "PublicationHistory": {
+      "StatePath": "/absolute/original/controller-state",
+      "DeploymentKey": "original-deployment-key",
+      "LockTimeout": "00:00:30"
+    }
+  }
+}
+```
+
+`LockTimeout` defaults to 30 seconds and must be positive and at most ten minutes.
+Normal environment variables override the settings (for example,
+`Cdc__PublicationHistory__StatePath`); this CLI does not use SchemaTools' `DMS_CDC__`
+prefix. The reader derives its provider from the selected relational runtime. Keep
+state owner-only and preserve it as described by the
+[CDC state inventory](../../../../reference/cdc-documentation/operations-runbook.md#deployment-state).
+The [production history handoff](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff)
+explains admitted and rejected cases for all three internal-only commands; the
+[DocumentCache runbook](../../../../reference/document-cache-documentation/operations-runbook.md)
+remains the owner of their offline procedures.
+
 Every invocation targets exactly one DocumentCache target:
 
 ```bash
@@ -93,9 +123,13 @@ dms-document-cache status --request-json status-target.json --settings ./appsett
 Current packaged production behavior intentionally rejects `activate-offline`,
 `deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
-physical-source fingerprint. The default provider reports `unknown` because durable CDC
-binding/history evidence is not available in this product scope. Treat
-`downstreamHistoryPresentOrUnknown` as expected in that default state.
+physical-source fingerprint. With `Cdc:PublicationHistory` configured, the shipped
+production reader checks original managed creation/source history while holding the
+controller lock through administration. Without that configuration, the default provider
+reports `unknown`; missing, unreadable, invalid or mismatched evidence also fails closed.
+See the [CDC history decision and examples](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff).
+Binding absence, connector stop, runtime-target removal and retirement do not establish
+internal-only eligibility.
 
 All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
 document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
@@ -431,7 +465,9 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
 - Kafka connector setup, connector teardown, source replacement, binding retirement, topic
   management, CDC bootstrap orchestration, and downstream publication containment are E19
   concerns. Start with
-  [Add CDC Setup, Monitoring, Recovery, and Security Runbooks](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+  [CDC operator reference](../../../../reference/cdc-documentation/README.md) and its
+  [projection/history handoff](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff).
+  Physical-source replacement remains unsupported in v1.
 - The CLI story boundary and package verification evidence are in
   [Add a DocumentCache Administration CLI](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
   cross-feature DocumentCache runbook evidence is tracked by

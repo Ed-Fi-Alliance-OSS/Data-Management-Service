@@ -3,8 +3,9 @@
 [Entry point](README.md) · [Evidence index](cdc-inv-evidence.md)
 
 This shared PostgreSQL/SQL Server runbook is under construction. PostgreSQL setup
-and its E2E opt-in variant, state preservation, managed lifecycle and recovery are
-documented; live qualification remains pending. Other records reserve stable destinations and are **pending** their named tasks; do not
+and its E2E opt-in variant, state preservation, managed lifecycle, recovery and
+projection handoffs are documented; live qualification remains pending. Other
+records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
 
@@ -22,7 +23,7 @@ for current command details and the linked design owners for support boundaries.
 | Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | T05 — documented; live exercise pending |
 | Intact connector restart and resume | [intact-restart](#intact-restart) | T05 — documented; live exercise pending |
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — documented; live exercise pending |
-| Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — pending |
+| Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — pending |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — pending |
@@ -1044,30 +1045,145 @@ the [disclosure-response handoff](#sensitive-data-response); connector stop is n
 
 ## Projection troubleshooting and administration handoff
 
-**Pending T06; exercise T25/T26.** Scope to deliver: Backlog/oldest work, poison, enqueue failure, lifecycle mismatch, Resetting, rebuild, scrub and history-gated administration.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration).
+**Documented T06; live snippet exercise pending T25/T26.** E18 owns projection
+administration. This procedure selects that workflow and explains its production
+history gate under the [projection administration owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration)
+and [cache-ahead recovery owner](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery).
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Same target and physical-source fingerprint as projection administration. |
-| Authority/offline window | Pending T06: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Production downstream-publication-history evidence and projection status. Exact paths and substitutions pending T06. |
-| Invocation | Reserved IDs: `cdc-history-internal-only`, `cdc-history-rejected`. Commands and fixture substitutions pending T06. |
-| JSON/exit status | Pending T06: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T06: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T06: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | One CMS-selected normalized `(tenantKey, dataStoreId)` and its current opaque physical-source fingerprint. Source publication history follows the original creation identity across binding retirement; the administrative result's `targetGeneration` is a projection execution generation, not a CDC binding generation. |
+| Authority/offline window | Deployment/database authority for the E18 operation. For each of the three internal-only commands, close admission and drain every canonical, projector, direct-fill, bulk, external and administrative writer before asserting `closedAndDrained`; retain the fence through completion or incident reconciliation. Connector stop alone does not supply this fence. |
+| Retained inputs | Full DocumentCacheAdmin settings, matching schemas/CMS target, current fingerprint and projection status, plus the original protected controller root, CREATE receipt, workflow and source history from [state preservation](#deployment-state). Keep sanitized command results and incident evidence. |
+| Invocation | Choose the E18 procedure below, configure its production history reader, then select exactly one operation for `cdc-history-internal-only`. `cdc-history-rejected` illustrates that same request against retained rejecting evidence in an owned qualification fixture; it is not a production health probe. |
+| JSON/exit status | DocumentCacheAdmin `--json` emits one shared result document on stdout, diagnostics on stderr. Completion: exit `0`, `status: "completed"`, `classification: "succeeded"`. History rejection: exit `10`, `status: "rejectedNoMutation"`, `classification: "downstreamHistoryPresentOrUnknown"`, `mutated: false`. This is not the SchemaTools CDC envelope or exit-code scheme. |
+| Postcondition | Accepted activation/recovery finishes in `Tracking` with a clear latch; deactivation finishes in `Disabled`. Verify the E18 operation's own status postconditions. Neither history admission nor projection completion grants CDC readiness, a replacement baseline, or consumer correctness. |
+| Rejection/timeout action | Preserve the result and original evidence. History rejection authorizes no clearing or recovery. Follow [unsupported provenance](#unsupported-provenance) or [native recovery/containment](#native-recovery) as applicable. Exit `12` (`incompleteRetryable`) requires the same command, target and guards after reconciliation; retain the offline fence. Other failures follow the [Admin exit-code reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#exit-codes), not a guessed retry from lifecycle alone. |
 
-E18 destinations: [status](../document-cache-documentation/operations-runbook.md#status-interpretation),
-[enqueue versus processing](../document-cache-documentation/operations-runbook.md#enqueue-vs-processing-availability),
-[poison remediation](../document-cache-documentation/operations-runbook.md#persistent-projection-failure-and-poison-remediation),
-[lifecycle/Resetting](../document-cache-documentation/operations-runbook.md#lifecycle-mismatch-and-resetting),
-[activation](../document-cache-documentation/operations-runbook.md#activation),
-[deactivation](../document-cache-documentation/operations-runbook.md#deactivation),
-[rebuild](../document-cache-documentation/operations-runbook.md#online-rebuild),
-[scrub](../document-cache-documentation/operations-runbook.md#explicit-integrity-scrub),
-[cache-ahead recovery](../document-cache-documentation/operations-runbook.md#cache-ahead-recovery),
-and [SQL Server prerequisite correction](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction).
-The CDC-specific downstream-history decision examples remain pending T06.
+### Select the projection procedure
+
+Inspect the target's [E18 status](../document-cache-documentation/operations-runbook.md#status-interpretation)
+first. The following are handoffs, not alternative repair implementations:
+
+| Observation | E18 procedure and completion observation |
+| --- | --- |
+| `queueSummary.presence: "notEmpty"`, increasing `oldestWorkAgeSeconds`, `caughtUp.reason: "queueNotEmpty"` | [Enqueue versus processing availability](../document-cache-documentation/operations-runbook.md#enqueue-vs-processing-availability): correct or resume processing; require operational health, and a fresh `caughtUp.status: "caughtUp"` only when queue-empty proof is needed. |
+| `documentDiagnostics`, `poisonTraversalDiagnostics`, persistent materialization/writer failure | [Poison remediation](../document-cache-documentation/operations-runbook.md#persistent-projection-failure-and-poison-remediation): fix the defect and verify ordinary processing resumes. Do not delete poison work or repeatedly rebuild it without correction. |
+| `enqueueFailures`, missing/disabled `inventory.enqueueTrigger`, invalid work inventory | [Enqueue failure](../document-cache-documentation/operations-runbook.md#enqueue-vs-processing-availability): restore supported inventory/prerequisites and verify canonical writes enqueue atomically; a processing restart alone does not establish this. |
+| `classification: "lifecycleMismatch"`, `Resetting`, interrupted `Rebuilding` | [Lifecycle and Resetting](../document-cache-documentation/operations-runbook.md#lifecycle-mismatch-and-resetting): reissue only the proven interrupted command with identical guards and require its completion; unknown intent is an unsupported incident. |
+| Compatible rebuild needed, lifecycle `Tracking` or `Rebuilding`, latch clear | [Online rebuild](../document-cache-documentation/operations-runbook.md#online-rebuild): bounded clearing/seeding and drain return to `Tracking`. Canonical writes may remain online; no production-scale duration claim follows. |
+| Suspected missing/mismatched work, restore or direct mutation | [Explicit integrity scrub](../document-cache-documentation/operations-runbook.md#explicit-integrity-scrub): intentional O(N) scan, admitted only in `Tracking` with a clear latch. Scrub can set, never clear, the latch; recheck status after work drains. CDC restore/provenance concerns also require [unsupported-provenance handling](#unsupported-provenance); scrub does not restore continuity. |
+| Existing `Disabled` source needs activation, or internal-only deactivation requested | [Activation](../document-cache-documentation/operations-runbook.md#activation) / [deactivation](../document-cache-documentation/operations-runbook.md#deactivation): use the history gate below and the E18 offline fence; finish in the selected operation's lifecycle. New-empty activation is a separate guarded workflow. |
+| `cacheAhead.recoveryRequired: true` | [Cache-ahead recovery](../document-cache-documentation/operations-runbook.md#cache-ahead-recovery): internal-only proof and the offline fence are required. Possible downstream observation routes to containment/escalation, not in-place internal recovery. |
+| SQL Server `sqlServerPrerequisiteFailed` or `unsupportedPrerequisiteIncident` | [SQL Server correction](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction): preserve Disabled-only initialization correction/restart and activation-preflight retry boundaries. Other lifecycles and post-validation prerequisite changes have no renewed-readiness guarantee. |
+
+During projector downtime in an enqueue-enabled lifecycle, canonical writes still
+record durable work. Failure to persist that work rolls back the **whole canonical
+transaction**. Projection backlog, poison, lifecycle or CDC status does not gate
+ordinary API routing; see [enqueue/processing availability](../document-cache-documentation/operations-runbook.md#enqueue-vs-processing-availability)
+and the [projection health owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness).
+
+### Production history decision
+
+The shipped [CdcDownstreamPublicationHistoryProvider](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcDownstreamPublicationHistoryProvider.cs)
+is registered in DocumentCacheAdmin when `Cdc:PublicationHistory` is configured.
+Use the [Admin configuration reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#configuration)
+to point the complete settings at the **original** root and deployment key. This
+selects evidence; it does not create or attest to provenance. The reader normalizes
+the tenant for CDC lookup, matches the current physical-source fingerprint, and
+holds the controller lock across the E18 command. A standalone read is `unknown`
+and cannot be saved as reusable permission. The provider mutex and all E18 guards
+still apply. See the [deployment-state continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
+
+| Trusted observation during the command | Decision for all three internal-only commands |
+| --- | --- |
+| `internalOnly`, matching target/source, intact managed creation history | History gate admits; lifecycle, provider, writer-admission and fingerprint guards must still pass. The packaged admitted fixture uses ordinary managed non-CDC creation (`SourceHistoryOnly`). |
+| `possible`, `active`, `historical` | Reject without mutation. Reservation can already mean possible exposure; retirement retains historical exposure. |
+| `unknown`, no configured reader, missing/empty/unreadable root, missing receipt/journal/history, corrupt or contradictory evidence, wrong deployment/target/provider/source | Reject without mutation; do not construct replacement evidence or choose a fresh root. A controller-lock failure also rejects without executing the command. |
+
+Binding absence, stopped connectors, removal of runtime `DocumentCache:Targets`,
+and successful retirement cannot substitute for internal-only history. The
+[packaged fixtures](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs)
+cover all three commands, rejection with unchanged database/provenance, historical
+rejection after retirement, and both orders of a reservation/admin lock race.
+Their fixture-only SQL and history faults are not operator recovery steps.
+A previously admitted ordinary non-CDC source is also not eligible for fresh CDC
+enablement merely because it has `internalOnly` history; use the
+[initial-enable boundary](#initial-enable-retry).
+
+### Admitted and rejected command examples
+
+PowerShell, repository root. Prepare the matching packaged `dms-document-cache`
+tool using its [installation instructions](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#installation).
+Supply complete normal settings including CMS credentials/endpoint, schema workspace,
+provider and selected projection target, with the history configuration above;
+keep secrets in protected settings/environment, never command-line arguments.
+Account for normal environment overrides; this tool does not use SchemaTools'
+`DMS_CDC__` override convention. Retain the full settings and original state root.
+
+Choose **one** E18 operation; these are alternatives, not a sequence:
+
+| `$HistoryCommand` | `$HistoryConfirmation` | E18 prerequisite and successful end state |
+| --- | --- | --- |
+| `activate-offline` | `offlineActivation` | Existing `Disabled` target, internal-only proof and closed/drained writers; finish `Tracking`, clear latch. |
+| `deactivate-offline` | `offlineDeactivation` | Admitted offline deactivation under the [E18 guards](../document-cache-documentation/operations-runbook.md#deactivation); finish `Disabled`. |
+| `recover-cache-ahead` | `internalCacheAheadRecovery` | Internal-only cache-ahead incident, set latch and closed/drained writers under [E18 recovery](../document-cache-documentation/operations-runbook.md#cache-ahead-recovery); finish `Tracking`, clear latch. |
+
+Both snippets use these declared substitutions. For rejected-history qualification,
+fixtures establish a rejecting scenario before invocation; operators must not
+inject faults or execute a destructive request merely to discover history.
+
+| Placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `$HistoryCommand`, `$HistoryConfirmation` | Matching pair from the alternatives above after selecting the E18 procedure | All three matching pairs from `CdcPublicationHistoryFixture.Arguments`, each independently prepared |
+| `$HistorySettings` | Absolute path to complete protected Admin settings pointing at original `Cdc:PublicationHistory` state/deployment | Fixture's complete settings with original disposable root and deployment `history`; rejection cases may select the explicit fixture-owned evidence faults |
+| `$HistoryEnvironment` | Matching normal settings environment name | Packaged harness environment |
+| `$HistoryProvider` | `postgresql` or `sqlserver` for the same CMS database | Fixture provider; `sqlserver` is the Admin CLI token even when application settings use `mssql` |
+| `$HistoryTenant`, `$HistoryDataStoreId` | Normalized tenant and CMS-selected numeric ID for the source | Default tenant `''` and `1` in the packaged fixtures |
+| `$HistoryFingerprint` | Current opaque fingerprint from that target's projection status, matched to retained managed source identity; never invent it | Fixture's provider-read fingerprint, equal to its creation receipt |
+| `$HistoryTimeoutSeconds` | Finite command timeout chosen for the E18 operation/workload | `60` as in the packaged fixture |
+
+Admitted example: `It_allows_all_three_commands_from_managed_non_CDC_creation`
+prepares each operation separately, with trusted `internalOnly` creation history.
+This request mutates cache/work/lifecycle according to the selected E18 procedure.
+
+<!-- cdc-snippet: cdc-history-internal-only -->
+```powershell
+dms-document-cache $HistoryCommand --data-store-id $HistoryDataStoreId --tenant-key $HistoryTenant `
+    --confirm $HistoryConfirmation --offline-writer-admission closedAndDrained `
+    --expected-physical-source-fingerprint $HistoryFingerprint `
+    --command-timeout-seconds $HistoryTimeoutSeconds `
+    --settings $HistorySettings --environment $HistoryEnvironment --datastore $HistoryProvider --json
+```
+<!-- /cdc-snippet: cdc-history-internal-only -->
+
+Rejected example: `It_rejects_untrusted_or_exposed_history_without_any_mutation`
+uses the **same** selected command/target/fingerprint and changes only the fixture's
+history scenario (`possible`, `active`, `historical`, unknown/missing/unreadable or
+mismatched evidence). It asserts exit `10`, the history rejection classification,
+`mutated: false`, and unchanged database and provenance snapshots. Do not retry by
+removing the history reader.
+
+<!-- cdc-snippet: cdc-history-rejected -->
+```powershell
+dms-document-cache $HistoryCommand --data-store-id $HistoryDataStoreId --tenant-key $HistoryTenant `
+    --confirm $HistoryConfirmation --offline-writer-admission closedAndDrained `
+    --expected-physical-source-fingerprint $HistoryFingerprint `
+    --command-timeout-seconds $HistoryTimeoutSeconds `
+    --settings $HistorySettings --environment $HistoryEnvironment --datastore $HistoryProvider --json
+```
+<!-- /cdc-snippet: cdc-history-rejected -->
+
+Read `status`, `classification`, `mutated`, `targetKey`, `physicalSourceFingerprint`,
+`lifecycle`, `cacheAheadRecoveryRequired` and `phaseDiagnostics` from the Admin
+result. The shared result does **not** serialize `downstreamPublicationStatus`;
+`internalOnly` is a trusted gate observation, not a promised stdout field.
+The admitted fixtures assert exit `0`, mutation, the selected final lifecycle and
+clear latch; the normal completion contract is `completed` / `succeeded`.
+For rejection, keep the original offline fence while reconciling the incident;
+no failed history check authorizes recovery or reopening publication. Possible
+published cache-ahead values follow the [repair/containment owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+V1 new-generation cutover remains [deferred](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover).
 
 <a id="monitoring-retention"></a>
 

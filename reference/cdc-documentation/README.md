@@ -3,7 +3,8 @@
 This is the shared PostgreSQL and SQL Server operator reference set for relational
 CDC. Delivery is in progress under [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
 PostgreSQL setup, its DMS E2E opt-in variant, deployment-state preservation, managed
-lifecycle, connector restart/resume and recovery classification are documented.
+lifecycle, connector restart/resume, recovery classification and the projection
+administration/history handoff are documented.
 Remaining procedure bodies and live qualification are **pending**. A reserved procedure or snippet ID is not an executable procedure
 or evidence of a successful deployment.
 
