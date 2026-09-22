@@ -743,6 +743,151 @@ function Get-OccupiedHostResource {
     }
 }
 
+function Test-PreparedSchemaIdentity {
+    <#
+    .SYNOPSIS
+    Decides whether the schema packages a bootstrap actually staged are the ones the pin names.
+
+    .DESCRIPTION
+    prepare-dms-schema.ps1 records what it staged into .bootstrap/bootstrap-manifest.json as
+    schema.selectedPackages, one "<packageId>@<version>" string per package, built from the
+    SCHEMA_PACKAGES entries it resolved. That is the only place the prepared set is stated, and
+    comparing it to the pin is what makes "the proof ran against the schema content the pin names"
+    a checked claim rather than an assumption about an environment variable.
+
+    The raw property is examined rather than wrapped in @(). A scalar wrapped that way becomes a
+    one-element array and a manifest recording a single string would read as a well-formed
+    one-package set, which is exactly the shape a truncated or hand-edited manifest takes.
+
+    Comparison is ordinal throughout. The identity is the recorded spelling: a differing case in an
+    id, or a version written differently, is a different package as far as this check is concerned,
+    because it is a different string in the manifest that a later reader would have to reconcile.
+    #>
+    param(
+        # The raw schema.selectedPackages value, passed without coercion.
+        $Prepared,
+
+        # The pin's provisioning.schemaPackages entries.
+        $PinnedPackage
+    )
+
+    $ordinal = [System.StringComparer]::Ordinal
+
+    # Comma-wrapped: an empty array returned bare is unwrapped to nothing, and every caller below
+    # reads .Length off the result.
+    function Get-OrdinalSorted([string[]]$Value) {
+        $copy = [string[]]::new($Value.Length)
+        [Array]::Copy($Value, $copy, $Value.Length)
+        [Array]::Sort($copy, $ordinal)
+        return , $copy
+    }
+
+    $expected = @(
+        foreach ($package in @($PinnedPackage)) {
+            "$($package.name)@$($package.version)"
+        }
+    )
+
+    $empty = [string[]]@()
+
+    if ($null -eq $Prepared) {
+        return [pscustomobject]@{
+            Verified = $false
+            Observed = $empty
+            Missing  = (Get-OrdinalSorted ([string[]]$expected))
+            Extra    = $empty
+            Reason   = 'the bootstrap manifest records no schema.selectedPackages, so what was staged is unknown'
+        }
+    }
+
+    # A JSON array and nothing else. A string is enumerable but is not an array, and an object is
+    # neither; both would otherwise be coerced into a plausible-looking one-element set.
+    if ($Prepared -is [string] -or $Prepared -isnot [System.Array]) {
+        return [pscustomobject]@{
+            Verified = $false
+            Observed = $empty
+            Missing  = (Get-OrdinalSorted ([string[]]$expected))
+            Extra    = $empty
+            Reason   = "the bootstrap manifest's schema.selectedPackages is a $($Prepared.GetType().Name) rather than an array"
+        }
+    }
+
+    if ($Prepared.Length -eq 0) {
+        return [pscustomobject]@{
+            Verified = $false
+            Observed = $empty
+            Missing  = (Get-OrdinalSorted ([string[]]$expected))
+            Extra    = $empty
+            Reason   = 'the bootstrap manifest staged no schema packages at all'
+        }
+    }
+
+    $observed = [System.Collections.Generic.List[string]]::new()
+    $malformed = [System.Collections.Generic.List[string]]::new()
+
+    for ($index = 0; $index -lt $Prepared.Length; $index++) {
+        $entry = $Prepared[$index]
+
+        if ($entry -isnot [string]) {
+            $malformed.Add("[$index] is a $(if ($null -eq $entry) { 'null' } else { $entry.GetType().Name }) rather than a string")
+            continue
+        }
+
+        # One '@' separating a non-empty id from a non-empty version, which is the shape
+        # prepare-dms-schema.ps1 writes.
+        if ($entry -cnotmatch '^[^@\s]+@[^@\s]+$') {
+            $malformed.Add("[$index] '$entry' is not a <packageId>@<version> identity")
+            continue
+        }
+
+        $observed.Add($entry)
+    }
+
+    if ($malformed.Count -gt 0) {
+        return [pscustomobject]@{
+            Verified = $false
+            Observed = (Get-OrdinalSorted $observed.ToArray())
+            Missing  = $empty
+            Extra    = $empty
+            Reason   = "the bootstrap manifest's schema.selectedPackages carries malformed entries: $($malformed -join '; ')"
+        }
+    }
+
+    $duplicate = @(
+        $observed | Group-Object -CaseSensitive |
+            Where-Object { $_.Count -gt 1 } |
+            ForEach-Object { $_.Name }
+    )
+
+    if ($duplicate.Count -gt 0) {
+        return [pscustomobject]@{
+            Verified = $false
+            Observed = (Get-OrdinalSorted $observed.ToArray())
+            Missing  = $empty
+            Extra    = $empty
+            Reason   = "the bootstrap manifest stages $($duplicate -join ', ') more than once"
+        }
+    }
+
+    $expectedSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$expected, $ordinal)
+    $observedSet = [System.Collections.Generic.HashSet[string]]::new($observed.ToArray(), $ordinal)
+
+    $missing = (Get-OrdinalSorted (@($expected | Where-Object { -not $observedSet.Contains($_) })))
+    $extra = (Get-OrdinalSorted (@($observed | Where-Object { -not $expectedSet.Contains($_) })))
+
+    $reason = @()
+    if ($missing.Length -gt 0) { $reason += "the pin names $($missing -join ', ') but the bootstrap did not stage them" }
+    if ($extra.Length -gt 0) { $reason += "the bootstrap staged $($extra -join ', ') which the pin does not name" }
+
+    return [pscustomobject]@{
+        Verified = ($missing.Length -eq 0 -and $extra.Length -eq 0)
+        Observed = (Get-OrdinalSorted $observed.ToArray())
+        Missing  = $missing
+        Extra    = $extra
+        Reason   = if ($reason.Count -eq 0) { "the bootstrap staged exactly the $($observed.Count) package(s) the pin names" } else { $reason -join '; ' }
+    }
+}
+
 function Get-NetworkAttachmentInventory {
     <#
     .SYNOPSIS
@@ -1294,6 +1439,7 @@ Export-ModuleMember -Function @(
     'Get-RemoteImageDigest'
     'Test-RemoteImageDescriptor'
     'Test-BuildCommandAbsent'
+    'Get-JsonMember'
 
     # Decisions about what the run may touch, and what it must put back.
     'Get-OccupiedHostResource'
@@ -1305,6 +1451,7 @@ Export-ModuleMember -Function @(
     'Get-SchemaToolInstallArgument'
     'Test-ProofPathSafety'
     'Test-OwnedDeletionPath'
+    'Test-PreparedSchemaIdentity'
     'Get-NetworkAttachmentInventory'
     'Test-LocalPortAvailable'
     'Get-GovernedEnvironmentKey'

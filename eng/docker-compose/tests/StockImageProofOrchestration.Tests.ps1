@@ -294,6 +294,125 @@ Describe 'Stock image proof orchestration' {
         }
     }
 
+    Context 'the schema packages a bootstrap actually staged' {
+        BeforeAll {
+            $script:pinnedSchema = @(
+                [pscustomobject]@{ name = 'EdFi.DataStandard52.ApiSchema'; version = '1.0.335' }
+                [pscustomobject]@{ name = 'EdFi.DataStandard52.TPDM.ApiSchema'; version = '1.0.335' }
+            )
+            $script:exactlyStaged = @('EdFi.DataStandard52.ApiSchema@1.0.335', 'EdFi.DataStandard52.TPDM.ApiSchema@1.0.335')
+
+            function script:Test-Prepared {
+                param($Prepared)
+                return Test-PreparedSchemaIdentity -Prepared $Prepared -PinnedPackage $script:pinnedSchema
+            }
+        }
+
+        It 'accepts exactly the pinned set' {
+            $verdict = Test-Prepared $script:exactlyStaged
+
+            $verdict.Verified | Should -BeTrue
+            $verdict.Observed | Should -HaveCount 2
+            $verdict.Missing | Should -HaveCount 0
+            $verdict.Extra | Should -HaveCount 0
+        }
+
+        It 'accepts the pinned set staged in another order, and reports it ordinally' {
+            $verdict = Test-Prepared @($script:exactlyStaged[1], $script:exactlyStaged[0])
+
+            $verdict.Verified | Should -BeTrue
+            # Deterministic ordinal ordering, so evidence and diagnostics do not vary by staging order.
+            $verdict.Observed[0] | Should -BeExactly 'EdFi.DataStandard52.ApiSchema@1.0.335'
+        }
+
+        It 'reports a missing identity' {
+            $verdict = Test-Prepared @($script:exactlyStaged[0])
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Missing | Should -Be @('EdFi.DataStandard52.TPDM.ApiSchema@1.0.335')
+            $verdict.Extra | Should -HaveCount 0
+        }
+
+        It 'reports an extra identity' {
+            $verdict = Test-Prepared ($script:exactlyStaged + 'EdFi.Something.Else@2.0.0')
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Extra | Should -Be @('EdFi.Something.Else@2.0.0')
+            $verdict.Missing | Should -HaveCount 0
+        }
+
+        It 'reports missing and extra separately rather than normalizing one into the other' {
+            $verdict = Test-Prepared @($script:exactlyStaged[0], 'EdFi.Something.Else@2.0.0')
+
+            $verdict.Missing | Should -Be @('EdFi.DataStandard52.TPDM.ApiSchema@1.0.335')
+            $verdict.Extra | Should -Be @('EdFi.Something.Else@2.0.0')
+        }
+
+        It 'treats a differing <_> spelling as a different package' -ForEach @('id case', 'version') {
+            # The identity is the recorded string. A later reader has to reconcile whatever the
+            # manifest actually says, so normalizing here would hide a real difference.
+            $staged = if ($_ -eq 'id case') {
+                @('edfi.datastandard52.apischema@1.0.335', $script:exactlyStaged[1])
+            }
+            else {
+                @('EdFi.DataStandard52.ApiSchema@1.0.335.0', $script:exactlyStaged[1])
+            }
+
+            $verdict = Test-Prepared $staged
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Missing | Should -HaveCount 1
+            $verdict.Extra | Should -HaveCount 1
+        }
+
+        It 'refuses a scalar rather than reading it as a one-package set' {
+            # @() around a scalar would make a truncated manifest look well formed.
+            $verdict = Test-Prepared 'EdFi.DataStandard52.ApiSchema@1.0.335'
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'rather than an array'
+        }
+
+        It 'refuses <Case>' -ForEach @(
+            @{ Case = 'an object'; Value = ([pscustomobject]@{ name = 'x' }) }
+            @{ Case = 'a number'; Value = 335 }
+        ) {
+            (Test-Prepared $Value).Verified | Should -BeFalse
+        }
+
+        It 'refuses an absent value' {
+            $verdict = Test-Prepared $null
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'records no schema.selectedPackages'
+        }
+
+        It 'refuses an empty array' {
+            $verdict = Test-Prepared @()
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'staged no schema packages'
+        }
+
+        It 'refuses a malformed entry: <_>' -ForEach @('no-at-sign', '@1.0.0', 'EdFi.Api@', 'a@b@c', 'has space@1.0.0') {
+            $verdict = Test-Prepared @($_)
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'malformed'
+        }
+
+        It 'refuses a non-string element' {
+            (Test-Prepared @($script:exactlyStaged[0], 42)).Reason | Should -Match 'rather than a string'
+        }
+
+        It 'refuses a duplicated exact entry' {
+            $verdict = Test-Prepared ($script:exactlyStaged + $script:exactlyStaged[0])
+
+            $verdict.Verified | Should -BeFalse
+            $verdict.Reason | Should -Match 'more than once'
+        }
+    }
+
     Context 'the shared external network, absent versus unreadable' {
         It 'reports no attachments when the enumeration succeeded and did not name it' {
             $result = Get-NetworkAttachmentInventory -NetworkName 'dms' -ListExitCode 0 -ListedNetwork @('bridge', 'host')

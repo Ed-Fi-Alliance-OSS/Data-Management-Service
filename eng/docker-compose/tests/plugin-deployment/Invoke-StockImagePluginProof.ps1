@@ -74,7 +74,13 @@ param(
     # stack binds and therefore the ports the preflight guards, so naming a different one is how a
     # caller runs this against a differently configured stack rather than a way around any check.
     [string]
-    $BaseEnvironmentFile
+    $BaseEnvironmentFile,
+
+    # Where the bootstrap wrapper stages its workspace. The default is the one fixed path it
+    # actually uses; this exists so a test can observe the prepared-schema check without writing a
+    # synthetic manifest into the repository, and a test asserts that the default is the real path.
+    [string]
+    $BootstrapWorkspacePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,7 +110,12 @@ $WorkspaceRoot = [IO.Path]::GetFullPath($WorkspaceRoot)
 $EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
 
 $composeProject = 'dms-published'
-$bootstrapPath = Join-Path $composeRoot '.bootstrap'
+$bootstrapPath = if ([string]::IsNullOrWhiteSpace($BootstrapWorkspacePath)) {
+    Join-Path $composeRoot '.bootstrap'
+}
+else {
+    [IO.Path]::GetFullPath($BootstrapWorkspacePath)
+}
 $pluginName = 'Acme.CustomValidationProof'
 # Read from, never written to. The publish below runs against a copy in the run workspace, for
 # two reasons: this tree belongs to DMS-1436 and its integration tier, and its nuget.config binds
@@ -834,6 +845,47 @@ function Start-ProofDeployment {
     }
 }
 
+# The schema packages this deployment's bootstrap actually staged, checked against the pin.
+#
+# Per deployment, never once for the run: each scenario tears down with -d -v and the next one
+# restages the workspace from scratch, so an observation from an earlier deployment says nothing
+# about this one. The expected-negative scenarios are checked too - the prepare phase stages the
+# manifest before the stack is started, so a wrong schema set there would otherwise be invisible
+# behind the failure the scenario is looking for.
+function Assert-PreparedSchemaIdentity {
+    param([Parameter(Mandatory)] $Pin, [Parameter(Mandatory)] [string] $ScenarioName)
+
+    $manifestPath = Join-Path $bootstrapPath 'bootstrap-manifest.json'
+
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        throw "The $ScenarioName deployment staged no $manifestPath, so the schema packages it prepared are unknown."
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+
+    # Read through Get-JsonMember, not $manifest.schema.selectedPackages. Two PowerShell behaviours
+    # would corrupt this read: an if-expression enumerates its output, so a one-package manifest
+    # would arrive here as a bare string and be refused as malformed; and .PSObject.Properties.Name
+    # throws under StrictMode when the object has no properties at all, which is what "{}" parses
+    # to. @() around the result would be just as wrong, since it turns a truncated scalar into a
+    # well-formed one-package set, the exact shape this check exists to catch.
+    $prepared = Get-JsonMember -Object (Get-JsonMember -Object $manifest -Name 'schema') -Name 'selectedPackages'
+
+    $verdict = Test-PreparedSchemaIdentity -Prepared $prepared -PinnedPackage $Pin.provisioning.schemaPackages
+
+    if (-not $verdict.Verified) {
+        throw "The $ScenarioName deployment prepared schema packages the pin does not name: $($verdict.Reason)"
+    }
+
+    Write-Detail "$ScenarioName staged $($verdict.Observed -join ', ')"
+
+    return [ordered]@{
+        observed = @($verdict.Observed)
+        missing  = @($verdict.Missing)
+        extra    = @($verdict.Extra)
+    }
+}
+
 function Stop-ProofDeployment {
     param([Parameter(Mandatory)] [string] $EnvironmentFile)
 
@@ -1059,7 +1111,16 @@ function Invoke-ProofScenario {
             throw "The $Name deployment was expected to fail to come up and did not."
         }
 
+        # Before the scenario body, and for the expected-negative scenarios as well: the bootstrap
+        # has had its chance to stage the manifest by now, and a scenario cannot be accepted on a
+        # workspace prepared from a schema set the pin does not name.
+        $preparedSchema = Assert-PreparedSchemaIdentity -Pin $Pin -ScenarioName $Name
+
         $record = & $Scenario $environmentFile
+
+        if ($record -is [System.Collections.IDictionary]) {
+            $record['preparedSchemaPackages'] = $preparedSchema
+        }
     }
     catch {
         $failure = $_

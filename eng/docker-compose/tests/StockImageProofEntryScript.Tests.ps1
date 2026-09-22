@@ -36,6 +36,7 @@ param(
     [Parameter(Mandatory)] [string] $ResultFile,
     [Parameter(Mandatory)] [string] $BaseEnvironmentFile,
     [Parameter(Mandatory)] [string] $CaptureRoot,
+    [Parameter(Mandatory)] [string] $BootstrapWorkspacePath,
     [string] $AmbientKey,
     [string] $AmbientValue
 )
@@ -45,6 +46,7 @@ $global:DmsShimPlan = Get-Content -LiteralPath $ShimPlan -Raw | ConvertFrom-Json
 $global:DmsShimLog = $ShimLog
 $global:DmsWorkspaceRoot = $WorkspaceRoot
 $global:DmsCaptureRoot = $CaptureRoot
+$global:DmsRuleHits = @{}
 
 function global:Invoke-DmsShim {
     param([string] $Tool, [string[]] $ShimArgs)
@@ -52,8 +54,20 @@ function global:Invoke-DmsShim {
     $line = "$Tool $($ShimArgs -join ' ')"
     Add-Content -LiteralPath $global:DmsShimLog -Value $line
 
-    foreach ($rule in $global:DmsShimPlan) {
+    for ($ruleIndex = 0; $ruleIndex -lt @($global:DmsShimPlan).Count; $ruleIndex++) {
+        $rule = @($global:DmsShimPlan)[$ruleIndex]
+
         if ($line -match $rule.match) {
+            # A rule may answer differently on successive matches, which is how a run with four
+            # deployments can be given a good manifest first and a bad one later. The last entry
+            # repeats once the sequence is exhausted.
+            if ($rule.PSObject.Properties.Name -contains 'sequence') {
+                $hits = if ($global:DmsRuleHits.ContainsKey($ruleIndex)) { $global:DmsRuleHits[$ruleIndex] } else { 0 }
+                $global:DmsRuleHits[$ruleIndex] = $hits + 1
+                $step = @($rule.sequence)
+                $rule = $step[[Math]::Min($hits, $step.Count - 1)]
+            }
+
             # What the command would have left on disk, created as it runs rather than beforehand.
             # Creating it in advance would materialise the run workspace before the script does, and
             # the script correctly refuses a workspace that already exists.
@@ -142,7 +156,7 @@ if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
 
 $failure = '<the script returned without throwing>'
 try {
-    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile
+    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile -BootstrapWorkspacePath $BootstrapWorkspacePath
 }
 catch {
     $failure = $_.Exception.Message
@@ -190,6 +204,10 @@ catch {
             Set-Content -LiteralPath $Path -Value ($pin | ConvertTo-Json -Depth 8) -Encoding utf8
         }
 
+        # What New-PublishedPinFile's schemaPackages renders to, as prepare-dms-schema.ps1 would
+        # record it in the staged manifest.
+        $script:pinnedIdentity = @('EdFi.DataStandard52.ApiSchema@1.0.335')
+
         function script:Get-FreePort {
             $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
             $listener.Start()
@@ -236,6 +254,34 @@ catch {
 
         # The files a successful fixture publish would have left behind, so a traversal can reach
         # the deployments. The entry assembly is a real one: the script reads its version.
+        # What a bootstrap stages: the manifest recording the schema packages it prepared. Written
+        # by the bootstrap rule so each deployment restages it, exactly as -d -v then a fresh
+        # bootstrap does in a real run.
+        function script:Get-BootstrapRule {
+            param([string[]] $SelectedPackages, [switch] $OmitSelectedPackages, [switch] $OmitSchema, [switch] $AsScalar)
+
+            $schema = if ($OmitSchema) {
+                @{ }
+            }
+            elseif ($OmitSelectedPackages) {
+                @{ schema = @{ effectiveSchemaHash = 'abc' } }
+            }
+            elseif ($AsScalar) {
+                @{ schema = @{ selectedPackages = $SelectedPackages[0] } }
+            }
+            else {
+                @{ schema = @{ selectedPackages = @($SelectedPackages) } }
+            }
+
+            return @(
+                @{
+                    match    = 'bootstrap-published-dms\.ps1 -EnvironmentFile'
+                    exitCode = 0
+                    create   = @(@{ path = 'bootstrap/bootstrap-manifest.json'; content = ($schema | ConvertTo-Json -Depth 6 -Compress) })
+                }
+            )
+        }
+
         function script:Get-PublishedFixtureRule {
             param([string] $AssetsVersion = '1.0.0')
 
@@ -280,7 +326,7 @@ catch {
 
                 $planPath = Join-Path $scratch 'shim-plan.json'
                 Set-Content -LiteralPath $planPath -Encoding utf8 -Value (
-                    ConvertTo-Json -Depth 5 -InputObject @($ShimRule | ForEach-Object { [pscustomobject]$_ }))
+                    ConvertTo-Json -Depth 9 -InputObject @($ShimRule | ForEach-Object { [pscustomobject]$_ }))
 
                 $captureRoot = Join-Path $scratch 'captured'
                 $shimLog = Join-Path $scratch 'shim.log'
@@ -313,6 +359,7 @@ catch {
                     '-WorkspaceRoot', $workspace
                     '-EvidenceRoot', $evidenceRoot
                     '-CaptureRoot', $captureRoot
+                    '-BootstrapWorkspacePath', (Join-Path $workspace 'bootstrap')
                     '-ShimPlan', $planPath
                     '-ShimLog', $shimLog
                     '-ResultFile', $resultFile
@@ -610,7 +657,7 @@ catch {
 
             try {
                 Invoke-EntryScript -PinPath $pinPath -ShimRule @(
-                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ }) | Out-Null
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ }) | Out-Null
             }
             finally {
                 Remove-Item -LiteralPath $pinPath -Force -ErrorAction SilentlyContinue
@@ -638,7 +685,7 @@ catch {
 
             try {
                 Invoke-EntryScript -PinPath $pinPath -ShimRule @(
-                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ }) | Out-Null
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ }) | Out-Null
             }
             finally {
                 Remove-Item -LiteralPath $pinPath -Force -ErrorAction SilentlyContinue
@@ -657,7 +704,7 @@ catch {
 
             try {
                 $run = Invoke-EntryScript -PinPath $pinPath -ShimRule @(
-                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
 
                 $generated = $run.Captured['fixture-src_Acme.CustomValidationProof_nuget.config']
                 $generated | Should -Not -BeNullOrEmpty -Because 'the publish must run against a generated configuration'
@@ -710,7 +757,7 @@ catch {
 
             try {
                 Invoke-EntryScript -PinPath $pinPath -ShimRule @(
-                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ }) | Out-Null
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ }) | Out-Null
             }
             finally {
                 Remove-Item -LiteralPath $pinPath -Force -ErrorAction SilentlyContinue
@@ -725,7 +772,7 @@ catch {
 
             try {
                 $run = Invoke-EntryScript -PinPath $pinPath -ShimRule @(
-                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+                    @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
 
                 $publish = @($run.ShimCall | Where-Object { $_ -like 'dotnet publish*' })
 
@@ -738,6 +785,128 @@ catch {
             finally {
                 Remove-Item -LiteralPath $pinPath -Force -ErrorAction SilentlyContinue
             }
+        }
+    }
+
+    Context 'the schema packages each deployment actually staged' {
+        BeforeEach {
+            $script:pinPath = Join-Path ([IO.Path]::GetTempPath()) "dms1502-pin-$([guid]::NewGuid().ToString('N')).json"
+            New-PublishedPinFile -Path $script:pinPath
+        }
+
+        AfterEach {
+            Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'looks in the real bootstrap workspace by default' {
+            # The seam above exists so these cases need not write into the repository. The default
+            # has to remain the one path the bootstrap wrapper actually stages.
+            $script = Get-Content -LiteralPath $script:entryScript -Raw
+
+            $script | Should -Match "Join-Path \`$composeRoot '\.bootstrap'"
+        }
+
+        It 'accepts a deployment that staged exactly the pinned set' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
+
+            # Not a bare "did not fail": a run that never reached the check would satisfy that.
+            # This shim carries the run as far as the first scenario body, which is past the check,
+            # so the later failure is what proves the check ran and accepted the manifest.
+            $run.Failure | Should -Not -Match 'prepared schema packages'
+            $run.Failure | Should -Match 'DMS container could not be located'
+        }
+
+        It 'refuses a deployment that staged <Case>' -ForEach @(
+            @{ Case = 'a missing package'; Staged = @() ; Expect = 'staged no schema packages' }
+            @{ Case = 'an extra package'; Staged = @('EdFi.DataStandard52.ApiSchema@1.0.335', 'EdFi.Other@9.9.9'); Expect = 'which the pin does not name' }
+            @{ Case = 'a different version'; Staged = @('EdFi.DataStandard52.ApiSchema@9.9.9'); Expect = 'did not stage them' }
+            @{ Case = 'a malformed entry'; Staged = @('no-at-sign'); Expect = 'malformed' }
+            @{ Case = 'a duplicate'; Staged = @('EdFi.DataStandard52.ApiSchema@1.0.335', 'EdFi.DataStandard52.ApiSchema@1.0.335'); Expect = 'more than once' }
+        ) {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $Staged) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'prepared schema packages the pin does not name'
+            $run.Failure | Should -Match $Expect
+        }
+
+        It 'refuses a manifest whose selectedPackages is a scalar' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity -AsScalar) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'rather than an array'
+        }
+
+        It 'refuses a manifest with no <Case>' -ForEach @(
+            @{ Case = 'selectedPackages'; Switch = 'OmitSelectedPackages' }
+            @{ Case = 'schema section'; Switch = 'OmitSchema' }
+        ) {
+            $argument = @{ SelectedPackages = $script:pinnedIdentity; $Switch = $true }
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @(Get-BootstrapRule @argument) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'records no schema.selectedPackages'
+        }
+
+        It 'refuses a deployment that staged no manifest at all' {
+            # Every rule but the bootstrap one, so the command runs and produces nothing.
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+
+            $run.Failure | Should -Match 'staged no .*bootstrap-manifest\.json'
+        }
+
+        It 'runs the check inside the per-deployment path, not once for the run' {
+            # The behavioural form of this case - a good manifest in deployment 1 and a bad one in
+            # deployment 3 - needs the shim to carry a scenario body through to a second deployment,
+            # which it cannot do yet. What is enforceable here is where the call lives: hoisting it
+            # into the caller that runs the four scenarios would make one observation stand for all
+            # four, and each scenario restages the workspace after a -d -v teardown.
+            $ast = [Management.Automation.Language.Parser]::ParseFile($script:entryScript, [ref]$null, [ref]$null)
+
+            $call = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq 'Assert-PreparedSchemaIdentity'
+                    }, $true))
+
+            $call | Should -HaveCount 1
+
+            $enclosing = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Extent.StartOffset -le $call[0].Extent.StartOffset -and
+                        $node.Extent.EndOffset -ge $call[0].Extent.EndOffset
+                    }, $true))
+
+            $enclosing.Name | Should -Contain 'Invoke-ProofScenario'
+
+            # And after the deployment it is asked about, so it reads that deployment's manifest.
+            $deployment = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq 'Start-ProofDeployment'
+                    }, $true))
+
+            $deployment | Should -HaveCount 1
+            $call[0].Extent.StartOffset | Should -BeGreaterThan $deployment[0].Extent.EndOffset
+        }
+
+        It 'reaches that per-deployment path once for every scenario' {
+            $ast = [Management.Automation.Language.Parser]::ParseFile($script:entryScript, [ref]$null, [ref]$null)
+
+            $scenario = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and
+                        $node.GetCommandName() -eq 'Invoke-ProofScenario'
+                    }, $true))
+
+            $scenario | Should -HaveCount 4
         }
     }
 
@@ -764,7 +933,7 @@ catch {
 
         It 'passes bare contract versions to the publish, because the project brackets them itself' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
-                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
 
             $publish = @($run.ShimCall | Where-Object { $_ -like 'dotnet publish*' })
 
@@ -793,14 +962,14 @@ catch {
 
         It 'runs no command that builds an image, across the whole traversal' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
-                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
 
             $run.Evidence.buildCommandAbsent.Verified | Should -BeTrue
         }
 
         It 'fails the run when the final teardown fails, rather than reporting success' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
-                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) +
                 @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) | ForEach-Object { $_ })
 
             $run.Failure | Should -Match 'Tearing down'
@@ -808,7 +977,7 @@ catch {
 
         It 'keeps the run directories when teardown failed, because they are still mounted' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
-                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) +
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) +
                 @(@{ match = 'bootstrap-published-dms\.ps1 -d -v'; exitCode = 1; output = 'down failed' }) | ForEach-Object { $_ })
 
             $run.WorkspaceCreated | Should -BeTrue
@@ -816,7 +985,7 @@ catch {
 
         It 'removes the run directories when teardown succeeded' {
             $run = Invoke-EntryScript -PinPath $script:pinPath -ShimRule @(
-                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) | ForEach-Object { $_ })
+                @((Get-MatchingDescriptorRule)) + @(Get-InstalledToolRule) + @(Get-PublishedFixtureRule) + @(Get-BootstrapRule -SelectedPackages $script:pinnedIdentity) | ForEach-Object { $_ })
 
             $run.WorkspaceCreated | Should -BeFalse
         }
