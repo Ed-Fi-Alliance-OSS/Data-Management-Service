@@ -88,7 +88,8 @@ public class ApiServiceOpenApiTests
             cachedClaimSetProvider,
             A.Fake<IResourceDependencyGraphMLFactory>(),
             profileService ?? A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 
