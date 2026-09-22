@@ -348,12 +348,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             {
                 // Still a 429: the upstream *status* is trustworthy even when its body is not,
                 // and the generic rate-limit contract is also the honest answer when the 429 came
-                // from a gateway limiter rather than from the token limit. The body is logged
-                // here, as the one place it is recorded at all, and never returned.
+                // from a gateway limiter rather than from the token limit.
+                //
+                // The log gets the same selected summary the 401 fallback writes, never the body
+                // (reference/adr-oauth-upstream-error-disclosure.md): the values of the RFC 6749
+                // error fields and the bare names of every other member, under the trace id the
+                // client was given. A body that is not a JSON object has no members to name.
+                (string standardFields, string otherFieldNames) = JsonObjectOrNull(body) is JsonObject obj
+                    ? SummarizeUpstreamFieldsForLogging(obj)
+                    : (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker);
+
                 logger.LogWarning(
-                    "Unrecognized 429 body from upstream identity service - {TraceId} - {Content}",
+                    "Unrecognized 429 body from upstream identity service; its values are withheld "
+                        + "- {TraceId} - standard OAuth error fields: {StandardFields} - other field "
+                        + "names present: {OtherFieldNames}",
                     traceId.Value,
-                    SanitizeAndBoundForLogging(body)
+                    standardFields,
+                    otherFieldNames
                 );
 
                 return GenerateProblemDetailResponse(
@@ -384,17 +395,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // partially believed.
         static int? TokenLimitFromUpstreamBody(string body)
         {
-            JsonNode? parsed;
-            try
-            {
-                parsed = JsonNode.Parse(body);
-            }
-            catch (JsonException)
-            {
-                return null;
-            }
-
-            if (parsed is not JsonObject obj)
+            if (JsonObjectOrNull(body) is not JsonObject obj)
             {
                 return null;
             }
@@ -447,6 +448,19 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             }
 
             return limit;
+        }
+
+        // The body as a JSON object, or null when it is unparseable or any other JSON value.
+        static JsonObject? JsonObjectOrNull(string body)
+        {
+            try
+            {
+                return JsonNode.Parse(body) as JsonObject;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         // Splits the top-level members of an upstream 401 body into the only two things the log

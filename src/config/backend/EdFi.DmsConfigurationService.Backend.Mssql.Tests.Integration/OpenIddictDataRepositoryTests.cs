@@ -1112,4 +1112,83 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(applicationId)).Should().Be(0);
         }
     }
+
+    /// <summary>
+    /// A grant chosen as a deadlock victim is contention, exactly like a lock-wait timeout, so it
+    /// must come back as the retriable outcome rather than escape as a server error. In production
+    /// the other party is the expired-token sweep, whose delete locks a token row's clustered key
+    /// before its ApplicationId key while the grant's count takes them in the opposite order. That
+    /// interleaving depends on the count's plan shape, so this fixture builds the cycle from locks
+    /// every plan must take: the holder X-locks one of the client's token rows, which the count has
+    /// to read, and then asks for the application row the grant already holds.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Grant_Chosen_As_A_Deadlock_Victim : OpenIddictDataRepositoryTests
+    {
+        private static readonly TimeSpan _blockedObservationTimeout = TimeSpan.FromSeconds(4);
+
+        private OpenIddictDataRepository _repository = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+
+        [Test]
+        public async Task It_reports_the_retriable_outcome_and_stores_nothing()
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"deadlock-victim-{Guid.NewGuid():N}"
+            );
+            Guid existingTokenId = Guid.NewGuid();
+            (
+                await _repository.StoreTokenAsync(
+                    existingTokenId,
+                    applicationId,
+                    "subject-existing",
+                    FarPast,
+                    EnforcementDisabled
+                )
+            )
+                .Should()
+                .Be(TokenStoreOutcome.Stored);
+
+            await using SqlConnection holder = await OpenConnectionAsync();
+            await holder.ExecuteAsync("SET DEADLOCK_PRIORITY HIGH");
+            await using SqlTransaction holderTransaction = (SqlTransaction)
+                await holder.BeginTransactionAsync();
+
+            // RedemptionDate is in no nonclustered index, so this locks only the clustered row.
+            await holder.ExecuteAsync(
+                "UPDATE dmscs.OpenIddictToken SET RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id",
+                new { Id = existingTokenId },
+                holderTransaction
+            );
+            int holderSessionId = await holder.ExecuteScalarAsync<int>(
+                "SELECT @@SPID",
+                transaction: holderTransaction
+            );
+
+            Task<TokenStoreOutcome> grant = Task.Run(() =>
+                _repository.StoreTokenAsync(Guid.NewGuid(), applicationId, "subject-victim", FarFuture, 5)
+            );
+
+            // The grant now holds the application row and waits on the token row.
+            await WaitUntilASessionIsBlockedBy(holderSessionId, _blockedObservationTimeout);
+
+            // Closing the cycle: SQL Server picks the grant, the lower-priority session, as victim,
+            // and the holder's request is then granted.
+            await holder.ExecuteAsync(
+                "SELECT Id FROM dmscs.OpenIddictApplication WITH (UPDLOCK, HOLDLOCK) WHERE Id = @Id",
+                new { Id = applicationId },
+                holderTransaction
+            );
+
+            TokenStoreOutcome outcome = await grant;
+            await holderTransaction.RollbackAsync();
+
+            outcome.Should().Be(TokenStoreOutcome.LockTimeout);
+            (await TokenRowCountAsync(applicationId)).Should().Be(1);
+        }
+    }
 }

@@ -1911,14 +1911,24 @@ public class OAuthManagerTests
             _raw.Should().NotContain(Sentinel);
         }
 
-        // The other half of the same decision, and the reason the branch is safe to keep quiet:
-        // the text withheld from the caller is written to the log instead, where an operator can
-        // see what the upstream actually said. Asserting only the response would leave a silent
-        // deletion of the LogWarning indistinguishable from correct behavior.
+        // The log receives a selected summary, never the body
+        // (reference/adr-oauth-upstream-error-disclosure.md), so the text withheld from the
+        // caller is withheld from the log as well. The whole rendered event is checked, so a
+        // leak through any bound parameter would fail this.
         [Test]
-        public void It_records_the_withheld_text_in_the_log()
+        public void It_does_not_write_the_upstream_text_to_the_log()
         {
-            LoggedUpstreamContent(_logger).Should().Contain(Sentinel);
+            Unrecognized429Record(_logger).Message.Should().NotContain(Sentinel);
+        }
+
+        // What the operator gets instead: the member names, under the trace id the client was
+        // given, so the correlationId in the response still leads to this event.
+        [Test]
+        public void It_records_the_member_names_under_the_trace_id()
+        {
+            LogRecord record = Unrecognized429Record(_logger);
+            record.Properties["TraceId"].Should().Be(CorrelationId);
+            ((string)record.Properties["OtherFieldNames"]!).Should().Contain("errors").And.Contain("type");
         }
 
         // A trailing suffix makes the message non-canonical, so the limit is not believed either.
@@ -1930,47 +1940,59 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// The fallback branch's warning is held to the same treatment every other upstream body gets
-    /// before it reaches a log sink: newline-sanitized so it cannot forge log lines, and capped so
-    /// one hostile response cannot flood the log.
+    /// The single warning the 429 fallback emits, told apart from the 502 branch's warning by the
+    /// <c>{OtherFieldNames}</c> parameter, which only it binds.
+    /// </summary>
+    private static LogRecord Unrecognized429Record(RecordingLogger<OAuthManager> logger) =>
+        logger.Records.Single(record =>
+            record.Level == LogLevel.Warning && record.Properties.ContainsKey("OtherFieldNames")
+        );
+
+    /// <summary>
+    /// The fallback branch's warning carries a summary, and the summary is held to the same
+    /// treatment as the 401 fallback's: values of non-standard members never reach it, member
+    /// names are newline-sanitized, and a body that is not a JSON object leaves nothing to name.
     /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_An_Unrecognized_429_Body_Reaching_The_Log
     {
-        private static string DeviatingBodyContaining(string injected) =>
-            $$"""
-                {
-                  "type": "urn:ed-fi:api:too-many-requests",
-                  "status": 429,
-                  "errors": [{{System.Text.Json.JsonSerializer.Serialize(injected)}}]
-                }
-                """;
-
         [Test]
-        public async Task It_does_not_log_raw_newlines_from_the_upstream_body()
+        public async Task It_withholds_the_values_of_non_standard_members()
         {
             (_, _, _, RecordingLogger<OAuthManager> logger) = await UpstreamRejectsWith(
-                DeviatingBodyContaining("first line\r\nWARN forged second line")
+                """{ "type": "urn:ed-fi:api:too-many-requests", "status": 429, "errors": ["upstream-value-never-logged"] }"""
             );
 
-            string logged = LoggedUpstreamContent(logger);
-            logged.Should().NotContain("\r");
-            logged.Should().NotContain("\n");
-            logged.Should().Contain("forged second line");
+            LogRecord record = Unrecognized429Record(logger);
+            record.Message.Should().NotContain("upstream-value-never-logged");
+            record.Properties["OtherFieldNames"].Should().Be("type, status, errors");
         }
 
         [Test]
-        public async Task It_caps_an_over_long_body_at_the_documented_bound()
+        public async Task It_does_not_log_raw_newlines_from_a_member_name()
+        {
+            (_, _, _, RecordingLogger<OAuthManager> logger) = await UpstreamRejectsWith(
+                """{ "first\r\nWARN forged second line": 1 }"""
+            );
+
+            string names = (string)Unrecognized429Record(logger).Properties["OtherFieldNames"]!;
+            names.Should().NotContain("\r");
+            names.Should().NotContain("\n");
+            names.Should().Contain("forged second line");
+        }
+
+        [Test]
+        public async Task It_names_nothing_for_a_body_that_is_not_a_json_object()
         {
             (_, _, _, RecordingLogger<OAuthManager> logger) = await UpstreamRejectsWith(
                 new string('a', 5000)
             );
 
-            LoggedUpstreamContent(logger)
-                .Should()
-                .HaveLength(ExpectedMaxLoggedContentLength + ExpectedTruncationSuffix.Length)
-                .And.EndWith(ExpectedTruncationSuffix);
+            LogRecord record = Unrecognized429Record(logger);
+            record.Properties["StandardFields"].Should().Be(ExpectedNoFieldsMarker);
+            record.Properties["OtherFieldNames"].Should().Be(ExpectedNoFieldsMarker);
+            record.Message.Should().NotContain("aaaa");
         }
     }
 

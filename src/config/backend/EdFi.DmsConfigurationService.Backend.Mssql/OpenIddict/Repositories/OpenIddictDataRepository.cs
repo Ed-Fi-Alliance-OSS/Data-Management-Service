@@ -38,6 +38,15 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
         /// </summary>
         private const int LockRequestTimeoutErrorNumber = 1222;
 
+        /// <summary>
+        /// "Transaction was deadlocked ... Rerun the transaction". The active-token count reads
+        /// IX_OpenIddictToken_ApplicationId and then looks each row up in the clustered index,
+        /// while the expired-token sweep's delete locks the clustered row first and the same row's
+        /// ApplicationId key second, so under locking read committed a grant counting over rows
+        /// the sweep is deleting can deadlock with it.
+        /// </summary>
+        private const int DeadlockVictimErrorNumber = 1205;
+
         private const string LockApplicationSql =
             "SELECT Id FROM dmscs.OpenIddictApplication WITH (UPDLOCK, HOLDLOCK) WHERE Id = @ApplicationId";
 
@@ -504,17 +513,19 @@ UPDATE dmscs.OpenIddictApplication
 
                 await transaction.CommitAsync();
 
-                // Zero rows can only mean the count predicate was false. A deadlock victim (1205),
-                // or any other fault, throws from the statements above and is never reported here
-                // as a limit rejection; only the lock-wait timeout below is answered as an outcome.
+                // Zero rows can only mean the count predicate was false. Any fault throws from the
+                // statements above and is never reported here as a limit rejection; only the
+                // lock-wait timeout and the deadlock below are answered as an outcome.
                 return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
-            catch (SqlException exception) when (exception.Number == LockRequestTimeoutErrorNumber)
+            catch (SqlException exception)
+                when (exception.Number is LockRequestTimeoutErrorNumber or DeadlockVictimErrorNumber)
             {
-                // Waiting out SetLockTimeoutSql is contention, not a fault, and not a limit
-                // rejection either - the client may hold no tokens at all. Reported as its own
-                // outcome so the caller can answer it as retriable rather than as a server error.
-                // The transaction is rolled back by its disposal on the way out.
+                // Waiting out SetLockTimeoutSql, or being chosen as a deadlock victim, is
+                // contention, not a fault, and not a limit rejection either - the client may hold
+                // no tokens at all. Reported as its own outcome so the caller can answer it as
+                // retriable rather than as a server error. A deadlock victim's transaction is
+                // already rolled back by the server; otherwise its disposal rolls it back.
                 return TokenStoreOutcome.LockTimeout;
             }
         }

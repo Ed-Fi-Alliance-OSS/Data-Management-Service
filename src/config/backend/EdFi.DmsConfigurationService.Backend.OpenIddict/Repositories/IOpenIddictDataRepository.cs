@@ -129,7 +129,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
         /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
         /// out, whether behind a competing grant for this application or another writer such as the
-        /// expired-token sweep.
+        /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
         /// </returns>
         Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,

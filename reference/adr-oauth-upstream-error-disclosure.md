@@ -28,6 +28,7 @@ branches on the upstream status:
 | --------------------------- | ----------------------------------------------------------------- |
 | `200`                       | the upstream response is returned unaltered                       |
 | `401`                       | `GenerateUnauthorizedResponse` builds a DMS problem-details `401` |
+| `429`                       | `GenerateTooManyTokensResponse` builds a DMS problem-details `429` |
 | anything else               | `502 Bad Gateway` with a fixed detail                             |
 | transport failure (`catch`) | `502 Bad Gateway` with the same fixed detail                      |
 
@@ -63,10 +64,17 @@ fills.
 | `502`, `catch` branch                   | `"Upstream service unavailable"`       | `GatewayErrorDetail`          |
 | `401` with a usable `error_description` | the `error` value, or `"Unauthorized"` | the `error_description` value |
 | `401` without one                       | the `error` value, or `"Unauthorized"` | `UnauthorizedFallbackDetail`  |
+| `429`, canonical token-limit body       | `"Too Many Tokens"`                    | fixed token-limit detail      |
+| `429`, any other body                   | `"Too Many Requests"`                  | fixed rate-limit detail       |
 
 The two `502` branches are **deliberately indistinguishable from outside**. An upstream that
 returned a well-formed HTTP error and an upstream that could not be reached at all are different
 conditions for an operator and the same condition for an unauthenticated caller.
+
+A `429` passes nothing through. When the body is the Configuration Service's canonical
+token-limit rejection, the only thing read from it is the integer limit, and the `errors` message
+is rebuilt around that number from DMS-side text. Any other `429` body gets the generic rate-limit
+contract, because the upstream status is trustworthy even when its body is not.
 
 `error` and `error_description` are passed through because they are the OAuth 2.0 error contract
 and the client is entitled to them. A body that merely *failed* to contain them is not part of any
@@ -75,9 +83,12 @@ and any stack trace it carries are all disclosure.
 
 ### The log receives a selected summary, never a body
 
-On the `401` fallback — and only there — DMS emits one Information event
-(`DiscardedUnauthorizedDetailTemplate`) carrying exactly three bound properties: `TraceId`,
-`StandardFields`, `OtherFieldNames`.
+On the `401` fallback DMS emits one Information event (`DiscardedUnauthorizedDetailTemplate`)
+carrying exactly three bound properties: `TraceId`, `StandardFields`, `OtherFieldNames`. A `429`
+whose body is not the canonical token-limit rejection emits the same three properties, from the
+same summary, at Warning: an unrecognized `429` can mean the Configuration Service's message and
+the DMS parser have drifted apart, which is a condition an operator must act on. A canonical
+token-limit `429` discards nothing, so it logs nothing.
 
 - **Only on the fallback.** A `401` is routine and client-triggered; every mistyped client secret
   produces one. When the upstream did supply an `error_description`, the client already has the

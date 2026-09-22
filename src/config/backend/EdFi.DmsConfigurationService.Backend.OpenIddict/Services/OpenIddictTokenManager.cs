@@ -307,7 +307,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     // condition, and reporting it as an unknown failure would answer a transient
                     // queue with a server error.
                     _logger.LogWarning(
-                        "Timed out waiting for a database lock while storing a token grant for client {ClientId}",
+                        "Timed out waiting for, or deadlocked on, a database lock while storing a token grant for client {ClientId}",
                         LoggingUtility.SanitizeForLog(clientId)
                     );
                     return new TokenResult.FailureLockTimeout();
