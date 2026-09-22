@@ -36,7 +36,7 @@ param(
     [Parameter(Mandatory)] [string] $ResultFile,
     [Parameter(Mandatory)] [string] $BaseEnvironmentFile,
     [Parameter(Mandatory)] [string] $CaptureRoot,
-    [Parameter(Mandatory)] [string] $BootstrapWorkspacePath,
+    [Parameter(Mandatory)] [string] $BootstrapManifestPath,
     [string] $AmbientKey,
     [string] $AmbientValue
 )
@@ -156,7 +156,7 @@ if (-not [string]::IsNullOrWhiteSpace($AmbientKey)) {
 
 $failure = '<the script returned without throwing>'
 try {
-    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile -BootstrapWorkspacePath $BootstrapWorkspacePath
+    & $EntryScript -PinFile $PinFile -WorkspaceRoot $WorkspaceRoot -EvidenceRoot $EvidenceRoot -BaseEnvironmentFile $BaseEnvironmentFile -BootstrapManifestPath $BootstrapManifestPath
 }
 catch {
     $failure = $_.Exception.Message
@@ -314,7 +314,8 @@ catch {
                 [hashtable[]] $ShimRule = @(),
                 [string] $AmbientKey,
                 [string] $AmbientValue,
-                [int[]] $Port
+                [int[]] $Port,
+                [string] $ManifestOverride
             )
 
             $scratch = Join-Path ([IO.Path]::GetTempPath()) "dms1502-entry-$([guid]::NewGuid().ToString('N'))"
@@ -359,7 +360,7 @@ catch {
                     '-WorkspaceRoot', $workspace
                     '-EvidenceRoot', $evidenceRoot
                     '-CaptureRoot', $captureRoot
-                    '-BootstrapWorkspacePath', (Join-Path $workspace 'bootstrap')
+                    '-BootstrapManifestPath', ($ManifestOverride ? $ManifestOverride : (Join-Path $workspace 'bootstrap/bootstrap-manifest.json'))
                     '-ShimPlan', $planPath
                     '-ShimLog', $shimLog
                     '-ResultFile', $resultFile
@@ -798,12 +799,67 @@ catch {
             Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
         }
 
-        It 'looks in the real bootstrap workspace by default' {
-            # The seam above exists so these cases need not write into the repository. The default
-            # has to remain the one path the bootstrap wrapper actually stages.
+        It 'reads the real bootstrap workspace by default' {
+            # The seam exists so these cases need not write into the repository. The default has to
+            # remain the one file the bootstrap wrapper actually stages.
             $script = Get-Content -LiteralPath $script:entryScript -Raw
 
-            $script | Should -Match "Join-Path \`$composeRoot '\.bootstrap'"
+            $script | Should -Match "Join-Path \`$bootstrapPath 'bootstrap-manifest\.json'"
+        }
+
+        It 'refuses a manifest override outside the run workspace, before touching anything' {
+            # The override reads one file. A path outside the workspace would let a caller answer
+            # the check with a manifest this run's deployment did not stage.
+            $outside = Join-Path ([IO.Path]::GetTempPath()) "dms1502-outside-$([guid]::NewGuid().ToString('N')).json"
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ManifestOverride $outside
+
+            $run.Failure | Should -Match 'outside the run workspace'
+            $run.ShimCall | Should -HaveCount 0
+            $run.WorkspaceCreated | Should -BeFalse
+        }
+
+        It 'refuses an override that walks out of the workspace by relative segment' {
+            $run = Invoke-EntryScript -PinPath $script:pinPath -ManifestOverride 'C:/does-not-matter/../elsewhere/bootstrap-manifest.json'
+
+            $run.Failure | Should -Match 'outside the run workspace'
+            $run.ShimCall | Should -HaveCount 0
+        }
+
+        It 'keeps the bootstrap workspace itself out of the override' {
+            # The one defect this override must not reintroduce: the path the preflight inspects,
+            # the run claims, and cleanup may delete recursively stays a fixed compose-root path.
+            $script = Get-Content -LiteralPath $script:entryScript -Raw
+
+            $script | Should -Match "(?m)^\`$bootstrapPath = Join-Path \`$composeRoot '\.bootstrap'"
+            $script | Should -Not -Match 'BootstrapWorkspacePath'
+
+            $ast = [Management.Automation.Language.Parser]::ParseFile($script:entryScript, [ref]$null, [ref]$null)
+            $assigned = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+                        $node.Left.Extent.Text -eq '$bootstrapPath'
+                    }, $true))
+
+            $assigned | Should -HaveCount 1
+
+            # And the override reaches the manifest read only: nothing that owns or deletes.
+            $override = @($ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.VariableExpressionAst] -and
+                        $node.VariablePath.UserPath -eq 'BootstrapManifestPath'
+                    }, $true))
+            $enclosing = foreach ($use in $override) {
+                @($ast.FindAll({
+                            param($node)
+                            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                            $node.Extent.StartOffset -le $use.Extent.StartOffset -and
+                            $node.Extent.EndOffset -ge $use.Extent.EndOffset
+                        }, $true)).Name
+            }
+
+            @($enclosing | Where-Object { $_ -ne 'Get-BootstrapManifestPath' }) | Should -BeNullOrEmpty
+            $enclosing | Should -Contain 'Get-BootstrapManifestPath'
         }
 
         It 'accepts a deployment that staged exactly the pinned set' {

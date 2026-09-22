@@ -76,11 +76,13 @@ param(
     [string]
     $BaseEnvironmentFile,
 
-    # Where the bootstrap wrapper stages its workspace. The default is the one fixed path it
-    # actually uses; this exists so a test can observe the prepared-schema check without writing a
-    # synthetic manifest into the repository, and a test asserts that the default is the real path.
+    # One file, read-only, and nothing else: the manifest the prepared-schema check reads. It exists
+    # so a test can supply a synthetic manifest without writing into the repository. It deliberately
+    # does NOT redefine the bootstrap workspace, because that path decides what the preflight
+    # inspects, what this run claims, and what cleanup may delete. An override is accepted only
+    # inside the run workspace this process created, and reaches nothing but the read below.
     [string]
-    $BootstrapWorkspacePath
+    $BootstrapManifestPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -110,12 +112,11 @@ $WorkspaceRoot = [IO.Path]::GetFullPath($WorkspaceRoot)
 $EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
 
 $composeProject = 'dms-published'
-$bootstrapPath = if ([string]::IsNullOrWhiteSpace($BootstrapWorkspacePath)) {
-    Join-Path $composeRoot '.bootstrap'
-}
-else {
-    [IO.Path]::GetFullPath($BootstrapWorkspacePath)
-}
+# Fixed, and not overridable by anything. bootstrap-published-dms.ps1 stages exactly here, and this
+# one value is what the host preflight inspects, what this run claims, and what cleanup is allowed
+# to remove. A caller-supplied value here would be a proof bypass and a destructive-path widening
+# at the same time.
+$bootstrapPath = Join-Path $composeRoot '.bootstrap'
 $pluginName = 'Acme.CustomValidationProof'
 # Read from, never written to. The publish below runs against a copy in the run workspace, for
 # two reasons: this tree belongs to DMS-1436 and its integration tier, and its nuget.config binds
@@ -350,6 +351,10 @@ function Assert-PathsSafeToOwn {
         throw ("These paths are not ones this run may own:" + [Environment]::NewLine +
             (($verdict.Blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
     }
+
+    # Fail here rather than four phases in, and check it again at the read, because the file does
+    # not exist yet and only the later check can follow a link that appears in between.
+    Get-BootstrapManifestPath | Out-Null
 
     Write-Detail "workspace: $WorkspaceRoot"
     Write-Detail "evidence:  $EvidenceRoot"
@@ -852,10 +857,34 @@ function Start-ProofDeployment {
 # about this one. The expected-negative scenarios are checked too - the prepare phase stages the
 # manifest before the stack is started, so a wrong schema set there would otherwise be invisible
 # behind the failure the scenario is looking for.
+# The manifest file to read, and the only place the override is honoured. An override is resolved
+# first, so a link or a "..\" segment cannot walk out of the workspace and then be approved by its
+# spelling, and it is refused unless it sits inside the workspace this run created. It is never
+# passed to ownership, to the host preflight, or to cleanup.
+function Get-BootstrapManifestPath {
+    if ([string]::IsNullOrWhiteSpace($BootstrapManifestPath)) {
+        return Join-Path $bootstrapPath 'bootstrap-manifest.json'
+    }
+
+    $resolved = [IO.Path]::GetFullPath($BootstrapManifestPath)
+
+    if (Test-Path -LiteralPath $resolved) {
+        $resolved = (Resolve-Path -LiteralPath $resolved).ProviderPath
+    }
+
+    if (-not (Test-OwnedDeletionPath -Path $resolved -OwnedDirectory @($WorkspaceRoot))) {
+        throw ("The bootstrap manifest override '$BootstrapManifestPath' resolves to '$resolved', " +
+            "which is outside the run workspace '$WorkspaceRoot'. This override reads one file and " +
+            'may only name a file this run created.')
+    }
+
+    return $resolved
+}
+
 function Assert-PreparedSchemaIdentity {
     param([Parameter(Mandatory)] $Pin, [Parameter(Mandatory)] [string] $ScenarioName)
 
-    $manifestPath = Join-Path $bootstrapPath 'bootstrap-manifest.json'
+    $manifestPath = Get-BootstrapManifestPath
 
     if (-not (Test-Path -LiteralPath $manifestPath)) {
         throw "The $ScenarioName deployment staged no $manifestPath, so the schema packages it prepared are unknown."
