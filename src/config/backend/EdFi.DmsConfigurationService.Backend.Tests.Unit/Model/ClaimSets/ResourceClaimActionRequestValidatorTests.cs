@@ -112,6 +112,23 @@ public class ResourceClaimActionRequestValidatorTests
     }
 
     [Test]
+    public async Task It_rejects_action_entries_without_names()
+    {
+        var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions = [new() { Name = null, Enabled = true }],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimActions");
+    }
+
+    [Test]
     public async Task It_rejects_duplicate_actions_case_insensitively()
     {
         var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();

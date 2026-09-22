@@ -113,6 +113,7 @@ public class ClaimSetModule : IEndpointModule
     )
     {
         PutGuards.GuardRouteIdMatchesBodyId(claimSetId, request.ClaimSetId, "ClaimSetId");
+        request.ClaimSetId = claimSetId;
 
         await validator.GuardAsync(request);
 
@@ -156,13 +157,15 @@ public class ClaimSetModule : IEndpointModule
     {
         PutGuards.GuardRouteIdMatchesBodyId(claimSetId, request.ClaimSetId, "ClaimSetId");
         PutGuards.GuardRouteIdMatchesBodyId(resourceClaimId, request.ResourceClaimId, "ResourceClaimId");
+        request.ClaimSetId = claimSetId;
+        request.ResourceClaimId = resourceClaimId;
 
         await validator.GuardAsync(request);
 
         var result = await repository.ModifyResourceClaimActions(
             new ResourceClaimActionMutationCommand(
-                request.ClaimSetId,
-                request.ResourceClaimId,
+                claimSetId,
+                resourceClaimId,
                 request
                     .ResourceClaimActions!.Where(action => action.Enabled)
                     .Select(action => action.Name!)
@@ -176,12 +179,7 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetResourceActionMutationResult.Success => Results.NoContent(),
-            _ => ToResourceActionFailureResult(
-                result,
-                request.ClaimSetId,
-                request.ResourceClaimId,
-                httpContext
-            ),
+            _ => ToResourceActionFailureResult(result, claimSetId, resourceClaimId, httpContext),
         };
     }
 
@@ -212,13 +210,15 @@ public class ClaimSetModule : IEndpointModule
     {
         PutGuards.GuardRouteIdMatchesBodyId(claimSetId, request.ClaimSetId, "ClaimSetId");
         PutGuards.GuardRouteIdMatchesBodyId(resourceClaimId, request.ResourceClaimId, "ResourceClaimId");
+        request.ClaimSetId = claimSetId;
+        request.ResourceClaimId = resourceClaimId;
 
         await validator.GuardAsync(request);
 
         var result = await repository.OverrideAuthorizationStrategy(
             new AuthorizationStrategyOverrideCommand(
-                request.ClaimSetId,
-                request.ResourceClaimId,
+                claimSetId,
+                resourceClaimId,
                 request.ActionName!,
                 request.AuthorizationStrategies!,
                 request.AuthStrategyIds ?? []
@@ -228,12 +228,7 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetResourceActionMutationResult.Success => Results.Ok(),
-            _ => ToResourceActionFailureResult(
-                result,
-                request.ClaimSetId,
-                request.ResourceClaimId,
-                httpContext
-            ),
+            _ => ToResourceActionFailureResult(result, claimSetId, resourceClaimId, httpContext),
         };
     }
 

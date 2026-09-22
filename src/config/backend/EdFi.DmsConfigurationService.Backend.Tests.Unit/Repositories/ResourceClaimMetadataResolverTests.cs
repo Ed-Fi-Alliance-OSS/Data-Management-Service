@@ -17,11 +17,7 @@ public class ResourceClaimMetadataResolverTests
     public void It_resolves_a_nested_hierarchy_claim_by_resource_claim_id()
     {
         IReadOnlyList<Claim> claims = [new() { Name = "claim-a", Claims = [new() { Name = "claim-b" }] }];
-        IReadOnlyList<ResourceClaimMetadataRow> metadata =
-        [
-            new(1, "Resource A", "claim-a"),
-            new(2, "Resource B", "claim-b"),
-        ];
+        IReadOnlyList<ResourceClaimMetadataRow> metadata = [new(1, "claim-a"), new(2, "claim-b")];
 
         var result = ResourceClaimMetadataResolver.Resolve(2, claims, metadata);
 
@@ -45,5 +41,16 @@ public class ResourceClaimMetadataResolverTests
             .BeOfType<ResourceClaimMetadataResolveResult.FailureProjectionIntegrity>()
             .Which.FailureMessage.Should()
             .Contain("missing-claim-uri");
+    }
+
+    [Test]
+    public void It_returns_not_found_when_the_requested_resource_claim_metadata_is_missing()
+    {
+        IReadOnlyList<Claim> claims = [new() { Name = "claim-a" }];
+        IReadOnlyList<ResourceClaimMetadataRow> metadata = [new(1, "claim-a")];
+
+        var result = ResourceClaimMetadataResolver.Resolve(2, claims, metadata);
+
+        result.Should().BeOfType<ResourceClaimMetadataResolveResult.FailureResourceClaimNotFound>();
     }
 }

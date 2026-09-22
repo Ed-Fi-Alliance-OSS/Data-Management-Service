@@ -15,9 +15,14 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
     IClaimsHierarchyRepository claimsHierarchyRepository,
     IClaimsHierarchyManager claimsHierarchyManager,
     Func<Task<DbConnection>> createOpenConnection,
-    Func<DbConnection, DbTransaction, int, Task<ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult?>> loadClaimSet,
+    Func<
+        DbConnection,
+        DbTransaction,
+        int,
+        Task<ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult?>
+    > loadClaimSet,
     Func<DbConnection, DbTransaction, Task<List<ResourceClaimMetadataRow>>> loadResourceClaimMetadata,
-    Func<Task<List<ClaimSetResourceActionMutationWorkflow.AuthorizationStrategyLookup>>> loadAuthorizationStrategyLookup,
+    Func<Task<AuthorizationStrategyGetResult>> loadAuthorizationStrategies,
     ILogger logger
 )
 {
@@ -103,7 +108,22 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
             return new ClaimSetResourceActionMutationResult.FailureInvalidAction(command.ActionName);
         }
 
-        List<AuthorizationStrategyLookup> configuredStrategies = await loadAuthorizationStrategyLookup();
+        AuthorizationStrategyGetResult configuredStrategiesResult = await loadAuthorizationStrategies();
+        if (configuredStrategiesResult is not AuthorizationStrategyGetResult.Success success)
+        {
+            return configuredStrategiesResult switch
+            {
+                AuthorizationStrategyGetResult.FailureUnknown failure =>
+                    new ClaimSetResourceActionMutationResult.FailureUnknown(failure.FailureMessage),
+                _ => new ClaimSetResourceActionMutationResult.FailureUnknown(
+                    $"Unhandled authorization strategy result of type '{configuredStrategiesResult.GetType().Name}'"
+                ),
+            };
+        }
+
+        List<AuthorizationStrategyLookup> configuredStrategies = success.AuthorizationStrategy
+            .Select(strategy => new AuthorizationStrategyLookup(strategy.Id, strategy.AuthorizationStrategyName))
+            .ToList();
         ClaimSetResourceActionMutationResult? validationResult = ResolveAuthorizationStrategyNames(
             command,
             configuredStrategies,
@@ -170,11 +190,7 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
 
         try
         {
-            ClaimSetMutationLookupResult? claimSet = await loadClaimSet(
-                connection,
-                transaction,
-                claimSetId
-            );
+            ClaimSetMutationLookupResult? claimSet = await loadClaimSet(connection, transaction, claimSetId);
 
             if (claimSet is null)
             {
@@ -252,8 +268,16 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
     )
     {
         canonicalActionNames = [];
-        return ResolveActionNames(command.SuppliedActionNames, out _)
-            ?? ResolveActionNames(command.EnabledActionNames, out canonicalActionNames);
+        ClaimSetResourceActionMutationResult? validationResult = ResolveActionNames(
+            command.SuppliedActionNames,
+            out _
+        );
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
+        return ResolveActionNames(command.EnabledActionNames, out canonicalActionNames);
     }
 
     private ClaimSetResourceActionMutationResult? ResolveActionNames(

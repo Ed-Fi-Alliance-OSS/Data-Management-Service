@@ -148,7 +148,11 @@ public class ClaimSetResourceActionMutationTests
                 SELECT "Hierarchy"::text FROM "dmscs"."ClaimsHierarchy"
                 """;
             string before = await Connection!.QuerySingleAsync<string>(hierarchySql);
-            var command = new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"])
+            var command = new ResourceClaimActionMutationCommand(
+                claimSetId,
+                StudentResourceClaimId,
+                ["Create"]
+            )
             {
                 SuppliedActionNames = ["Create", "NotAnAction"],
             };
@@ -167,7 +171,11 @@ public class ClaimSetResourceActionMutationTests
         {
             int claimSetId = await CreateVendorClaimSet();
             await GrantRead(claimSetId, StudentResourceClaimId);
-            var command = new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["create"])
+            var command = new ResourceClaimActionMutationCommand(
+                claimSetId,
+                StudentResourceClaimId,
+                ["create"]
+            )
             {
                 SuppliedActionNames = ["create", "Read"],
             };
@@ -205,22 +213,18 @@ public class ClaimSetResourceActionMutationTests
         {
             int claimSetId = await CreateVendorClaimSet();
 
-            (await Repository.GrantResourceClaimActions(
-                    new ResourceClaimActionMutationCommand(
-                        claimSetId,
-                        StudentResourceClaimId,
-                        ["Read"]
-                    )
-                ))
+            (
+                await Repository.GrantResourceClaimActions(
+                    new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Read"])
+                )
+            )
                 .Should()
                 .BeOfType<ClaimSetResourceActionMutationResult.Success>();
-            (await Repository.GrantResourceClaimActions(
-                    new ResourceClaimActionMutationCommand(
-                        claimSetId,
-                        StudentResourceClaimId,
-                        ["Read"]
-                    )
-                ))
+            (
+                await Repository.GrantResourceClaimActions(
+                    new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Read"])
+                )
+            )
                 .Should()
                 .BeOfType<ClaimSetResourceActionMutationResult.Success>();
 
@@ -261,7 +265,7 @@ public class ClaimSetResourceActionMutationTests
         }
 
         [Test]
-        public async Task It_requires_an_existing_target_association_without_mutating_other_associations()
+        public async Task It_returns_not_found_for_a_missing_target_association_without_mutating_other_associations()
         {
             int claimSetId = await CreateVendorClaimSet();
             await GrantRead(claimSetId, SchoolResourceClaimId);
@@ -270,12 +274,11 @@ public class ClaimSetResourceActionMutationTests
                 new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"])
             );
 
-            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound());
-            (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
-            (await Repository.Export(claimSetId)).Should().BeOfType<ClaimSetExportResult.Success>();
+            result.Should().BeOfType<ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound>();
             ((ClaimSetExportResult.Success)await Repository.Export(claimSetId))
                 .ClaimSetExportResponse.ResourceClaims.Should()
                 .NotContain(resourceClaim => resourceClaim.ClaimName == StudentClaimName);
+            (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
         }
     }
 
@@ -286,10 +289,18 @@ public class ClaimSetResourceActionMutationTests
         {
             int claimSetId = await CreateVendorClaimSet();
             await GrantRead(claimSetId, StudentResourceClaimId);
-            var command = new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"]);
+            var command = new ResourceClaimActionMutationCommand(
+                claimSetId,
+                StudentResourceClaimId,
+                ["Create"]
+            );
 
-            (await Repository.ModifyResourceClaimActions(command)).Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
-            (await Repository.ModifyResourceClaimActions(command)).Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await Repository.ModifyResourceClaimActions(command))
+                .Should()
+                .BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            (await Repository.ModifyResourceClaimActions(command))
+                .Should()
+                .BeOfType<ClaimSetResourceActionMutationResult.Success>();
             (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
         }
 
@@ -307,6 +318,7 @@ public class ClaimSetResourceActionMutationTests
             (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Read");
         }
     }
+
     public class Given_revoking_resource_claim_actions : ClaimSetMutationTestBase
     {
         [Test]
