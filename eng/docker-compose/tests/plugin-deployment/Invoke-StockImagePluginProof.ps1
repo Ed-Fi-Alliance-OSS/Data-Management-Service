@@ -1384,6 +1384,45 @@ function New-ProofSmokeClient {
     return [pscustomobject]@{ Client = $client; DataStoreId = $verdict.Id }
 }
 
+# The run-time half of the no-build claim, for every deployment rather than for the two that
+# serve. A fetch that failed on a checksum and a host that refused a misspelled allowlist entry are
+# both outcomes an image other than the pinned one can produce, so the scenarios that assert them
+# have to establish the same identity the happy path does. Without this, dropping the pin overlay
+# from a composed file list would leave both negative deployments passing against whatever image
+# the base file names, with the intended reference still recorded in the evidence.
+function Assert-PinnedRuntimeImage {
+    param(
+        [Parameter(Mandatory)] $Pin,
+        [Parameter(Mandatory)] $Fact,
+        [Parameter(Mandatory)] [string] $ScenarioName
+    )
+
+    # The fact has to be one a successful inspect produced. An unattempted or failed inspect
+    # reports an empty image id, which would otherwise be compared against a real one and fail for
+    # the wrong reason, or worse, match another empty value.
+    if (-not $Fact.InspectSucceeded) {
+        throw "The $ScenarioName deployment's DMS container could not be inspected, so the image it ran is unknown."
+    }
+
+    $expected = Invoke-Docker -AllowFailure -ArgumentList @(
+        'image', 'inspect', "$($Pin.edFiApi.repository)@$($Pin.edFiApi.digest)", '--format', '{{.Id}}'
+    )
+
+    if ($expected.ExitCode -ne 0) {
+        throw "The $ScenarioName deployment could not resolve the pinned digest to a local image id, so what the container ran cannot be compared against it."
+    }
+
+    $expectedId = $expected.Output.Trim()
+
+    if ($Fact.ImageId -cne $expectedId) {
+        throw "The $ScenarioName deployment ran image $($Fact.ImageId), not the pinned digest's image $expectedId."
+    }
+
+    Write-Detail "$ScenarioName ran the pinned digest's image"
+
+    return $Fact.ImageId
+}
+
 function Invoke-HappyPath {
     param(
         [Parameter(Mandatory)] [string] $BaseUrl,
@@ -1401,15 +1440,7 @@ function Invoke-HappyPath {
     $status = Wait-ForDmsReady -Container $dms.Name
     $facts = Get-ContainerFact $dms.Name
 
-    # The image identity, which is the run-time half of the no-build claim: the container ran the
-    # artifact the pin names rather than anything built here.
-    $expected = Invoke-Docker -AllowFailure -ArgumentList @(
-        'image', 'inspect', "$($Pin.edFiApi.repository)@$($Pin.edFiApi.digest)", '--format', '{{.Id}}'
-    )
-
-    if ($expected.ExitCode -ne 0 -or $facts.ImageId -cne $expected.Output.Trim()) {
-        throw "The DMS container ran image $($facts.ImageId), not the pinned digest's image $($expected.Output.Trim())."
-    }
+    $dmsImageId = Assert-PinnedRuntimeImage -Pin $Pin -Fact $facts -ScenarioName 'recipe'
 
     Assert-PluginRootReadOnly -Container $dms.Name
 
@@ -1419,7 +1450,7 @@ function Invoke-HappyPath {
 
     return [ordered]@{
         readyState  = $status.State
-        dmsImageId  = $facts.ImageId
+        dmsImageId  = $dmsImageId
         pluginRootReadOnly = $true
         dataStoreId = $smoke.DataStoreId
         http        = $http
@@ -1427,6 +1458,8 @@ function Invoke-HappyPath {
 }
 
 function Invoke-WrongDigestCheck {
+    param([Parameter(Mandatory)] $Pin)
+
     $fetch = Get-ComposeContainerName 'fetch-plugins'
     $fetchFacts = Get-ContainerFact $fetch.Name
     $fetchLog = if ([string]::IsNullOrWhiteSpace($fetch.Name)) { '' } else { (Invoke-Docker -AllowFailure -ArgumentList @('logs', $fetch.Name)).Output }
@@ -1453,11 +1486,16 @@ function Invoke-WrongDigestCheck {
         throw "The wrong-digest deployment started DMS: $($neverStarted.Reason)"
     }
 
+    # The container was created and never started, so its image was resolved at create time and is
+    # exactly as comparable as a running one's.
+    $dmsImageId = Assert-PinnedRuntimeImage -Pin $Pin -Fact $dmsFacts -ScenarioName 'wrong-digest'
+
     Write-Detail 'the fetch failed on the checksum and DMS never started'
 
     # The observations the two verdicts were reached from, not only the verdicts. A later reader
     # asking "how was this established" has to be able to answer it from the artifact.
     return [ordered]@{
+        dmsImageId              = $dmsImageId
         fetchExitCode           = $fetchFacts.ExitCode
         checksumVerified        = $checksum.Verified
         fetchLogExcerpt         = (Format-LogSafeText ((($fetchLog -split "`r?`n") | Where-Object { $_ -match 'did NOT match|FAILED' } | Select-Object -First 1)))
@@ -1472,6 +1510,8 @@ function Invoke-WrongDigestCheck {
 }
 
 function Invoke-MisspelledAllowlistCheck {
+    param([Parameter(Mandatory)] $Pin)
+
     $dms = Get-ComposeContainerName 'dms'
 
     if (-not $dms.EnumerationSucceeded -or [string]::IsNullOrWhiteSpace($dms.Name)) {
@@ -1494,6 +1534,7 @@ function Invoke-MisspelledAllowlistCheck {
     # The path asserted against and what the host actually said, both in the record. Without them
     # the artifact says a refusal happened but not that it was about the misspelled entry.
     return [ordered]@{
+        dmsImageId   = (Assert-PinnedRuntimeImage -Pin $Pin -Fact $settled.Fact -ScenarioName 'misspelled-allowlist')
         dmsExitCode  = $settled.Fact.ExitCode
         dmsStatus    = $settled.Fact.Status
         phase        = $settled.Status.Phase
@@ -1571,14 +1612,14 @@ try {
         -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 ('0' * 64) -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
-        -ExpectStartFailure -Scenario { param($environmentFile) Invoke-WrongDigestCheck }
+        -ExpectStartFailure -Scenario { param($environmentFile) Invoke-WrongDigestCheck -Pin $pin }
 
     # One allowlisted name misspelled: DMS must exit with a failed LoadPlugins phase naming the path
     # it looked for.
     $result.misspelledAllowlist = Invoke-ProofScenario -Name 'misspelled-allowlist' -Pin $pin -BaseContent $baseContent `
         -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
         -PluginMountSource $fixture.PublishRoot -AllowedPlugins "${script:pluginName}1" `
-        -ExpectStartFailure -Scenario { param($environmentFile) Invoke-MisspelledAllowlistCheck }
+        -ExpectStartFailure -Scenario { param($environmentFile) Invoke-MisspelledAllowlistCheck -Pin $pin }
 
     $script:requiredWorkCompleted = $true
 

@@ -653,7 +653,8 @@ exit 0
         # Deployment 3: the fetch refuses on the digest comparison and DMS is never started.
         function script:Get-WrongDigestDeploymentRule {
             param([string] $FetchLog = "sha256sum: WARNING: 1 of 1 computed checksums did NOT match", [int] $FetchExit = 1,
-                [string] $DmsStartedAt = '0001-01-01T00:00:00Z', [string] $DmsStatus = 'created')
+                [string] $DmsStartedAt = '0001-01-01T00:00:00Z', [string] $DmsStatus = 'created',
+                [string] $DmsImageId = $script:proofImageId, [int] $PinnedInspectExit = 0)
 
             return @(
                 @{ phase = 3; match = 'bootstrap-published-dms\.ps1 -EnvironmentFile'; exitCode = 1
@@ -669,7 +670,10 @@ exit 0
                 @{ phase = 3; match = 'logs dms-published-fetch-plugins-1'; exitCode = 0; output = $FetchLog }
                 @{ phase = 3; match = 'service=dms '; exitCode = 0; output = 'dms-published-dms-1' }
                 @{ phase = 3; match = 'inspect dms-published-dms-1 --format'
-                    exitCode = 0; output = "$DmsStatus|$DmsStartedAt|0|$script:proofImageId|false"
+                    exitCode = 0; output = "$DmsStatus|$DmsStartedAt|0|$DmsImageId|false"
+                }
+                @{ phase = 3; match = 'image inspect edfialliance/ed-fi-api@sha256:a{64} --format'
+                    exitCode = $PinnedInspectExit; output = $script:proofImageId
                 }
             )
         }
@@ -678,7 +682,8 @@ exit 0
         function script:Get-MisspelledDeploymentRule {
             # $Status untyped on purpose: a [string] parameter defaults to '', and '' is the case
             # that means "the container wrote nothing", which is one of the mutations below.
-            param($Status, [string] $ContainerState = 'exited', [int] $ExitCode = 1, [switch] $NoDocument)
+            param($Status, [string] $ContainerState = 'exited', [int] $ExitCode = 1, [switch] $NoDocument,
+                [string] $DmsImageId = $script:proofImageId, [int] $PinnedInspectExit = 0)
 
             $document = if ($null -eq $Status) {
                 New-StatusDocument -State 'Failed' -Phase 'LoadPlugins' `
@@ -695,7 +700,10 @@ exit 0
                 }
                 @{ phase = 4; match = 'service=dms '; exitCode = 0; output = 'dms-published-dms-1' }
                 @{ phase = 4; match = 'inspect dms-published-dms-1 --format'
-                    exitCode = 0; output = "$ContainerState|2026-09-21T09:00:00Z|$ExitCode|$script:proofImageId|false"
+                    exitCode = 0; output = "$ContainerState|2026-09-21T09:00:00Z|$ExitCode|$DmsImageId|false"
+                }
+                @{ phase = 4; match = 'image inspect edfialliance/ed-fi-api@sha256:a{64} --format'
+                    exitCode = $PinnedInspectExit; output = $script:proofImageId
                 }
             )
 
@@ -1979,6 +1987,16 @@ exit 0
             $recipe.refusal | Should -Match 'Acme\.CustomValidationProof1'
         }
 
+        It 'proves all four deployments ran the pinned digest''s image' {
+            # The run-time half of the no-build claim. A fetch that failed on a checksum and a host
+            # that refused a misspelled entry are both reachable on another image, so the two
+            # negative deployments need the same identity check the two serving ones make.
+            foreach ($name in @('recipe1', 'recipe2', 'wrongDigest', 'misspelledAllowlist')) {
+                $script:strict.Evidence.$name.dmsImageId |
+                    Should -BeExactly $script:proofImageId -Because "$name recorded the image it ran"
+            }
+        }
+
         It 'checks the prepared schema of all four deployments, not one of them' {
             foreach ($name in @('recipe1', 'recipe2', 'wrongDigest', 'misspelledAllowlist')) {
                 @($script:strict.Evidence.$name.preparedSchemaPackages.observed) |
@@ -2239,6 +2257,55 @@ exit 0
 
             $run.ExitCode | Should -Be 1
             $run.Evidence.primaryFailure | Should -Match 'started at .* and then exited, which is not the same as never starting'
+        }
+
+        It 'refuses a wrong-digest deployment that ran an image other than the pinned one' {
+            # The checksum half is correct and DMS still never started, so both existing assertions
+            # pass; only the identity is wrong. This is the case that passed before F4.
+            $other = 'sha256:' + ('d' * 64)
+            $run = Invoke-Mutated {
+                param($p)
+                @($p | Where-Object { -not ($_.ContainsKey('phase') -and $_['phase'] -eq 3) }) +
+                @(Get-WrongDigestDeploymentRule -DmsImageId $other)
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'The wrong-digest deployment ran image'
+            $run.Evidence.primaryFailure | Should -Match ([regex]::Escape($other))
+            $run.Evidence.primaryFailure | Should -Not -Match 'checksum'
+            $run.Evidence.primaryFailure | Should -Not -Match 'never starting'
+        }
+
+        It 'refuses a misspelled-allowlist deployment that ran an image other than the pinned one' {
+            $other = 'sha256:' + ('e' * 64)
+            $run = Invoke-Mutated {
+                param($p)
+                @($p | Where-Object { -not ($_.ContainsKey('phase') -and $_['phase'] -eq 4) }) +
+                @(Get-MisspelledDeploymentRule -DmsImageId $other)
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match 'The misspelled-allowlist deployment ran image'
+            $run.Evidence.primaryFailure | Should -Match ([regex]::Escape($other))
+            $run.Evidence.primaryFailure | Should -Not -Match 'LoadPlugins'
+        }
+
+        It 'refuses a <Case> deployment whose pinned digest could not be resolved' -ForEach @(
+            @{ Case = 'wrong-digest'; Phase = 3; Name = 'wrong-digest' }
+            @{ Case = 'misspelled-allowlist'; Phase = 4; Name = 'misspelled-allowlist' }
+        ) {
+            # An inspect that failed is not a match. Reading it as one would let a deployment whose
+            # pinned image is not even present locally report that it ran it.
+            $run = Invoke-Mutated {
+                param($p)
+                $rule = if ($Phase -eq 3) { Get-WrongDigestDeploymentRule -PinnedInspectExit 1 }
+                else { Get-MisspelledDeploymentRule -PinnedInspectExit 1 }
+
+                @($p | Where-Object { -not ($_.ContainsKey('phase') -and $_['phase'] -eq $Phase) }) + @($rule)
+            }
+
+            $run.ExitCode | Should -Be 1
+            $run.Evidence.primaryFailure | Should -Match "The $Name deployment could not resolve the pinned digest"
         }
 
         It 'refuses a Ready status where a refusal was required' {
