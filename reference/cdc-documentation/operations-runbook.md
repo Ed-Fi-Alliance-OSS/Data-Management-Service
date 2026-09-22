@@ -4,7 +4,8 @@
 
 This shared PostgreSQL/SQL Server runbook is under construction. Both providers’ setup
 and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
-projection handoffs, monitoring and retention inspections are documented; live qualification remains pending. Other
+projection handoffs, monitoring, retention, security and consumer-evidence checklists are
+documented; live qualification remains pending. Other
 records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
@@ -25,7 +26,7 @@ for current command details and the linked design owners for support boundaries.
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — documented; live exercise pending |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
-| Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — pending |
+| Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — pending |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — pending |
 | Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — pending |
@@ -1589,7 +1590,7 @@ unavailable, not zero. Do not require percentile fields to exist.
 | Current connector lag | `details.lagMilliseconds`, `details.lagThresholdMilliseconds`: integer milliseconds; `details.p50LagMilliseconds`, `p95LagMilliseconds`, `p99LagMilliseconds` are optional. | Only current lag decides lag threshold satisfaction. Percentiles are diagnostic, may be absent/null and are discarded if inconsistent. A low current value does not prove projection catch-up, provider history or consumer progress. |
 | Provider continuity | `details.providerArtifactState`, `retainedRangeState`, `schemaHistoryState`, optional `incidentFailureCategory`; `status.sourceHistory.continuity` and `status.sourceHistory.incidentLatched`. | Categorized evidence with `status.sourceHistory.observedAt`, not a numeric retention-margin metric or reusable last-good proof. `details.positions` has safe `lsnProc`, `commitLsn`, `changeLsn`, optional `eventSerialNo`, `retainedRangeStart`, `retainedRangeEnd`, `unavailableFacts`. Do not subtract these into a time margin or treat raw positions as continuity proof. |
 | Shared worker/rollout | `hasSharedOffsetStoreIssue`, `hasPendingRecordSizeIncrease` on each target. | A shared-store fault propagates to selected peers sharing the deployment/worker. Inspect the complete retained worker inventory; one target's success does not clear the others. |
-| Consumer progress | Consumer-owner partition barriers, checkpoint commits, deadline/renewal evidence. | No field above measures this. Use the [public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap) and [consumer checklist](#security-consumer-evidence) (T08 pending). |
+| Consumer progress | Consumer-owner partition barriers, checkpoint commits, deadline/renewal evidence. | No field above measures this. Use the [public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap) and [consumer checklist](#security-consumer-evidence). |
 
 Projection backlog counts coalesced document work, not queued API operations or Kafka
 records. Keep oldest-work age, current source lag, retained-history headroom, and
@@ -1832,8 +1833,8 @@ kill sessions or alter isolation/retention from this inspection recipe.
 These handoffs implement the [operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
 [shared offset-store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup),
 and [recovery](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
-boundaries. For topic-policy/access examples use [T08's checklist](#security-consumer-evidence)
-when delivered; status already performs authoritative policy observations. No raw
+boundaries. Use the [security and consumer checklist](#security-consumer-evidence)
+for topic-policy/access examples; status performs authoritative policy observations. No raw
 Connect lifecycle mutation or new monitoring service is needed here.
 
 | Symptom / observation | Action and owning procedure | Observation that ends diagnosis |
@@ -1904,20 +1905,188 @@ thresholds.
 
 ## Security, topic retention and consumer evidence
 
-**Pending T08; exercise T20.** Scope to deliver: Setup/connector/worker/controller/consumer access, private endpoints, externalized credentials, state permissions and sanitized evidence.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations).
+**Documented in T08; live snippet qualification pending T20.** Use the
+[security owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
+[topology/offset-store owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store),
+[public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap)
+and [ADR 0002 topic contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic)
+as the acceptance boundaries. Each consumer owner supplies evidence for its own store.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Binding artifacts, deployment roles and consumer namespaces. |
-| Authority/offline window | Pending T08: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Effective access and topic policies, barriers, durable checkpoints, deadline/renewal and retained-log capacity evidence. Exact paths and substitutions pending T08. |
-| Invocation | Reserved IDs: `cdc-access-inspect`, `cdc-topic-policy-inspect`, `cdc-consumer-evidence`. Commands and fixture substitutions pending T08. |
-| JSON/exit status | Pending T08: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T08: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T08: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Original CMS target, physical source, binding generation and public topic; inventory peer bindings, shared worker topics, actual deployment principals and every independent consumer namespace/group. Qualification fixtures create separate synthetic targets; they do not attest this inventory. |
+| Authority/offline window | Deployment security/database/platform owners inspect effective permissions and policy; consumer owners inspect their durable state. Observation requires no new writer-offline window. Keep existing incident fences. Qualification commands below mutate and destroy only their disposable fixture resources; never point fault probes at a live deployment. |
+| Retained inputs | Original settings/state and artifact inventory, timestamped policy/access observations, principal/group inventory, consumer barriers/checkpoints and capacity results. Keep credential material and physical names private; share only sanitized evidence with profile/image, case IDs and actual results. |
+| Invocation | `cdc-topic-policy-inspect` for current local controller observations; `cdc-access-inspect` for separate secured/local Kafka qualification; `cdc-consumer-evidence` for the existing DMS-1324 provider/message lane. Complete all owner checklists below; these commands alone are insufficient. |
+| JSON/exit status | Local `status` uses the monitoring envelope/exits below. Qualification runner writes `qualification.json`: per-suite `Name`, `Status`, `Total`, `Passed`, `Failed`, `Skipped`; exit `0` requires every report `Passed`. Exit `1`, `EnvironmentUnavailable`, `RunnerFailed`, missing results or skipped required cases mean no qualification. Test reports are not CDC command JSON. |
+| Postcondition | Every applicable row has fresh evidence attributable to its target, principal, generation and consumer. Production ACL/durability proof comes from authorization-enabled deployment adapters and real access probes; consumer validity comes from that consumer's durable proof. Local readiness or reference fixture success cannot stand in for either. |
+| Rejection/timeout action | Mark the failed/unavailable evidence explicitly; retain original state and route access/policy correction to its deployment owner. Use [native recovery/containment](#native-recovery) for publication incidents and [unsupported provenance](#unsupported-provenance) for state/source failures. Consumer uncertainty immediately follows the invalidation/bootstrap handoff below. |
 
-Additional owners: [public consumer bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap) and [topic retention](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic).
+### Role and artifact access checklist
+
+Record actual identities privately and review **effective** access, including inherited,
+wildcard and prefixed grants, superuser bypass and denies. A list of intended literal
+ACLs is insufficient. The [shipped policy](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcDeploymentKafkaPolicy.cs)
+and [secured fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.cs)
+provide the grant and probe examples; do not broaden connector access for inspections.
+
+| Owner/role | Artifact and required evidence | Reject or hand off when |
+| --- | --- | --- |
+| Database setup owner | Separate setup authority for managed creation/provider setup. PostgreSQL restricted role is deployment-prepared; SQL Server restricted SQL login is deployment-prepared and initial setup maps its same-name user. Retain successful narrow source/heartbeat access validation from [PostgreSQL](#postgresql-setup) / [SQL Server](#sql-server-setup). | Missing login, conflicting SID, unsupported/elevated principal or inadequate setup authority: retain retry state. Completed setup stays validation-only; no identity remapping or credential repair. |
+| Connector database principal | Effective provider-specific replication/CDC and narrow source/heartbeat permissions under the [PostgreSQL](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql) / [SQL Server](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) contract; no document-table writes, projection-work-table access or general administrative access. | Connection success alone supplies no permission proof. Keep DBA monitoring credentials separate. |
+| Connector Kafka principal | Literal `WRITE`, `DESCRIBE` on its public and progress topics; SQL Server history also has `READ`, `DESCRIBE_CONFIGS`. Probe that it cannot write the shared worker offset topic. | Effective access exceeds the deployment's scoped role, or required producer/history access is unavailable. |
+| Worker service principal | Literal `READ`, `WRITE`, `DESCRIBE` on the configured shared `offset.storage.topic`; existing worker config/status topics and worker group remain private. Validate offsets before worker startup and on controller lifecycle/status checks. | A per-binding connector or instance consumer can use shared worker state; missing/unsafe offset policy affects all peer bindings. |
+| Deployment controller/platform | Topic/configuration and ACL administration, authoritative effective-access inspection, private Connect lifecycle authority, original state-root lock/write access, provider observations and fresh telemetry. | Denied/incomplete evidence is unknown, not safe isolation. Observation cannot repair unsafe ACLs. Use deployment-owned admission/correction authority, never raw Connect lifecycle mutation. |
+| Instance consumer owner | Literal `READ`, `DESCRIBE` on only its public topic and `READ` on only its configured consumer group. Prove allowed read plus denied peer-topic, peer-group, worker-group, progress, history, offset/config/status reads and denied public writes. | Cross-instance access or any internal-state access succeeds. Consumer-side filtering cannot provide isolation. |
+| Platform/network/secrets owner | Private REST and exporter endpoints; authenticated production access/network controls; worker-resolved secret references, protected secret mounts and normal DMS settings. Confirm consumers cannot reach REST/metrics or obtain DB/worker/controller credentials. | Local loopback/SASL fixture defaults are being treated as production network or secret-management proof. |
+| State/incident owner | Original roots and retained inputs in [state inventory](#deployment-state), owner-only directory/file permissions (local `700`/`600`), protected persistent storage and access-controlled backups. Share sanitized diagnostics/counts, no document payloads, credentials, raw source offsets or sensitive physical names. | Missing/unreadable/rolled-back state goes to continuity incident handling; a backup is not authority to restore continuity. Raw test logs stay private. |
+
+Production deployment prerequisites include the
+[topology and durability requirements](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup),
+[durable binding authority](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding),
+[continuity requirements](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
+and the security owner above. Supply deployment adapters for those authorities and
+protected persistent state. The shipped CLI accepts only its qualified local profile;
+changing a profile token supplies none of these capabilities. This is not a cloud
+installation guide. The separate three-broker secured fixture proves its tested access
+and durability behavior, not a production installation or physical-source admission.
+
+### Inspect topic policy and effective access
+
+Use original generated artifact names; do not derive substitute topics from display names.
+The values below are acceptance checks from the linked owners, not a second settings
+catalog. Retain actual per-topic configuration sources and replica assignments privately
+through the deployment's existing broker inspection/authority adapter.
+
+| Artifact | Required policy/evidence | Completion limit |
+| --- | --- | --- |
+| Public document topic | Exactly `cleanup.policy=compact`; explicit per-topic `delete.retention.ms >= 604800000` (seven days); immutable binding partition count; record ceiling matching the accepted deployment policy. | Broker default inheritance and `compact,delete` fail. A stronger tombstone setting is allowed but does not extend the 24-hour consumer deadline. |
+| Internal progress topic | Exactly one partition, `cleanup.policy=compact`; connector/control-plane only. | Not a consumer bootstrap source; public tombstone-retention minimum does not apply. |
+| SQL Server schema-history topic | Exactly one partition, `cleanup.policy=delete`, `retention.ms=-1`, `retention.bytes=-1`; connector/control-plane only. PostgreSQL has none. | Finite retention or compaction fails. Retained source LSNs cannot compensate for missing history. |
+| Shared worker offsets | Pre-created configured topic, `cleanup.policy=compact`, actual replicas and explicit topic-level ISR; worker-only data grants plus control-plane administration. | Shared across bindings; not a per-binding cleanup artifact. Raw offsets are not continuity proof. |
+| All governed topics and shared offsets | Production: replication factor at least three and explicit `min.insync.replicas >= 2`; qualified local: one replica and explicit ISR `1`. Inspect actual assignments, not desired defaults. | Single-broker local success supplies no production durability or ACL proof. |
+| Cleaner and capacity | Platform samples cleaner progress/errors/backlog, retained bytes, partition earliest/end offsets, storage headroom and skew using its broker tooling; pair with the [monitoring handoff](#monitoring-retention). | Configuration success supplies no cleaner-health or purge proof. Capacity includes the entire retained log, including dirty/uncompacted records, not just live keys. |
+
+PowerShell, repository root; matching `api-schema-tools` on PATH and an intact running
+local deployment. Same observation and possible incident/stop side effects as
+`cdc-status`; preserve existing fences. This command reports policy components, not
+raw broker configuration or consumer proof.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>`, `<original-state-root>` | Original wrapper-emitted runtime settings and controller root | Actual established fixture-emitted paths, never fabricated provenance |
+
+<!-- cdc-snippet: cdc-topic-policy-inspect -->
+```powershell
+api-schema-tools cdc status --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-topic-policy-inspect -->
+
+Inspect `data.targets[].status.kafkaPolicy` and `connectOffsetStore` (`state`,
+`category`, `observedAt`), target `hasSharedOffsetStoreIssue`, `diagnostics`,
+`incidentPersistence` and `containment`, plus `deploymentProfile.aclIsolationProven`.
+Exit `0` requires the current aggregate `Ready`; `1` covers not-ready/rejected/timeout,
+`2` invalid input and `130` cancellation. Unknown/missing evidence cannot pass.
+Local `aclIsolationProven: false` remains false even when policy components pass.
+For full field nesting and freshness see [monitoring](#monitoring-retention).
+
+The existing [Kafka qualification lane](../../eng/ci/Invoke-CdcQualification.ps1)
+performs authenticated broker probes and live policy inspection in disposable fixtures.
+It intentionally changes grants, topic configuration and replica assignments, denies
+inspection authority, and exercises cleanup; it must never be repointed at operator
+resources. `Given_authorized_three_broker_cdc_policy` covers allow/deny behavior,
+unsafe effective grants, denied ACL inspection, topic drift and stronger retention.
+`Given_explicit_authorization_disabled_local_kafka_policy` checks honest local reporting.
+The fixture's SASL/PLAIN credentials are ephemeral on its isolated Docker network and
+loopback listeners; this is no production transport-security recipe.
+
+PowerShell, repository root; .NET 10, PowerShell 7 and working Docker Engine with permission
+to create/remove isolated containers/networks/volumes. Verify `systemctl status docker
+--no-pager` and `docker ps` on Linux. Have the repository-pinned Kafka image and qualified
+Connect image locally, or deliberately add the runner's `-PullImages` option. No provider
+admin connection is needed for the Kafka lane. The runner uses a fresh results directory
+and the existing allowlisted exporter; never upload the printed private log directory.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` | Shipped `CdcQualifiedWorkerImage.json` loaded below | Same exact qualified digest; no arbitrary tag |
+| `<new-kafka-evidence-directory>` | New private results location, not already present | Fresh isolated fixture results path |
+| Binding/principal/topic/group names and credentials | Created internally by the existing fixture | Existing fixture-owned synthetic identities only; no deployment settings/state substitution |
+
+<!-- cdc-snippet: cdc-access-inspect -->
+```powershell
+$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = (Get-Content './src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json).image
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Kafka -Configuration Release -ResultsDirectory '<new-kafka-evidence-directory>'
+```
+<!-- /cdc-snippet: cdc-access-inspect -->
+
+Retain both `kafka-secured` and `kafka-local` reports, case-level results and image identity.
+Only the former's successful authenticated negative probes support ACL isolation within
+its fixture scope. Effective wildcard/prefix grants and explicit denies must be evaluated,
+not removed from evidence to make a literal ACL list match. Denied inspection is
+`Unavailable` transport evidence / `Unknown` policy, not an empty safe grant set.
+Failed assertions, absent cases and environmental skips remain failures to qualify.
+Deployment owners must obtain equivalent fresh evidence for their own adapters/resources;
+running this fixture never certifies their deployment.
+
+### Consumer-owner proof and invalidation handoff
+
+Use the [public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap)
+and [public message/ordering contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md)
+for each independent consumer, including every independently operated store using the same
+principal. Kafka group lag or fetched offsets do not prove durable application.
+
+| Consumer evidence to retain | Acceptance / failure action |
+| --- | --- |
+| Namespace and complete partition inventory | Match the binding generation/public topic and consumer store/group. Capture each partition's earliest offset and exclusive end barrier; include idle and empty partitions. Unexpected assignment or missing partition evidence invalidates the entire store. |
+| Bootstrap start, durable apply and checkpoints | Begin at every earliest offset; durably apply through every captured barrier and persist the corresponding next-offset checkpoints. Finish within 24 hours from the first partition scan, including stalls, retries, rebalances and persistence. Reading through the barrier or applying without checkpoint durability is insufficient. |
+| Incremental renewal | Continue from durable next offsets only after complete bootstrap. At least once every 24 hours capture fresh barriers for all partitions and durably complete them; idle partitions can use unchanged ends. Record proof completion time, not merely poll/read time. |
+| Fault response | Deadline missed, lost/corrupt checkpoint, unexpected partition assignment or uncertain continuity: immediately stop advertising the entire local state as valid, discard it and repeat a complete earliest-offset bootstrap under the same 24-hour deadline. Never resume from the uncertain checkpoint; fence delayed writes/callbacks from discarded attempts. |
+| Capacity and cleaner evidence | Measure the largest retained log claimed, dirty/uncompacted versions, skew, maximum-sized records, durable state writes and concurrent mutations, including persistence/stalls in elapsed time. Record fetch capacity against the accepted record ceiling and cleaner/storage observations. Repeated missed deadlines require more throughput/parallelism before production use. |
+| Completion and responsibility | Consumer owner attests its store's actual evidence and supported workload. Reference fixtures and deployment topic validation cannot certify that store; live-key counts, a healthy connector or a larger retention setting cannot substitute. |
+
+Consumer invalidation is scoped to consumer-owned state. It does **not** authorize deleting
+controller provenance, resetting Connect offsets, changing binding generation or executing
+the deferred [new-topic cutover](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover).
+If the earliest/end bounds cannot be observed, keep state invalid and escalate access or
+availability to the platform owner; advertise validity only after a complete durable proof.
+
+[DMS-1324 consumer fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs)
+are test-only reference evidence. The broker fixture uses real Kafka transport and synthetic
+E18-derived public values, but simulates durable storage and clock. Its PostgreSQL fixture
+hosts the broker/topic; the consumer assertions are provider-neutral, not SQL Server setup
+qualification. Unit [bootstrap](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrapTests.cs),
+[continuity](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerContinuityTests.cs)
+and [ordering](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerOrderingTests.cs)
+cases cover deadline boundaries, stale callbacks, checkpoint loss/corruption, idle renewal,
+duplicates, lower versions and Kafka-null deletes. This harness is not a shipped consumer
+product, benchmark or certification of an independently operated persistence system.
+
+PowerShell, repository root; disposable Docker qualification environment and runner
+prerequisites above. This broader existing MessageContract lane also exercises provider
+and transform cases; it does not run against the retained operator deployment. Exact
+execution and sanitized artifacts remain T20 work.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` | Qualified digest loaded by `cdc-access-inspect` | Same shipped digest |
+| `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` | Qualification owner's approved immutable image references, set privately before running | Images accepted by existing pinned-image fixture; record exact images with result |
+| `<new-consumer-evidence-directory>` | New private results location | Fresh isolated fixture results path |
+| Provider/target/records/clock/store | Existing PostgreSQL-hosted DMS-1324 fixture | Its existing synthetic rows, simulated persistence/clock and fixture-created targets only |
+
+<!-- cdc-snippet: cdc-consumer-evidence -->
+```powershell
+pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite MessageContract -Configuration Release -ResultsDirectory '<new-consumer-evidence-directory>'
+```
+<!-- /cdc-snippet: cdc-consumer-evidence -->
+
+Inspect `Postgresql-MessageContract` in `qualification.json` and its case-level report.
+The fixture observation artifact identifies `Evidence`, `States` (`Phase`, `Valid`,
+`RenewalInProgress`, `Attempt`, `ProofCompletedAt`, `NextOffsets`, `Checkpoints`,
+`DocumentCount`) and `Scans` (partition bounds and record sizes/null flags); bodies and
+physical topic names are omitted. Use the runner's exported artifacts rather than raw
+attachments. The evidence index links stable `MC-CONSUMER-BROKER-*` cases; record actual
+results and their simulated-store limitation, not an inferred consumer conformance pass.
 
 <a id="record-size-increase"></a>
 
