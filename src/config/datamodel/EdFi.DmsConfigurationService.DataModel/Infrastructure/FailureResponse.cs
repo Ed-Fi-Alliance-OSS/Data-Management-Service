@@ -79,9 +79,9 @@ public static class FailureResponse
     /// <c>/oauth/token</c> proxy's 429 parser (<c>OAuthManager</c> in <c>src/dms</c>) reads the limit
     /// back out of it and rebuilds its own message from the number. Changing the text here without
     /// changing that parser leaves DMS answering a generic rate-limit 429 instead of the token-limit
-    /// one. Each side's tests pin only its own copy of this sentence, so neither can catch a change
-    /// to the other and nothing automated detects divergence between the two services. Reword this
-    /// text and the DMS parser has to be reworded in the same change.
+    /// one. DMS's <c>OAuthManagerTests</c> feeds this method's output through that parser, so a
+    /// reword here fails the DMS unit suite. Reword this text and the DMS parser has to be reworded
+    /// in the same change.
     /// </remarks>
     public static JsonNode ForTooManyTokens(int limit, string correlationId) =>
         CreateBaseJsonObject(

@@ -13,6 +13,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using CmsFailureResponse = EdFi.DmsConfigurationService.DataModel.Infrastructure.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit;
 
@@ -1740,10 +1741,9 @@ public class OAuthManagerTests
     /// The canonical CMS token-limit body, and the pieces tests vary to walk away from it.
     /// </summary>
     /// <remarks>
-    /// The message is written out here rather than obtained from CMS's factory: this test project
-    /// has no reference to <c>src/config</c>, and no cross-tree project reference exists anywhere
-    /// in the repository. The two copies are held together by comments on both sides, not by a
-    /// shared artifact - see <c>FailureResponse.ForTooManyTokens</c> in the configuration service.
+    /// Hand-built so the deviation fixtures can walk away from the canonical shape in ways CMS's
+    /// formatter never would. Agreement with what CMS actually emits is proven separately, by
+    /// <see cref="Given_A_Token_Limit_Rejection_Built_By_The_Configuration_Service"/>.
     /// </remarks>
     private static class TooManyTokensUpstream
     {
@@ -1882,6 +1882,55 @@ public class OAuthManagerTests
     }
 
     /// <summary>
+    /// The cross-service contract: the body comes from the Configuration Service's own formatter
+    /// rather than from <see cref="TooManyTokensUpstream"/>, so rewording either the CMS message or
+    /// the DMS parser without the other fails here. A limit other than the default shows the number
+    /// was read from the body.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Token_Limit_Rejection_Built_By_The_Configuration_Service
+    {
+        private HttpStatusCode _status;
+        private JsonNode _body = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string upstreamBody = CmsFailureResponse
+                .ForTooManyTokens(7, "upstream-correlation-id")
+                .ToJsonString();
+            (_status, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);
+        }
+
+        [Test]
+        public void It_responds_with_too_many_requests()
+        {
+            _status.Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        [Test]
+        public void It_recognizes_the_token_limit_rejection()
+        {
+            _body["type"]!.ToString().Should().Be(TooManyTokensUpstream.Type);
+        }
+
+        [Test]
+        public void It_reconstructs_the_message_with_the_configured_limit()
+        {
+            _body["errors"]!.AsArray().Count.Should().Be(1);
+            _body["errors"]![0]!.ToString().Should().Be(TooManyTokensUpstream.MessageWithLimit("7"));
+        }
+
+        [Test]
+        public void It_does_not_log_the_unrecognized_body_warning()
+        {
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
     /// The test that proves local reconstruction rather than assuming it: the upstream message is
     /// canonical in shape but carries extra text, so a parser that relayed the entry verbatim
     /// would leak it.
@@ -1936,6 +1985,82 @@ public class OAuthManagerTests
         public void It_falls_back_to_the_generic_rate_limit_contract()
         {
             ShouldBeTheGenericRateLimitContract(_body);
+        }
+    }
+
+    /// <summary>
+    /// The Configuration Service's 409 for a token grant that timed out on, or deadlocked over, a
+    /// database lock. Retrying is the answer, so the proxy must not report it as a 502.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Lock_Contention_Conflict
+    {
+        private const string UpstreamDetail =
+            "Unable to process the request due to a concurrent modification. Retry the request.";
+
+        private HttpResponseMessage _response = default!;
+        private string _raw = default!;
+        private JsonNode _body = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string upstreamBody = $$"""
+                {
+                  "detail": "{{UpstreamDetail}}",
+                  "type": "urn:ed-fi:api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "upstream-correlation-id",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """;
+            (_response, _logger) = await UpstreamResponds(HttpStatusCode.Conflict, upstreamBody);
+            _raw = await _response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_raw)!;
+        }
+
+        [Test]
+        public void It_responds_with_service_unavailable()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+
+        [Test]
+        public void It_has_the_service_unavailable_type()
+        {
+            _body["type"]!.ToString().Should().Be("urn:ed-fi:api:service-unavailable");
+        }
+
+        [Test]
+        public void It_carries_the_dms_trace_id_not_the_upstream_one()
+        {
+            _body["correlationId"]!.ToString().Should().Be(CorrelationId);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_upstream_text()
+        {
+            _raw.Should().NotContain("concurrent modification");
+        }
+
+        [Test]
+        public void It_does_not_take_the_bad_gateway_branch()
+        {
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
+        }
+
+        [Test]
+        public void It_records_the_contention_under_the_trace_id_without_the_body()
+        {
+            LogRecord record = _logger.Records.Single(record =>
+                record.Level == LogLevel.Information && record.Message.Contains("lock contention")
+            );
+            record.Properties["TraceId"].Should().Be(CorrelationId);
+            record.Message.Should().NotContain("concurrent modification");
         }
     }
 

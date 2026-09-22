@@ -176,9 +176,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// used twice - as the shape an upstream body must match to be believed, and as a piece the
     /// returned message is rebuilt from - so the parse and the format cannot drift apart from one
     /// another. Staying in step with the CMS formatter that writes the upstream body is a separate
-    /// obligation that no test covers: this project cannot reference <c>src/config</c>, so the
-    /// fixtures here pin a local copy of the sentence rather than the one CMS emits. A reworded CMS
-    /// message silently degrades every token-limit rejection to the generic 429, and nothing fails.
+    /// obligation, held by a unit test that feeds this parser the body CMS's own
+    /// <c>FailureResponse.ForTooManyTokens</c> produces: a reworded CMS message fails that test
+    /// rather than silently degrading every token-limit rejection to the generic 429. Separately
+    /// deployed DMS and CMS versions can still disagree, which is what the fallback's warning is for.
     /// </summary>
     private const string TokenLimitMessagePrefix = "Too many access tokens have been requested (limit is ";
 
@@ -232,6 +233,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     return await GenerateUnauthorizedResponse(logger, traceId, response);
                 case HttpStatusCode.TooManyRequests:
                     return await GenerateTooManyTokensResponse(logger, traceId, response);
+                case HttpStatusCode.Conflict:
+                    // The Configuration Service answers 409 when a token grant timed out waiting
+                    // for a database lock or was chosen as a deadlock victim: contention, which
+                    // retrying resolves. Without this arm it would fall through to the 502 branch
+                    // below, which tells the caller the upstream failed. 503 is DMS's own answer
+                    // to a transient upstream condition, and the one standard retry policies act
+                    // on. The status is the whole signal, so the body is neither parsed nor
+                    // logged, and no Retry-After is sent because nothing upstream supplies one.
+                    logger.LogInformation(
+                        "Upstream identity service reported lock contention on the token grant; "
+                            + "answered 503 so the client retries - {TraceId}",
+                        traceId.Value
+                    );
+                    return GenerateProblemDetailResponse(
+                        HttpStatusCode.ServiceUnavailable,
+                        FailureResponse.ForServiceUnavailable(traceId)
+                    );
                 default:
                     var content = await response.Content.ReadAsStringAsync();
                     logger.LogWarning(

@@ -29,6 +29,7 @@ branches on the upstream status:
 | `200`                       | the upstream response is returned unaltered                       |
 | `401`                       | `GenerateUnauthorizedResponse` builds a DMS problem-details `401` |
 | `429`                       | `GenerateTooManyTokensResponse` builds a DMS problem-details `429` |
+| `409`                       | `503 Service Unavailable` with a fixed retry detail               |
 | anything else               | `502 Bad Gateway` with a fixed detail                             |
 | transport failure (`catch`) | `502 Bad Gateway` with the same fixed detail                      |
 
@@ -66,6 +67,7 @@ fills.
 | `401` without one                       | the `error` value, or `"Unauthorized"` | `UnauthorizedFallbackDetail`  |
 | `429`, canonical token-limit body       | `"Too Many Tokens"`                    | fixed token-limit detail      |
 | `429`, any other body                   | `"Too Many Requests"`                  | fixed rate-limit detail       |
+| `503`, upstream `409`                   | `"Service Unavailable"`                | fixed retry detail            |
 
 The two `502` branches are **deliberately indistinguishable from outside**. An upstream that
 returned a well-formed HTTP error and an upstream that could not be reached at all are different
@@ -75,6 +77,12 @@ A `429` passes nothing through. When the body is the Configuration Service's can
 token-limit rejection, the only thing read from it is the integer limit, and the `errors` message
 is rebuilt around that number from DMS-side text. Any other `429` body gets the generic rate-limit
 contract, because the upstream status is trustworthy even when its body is not.
+
+A `409` passes nothing through either. The Configuration Service answers it when a token grant
+timed out waiting for a database lock or was chosen as a deadlock victim, which retrying resolves,
+so DMS answers the transient-condition `503` rather than the `502` that reports the upstream as
+failed. The status is the whole signal: the body is neither parsed nor logged, and the one
+Information event the arm emits carries only `TraceId`.
 
 `error` and `error_description` are passed through because they are the OAuth 2.0 error contract
 and the client is entitled to them. A body that merely *failed* to contain them is not part of any

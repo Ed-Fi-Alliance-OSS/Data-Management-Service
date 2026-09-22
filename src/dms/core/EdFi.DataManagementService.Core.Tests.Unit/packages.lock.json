@@ -780,6 +780,13 @@
           "Serilog.Sinks.OpenTelemetry": "[4.2.0, )"
         }
       },
+      "edfi.dmsconfigurationservice.datamodel": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[11.11.0, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )"
+        }
+      },
       "AspNetCore.HealthChecks.NpgSql": {
         "type": "CentralTransitive",
         "requested": "[8.0.2, )",
@@ -807,6 +814,12 @@
         "requested": "[1.4.1, )",
         "resolved": "1.4.1",
         "contentHash": "aYodIyihe8YqrPVmqW8chz/BukxSlSnDIMqIrYfbsmyg4HH4Eg5mhxyQUcu9IW5bXVX6OwRHLGGlLKESxh+acA=="
+      },
+      "FluentValidation": {
+        "type": "CentralTransitive",
+        "requested": "[11.11.0, )",
+        "resolved": "11.11.0",
+        "contentHash": "cyIVdQBwSipxWG8MA3Rqox7iNbUNUTK5bfJi9tIdm4CAfH71Oo5ABLP4/QyrUwuakqpUEPGtE43BDddvEehuYw=="
       },
       "JsonPath.Net": {
         "type": "CentralTransitive",
