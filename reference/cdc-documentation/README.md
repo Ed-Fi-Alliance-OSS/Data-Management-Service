@@ -2,8 +2,9 @@
 
 This is the shared PostgreSQL and SQL Server operator reference set for relational
 CDC. Delivery is in progress under [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
-PostgreSQL setup and its DMS E2E opt-in variant are documented; remaining procedure
-bodies and live qualification are **pending**. A reserved procedure or snippet ID is not an executable procedure
+PostgreSQL setup, its DMS E2E opt-in variant, deployment-state preservation and
+recovery classification are documented; remaining procedure bodies and live
+qualification are **pending**. A reserved procedure or snippet ID is not an executable procedure
 or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,

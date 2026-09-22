@@ -3,8 +3,8 @@
 [Entry point](README.md) · [Evidence index](cdc-inv-evidence.md)
 
 This shared PostgreSQL/SQL Server runbook is under construction. PostgreSQL setup
-and its E2E opt-in variant are documented; live qualification remains pending. Other
-records reserve stable destinations and are **pending** their named tasks; do not
+and its E2E opt-in variant, state preservation and recovery classification are
+documented; live qualification remains pending. Other records reserve stable destinations and are **pending** their named tasks; do not
 execute an unfinished workflow. Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
 
@@ -15,10 +15,10 @@ for current command details and the linked design owners for support boundaries.
 | PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 exercise pending |
 | SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — pending |
 | DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL documented; SQL Server pending T03 |
-| Preserve deployment state | [deployment-state](#deployment-state) | T04 — pending |
-| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — pending |
-| Established validation and restart preflight | [established-validation](#established-validation) | T04 — pending |
-| Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | T04 — pending |
+| Preserve deployment state | [deployment-state](#deployment-state) | T04 — documented; T18/T19 exercise pending |
+| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; T18/T19 exercise pending |
+| Established validation and restart preflight | [established-validation](#established-validation) | T04 — documented; T18/T19 exercise pending |
+| Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | T04 — documented; T18/T19 exercise pending |
 | Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | T05 — pending |
 | Intact connector restart and resume | [intact-restart](#intact-restart) | T05 — pending |
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — pending |
@@ -361,7 +361,7 @@ settings and original state paths. Copy those exact paths for subsequent operati
 do not choose the newest file by timestamp or return to the un-staged input settings.
 Preserve the whole retained handoff, including `.bootstrap` schema/configuration data,
 `.cdc-deployments/<project>.json`, all custom controller roots and broker-size override.
-See [deployment state](#deployment-state) (T04 detail pending).
+See [deployment state](#deployment-state) (documented; live exercise pending).
 
 PowerShell, repository root; `api-schema-tools` is the matching installed/resolved
 SchemaTools executable. Requires retained paths from the wrapper's printed command.
@@ -571,69 +571,243 @@ before preparing another one. Do not bypass that guard by deleting `.bootstrap` 
 
 ## Preserve deployment state
 
-**Pending T04; exercise T18/T19.** Scope to deliver: Distinguish prepared inputs from retained state; the entire .bootstrap tree is not disposable.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
+**Documented in T04; live exercise pending T18/T19.** Apply to both providers from
+first managed provisioning onward. The [continuity/adoption owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
+defines why current artifact health cannot replace historical evidence.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Each target/generation and its shared deployment. |
-| Authority/offline window | Pending T04: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Original controller roots, provisioning receipts/source history, bindings/journals/incidents, .cdc-deployments, .bootstrap/cdc-runtime settings, broker-size override; include custom roots. Exact paths and substitutions pending T04. |
-| Invocation | Reserved IDs: `cdc-state-inventory`. Commands and fixture substitutions pending T04. |
-| JSON/exit status | Pending T04: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T04: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T04: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Every retained deployment/instance/data-store/generation and its original physical source; include peer entries sharing the worker. |
+| Authority/offline window | Deployment owner may inspect file metadata without an API offline window. Coordinate access with the state owner; preservation or incident work must not race controller writes. Keep an existing initial writer fence or managed shutdown in place. |
+| Retained inputs | Full inventory below, including custom/nested state roots and external settings/schema/Compose paths. |
+| Invocation | `cdc-state-inventory` locates selected retained roots; review the private inventory against the original handoff. This is metadata inspection, not a state validator or backup utility. |
+| JSON/exit status | PowerShell file metadata, no controller JSON. A missing/unreadable required path fails the command; successful listing proves only path access. |
+| Postcondition | Deployment owner has accounted for original state and referenced inputs, permissions and peer ownership; no continuity or restart authorization follows from this inventory. |
+| Rejection/timeout action | Preserve available files and access diagnostics; use [unsupported provenance](#unsupported-provenance) for missing required evidence. Do not create an empty replacement root. |
+
+### Retention inventory
+
+| Artifact | Location/source and preservation requirement |
+| --- | --- |
+| Controller state root | Exact absolute path emitted by bootstrap and stored as `StatePath` in the retained deployment entry; custom roots may be outside the checkout or nested within `.bootstrap`. Preserve the whole root, not selected JSON files. |
+| Managed CREATE receipt and source association | Controller `workflows/` journal and `source-history/` records retain authoritative creation/source evidence; preserve the provisioning handoff too. An input connection string, surviving database or independently generated DDL is not a managed CREATE receipt. |
+| Binding and workflow evidence | `bindings/` and `workflows/` retain immutable binding identity, stage intents/completions, connector establishment, provider identity, writer-publication intent and lifecycle/rollout/retirement progress. Retain `kafka-preparation/` and controller coordination files with their root; never clear a lock file as a retry procedure. |
+| Terminal incidents | `incidents/` records are created when a loss is latched. Absence before any loss can be normal; absence does not prove that history was never deleted. Do not fabricate an empty incident record. |
+| Source publication history | `source-history/` outlives binding retirement and preserves downstream history. Binding absence or removal from settings cannot reestablish initial eligibility or internal-only status. |
+| Wrapper inventory | `eng/docker-compose/.cdc-deployments/<project>.json`, including every entry and its settings/state paths, hashes and bootstrap handoff. Do not edit it to bypass mismatches or drop peers. |
+| Runtime settings and Compose override | Exact emitted files under `eng/docker-compose/.bootstrap/cdc-runtime/`; retain referenced staged schemas, effective environment and `eng/docker-compose/.bootstrap/bootstrap-manifest.json`. Original input JSON alone does not reproduce this handoff. |
+| Broker-size override | The retained `Cdc:Compose:BrokerSizeOverrideFile` (bootstrap uses `<original-state-root>/broker-size.json`), including completed or partial size-rollout state. Do not regenerate it from older settings. |
+| Prepared inputs | Original full DMS/CDC settings, environment files, worker secret references, matching core/extension schemas and Compose inputs explain the deployment. They are inputs, not substitutes for receipts, bindings or journals. Keep secrets private and retain owner-only permissions. |
+
+The [wrapper lifecycle implementation](../../eng/docker-compose/cdc-lifecycle.psm1)
+protects nested roots and peer-owned configuration. The entire `.bootstrap` tree is
+**not disposable** for CDC. Generic workspace-reset advice does not authorize its
+removal. Use the [governed teardown handoff](#stack-teardown) only when its independent
+requirements are met. Preserve database and Kafka persistent storage under deployment
+ownership too; filesystem inventory does not prove provider history or offset durability.
+
+PowerShell, repository root; run as the deployment state owner. Metadata-only, no
+fault injection. Prerequisite: original bootstrap output or privately reviewed retained
+inventory identifies the paths. Inspect all entries in a shared deployment, repeating
+this bounded listing for each referenced root; do not print settings or history contents.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<original-state-root>` | Original managed provisioning/controller root | Fixture's actual retained root |
+| `<retained-settings-path>` | Emitted runtime settings path | Fixture-emitted settings |
+| `<deployment-inventory-path>` | Actual `.cdc-deployments/<project>.json` | Fixture-created wrapper inventory |
+| `<retained-bootstrap-root>` | Actual staged `.bootstrap` root | Fixture-owned staged root |
+
+<!-- cdc-snippet: cdc-state-inventory -->
+```powershell
+Get-Item -LiteralPath '<original-state-root>', '<retained-settings-path>', '<deployment-inventory-path>', '<retained-bootstrap-root>' -Force -ErrorAction Stop |
+    Select-Object FullName, Attributes, LastWriteTimeUtc
+```
+<!-- /cdc-snippet: cdc-state-inventory -->
+
+Store this metadata privately; paths can identify a deployment. A state backup may be
+retained for investigation, but restoring it is not a supported continuity recovery.
+The CLI cannot detect every rollback or certify an older backup. Suspected rollback
+or incident-history deletion remains an incident even when files parse and live checks pass.
 
 <a id="initial-enable-retry"></a>
 
 ## Interrupted initial-enable retry
 
-**Pending T04; exercise T18/T19.** Scope to deliver: Classify intact initial retry separately from established validation; retain initial writer exclusion.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
+**Documented in T04; live exercise pending T18/T19.** Follow the
+[initial retry classification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
+and [initial-admission sequence](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Original unfinished initial target/generation. |
-| Authority/offline window | Pending T04: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Original settings, state and initial workflow evidence. Exact paths and substitutions pending T04. |
-| Invocation | Reserved IDs: `cdc-enable-retry`. Commands and fixture substitutions pending T04. |
-| JSON/exit status | Pending T04: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T04: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T04: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Same controller-proven new physical database, CMS-selected target and unfinished initial generation. No previously admitted or replacement source. |
+| Authority/offline window | Original deployment owner retains exclusive writer/seed exclusion throughout retry. CMS, database, Kafka and worker dependencies must be reachable with the original authority. |
+| Retained inputs | Original state, managed provisioning receipt/history, exact emitted runtime settings and referenced schemas/environment. Keep settings overrides consistent with the original target. |
+| Invocation | `cdc-enable-retry`; the controller classifies and reconciles its journal. Do not rerun independent provisioning or construct stage receipts. |
+| JSON/exit status | Completion requires process exit `0`, `operation: "enable"`, `succeeded: true`, `exitCode: 0`, `data.workflowId` matching the original workflow and non-default `data.authorizedAt`. Failure may omit `data`, `binding` and `deploymentProfile`. |
+| Postcondition | Temporary projector is stopped and the matching writer-publication result has returned. Only this result completes the initial writer handoff; `Ready` status or a journal checkpoint does not. |
+| Rejection/timeout action | Keep writers excluded; retain stdout/stderr separately. Reconcile the actual failure before retrying the same command. If writer-publication intent already exists, initial retry is closed; use established inspection and escalate any uncertain writer handoff rather than replaying intent as permission. |
+
+The shipped [initial workflow](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcInitialEnableWorkflow.cs)
+and [retry fixtures](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandEnableRetryTests.cs)
+select the next permitted stage. This table explains their classification; it is not
+an instruction to query or modify lifecycle rows manually.
+
+| Retained/current evidence | Action |
+| --- | --- |
+| Original managed initial journal/source receipt, before binding reservation | Controller may continue its original reservation stage; this does not admit an established source missing a binding. |
+| Exact binding, `Disabled`, clear cache-ahead latch | Retry guarded activation under the initial empty-source checks. |
+| Exact binding, `Tracking`, clear latch, canonical/cache/work tables empty before capture setup | Reconcile committed activation and resume provider/topic/connector setup or validation. |
+| Connector registration/establishment already reached | Reconcile existing artifacts and fresh continuity evidence; do not register a replacement connector or recreate capture artifacts. Retry performs fresh readiness/barrier work, not reuse of a saved ready bit. |
+| `Tracking` without the required binding; missing/corrupt/contradictory initial evidence; changed physical source | Reject; preserve evidence and use [unsupported provenance](#unsupported-provenance). |
+| Cache-ahead latch, `Resetting`/`Rebuilding`, or unexpected canonical/cache/work rows | Reject. Initial eligibility is not repaired with SQL; any unused-binding retirement or separate provisioning needs its own authority and is not continuity recovery. |
+| Writer-publication intent, managed lifecycle or retirement evidence | Reject initial retry. A lost response after publication intent does not make that intent replayable. Inspect the established generation; never erase intent to reopen initial enablement. |
+
+PowerShell, repository root; `api-schema-tools` must be available as in setup. All
+original initial prerequisites and writer exclusion still apply. This can resume
+provider/Kafka/connector mutations within the original workflow. Use the emitted
+settings, not the unmodified pre-bootstrap input JSON. Bootstrap rejects `DMS_CDC__`
+overrides; direct CLI accepts them, so verify privately that the current process
+has no conflicting overrides before invoking it.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Bootstrap-emitted full runtime settings | Actual settings from the interrupted fixture workflow |
+| `<original-state-root>` | Original managed provisioning root | Same interrupted fixture root; no recreated provenance |
+
+<!-- cdc-snippet: cdc-enable-retry -->
+```powershell
+api-schema-tools cdc enable --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-enable-retry -->
+
+Exit `1` is rejection, unavailable evidence or bounded timeout, not rollback. Exit
+`2` is invalid command/configuration; correct only the discrepancy, preserving scope.
+Exit `130` is cancellation; reconcile retained effects first. The same retry can
+succeed after an interrupted provider, broker/worker start, preflight, registration,
+barrier or metrics stage only while its original evidence remains eligible.
+Provider/offset loss instead enters terminal containment. Retain **all** diagnostics:
+`WorkflowState/Unavailable` and `Connect/Unavailable` can coexist when incident
+persistence and connector containment both fail. Neither attempt means containment
+completed. Use the [containment handoff](#native-recovery); T05 owns its detailed steps.
 
 <a id="established-validation"></a>
 
 ## Established validation and restart preflight
 
-**Pending T04; exercise T18/T19.** Scope to deliver: Operation-specific validation observations without claiming a fresh initial baseline.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity).
+**Documented in T04; live exercise pending T18/T19.** The
+[source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
+and [managed/native recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+define the scope of fresh observations.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Established target/generation. |
-| Authority/offline window | Pending T04: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Retained settings, binding, journal and source history. Exact paths and substitutions pending T04. |
-| Invocation | Reserved IDs: `cdc-validate`. Commands and fixture substitutions pending T04. |
-| JSON/exit status | Pending T04: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T04: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T04: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Established binding, same selected target, physical source and generation with intact provenance. |
+| Authority/offline window | Deployment owner with original controller/database observation access. Running validation needs no new writer-offline window. Preserve any existing incident or shutdown fence; validation does not release it. |
+| Retained inputs | Original runtime settings/state; matching binding, workflow, CREATE/source history, provider identity and connector establishment; retained incident/rollout/lifecycle records. |
+| Invocation | `cdc-validate` for running publication inspection. Guarded start/restart/resume perform their own fresh pre-start checks; use the lifecycle handoff below for a stopped deployment. |
+| JSON/exit status | `operation: "validate"`; exit `0` and `succeeded: true` require `data.publicationReady: true`. When available, inspect `data.observedAt`, `preStartEligible`, `continuity`, `hasPendingRecordSizeIncrease`, `diagnostics` and `recovery`. Null result data can be omitted on early rejection. |
+| Postcondition | A bounded observation of current running publication, without repair, writer authorization or certification of a new exact baseline. |
+| Rejection/timeout action | Retain evidence and keep existing fences. Unavailable live evidence may be reobserved after restoring access to the same intact services; provenance failure, source mismatch or terminal loss goes to the next procedure. |
+
+PowerShell, repository root; original deployment and services reachable, production
+CLI available. Observational validation takes the state lock but does not repair,
+start a projector, capture an initial barrier, latch an incident or stop a connector.
+No fault injection or new source selection is part of this command.
+
+| Literal placeholder | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<retained-settings-path>` | Original emitted runtime settings | Established fixture's retained settings |
+| `<original-state-root>` | Original managed provisioning/controller root | Established fixture's intact root |
+
+<!-- cdc-snippet: cdc-validate -->
+```powershell
+api-schema-tools cdc validate --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-validate -->
+
+The [CLI runner](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/Cdc/CdcCommandRunner.cs)
+selects `RunningPublication`, not `PreStart`. Thus a stopped connector can return exit
+`1` without proving history loss. Even `data.preStartEligible: true` is only an
+observation, never reusable start authority. There is no CLI `--mode PreStart` flag.
+Use [managed startup](#managed-lifecycle) or [intact restart/resume](#intact-restart)
+(T05 detail pending; current [command handoff](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#managed-stack-lifecycle)).
+Those controllers revalidate under their own session immediately before acting.
+
+Serialized `data.continuity` values are `Healthy`, `Unknown` or `Lost`. `Unknown`
+prevents controller start/restart/resume; it is not proof of terminal loss. A later
+complete affirmative observation can restore current readiness. `Lost` is terminal
+for that generation, including when current provider artifacts or offsets later
+look healthy. `validate` itself does not contain it: use the governed status/stop
+handoff below. A partial record-size rollout remains not ready and belongs to
+[its retained-operation procedure](#record-size-increase), not a fresh enable.
+The same `1`/`2`/`130` failure conventions described above apply. Native recovery can
+publish before revalidation; a later healthy result cannot certify the unsampled interval.
 
 <a id="unsupported-provenance"></a>
 
 ## Missing provenance and source mismatch
 
-**Pending T04; exercise T18/T19.** Scope to deliver: Rejection and escalation for missing/corrupt history, terminal incidents and mismatched source; no adoption or replacement recipe.
-[Design owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+**Documented in T04; live rejection exercises pending T18/T19.** Use the
+[adoption/state-loss boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
+and [physical-source replacement deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Affected retained target/generation and physical source. |
-| Authority/offline window | Pending T04: specify authority and applicable fence from the linked owner. |
-| Retained inputs | Available sanitized diagnostics and retained deployment evidence. Exact paths and substitutions pending T04. |
-| Invocation | Reserved IDs: `cdc-provenance-rejection`. Commands and fixture substitutions pending T04. |
-| JSON/exit status | Pending T04: bind operation-specific fields and exit status to shipped fixtures. |
-| Postcondition | Pending T04: observable completion criterion; no completion claimed here. |
-| Rejection/timeout action | Pending T04: diagnostic-specific retry, containment or escalation and retained evidence. |
+| Target/generation | Affected original target/generation and source; retain evidence of any observed mismatch without rebinding. Account for shared-worker peers. |
+| Authority/offline window | Deployment incident owner maintains any writer/consumer fence and governs containment. CDC status does not gate ordinary DMS request routing; containment must not be inferred from API health. |
+| Retained inputs | Available original state, settings and inventory; private diagnostic streams, observation times, incident/containment outcomes and deployment-owner reports of rollback/deletion. Never export credentials, settings contents, raw offsets or payloads. |
+| Invocation | `cdc-provenance-rejection` is the same non-repairing validation against retained inputs, used to record an existing incident's rejection. No production fault injection. Follow status/managed-stop handoffs only with their original authority. |
+| JSON/exit status | Normally exit `1`, `succeeded: false`; retain `diagnostics[].component`, `.failure`, `.message`. Early failures may have no `data`; available validation data can report `publicationReady: false` or `continuity: "Lost"`. Exit `2` denotes invalid input, not a specific provenance diagnosis. |
+| Postcondition | Evidence retained, restart/initial retry withheld, and incident escalated to deployment ownership. This procedure does not restore continuity. |
+| Rejection/timeout action | No force/adopt/import/replacement operation exists. If containment cannot be verified, report it as incomplete and keep the incident open; do not delete shared infrastructure or attempt artifact repair. |
+
+PowerShell, repository root; original settings/state paths are still known and CLI
+available. Observe the already affected deployment; do not change its target to
+manufacture a mismatch. Fixture substitutions may select only disposable fixture-owned
+state already damaged by the existing test's fault seam; operators do not perform
+those mutations. See the private path substitution table in `cdc-validate`.
+
+<!-- cdc-snippet: cdc-provenance-rejection -->
+```powershell
+api-schema-tools cdc validate --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
+```
+<!-- /cdc-snippet: cdc-provenance-rejection -->
+
+The [diagnostic model](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcDeploymentResults.cs)
+deliberately emits broad safe codes. There is no CLI `MissingProvenance` or
+`SourceMismatch` failure code; a code alone cannot identify a missing file or prove
+that a service is absent. Use the original private inventory and incident context:
+
+| Symptom / shipped evidence | Operator action |
+| --- | --- |
+| Required journal/history missing or unreadable; typically `WorkflowState/Unavailable` | Verify the exact original path and owner access without changing state. If provenance cannot be established, withhold restart and escalate. Never create replacement JSON. |
+| Corrupt/contradictory journal/history or incomplete provider/connector completions; `WorkflowState/ValidationFailed` | Preserve damaged evidence and stop retrying setup. An exact binding alone is insufficient. Binding mismatch or missing binding can also produce this broad rejection. |
+| Unsafe state permissions, lock/access timeout or authentication failure; `Unavailable`, `Timeout` or `AuthenticationFailed` at the reported component | Owner diagnoses access/contention against the original state. A timeout is not evidence of absence. Reobserve only after the access problem is resolved and intact provenance is established; do not remove coordination files or restore backups. |
+| Normally absent incident file in an otherwise intact workflow | No file needs to be created. Missing required binding/journal/source history is a different condition. Absence cannot rebut a report that an incident was deleted. |
+| Suspected incident-history deletion or state rollback | Preserve the report and withhold validation/restart authorization even if the CLI appears healthy. The controller fixtures exercise `IncidentHistoryDeletion` and `StateRollback` integrity reports; these are adapter inputs, not CLI flags or automatic rollback detectors. Escalate; no stale-backup restoration procedure exists. |
+| Retained terminal incident or `data.continuity: "Lost"` | Keep the generation terminal. Use governed observation/containment and escalate. Recreated provider artifacts, changed offsets, snapshots or later health cannot clear it. |
+| Empty **or populated** different physical source; validation/lifecycle rejection | Preserve both source and original binding evidence. No identity rotation, replacement capture, CMS cutover or rebinding is authorized. Empty tables do not establish initial eligibility for the old target. |
+| Live provider/Connect/Kafka evidence unavailable; `Unknown` when classification is available | Restore observation access to the same intact services and reobserve within a bounded attempt. Do not claim zero lag, absence, healthy continuity or successful shutdown. |
+| Status reports `incidentPersistence: "Failed"` or `containment: "Failed"` | Preserve every diagnostic and escalate the failed dimension. `containment: "Stopped"` can verify connector stop even when incident persistence failed; it does not establish durable incident protection. Successful persistence does not imply the connector stopped. A failed stop/readback leaves containment unverified. |
+
+`status/watch` (the [existing observation examples](#postgresql-setup) apply to either
+provider with its retained settings) may latch terminal incidents and stop affected
+connectors. In `data.targets[]`, distinguish `incidentPersistence: "Persisted"` from
+`containment: "Stopped"`; `NotRequired` proves neither action occurred. The
+[status contracts](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcControllerStatus.Contracts.cs)
+expose `details.incidentFailureCategory` when available. Missing historical evidence
+can prevent these operations too. Use [managed stop](#managed-lifecycle) and
+[incomplete-containment handling](#native-recovery) with reachable original
+infrastructure; detailed wrapper procedures remain T05 work.
+
+The [DMS-1323 provenance/source fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs)
+restore deliberately damaged test files only to isolate test cases. That cleanup is
+not an operator recovery recipe. Backup restoration, artifact recreation, state deletion,
+replacement-binding JSON, guarded retirement and independently provisioning another
+database cannot certify continuity or perform the deferred new-generation cutover.
+Retirement requires [independent cleanup authority](#generation-retirement); missing
+state supplies none and retirement does not erase source publication history.
 
 <a id="managed-lifecycle"></a>
 
