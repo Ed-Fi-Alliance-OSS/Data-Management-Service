@@ -20,7 +20,8 @@ restate them.
 
 ## Outcome
 
-Publish verified operator guidance for the implemented relational CDC capability.
+Publish verified operator guidance for the implemented relational CDC capability and
+complete the SQL Server initial connector-user mapping needed by the public setup paths.
 
 ## Dependencies
 
@@ -31,6 +32,8 @@ Publish verified operator guidance for the implemented relational CDC capability
 
 ## Implementation Scope
 
+- Implement and qualify SQL Server initial connector-user mapping through the shared
+  provider setup path, as specified below. DMS-1326 owns this integration fix.
 - Document local opt-in, production-like prerequisites, setup, observation, and
   troubleshooting for both providers.
 - Document the shipped topic, connector, consumer, binding-state, security, retention,
@@ -77,6 +80,34 @@ owned by DMS-1326. The linked design sections remain the owners of behavior; thi
 turns the shipped surfaces into operator procedures without adding a second controller or
 redefining a recovery contract.
 
+### SQL Server Initial Connector-User Mapping
+
+The public wrappers create a new database and proceed directly to CDC enablement, while
+the current provider requires an already existing database user. DMS-1326 resolves this
+gap by implementing the amended [SQL Server provider contract](../../design-docs/cdc/cdc-streaming.md#sql-server).
+The deployment supplies the restricted login; initial provider setup maps its database
+user and performs the existing grant validation. The qualified examples use the same
+login/user name through `Cdc:DatabaseConnectorPrincipal` and the matching connector
+`database.user` identity.
+
+- Use the existing managed provider setup, retained completion, and retry boundaries.
+  Preserve the authoritative creation receipt, selected CMS target, physical-source
+  validation, writer exclusion, and original state root across local, published, and
+  DMS E2E paths. No public callback, pause/resume command, or separate provisioning phase
+  is required.
+- Reject missing logins, conflicting user/login SIDs, unsupported principal types, and
+  elevated connector permissions. Keep login/credential management with the deployment.
+  Completed provider setup and established workflows remain validation-only; they must
+  not recreate missing users or repair mappings.
+- Add focused provider/controller regression coverage and wrapper ordering checks, then
+  exercise the public SQL Server setup paths from an existing restricted login with no
+  target database/user. A fixture that manually creates the target user cannot qualify
+  this workflow. Reuse existing fixtures and qualification lanes.
+- T29 implements this prerequisite before T03 writes the SQL Server examples. T17 owns the
+  exact runbook-snippet qualification after the examples exist. Neither task is complete
+  merely because the design or task plan has been revised. This CDC access setup does
+  not change relational mappings or require a `RelationalMappingVersion` bump.
+
 ### Documentation Home and Integration with Existing Guidance
 
 - Add `reference/cdc-documentation/README.md` as the operator entry point,
@@ -104,9 +135,12 @@ redefining a recovery contract.
   Update the design's implementation-status disposition if needed, without changing its
   normative contracts or reviving legacy KafkaMessaging instructions.
 - Consolidate duplicated operational prose when editing those entry points. Documentation
-  corrections, example extraction, and small test-helper reuse are in scope. A missing
-  runtime capability must be identified against its owning sibling story; do not hide it
-  behind manual SQL, raw Connect mutations, or a new runbook-only automation path.
+  corrections, example extraction, small test-helper reuse, and the initial-user mapping
+  fix above are in scope. DMS-1326 is the remaining non-test-centric ticket: required
+  runtime integration work must be planned and completed here, with contract amendments
+  made in the owning design documents. Do not route that work to completed sibling
+  stories or hide it behind manual SQL, raw Connect mutations, or runbook-only automation.
+  Existing design deferrals remain out of scope.
 
 ### Supported Deployment and Command Examples
 
@@ -256,6 +290,11 @@ redefining a recovery contract.
 
 ## Acceptance Evidence
 
+- SQL Server initial setup creates the missing user for the pre-existing restricted login
+  and succeeds through the public local, published, and DMS E2E setup paths. Focused tests
+  cover exact-match retry, conflicting mappings, unsupported/elevated principals, missing
+  login, setup-authority failure, and validation-only rejection of a missing user after
+  provider completion. Failure prevents connector/writer admission and seed continuation.
 - Runbook commands are exercised against the supported PostgreSQL and SQL Server workflows.
 - Provider exercises cover RCSI/nested-trigger target and activation validation, guidance
   that post-validation changes to either setting are outside the supported v1 contract,

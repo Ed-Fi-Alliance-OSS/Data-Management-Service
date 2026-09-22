@@ -69,12 +69,20 @@ are outside [this story](../design/backend-redesign/epics/19-cdc-kafka/07-ops-do
 [Production-scale performance qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 also remains separate work.
 
-No missing shipped surface has been established during T01's structural review.
-The pending sections below are documentation work, not diagnosed runtime defects.
-If a later procedure needs a missing capability, record the command/fixture,
-expected surface, observed gap, and owning sibling here before describing a remedy:
+SQL Server setup has a diagnosed integration gap: public bootstrap creates the target
+database and proceeds to CDC enablement, but the current provider requires an existing
+database user. [DMS-1326 owns initial connector-user mapping](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping)
+for a deployment-supplied restricted login. T29 implements and tests the amended
+contract, T03 documents the setup procedure, and T17 qualifies the public runbook
+snippets. This capability remains pending implementation and qualification.
 
-| Surface | Owning implementation story |
+If a later procedure needs a missing capability, record the command/fixture, expected
+surface, and observed gap here. Required runtime integration work belongs to DMS-1326,
+with contract amendments in the owning design documents and existing deferrals preserved.
+The sibling stories below remain implementation and evidence references; required runtime
+integration fixes are not routed back to completed stories.
+
+| Surface | Implementation/evidence reference |
 | --- | --- |
 | Binding/readiness and projection prerequisites | [DMS-1319](../design/backend-redesign/epics/19-cdc-kafka/00-documentcache-cdc-prerequisites.md) |
 | Provider CDC DDL/setup | [DMS-1320](../design/backend-redesign/epics/19-cdc-kafka/01-cdc-ddl-support.md) |

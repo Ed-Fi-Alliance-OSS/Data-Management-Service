@@ -1270,6 +1270,23 @@ database-per-instance isolation model.
   capture instance for `dms.DocumentProjectionWork`.
 - Use a least-privilege login with CDC read access plus only the access needed to read and
   update the internal heartbeat singleton; do not grant document-table writes.
+- The deployment supplies the SQL Server login and credentials. During
+  `InitialCreateOrExactMatch`, provider setup may create a missing database user mapped
+  to that existing login, then apply and validate the narrowly scoped connector grants.
+  The qualified local workflow uses the same login and user name, supplied through
+  `Cdc:DatabaseConnectorPrincipal`, with the matching connector `database.user` identity.
+  Automatic user creation supports this same-name SQL login mapping only; it does not
+  create logins, create or rotate credentials, or provide a general identity-mapping API.
+  Existing users must map to the expected login SID and pass the principal-type and
+  effective-permission checks. Missing logins, conflicting mappings, unsupported principal
+  types, and elevated connector permissions are rejected without automatic repair.
+  User creation runs within the existing managed initial provider setup/retry boundary,
+  after source/provenance checks and before connector registration or writer publication.
+  Once provider completion is durable, even an initial-enable retry uses `ValidateOnly`:
+  missing users and mapping mismatches fail validation and are never recreated or remapped.
+  [DMS-1326](../../epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping)
+  owns implementation and qualification of this contract amendment; operator examples
+  must not claim it is shipped until that work passes.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
