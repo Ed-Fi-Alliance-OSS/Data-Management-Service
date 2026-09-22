@@ -96,3 +96,37 @@ E18 owns projection performance and lifecycle evidence; link its workload limits
 when adding tuning guidance. [Production-scale qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 is not assigned to this runbook. Consumer conformance examples likewise remain
 DMS-1324 evidence, not certification of third-party consumer stores.
+
+## SQL Server Initial User Mapping (T29)
+
+T29 resolves the former root `PROBLEMS.md` blocker: shared managed setup can now proceed
+from a deployment-owned restricted SQL login and a new database with no connector user.
+The provider maps the same-name user, verifies its SID/type, and reuses narrow grants and
+effective-access validation. The controller's original durable completion boundary selects
+`ValidateOnly` on subsequent setup, including before connector registration. See the
+[owning SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
+and [story handoff](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping).
+The resolution is retained here because a root `PROBLEMS.md` is the implementation-loop
+stop flag. No manual user preparation or public callback is the successful setup path.
+
+[Sanitized T29 evidence](evidence/t29-sqlserver-initial-user-mapping.json) records immutable
+images, source hashes, exact executed cases, corrections, and final outcomes. It retains
+only case metadata, provider modes/outcomes/diagnostic codes, and writer-authorization
+results from the existing qualification exporter; no settings, credentials, SIDs, offsets,
+or document data are included. Faults target fixture-owned disposable SQL Server instances,
+databases, principals, and controller state. The provider access fixture prepares only the
+login; its elevated-user rejection case explicitly injects an existing invalid user.
+
+| Procedure / layer | Design / invariant | Provider | Stable test identifiers | Snippet ID | Profile / image | Sanitized artifact | Actual result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Initial user mapping / controller admission | [SQL Server setup; CDC-INV-14/15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_SqlServer_Controller_Admission](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcMssqlAdmissionTests.cs): `It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag`; `It_rejects_initial_connector_mapping_before_registration_or_publication` (4 cases); `It_never_repairs_connector_mapping_after_durable_provider_completion` (2 cases); `It_reconciles_exact_capture_after_lost_provider_evidence_without_repair` | None: runtime prerequisite; `cdc-sqlserver-bootstrap-*` remains T17 | Mssql Admission category selection; qualified Connect digest, pinned SQL Server 2025 and resolved Kafka digest in artifact; `aclIsolationProven: false` | [Admission cases](evidence/t29-sqlserver-initial-user-mapping.json) | 8 final cases passed; no skips. Happy path verifies absent user before setup, same login SID afterward, and eventual writer publication. Initial rejection and post-completion removal/conflict keep publication unauthorized. |
+| Mapping, narrow grants and effective access / provider integration | [SQL Server provider](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_MssqlCdcProviderAccessRetry](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCdcProviderAccessRetryTests.cs); every executed method/case appears in artifact | None: provider regression | Fixture-owned SQL Server 2025; restricted connector live probe | [Provider cases](evidence/t29-sqlserver-initial-user-mapping.json) | 29 final cases passed; no skips. Includes a connector-credential boundary probe and exact retry after a missing-login rejection. |
+| Mapping and interruption / unit | [SQL Server provider](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_MssqlCdcPrincipalAccess_Initial_Setup / ValidateOnly](../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs); filter `FullyQualifiedName~MssqlCdc\|FullyQualifiedName~CdcProviderRetry` | None | In-memory executor | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 82 passed, plus 6 work-table exclusion checks; includes absent/unsupported/elevated login, conflicting SID/type, safe quoting, insufficient setup authority, interrupted mapping/grants, exact retry and validation-only rejection. |
+| Durable completion and initial retry / unit | [Managed setup boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | Both provider variants | [Given_CdcProviderSetupOrchestration](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcProviderSetupOrchestrationTests.cs); [Given_Cdc_command_enable_retry](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandEnableRetryTests.cs) | None | Controller/CLI fakes | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 68 controller + 86 CLI cases passed; no skips. |
+| Shared public-wrapper handoff / Pester | [Local bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | Both provider variants | [CdcBootstrapWorkflow.Tests.ps1](../../eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1), [CdcE2EWorkflow.Tests.ps1](../../eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1): retained-state retry before writer/seed; SQL Server local/published E2E provider-admission rejection | None: mocked wiring | PowerShell 7.6.6 / Pester | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 131 passed; no skips. Public command/snippet live exercise remains T17. |
+
+T03 can now write the SQL Server setup examples. T17 must still execute those exact
+marked examples through the public local, published and DMS E2E surfaces. These results
+are provider/controller qualification, not DMS-1325 API-driven message evidence, ACL
+isolation proof, or production deployment qualification. No relational mapping/hash or
+`RelationalMappingVersion` change was made.

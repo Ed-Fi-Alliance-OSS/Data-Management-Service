@@ -710,13 +710,65 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         try
         {
+            var mapping = await executor.QueryAsync(
+                ConnectorUserMappingSql(context.Request),
+                cancellationToken
+            );
+            var mappingFailure = ConnectorUserMappingFailure(mapping, context.Mode);
+            if (mappingFailure.Length > 0)
+            {
+                return new CdcProviderSetupStepResult(
+                    diagnostics:
+                    [
+                        ConnectorPrincipalPrivilegeFailure(
+                            connectorPrincipal,
+                            mappingFailure,
+                            "same-name-restricted-sql-login-and-user",
+                            "identity-validation-failed"
+                        ),
+                    ]
+                );
+            }
+
+            var userCreated = !ReadBool(mapping.Single(), "user_exists");
+            if (userCreated)
+            {
+                var identifier = _dialect.QuoteIdentifier(connectorPrincipal.Value);
+                await executor.ExecuteNonQueryAsync(
+                    $"/* cdc:sqlserver:create-connector-user */ CREATE USER {identifier} FOR LOGIN {identifier};",
+                    cancellationToken
+                );
+                mapping = await executor.QueryAsync(
+                    ConnectorUserMappingSql(context.Request),
+                    cancellationToken
+                );
+                mappingFailure = ConnectorUserMappingFailure(
+                    mapping,
+                    CdcProviderSetupStepMode.ExactMatchOnly
+                );
+                if (mappingFailure.Length > 0)
+                {
+                    return new CdcProviderSetupStepResult(
+                        diagnostics:
+                        [
+                            ConnectorPrincipalPrivilegeFailure(
+                                connectorPrincipal,
+                                mappingFailure,
+                                "same-name-restricted-sql-login-and-user",
+                                "identity-validation-failed"
+                            ),
+                        ]
+                    );
+                }
+            }
+
             var access = await InspectConnectorPrincipalAccessAsync(
                     executor,
                     context.Request,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-            var state = CdcProviderArtifactState.Matched;
+            var state = userCreated ? CdcProviderArtifactState.Created : CdcProviderArtifactState.Matched;
 
             if (
                 access.IsGrantableMissingPrivilege
@@ -779,6 +831,71 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 exception
             );
         }
+    }
+
+    private static string ConnectorUserMappingFailure(
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows,
+        CdcProviderSetupStepMode mode
+    )
+    {
+        if (rows.Count != 1 || !ReadBool(rows[0], "login_exists"))
+        {
+            return "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING";
+        }
+        var row = rows[0];
+        if (!ReadBool(row, "mapping_metadata_visible"))
+        {
+            throw new InvalidOperationException("Connector identity metadata is unavailable.");
+        }
+        if (!ReadBool(row, "login_supported"))
+        {
+            return "CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED";
+        }
+        if (ReadBool(row, "login_elevated"))
+        {
+            return "CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED";
+        }
+        if (!ReadBool(row, "user_exists"))
+        {
+            return mode == CdcProviderSetupStepMode.CreateOrExactMatch
+                ? string.Empty
+                : "CDC_SQLSERVER_CONNECTOR_USER_MISSING";
+        }
+        return ReadBool(row, "user_mapping_matches")
+            ? string.Empty
+            : "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH";
+    }
+
+    private static string ConnectorUserMappingSql(CdcProviderSetupRequest request)
+    {
+        var principal = EscapeSqlLiteral(request.ConnectorPrincipal.SafePrincipalName.Value);
+        return $"""
+            /* cdc:sqlserver:connector-user-mapping */
+            DECLARE @connector_name sysname = N'{principal}';
+            DECLARE @login_id int = SUSER_ID(@connector_name);
+            SELECT
+                CONVERT(bit, COALESCE(HAS_PERMS_BY_NAME(NULL, NULL, N'VIEW ANY DEFINITION'), 0)) AS mapping_metadata_visible,
+                CONVERT(bit, CASE WHEN login_info.principal_id IS NOT NULL THEN 1 ELSE 0 END) AS login_exists,
+                CONVERT(bit, CASE WHEN login_info.type = N'S' AND login_info.is_disabled = 0 THEN 1 ELSE 0 END) AS login_supported,
+                CONVERT(bit, CASE WHEN
+                    EXISTS (SELECT 1 FROM sys.server_role_members WHERE member_principal_id = @login_id)
+                    OR EXISTS (SELECT 1 FROM sys.server_principals WHERE owning_principal_id = @login_id)
+                    OR EXISTS (
+                        SELECT 1 FROM sys.server_permissions
+                        WHERE grantee_principal_id IN (@login_id, SUSER_ID(N'public'))
+                        AND state IN (N'G', N'W')
+                        AND (permission_name NOT IN (N'CONNECT SQL', N'VIEW ANY DATABASE') OR state = N'W')
+                        AND NOT (grantee_principal_id = SUSER_ID(N'public') AND class = 105
+                            AND permission_name = N'CONNECT' AND state = N'G')
+                    )
+                    THEN 1 ELSE 0 END) AS login_elevated,
+                CONVERT(bit, CASE WHEN user_info.principal_id IS NOT NULL THEN 1 ELSE 0 END) AS user_exists,
+                CONVERT(bit, CASE WHEN user_info.type = N'S' AND user_info.authentication_type = 1
+                    AND user_info.sid = login_info.sid THEN 1 ELSE 0 END) AS user_mapping_matches
+            FROM (VALUES (1)) AS singleton(value)
+            LEFT JOIN sys.server_principals login_info ON login_info.name = @connector_name
+            LEFT JOIN sys.database_principals user_info ON user_info.name = @connector_name;
+            """;
     }
 
     internal static CdcHeartbeatActionQuery BuildHeartbeatActionQuery(CdcProviderSetupRequest request)

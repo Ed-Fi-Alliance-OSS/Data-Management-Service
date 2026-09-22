@@ -274,7 +274,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         await ExecuteAsync(
             _provider == CdcProvider.Postgresql
                 ? "CREATE ROLE dms_connector LOGIN REPLICATION PASSWORD 'EdFi_Dms1!'"
-                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF; CREATE USER dms_connector FOR LOGIN dms_connector;",
+                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF;",
             cancellationToken
         );
         _configuration = new ConfigurationBuilder()
@@ -1184,6 +1184,16 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             modes.Add(request.Mode);
             var result = await inner.SetupAsync(request, cancellationToken);
             results.Add(result);
+            if (result.Outcome == CdcProviderSetupOutcome.Failed)
+            {
+                await TestContext.Out.WriteLineAsync(
+                    "Provider rejection: "
+                        + string.Join(
+                            ", ",
+                            result.Diagnostics.Select(d => d.Code + ":" + d.ProviderErrorCode)
+                        )
+                );
+            }
             return result;
         }
     }

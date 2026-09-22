@@ -97,15 +97,17 @@ Describe 'Shared CDC E2E setup handoff' {
         }
     }
 
-    It 'retains controller classifications without raw failure data' {
+    It 'retains provider admission classifications without raw failure data for <Published>' -ForEach @(
+        @{ Published = $false }, @{ Published = $true }
+    ) {
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             $setupError = [InvalidOperationException]::new('private-secret')
-            $setupError.Data['CdcFailureCodes'] = @('WriterPublication/ValidationFailed', 'private-secret/Timeout')
+            $setupError.Data['CdcFailureCodes'] = @('ProviderSetup/ValidationFailed', 'private-secret/Timeout')
             throw $setupError
         }
-        { Invoke-E2ECdcSetup @script:arguments } | Should -Throw '*tests were not launched*'
+        { Invoke-E2ECdcSetup @script:arguments -DatabaseEngine mssql -UsePublishedImage:$Published } | Should -Throw '*tests were not launched*'
         Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
-            ($Value -join '') -match 'WriterPublication/ValidationFailed' -and ($Value -join '') -notmatch 'private-secret'
+            ($Value -join '') -match 'ProviderSetup/ValidationFailed' -and ($Value -join '') -notmatch 'private-secret'
         }
     }
 

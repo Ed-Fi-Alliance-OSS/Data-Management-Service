@@ -319,6 +319,8 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         '' | Set-Content (Join-Path $script:sandbox 'fail')
         { & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider } | Should -Throw '*CDC unavailable*'
         $retained = Get-Content (Join-Path $script:sandbox 'retained.json') -Raw
+        # Provider/user admission failure must not reach either writer startup or seed.
+        @(Get-Content (Join-Path $script:sandbox 'calls') | Where-Object { $_ -match '^(dms|seed):' }).Count | Should -Be 0
         Remove-Item (Join-Path $script:sandbox 'fail')
         & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
         $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))

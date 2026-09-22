@@ -69,12 +69,13 @@ are outside [this story](../design/backend-redesign/epics/19-cdc-kafka/07-ops-do
 [Production-scale performance qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 also remains separate work.
 
-SQL Server setup has a diagnosed integration gap: public bootstrap creates the target
-database and proceeds to CDC enablement, but the current provider requires an existing
-database user. [DMS-1326 owns initial connector-user mapping](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping)
-for a deployment-supplied restricted login. T29 implements and tests the amended
-contract, T03 documents the setup procedure, and T17 qualifies the public runbook
-snippets. This capability remains pending implementation and qualification.
+The SQL Server provider now maps a missing same-name database user to the deployment's
+restricted SQL login during managed initial setup. Durable provider completion switches
+retries to validation-only; missing users and conflicting SIDs then fail without repair.
+[DMS-1326's T29 evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29) records
+provider/controller qualification and wrapper ordering checks for this former setup gap.
+T03 still owns the SQL Server operator procedure and T17 the exact public runbook-snippet
+qualification; those procedures remain pending.
 
 If a later procedure needs a missing capability, record the command/fixture, expected
 surface, and observed gap here. Required runtime integration work belongs to DMS-1326,

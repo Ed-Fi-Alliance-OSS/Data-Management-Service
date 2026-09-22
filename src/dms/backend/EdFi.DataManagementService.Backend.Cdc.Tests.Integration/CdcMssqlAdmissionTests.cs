@@ -45,7 +45,9 @@ public sealed class Given_SqlServer_Controller_Admission
     [Test]
     public async Task It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag()
     {
+        (await _fixture.ScalarAsync<int>(ConnectorUserCountSql, Token)).Should().Be(0);
         await _fixture.RegisterAsync(Token);
+        (await _fixture.ScalarAsync<int>(ConnectorMappingCountSql, Token)).Should().Be(1);
         var journal = await _fixture.JournalAsync(Token);
         journal.WriterPublicationAuthorized.Should().BeFalse();
         var publication = Observed(
@@ -152,6 +154,80 @@ public sealed class Given_SqlServer_Controller_Admission
         Observed(await _fixture.Kafka.InspectSchemaHistoryAsync(_fixture.Request, Token))
             .Should()
             .Be(CoreCdc.CdcSqlServerSchemaHistoryState.Valid);
+    }
+
+    [TestCase("absent-login", "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING")]
+    [TestCase("conflicting-sid", "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH")]
+    [TestCase("unsupported-user", "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH")]
+    [TestCase("elevated-login", "CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED")]
+    public async Task It_rejects_initial_connector_mapping_before_registration_or_publication(
+        string fault,
+        string diagnostic
+    )
+    {
+        (await _fixture.ScalarAsync<int>(ConnectorUserCountSql, Token)).Should().Be(0);
+        var sql = fault switch
+        {
+            "absent-login" => "DROP LOGIN dms_connector;",
+            "conflicting-sid" => "CREATE USER dms_connector WITHOUT LOGIN;",
+            "unsupported-user" => "CREATE ROLE dms_connector;",
+            "elevated-login" => "USE master; GRANT CONTROL SERVER TO dms_connector;",
+            _ => throw new ArgumentOutOfRangeException(nameof(fault)),
+        };
+        await _fixture.ExecuteAsync(sql, Token);
+        int before = await _fixture.ScalarAsync<int>(ConnectorUserCountSql, Token);
+        Observed(
+            await _fixture.Controllers.Activation.ActivateAsync(_fixture.Request, _fixture.Runtime, Token)
+        );
+        (await _fixture.Controllers.ProviderSetup.SetupAsync(_fixture.Request, _fixture.Runtime, Token))
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        _fixture.ProviderResults[^1].Diagnostics.Should().Contain(d => d.Code == diagnostic);
+        (await _fixture.ScalarAsync<int>(ConnectorUserCountSql, Token)).Should().Be(before);
+        var journal = await _fixture.JournalAsync(Token);
+        journal.WriterPublicationAuthorized.Should().BeFalse();
+        journal.Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.RegisterConnector);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_never_repairs_connector_mapping_after_durable_provider_completion(
+        bool conflictingSid
+    )
+    {
+        Observed(
+            await _fixture.Controllers.Activation.ActivateAsync(_fixture.Request, _fixture.Runtime, Token)
+        );
+        Observed(
+            await _fixture.Controllers.ProviderSetup.SetupAsync(_fixture.Request, _fixture.Runtime, Token)
+        );
+        (await _fixture.ScalarAsync<int>(ConnectorMappingCountSql, Token)).Should().Be(1);
+        await _fixture.ExecuteAsync(
+            "DROP USER dms_connector;" + (conflictingSid ? " CREATE USER dms_connector WITHOUT LOGIN;" : ""),
+            Token
+        );
+        _fixture.ProviderModes.Clear();
+        await _fixture.ReopenRuntimeAsync(Token);
+        (await _fixture.Controllers.ProviderSetup.SetupAsync(_fixture.Request, _fixture.Runtime, Token))
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        _fixture.ProviderModes.Should().Equal(CdcProviderSetupMode.ValidateOnly);
+        _fixture
+            .ProviderResults[^1]
+            .Diagnostics.Should()
+            .Contain(d =>
+                d.Code
+                == (
+                    conflictingSid
+                        ? "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH"
+                        : "CDC_SQLSERVER_CONNECTOR_USER_MISSING"
+                )
+            );
+        (await _fixture.ScalarAsync<int>(ConnectorMappingCountSql, Token)).Should().Be(0);
+        (await _fixture.ScalarAsync<int>(ConnectorUserCountSql, Token)).Should().Be(conflictingSid ? 1 : 0);
+        var journal = await _fixture.JournalAsync(Token);
+        journal.WriterPublicationAuthorized.Should().BeFalse();
+        journal.Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.RegisterConnector);
     }
 
     [TestCase(CdcControllerBoundary.Binding, CdcControllerEdge.Before, "Disabled")]
@@ -1010,6 +1086,10 @@ public sealed class Given_SqlServer_Controller_Admission
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeFalse();
     }
 
+    private const string ConnectorUserCountSql =
+        "SELECT COUNT(*) FROM sys.database_principals WHERE name = N'dms_connector'";
+    private const string ConnectorMappingCountSql =
+        "SELECT COUNT(*) FROM sys.database_principals WHERE name = N'dms_connector' AND type = N'S' AND authentication_type = 1 AND sid = SUSER_SID(N'dms_connector')";
     private const string LifecycleSql = "SELECT ProjectionLifecycleState FROM dms.DocumentCacheState";
     private const string CaptureIdentitySql =
         "SELECT STRING_AGG(CONCAT(capture_instance, ':', object_id, ':', CONVERT(varchar(40), create_date, 126)), ',') WITHIN GROUP (ORDER BY capture_instance) FROM cdc.change_tables";

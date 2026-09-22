@@ -1285,8 +1285,19 @@ database-per-instance isolation model.
   Once provider completion is durable, even an initial-enable retry uses `ValidateOnly`:
   missing users and mapping mismatches fail validation and are never recreated or remapped.
   [DMS-1326](../../epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping)
-  owns implementation and qualification of this contract amendment; operator examples
-  must not claim it is shipped until that work passes.
+  owns implementation and qualification of this contract amendment. The provider checks
+  an enabled SQL login and an instance-authenticated SQL user with the same SID; it rejects
+  server role membership, ownership and elevated server grants before mapping, then reuses
+  the existing database effective-permission checks. Setup requires visibility of server
+  principal definitions (`VIEW ANY DEFINITION`, also implied by the setup administrator's
+  authority); unavailable metadata or insufficient `CREATE USER` authority fails closed.
+  Login/user identity rejection uses `CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING`,
+  `CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED`, `CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED`,
+  `CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH`, or (in validation-only mode)
+  `CDC_SQLSERVER_CONNECTOR_USER_MISSING`. Setup-authority failures use
+  `CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE`. These diagnostics never expose SIDs or credentials.
+  T29's [implementation evidence](../../../../cdc-documentation/cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
+  is separate from T03's operator examples and T17's public-snippet qualification.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.

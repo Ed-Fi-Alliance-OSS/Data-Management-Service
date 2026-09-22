@@ -82,9 +82,9 @@ redefining a recovery contract.
 
 ### SQL Server Initial Connector-User Mapping
 
-The public wrappers create a new database and proceed directly to CDC enablement, while
-the current provider requires an already existing database user. DMS-1326 resolves this
-gap by implementing the amended [SQL Server provider contract](../../design-docs/cdc/cdc-streaming.md#sql-server).
+The public wrappers create a new database and proceed directly to CDC enablement. The
+previous provider required an already existing database user. DMS-1326 resolves this
+gap through the amended [SQL Server provider contract](../../design-docs/cdc/cdc-streaming.md#sql-server).
 The deployment supplies the restricted login; initial provider setup maps its database
 user and performs the existing grant validation. The qualified examples use the same
 login/user name through `Cdc:DatabaseConnectorPrincipal` and the matching connector
