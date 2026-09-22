@@ -456,5 +456,22 @@ Feature: ClaimSets endpoints
                   }
                   """
              Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 200
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+              And the response body contains a non-empty authorization strategy override
              When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/resetAuthorizationStrategies" with no body
              Then it should respond with 200
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+              And the response body contains no non-empty authorization strategy overrides
