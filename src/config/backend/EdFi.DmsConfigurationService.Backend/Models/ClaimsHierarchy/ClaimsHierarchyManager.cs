@@ -9,6 +9,12 @@ namespace EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 
 public interface IClaimsHierarchyManager
 {
+    ClaimSetResourceActionStatus GetClaimSetResourceActionStatus(
+        string claimSetName,
+        string resourceClaimName,
+        string actionName,
+        List<Claim> claims
+    );
     void RemoveClaimSetFromHierarchy(string claimSetName, List<Claim> claims);
 
     void CloneClaimSetInHierarchy(string sourceClaimSetName, string targetClaimSetName, List<Claim> claims);
@@ -38,6 +44,13 @@ public interface IClaimsHierarchyManager
     );
 
     IReadOnlyList<string> ApplyImportedClaimSetToHierarchy(ClaimSetImportCommand command, List<Claim> claims);
+}
+
+public enum ClaimSetResourceActionStatus
+{
+    MissingAssociation,
+    Disabled,
+    Enabled,
 }
 
 public class ClaimsHierarchyManager : IClaimsHierarchyManager
@@ -187,6 +200,27 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         ];
 
         return true;
+    }
+
+    public ClaimSetResourceActionStatus GetClaimSetResourceActionStatus(
+        string claimSetName,
+        string resourceClaimName,
+        string actionName,
+        List<Claim> claims
+    )
+    {
+        Claim? claim = FindClaim(resourceClaimName, claims);
+        ClaimSet? claimSet = claim is null ? null : FindClaimSet(claim, claimSetName);
+        if (claimSet is null)
+        {
+            return ClaimSetResourceActionStatus.MissingAssociation;
+        }
+
+        return claimSet.Actions.Exists(action =>
+                action.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+            )
+            ? ClaimSetResourceActionStatus.Enabled
+            : ClaimSetResourceActionStatus.Disabled;
     }
 
     public bool ResetClaimSetResourceActionStrategies(

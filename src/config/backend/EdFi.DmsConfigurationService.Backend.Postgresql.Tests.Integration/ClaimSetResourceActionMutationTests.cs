@@ -229,7 +229,7 @@ public class ClaimSetResourceActionMutationTests
                 new ResourceClaimActionMutationCommand(claimSetId, StudentResourceClaimId, ["Create"])
             );
 
-            result.Should().BeOfType<ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound>();
+            result.Should().Be(new ClaimSetResourceActionMutationResult.FailureInvalidAction("Create"));
             (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
             (await Repository.Export(claimSetId)).Should().BeOfType<ClaimSetExportResult.Success>();
             ((ClaimSetExportResult.Success)await Repository.Export(claimSetId))

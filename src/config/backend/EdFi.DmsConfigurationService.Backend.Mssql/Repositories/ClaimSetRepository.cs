@@ -1117,15 +1117,23 @@ public class ClaimSetRepository(
             command.ClaimSetId,
             command.ResourceClaimId,
             (claimSetName, resourceClaimName, claims) =>
-                claimsHierarchyManager.OverrideClaimSetResourceActionStrategies(
+                claimsHierarchyManager.GetClaimSetResourceActionStatus(
                     claimSetName,
                     resourceClaimName,
                     actionName,
-                    authorizationStrategyNames,
                     claims
-                )
-                    ? new ClaimSetResourceActionMutationResult.Success()
-                    : new ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound()
+                ) switch
+                {
+                    ClaimSetResourceActionStatus.Enabled when claimsHierarchyManager.OverrideClaimSetResourceActionStrategies(
+                        claimSetName,
+                        resourceClaimName,
+                        actionName,
+                        authorizationStrategyNames,
+                        claims
+                    ) => new ClaimSetResourceActionMutationResult.Success(),
+                    ClaimSetResourceActionStatus.Disabled => new ClaimSetResourceActionMutationResult.FailureInvalidAction(actionName),
+                    _ => new ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound(),
+                }
         );
     }
 
