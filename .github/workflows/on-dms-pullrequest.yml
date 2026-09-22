@@ -264,6 +264,7 @@ jobs:
             "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
             "eng/ci/tests/DmsPrereleaseImageTags.Tests.ps1",
             "eng/ci/tests/StockImagePinReadiness.Tests.ps1",
+            "eng/ci/tests/StockImageProofWorkflow.Tests.ps1",
             "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
