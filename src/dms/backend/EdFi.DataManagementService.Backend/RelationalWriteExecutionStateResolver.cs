@@ -57,7 +57,24 @@ internal sealed class RelationalWriteExecutionStateResolver(
     /// emission — which happens before the target is observed — cannot drift from the resolved
     /// request's decision.
     /// </summary>
-    public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(
+    /// <summary>
+    /// The evaluation before the target is known. A POST whose branches differ defers when either branch
+    /// would, so work planned ahead of the target (the hydrated descriptor projection) covers both; the
+    /// executor's own decision is made from the selected branch once the target is resolved.
+    /// </summary>
+    public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(RelationalWriteExecutorInput input)
+    {
+        var evaluation = GetUnresolvedEtagPreconditionEvaluation(input);
+
+        return
+            evaluation is EtagPreconditionEvaluation.BeforeProposedAuthorization
+            && input.PostTargetAuthorizationBundles?.CreateNew
+                is PostBranchAuthorization.Authorized createNewBranch
+            ? GetUnresolvedEtagPreconditionEvaluation(input.WithPostBranchInputs(createNewBranch.Inputs))
+            : evaluation;
+    }
+
+    private static EtagPreconditionEvaluation GetUnresolvedEtagPreconditionEvaluation(
         RelationalWriteExecutorInput input
     ) =>
         GetEtagPreconditionEvaluation(

@@ -144,6 +144,298 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
+    public async Task It_returns_the_update_branch_result_right_after_capturing_an_existing_target()
+    {
+        var updateImmediate = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Immediate(updateImmediate)
+        );
+        var adapterFactory = new TestReferenceResolverAdapterFactory
+        {
+            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+
+        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+
+        resolution.Outcome.Should().BeNull();
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("current-state-hydration");
+    }
+
+    [Test]
+    public async Task It_returns_the_create_branch_result_right_after_capturing_no_target()
+    {
+        var createImmediate = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(createImmediate),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        );
+        var adapterFactory = new TestReferenceResolverAdapterFactory
+        {
+            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+
+        resolution.Outcome.Should().BeNull();
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create));
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_applies_the_create_branch_authorization_when_no_target_is_captured()
+    {
+        var createNamespace = CreateStoredNamespaceAuthorization();
+        var updateNamespace = CreateStoredNamespaceAuthorization();
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = createNamespace,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = updateNamespace,
+                }
+            )
+        );
+        var session = new ScriptedWriteSession(CreateCompositeReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.ProposedNamespaceAuthorization.Should()
+            .BeSameAs(createNamespace);
+    }
+
+    [Test]
+    public async Task It_applies_the_update_branch_authorization_when_an_existing_target_is_captured()
+    {
+        var createNamespace = CreateStoredNamespaceAuthorization();
+        var updateNamespace = CreateStoredNamespaceAuthorization();
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = createNamespace,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = updateNamespace,
+                }
+            )
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var session = new ScriptedWriteSession(CreateCompositeReader(target));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.ProposedNamespaceAuthorization.Should()
+            .BeSameAs(updateNamespace);
+    }
+
+    [Test]
+    public async Task It_runs_the_update_branch_stored_check_against_a_captured_existing_target()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+                )
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        var extractor = new TestProviderFailureExtractor(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            payload
+        );
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            new FakeDbException("namespace denial")
+        );
+
+        var resolution = await CreateSut(providerFailureExtractor: extractor).ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContain("AUTH1");
+        session.Commands[1].CommandText.Should().Contain("AUTH1");
+    }
+
+    [Test]
+    public async Task It_co_batches_the_capture_when_both_branches_are_authorized()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        );
+        var session = new ScriptedWriteSession(
+            CreateCompositeReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_attributes_a_co_batched_stored_security_configuration_failure_on_a_post_to_update()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
+
+        // Index 4 addresses no planned check, so the stored check's payload is a configuration defect.
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(4))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        resolution.ImmediateResult!.SelectedPostAction.Should().Be(UpsertTargetAction.Update);
+    }
+
+    [Test]
+    public async Task It_attributes_a_post_branch_security_configuration_result_to_the_selected_action()
+    {
+        var securityConfiguration = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureSecurityConfiguration(["misconfigured"])
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(securityConfiguration),
+            new PostBranchAuthorization.Immediate(securityConfiguration)
+        );
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult!.SelectedPostAction.Should().Be(UpsertTargetAction.Create);
+    }
+
+    [Test]
+    public async Task It_leaves_a_post_denial_unattributed()
+    {
+        var denial = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(denial),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        );
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeSameAs(denial);
+    }
+
+    [Test]
+    public void It_defers_the_unresolved_precondition_when_only_the_create_branch_authorizes_proposed_values()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+                }
+            ),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"etag\""),
+        };
+
+        RelationalWriteExecutionStateResolver
+            .GetEtagPreconditionEvaluation(input)
+            .Should()
+            .Be(EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization);
+    }
+
+    [Test]
+    public void It_evaluates_the_unresolved_precondition_before_authorization_when_neither_branch_authorizes()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"etag\""),
+        };
+
+        RelationalWriteExecutionStateResolver
+            .GetEtagPreconditionEvaluation(input)
+            .Should()
+            .Be(EtagPreconditionEvaluation.BeforeProposedAuthorization);
+    }
+
+    private static RelationalWriteExecutorInput CreatePostInputWithBranches(
+        PostBranchAuthorization createNew,
+        PostBranchAuthorization existingDocument,
+        bool includeReadPlan = true
+    )
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan) with
+        {
+            PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(createNew, existingDocument),
+        };
+
+        // As the repository preflight hands it over: the input's own members are the existing-document
+        // branch's, which is what any check emitted before the target is known must use.
+        return existingDocument is PostBranchAuthorization.Authorized authorized
+            ? input.WithPostBranchInputs(authorized.Inputs)
+            : input;
+    }
+
+    private static PostBranchAuthorizationInputs EmptyBranchInputs() =>
+        new(null, null, null, null, null, null, null, null);
+
+    [Test]
     public async Task It_keeps_stored_authorization_and_hydration_vacuous_after_an_absent_capture()
     {
         var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
@@ -1052,7 +1344,10 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         var resolution = await CreateSut().ResolveAsync(input, session);
 
-        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        // The owed failure is the existing-document branch's configuration, so it is attributed to Update.
+        resolution
+            .ImmediateResult.Should()
+            .Be(deferred with { SelectedPostAction = UpsertTargetAction.Update });
         resolution.Outcome.Should().BeNull();
         // Capture, then the namespace segment, then the deferred failure in the ownership slot: no
         // relationship, reference or hydration command follows it.

@@ -184,10 +184,6 @@ public sealed class RelationalDocumentStoreRepository(
                 .ConfigureAwait(false);
         }
 
-        var postAuthorizationStrategyEvaluators = PostActionPolicySupport.RequireSharedPolicy(
-            upsertRequest.ActionAuthorization
-        );
-
         var profileWriteContext = upsertRequest.BackendProfileWriteContext;
         var selectedBody = profileWriteContext?.Request.WritableRequestBody ?? upsertRequest.EdfiDoc;
 
@@ -227,6 +223,15 @@ public sealed class RelationalDocumentStoreRepository(
                 static executorResult =>
                     executorResult switch
                     {
+                        // A security-configuration failure decided after the target was observed names the
+                        // action whose configuration failed, so it is logged against that action.
+                        RelationalWriteExecutorResult.Upsert(
+                            UpsertResult.UpsertFailureSecurityConfiguration securityConfigurationFailure
+                        ) when executorResult.SelectedPostAction is { } selectedPostAction =>
+                            securityConfigurationFailure with
+                            {
+                                TargetAction = selectedPostAction,
+                            },
                         RelationalWriteExecutorResult.Upsert(var result) => result,
                         RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
                             "Relational write executor returned an update result for a POST request."
@@ -237,9 +242,9 @@ public sealed class RelationalDocumentStoreRepository(
                     },
                 profileWriteContext,
                 writePlan =>
-                    AuthorizePostRelationshipIfRequired(
+                    AuthorizePostActionPolicies(
+                        upsertRequest.ActionAuthorization,
                         upsertRequest.AuthorizationContext,
-                        postAuthorizationStrategyEvaluators,
                         mappingSet,
                         resource,
                         writePlan
@@ -2973,6 +2978,118 @@ public sealed class RelationalDocumentStoreRepository(
         public sealed record Complete(QueryResult Result) : QueryAuthorizationResolution;
     }
 
+    /// <summary>
+    /// Plans a POST's authorization for both branches it may take. When Create and Update carry the same
+    /// strategies one POST preflight serves both, exactly as a single action list always has. Otherwise each
+    /// permitted action runs that same POST preflight over its own list, and the target the write session
+    /// observes selects which branch applies.
+    /// </summary>
+    private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostActionPolicies(
+        UpsertActionAuthorization actionAuthorization,
+        RelationalAuthorizationContext authorizationContext,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan
+    )
+    {
+        ArgumentNullException.ThrowIfNull(actionAuthorization);
+
+        if (actionAuthorization.TryGetSharedPolicy(out var sharedEvaluators))
+        {
+            var sharedPreflight = AuthorizePostRelationshipIfRequired(
+                authorizationContext,
+                sharedEvaluators,
+                mappingSet,
+                resource,
+                writePlan
+            );
+
+            // A security-configuration terminal is logged against the action whose configuration failed, and
+            // only the target says which action that is. The one planned terminal is therefore carried to the
+            // target selection for either branch rather than returned before any session opens.
+            if (
+                sharedPreflight is WriteGuardRailPreflightResult<UpsertResult>.Stop
+                {
+                    Result: UpsertResult.UpsertFailureSecurityConfiguration,
+                } securityConfigurationStop
+            )
+            {
+                var immediate = ToImmediateBranch(securityConfigurationStop);
+                return WriteGuardRailPreflightResult<UpsertResult>.Continue.ForPostBranches(
+                    new PostTargetAuthorizationBundles(immediate, immediate)
+                );
+            }
+
+            return sharedPreflight;
+        }
+
+        return WriteGuardRailPreflightResult<UpsertResult>.Continue.ForPostBranches(
+            new PostTargetAuthorizationBundles(
+                PlanPostBranch(
+                    actionAuthorization.Create,
+                    UpsertTargetAction.Create,
+                    authorizationContext,
+                    mappingSet,
+                    resource,
+                    writePlan
+                ),
+                PlanPostBranch(
+                    actionAuthorization.Update,
+                    UpsertTargetAction.Update,
+                    authorizationContext,
+                    mappingSet,
+                    resource,
+                    writePlan
+                )
+            )
+        );
+    }
+
+    private PostBranchAuthorization PlanPostBranch(
+        UpsertActionPolicy policy,
+        UpsertTargetAction action,
+        RelationalAuthorizationContext authorizationContext,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan
+    )
+    {
+        if (policy is not UpsertActionPolicy.Permitted permitted)
+        {
+            return new PostBranchAuthorization.Immediate(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureTargetActionNotPermitted(action)
+                )
+            );
+        }
+
+        return AuthorizePostRelationshipIfRequired(
+            authorizationContext,
+            permitted.Evaluators,
+            mappingSet,
+            resource,
+            writePlan
+        ) switch
+        {
+            WriteGuardRailPreflightResult<UpsertResult>.Continue continueResult =>
+                new PostBranchAuthorization.Authorized(continueResult.ToPostBranchInputs()),
+            WriteGuardRailPreflightResult<UpsertResult>.Stop stop => ToImmediateBranch(stop),
+            var unsupported => throw new InvalidOperationException(
+                $"Unsupported relational write preflight result '{unsupported.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static PostBranchAuthorization.Immediate ToImmediateBranch(
+        WriteGuardRailPreflightResult<UpsertResult>.Stop stop
+    ) =>
+        new(
+            new RelationalWriteExecutorResult.Upsert(stop.Result)
+            {
+                CustomViewChecksToValidateAfterSession = stop.CustomViewChecksToValidate,
+            }
+        );
+
     private WriteGuardRailPreflightResult<UpsertResult> AuthorizePostRelationshipIfRequired(
         RelationalAuthorizationContext authorizationContext,
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
@@ -3881,6 +3998,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalCustomViewAuthorization? customViewAuthorization = null;
         RelationalOwnershipAuthorization? storedOwnershipAuthorization = null;
         RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null;
+        PostTargetAuthorizationBundles? postTargetAuthorizationBundles = null;
 
         if (preflight is not null)
         {
@@ -3898,6 +4016,7 @@ public sealed class RelationalDocumentStoreRepository(
                     storedOwnershipAuthorization = continueResult.StoredOwnershipAuthorization;
                     deferredStoredOwnershipFailureResult =
                         continueResult.DeferredStoredOwnershipFailureResult;
+                    postTargetAuthorizationBundles = continueResult.PostTargetAuthorizationBundles;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
@@ -3966,9 +4085,24 @@ public sealed class RelationalDocumentStoreRepository(
                         CreatorOwnershipTokenId = creatorOwnershipTokenId,
                         StoredOwnershipAuthorization = storedOwnershipAuthorization,
                         DeferredStoredOwnershipFailureResult = deferredStoredOwnershipFailureResult,
+                        PostTargetAuthorizationBundles = postTargetAuthorizationBundles,
                     }
                 )
                 .ConfigureAwait(false);
+
+            // A POST branch owed a planning failure: the views configured ahead of it are validated now that
+            // the session is closed, as a preflight terminal's are, so a broken view keeps its own failure.
+            //
+            // CancellationToken.None for the same reason as the preflight terminal above.
+            if (executorResult.CustomViewChecksToValidateAfterSession.Count > 0)
+            {
+                await ValidateSingleRecordCustomViewsAsync(
+                        mappingSet,
+                        executorResult.CustomViewChecksToValidateAfterSession,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
 
             if (
                 executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
@@ -4075,6 +4209,48 @@ public sealed class RelationalDocumentStoreRepository(
             public RelationalCustomViewAuthorization? CustomViewAuthorization { get; }
 
             public PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; }
+
+            /// <summary>
+            /// The per-branch authorization of a POST whose branches differ, or <see langword="null"/>. When
+            /// set, this result's own members are the ExistingDocument branch's inputs, or empty when that
+            /// branch owes an immediate result.
+            /// </summary>
+            public PostTargetAuthorizationBundles? PostTargetAuthorizationBundles { get; private init; }
+
+            public static Continue ForPostBranches(PostTargetAuthorizationBundles bundles)
+            {
+                ArgumentNullException.ThrowIfNull(bundles);
+
+                var existing = bundles.ExistingDocument is PostBranchAuthorization.Authorized authorized
+                    ? authorized.Inputs
+                    : null;
+
+                return new Continue(
+                    existing?.StoredRelationshipAuthorization,
+                    existing?.ProposedRelationshipAuthorization,
+                    existing?.StoredNamespaceAuthorization,
+                    existing?.ProposedNamespaceAuthorization,
+                    existing?.PostRelationshipAuthorizationPlans,
+                    existing?.CustomViewAuthorization,
+                    existing?.StoredOwnershipAuthorization,
+                    existing?.DeferredStoredOwnershipFailureResult
+                )
+                {
+                    PostTargetAuthorizationBundles = bundles,
+                };
+            }
+
+            public PostBranchAuthorizationInputs ToPostBranchInputs() =>
+                new(
+                    StoredRelationshipAuthorization,
+                    ProposedRelationshipAuthorization,
+                    StoredNamespaceAuthorization,
+                    ProposedNamespaceAuthorization,
+                    PostRelationshipAuthorizationPlans,
+                    CustomViewAuthorization,
+                    StoredOwnershipAuthorization,
+                    DeferredStoredOwnershipFailureResult
+                );
 
             private static void ValidateStoredRelationshipAuthorization(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization

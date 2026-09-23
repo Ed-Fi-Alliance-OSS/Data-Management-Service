@@ -117,13 +117,31 @@ internal sealed class DefaultRelationalWriteExecutor(
         logger
     );
 
-    public Task<RelationalWriteExecutorResult> ExecuteAsync(
+    public async Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorInput input,
         CancellationToken cancellationToken = default
-    ) => ExecuteAsyncInternal(input, cancellationToken);
+    )
+    {
+        var observation = new PostTargetObservation();
+        var result = await ExecuteAsyncInternal(input, observation, cancellationToken).ConfigureAwait(false);
+
+        // A security-configuration failure a POST reaches after the first phase resolved its target is
+        // attributed to the action that target selected; one the first phase returned already is.
+        return PostActionAttribution.Apply(result, observation.SelectedPostAction);
+    }
+
+    /// <summary>
+    /// What the attempt observed about its POST target, recorded as the attempt proceeds so the result can be
+    /// attributed on every return path.
+    /// </summary>
+    private sealed class PostTargetObservation
+    {
+        public UpsertTargetAction? SelectedPostAction { get; set; }
+    }
 
     private async Task<RelationalWriteExecutorResult> ExecuteAsyncInternal(
         RelationalWriteExecutorInput input,
+        PostTargetObservation observation,
         CancellationToken cancellationToken
     )
     {
@@ -193,6 +211,10 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var outcome = firstPhase.Outcome!;
             executionRequest = outcome.ExecutionRequest;
+            observation.SelectedPostAction = CompositeRelationalWriteFirstPhase.SelectPostAction(
+                input,
+                executionRequest.TargetContext
+            );
             var request = executionRequest;
             var currentState = outcome.CurrentState;
             var lockedTarget = outcome.LockedTarget;

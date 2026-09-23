@@ -148,7 +148,22 @@ public record UpsertResult
     public record UpsertFailureSecurityConfiguration(
         string[] Errors,
         SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
-    ) : UpsertResult();
+    ) : UpsertResult()
+    {
+        /// <summary>
+        /// The action whose configuration failed, when the POST observed its target first; null when the
+        /// failure was decided before any target was observed.
+        /// </summary>
+        public UpsertTargetAction? TargetAction { get; init; }
+    }
+
+    /// <summary>
+    /// A failure because the API client's claim set does not permit the action the POST resolved to: Create
+    /// for a new document, Update for the document the natural key identifies. Core renders it from the
+    /// claim-set evidence it holds for that action.
+    /// </summary>
+    /// <param name="Action">The action the observed target required</param>
+    public record UpsertFailureTargetActionNotPermitted(UpsertTargetAction Action) : UpsertResult();
 
     /// <summary>
     /// A failure because the request body violated a write-path validation guard rail

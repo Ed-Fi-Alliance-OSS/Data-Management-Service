@@ -131,12 +131,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorInput>(0)!;
                 _capturedExecutorRequests.Add(_capturedExecutorRequest);
             })
-            .ReturnsLazily(() =>
-                Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.UnknownFailure("Unexpected write-executor test fallback.")
+            .ReturnsLazily(
+                (RelationalWriteExecutorInput input, CancellationToken _) =>
+                    Task.FromResult(
+                        // A POST branch owed right after capture is what the real first phase returns for a
+                        // create target, the one this fake stands in for.
+                        input.PostTargetAuthorizationBundles?.CreateNew
+                            is PostBranchAuthorization.Immediate immediate
+                            ? PostActionAttribution.Apply(immediate.Result, UpsertTargetAction.Create)
+                            : new RelationalWriteExecutorResult.Upsert(
+                                new UpsertResult.UnknownFailure("Unexpected write-executor test fallback.")
+                            )
                     )
-                )
             );
         A.CallTo(() =>
                 _descriptorReadHandler.HandleGetByIdAsync(
@@ -8464,7 +8470,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
             .And.Contain("anchor column")
             .And.NotContain("EducationOrganization subject");
-        _capturedExecutorRequests.Should().BeEmpty();
+        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
     }
 
     [Test]
@@ -10271,7 +10277,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 diagnostic.ProviderOrPlannerFailureKind
                 == AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
             );
-        _capturedExecutorRequests.Should().BeEmpty();
+        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
     }
 
     /// <summary>
@@ -10693,9 +10699,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Contain("Could not find authorization strategy implementations")
             .And.Contain("CustomAuthorizationStrategy");
-        _capturedExecutorRequests.Should().BeEmpty();
-        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
@@ -11550,7 +11554,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Contain("Ed-Fi.School")
             .And.Contain("NamespaceBased")
             .And.Contain("no Namespace securable element resolves to a root table column");
-        _capturedExecutorRequests.Should().BeEmpty();
+        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
     }
 
     [Test]
@@ -11582,7 +11586,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Contain("2000 namespace prefixes")
             .And.Contain("exceeds the SQL Server limit");
-        _capturedExecutorRequests.Should().BeEmpty();
+        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
     }
 
     [Test]
@@ -12438,35 +12442,266 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_fails_closed_before_any_write_for_a_resource_post_whose_create_and_update_policies_differ()
+    public async Task It_plans_one_shared_post_preflight_when_create_and_update_are_equivalent()
+    {
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted(RelationshipAndOwnershipEvaluators()),
+                    new UpsertActionPolicy.Permitted(RelationshipAndOwnershipEvaluators())
+                )
+            )
+        );
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.PostTargetAuthorizationBundles.Should().BeNull();
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+    }
+
+    [Test]
+    public async Task It_plans_each_branch_when_the_same_strategies_are_configured_in_a_different_order()
+    {
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted(RelationshipAndOwnershipEvaluators()),
+                    new UpsertActionPolicy.Permitted([.. RelationshipAndOwnershipEvaluators().Reverse()])
+                )
+            )
+        );
+
+        _capturedExecutorRequests
+            .Should()
+            .ContainSingle()
+            .Which.PostTargetAuthorizationBundles.Should()
+            .NotBeNull();
+    }
+
+    [Test]
+    public async Task It_plans_each_branch_when_one_action_repeats_a_strategy()
+    {
+        var relationship = CreateAuthorizationStrategyEvaluator(
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+        );
+
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted([relationship, relationship]),
+                    new UpsertActionPolicy.Permitted([relationship])
+                )
+            )
+        );
+
+        _capturedExecutorRequests
+            .Should()
+            .ContainSingle()
+            .Which.PostTargetAuthorizationBundles.Should()
+            .NotBeNull();
+    }
+
+    /// <summary>
+    /// Each branch is exactly the POST planning its own action list gets when it is the only list: the
+    /// update branch matches a POST planned with the Update strategies alone, the create branch one planned
+    /// with the Create strategies alone.
+    /// </summary>
+    [Test]
+    public async Task It_plans_each_branch_exactly_as_a_post_with_that_actions_strategies_alone()
+    {
+        var createEvaluators = NoFurtherAuthorizationRequiredEvaluators();
+        var updateEvaluators = RelationshipAndOwnershipEvaluators();
+
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate(updateEvaluators)
+            )
+        );
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate(createEvaluators)
+            )
+        );
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted(createEvaluators),
+                    new UpsertActionPolicy.Permitted(updateEvaluators)
+                )
+            )
+        );
+
+        _capturedExecutorRequests.Should().HaveCount(3);
+        var updateAlone = _capturedExecutorRequests[0];
+        var createAlone = _capturedExecutorRequests[1];
+        var branched = _capturedExecutorRequests[2];
+        var bundles = branched.PostTargetAuthorizationBundles!;
+
+        bundles
+            .ExistingDocument.Should()
+            .BeOfType<PostBranchAuthorization.Authorized>()
+            .Which.Inputs.Should()
+            .BeEquivalentTo(ToPostBranchInputs(updateAlone));
+        bundles
+            .CreateNew.Should()
+            .BeOfType<PostBranchAuthorization.Authorized>()
+            .Which.Inputs.Should()
+            .BeEquivalentTo(ToPostBranchInputs(createAlone));
+        // Checks emitted before the target is known are the update branch's, as for the list alone.
+        ToPostBranchInputs(branched).Should().BeEquivalentTo(ToPostBranchInputs(updateAlone));
+        updateAlone.StoredOwnershipAuthorization.Should().NotBeNull();
+        createAlone.StoredOwnershipAuthorization.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_owes_the_target_action_denial_for_a_branch_whose_action_is_not_permitted()
+    {
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted(NoFurtherAuthorizationRequiredEvaluators()),
+                    UpsertActionPolicy.NotPermitted.Instance
+                )
+            )
+        );
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput
+            .PostTargetAuthorizationBundles!.ExistingDocument.Should()
+            .BeOfType<PostBranchAuthorization.Immediate>()
+            .Which.Result.Should()
+            .Be(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+                )
+            );
+        executorInput
+            .PostTargetAuthorizationBundles.CreateNew.Should()
+            .BeOfType<PostBranchAuthorization.Authorized>();
+        // Nothing for the refused update branch reaches the checks emitted before the target is known.
+        ToPostBranchInputs(executorInput)
+            .Should()
+            .BeEquivalentTo(
+                new PostBranchAuthorizationInputs(null, null, null, null, null, null, null, null)
+            );
+    }
+
+    [Test]
+    public async Task It_owes_a_branch_planning_failure_only_to_that_branch()
+    {
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted(NoFurtherAuthorizationRequiredEvaluators()),
+                    new UpsertActionPolicy.Permitted([
+                        CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                    ])
+                ),
+                CreateSupportedMappingSet(_schoolResourceInfo)
+            )
+        );
+
+        var bundles = _capturedExecutorRequests
+            .Should()
+            .ContainSingle()
+            .Subject.PostTargetAuthorizationBundles!;
+        bundles
+            .ExistingDocument.Should()
+            .BeOfType<PostBranchAuthorization.Immediate>()
+            .Which.Result.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        bundles.CreateNew.Should().BeOfType<PostBranchAuthorization.Authorized>();
+    }
+
+    [Test]
+    public async Task It_attributes_a_shared_security_configuration_terminal_to_the_selected_action()
+    {
+        var result = await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+                ]),
+                CreateSupportedMappingSet(_schoolResourceInfo)
+            )
+        );
+
+        // The fixture's executor stands in for a capture that observed no target, so Create is selected.
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.TargetAction.Should()
+            .Be(UpsertTargetAction.Create);
+    }
+
+    private static IUpsertRequest CreateSchoolPostWithActionAuthorization(
+        UpsertActionAuthorization actionAuthorization,
+        MappingSet? mappingSet = null
+    )
     {
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
-            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+            .Returns(
+                mappingSet ?? CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo)
+            );
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Roosevelt High"));
-        A.CallTo(() => upsertRequest.ActionAuthorization)
-            .Returns(
-                new UpsertActionAuthorization(
-                    new UpsertActionPolicy.Permitted([
-                        CreateAuthorizationStrategyEvaluator(
-                            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
-                        ),
-                    ]),
-                    new UpsertActionPolicy.Permitted([
-                        CreateAuthorizationStrategyEvaluator(
-                            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
-                        ),
-                    ])
-                )
-            );
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-action-policies"));
+        A.CallTo(() => upsertRequest.ActionAuthorization).Returns(actionAuthorization);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901], [], null, [11]));
+        return upsertRequest;
+    }
 
-        var act = () => _sut.UpsertDocument(upsertRequest);
+    private static AuthorizationStrategyEvaluator[] RelationshipAndOwnershipEvaluators() =>
+        [
+            CreateAuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+            ),
+            CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+        ];
 
-        await act.Should().ThrowAsync<NotSupportedException>();
-        _capturedExecutorRequests.Should().BeEmpty();
+    private static AuthorizationStrategyEvaluator[] NoFurtherAuthorizationRequiredEvaluators() =>
+        [
+            CreateAuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+            ),
+        ];
+
+    private static PostBranchAuthorizationInputs ToPostBranchInputs(RelationalWriteExecutorInput input) =>
+        new(
+            input.StoredRelationshipAuthorization,
+            input.ProposedRelationshipAuthorization,
+            input.StoredNamespaceAuthorization,
+            input.ProposedNamespaceAuthorization,
+            input.PostRelationshipAuthorizationPlans,
+            input.CustomViewAuthorization,
+            input.StoredOwnershipAuthorization,
+            input.DeferredStoredOwnershipFailureResult
+        );
+
+    /// <summary>
+    /// A security-configuration terminal from the one POST preflight both branches share is logged against
+    /// the action whose configuration failed, so it reaches the write session as the owed result of either
+    /// branch rather than returning before the target is observed.
+    /// </summary>
+    private void AssertSecurityConfigurationTerminalDeferredToTargetSelection()
+    {
+        var bundles = _capturedExecutorRequests
+            .Should()
+            .ContainSingle()
+            .Subject.PostTargetAuthorizationBundles.Should()
+            .NotBeNull()
+            .And.Subject.As<PostTargetAuthorizationBundles>();
+        var createNew = bundles.CreateNew.Should().BeOfType<PostBranchAuthorization.Immediate>().Subject;
+        bundles.ExistingDocument.Should().BeSameAs(createNew);
+        createNew
+            .Result.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
     }
 
     [Test]
