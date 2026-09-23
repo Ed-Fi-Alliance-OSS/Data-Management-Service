@@ -15,6 +15,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1374,6 +1375,143 @@ public class ClaimSetTests : DatabaseTest
             var testNames = names.Where(n => n.Contains("-ClaimSet")).ToList();
             testNames.Should().HaveCount(3);
             testNames.Should().ContainInOrder("Apple-ClaimSet", "Mango-ClaimSet", "Zebra-ClaimSet");
+        }
+    }
+
+    /// <summary>
+    /// Claim set names stay unique across the whole deployment, not per tenant (DMS-1530 Resolved
+    /// Decision 1): the claims hierarchy keys every claim set's permissions by name alone, so two
+    /// tenants holding the same name would share, overwrite and delete each other's permissions.
+    /// These tests fail loudly if the unique constraint is ever narrowed to a tenant.
+    /// </summary>
+    [TestFixture]
+    public class Given_claim_set_names_across_tenants : ClaimSetTests
+    {
+        private IClaimSetRepository _tenantARepository = null!;
+        private IClaimSetRepository _tenantBRepository = null!;
+        private string _tenantAClaimSetName = string.Empty;
+        private int _tenantBClaimSetId;
+        private string _tenantBClaimSetName = string.Empty;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await EnsureClaimsDataLoaded();
+
+            var tenantRepository = new TenantRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<TenantRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            _tenantARepository = CreateClaimSetRepository(await CreateTenantProvider(tenantRepository, "A"));
+            _tenantBRepository = CreateClaimSetRepository(await CreateTenantProvider(tenantRepository, "B"));
+
+            _tenantAClaimSetName = $"Tenant-A-ClaimSet-{Guid.NewGuid():N}";
+            await InsertClaimSet(_tenantARepository, _tenantAClaimSetName);
+
+            _tenantBClaimSetName = $"Tenant-B-ClaimSet-{Guid.NewGuid():N}";
+            _tenantBClaimSetId = await InsertClaimSet(_tenantBRepository, _tenantBClaimSetName);
+        }
+
+        private static async Task<TenantContextProvider> CreateTenantProvider(
+            TenantRepository tenantRepository,
+            string suffix
+        )
+        {
+            var tenantName = $"ClaimSetTenant{suffix}-{Guid.NewGuid()}";
+            var tenantResult = await tenantRepository.InsertTenant(
+                new TenantInsertCommand { Name = tenantName }
+            );
+            tenantResult.Should().BeOfType<TenantInsertResult.Success>();
+            return new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(
+                    ((TenantInsertResult.Success)tenantResult).Id,
+                    tenantName
+                ),
+            };
+        }
+
+        private static ClaimSetRepository CreateClaimSetRepository(
+            TenantContextProvider tenantContextProvider
+        ) =>
+            new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ClaimSetRepository>.Instance,
+                new ClaimsHierarchyRepository(
+                    MssqlTestConfiguration.DatabaseOptions,
+                    NullLogger<ClaimsHierarchyRepository>.Instance,
+                    new TestAuditContext()
+                ),
+                new ClaimsHierarchyManager(),
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+        private static async Task<int> InsertClaimSet(
+            IClaimSetRepository repository,
+            string name,
+            bool isSystemReserved = false
+        )
+        {
+            var result = await repository.InsertClaimSet(
+                new ClaimSetInsertCommand { Name = name, IsSystemReserved = isSystemReserved }
+            );
+            result.Should().BeOfType<ClaimSetInsertResult.Success>();
+            return ((ClaimSetInsertResult.Success)result).Id;
+        }
+
+        private static async Task<int> CountClaimSetsNamed(string name) =>
+            (await GetClaimSetNamesAsync()).Count(claimSetName => claimSetName == name);
+
+        [Test]
+        public async Task It_should_reject_another_tenants_claim_set_name_on_insert()
+        {
+            var result = await _tenantBRepository.InsertClaimSet(
+                new ClaimSetInsertCommand { Name = _tenantAClaimSetName }
+            );
+
+            result.Should().BeOfType<ClaimSetInsertResult.FailureDuplicateClaimSetName>();
+            (await CountClaimSetsNamed(_tenantAClaimSetName)).Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_should_reject_another_tenants_claim_set_name_on_copy()
+        {
+            var result = await _tenantBRepository.Copy(
+                new ClaimSetCopyCommand { OriginalId = _tenantBClaimSetId, Name = _tenantAClaimSetName }
+            );
+
+            result.Should().BeOfType<ClaimSetCopyResult.FailureDuplicateClaimSetName>();
+            (await CountClaimSetsNamed(_tenantAClaimSetName)).Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_should_reject_another_tenants_claim_set_name_on_rename()
+        {
+            var result = await _tenantBRepository.UpdateClaimSet(
+                new ClaimSetUpdateCommand { Id = _tenantBClaimSetId, Name = _tenantAClaimSetName }
+            );
+
+            result.Should().BeOfType<ClaimSetUpdateResult.FailureDuplicateClaimSetName>();
+            var unchanged = await _tenantBRepository.GetClaimSet(_tenantBClaimSetId);
+            unchanged.Should().BeOfType<ClaimSetGetResult.Success>();
+            ((ClaimSetGetResult.Success)unchanged).ClaimSetResponse.Name.Should().Be(_tenantBClaimSetName);
+        }
+
+        [Test]
+        public async Task It_should_reject_a_system_reserved_claim_set_name_from_a_tenant()
+        {
+            string reservedName = $"System-Reserved-ClaimSet-{Guid.NewGuid():N}";
+            await InsertClaimSet(_repository, reservedName, isSystemReserved: true);
+
+            var result = await _tenantARepository.InsertClaimSet(
+                new ClaimSetInsertCommand { Name = reservedName }
+            );
+
+            result.Should().BeOfType<ClaimSetInsertResult.FailureDuplicateClaimSetName>();
+            (await CountClaimSetsNamed(reservedName)).Should().Be(1);
         }
     }
 }
