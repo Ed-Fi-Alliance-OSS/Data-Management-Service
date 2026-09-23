@@ -265,6 +265,7 @@ jobs:
             "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
+            "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",

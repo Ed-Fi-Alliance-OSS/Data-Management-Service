@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Adds approved, ready pull requests to the merge queue overnight so merge-queue CI does not compete
+# with in-progress pull requests for runners during the day. Urgent pull requests are still added
+# by hand. A pull request removed from the queue (for example by a flaky test) stays eligible and
+# is retried by the next run. The selection rules live in eng/ci/Invoke-ScheduledMergeQueueEnqueue.ps1.
+
+name: Scheduled Merge Queue Enqueue
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 8pm CST (9pm CDT)
+    - cron: '0 5 * * *' # 11pm CST (12am CDT)
+    - cron: '0 8 * * *' # 2am CST (3am CDT)
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List what would be enqueued without enqueueing or commenting
+        type: boolean
+        default: true
+
+# Only for the checkout. The script authenticates with a PAT instead: events created with the
+# workflow token do not start other workflows, and an enqueue has to start the merge_group CI.
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-merge-queue-enqueue
+  cancel-in-progress: false
+
+jobs:
+  enqueue:
+    name: Enqueue approved pull requests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Enqueue eligible pull requests
+        env:
+          GH_TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
+          DRY_RUN: ${{ inputs.dry-run == true }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: ./eng/ci/Invoke-ScheduledMergeQueueEnqueue.ps1 -DryRun:($env:DRY_RUN -eq 'true')
