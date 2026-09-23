@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -11,6 +12,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
@@ -1183,6 +1185,10 @@ public class ApplicationTests : DatabaseTest
         private int _tenantBApplicationId;
         private string _tenantBClientId = string.Empty;
         private int _tenantADataStoreId;
+        private TenantContextProvider _tenantAProvider = null!;
+        private TenantContextProvider _tenantBProvider = null!;
+        private int _tenantAProfileId;
+        private int _tenantBProfileId;
 
         [SetUp]
         public async Task Setup()
@@ -1193,14 +1199,14 @@ public class ApplicationTests : DatabaseTest
                 new TestAuditContext()
             );
 
-            var tenantAProvider = await CreateTenantProvider(tenantRepository, "A");
-            var tenantBProvider = await CreateTenantProvider(tenantRepository, "B");
+            _tenantAProvider = await CreateTenantProvider(tenantRepository, "A");
+            _tenantBProvider = await CreateTenantProvider(tenantRepository, "B");
 
-            _tenantARepository = CreateApplicationRepository(tenantAProvider);
-            _tenantBRepository = CreateApplicationRepository(tenantBProvider);
+            _tenantARepository = CreateApplicationRepository(_tenantAProvider);
+            _tenantBRepository = CreateApplicationRepository(_tenantBProvider);
 
-            _tenantAVendorId = await InsertVendor(tenantAProvider, "Tenant A Company");
-            _tenantBVendorId = await InsertVendor(tenantBProvider, "Tenant B Company");
+            _tenantAVendorId = await InsertVendor(_tenantAProvider, "Tenant A Company");
+            _tenantBVendorId = await InsertVendor(_tenantBProvider, "Tenant B Company");
 
             (_tenantAApplicationId, _) = await InsertApplication(
                 _tenantARepository,
@@ -1213,7 +1219,10 @@ public class ApplicationTests : DatabaseTest
                 "Tenant B Application"
             );
 
-            _tenantADataStoreId = await InsertDataStore(tenantAProvider, "Tenant A Data Store");
+            _tenantADataStoreId = await InsertDataStore(_tenantAProvider, "Tenant A Data Store");
+
+            _tenantAProfileId = await InsertProfile(_tenantAProvider, "Tenant A Profile");
+            _tenantBProfileId = await InsertProfile(_tenantBProvider, "Tenant B Profile");
         }
 
         private static async Task<TenantContextProvider> CreateTenantProvider(
@@ -1326,6 +1335,57 @@ public class ApplicationTests : DatabaseTest
             result.Should().BeOfType<DataStoreInsertResult.Success>();
             return ((DataStoreInsertResult.Success)result).Id;
         }
+
+        private static async Task<int> InsertProfile(TenantContextProvider tenantContextProvider, string name)
+        {
+            IProfileRepository profileRepository = new ProfileRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ProfileRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+            var result = await profileRepository.InsertProfile(
+                new ProfileInsertCommand { Name = name, Definition = $"<Profile name=\"{name}\"/>" }
+            );
+            result.Should().BeOfType<ProfileInsertResult.Success>();
+            return ((ProfileInsertResult.Success)result).Id;
+        }
+
+        private Task<int> CountApplicationsNamed(string applicationName) =>
+            Connection!.ExecuteScalarAsync<int>(
+                """SELECT COUNT(1) FROM dmscs.Application WHERE ApplicationName = @ApplicationName;""",
+                new { ApplicationName = applicationName }
+            );
+
+        private Task<int> CountApplicationProfileRows(params int[] profileIds) =>
+            Connection!.ExecuteScalarAsync<int>(
+                """SELECT COUNT(1) FROM dmscs.ApplicationProfile WHERE ProfileId IN @ProfileIds;""",
+                new { ProfileIds = profileIds }
+            );
+
+        private static async Task<List<int>> GetProfileIds(
+            IApplicationRepository repository,
+            int applicationId
+        )
+        {
+            var result = await repository.GetApplication(applicationId);
+            result.Should().BeOfType<ApplicationGetResult.Success>();
+            return ((ApplicationGetResult.Success)result).ApplicationResponse.ProfileIds;
+        }
+
+        private Task<ApplicationUpdateResult> UpdateTenantBApplicationProfiles(params int[] profileIds) =>
+            _tenantBRepository.UpdateApplication(
+                new ApplicationUpdateCommand
+                {
+                    Id = _tenantBApplicationId,
+                    ApplicationName = "Tenant B Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = profileIds,
+                },
+                new ApiClientCommand { ClientId = _tenantBClientId, ClientUuid = Guid.NewGuid() }
+            );
 
         [Test]
         public async Task It_should_not_get_another_tenants_application()
@@ -1471,6 +1531,120 @@ public class ApplicationTests : DatabaseTest
             var singleTenantRepository = CreateApplicationRepository(new TenantContextProvider());
             var result = await singleTenantRepository.GetApplication(_tenantAApplicationId);
             result.Should().BeOfType<ApplicationGetResult.FailureNotFound>();
+        }
+
+        [Test]
+        public async Task It_should_not_insert_an_application_with_another_tenants_profile()
+        {
+            const string ApplicationName = "Cross Tenant Profile Application";
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = ApplicationName,
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = [_tenantAProfileId],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.FailureProfileNotFound>();
+
+            (await CountApplicationsNamed(ApplicationName)).Should().Be(0);
+            (await CountApplicationProfileRows(_tenantAProfileId)).Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_should_not_insert_an_application_with_its_own_and_another_tenants_profile()
+        {
+            const string ApplicationName = "Mixed Tenant Profile Application";
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = ApplicationName,
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = [_tenantBProfileId, _tenantAProfileId],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.FailureProfileNotFound>();
+
+            (await CountApplicationsNamed(ApplicationName)).Should().Be(0);
+            (await CountApplicationProfileRows(_tenantAProfileId, _tenantBProfileId)).Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_should_insert_an_application_with_its_own_tenants_profile()
+        {
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Own Tenant Profile Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = [_tenantBProfileId],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.Success>();
+
+            (await GetProfileIds(_tenantBRepository, ((ApplicationInsertResult.Success)result).Id))
+                .Should()
+                .BeEquivalentTo([_tenantBProfileId]);
+        }
+
+        [Test]
+        public async Task It_should_update_an_application_with_its_own_tenants_profile()
+        {
+            var result = await UpdateTenantBApplicationProfiles(_tenantBProfileId);
+            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+
+            (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
+                .Should()
+                .BeEquivalentTo([_tenantBProfileId]);
+        }
+
+        [Test]
+        public async Task It_should_not_update_an_application_with_another_tenants_profile()
+        {
+            (await UpdateTenantBApplicationProfiles(_tenantBProfileId))
+                .Should()
+                .BeOfType<ApplicationUpdateResult.Success>();
+
+            var result = await UpdateTenantBApplicationProfiles(_tenantAProfileId);
+            result.Should().BeOfType<ApplicationUpdateResult.FailureProfileNotFound>();
+
+            (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
+                .Should()
+                .BeEquivalentTo([_tenantBProfileId]);
+            (await CountApplicationProfileRows(_tenantAProfileId)).Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_should_allow_the_same_vendor_company_and_application_name_in_both_tenants()
+        {
+            const string Company = "Shared Tenant Company";
+            const string ApplicationName = "Shared Tenant Application";
+            int tenantAVendorId = await InsertVendor(_tenantAProvider, Company);
+            int tenantBVendorId = await InsertVendor(_tenantBProvider, Company);
+
+            (int tenantAApplicationId, _) = await InsertApplication(
+                _tenantARepository,
+                tenantAVendorId,
+                ApplicationName
+            );
+            (int tenantBApplicationId, _) = await InsertApplication(
+                _tenantBRepository,
+                tenantBVendorId,
+                ApplicationName
+            );
+
+            tenantBVendorId.Should().NotBe(tenantAVendorId);
+            tenantBApplicationId.Should().NotBe(tenantAApplicationId);
+            (await CountApplicationsNamed(ApplicationName)).Should().Be(2);
         }
     }
 
