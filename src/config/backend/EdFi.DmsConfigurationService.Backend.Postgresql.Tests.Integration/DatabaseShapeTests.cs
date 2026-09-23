@@ -27,6 +27,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "DataStore",
         "DataStoreContext",
         "DataStoreDerivative",
+        "Job",
         "JobSchedule",
         "OpenIddictApplication",
         "OpenIddictApplicationScope",
@@ -128,8 +129,9 @@ public class Given_CMS_PostgreSQL_database_shape
     /// EducationOrganizationId is an Ed-Fi education organization id, not a CMS resource id, and the
     /// draft Management API v3 spec declares it int64. Tenant.Id has no Admin API counterpart and
     /// ClaimsHierarchy.Id is an internal concurrency token; both are out of scope, as are the
-    /// TenantId foreign keys that reference Tenant.Id. JobSchedule.Id and JobSchedule.FencingToken
-    /// (DMS-1437) are internal job-infrastructure identifiers with no Admin API counterpart.
+    /// TenantId foreign keys that reference Tenant.Id. Job.Id, Job.FencingToken, JobSchedule.Id, and
+    /// JobSchedule.FencingToken (DMS-1437) are internal job-infrastructure identifiers with no Admin API
+    /// counterpart, and Job.SourceScheduleId references JobSchedule.Id.
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
@@ -138,6 +140,10 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("Job", "FencingToken"),
+        ("Job", "Id"),
+        ("Job", "SourceScheduleId"),
+        ("Job", "TenantId"),
         ("JobSchedule", "FencingToken"),
         ("JobSchedule", "Id"),
         ("JobSchedule", "TenantId"),
@@ -190,10 +196,13 @@ public class Given_CMS_PostgreSQL_database_shape
     /// unique constraint, so a uniqueness rule that applies to a subset of rows is a partial unique
     /// index; every other logical uniqueness rule is a UX_* constraint. JobSchedule (DMS-1437) keys
     /// tenant schedules on (TenantId, ScheduleType) and single-tenant schedules, whose TenantId is
-    /// NULL and so would never collide in a plain unique index, on ScheduleType alone.
+    /// NULL and so would never collide in a plain unique index, on ScheduleType alone. Job keys a
+    /// scheduled occurrence on (SourceScheduleId, ScheduledOccurrence) only when both are set, so
+    /// manual jobs, which leave both NULL, never collide.
     /// </summary>
     private static readonly string[] ExpectedPartialUniqueIndexNames =
     [
+        "UX_Job_SourceScheduleId_ScheduledOccurrence",
         "UX_JobSchedule_SingleTenant_Type",
         "UX_JobSchedule_Tenant_Type",
     ];

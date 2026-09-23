@@ -222,14 +222,14 @@ Test names are NUnit fixture/test identifiers; `×2` = identical fixtures in the
 | Column | PostgreSQL | SQL Server | Notes |
 | --- | --- | --- | --- |
 | Id | BIGINT identity, `PK_Job` | BIGINT IDENTITY PK | FIFO key |
-| JobId | VARCHAR(150) NOT NULL | NVARCHAR(150) COLLATE Latin1_General_BIN2 NOT NULL | `UX_Job_JobId` |
+| JobId | VARCHAR(150) NOT NULL | NVARCHAR(150) COLLATE Latin1_General_BIN2 NOT NULL | `UX_Job_JobId`, a `UNIQUE` constraint per the `UX_*` convention |
 | TenantId | BIGINT NULL, `FK_Job_Tenant` ON DELETE RESTRICT | ON DELETE NO ACTION | `IX_Job_TenantId` |
 | JobType | VARCHAR(100) NOT NULL | NVARCHAR(100) COLLATE Latin1_General_BIN2 | key syntax enforced in code |
 | PayloadVersion | SMALLINT NOT NULL | SMALLINT | |
 | Payload | VARCHAR(4000) NOT NULL, `CK_Job_Payload_Object CHECK (jsonb_typeof(("Payload")::jsonb) = 'object')` | NVARCHAR(4000) NOT NULL, `CK_Job_Payload_Object CHECK (ISJSON(Payload) = 1 AND SUBSTRING(Payload, PATINDEX(N'%[^ ' + NCHAR(9) + NCHAR(10) + NCHAR(13) + N']%', Payload), 1) = N'{')` | same accepted shape: JSON object with any JSON whitespace prefix |
 | SourceScheduleId | BIGINT NULL, `FK_Job_JobSchedule` RESTRICT | NO ACTION | |
 | ScheduledOccurrence | TIMESTAMP NULL | DATETIME2 NULL | `CK_Job_Occurrence_Pairing`: both null or both set |
-| Status | VARCHAR(20) NOT NULL, `CK_Job_Status` | NVARCHAR(20) | four values |
+| Status | VARCHAR(20) NOT NULL, `CK_Job_Status` | NVARCHAR(20) COLLATE Latin1_General_BIN2 NOT NULL | four values; BIN2 on SQL Server (step 1.2) so that `CK_Job_Status` and the `IX_Job_Claim`/`IX_Job_Retention` filter predicates are exact and case-sensitive, as on PostgreSQL |
 | CreatedAt | TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC') | DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME() | |
 | FinishedAt, LeaseExpiresAt | TIMESTAMP NULL | DATETIME2 NULL | |
 | NextAttemptAt | TIMESTAMP NULL | DATETIME2 NULL | eligibility time (A1): `= CreatedAt` on every enqueue path (same time sample), set by retry and release (D-6), unchanged by claims and finished writes; `CK_Job_NextAttemptAt_Active CHECK (Status IN ('Completed','Error') OR NextAttemptAt IS NOT NULL)` |
@@ -239,7 +239,7 @@ Test names are NUnit fixture/test identifiers; `×2` = identical fixtures in the
 | FencingToken | BIGINT NOT NULL DEFAULT 0 | same | |
 | CreatedBy, LastModifiedAt, ModifiedBy | audit convention | | |
 
-Indexes: `UX_Job_JobId`; `UX_Job_SourceScheduleId_ScheduledOccurrence` unique partial/filtered `WHERE SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL`; `IX_Job_Claim (NextAttemptAt, Id) WHERE Status IN ('Pending','InProgress')` (MSSQL `INCLUDE (Status, LeaseExpiresAt, AttemptCount)`; A1); `IX_Job_Retention (Status, FinishedAt) WHERE Status IN ('Completed','Error')`; `IX_Job_TenantId`.
+Indexes: `UX_Job_JobId` (constraint-backed); `UX_Job_SourceScheduleId_ScheduledOccurrence` unique partial/filtered `WHERE SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL`; `IX_Job_Claim (NextAttemptAt, Id) WHERE Status IN ('Pending','InProgress')` (MSSQL `INCLUDE (Status, LeaseExpiresAt, AttemptCount)`; A1); `IX_Job_Retention (Status, FinishedAt) WHERE Status IN ('Completed','Error')`; `IX_Job_TenantId`.
 
 ### 3.2 `dmscs.JobSchedule` (`0032_Create_JobSchedule_Table.sql`, both providers)
 
@@ -248,7 +248,7 @@ Indexes: `UX_Job_JobId`; `UX_Job_SourceScheduleId_ScheduledOccurrence` unique pa
 ### 3.3 Migration behavior, upgrade coverage, provider differences
 
 - DbUp embedded scripts journaled in `public.dmscs_SchemaVersions` / `dbo.dmscs_SchemaVersions`; idempotent guards; `0032` before `0033`.
-- Upgrade-from-pre-ticket (both providers; isolated database per fixture like `DataStoreDerivativeUpgradeTests`): new internal seam `Func<string,bool>? ScriptFilter { get; init; }` on both `DatabaseDeploy` (mirrors `ScriptOutputLog`, unset in production) deploys only scripts `< 0032`; assert tables absent; full deploy; assert both tables, exactly two new journal rows; second full deploy adds none.
+- Upgrade-from-pre-ticket (both providers; isolated database per fixture like `DataStoreDerivativeUpgradeTests`): new internal seam `Func<string,bool>? ScriptFilter { get; init; }` on both `DatabaseDeploy` (mirrors `ScriptOutputLog`, unset in production) deploys only scripts `< 0032`; assert tables absent; full deploy; assert both tables, exactly two new journal rows; second full deploy adds none. Every upgrade fixture bounds its deploys with `ScriptFilter`, so its exact journal assertions are not changed by later scripts: `JobScheduleUpgradeTests` upgrades 0031 → 0032; `JobUpgradeTests` upgrades 0032 → 0033 and, separately, pre-ticket 0031 → 0033 through both new migrations in one deploy. Each fixture repeats its final deploy and asserts that no journal row is added.
 - Harness updates in the migration steps: Respawn lists ×2; `DatabaseShapeTests` allowlists the partial unique indexes by name (`UX_JobSchedule_Tenant_Type` and `UX_JobSchedule_SingleTenant_Type` at step 1.1, `UX_Job_SourceScheduleId_ScheduledOccurrence` at step 1.2). PostgreSQL cannot declare a partial unique constraint, so the test's rule that logical uniqueness is a `UX_*` constraint admits exactly these partial unique indexes and no others; `DatabaseShapeTests.ExpectedTableNames` and `ExpectedBigintColumns` (PG); `DeployTests.ExpectedBigintColumns` (MSSQL): `Job.Id`, `Job.TenantId`, `Job.SourceScheduleId`, `Job.FencingToken`, `JobSchedule.Id`, `JobSchedule.TenantId`, `JobSchedule.FencingToken`.
 - Provider differences: partial vs filtered index syntax; `clock_timestamp()/now()` vs `SYSUTCDATETIME()`; `jsonb_typeof` vs `ISJSON + PATINDEX`; `RESTRICT` vs `NO ACTION`; `FOR UPDATE SKIP LOCKED` vs `UPDLOCK, READPAST, ROWLOCK`; `RETURNING` vs `OUTPUT inserted`; `ON CONFLICT … DO NOTHING` vs `WHERE NOT EXISTS`; `SET LOCAL lock_timeout` vs `SET LOCK_TIMEOUT`; BIN2 + `DATALENGTH` on MSSQL; `interval` arithmetic vs `DATEADD/DATEDIFF_BIG`.
 
