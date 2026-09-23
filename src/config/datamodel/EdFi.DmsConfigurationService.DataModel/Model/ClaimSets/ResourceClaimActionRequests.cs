@@ -76,7 +76,9 @@ public abstract class ResourceClaimActionsOnClaimSetRequestValidator<T> : Abstra
         RuleFor(request => request.ResourceClaimActions)
             .Must(actions =>
                 actions is not null
-                && actions.All(action => action is not null && !string.IsNullOrWhiteSpace(action.Name))
+                && actions.TrueForAll(action =>
+                    action is not null && !string.IsNullOrWhiteSpace(action.Name)
+                )
             )
             .WithMessage("Every resource claim action must have a name.");
         RuleFor(request => request.ResourceClaimActions)

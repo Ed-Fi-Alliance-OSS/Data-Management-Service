@@ -23,7 +23,6 @@ public interface IClaimsHierarchyManager
         string claimSetName,
         string resourceClaimName,
         IReadOnlyCollection<string> enabledActionNames,
-        bool requireExistingAssociation,
         List<Claim> claims
     );
 
@@ -119,7 +118,6 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         string claimSetName,
         string resourceClaimName,
         IReadOnlyCollection<string> enabledActionNames,
-        bool requireExistingAssociation,
         List<Claim> claims
     )
     {
@@ -132,11 +130,6 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         ClaimSet? claimSet = FindClaimSet(claim, claimSetName);
         if (claimSet is null)
         {
-            if (requireExistingAssociation)
-            {
-                return false;
-            }
-
             claimSet = new ClaimSet { Name = claimSetName, Actions = [] };
             claim.ClaimSets.Add(claimSet);
         }

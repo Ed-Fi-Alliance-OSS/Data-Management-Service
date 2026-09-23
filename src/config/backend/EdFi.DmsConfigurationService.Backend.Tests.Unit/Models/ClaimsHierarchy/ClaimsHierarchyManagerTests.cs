@@ -52,7 +52,7 @@ public class ClaimsHierarchyManagerTests
             ];
 
             new ClaimsHierarchyManager()
-                .ReplaceClaimSetResourceActions("SIS Vendor", "claim-a", ["Create", "Read"], true, _claims)
+                .ReplaceClaimSetResourceActions("SIS Vendor", "claim-a", ["Create", "Read"], _claims)
                 .Should()
                 .BeTrue();
         }
@@ -431,7 +431,6 @@ public class ClaimsHierarchyManagerTests
             "SIS Vendor",
             "claim-a",
             ["Create", "Read"],
-            requireExistingAssociation: false,
             claims
         );
 
@@ -455,7 +454,7 @@ public class ClaimsHierarchyManagerTests
     }
 
     [Test]
-    public void ReplaceClaimSetResourceActions_ShouldAddAnOptionalMissingAssociation()
+    public void ReplaceClaimSetResourceActions_ShouldAddAMissingAssociation()
     {
         // Arrange
         List<Claim> claims = [new() { Name = "parent", Claims = [new() { Name = "claim-a" }] }];
@@ -465,7 +464,6 @@ public class ClaimsHierarchyManagerTests
             "sis vendor",
             "CLAIM-A",
             ["Create"],
-            requireExistingAssociation: false,
             claims
         );
 
@@ -476,25 +474,6 @@ public class ClaimsHierarchyManagerTests
     }
 
     [Test]
-    public void ReplaceClaimSetResourceActions_ShouldNotAddARequiredMissingAssociation()
-    {
-        // Arrange
-        List<Claim> claims = [new() { Name = "claim-a", ClaimSets = [] }];
-
-        // Act
-        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
-            "SIS Vendor",
-            "claim-a",
-            ["Create"],
-            requireExistingAssociation: true,
-            claims
-        );
-
-        // Assert
-        changed.Should().BeFalse();
-        claims[0].ClaimSets.Should().BeEmpty();
-    }
-
     [Test]
     public void RemoveClaimSetResourceActions_ShouldRemoveOnlyTheTargetAssociation()
     {

@@ -377,6 +377,28 @@ Feature: ClaimSets endpoints
              Then it should respond with 200
               And the response body contains no non-empty authorization strategy overrides
 
+        Scenario: Ensure clients can add resource claim actions through PUT
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853-resource-action-put-add-{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+
         Scenario: Ensure clients can modify and revoke resource claim actions
              When a POST request is made to "/v3/claimSets" with
                   """
