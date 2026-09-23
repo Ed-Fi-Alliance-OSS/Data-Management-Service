@@ -64,8 +64,12 @@ workspace; the CLI loads complete matching settings and inspects live
 provider, broker, worker, offsets and metrics. Its invocation-owned projector is
 not started by status/watch, so projection health remains unavailable. Separate
 in-process assertions qualify fresh readiness and invalidation of retained telemetry.
-Neither layer certifies the unobserved interval. See the
-[operator evidence index](../reference/cdc-documentation/cdc-inv-evidence.md).
+Neither layer certifies the unobserved interval. Marked recovery commands passed
+[PostgreSQL T21](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21)
+and [SQL Server T22](../reference/cdc-documentation/cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22),
+with nine live cases and eleven marked invocations per provider. SQL Server task
+failure uses a temporary password change on the fixture-owned login, restored
+before controller inspection; this is a test fault, not an operator procedure.
 
 Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.
 

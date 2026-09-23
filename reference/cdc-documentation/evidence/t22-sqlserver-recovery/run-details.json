@@ -1,0 +1,41 @@
+{
+  "Task": "T22",
+  "Provider": "SqlServer",
+  "Date": "2026-09-23",
+  "RuntimeVersions": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "Pester": "5.7.1"
+  },
+  "CmsFixture": "DocumentCacheAdminTestConfigurationService",
+  "RuntimeSchemaFixture": "DocumentCacheAdminCliFixture descriptor-runtime workspace",
+  "BaseRevision": "5322129c7d43577d6fe0eb82b4367e1506b62279",
+  "SourceSha256": {
+    "eng/ci/Invoke-CdcQualification.ps1": "f901f6232431feea3ddf9ad82628b6437af75fe8ecac10b895ca9e79568f58d9",
+    "eng/ci/cdc-qualification.psm1": "7d647889b2dddfff31a67f5f97c724de8a72ccdcf9982e1579f8c082cb9bf52e",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs": "b65eef54f3757d6e5a63f4a8387d5ccdc367c6cd56d8c4d87545fcd7d73c6b24",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRunbookLiveCommands.cs": "85168774bf828083b036e28e2cc67295a3d054b6e0f6f74f52265da924512f89",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcProviderAdmissionFixture.cs": "d526d10f238c9dbda69721f31b766ccb0404c6b6c4e287082951927df1f8ab26",
+    "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookArguments.cs": "5ebf58c70a27c47bd1f2a322f6b77a6f29a90a83796faea1d7efbc0d8d33be82"
+  },
+  "Command": "pwsh eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite Recovery -ResultsDirectory TestResults/cdc-docs-mssql-recovery-t22-20260923-01",
+  "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+    "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "ImageReferences": {
+    "Provider": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+    "Broker": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "Worker": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "FixtureSubstitutions": [
+    "<retained-settings-path>: complete private settings matching the established provider fixture and packaged-test CMS endpoint",
+    "<original-state-root>: original managed provisioning/controller state",
+    "maximum-passes remains 3"
+  ],
+  "Scope": "Live provider/broker/worker and packaged CLI with test CMS/schema workspace; standalone projector health unobserved. In-process runtime and injected failure layers separately identified. No interval certification.",
+  "Rehearsals": []
+}

@@ -70,7 +70,7 @@ described in the [entry point](README.md#supported-deployment).
 | [Intact connector restart and resume](operations-runbook.md#intact-restart) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | PostgreSQL | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_restarts_an_intact_running_connector_with_fresh_ready_evidence`; `It_rejects_unavailable_live_evidence_while_stopped` (offset/provider). [Given_CdcManagedLifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcManagedLifecycleTests.cs) — `It_does_not_infer_a_restart_from_unchanged_running_status_after_a_lost_reply` (unit); `CDC-DOC cdc-managed-start` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1) | `cdc-intact-restart`, `cdc-intact-resume` | LocalSingleBroker / AuthorizationDisabledLocal; [immutable images](evidence/t18-postgresql-lifecycle/run-details.json) | [Live assertions](evidence/t18-postgresql-lifecycle/managed-lifecycle-runbook.json), [required cases](evidence/t18-postgresql-lifecycle/qualification.json) | Passed T18; [exact outcomes and limits](#postgresql-lifecycle-qualification-t18) |
 | [Intact connector restart and resume](operations-runbook.md#intact-restart) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | SQL Server | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_restarts_an_intact_running_connector_with_fresh_ready_evidence`; `It_rejects_unavailable_live_evidence_while_stopped` (offset/provider). [Given_CdcManagedLifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcManagedLifecycleTests.cs) — `It_does_not_infer_a_restart_from_unchanged_running_status_after_a_lost_reply` (unit). Live snippet wiring pending | `cdc-intact-restart`, `cdc-intact-resume` | LocalSingleBroker / AuthorizationDisabledLocal; [immutable images](evidence/t19-sqlserver-lifecycle/run-details.json) | [Live assertions](evidence/t19-sqlserver-lifecycle/managed-lifecycle-runbook.json), [required cases](evidence/t19-sqlserver-lifecycle/qualification.json) | Passed T19; [exact outcomes and limits](#sql-server-lifecycle-qualification-t19) |
 | [Native recovery and incomplete shutdown](operations-runbook.md#native-recovery) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | PostgreSQL | [Given_Cdc_Controller_Native_Recovery](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs) — `It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics`; `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap`; `It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery` (false/true); `It_contains_recovered_connectors_and_retains_terminal_history_loss` (false/true). [Given_Cdc_command_configuration](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandContainmentTests.cs) — `It_contains_retained_incidents_through_the_request_builder_despite_journal_failure`; `It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation` (unit). [Given_CdcControllerStatus](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcControllerStatusTests.cs) — `It_reports_failed_latch_and_still_attempts_containment` (false/true; unit persistence/stop faults). Packaged marked commands execute against the same owned services; all seven methods/nine outcomes are required | `cdc-native-recovery-watch`, `cdc-incomplete-shutdown-status` | LocalSingleBroker / AuthorizationDisabledLocal; immutable images in [run details](evidence/t21-postgresql-recovery/run-details.json) | [T21 qualification](#postgresql-native-recovery-qualification-t21), [marked commands](evidence/t21-postgresql-recovery/marked-commands.json) | Passed T21: 9 live cases, 11 marked commands; unit failure layers separately labeled |
-| [Native recovery and incomplete shutdown](operations-runbook.md#native-recovery) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | SQL Server | [Given_Cdc_Controller_Native_Recovery](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs) — `It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics`; `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap`; `It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery` (false/true); `It_contains_recovered_connectors_and_retains_terminal_history_loss` (false/true). [Given_Cdc_command_configuration](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandContainmentTests.cs) — `It_contains_retained_incidents_through_the_request_builder_despite_journal_failure`; `It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation` (unit). [Given_CdcControllerStatus](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcControllerStatusTests.cs) — `It_reports_failed_latch_and_still_attempts_containment` (false/true; unit persistence/stop faults). Shared wiring present; SQL Server live exercise pending | `cdc-native-recovery-watch`, `cdc-incomplete-shutdown-status` | Pending | Pending — no artifact | Documented T05; live exercise pending T22 |
+| [Native recovery and incomplete shutdown](operations-runbook.md#native-recovery) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary) | SQL Server | [Given_Cdc_Controller_Native_Recovery](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs) — `It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics`; `It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap`; `It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery` (false/true); `It_contains_recovered_connectors_and_retains_terminal_history_loss` (false/true). [Given_Cdc_command_configuration](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandContainmentTests.cs) — `It_contains_retained_incidents_through_the_request_builder_despite_journal_failure`; `It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation` (unit). [Given_CdcControllerStatus](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcControllerStatusTests.cs) — `It_reports_failed_latch_and_still_attempts_containment` (false/true; unit persistence/stop faults). Packaged marked commands execute against the same owned services; all seven methods/nine outcomes are required | `cdc-native-recovery-watch`, `cdc-incomplete-shutdown-status` | LocalSingleBroker / AuthorizationDisabledLocal; immutable images in [run details](evidence/t22-sqlserver-recovery/run-details.json) | [T22 qualification](#sql-server-native-recovery-qualification-t22), [marked commands](evidence/t22-sqlserver-recovery/marked-commands.json) | Passed T22: 9 live cases, 11 marked commands; unit failure layers separately labeled |
 | [Projection troubleshooting and administration handoff](operations-runbook.md#projection-handoff) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration) | PostgreSQL | [Given_CdcPublicationHistory_packaged_administration](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs) — `It_allows_all_three_commands_from_managed_non_CDC_creation`; `It_rejects_untrusted_or_exposed_history_without_any_mutation` (all 15 scenarios); `It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source`; `It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early`; `It_holds_the_controller_lock_through_E18_mutation_when_administration_wins` (all three commands). Live snippet wiring pending | `cdc-history-internal-only`, `cdc-history-rejected` | Pending | Pending — no artifact | Documented T06; live exercise pending T25 |
 | [Projection troubleshooting and administration handoff](operations-runbook.md#projection-handoff) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration) | SQL Server | [Given_CdcPublicationHistory_packaged_administration](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs) — `It_allows_all_three_commands_from_managed_non_CDC_creation`; `It_rejects_untrusted_or_exposed_history_without_any_mutation` (all 15 scenarios); `It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source`; `It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early`; `It_holds_the_controller_lock_through_E18_mutation_when_administration_wins` (all three commands). Live snippet wiring pending | `cdc-history-internal-only`, `cdc-history-rejected` | Pending | Pending — no artifact | Documented T06; live exercise pending T26 |
 | [Monitoring and provider retention](operations-runbook.md#monitoring-retention) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry) | PostgreSQL | [Given_CdcConnectorTelemetryQualification.It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs) (Postgresql); [Given_PostgresqlCdcSourcePositionAdapterTests.It_reads_slot_publication_and_retained_wal_metadata_for_healthy_continuity](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlCdcSourcePositionAdapterTests.cs); exact inspection wiring pending T27 | `cdc-status`, `cdc-watch`, `cdc-telemetry-inspect`, `cdc-pg-retention-inspect`, `cdc-provider-disk-inspect` | Pending live run; qualified local single-worker/broker only | Pending — no live snippet artifact | T07 source/contract review only; exact snippets pending T27 |
@@ -576,5 +576,80 @@ persistence never substitutes for verified stop.
 [worker qualification record](evidence/t21-postgresql-recovery/qualified-image.json)
 record immutable images, local authorization-disabled scope and fixture substitutions.
 Only owned containers, volumes and temporary state are removed by fixture cleanup.
-Raw logs/settings remain private. SQL Server's corresponding exercise remains T22;
-remaining procedure tasks retain their pending status.
+Raw logs/settings remain private. SQL Server's corresponding exercise passed
+[T22](#sql-server-native-recovery-qualification-t22); remaining procedure tasks retain
+their pending status.
+
+## SQL Server native recovery qualification (T22)
+
+The SQL Server `Recovery` selection reuses T21's
+[provider-parameterized fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcNativeRecoveryTests.cs)
+and packaged marked-command harness. The
+[required-case report](evidence/t22-sqlserver-recovery/qualification.json) records
+all nine outcomes across seven methods passing with no failures or skips.
+[Stable test results](evidence/t22-sqlserver-recovery/controller-results.json),
+[controller observations](evidence/t22-sqlserver-recovery/controller-observations.json)
+and [11 marked command records](evidence/t22-sqlserver-recovery/marked-commands.json)
+keep live command evidence separate from injected controller faults.
+The [native-recovery owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
+and [T21 scenario descriptions](#postgresql-native-recovery-qualification-t21)
+apply, with these SQL Server results and distinctions:
+
+- Worker crash: committed offsets advance and progress records publish after
+  SIGKILL, before controller revalidation. Exact `cdc-native-recovery-watch`
+  observes the recovered service; in-process assertions reject pre-crash metrics
+  and require fresh readiness. A retained terminal incident also permits observed
+  publication before later CLI containment. Neither case certifies the interval,
+  pre-consumption fencing or an exact consumer baseline.
+- Task recovery: the existing SQL Server fixture temporarily changes its own
+  connector login password and restarts its task to observe `Failed`. It restores
+  the original password before controller inspection, then restarts the task.
+  The worker identity and connector configuration remain unchanged; retained
+  telemetry rejects and fresh observations succeed. The exact three-pass watch
+  runs against the recovered services. This credential fault is confined to the
+  disposable fixture; it is not an operator recovery step.
+- Incomplete shutdown: both failed-stop and acknowledged-but-unverified-stop hooks
+  leave shutdown unverified and its completion absent. After real worker recovery,
+  exact `cdc-incomplete-shutdown-status` and `cdc-native-recovery-watch` report
+  `NativeRecovery`; managed start rejects without resume. These are transport
+  hooks around live services, not a whole-stack partition qualification.
+- Missing binding returns `Request/InvalidInput`, exit 2, without `data`.
+  Missing journal or source history returns `WorkflowState/Unavailable`, exit 1.
+  Marked status never reconstructs those files. Unknown provider, offsets, worker,
+  status and metrics use separately labeled controller fault hooks; unavailable
+  continuity evidence cannot authorize restart. Preserve evidence and escalate
+  through [unsupported provenance](operations-runbook.md#unsupported-provenance).
+- Both terminal-history variants run exact watch, require durable
+  `incidentPersistence: "Persisted"` and `containment: "Stopped"`, and independently
+  read back STOPPED from the live worker. One deletes fixture-owned committed
+  offsets; the other retains a pre-crash incident. Later observations retain the
+  terminal incident and reject restart. A stop attempt does not qualify containment.
+- Interrupted initial readiness repeats the offline barrier and obtains fresh
+  authorization at the controller layer. This does not exercise the separate
+  initial-enable-retry snippet.
+
+All marked invocations use the complete matching private settings, original state,
+existing test CMS/schema workspace, live SQL Server 2025, Kafka and qualified
+Connect worker. Only the declared settings/state paths are substituted; watch
+keeps three passes. Assertions verify process exit, final stdout JSON, stderr
+watch passes and diagnostics. Standalone status/watch leave their projector
+unstarted and report projection unavailable, exit 1 / not ready; fresh in-process
+readiness is a separate assertion. A new CLI process reports `Unobserved` without
+its predecessor's worker/task sample; durable incomplete-stop intent establishes
+`NativeRecovery`. No aggregate-ready, ACL, multi-binding, API-message or state-loss
+recovery claim follows.
+
+[Unit and qualification checks](evidence/t22-sqlserver-recovery/checks.json) label
+`CdcCommandContainmentTests` and
+`Given_CdcControllerStatus.It_reports_failed_latch_and_still_attempts_containment`
+(false/true) as unit fault seams. Incident-write failure requires durable-state
+escalation; connector-stop failure requires infrastructure fencing under the
+[runbook's diagnostic-to-action table](operations-runbook.md#native-recovery).
+These checks do not claim live storage-failure or network-partition evidence.
+
+[Run details](evidence/t22-sqlserver-recovery/run-details.json) and the
+[qualified worker record](evidence/t22-sqlserver-recovery/qualified-image.json)
+retain immutable image IDs, exact selection, source hashes and the local
+`AuthorizationDisabledLocal` scope (`aclIsolationProven: false`). Fixture cleanup
+removes only its own containers, volumes and state; raw settings and logs remain
+private. Other procedure tasks remain pending.

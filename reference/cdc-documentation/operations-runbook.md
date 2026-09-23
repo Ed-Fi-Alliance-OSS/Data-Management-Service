@@ -26,7 +26,7 @@ for current command details and the linked design owners for support boundaries.
 | Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | PostgreSQL passed T18; SQL Server passed T19 |
 | Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | PostgreSQL passed T18; SQL Server passed T19 |
 | Intact connector restart and resume | [intact-restart](#intact-restart) | PostgreSQL passed T18; SQL Server passed T19 |
-| Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — documented; live exercise pending |
+| Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | PostgreSQL T21 / SQL Server T22 — qualified local scope |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
@@ -1400,7 +1400,7 @@ occurred. Keep the result and inspect before issuing another operation.
 
 ## Native recovery and incomplete shutdown
 
-**PostgreSQL passed [T21](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21); SQL Server live exercise remains pending T22.** Native worker recovery, task
+**PostgreSQL passed [T21](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21); SQL Server passed [T22](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22).** Native worker recovery, task
 reassignment/internal recovery and incomplete shutdown follow the
 [design-owned recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
 Records may be consumed and published **before** controller revalidation. Later
@@ -1459,8 +1459,9 @@ broker, worker, offsets and telemetry. The standalone observer does not start it
 projector, so its projection health remains unavailable; it cannot borrow readiness
 from the fixture's in-process projector. Separate controller assertions exercise
 stale telemetry invalidation and fresh current readiness. Fixture-only crash,
-task configuration, offset deletion and missing-state faults are never operator
-recovery instructions.
+task configuration (PostgreSQL) or temporary fixture-login password changes
+(SQL Server), offset deletion and missing-state faults are never operator recovery
+instructions.
 
 | Observation/diagnostic | Action and completion criterion |
 | --- | --- |
