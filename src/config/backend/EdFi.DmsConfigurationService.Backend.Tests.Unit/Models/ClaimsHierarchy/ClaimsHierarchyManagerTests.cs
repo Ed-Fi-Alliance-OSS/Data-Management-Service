@@ -52,7 +52,13 @@ public class ClaimsHierarchyManagerTests
             ];
 
             new ClaimsHierarchyManager()
-                .ReplaceClaimSetResourceActions("SIS Vendor", "claim-a", ["Create", "Read"], _claims)
+                .ReplaceClaimSetResourceActions(
+                    "SIS Vendor",
+                    "claim-a",
+                    ["Create", "Read"],
+                    ["Create", "Read"],
+                    _claims
+                )
                 .Should()
                 .BeTrue();
         }
@@ -61,14 +67,18 @@ public class ClaimsHierarchyManagerTests
         public void It_preserves_overrides_for_retained_actions_case_insensitively() =>
             _claims[0]
                 .ClaimSets[0]
-                .Actions.Single(action => action.Name == "Read")
+                .Actions.Single(action => action.Name.Equals("Read", StringComparison.OrdinalIgnoreCase))
                 .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
                 .Should()
                 .Equal("NamespaceBased");
 
         [Test]
-        public void It_removes_omitted_actions_and_their_overrides() =>
-            _claims[0].ClaimSets[0].Actions.Select(action => action.Name).Should().Equal("Create", "Read");
+        public void It_preserves_omitted_actions_and_their_overrides() =>
+            _claims[0]
+                .ClaimSets[0]
+                .Actions.Select(action => action.Name)
+                .Should()
+                .Equal("read", "Update", "Create");
 
         [Test]
         public void It_does_not_copy_removed_overrides_to_new_actions() =>
@@ -431,6 +441,7 @@ public class ClaimsHierarchyManagerTests
             "SIS Vendor",
             "claim-a",
             ["Create", "Read"],
+            ["Create", "Read"],
             claims
         );
 
@@ -440,7 +451,7 @@ public class ClaimsHierarchyManagerTests
             .ClaimSets.Single(claimSet => claimSet.Name == "SIS Vendor")
             .Actions.Select(action => action.Name)
             .Should()
-            .Equal("Create", "Read");
+            .Equal("Read", "Update", "Create");
         claims[0]
             .ClaimSets.Single(claimSet => claimSet.Name == "Other")
             .Actions.Select(action => action.Name)
@@ -464,6 +475,7 @@ public class ClaimsHierarchyManagerTests
             "sis vendor",
             "CLAIM-A",
             ["Create"],
+            ["Create"],
             claims
         );
 
@@ -471,6 +483,61 @@ public class ClaimsHierarchyManagerTests
         changed.Should().BeTrue();
         claims[0].Claims[0].ClaimSets.Should().ContainSingle(claimSet => claimSet.Name == "sis vendor");
         claims[0].Claims[0].ClaimSets.Single().Actions.Select(action => action.Name).Should().Equal("Create");
+    }
+
+    [Test]
+    public void ReplaceClaimSetResourceActions_ShouldRemoveOnlyExplicitlyDisabledActions()
+    {
+        // Arrange
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "NamespaceBased" }],
+                            },
+                            new()
+                            {
+                                Name = "Update",
+                                AuthorizationStrategyOverrides =
+                                [
+                                    new() { Name = "NoFurtherAuthorizationRequired" },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
+            "SIS Vendor",
+            "claim-a",
+            ["Read"],
+            ["Read", "Update"],
+            claims
+        );
+
+        // Assert
+        changed.Should().BeTrue();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "SIS Vendor")
+            .Actions.Should()
+            .ContainSingle(action =>
+                action.Name == "Read"
+                && action.AuthorizationStrategyOverrides.Single().Name == "NamespaceBased"
+            );
     }
 
     [Test]

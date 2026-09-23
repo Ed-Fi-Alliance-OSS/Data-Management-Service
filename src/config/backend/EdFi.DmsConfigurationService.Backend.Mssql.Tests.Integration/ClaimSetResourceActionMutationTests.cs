@@ -247,7 +247,7 @@ public class ClaimSetResourceActionMutationTests
     public class Given_modifying_resource_claim_actions : ClaimSetMutationTestBase
     {
         [Test]
-        public async Task It_replaces_target_actions_and_preserves_an_unrelated_association()
+        public async Task It_preserves_omitted_target_actions_and_an_unrelated_association()
         {
             int claimSetId = await CreateVendorClaimSet();
             await GrantRead(claimSetId, StudentResourceClaimId);
@@ -258,7 +258,7 @@ public class ClaimSetResourceActionMutationTests
             );
 
             result.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
-            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Read", "Create");
             (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
         }
 
@@ -281,7 +281,7 @@ public class ClaimSetResourceActionMutationTests
             ((ClaimSetExportResult.Success)await Repository.Export(claimSetId))
                 .ClaimSetExportResponse.ResourceClaims.Should()
                 .ContainSingle(resourceClaim => resourceClaim.ClaimName == StudentClaimName);
-            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Read", "Create");
             (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
         }
     }
@@ -425,7 +425,9 @@ public class ClaimSetResourceActionMutationTests
                 )
             );
 
-            result.Should().BeOfType<ClaimSetResourceActionMutationResult.FailureDuplicateAuthorizationStrategy>();
+            result
+                .Should()
+                .BeOfType<ClaimSetResourceActionMutationResult.FailureDuplicateAuthorizationStrategy>();
             (await ExportResourceClaim(claimSetId, StudentClaimName))
                 .AuthorizationStrategyOverrides.Should()
                 .BeEmpty();
