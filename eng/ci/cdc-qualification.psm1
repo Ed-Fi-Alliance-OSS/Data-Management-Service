@@ -241,14 +241,14 @@ function Get-CdcRunbookPesterReport {
     <# .SYNOPSIS
     Requires named wrapper cases independently of discovery; exclusions cannot pass qualification.
     #>
-    param([object[]] $Tests)
-    $required = @(
+    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup')][string] $QualificationProfile = 'Contract')
+    $required = if ($QualificationProfile -eq 'PostgresqlSetup') { @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup') } else { @(
         'cdc-pg-bootstrap-local', 'cdc-pg-bootstrap-published',
         'cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published',
         'cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup', 'cdc-pg-e2e-build', 'cdc-sqlserver-e2e-build',
         'cdc-pg-infrastructure', 'cdc-sqlserver-infrastructure',
         'cdc-managed-stop', 'cdc-managed-start', 'cdc-managed-start-rejected', 'cdc-stack-teardown'
-    )
+    ) }
     $cases = @($required | ForEach-Object {
         $id = $_
         $found = @($Tests | Where-Object ExpandedName -eq "CDC-DOC $id")
@@ -257,7 +257,7 @@ function Get-CdcRunbookPesterReport {
         [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
     })
     $passed = @($cases | Where-Object Outcome -eq Passed).Count
-    return [ordered]@{ Name = 'runbook-wrappers'; Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
+    return [ordered]@{ Name = $(if ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 

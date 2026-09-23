@@ -537,7 +537,7 @@ Describe 'CDC local ownership inspection' {
     It 'requires live CMS and database evidence after startup' {
         { Assert-BootstrapCdcOfflineOwnership -Project 'dms-local' -InfrastructureReady -CmsPort 8081 -DatabaseEngine postgresql } | Should -Throw '*exclusively owned local*'
     }
-    It 'accepts scoped loopback infrastructure for <provider>' -ForEach @(
+    It 'accepts scoped loopback infrastructure with an unpublished exposed port for <provider>' -ForEach @(
         @{ provider = 'postgresql'; database = '/dms-postgresql' }, @{ provider = 'mssql'; database = '/dms-mssql' }
     ) {
         $script:databaseContainerName = $database
@@ -546,7 +546,7 @@ Describe 'CDC local ownership inspection' {
             if ($Arguments[0] -eq 'ps') { return @('cms', 'db') }
             foreach ($entry in @(@{ name = '/ed-fi-api-config-service'; service = 'config'; port = '8081' }, @{ name = $script:databaseContainerName; service = 'db'; port = '15432' })) {
                 @{ name = $entry.name; service = $entry.service; project = 'dms-local'; directory = $script:composeRoot;
-                    ports = @{ '1234/tcp' = @(@{ HostIp = '127.0.0.1'; HostPort = $entry.port }) }; networks = @{ dms = @{} }; command = @(); entrypoint = @()
+                    ports = @{ '8080/tcp' = $null; '1234/tcp' = @(@{ HostIp = '127.0.0.1'; HostPort = $entry.port }) }; networks = @{ dms = @{} }; command = @(); entrypoint = @()
                 } | ConvertTo-Json -Depth 10 -Compress
             }
         }

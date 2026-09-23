@@ -57,6 +57,7 @@ jobs:
         shell: pwsh
     env:
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
+      CDC_RUNBOOK_OWNED_STACK: '1'
       CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
@@ -72,6 +73,10 @@ jobs:
         run: |
           $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
           "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE=$($qualified.image)" >> $env:GITHUB_ENV
+
+      - name: Install live runbook test dependency
+        if: matrix.lane == 'Postgresql' && matrix.suite == 'Admission'
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 
       # History suites use packaged CLIs and isolated admin servers. Other suites
       # provision and clean up their own per-test containers through the runner.

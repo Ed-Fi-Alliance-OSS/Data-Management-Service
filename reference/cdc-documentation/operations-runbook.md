@@ -6,7 +6,8 @@ This shared PostgreSQL/SQL Server runbook is under construction. Both providers�
 and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
 projection handoffs, monitoring, retention, security, consumer-evidence checklists and
 coordinated record-size increases, retirement/teardown and restamp/disclosure handoffs
-are documented. Exact live snippet qualification remains **pending** its named tasks.
+are documented. PostgreSQL local/direct-E2E setup and observation snippets passed T16; remaining
+live procedure qualification is **pending** its named tasks.
 Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
 
@@ -14,9 +15,9 @@ for current command details and the linked design owners for support boundaries.
 
 | Need | Procedure | Documentation task |
 | --- | --- | --- |
-| PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 exercise pending |
+| PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 local setup passed |
 | SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 exercise pending |
-| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | Both providers documented; T16/T17 exercises pending |
+| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL direct setup passed T16; SQL Server pending T17 |
 | Preserve deployment state | [deployment-state](#deployment-state) | T04 — documented; T18/T19 exercise pending |
 | Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; T18/T19 exercise pending |
 | Established validation and restart preflight | [established-validation](#established-validation) | T04 — documented; T18/T19 exercise pending |
@@ -96,12 +97,28 @@ inputs. These checks prove binding/forwarding and failure ordering, not live rea
 The [qualification handoff](cdc-inv-evidence.md#shared-helper-and-live-qualification-handoff)
 identifies the existing live suite owners.
 
+The test-only [live setup fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1)
+reuses that binding helper and the existing bounded native-process harness to invoke
+the shipped wrappers against real services. It requires an exclusively owned,
+disposable `dms-local` stack (`CDC_RUNBOOK_OWNED_STACK=1`), fresh fixture settings and
+the original managed state through retirement. Private stdout/stderr and credentials
+remain beneath its owner-only fixture root; qualification exports named outcomes.
+It prepares a restricted role before target provisioning, never capture artifacts or
+manual schema repairs. PostgreSQL fixtures select host port `5435`, target `1`, the
+documented primary names, and matching staged core/extensions. The masked setup input
+explicitly includes `Username=postgres`; an absent `POSTGRES_USER` declaration in an
+environment file still uses Compose's `postgres` default.
+The local bootstrap fixture makes at most three intact initial wrapper attempts when a cold
+infrastructure observation fails, retaining every attempt's private output. It
+never retries a workflow that already authorized writer publication, changes a
+retained input, or repairs provider/Connect artifacts between attempts.
+E2E setup runs once: its destructive setup guard rejects retained CDC workspaces.
 
 <a id="postgresql-setup"></a>
 
 ## PostgreSQL local setup
 
-**Documented in T02; live exercise pending T16.** This is an initial setup on an
+**Documented in T02; local bootstrap and observations passed T16.** This is an initial setup on an
 exclusively owned Linux local deployment using the [supported profile](README.md#supported-deployment).
 Follow the [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
 and [PostgreSQL setup owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql).
@@ -310,6 +327,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot protect settings file.' }
 <!-- /cdc-snippet: cdc-pg-settings -->
 
 This writes full normal settings plus `Cdc`, not a standalone partial fragment.
+Choose call/wait budgets before creating the retained snapshot. A cold broker or
+worker can exceed the example's 30-second call budget; the live setup fixture uses
+120-second calls and a 600-second bounded wait. These are declared fixture policy
+substitutions, not a changed controller default or an instruction to edit retained
+configuration after admission. An initial timeout retains the original workflow.
 It is a **wrapper input**: the empty `Schemas` array is deliberately filled by staging
 and must not be passed directly to the CLI. Bootstrap snapshots it to owner-only
 `eng/docker-compose/.bootstrap/cdc-runtime/bootstrap-*.settings.json`, replacing
@@ -416,6 +438,18 @@ Retain the two streams separately in restricted files; publish only sanitized re
 [Host serialization](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/Cdc/CdcCommandHost.cs)
 uses camel-case properties and string enum values; null properties may be omitted.
 The local profile reports `deploymentProfile.aclIsolationProven: false`.
+
+The current standalone CLI observes durable lifecycle, queue and provider state;
+it does not import the hosted DMS worker's execution observations. The
+[standalone runtime](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcProjectionRuntime.cs)
+can therefore report projection health/caught-up as `Unknown` with
+`RuntimeNotObserved`, even for an empty queue and a healthy hosted DMS. The
+[CDC evaluator](../../src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/CdcTargetStatusEvaluator.cs)
+then reports `projection.state: "Unknown"`, aggregate `NotReady`, exit `1`, while
+provider/connector components can be satisfied. Retain that uncertainty; do not
+reinterpret HTTP health or initial writer-publication authority as a current ready
+observation. The [readiness owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-readiness-scope)
+distinguishes initial publication from later observational status.
 
 | Operation/result | Completion/action |
 | --- | --- |
@@ -712,7 +746,7 @@ including E2E variants, from a restricted login with no precreated target user.
 
 ## DMS E2E opt-in
 
-**PostgreSQL documented in T02; SQL Server in T03. Live exercises pending T16/T17.** These alternatives qualify setup wiring. API-driven message
+**PostgreSQL direct setup passed T16; SQL Server exercise remains T17.** These alternatives qualify setup wiring. API-driven message
 scenarios remain [DMS-1325](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md).
 [Local bootstrap/CI owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
 This is the DMS E2E suite, not Instance Management E2E.

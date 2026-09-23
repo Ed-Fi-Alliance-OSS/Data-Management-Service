@@ -5,8 +5,8 @@
 
 # Test-only: bind selected marked invocations using the shipped parameter block. Never run
 # arbitrary Markdown or a wrapper body here. Callers retain their existing controlled seams.
-function Get-CdcRunbookInvocation {
-    param([string] $Id, [string] $FixtureRoot, [string] $Markdown = '')
+function Get-CdcRunbookCode {
+    param([string] $Id, [string] $Markdown = '')
     $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
     if (-not $Markdown) { $Markdown = Get-Content (Join-Path $repo 'reference/cdc-documentation/operations-runbook.md') -Raw }
     $start = [regex]::Escape("<!-- cdc-snippet: $Id -->")
@@ -16,8 +16,15 @@ function Get-CdcRunbookInvocation {
     }
     $match = [regex]::Match($Markdown, "(?s)$start\s*``````powershell\r?\n(?<code>.*?)\r?\n``````\s*$end")
     if (-not $match.Success -or $match.Groups['code'].Value.Contains('```')) { throw "Invalid CDC snippet fence: $Id" }
+    return $match.Groups['code'].Value
+}
+
+function Get-CdcRunbookInvocation {
+    param([string] $Id, [string] $FixtureRoot, [string] $Markdown = '')
+    $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+    $code = Get-CdcRunbookCode -Id $Id -Markdown $Markdown
     $errors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseInput($match.Groups['code'].Value, [ref]$null, [ref]$errors)
+    $ast = [Management.Automation.Language.Parser]::ParseInput($code, [ref]$null, [ref]$errors)
     if ($errors.Count) { throw "Invalid CDC snippet syntax: $Id" }
     $commands = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'pwsh' }, $true))
     if ($commands.Count -ne 1) { throw "Expected one wrapper invocation: $Id" }
@@ -66,4 +73,27 @@ function Get-CdcRunbookInvocation {
     $binder = [scriptblock]::Create("[CmdletBinding()]`n" + $source.ParamBlock.Extent.Text + "`n" + 'return $PSBoundParameters')
     $bound = & $binder @parameters
     return @{ Path = $path; Parameters = $bound }
+}
+
+# Live callers use the same marked argument binding as the Contract fixtures, then run
+# the shipped wrapper in a child process. stdout/stderr stay in the private fixture root.
+# Nothing here implements provisioning, lifecycle, readiness, or connector mutation.
+function Invoke-CdcRunbookLiveWrapper {
+    param([string] $Id, [string] $FixtureRoot, [int] $TimeoutSeconds = 600)
+    $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+    Import-Module (Join-Path $repo 'eng/docker-compose/env-utility.psm1') -DisableNameChecking
+    $invocation = Get-CdcRunbookInvocation -Id $Id -FixtureRoot $FixtureRoot
+    $arguments = [Collections.Generic.List[string]]::new()
+    foreach ($value in @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repo $invocation.Path))) { $arguments.Add($value) }
+    foreach ($key in $invocation.Parameters.Keys) {
+        $arguments.Add("-$key")
+        $value = $invocation.Parameters[$key]
+        if ($value -isnot [Management.Automation.SwitchParameter] -and $value -isnot [bool]) { $arguments.Add([string]$value) }
+    }
+    $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList $arguments.ToArray() -InputText '' -TimeoutSeconds $TimeoutSeconds
+    $prefix = Join-Path $FixtureRoot ($Id + '-' + [guid]::NewGuid().ToString('N'))
+    $result.StandardOutput | Set-Content -LiteralPath "$prefix.stdout"
+    $result.StandardError | Set-Content -LiteralPath "$prefix.stderr"
+    if (-not $IsWindows) { & chmod 600 "$prefix.stdout" "$prefix.stderr" }
+    return [pscustomobject]@{ SnippetId = $Id; ExitCode = $result.ExitCode; FailureKind = $result.FailureKind; LogPrefix = $prefix }
 }

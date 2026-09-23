@@ -1,0 +1,131 @@
+{
+  "Source": "Postgresql Admission qualification runner; projection of sanitized exported TRX outcomes",
+  "Provider": "Postgresql",
+  "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+  "Total": 30,
+  "Passed": 30,
+  "Failed": 0,
+  "Skipped": 0,
+  "Cases": [
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_cannot_reconstruct_initial_ownership_after_creation_receipt_interruption(\"lost-create-result\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_cannot_reconstruct_initial_ownership_after_creation_receipt_interruption(\"receipt-flushed\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_cannot_reconstruct_initial_ownership_after_creation_receipt_interruption(\"receipt-replaced\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_does_not_report_history_loss_for_a_healthy_streaming_slot",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_forbids_initial_retry_after_atomic_publication_intent_loses_its_reply",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_reconciles_a_lost_registration_response_without_recreating_the_connector",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_records_reused_database_without_granting_initial_eligibility",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_a_mismatched_binding_without_rewriting_the_existing_generation",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_an_existing_slot_when_its_creation_reply_was_lost",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"cache\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"canonical\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"latch\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"rebuilding\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"source-mismatch\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"unbound-tracking\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"work\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"barrier\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"handoff\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"queue\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"second-observation\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"cancelled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"expired\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"timeout\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"unavailable\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_resumes_the_same_slot_and_processes_wal_written_while_stopped",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Activation,After,\"Tracking\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Activation,Before,\"Disabled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Binding,After,\"Disabled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Postgresql_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Binding,Before,\"Disabled\")",
+      "Outcome": "Passed"
+    }
+  ]
+}

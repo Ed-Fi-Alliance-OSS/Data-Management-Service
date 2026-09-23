@@ -501,6 +501,27 @@ Describe 'CDC documentation qualification boundary' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
     }
+    It 'requires both live PostgreSQL setup invocations independently of controller admission (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
+    ) {
+        $required = (Get-CdcRunbookPesterReport -Tests @() -QualificationProfile PostgresqlSetup).Cases
+        $required.SnippetId | Should -Be @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup')
+        $tests = @($required | ForEach-Object { [pscustomobject]@{ ExpandedName = $_.TestId; Result = 'Passed' } })
+        if ($Fault -eq 'excluded') { $tests = @($tests[0]) }
+        if ($Fault -eq 'skipped') { $tests[0].Result = 'Skipped' }
+        if ($Fault -eq 'notrun') { $tests[0].Result = 'NotRun' }
+        if ($Fault -eq 'duplicate') { $tests += $tests[0] }
+        $report = Get-CdcRunbookPesterReport -Tests $tests -QualificationProfile PostgresqlSetup
+        $report.Name | Should -Be 'Postgresql-runbook-setup'
+        $report.Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
+    It 'selects live setup only in the owned PostgreSQL Admission path' {
+        $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
+        $runner | Should -Match '\$selected -eq ''Postgresql'' -and \$phase -eq ''Admission'''
+        $runner | Should -Match 'RunbookSetup.Live.Tests.ps1'
+        $runner | Should -Match 'CDC_RUNBOOK_OWNED_STACK'
+        $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile PostgresqlSetup'
+    }
     It 'requires every named wrapper case to execute once and pass (<Fault>)' -ForEach @(
         @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
     ) {

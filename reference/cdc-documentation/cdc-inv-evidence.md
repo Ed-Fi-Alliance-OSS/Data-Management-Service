@@ -47,15 +47,15 @@ or production capacity from a narrower success.
 
 ## Procedure Evidence
 
-`Both` means PostgreSQL and SQL Server, each still pending. Image/profile values
+`Both` means PostgreSQL and SQL Server; each provider result is recorded separately. Image/profile values
 remain pending until an actual run captures them; the supported local profile is
 described in the [entry point](README.md#supported-deployment).
 
 | Procedure | Design link / invariant contribution | Provider | Stable test identifiers (reuse candidates; method/case wiring pending) | Snippet ID (documented or reserved) | Qualification profile/image | Sanitized artifact reference | Actual result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [PostgreSQL local setup](operations-runbook.md#postgresql-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | PostgreSQL | [Given_Cdc_command_contract](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandTests.cs); exact snippet case pending | `cdc-pg-infrastructure`, `cdc-pg-connector-role`, `cdc-pg-settings`, `cdc-pg-bootstrap-local`, `cdc-pg-bootstrap-published`, `cdc-pg-status`, `cdc-pg-watch` | Pending | Pending — no artifact | Pending T16 |
+| [PostgreSQL local setup](operations-runbook.md#postgresql-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | PostgreSQL | `CDC-DOC cdc-pg-bootstrap-local` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); [behavioral cases](#postgresql-setup-qualification-t16) | `cdc-pg-infrastructure`, `cdc-pg-settings`, `cdc-pg-bootstrap-local`, `cdc-pg-status`, `cdc-pg-watch` | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t16-postgresql-setup/run-details.json) | [Live outcomes](evidence/t16-postgresql-setup/cdc-runbook-live-setup.json), [qualification](evidence/t16-postgresql-setup/qualification.json) | Passed T16; observation exits 1 with projection Unknown. Interactive role prompt and published alternative not exercised. |
 | [SQL Server local setup](operations-runbook.md#sql-server-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_CdcProjectionPrerequisite_Managed_Provisioning](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcProjectionPrerequisiteTests.cs) — `It_prepares_before_schema_and_requires_separate_server_authority`, `It_inspects_current_prerequisites_on_retry_without_repair`; [T29 mapping fixtures](#sql-server-initial-user-mapping-t29); exact snippet case pending | `cdc-sqlserver-infrastructure`, `cdc-sqlserver-settings`, `cdc-sqlserver-bootstrap-local`, `cdc-sqlserver-bootstrap-published`, `cdc-sqlserver-status`, `cdc-sqlserver-watch` | Pending | Pending — no artifact | Documented T03; live exercise pending T17 |
-| [DMS E2E opt-in](operations-runbook.md#dms-e2e-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | Both | [Given_Cdc_command_contract](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandTests.cs); exact snippet case pending | `cdc-pg-e2e-setup`, `cdc-pg-e2e-test`, `cdc-pg-e2e-build`, `cdc-sqlserver-e2e-setup`, `cdc-sqlserver-e2e-build` | Pending | Pending — no artifact | Pending T16/T17 |
+| [DMS E2E opt-in](operations-runbook.md#dms-e2e-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | PostgreSQL; SQL Server pending | `CDC-DOC cdc-pg-e2e-setup` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); both `Given_CdcE2ESetup` smoke tests | `cdc-pg-e2e-setup`, `cdc-pg-e2e-test`; build and SQL Server alternatives pending | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t16-postgresql-setup/run-details.json) | [Live outcomes](evidence/t16-postgresql-setup/cdc-runbook-live-setup.json), [smoke details](evidence/t16-postgresql-setup/run-details.json) | PostgreSQL direct setup passed T16, smoke 2 passed/0 skipped. Build alternative not exercised; SQL Server pending T17. No API-driven message certification. |
 | [Preserve deployment state](operations-runbook.md#deployment-state) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral) | PostgreSQL | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume` (missing/corrupt/unsafe-permissions/contradictory bindings, workflows and source-history; incomplete completions; integrity reports); live snippet wiring pending | `cdc-state-inventory` | Pending | Pending — no artifact | Documented T04; live exercise pending T18 |
 | [Preserve deployment state](operations-runbook.md#deployment-state) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral) | SQL Server | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume` (missing/corrupt/unsafe-permissions/contradictory bindings, workflows and source-history; incomplete completions; integrity reports); live snippet wiring pending | `cdc-state-inventory` | Pending | Pending — no artifact | Documented T04; live exercise pending T19 |
 | [Interrupted initial-enable retry](operations-runbook.md#initial-enable-retry) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | PostgreSQL | [Given_Cdc_command_enable_retry](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandEnableRetryTests.cs) — `It_resumes_the_same_command_after_a_stage_interruption` (provider/broker-start/worker-start/preflight/post-after/barrier/metrics); `It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects`; `It_preserves_combined_initial_containment_failures_in_command_json`; unit reuse candidates, live snippet wiring pending | `cdc-enable-retry` | Pending | Pending — no artifact | Documented T04; live exercise pending T18 |
@@ -102,7 +102,7 @@ described in the [entry point](README.md#supported-deployment).
 | Restamp/disclosure handoff source review, snippet syntax/help and existing restamp/lifecycle/CLI contracts | T11 | Passed: 31 Backend restamp, 596 Backend.Cdc lifecycle/retirement, 493 SchemaTools command/configuration and 36 DocumentCacheAdmin parser/result/exit-code tests; 1156 total, zero failed/skipped. Checked 564 relative links/anchors, 47 paired snippets (46 PowerShell + 1 JSON), 16 existing wrapper parameter sets, both new CLI option sets against built help, production stop-result serialization and named evidence methods. No live provider snippet, consumer-access revocation or platform purge claimed; exact exercises remain T25/T26 and durable snippet wiring T13–T15. |
 | Exact marked command/configuration examples through production host/configuration paths | T13 | Passed: 56 focused cases; full SchemaTools `FullyQualifiedName~Cdc` run 771 passed, zero failed/skipped (.NET SDK 10.0.102, PowerShell 7.4.10, Linux; no live images). [Command checks](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookCommandTests.cs) dispatch 19 marked CLI examples and check help/options; [configuration checks](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookConfigurationTests.cs) execute both marked settings blocks with isolated inputs/overrides, load production settings, render templates and parse the marked acknowledgement; [rejection cases](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookRejectionTests.cs) reuse original controller fixtures for both providers. Deliberate temporary option/provider/settings-field/acknowledgement mutations each failed meaningfully and were restored. Live procedures remain pending; no wrapper/output qualification claimed. |
 | Serialized output, packaged stdout/stderr and exit codes, touched links/anchors | T14 | Full SchemaTools `FullyQualifiedName~Cdc`: 810 passed; final focused documentation/packaged rerun: 102 passed, zero failed/skipped; Admin serialization/exit selection: 56 passed, zero failed/skipped (.NET SDK 10.0.102, Linux; no live images). [Output cases](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookOutputTests.cs) compare marked ready/backlog/unavailable/terminal excerpts with both-provider controller results, omitted lag/percentiles and operation-scoped stop/retire models; the existing [source-mismatch case](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookRejectionTests.cs) now checks its serialized excerpt. [Packaged cases](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookPackagedTests.cs) reuse the separate-process harness for marked commands, one stdout JSON value, watch/diagnostics stderr and 0/1/2/130 exits; controlled controller results are not live qualification. [Link checks](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookLinkTests.cs) cover 12 operator documents, owning-design and E18 anchors; copied field/value/removal and broken-anchor mutations must fail. [Admin cases](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/CdcRunbookHistoryOutputTests.cs) serialize admitted/rejected excerpts for all three operations and map exits 0/10. Those same excerpts are asserted in the existing packaged `CdcPublicationHistoryTests.ReadResult` for both providers; build/discovery passed, live gate/exact-command exercises remain T25/T26. Local reports: `/tmp/dms1326-t14-results/{t14-cdc,t14-final,t14-admin}.trx`. No wrapper/CI or live provider qualification claimed. |
-| Wrapper Pester examples and Contract/PR qualification wiring | T15 | Passed: [exported Contract report](evidence/t15-contract/qualification.json) and [exported snippet outcomes](evidence/t15-contract/cdc-runbook-wrappers.json), copied unchanged from `TestResults/cdc-docs-contract-t15-20260922-01`. Linux, .NET SDK 10.0.102, PowerShell 7.6.6, Pester 5.7.1; Contract/offline profile, no live images. Controller unit 4614, CLI 810, Admin output 6, controller offline 418, Pester 502: **6350 passed, zero failed/skipped**. Required-case guards confirm all 14 `CDC-DOC` wrapper IDs (13 distinct snippets) and 65 CLI cases across ten methods. [Bootstrap](../../eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1), [E2E](../../eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1), [lifecycle](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1) and [worker](../../eng/docker-compose/tests/CdcWorkerStartup.Tests.ps1) seams check both providers, forwarding, initial failure/retry, retained custom roots, verified stop/start and interrupted cleanup. [Drift checks](../../eng/docker-compose/tests/CdcRunbookWrappers.Tests.ps1) reject missing/duplicate snippets, arguments, environment/provider changes and undeclared expressions; [runner/export checks](../../eng/ci/tests/CdcQualification.Tests.ps1) reject excluded/skipped/unexecuted required cases and strip private attachment fields. Standalone required Pester command: 502 passed; CI budget/classification: 261 passed. PowerShell analysis and whitespace checks clean. Initial 7.4 run failed existing empty-environment retention cases; final 7.6.6 runs resolved them. Initial E2E mock-argument assertions were corrected before final passing runs. No live provider qualification claimed; T16 onward remain pending. |
+| Wrapper Pester examples and Contract/PR qualification wiring | T15 | Passed: [exported Contract report](evidence/t15-contract/qualification.json) and [exported snippet outcomes](evidence/t15-contract/cdc-runbook-wrappers.json), copied unchanged from `TestResults/cdc-docs-contract-t15-20260922-01`. Linux, .NET SDK 10.0.102, PowerShell 7.6.6, Pester 5.7.1; Contract/offline profile, no live images. Controller unit 4614, CLI 810, Admin output 6, controller offline 418, Pester 502: **6350 passed, zero failed/skipped**. Required-case guards confirm all 14 `CDC-DOC` wrapper IDs (13 distinct snippets) and 65 CLI cases across ten methods. [Bootstrap](../../eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1), [E2E](../../eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1), [lifecycle](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1) and [worker](../../eng/docker-compose/tests/CdcWorkerStartup.Tests.ps1) seams check both providers, forwarding, initial failure/retry, retained custom roots, verified stop/start and interrupted cleanup. [Drift checks](../../eng/docker-compose/tests/CdcRunbookWrappers.Tests.ps1) reject missing/duplicate snippets, arguments, environment/provider changes and undeclared expressions; [runner/export checks](../../eng/ci/tests/CdcQualification.Tests.ps1) reject excluded/skipped/unexecuted required cases and strip private attachment fields. Standalone required Pester command: 502 passed; CI budget/classification: 261 passed. PowerShell analysis and whitespace checks clean. Initial 7.4 run failed existing empty-environment retention cases; final 7.6.6 runs resolved them. Initial E2E mock-argument assertions were corrected before final passing runs. No live provider qualification claimed by T15; see T16 results below. |
 
 E18 owns projection performance and lifecycle evidence; link its workload limits
 when adding tuning guidance. [Production-scale qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
@@ -111,11 +111,11 @@ DMS-1324 evidence, not certification of third-party consumer stores.
 
 ## Shared Helper and Live Qualification Handoff
 
-The [PowerShell helper](../../eng/docker-compose/tests/cdc-runbook-snippets.ps1) is test-only
-parameter binding; the [.NET excerpt helper](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs)
+The [PowerShell helper](../../eng/docker-compose/tests/cdc-runbook-snippets.ps1) supplies test-only
+parameter binding and bounded live wrapper invocation; the [.NET excerpt helper](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs)
 is linked into the existing Admin unit/integration projects without NUnit fixture/category
 attributes. Reusing a helper must not move tests out of their provider/suite categories.
-T16 owns the small live snippet-to-command helper and PostgreSQL wiring; later tasks reuse
+T16 supplies the small live snippet-to-command helper and PostgreSQL wiring; later tasks reuse
 it and assert their own discovery. No live execution is supplied by T15's wrapper doubles.
 
 The current [suite filter owner](../../eng/ci/cdc-qualification.psm1) and
@@ -124,6 +124,7 @@ The current [suite filter owner](../../eng/ci/cdc-qualification.psm1) and
 | Suite | Project | Filter (plus `Category=PostgresqlIntegration` or `Category=MssqlIntegration`) |
 | --- | --- | --- |
 | Admission | Backend.Cdc.Tests.Integration | `Category=CdcControllerAdmission` |
+| PostgreSQL Admission setup | RunbookSetup.Live.Tests.ps1 | Explicit selection, both `CDC-DOC cdc-pg-bootstrap-local` and `CDC-DOC cdc-pg-e2e-setup` required; excluded from Contract glob |
 | Lifecycle | Backend.Cdc.Tests.Integration | `Category=CdcControllerManagedLifecycle` |
 | Recovery | Backend.Cdc.Tests.Integration | `Category=CdcControllerNativeRecovery` |
 | RecordSize | Backend.Cdc.Tests.Integration | `Category=CdcControllerRecordSize` |
@@ -183,3 +184,79 @@ marked examples through the public local, published and DMS E2E surfaces. These 
 are provider/controller qualification, not DMS-1325 API-driven message evidence, ACL
 isolation proof, or production deployment qualification. No relational mapping/hash or
 `RelationalMappingVersion` change was made.
+
+
+## PostgreSQL Setup Qualification (T16)
+
+**Passed:** both required live setup cases, 30 controller Admission cases and nine
+reused E18 cases; zero failures/skips. The E2E case additionally required two passing
+setup smoke tests. See the [qualification report](evidence/t16-postgresql-setup/qualification.json),
+[named live outcomes](evidence/t16-postgresql-setup/cdc-runbook-live-setup.json) and
+[images, substitutions and observations](evidence/t16-postgresql-setup/run-details.json).
+Both wrappers passed on their first invocation in the final run. A separate read-only
+inspection confirmed both E2E databases and one snapshot `EffectiveSchema` row.
+
+Qualification ran on Linux/amd64 with PowerShell 7.6.6, Pester 5.7.1 and
+.NET SDK 10.0.102. The selected supported deployment is `LocalSingleBroker` /
+`AuthorizationDisabledLocal`; no ACL isolation is claimed. The existing
+[Postgresql Admission runner](../../eng/ci/Invoke-CdcQualification.ps1) now requires
+both named live setup cases in addition to the provider suite. Missing, skipped,
+unexecuted or duplicate named cases fail its report.
+
+The [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1) invokes
+the shipped wrappers using the shared snippet/process helper. The role is prepared
+as a restricted fixture prerequisite using stdin, rather than replaying the
+interactive `cdc-pg-connector-role` prompt. Settings use the exact marked block
+with a private `Read-Host` fixture input. Declared substitutions are owner-only
+temporary settings/state/environment paths, fresh credentials, loopback host port
+5435, fresh CMS target 1, 120-second calls and 600-second waits, and two watch passes.
+Local bootstrap uses Ed-Fi/TPDM and `edfi_cdc`; E2E uses Ed-Fi/Homograph/Sample/TPDM,
+`edfi_datamanagementservice_e2e` and its distinct snapshot. The staged settings and
+inventory are asserted against these selections. No retained input or controller
+artifact is repaired between attempts. All raw output and settings remain private.
+
+The fixture asserts writer-publication authority, DMS health, the qualified worker
+image, publication tables `CdcHeartbeat,Document,DocumentCache` and exclusion of
+`DocumentProjectionWork`. Exact `cdc-pg-status` and `cdc-pg-watch` invocations
+return JSON and exit 1: provider/connector observations are `Satisfied`, standalone
+projection is `Unknown` and aggregate readiness is `NotReady`. This is an observed
+CLI limitation, not a successful aggregate-readiness claim. The two selected
+`Given_CdcE2ESetup` tests only check HTTP/database health. They do not qualify
+DMS-1325 API-driven message scenarios.
+
+Published-bootstrap and build-based E2E alternatives were not selected for this
+live run; their Contract binding checks remain separate. Governed teardown is
+fixture cleanup; the complete retirement/shutdown procedure matrix remains owned
+by its later tasks.
+
+The existing [Given_Postgresql_Controller_Admission](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcPostgresqlAdmissionTests.cs)
+ran through `Invoke-CdcQualification.ps1 -Lane Postgresql -Suite Admission`:
+**30 passed, zero failed/skipped**. The compact
+[admission results](evidence/t16-postgresql-setup/admission-results.json) project
+exact IDs/outcomes from the sanitized exported TRX; raw diagnostics and volatile
+controller observations are not checked in. The [qualified image manifest](evidence/t16-postgresql-setup/qualified-image.json)
+identifies the pinned Connect worker.
+
+Behavioral coverage includes `It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag`,
+`It_retries_exact_empty_binding_after_interrupted_binding_or_activation`,
+`It_repeats_fresh_readiness_after_an_interrupted_offline_wait`,
+`It_forbids_initial_retry_after_atomic_publication_intent_loses_its_reply`, and
+`It_rejects_ineligible_live_databases_without_mutating_binding_or_capture`
+(unbound tracking, canonical rows, cache rows, work rows, latch, rebuilding,
+source mismatch). These are real provider/controller cases, not execution of the
+operator's initial-retry snippet; that procedure remains T18.
+
+The existing E18 provider cases below ran on the same pinned PostgreSQL 16.8
+image used for local setup. All nine passed without skips; the
+[sanitized TRX](evidence/t16-postgresql-setup/e18/e18.trx) contains their exact
+fixture/method identifiers. This is reused provider behavior evidence, separate
+from the new runbook invocation cases.
+
+| E18 fixture | Executed methods | Result |
+| --- | --- | --- |
+| [Given_A_Postgresql_DocumentCacheProjector](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheProjectorTests.cs) | `It_drains_long_outage_backlog_in_bounded_pages_and_restarts_from_durable_work` — asserts bounded pages 3/3/1 and no source/cache scan | Passed, 1 |
+| [Given_A_Postgresql_DocumentCachePrerequisite_Validator](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheProviderPrerequisiteValidatorTests.cs) | `It_reports_sqlserver_prerequisites_as_not_applicable_for_initialization`, `It_reports_sqlserver_prerequisites_as_not_applicable_for_activation_preflight`, `It_reports_the_postgresql_provider_token` | Passed, 3 |
+| [Given_A_Postgresql_DocumentCacheOfflineDeactivation_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheOfflineDeactivationTests.cs) | `It_resumes_resetting_with_clear_latch_by_clearing_cache_and_work` | Passed, 1 |
+| [Given_A_Postgresql_DocumentCacheOfflineActivation_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheOfflineActivationTests.cs) | `It_resumes_rebuilding_without_repeating_destructive_clearing` | Passed, 1 |
+| [Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheOnlineCacheRebuildTests.cs) | `It_resumes_rebuilding_without_repeating_cache_clearing` | Passed, 1 |
+| [Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheInternalOnlyCacheAheadRecoveryTests.cs) | `It_resumes_resetting_with_the_latch_set_without_reentering_resetting`, `It_resumes_rebuilding_with_clear_latch_without_repeating_destructive_clearing` | Passed, 2 |

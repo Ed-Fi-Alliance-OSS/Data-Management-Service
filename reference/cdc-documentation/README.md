@@ -11,7 +11,8 @@ sensitive-data disclosure response are documented. Marked CLI commands, settings
 acknowledgement inputs, serialized result excerpts and touched document links have
 [focused automated checks](cdc-inv-evidence.md#documentation-verification). Packaged host
 checks cover output streams and exits. Wrapper snippet checks and required-case guards run
-in Contract/PR; exact live snippet qualification remains **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
+in Contract/PR. [PostgreSQL local/direct-E2E setup](cdc-inv-evidence.md#postgresql-setup-qualification-t16)
+and observation snippets passed live qualification; remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.
@@ -62,7 +63,7 @@ API-driven message scenarios belong to [DMS-1325](../design/backend-redesign/epi
 | Deployment, readiness, recovery, and security contracts | [CDC integration design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#authority-and-document-ownership). |
 | Projector/source behavior | [ADR 0001](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md). |
 | Topic/message, consumer, and compatibility contract | [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md). |
-| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; exact live snippet qualification remains pending. |
+| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; PostgreSQL setup has live evidence; remaining live procedures are pending. |
 
 ## Scope Boundaries and Missing Surfaces
 

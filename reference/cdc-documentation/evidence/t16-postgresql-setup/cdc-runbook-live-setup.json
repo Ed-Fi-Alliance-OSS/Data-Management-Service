@@ -1,0 +1,12 @@
+[
+  {
+    "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+    "SnippetId": "cdc-pg-bootstrap-local",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-pg-e2e-setup",
+    "SnippetId": "cdc-pg-e2e-setup",
+    "Outcome": "Passed"
+  }
+]
