@@ -632,7 +632,7 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
     // ── Prefix cap on the write path ────────────────────────────────────
 
     [Test]
-    public async Task It_returns_security_configuration_before_opening_a_write_session_at_the_prefix_cap()
+    public async Task It_returns_security_configuration_after_only_capturing_the_target_at_the_prefix_cap()
     {
         var seed = NamespaceSeed(501, "create-prefix-cap", AuthorizedPrefix + "assessments");
         IReadOnlyList<string> prefixes =
@@ -649,10 +649,17 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
         failure
             .Errors.Should()
             .Equal(NamespaceAuthorizationSecurityConfigurationMessages.PrefixCapExceeded(prefixes.Count));
+        failure.TargetAction.Should().Be(UpsertTargetAction.Create);
         await AssertNoRowsExistAsync(seed);
 
-        // The prefix cap is a planner terminal, so it must resolve before the write session issues anything.
-        _context.AssertNoWriteCommandsIssued();
+        // The prefix cap is a planner terminal, but a POST's security-configuration failure is logged against the
+        // action its target selects, so the write session captures the target and issues nothing else.
+        _context
+            .RecordedWriteCommands.Should()
+            .ContainSingle()
+            .Which.CommandText.Should()
+            .Contain("UPDLOCK")
+            .And.NotContainAny("INSERT ", "UPDATE ", "DELETE ");
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
