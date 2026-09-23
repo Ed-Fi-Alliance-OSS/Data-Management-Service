@@ -89,8 +89,8 @@ try {
         }
         if ('Mssql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE'
-            if ($Suite -in @('All', 'Admission') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
-                throw 'EnvironmentUnavailable: Mssql Admission requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__MssqlAdmin' }
         }
@@ -164,10 +164,10 @@ try {
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
                 Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
-                if ($phase -eq 'Lifecycle' -and $selected -eq 'Postgresql') {
+                if ($phase -eq 'Lifecycle') {
                     $reports.Add((Get-CdcRunbookLifecycleReport -Path (Join-Path $raw "$name/$name.trx")))
                 }
-                if ($phase -eq 'Admission' -or ($phase -eq 'Lifecycle' -and $selected -eq 'Postgresql')) {
+                if ($phase -eq 'Admission' -or ($phase -eq 'Lifecycle')) {
                     $procedure = if ($phase -eq 'Admission') { 'Setup' } else { 'Lifecycle' }
                     $liveDirectory = Join-Path $raw "$selected-runbook-$($procedure.ToLowerInvariant())"
                     New-Item -ItemType Directory -Path $liveDirectory | Out-Null

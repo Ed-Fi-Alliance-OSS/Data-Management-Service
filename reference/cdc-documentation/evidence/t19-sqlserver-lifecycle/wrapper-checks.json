@@ -1,0 +1,14 @@
+{
+  "Infrastructure": "Mocked wrapper/worker ordering; live persistence separately qualified",
+  "Selection": [
+    "CdcLifecycleOrdering.Tests.ps1",
+    "CdcWorkerStartup.Tests.ps1",
+    "CdcRunbookWrappers.Tests.ps1",
+    "CdcQualification.Tests.ps1"
+  ],
+  "Total": 364,
+  "Passed": 364,
+  "Failed": 0,
+  "Skipped": 0,
+  "RequiredCaseGuards": 73
+}

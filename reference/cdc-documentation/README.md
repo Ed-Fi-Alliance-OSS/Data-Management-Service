@@ -14,7 +14,8 @@ checks cover output streams and exits. Wrapper snippet checks and required-case 
 in Contract/PR. [PostgreSQL local/direct-E2E setup](cdc-inv-evidence.md#postgresql-setup-qualification-t16)
 and [SQL Server local/published/direct-E2E setup](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
 and observation snippets passed live qualification. [PostgreSQL lifecycle](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18)
-passed T18; SQL Server lifecycle and remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
+passed T18 and [SQL Server lifecycle](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19)
+passed T19; remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.

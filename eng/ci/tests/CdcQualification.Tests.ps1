@@ -533,29 +533,33 @@ Describe 'CDC documentation qualification boundary' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
         $runner | Should -Match "if \(\`$phase -eq 'Admission' -or"
         $runner | Should -Match 'New-PesterContainer.*RunbookSetup.Live.Tests.ps1.*Provider = \$selected'
-        $runner | Should -Match 'Mssql Admission requires CDC_RUNBOOK_OWNED_STACK=1'
+        $runner | Should -Match 'Mssql Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1'
         $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile "\$selected\$procedure"'
     }
-    It 'requires the live PostgreSQL lifecycle case (<Fault>)' -ForEach @(
-        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
+    It 'requires the live <Provider> lifecycle case (<Fault>)' -ForEach @(
+        foreach ($provider in @('Postgresql', 'Mssql')) {
+            foreach ($fault in @('none', 'excluded', 'skipped', 'notrun', 'duplicate')) {
+                @{ Provider = $provider; Fault = $fault }
+            }
+        }
     ) {
         $tests = @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Passed' })
         if ($Fault -eq 'excluded') { $tests = @() }
         if ($Fault -eq 'skipped') { $tests[0].Result = 'Skipped' }
         if ($Fault -eq 'notrun') { $tests[0].Result = 'NotRun' }
         if ($Fault -eq 'duplicate') { $tests += $tests[0] }
-        $report = Get-CdcRunbookPesterReport -Tests $tests -QualificationProfile PostgresqlLifecycle
-        $report.Name | Should -Be 'Postgresql-runbook-lifecycle'
+        $report = Get-CdcRunbookPesterReport -Tests $tests -QualificationProfile "${Provider}Lifecycle"
+        $report.Name | Should -Be "$Provider-runbook-lifecycle"
         $report.Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
-    It 'selects the owned PostgreSQL Lifecycle commands and their required behavior report' {
+    It 'selects both owned provider Lifecycle commands and their required behavior report' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
-        $runner | Should -Match "\`$phase -eq 'Lifecycle' -and \`$selected -eq 'Postgresql'"
+        $runner | Should -Match "if \(\`$phase -eq 'Lifecycle'\)"
         $runner | Should -Match 'Get-CdcRunbookLifecycleReport -Path'
         $runner | Should -Match 'New-PesterContainer.*Procedure = \$procedure'
         $runner | Should -Match 'PostgreSQL Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1'
         $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
-        $workflow | Should -Match "matrix.lane == 'Postgresql' && matrix.suite == 'Lifecycle'"
+        $workflow | Should -Match "matrix.suite == 'Admission' \|\| matrix.suite == 'Lifecycle'"
     }
     It 'requires all lifecycle persistence and rejection cases (<Fault>)' -ForEach @(
         @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }, @{ Fault = 'duplicate' }

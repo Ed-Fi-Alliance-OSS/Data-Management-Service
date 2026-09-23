@@ -115,58 +115,81 @@ function Invoke-CdcRunbookLifecycle {
             }
         }
     }
-    if ($Provider -eq 'Postgresql') {
-        # Existing physical-source rejection seam, exercised through the marked commands.
-        # These independent fixture databases are destroyed with the owned stack; no
-        # operator adoption, source identity repair, or replacement workflow is offered.
-        function Invoke-OwnedSql {
-            param([string] $Database, [string] $Sql)
-            $result = Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', $Database, '-At', '-v', 'ON_ERROR_STOP=1') -InputText $Sql
-            $result.FailureKind | Should -Be 'None'
-            $result.ExitCode | Should -Be 0
-            return $result.StandardOutput.Trim()
+    # Existing physical-source rejection seam, exercised through the marked commands.
+    # These independent fixture databases are destroyed with the owned stack; no
+    # operator adoption, source identity repair, or replacement workflow is offered.
+    function Invoke-OwnedSql {
+        param([string] $Database, [string] $Sql)
+        $result = if ($Provider -eq 'Postgresql') {
+            Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', $Database, '-At', '-v', 'ON_ERROR_STOP=1') -InputText $Sql
+        } else {
+            # sqlcmd defaults differ from SqlClient; indexed projection objects require this SET option.
+            Invoke-FixtureSql -Database $Database -Sql ("SET QUOTED_IDENTIFIER ON;`n" + $Sql)
         }
-        $sourceDatabase = $settings.Cdc.ProviderConnectionProperties.'database.dbname'
-        (Invoke-OwnedSql $sourceDatabase 'SELECT count(*) FROM dms."Document";') | Should -Be '0'
+        $result.FailureKind | Should -Be 'None'
+        $result.ExitCode | Should -Be 0
+        return $result.StandardOutput.Trim()
+    }
+    $sourceDatabase = if ($Provider -eq 'Postgresql') { $settings.Cdc.ProviderConnectionProperties.'database.dbname' } else { $settings.Cdc.ProviderConnectionProperties.'database.names' }
+    $countSql = if ($Provider -eq 'Postgresql') { 'SELECT count(*) FROM dms."Document";' } else { 'SELECT count(*) FROM dms.[Document];' }
+    $identitySql = if ($Provider -eq 'Postgresql') { 'SELECT "SourceIdentity" FROM dms."DataStoreIdentity";' } else { 'SELECT CONVERT(varchar(36), SourceIdentity) FROM dms.DataStoreIdentity;' }
+    (Invoke-OwnedSql $sourceDatabase $countSql) | Should -Be '0'
+    if ($Provider -eq 'Postgresql') {
         $dump = Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', 'dms-postgresql', 'pg_dump', '-U', 'postgres', $sourceDatabase) -InputText ''
         $dump.FailureKind | Should -Be 'None'
         $dump.ExitCode | Should -Be 0
-        $originalSource = Invoke-OwnedSql $sourceDatabase 'SELECT "SourceIdentity" FROM dms."DataStoreIdentity";'
-        foreach ($populated in @($false, $true)) {
-            $replacement = 'rejected_' + [guid]::NewGuid().ToString('N')
+    } else {
+        # Fixture-only clones, with a different source identity, exercise rejection.
+        # Restoring a backup is not an operator continuity/recovery procedure.
+        $backupPath = '/var/opt/mssql/data/rejected_' + [guid]::NewGuid().ToString('N') + '.bak'
+        $null = Invoke-OwnedSql 'master' "BACKUP DATABASE [$sourceDatabase] TO DISK = N'$backupPath' WITH COPY_ONLY, INIT;"
+        $logicalData = Invoke-OwnedSql $sourceDatabase "SELECT name FROM sys.database_files WHERE type = 0;"
+        $logicalLog = Invoke-OwnedSql $sourceDatabase "SELECT name FROM sys.database_files WHERE type = 1;"
+    }
+    $originalSource = Invoke-OwnedSql $sourceDatabase $identitySql
+    foreach ($populated in @($false, $true)) {
+        $replacement = 'rejected_' + [guid]::NewGuid().ToString('N')
+        if ($Provider -eq 'Postgresql') {
             $null = Invoke-OwnedSql 'postgres' "CREATE DATABASE $replacement;"
             $null = Invoke-OwnedSql $replacement $dump.StandardOutput
             $null = Invoke-OwnedSql $replacement 'UPDATE dms."DataStoreIdentity" SET "SourceIdentity" = gen_random_uuid();'
             if ($populated) {
                 $null = Invoke-OwnedSql $replacement 'INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId") SELECT gen_random_uuid(), "ResourceKeyId" FROM dms."ResourceKey" LIMIT 1;'
             }
-            (Invoke-OwnedSql $replacement 'SELECT count(*) FROM dms."Document";') | Should -Be $(if ($populated) { '1' } else { '0' })
-            $beforeSource = Invoke-OwnedSql $replacement 'SELECT "SourceIdentity" FROM dms."DataStoreIdentity";'
-            $altered = [Text.Encoding]::UTF8.GetString($settingsBytes) | ConvertFrom-Json -AsHashtable
-            $connection = [System.Data.Common.DbConnectionStringBuilder]::new()
-            # Invoke CLR accessors: PowerShell's IDictionary adapter otherwise creates a
-            # literal ConnectionString key, leaving subsequent database edits unused.
-            $connection.set_ConnectionString($altered.Cdc.SetupConnectionString)
-            $connection['Database'] = $replacement
-            $altered.Cdc.SetupConnectionString = $connection.get_ConnectionString()
-            $commandSettingsPath = Join-Path $FixtureRoot 'rejected-source-settings.json'
-            $altered | ConvertTo-Json -Depth 100 | Set-Content $commandSettingsPath
-            & chmod 600 $commandSettingsPath
-            foreach ($id in @('cdc-provenance-rejection', 'cdc-intact-resume')) {
-                $result = Invoke-MarkedCommand $id
-                $result.exitCode | Should -Be 1
-                $result.succeeded | Should -BeFalse
-                @($result.diagnostics | Where-Object { $_.component -eq 'ProviderSetup' -and $_.failure -eq 'ValidationFailed' }).Count | Should -BeGreaterThan 0
-                if ($id -eq 'cdc-provenance-rejection') { $result.data.preStartEligible | Should -BeFalse }
-                $results.Add(@{ SnippetId = $id; Scenario = $(if ($populated) { 'populated-independent-source' } else { 'empty-independent-source' }); ExitCode = 1; Diagnostics = @($result.diagnostics | Select-Object component, failure) })
+        } else {
+            $null = Invoke-OwnedSql 'master' "RESTORE DATABASE [$replacement] FROM DISK = N'$backupPath' WITH MOVE N'$logicalData' TO N'/var/opt/mssql/data/$replacement.mdf', MOVE N'$logicalLog' TO N'/var/opt/mssql/data/$replacement.ldf';"
+            $null = Invoke-OwnedSql $replacement 'UPDATE dms.DataStoreIdentity SET SourceIdentity = NEWID();'
+            if ($populated) {
+                $null = Invoke-OwnedSql $replacement 'INSERT INTO dms.Document (DocumentUuid, ResourceKeyId) SELECT TOP (1) NEWID(), ResourceKeyId FROM dms.ResourceKey;'
             }
-            (Invoke-OwnedSql $replacement 'SELECT "SourceIdentity" FROM dms."DataStoreIdentity";') | Should -Be $beforeSource
-            (Invoke-OwnedSql $sourceDatabase 'SELECT "SourceIdentity" FROM dms."DataStoreIdentity";') | Should -Be $originalSource
-            (Invoke-RestMethod -Uri "$connectorUri/offsets" -TimeoutSec 10 | ConvertTo-Json -Depth 30 -Compress) | Should -Be $offset
-            (Invoke-RestMethod -Uri "$connectorUri/status" -TimeoutSec 10).connector.state | Should -Be 'STOPPED'
         }
-        $commandSettingsPath = $Entry.SettingsPath
+        (Invoke-OwnedSql $replacement $countSql) | Should -Be $(if ($populated) { '1' } else { '0' })
+        $beforeSource = Invoke-OwnedSql $replacement $identitySql
+        $beforeSource | Should -Not -Be $originalSource
+        $altered = [Text.Encoding]::UTF8.GetString($settingsBytes) | ConvertFrom-Json -AsHashtable
+        $connection = [System.Data.Common.DbConnectionStringBuilder]::new()
+        # Invoke CLR accessors: PowerShell's IDictionary adapter otherwise creates a
+        # literal ConnectionString key, leaving subsequent database edits unused.
+        $connection.set_ConnectionString($altered.Cdc.SetupConnectionString)
+        $connection['Database'] = $replacement
+        $altered.Cdc.SetupConnectionString = $connection.get_ConnectionString()
+        $commandSettingsPath = Join-Path $FixtureRoot 'rejected-source-settings.json'
+        $altered | ConvertTo-Json -Depth 100 | Set-Content $commandSettingsPath
+        & chmod 600 $commandSettingsPath
+        foreach ($id in @('cdc-provenance-rejection', 'cdc-intact-resume')) {
+            $result = Invoke-MarkedCommand $id
+            $result.exitCode | Should -Be 1
+            $result.succeeded | Should -BeFalse
+            @($result.diagnostics | Where-Object { $_.component -eq 'ProviderSetup' -and $_.failure -eq 'ValidationFailed' }).Count | Should -BeGreaterThan 0
+            if ($id -eq 'cdc-provenance-rejection') { $result.data.preStartEligible | Should -BeFalse }
+            $results.Add(@{ SnippetId = $id; Scenario = $(if ($populated) { 'populated-independent-source' } else { 'empty-independent-source' }); ExitCode = 1; Diagnostics = @($result.diagnostics | Select-Object component, failure) })
+        }
+        (Invoke-OwnedSql $replacement $identitySql) | Should -Be $beforeSource
+        (Invoke-OwnedSql $sourceDatabase $identitySql) | Should -Be $originalSource
+        (Invoke-RestMethod -Uri "$connectorUri/offsets" -TimeoutSec 10 | ConvertTo-Json -Depth 30 -Compress) | Should -Be $offset
+        (Invoke-RestMethod -Uri "$connectorUri/status" -TimeoutSec 10).connector.state | Should -Be 'STOPPED'
     }
+    $commandSettingsPath = $Entry.SettingsPath
     (Get-FileHash $bindingPath).Hash | Should -Be $bindingHash
     (Get-FileHash $Entry.SettingsPath).Hash | Should -Be $settingsHash
     $journal = Get-Content (Join-Path $StatePath 'workflows/local/datastore-1/1.json') -Raw | ConvertFrom-Json

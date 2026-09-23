@@ -1,0 +1,84 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 19,
+    "Passed": 19,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 4,
+    "SqlStartupInjectedRecoveries": 4,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Mssql-CdcControllerManagedLifecycle"
+  },
+  {
+    "Name": "runbook-lifecycle-behavior",
+    "Status": "Passed",
+    "Total": 6,
+    "Passed": 6,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_unavailable_live_evidence_while_stopped",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Name": "Mssql-runbook-lifecycle",
+    "Status": "Passed",
+    "Total": 1,
+    "Passed": 1,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "CDC-DOC cdc-managed-start",
+        "SnippetId": "cdc-managed-start",
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

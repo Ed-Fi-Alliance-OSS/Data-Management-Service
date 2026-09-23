@@ -30,21 +30,22 @@ The nightly workflow loads `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` from the check
 
 Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1); its default `All` selection runs Contract and all 15 live jobs sequentially locally. `-Lane` selects one complete lane; a provider `-Suite` selects one complete CI job. Use a new `-ResultsDirectory` for every invocation.
 
-Live lanes require Docker, .NET 10, `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` equal to the [shipped qualification record](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json), `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, and the selected `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` / `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. The repository-pinned native Kafka image is also required. Images must exist locally unless `-PullImages` is supplied. Packaged-history tests require `ConnectionStrings__DatabaseConnection` / `ConnectionStrings__MssqlAdmin` pointing to isolated PostgreSQL / SQL Server 2025 admin servers. The contract lane, provider Admission lanes and PostgreSQL Lifecycle lane require Pester 5.7.1.
-Admission and PostgreSQL Lifecycle also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
+Live lanes require Docker, .NET 10, `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` equal to the [shipped qualification record](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json), `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, and the selected `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` / `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. The repository-pinned native Kafka image is also required. Images must exist locally unless `-PullImages` is supplied. Packaged-history tests require `ConnectionStrings__DatabaseConnection` / `ConnectionStrings__MssqlAdmin` pointing to isolated PostgreSQL / SQL Server 2025 admin servers. The contract lane, provider Admission and Lifecycle lanes require Pester 5.7.1.
+Admission and Lifecycle also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
 local/published Compose environment with no retained containers, volumes or bootstrap
 workspace. The shared live runbook fixture requires two PostgreSQL setup cases and
 three SQL Server setup cases (local, published and direct DMS E2E); missing or skipped
 cases fail qualification independently of the controller suite. SQL Server published
 qualification tags matching branch-built application/CMS images under the published
 Compose names and records their image IDs; it does not qualify a registry release.
-PostgreSQL Lifecycle reuses that fixture with `Procedure=Lifecycle` and requires
+Both provider Lifecycle lanes reuse that fixture with `Procedure=Lifecycle` and require
 `CDC-DOC cdc-managed-start` in addition to the provider `CdcControllerManagedLifecycle`
 selection. That live case invokes marked inventory, managed stop/start, validation,
 restart/resume and rejection examples on the original custom root. A separate report
 guard requires the existing retained-offset, restart, provenance, unavailable-evidence,
-source-mismatch and terminal-incident provider cases. SQL Server lifecycle snippet
-qualification remains pending T19; its existing controller selection is unchanged.
+source-mismatch and terminal-incident provider cases. SQL Server uses the same
+marked command harness with provider-specific fixture database cloning for source
+mismatch rejection; those fixture mutations are not operator recovery procedures.
 The runner builds SchemaTools in the selected configuration and in Debug, which
 the shipped wrapper resolver prefers when present, before executing the snippets.
 

@@ -241,8 +241,8 @@ function Get-CdcRunbookPesterReport {
     <# .SYNOPSIS
     Requires named wrapper cases independently of discovery; exclusions cannot pass qualification.
     #>
-    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup', 'MssqlSetup', 'PostgresqlLifecycle')][string] $QualificationProfile = 'Contract')
-    [string[]] $required = if ($QualificationProfile -eq 'PostgresqlLifecycle') { @('cdc-managed-start') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup') } elseif ($QualificationProfile -eq 'MssqlSetup') { @('cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published', 'cdc-sqlserver-e2e-setup') } else { @(
+    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup', 'MssqlSetup', 'PostgresqlLifecycle', 'MssqlLifecycle')][string] $QualificationProfile = 'Contract')
+    [string[]] $required = if ($QualificationProfile -in @('PostgresqlLifecycle', 'MssqlLifecycle')) { @('cdc-managed-start') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup') } elseif ($QualificationProfile -eq 'MssqlSetup') { @('cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published', 'cdc-sqlserver-e2e-setup') } else { @(
         'cdc-pg-bootstrap-local', 'cdc-pg-bootstrap-published',
         'cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published',
         'cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup', 'cdc-pg-e2e-build', 'cdc-sqlserver-e2e-build',
@@ -257,7 +257,7 @@ function Get-CdcRunbookPesterReport {
         [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
     })
     $passed = @($cases | Where-Object Outcome -eq Passed).Count
-    return [ordered]@{ Name = $(if ($QualificationProfile -eq 'PostgresqlLifecycle') { 'Postgresql-runbook-lifecycle' } elseif ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } elseif ($QualificationProfile -eq 'MssqlSetup') { 'Mssql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
+    return [ordered]@{ Name = $(if ($QualificationProfile -in @('PostgresqlLifecycle', 'MssqlLifecycle')) { $QualificationProfile.Replace('Lifecycle', '-runbook-lifecycle') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } elseif ($QualificationProfile -eq 'MssqlSetup') { 'Mssql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
