@@ -4,7 +4,8 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # Runs Invoke-ScheduledMergeQueueEnqueue.ps1 in a child pwsh, as the workflow step does, against a
-# fake gh on PATH that serves canned branch rules and pull request pages and records every write.
+# fake gh on PATH that serves canned branch rules, pull request lists and paged head-commit checks,
+# and records every read of checks and every write.
 
 Describe 'Scheduled merge queue enqueue' -Skip:$IsWindows {
     BeforeAll {
@@ -19,15 +20,17 @@ if [ "$1" = "api" ] && [[ "$2" == repos/Ed-Fi-Alliance-OSS/Data-Management-Servi
   exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
-  query=""; id=""
+  query=""; id=""; oid=""; number=""
   for arg in "$@"; do
     case "$arg" in
       query=*) query="${arg#query=}" ;;
       id=*) id="${arg#id=}" ;;
+      oid=*) oid="${arg#oid=}" ;;
+      number=*) number="${arg#number=}" ;;
     esac
   done
   if [[ "$query" == *enqueuePullRequest* ]]; then
-    echo "enqueue $id" >> "$FAKE_GH_LOG"
+    echo "enqueue $id $oid" >> "$FAKE_GH_LOG"
     if grep -qx "$id" "$FAKE_GH_DIR/fail-ids" 2>/dev/null; then
       echo "enqueue refused" >&2
       exit 1
@@ -35,13 +38,18 @@ if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     echo '{"data":{"enqueuePullRequest":{"clientMutationId":null}}}'
     exit 0
   fi
-  n=$(( $(cat "$FAKE_GH_DIR/fetch-count" 2>/dev/null || echo 0) + 1 ))
-  echo "$n" > "$FAKE_GH_DIR/fetch-count"
-  echo "fetch $n" >> "$FAKE_GH_LOG"
-  page="$FAKE_GH_DIR/prs-$n.json"
-  [ -f "$page" ] || page="$FAKE_GH_DIR/prs-1.json"
-  # --paginate --slurp returns every page wrapped in one array.
-  printf '['; cat "$page"; printf ']'
+  if [[ "$query" == *statusCheckRollup* ]]; then
+    echo "checks $number" >> "$FAKE_GH_LOG"
+    # Already the array --paginate --slurp returns.
+    cat "$FAKE_GH_DIR/checks-$number.json"
+    exit 0
+  fi
+  n=$(( $(cat "$FAKE_GH_DIR/list-count" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$FAKE_GH_DIR/list-count"
+  echo "list $n" >> "$FAKE_GH_LOG"
+  page="$FAKE_GH_DIR/list-$n.json"
+  [ -f "$page" ] || page="$FAKE_GH_DIR/list-1.json"
+  cat "$page"
   exit 0
 fi
 if [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
@@ -68,6 +76,11 @@ exit 99
 ]
 '@
 
+        $script:passing = @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS'))
+
+        # A pull request plus the checks on its head commit. Checks are name/state pairs so a name can
+        # repeat, and Filler adds that many passing unrelated check runs ahead of them, the way a full
+        # DMS run lists its matrix jobs before the gates.
         function Get-FakePullRequest {
             param(
                 [int] $Number,
@@ -75,43 +88,63 @@ exit 99
                 [string] $Mergeable = 'MERGEABLE',
                 [bool] $Draft = $false,
                 [bool] $Queued = $false,
-                [hashtable] $Checks = @{ 'DMS CI Gate' = 'SUCCESS'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'SUCCESS' }
+                [object[]] $Checks = $script:passing,
+                [int] $Filler = 0
             )
-            $contexts = @(foreach ($key in $Checks.Keys) {
-                    if ($key -eq 'license/cla') {
-                        [ordered]@{ __typename = 'StatusContext'; context = $key; state = $Checks[$key] }
-                    }
-                    elseif ($Checks[$key] -in 'QUEUED', 'IN_PROGRESS') {
-                        [ordered]@{ __typename = 'CheckRun'; name = $key; status = $Checks[$key]; conclusion = $null }
-                    }
-                    else {
-                        [ordered]@{ __typename = 'CheckRun'; name = $key; status = 'COMPLETED'; conclusion = $Checks[$key] }
-                    }
-                })
-            [ordered]@{
-                id = "PR_$Number"
-                number = $Number
-                title = "Pull request $Number"
-                url = "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/$Number"
-                isDraft = $Draft
-                isInMergeQueue = $Queued
-                reviewDecision = $Review
-                mergeable = $Mergeable
-                commits = @{ nodes = @(@{ commit = @{ statusCheckRollup = @{ contexts = @{ nodes = $contexts } } } }) }
+            $contexts = [System.Collections.Generic.List[object]]::new()
+            for ($i = 1; $i -le $Filler; $i++) {
+                $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = "Matrix job $i"; status = 'COMPLETED'; conclusion = 'SUCCESS' })
+            }
+            foreach ($check in $Checks) {
+                $name, $state = $check
+                if ($name -eq 'license/cla') {
+                    $contexts.Add([ordered]@{ __typename = 'StatusContext'; context = $name; state = $state })
+                }
+                elseif ($state -in 'QUEUED', 'IN_PROGRESS') {
+                    $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = $name; status = $state; conclusion = $null })
+                }
+                else {
+                    $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = $name; status = 'COMPLETED'; conclusion = $state })
+                }
+            }
+            [pscustomobject]@{
+                Node = [ordered]@{
+                    id = "PR_$Number"
+                    number = $Number
+                    title = "Pull request $Number"
+                    url = "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/$Number"
+                    isDraft = $Draft
+                    isInMergeQueue = $Queued
+                    reviewDecision = $Review
+                    mergeable = $Mergeable
+                }
+                Contexts = $contexts
             }
         }
 
-        function Get-FakePullRequestPage {
-            param([object[]] $Prs)
-            @{ data = @{ repository = @{ pullRequests = @{
-                            pageInfo = @{ hasNextPage = $false; endCursor = $null }
-                            nodes = @($Prs)
-                        } } } } | ConvertTo-Json -Depth 20
+        function ConvertTo-FakeCheckPage {
+            # The head-commit checks as gh api graphql --paginate --slurp returns them: 100 per page.
+            param([int] $Number, [System.Collections.Generic.List[object]] $Contexts)
+            $pages = [System.Collections.Generic.List[object]]::new()
+            $offset = 0
+            do {
+                $slice = @($Contexts | Select-Object -Skip $offset -First 100)
+                $offset += 100
+                $pages.Add(@{ data = @{ repository = @{ pullRequest = @{ commits = @{ nodes = @(@{ commit = @{
+                                                oid = "sha-$Number"
+                                                statusCheckRollup = @{ contexts = @{
+                                                        pageInfo = @{ hasNextPage = ($offset -lt $Contexts.Count); endCursor = "c$offset" }
+                                                        nodes = $slice
+                                                    } }
+                                            } }) } } } } })
+            } while ($offset -lt $Contexts.Count)
+            ConvertTo-Json -InputObject @($pages) -Depth 20
         }
 
         function Invoke-Enqueue {
+            # Each entry of Reads is the list of pull requests one read of the open pull requests returns.
             param(
-                [object[]] $Pages,
+                [object[][]] $Reads,
                 [switch] $DryRun,
                 [string[]] $FailIds = @()
             )
@@ -121,8 +154,15 @@ exit 99
             Set-Content -Path $gh -Value $script:fakeGh -NoNewline
             & chmod +x $gh
             Set-Content -Path (Join-Path $dir 'rules.json') -Value $script:rules
-            for ($i = 0; $i -lt $Pages.Count; $i++) {
-                Set-Content -Path (Join-Path $dir "prs-$($i + 1).json") -Value $Pages[$i]
+            for ($i = 0; $i -lt $Reads.Count; $i++) {
+                $page = @{ data = @{ repository = @{ pullRequests = @{
+                                pageInfo = @{ hasNextPage = $false; endCursor = $null }
+                                nodes = @($Reads[$i] | ForEach-Object Node)
+                            } } } }
+                Set-Content -Path (Join-Path $dir "list-$($i + 1).json") -Value (ConvertTo-Json -InputObject @($page) -Depth 20)
+                foreach ($pr in $Reads[$i]) {
+                    Set-Content -Path (Join-Path $dir "checks-$($pr.Node.number).json") -Value (ConvertTo-FakeCheckPage -Number $pr.Node.number -Contexts $pr.Contexts)
+                }
             }
             if ($FailIds.Count -gt 0) { Set-Content -Path (Join-Path $dir 'fail-ids') -Value ($FailIds -join "`n") }
             $log = Join-Path $dir 'gh.log'
@@ -183,24 +223,24 @@ exit 99
 
     Context 'selection' {
         It 'enqueues and comments on only the approved, mergeable pull requests whose required checks passed' {
-            $page = Get-FakePullRequestPage @(
+            $prs = @(
                 (Get-FakePullRequest 1)
                 (Get-FakePullRequest 2 -Draft $true)
                 (Get-FakePullRequest 3 -Review 'REVIEW_REQUIRED')
                 (Get-FakePullRequest 4 -Review 'CHANGES_REQUESTED')
                 (Get-FakePullRequest 5 -Mergeable 'CONFLICTING')
                 (Get-FakePullRequest 6 -Queued $true)
-                (Get-FakePullRequest 7 -Checks @{ 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'SUCCESS' })
-                (Get-FakePullRequest 8 -Checks @{ 'DMS CI Gate' = 'FAILURE'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'SUCCESS' })
-                (Get-FakePullRequest 9 -Checks @{ 'DMS CI Gate' = 'SUCCESS'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'PENDING' })
-                (Get-FakePullRequest 10 -Checks @{ 'DMS CI Gate' = 'SUCCESS'; 'Config CI Gate' = 'SKIPPED'; 'license/cla' = 'SUCCESS'; 'submit-nuget' = 'FAILURE' })
-                (Get-FakePullRequest 11 -Checks @{ 'DMS CI Gate' = 'IN_PROGRESS'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'SUCCESS' })
+                (Get-FakePullRequest 7 -Checks @(@('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
+                (Get-FakePullRequest 8 -Checks @(@('DMS CI Gate', 'FAILURE'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
+                (Get-FakePullRequest 9 -Checks @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'PENDING')))
+                (Get-FakePullRequest 10 -Checks @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'SKIPPED'), @('license/cla', 'SUCCESS'), @('submit-nuget', 'FAILURE')))
+                (Get-FakePullRequest 11 -Checks @(@('DMS CI Gate', 'IN_PROGRESS'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
             )
 
-            $result = Invoke-Enqueue -Pages @($page)
+            $result = Invoke-Enqueue -Reads @(, $prs)
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
-            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1', 'enqueue PR_10')
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1 sha-1', 'enqueue PR_10 sha-10')
             @($result.Log | Where-Object { $_ -like 'comment *' }) | Should -Be @(
                 'comment 1 Added to the merge queue by the scheduled merge queue run: https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/42'
                 'comment 10 Added to the merge queue by the scheduled merge queue run: https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/42'
@@ -218,24 +258,53 @@ exit 99
             $result.Summary | Should -Match '(?m)/pull/11\) Pull request 11: required check DMS CI Gate is IN_PROGRESS$'
         }
 
-        It 're-reads pull requests while GitHub has not computed mergeability yet' {
-            $first = Get-FakePullRequestPage @((Get-FakePullRequest 1 -Mergeable 'UNKNOWN'), (Get-FakePullRequest 2 -Review 'REVIEW_REQUIRED'))
-            $second = Get-FakePullRequestPage @((Get-FakePullRequest 1), (Get-FakePullRequest 2 -Review 'REVIEW_REQUIRED'))
+        It 'reads every page of head-commit checks and only for pull requests that pass the other rules' {
+            $prs = @(
+                (Get-FakePullRequest 1 -Filler 150)
+                (Get-FakePullRequest 2 -Filler 250 -Checks @(@('DMS CI Gate', 'FAILURE'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
+                (Get-FakePullRequest 3 -Review 'REVIEW_REQUIRED')
+            )
 
-            $result = Invoke-Enqueue -Pages @($first, $second)
+            $result = Invoke-Enqueue -Reads @(, $prs)
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
-            @($result.Log | Where-Object { $_ -like 'fetch *' }) | Should -Be @('fetch 1', 'fetch 2')
-            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1')
+            @($result.Log | Where-Object { $_ -like 'checks *' }) | Should -Be @('checks 1', 'checks 2')
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1 sha-1')
+            $result.Summary | Should -Match '(?m)/pull/2\) Pull request 2: required check DMS CI Gate is FAILURE$'
+        }
+
+        It 'requires every check sharing a required name to pass' {
+            $prs = @(
+                (Get-FakePullRequest 1 -Checks ($script:passing + , @('DMS CI Gate', 'FAILURE')))
+                (Get-FakePullRequest 2 -Checks (, @('DMS CI Gate', 'FAILURE') + $script:passing))
+            )
+
+            $result = Invoke-Enqueue -Reads @(, $prs)
+
+            $result.ExitCode | Should -Be 0 -Because $result.Output
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }).Count | Should -Be 0
+            $result.Summary | Should -Match '(?m)/pull/1\) Pull request 1: required check DMS CI Gate is FAILURE$'
+            $result.Summary | Should -Match '(?m)/pull/2\) Pull request 2: required check DMS CI Gate is FAILURE$'
+        }
+
+        It 're-reads pull requests while GitHub has not computed mergeability yet' {
+            $first = @((Get-FakePullRequest 1 -Mergeable 'UNKNOWN'), (Get-FakePullRequest 2 -Review 'REVIEW_REQUIRED'))
+            $second = @((Get-FakePullRequest 1), (Get-FakePullRequest 2 -Review 'REVIEW_REQUIRED'))
+
+            $result = Invoke-Enqueue -Reads @($first, $second)
+
+            $result.ExitCode | Should -Be 0 -Because $result.Output
+            @($result.Log | Where-Object { $_ -like 'list *' }) | Should -Be @('list 1', 'list 2')
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1 sha-1')
         }
 
         It 'gives up after three reads and reports a pull request that stays UNKNOWN' {
-            $page = Get-FakePullRequestPage @((Get-FakePullRequest 1 -Mergeable 'UNKNOWN'))
+            $prs = @((Get-FakePullRequest 1 -Mergeable 'UNKNOWN'))
 
-            $result = Invoke-Enqueue -Pages @($page)
+            $result = Invoke-Enqueue -Reads @(, $prs)
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
-            @($result.Log | Where-Object { $_ -like 'fetch *' }) | Should -Be @('fetch 1', 'fetch 2', 'fetch 3')
+            @($result.Log | Where-Object { $_ -like 'list *' }) | Should -Be @('list 1', 'list 2', 'list 3')
             @($result.Log | Where-Object { $_ -like 'enqueue *' }).Count | Should -Be 0
             $result.Summary | Should -Match '(?m)/pull/1\) Pull request 1: mergeable is UNKNOWN$'
         }
@@ -243,20 +312,20 @@ exit 99
 
     Context 'outcomes' {
         It 'exits early with a summary when no pull request is eligible' {
-            $page = Get-FakePullRequestPage @((Get-FakePullRequest 3 -Review 'REVIEW_REQUIRED'))
+            $prs = @((Get-FakePullRequest 3 -Review 'REVIEW_REQUIRED'))
 
-            $result = Invoke-Enqueue -Pages @($page)
+            $result = Invoke-Enqueue -Reads @(, $prs)
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
-            @($result.Log | Where-Object { $_ -like 'enqueue *' -or $_ -like 'comment *' }).Count | Should -Be 0
+            @($result.Log | Where-Object { $_ -like 'checks *' -or $_ -like 'enqueue *' -or $_ -like 'comment *' }).Count | Should -Be 0
             $result.Summary | Should -Match '(?m)^No eligible pull requests\.$'
             $result.Summary | Should -Match '(?m)^### Skipped \(1\)$'
         }
 
         It 'makes no writes on a dry run and lists what it would enqueue' {
-            $page = Get-FakePullRequestPage @((Get-FakePullRequest 1), (Get-FakePullRequest 2))
+            $prs = @((Get-FakePullRequest 1), (Get-FakePullRequest 2))
 
-            $result = Invoke-Enqueue -Pages @($page) -DryRun
+            $result = Invoke-Enqueue -Reads @(, $prs) -DryRun
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
             @($result.Log | Where-Object { $_ -like 'enqueue *' -or $_ -like 'comment *' }).Count | Should -Be 0
@@ -265,12 +334,13 @@ exit 99
         }
 
         It 'keeps going after a refused enqueue, skips its comment, and fails the run' {
-            $page = Get-FakePullRequestPage @((Get-FakePullRequest 1), (Get-FakePullRequest 2))
+            # A refusal is what GitHub returns when the head moved past the commit whose checks were read.
+            $prs = @((Get-FakePullRequest 1), (Get-FakePullRequest 2))
 
-            $result = Invoke-Enqueue -Pages @($page) -FailIds @('PR_1')
+            $result = Invoke-Enqueue -Reads @(, $prs) -FailIds @('PR_1')
 
             $result.ExitCode | Should -Not -Be 0
-            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1', 'enqueue PR_2')
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1 sha-1', 'enqueue PR_2 sha-2')
             @($result.Log | Where-Object { $_ -like 'comment *' }) | Should -HaveCount 1
             @($result.Log | Where-Object { $_ -like 'comment *' })[0] | Should -BeLike 'comment 2 *'
             $result.Summary | Should -Match '(?m)^### Enqueued \(1\)$'

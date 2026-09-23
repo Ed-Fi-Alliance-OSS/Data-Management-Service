@@ -60,11 +60,6 @@ query($owner: String!, $name: String!, $endCursor: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         id number title url isDraft isInMergeQueue reviewDecision mergeable
-        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-          __typename
-          ... on CheckRun { name status conclusion }
-          ... on StatusContext { context state }
-        } } } } } }
       }
     }
   }
@@ -76,41 +71,76 @@ query($owner: String!, $name: String!, $endCursor: String) {
     @($pages | ForEach-Object { $_.data.repository.pullRequests.nodes })
 }
 
-function Get-CheckState {
-    # Latest state of each check on the head commit, by name: a check run reports its status until
-    # it completes and its conclusion after, a commit status reports its state.
+function Get-HeadCheck {
+    # The head commit and the state of every check on it, by name. A full DMS run reports well over
+    # 100 checks with the gates near the end, so every page is read. A check run reports its status
+    # until it completes and its conclusion after; a commit status reports its state. Names repeat
+    # across workflows, so each name keeps every state it reported.
     param($PullRequest)
+    $query = @'
+query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      commits(last: 1) { nodes { commit {
+        oid
+        statusCheckRollup { contexts(first: 100, after: $endCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            __typename
+            ... on CheckRun { name status conclusion }
+            ... on StatusContext { context state }
+          }
+        } }
+      } } }
+    }
+  }
+}
+'@
+    $owner, $name = $Repository -split '/', 2
+    $pages = @(Invoke-Gh @('api', 'graphql', '--paginate', '--slurp', '-f', "query=$query", '-f', "owner=$owner", '-f', "name=$name", '-F', "number=$($PullRequest.number)") |
+            ConvertFrom-Json)
     $states = @{}
-    $rollup = $PullRequest.commits.nodes[0].commit.statusCheckRollup
-    if ($null -ne $rollup) {
-        foreach ($context in $rollup.contexts.nodes) {
+    foreach ($page in $pages) {
+        $commit = $page.data.repository.pullRequest.commits.nodes[0].commit
+        if ($null -eq $commit.statusCheckRollup) { continue }
+        foreach ($context in $commit.statusCheckRollup.contexts.nodes) {
             if ($context.__typename -eq 'CheckRun') {
-                $states[$context.name] = if ($null -ne $context.conclusion) { $context.conclusion } else { $context.status }
+                $checkName = $context.name
+                $state = if ($null -ne $context.conclusion) { $context.conclusion } else { $context.status }
             }
             else {
-                $states[$context.context] = $context.state
+                $checkName = $context.context
+                $state = $context.state
             }
+            if (-not $states.ContainsKey($checkName)) { $states[$checkName] = [System.Collections.Generic.List[string]]::new() }
+            $states[$checkName].Add($state)
         }
     }
-    $states
+    [pscustomobject]@{ Oid = $pages[0].data.repository.pullRequest.commits.nodes[0].commit.oid; States = $states }
 }
 
 function Get-SkipReason {
-    # Returns why a pull request is not eligible, or $null when it is. mergeStateStatus is not used:
-    # the license/cla ruleset requires up-to-date branches, so nearly every pull request reports
-    # BEHIND, which also hides required checks that have not reported yet.
-    param($PullRequest, [string[]] $RequiredChecks)
+    # Returns why a pull request is not eligible, or $null when it is, from the fields the list
+    # query returns. mergeStateStatus is not used: the license/cla ruleset requires up-to-date
+    # branches, so nearly every pull request reports BEHIND.
+    param($PullRequest)
     if ($PullRequest.isInMergeQueue) { return 'already in the merge queue' }
     if ($PullRequest.isDraft) { return 'draft' }
     if ($PullRequest.reviewDecision -ne 'APPROVED') {
         return "review decision is $(if ($PullRequest.reviewDecision) { $PullRequest.reviewDecision } else { 'none' })"
     }
     if ($PullRequest.mergeable -ne 'MERGEABLE') { return "mergeable is $($PullRequest.mergeable)" }
+    $null
+}
 
-    $states = Get-CheckState -PullRequest $PullRequest
+function Get-UnmetCheck {
+    # Returns why the required checks block the head commit, or $null when they all passed. A
+    # required name passes only when every check reporting under it passed.
+    param($HeadCheck, [string[]] $RequiredChecks)
     $unmet = @(foreach ($check in $RequiredChecks) {
-            $state = if ($states.ContainsKey($check)) { $states[$check] } else { 'missing' }
-            if ($state -notin 'SUCCESS', 'SKIPPED', 'NEUTRAL') { "$check is $state" }
+            if (-not $HeadCheck.States.ContainsKey($check)) { "$check is missing"; continue }
+            $blocking = @($HeadCheck.States[$check] | Where-Object { $_ -notin 'SUCCESS', 'SKIPPED', 'NEUTRAL' })
+            if ($blocking.Count -gt 0) { "$check is $($blocking[0])" }
         })
     if ($unmet.Count -gt 0) { return "required check $($unmet -join ', ')" }
     $null
@@ -135,22 +165,31 @@ $requiredChecks = Get-RequiredCheck
 # reading again a few seconds later returns the real value.
 for ($attempt = 1; $attempt -le 3; $attempt++) {
     $classified = @(Get-OpenPullRequest | ForEach-Object {
-            [pscustomobject]@{ PullRequest = $_; Skip = Get-SkipReason -PullRequest $_ -RequiredChecks $requiredChecks }
+            [pscustomobject]@{ PullRequest = $_; Skip = Get-SkipReason -PullRequest $_; Oid = $null }
         })
     if ($attempt -eq 3 -or -not ($classified | Where-Object Skip -EQ 'mergeable is UNKNOWN')) { break }
     Start-Sleep -Seconds $MergeableRetrySeconds
 }
 
-$eligible = @($classified | Where-Object { $null -eq $_.Skip } | ForEach-Object PullRequest)
+# Checks are read only for pull requests that pass every other rule, and the enqueue pins the
+# commit they were read from, so a push after this read makes GitHub refuse the enqueue.
+foreach ($entry in $classified | Where-Object { $null -eq $_.Skip }) {
+    $headCheck = Get-HeadCheck -PullRequest $entry.PullRequest
+    $entry.Skip = Get-UnmetCheck -HeadCheck $headCheck -RequiredChecks $requiredChecks
+    $entry.Oid = $headCheck.Oid
+}
+
+$eligible = @($classified | Where-Object { $null -eq $_.Skip })
 $skipped = @($classified | Where-Object { $null -ne $_.Skip } | ForEach-Object { "$(Format-PullRequest -PullRequest $_.PullRequest): $($_.Skip)" })
 $enqueued = [System.Collections.Generic.List[string]]::new()
 $failed = [System.Collections.Generic.List[string]]::new()
 
 if (-not $DryRun) {
-    foreach ($pullRequest in $eligible) {
+    foreach ($entry in $eligible) {
+        $pullRequest = $entry.PullRequest
         try {
-            $mutation = 'mutation($id: ID!) { enqueuePullRequest(input: {pullRequestId: $id}) { clientMutationId } }'
-            Invoke-Gh @('api', 'graphql', '-f', "query=$mutation", '-f', "id=$($pullRequest.id)") | Out-Null
+            $mutation = 'mutation($id: ID!, $oid: GitObjectID!) { enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $oid}) { clientMutationId } }'
+            Invoke-Gh @('api', 'graphql', '-f', "query=$mutation", '-f', "id=$($pullRequest.id)", '-f', "oid=$($entry.Oid)") | Out-Null
         }
         catch {
             Write-Output "::error::Failed to enqueue #$($pullRequest.number): $_"
@@ -171,7 +210,7 @@ if ($eligible.Count -eq 0) {
 }
 elseif ($DryRun) {
     $summary.Add('Dry run: nothing was enqueued.')
-    Write-Section -Lines $summary -Heading 'Would enqueue' -Items @($eligible | ForEach-Object { Format-PullRequest -PullRequest $_ })
+    Write-Section -Lines $summary -Heading 'Would enqueue' -Items @($eligible | ForEach-Object { Format-PullRequest -PullRequest $_.PullRequest })
 }
 else {
     Write-Section -Lines $summary -Heading 'Enqueued' -Items $enqueued
