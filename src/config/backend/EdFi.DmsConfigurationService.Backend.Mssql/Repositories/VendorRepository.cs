@@ -123,7 +123,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
                 return new VendorInsertResult.Success(id, isNewVendor);
             }
-            catch (SqlException ex) when (ex.IsUniqueViolation("UX_Vendor_Company"))
+            catch (SqlException ex) when (ex.IsUniqueViolation("UX_Vendor_TenantId_Company"))
             {
                 logger.LogWarning(ex, "Company Name must be unique");
                 await transaction.RollbackAsync();
@@ -345,6 +345,12 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                 await transaction.CommitAsync();
 
                 return new VendorUpdateResult.Success();
+            }
+            catch (SqlException ex) when (ex.IsUniqueViolation("UX_Vendor_TenantId_Company"))
+            {
+                logger.LogWarning(ex, "Company Name must be unique");
+                await RollbackSafelyAsync(transaction);
+                return new VendorUpdateResult.FailureDuplicateCompanyName();
             }
             catch (Exception ex)
             {
