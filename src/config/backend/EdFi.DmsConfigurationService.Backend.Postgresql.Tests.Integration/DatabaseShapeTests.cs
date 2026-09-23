@@ -53,7 +53,7 @@ public class Given_CMS_PostgreSQL_database_shape
         ["OpenIddictApplication"] = ["Id", "ClientId", "ClientSecret", "ProtocolMappers"],
         ["OpenIddictToken"] = ["Id", "ApplicationId", "ReferenceId", "ExpirationDate", "Payload"],
         ["Tenant"] = ["Id", "Name"],
-        ["Profile"] = ["Id", "ProfileName"],
+        ["Profile"] = ["Id", "TenantId", "ProfileName"],
     };
 
     private static readonly ConstraintExpectation[] ExpectedRepresentativeConstraints =
@@ -67,7 +67,7 @@ public class Given_CMS_PostgreSQL_database_shape
             ["VendorId", "ApplicationName"],
             false
         ),
-        new("UX_Vendor_Company", "Vendor", "u", ["Company"], false),
+        new("UX_Vendor_TenantId_Company", "Vendor", "u", ["TenantId", "Company"], true),
         new("FK_Vendor_Tenant", "Vendor", "f", ["TenantId"], false),
         new("UX_ClaimSet_ClaimSetName", "ClaimSet", "u", ["ClaimSetName"], false),
         new(
@@ -79,7 +79,8 @@ public class Given_CMS_PostgreSQL_database_shape
         ),
         new("UX_ResourceClaim_ClaimName", "ResourceClaim", "u", ["ClaimName"], false),
         new("UX_Tenant_Name", "Tenant", "u", ["Name"], false),
-        new("UX_Profile_ProfileName", "Profile", "u", ["ProfileName"], false),
+        new("UX_Profile_TenantId_ProfileName", "Profile", "u", ["TenantId", "ProfileName"], true),
+        new("FK_Profile_Tenant", "Profile", "f", ["TenantId"], false),
         new(
             "PK_OpenIddictApplicationScope",
             "OpenIddictApplicationScope",
@@ -112,6 +113,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "IX_AuthorizationStrategy_TenantId",
         "IX_ResourceClaim_TenantId",
         "IX_DataStore_TenantId",
+        "IX_Profile_TenantId",
         "IX_OpenIddictToken_ApplicationId",
         "IX_OpenIddictToken_Subject",
         "IX_OpenIddictToken_ReferenceId",
@@ -135,6 +137,7 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
         ("OwnershipToken", "TenantId"),
+        ("Profile", "TenantId"),
         ("ResourceClaim", "TenantId"),
         ("Tenant", "Id"),
         ("Vendor", "TenantId"),
@@ -322,12 +325,10 @@ public class Given_CMS_PostgreSQL_database_shape
     {
         string[] globalUniqueNames =
         [
-            "UX_Vendor_Company",
             "UX_ClaimSet_ClaimSetName",
             "UX_AuthorizationStrategy_AuthorizationStrategyName",
             "UX_ResourceClaim_ClaimName",
             "UX_Tenant_Name",
-            "UX_Profile_ProfileName",
             "UX_OpenIddictApplication_ClientId",
             "UX_OpenIddictScope_Name",
             "UX_OpenIddictRole_Name",
@@ -344,6 +345,16 @@ public class Given_CMS_PostgreSQL_database_shape
             ColumnsFor(actual).Should().NotContain("TenantId");
             actual.NullsNotDistinct.Should().BeFalse();
         }
+    }
+
+    [Test]
+    public void It_should_remove_the_global_vendor_and_profile_name_constraints_after_the_replay()
+    {
+        // Replaying 0001 and 0026 re-adds these, so their absence proves 0032 drops them on replay too.
+        _constraints
+            .Select(constraint => constraint.Name)
+            .Should()
+            .NotContain(["UX_Vendor_Company", "UX_Profile_ProfileName"]);
     }
 
     [Test]
