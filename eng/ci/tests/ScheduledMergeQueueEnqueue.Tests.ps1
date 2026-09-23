@@ -40,6 +40,10 @@ if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
   fi
   if [[ "$query" == *statusCheckRollup* ]]; then
     echo "checks $number" >> "$FAKE_GH_LOG"
+    if grep -qx "$number" "$FAKE_GH_DIR/fail-check-reads" 2>/dev/null; then
+      echo "HTTP 502: Bad Gateway" >&2
+      exit 1
+    fi
     # Already the array --paginate --slurp returns.
     cat "$FAKE_GH_DIR/checks-$number.json"
     exit 0
@@ -78,9 +82,10 @@ exit 99
 
         $script:passing = @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS'))
 
-        # A pull request plus the checks on its head commit. Checks are name/state pairs so a name can
-        # repeat, and Filler adds that many passing unrelated check runs ahead of them, the way a full
-        # DMS run lists its matrix jobs before the gates.
+        # A pull request plus the checks on its head commit. Checks are name/state pairs, or
+        # name/state/databaseId triples when a test needs to order repeated names; otherwise check run
+        # ids follow list order. Filler adds that many passing unrelated check runs ahead of them, the
+        # way a full DMS run lists its matrix jobs before the gates.
         function Get-FakePullRequest {
             param(
                 [int] $Number,
@@ -93,18 +98,21 @@ exit 99
             )
             $contexts = [System.Collections.Generic.List[object]]::new()
             for ($i = 1; $i -le $Filler; $i++) {
-                $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = "Matrix job $i"; status = 'COMPLETED'; conclusion = 'SUCCESS' })
+                $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = "Matrix job $i"; databaseId = $i; status = 'COMPLETED'; conclusion = 'SUCCESS' })
             }
+            $position = 0
             foreach ($check in $Checks) {
-                $name, $state = $check
+                $position++
+                $name, $state, $id = $check
+                if ($null -eq $id) { $id = 1000 + $position }
                 if ($name -eq 'license/cla') {
                     $contexts.Add([ordered]@{ __typename = 'StatusContext'; context = $name; state = $state })
                 }
                 elseif ($state -in 'QUEUED', 'IN_PROGRESS') {
-                    $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = $name; status = $state; conclusion = $null })
+                    $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = $name; databaseId = $id; status = $state; conclusion = $null })
                 }
                 else {
-                    $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = $name; status = 'COMPLETED'; conclusion = $state })
+                    $contexts.Add([ordered]@{ __typename = 'CheckRun'; name = $name; databaseId = $id; status = 'COMPLETED'; conclusion = $state })
                 }
             }
             [pscustomobject]@{
@@ -146,7 +154,8 @@ exit 99
             param(
                 [object[][]] $Reads,
                 [switch] $DryRun,
-                [string[]] $FailIds = @()
+                [string[]] $FailIds = @(),
+                [int[]] $FailCheckReads = @()
             )
             $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString())
             New-Item -ItemType Directory -Path $dir | Out-Null
@@ -165,6 +174,7 @@ exit 99
                 }
             }
             if ($FailIds.Count -gt 0) { Set-Content -Path (Join-Path $dir 'fail-ids') -Value ($FailIds -join "`n") }
+            if ($FailCheckReads.Count -gt 0) { Set-Content -Path (Join-Path $dir 'fail-check-reads') -Value ($FailCheckReads -join "`n") }
             $log = Join-Path $dir 'gh.log'
             $summary = Join-Path $dir 'summary.md'
             New-Item -ItemType File -Path $log, $summary | Out-Null
@@ -233,8 +243,12 @@ exit 99
                 (Get-FakePullRequest 7 -Checks @(@('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
                 (Get-FakePullRequest 8 -Checks @(@('DMS CI Gate', 'FAILURE'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
                 (Get-FakePullRequest 9 -Checks @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'PENDING')))
-                (Get-FakePullRequest 10 -Checks @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'SKIPPED'), @('license/cla', 'SUCCESS'), @('submit-nuget', 'FAILURE')))
+                (Get-FakePullRequest 10 -Checks ($script:passing + , @('submit-nuget', 'FAILURE')))
                 (Get-FakePullRequest 11 -Checks @(@('DMS CI Gate', 'IN_PROGRESS'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
+                # A draft skips its gates; once it is marked ready, that skip stays the newest result
+                # until the new run reaches the gate, so it must not count as passing.
+                (Get-FakePullRequest 12 -Checks @(@('DMS CI Gate', 'SKIPPED'), @('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS')))
+                (Get-FakePullRequest 13 -Checks @(@('DMS CI Gate', 'SUCCESS'), @('Config CI Gate', 'NEUTRAL'), @('license/cla', 'SUCCESS')))
             )
 
             $result = Invoke-Enqueue -Reads @(, $prs)
@@ -246,7 +260,7 @@ exit 99
                 'comment 10 Added to the merge queue by the scheduled merge queue run: https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/42'
             )
             $result.Summary | Should -Match '(?m)^### Enqueued \(2\)$'
-            $result.Summary | Should -Match '(?m)^### Skipped \(9\)$'
+            $result.Summary | Should -Match '(?m)^### Skipped \(11\)$'
             $result.Summary | Should -Match '(?m)/pull/2\) Pull request 2: draft$'
             $result.Summary | Should -Match '(?m)/pull/3\) Pull request 3: review decision is REVIEW_REQUIRED$'
             $result.Summary | Should -Match '(?m)/pull/4\) Pull request 4: review decision is CHANGES_REQUESTED$'
@@ -256,6 +270,8 @@ exit 99
             $result.Summary | Should -Match '(?m)/pull/8\) Pull request 8: required check DMS CI Gate is FAILURE$'
             $result.Summary | Should -Match '(?m)/pull/9\) Pull request 9: required check license/cla is PENDING$'
             $result.Summary | Should -Match '(?m)/pull/11\) Pull request 11: required check DMS CI Gate is IN_PROGRESS$'
+            $result.Summary | Should -Match '(?m)/pull/12\) Pull request 12: required check DMS CI Gate is SKIPPED$'
+            $result.Summary | Should -Match '(?m)/pull/13\) Pull request 13: required check Config CI Gate is NEUTRAL$'
         }
 
         It 'reads every page of head-commit checks and only for pull requests that pass the other rules' {
@@ -273,18 +289,33 @@ exit 99
             $result.Summary | Should -Match '(?m)/pull/2\) Pull request 2: required check DMS CI Gate is FAILURE$'
         }
 
-        It 'requires every check sharing a required name to pass' {
+        It 'judges a repeated required check by its most recent run' {
+            # Re-runs, close/reopen and draft-to-ready leave older runs of a gate on the same commit,
+            # and the rollup does not order them, so the newer run is listed first here.
+            $gates = @(@('Config CI Gate', 'SUCCESS'), @('license/cla', 'SUCCESS'))
             $prs = @(
-                (Get-FakePullRequest 1 -Checks ($script:passing + , @('DMS CI Gate', 'FAILURE')))
-                (Get-FakePullRequest 2 -Checks (, @('DMS CI Gate', 'FAILURE') + $script:passing))
+                (Get-FakePullRequest 1 -Checks ($gates + @(@('DMS CI Gate', 'SUCCESS', 20), @('DMS CI Gate', 'FAILURE', 10))))
+                (Get-FakePullRequest 2 -Checks ($gates + @(@('DMS CI Gate', 'FAILURE', 20), @('DMS CI Gate', 'SUCCESS', 10))))
+                (Get-FakePullRequest 3 -Checks ($gates + @(@('DMS CI Gate', 'QUEUED', 20), @('DMS CI Gate', 'FAILURE', 10))))
             )
 
             $result = Invoke-Enqueue -Reads @(, $prs)
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
-            @($result.Log | Where-Object { $_ -like 'enqueue *' }).Count | Should -Be 0
-            $result.Summary | Should -Match '(?m)/pull/1\) Pull request 1: required check DMS CI Gate is FAILURE$'
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_1 sha-1')
             $result.Summary | Should -Match '(?m)/pull/2\) Pull request 2: required check DMS CI Gate is FAILURE$'
+            $result.Summary | Should -Match '(?m)/pull/3\) Pull request 3: required check DMS CI Gate is QUEUED$'
+        }
+
+        It 'skips a pull request whose checks cannot be read and still enqueues the others' {
+            $prs = @((Get-FakePullRequest 1), (Get-FakePullRequest 2))
+
+            $result = Invoke-Enqueue -Reads @(, $prs) -FailCheckReads @(1)
+
+            $result.ExitCode | Should -Not -Be 0
+            @($result.Log | Where-Object { $_ -like 'enqueue *' }) | Should -Be @('enqueue PR_2 sha-2')
+            $result.Summary | Should -Match '(?m)^### Enqueued \(1\)$'
+            $result.Summary | Should -Match '(?m)/pull/1\) Pull request 1: check read failed$'
         }
 
         It 're-reads pull requests while GitHub has not computed mergeability yet' {

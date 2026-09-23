@@ -9,7 +9,7 @@
 
 .DESCRIPTION
     A pull request is eligible when it is not a draft, not already queued, approved, mergeable, and
-    every required check for main has passed. Each eligible pull request is enqueued and gets a
+    every required check for main succeeded. Each eligible pull request is enqueued and gets a
     comment linking the run, and a summary of enqueued and skipped pull requests is written.
     Called by .github/workflows/scheduled-merge-queue-enqueue.yml; gh must be authenticated with a
     token whose events start other workflows, so the enqueue starts merge_group CI.
@@ -72,10 +72,11 @@ query($owner: String!, $name: String!, $endCursor: String) {
 }
 
 function Get-HeadCheck {
-    # The head commit and the state of every check on it, by name. A full DMS run reports well over
-    # 100 checks with the gates near the end, so every page is read. A check run reports its status
-    # until it completes and its conclusion after; a commit status reports its state. Names repeat
-    # across workflows, so each name keeps every state it reported.
+    # The head commit and the current state of each check on it, by name. A full DMS run reports well
+    # over 100 checks with the gates near the end, so every page is read. The rollup also keeps older
+    # runs of a check on the same commit (re-runs, close/reopen, draft-to-ready), so the run with the
+    # highest databaseId decides, as it does for GitHub. A check run reports its status until it
+    # completes and its conclusion after; a commit status reports its state.
     param($PullRequest)
     $query = @'
 query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
@@ -87,7 +88,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
           pageInfo { hasNextPage endCursor }
           nodes {
             __typename
-            ... on CheckRun { name status conclusion }
+            ... on CheckRun { name databaseId status conclusion }
             ... on StatusContext { context state }
           }
         } }
@@ -100,20 +101,19 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
     $pages = @(Invoke-Gh @('api', 'graphql', '--paginate', '--slurp', '-f', "query=$query", '-f', "owner=$owner", '-f', "name=$name", '-F', "number=$($PullRequest.number)") |
             ConvertFrom-Json)
     $states = @{}
+    $newest = @{}
     foreach ($page in $pages) {
         $commit = $page.data.repository.pullRequest.commits.nodes[0].commit
         if ($null -eq $commit.statusCheckRollup) { continue }
         foreach ($context in $commit.statusCheckRollup.contexts.nodes) {
             if ($context.__typename -eq 'CheckRun') {
-                $checkName = $context.name
-                $state = if ($null -ne $context.conclusion) { $context.conclusion } else { $context.status }
+                if ($newest.ContainsKey($context.name) -and $newest[$context.name] -gt $context.databaseId) { continue }
+                $newest[$context.name] = $context.databaseId
+                $states[$context.name] = if ($null -ne $context.conclusion) { $context.conclusion } else { $context.status }
             }
             else {
-                $checkName = $context.context
-                $state = $context.state
+                $states[$context.context] = $context.state
             }
-            if (-not $states.ContainsKey($checkName)) { $states[$checkName] = [System.Collections.Generic.List[string]]::new() }
-            $states[$checkName].Add($state)
         }
     }
     [pscustomobject]@{ Oid = $pages[0].data.repository.pullRequest.commits.nodes[0].commit.oid; States = $states }
@@ -134,13 +134,13 @@ function Get-SkipReason {
 }
 
 function Get-UnmetCheck {
-    # Returns why the required checks block the head commit, or $null when they all passed. A
-    # required name passes only when every check reporting under it passed.
+    # Returns why the required checks block the head commit, or $null when they all succeeded.
+    # SKIPPED does not count: the gates skip on drafts, and after a draft is marked ready that skip
+    # stays the newest result until the new run reaches the gate, which can take hours.
     param($HeadCheck, [string[]] $RequiredChecks)
     $unmet = @(foreach ($check in $RequiredChecks) {
-            if (-not $HeadCheck.States.ContainsKey($check)) { "$check is missing"; continue }
-            $blocking = @($HeadCheck.States[$check] | Where-Object { $_ -notin 'SUCCESS', 'SKIPPED', 'NEUTRAL' })
-            if ($blocking.Count -gt 0) { "$check is $($blocking[0])" }
+            $state = if ($HeadCheck.States.ContainsKey($check)) { $HeadCheck.States[$check] } else { 'missing' }
+            if ($state -ne 'SUCCESS') { "$check is $state" }
         })
     if ($unmet.Count -gt 0) { return "required check $($unmet -join ', ')" }
     $null
@@ -173,8 +173,18 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
 
 # Checks are read only for pull requests that pass every other rule, and the enqueue pins the
 # commit they were read from, so a push after this read makes GitHub refuse the enqueue.
+# A failed read skips only that pull request; the run still fails so the error is seen.
+$readFailed = $false
 foreach ($entry in $classified | Where-Object { $null -eq $_.Skip }) {
-    $headCheck = Get-HeadCheck -PullRequest $entry.PullRequest
+    try {
+        $headCheck = Get-HeadCheck -PullRequest $entry.PullRequest
+    }
+    catch {
+        Write-Output "::error::Failed to read the checks of #$($entry.PullRequest.number): $_"
+        $entry.Skip = 'check read failed'
+        $readFailed = $true
+        continue
+    }
     $entry.Skip = Get-UnmetCheck -HeadCheck $headCheck -RequiredChecks $requiredChecks
     $entry.Oid = $headCheck.Oid
 }
@@ -225,4 +235,4 @@ else {
     $summary | Write-Output
 }
 
-if ($failed.Count -gt 0) { exit 1 }
+if ($failed.Count -gt 0 -or $readFailed) { exit 1 }
