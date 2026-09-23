@@ -13,10 +13,11 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs;
 
 /// <summary>
-/// DMS-1437 step 0.2 initial operational assessment (spec §6.2). Each fixture creates the scratch schema
-/// <c>dmscs_probe</c> with the planned <c>Job</c> and <c>JobSchedule</c> shapes and indexes (spec §3) in its own
-/// database, runs the planned SQL (spec D-3, D-4, D-6, D-8, D-9, D-17) through raw SqlClient commands, and drops
-/// the schema afterwards. Nothing here touches repositories, options, hosted services, or the <c>dmscs</c> schema.
+/// DMS-1437 step 0.2 operational assessment (spec §6.2). Each fixture creates the scratch schema
+/// <c>dmscs_probe</c> with the <c>Job</c> and <c>JobSchedule</c> shapes and indexes of spec §3 in its own database,
+/// runs the spec's SQL (D-3, D-4, D-6, D-8, D-9, D-17, including the amendments adopted at the step 0.2 review:
+/// the index-ordered claim and bounded exhaust batches) through raw SqlClient commands, and drops the schema
+/// afterwards. Nothing here touches repositories, options, hosted services, or the <c>dmscs</c> schema.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -51,14 +52,13 @@ public abstract class JobOperationalProbeBase
     protected const int LockTimeoutErrorNumber = 1222;
     protected const int DeadlockErrorNumber = 1205;
     protected const string ExhaustedMessage = "The job exceeded the maximum number of attempts.";
+    protected const int CheckViolationErrorNumber = 547;
+
+    /// <summary>The fixed D-6 batch bound adopted at the step 0.2 review (A4).</summary>
+    protected const int ExhaustBatchSize = 1_000;
 
     private static readonly object _resultsFileLock = new();
     private string? _connectionString;
-
-    /// <summary>
-    /// The claim shape whose index, seed values, and claim/exhaust statements the fixture uses.
-    /// </summary>
-    protected virtual ClaimShape Shape => ClaimShape.Planned;
 
     protected string ConnectionString =>
         _connectionString ?? throw new InvalidOperationException("The probe schema has not been created.");
@@ -93,7 +93,7 @@ public abstract class JobOperationalProbeBase
 
         await ExecuteAsync(JobProbeSql.DropSchema);
         await ExecuteAsync(JobProbeSql.CreateSchema);
-        await ExecuteAsync(JobProbeSql.CreateTables(Shape));
+        await ExecuteAsync(JobProbeSql.CreateTables);
     }
 
     [OneTimeTearDown]
@@ -139,7 +139,8 @@ public abstract class JobOperationalProbeBase
 
     /// <summary>
     /// Seeds <paramref name="count"/> jobs in one statement. Creation times are one millisecond apart and end
-    /// <paramref name="createdAgeSeconds"/> before now so that FIFO order is the insertion order.
+    /// <paramref name="createdAgeSeconds"/> before now so that FIFO order is the insertion order. Active rows get
+    /// <c>NextAttemptAt = CreatedAt</c>, as every enqueue path sets it (A1).
     /// </summary>
     protected Task SeedJobsAsync(
         string status,
@@ -158,8 +159,7 @@ public abstract class JobOperationalProbeBase
             ("@CreatedAgeSeconds", createdAgeSeconds),
             ("@FinishedAgeSeconds", finishedAgeSeconds),
             ("@LeaseRemainingSeconds", leaseRemainingSeconds),
-            ("@LeaseOwner", leaseOwner),
-            ("@AvailableAtEnqueue", Shape == ClaimShape.IndexOrdered)
+            ("@LeaseOwner", leaseOwner)
         );
 
     protected Task UpdateStatisticsAsync() =>
@@ -180,9 +180,9 @@ public abstract class JobOperationalProbeBase
     /// <summary>
     /// D-3: one claim statement in its own (implicit) transaction.
     /// </summary>
-    protected async Task<ClaimedProbeJob?> ClaimAsync(SqlConnection connection, string owner)
+    protected static async Task<ClaimedProbeJob?> ClaimAsync(SqlConnection connection, string owner)
     {
-        await using SqlCommand claim = Command(connection, null, JobProbeSql.Claim(Shape));
+        await using SqlCommand claim = Command(connection, null, JobProbeSql.Claim);
         claim.Parameters.AddWithValue("@Owner", owner);
         claim.Parameters.AddWithValue("@LeaseSeconds", LeaseSeconds);
         claim.Parameters.AddWithValue("@MaxAttempts", MaxAttempts);
@@ -261,13 +261,80 @@ public abstract class JobOperationalProbeBase
         }
     }
 
-    protected async Task<int> ExhaustAsync(SqlConnection connection, int maxAttempts = MaxAttempts)
+    /// <summary>
+    /// D-6 as adopted (A4): batches of at most <see cref="ExhaustBatchSize"/> rows, each committed in its own
+    /// transaction, with a cancellation check before every batch. The sweep ends at the first batch that comes back
+    /// short. <paramref name="beforeCommit"/> runs inside each batch transaction after the UPDATE, and
+    /// <paramref name="afterBatchCommitted"/> after each commit.
+    /// </summary>
+    protected static async Task<IReadOnlyList<ExhaustBatch>> ExhaustSweepAsync(
+        SqlConnection connection,
+        int maxAttempts = MaxAttempts,
+        CancellationToken cancellationToken = default,
+        Func<SqlConnection, SqlTransaction, Task>? beforeCommit = null,
+        Action<ExhaustBatch>? afterBatchCommitted = null
+    )
     {
-        await using SqlCommand exhaust = Command(connection, null, JobProbeSql.Exhaust(Shape));
-        exhaust.Parameters.AddWithValue("@MaxAttempts", maxAttempts);
-        exhaust.Parameters.AddWithValue("@Message", ExhaustedMessage);
-        exhaust.Parameters.AddWithValue("@Owner", "probe-exhaust");
-        return await exhaust.ExecuteNonQueryAsync();
+        List<ExhaustBatch> batches = [];
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            long start = Stopwatch.GetTimestamp();
+            int rows;
+            await using (
+                SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync()
+            )
+            {
+                await using (SqlCommand exhaust = Command(connection, transaction, JobProbeSql.Exhaust))
+                {
+                    exhaust.Parameters.AddWithValue("@MaxAttempts", maxAttempts);
+                    exhaust.Parameters.AddWithValue("@Message", ExhaustedMessage);
+                    exhaust.Parameters.AddWithValue("@Owner", "probe-exhaust");
+                    exhaust.Parameters.AddWithValue("@BatchSize", ExhaustBatchSize);
+                    rows = await exhaust.ExecuteNonQueryAsync();
+                }
+
+                if (beforeCommit is not null)
+                {
+                    await beforeCommit(connection, transaction);
+                }
+                await transaction.CommitAsync();
+            }
+
+            ExhaustBatch batch = new(rows, ElapsedMilliseconds(start));
+            batches.Add(batch);
+            afterBatchCommitted?.Invoke(batch);
+            if (rows < ExhaustBatchSize)
+            {
+                return batches;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The locks this session holds right now: table-level locks other than intent locks (an escalation) and key
+    /// locks.
+    /// </summary>
+    protected static async Task<(int TableLocks, int KeyLocks)> CountHeldLocksAsync(
+        SqlConnection connection,
+        SqlTransaction transaction
+    )
+    {
+        await using SqlCommand locks = Command(
+            connection,
+            transaction,
+            """
+            SELECT
+                COUNT(CASE WHEN resource_type = N'OBJECT' AND request_mode NOT LIKE N'I%' THEN 1 END),
+                COUNT(CASE WHEN resource_type = N'KEY' THEN 1 END)
+            FROM sys.dm_tran_locks
+            WHERE request_session_id = @@SPID AND resource_database_id = DB_ID();
+            """
+        );
+        await using SqlDataReader reader = await locks.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        return (reader.GetInt32(0), reader.GetInt32(1));
     }
 
     protected static double ElapsedMilliseconds(long start) =>
@@ -298,19 +365,8 @@ public enum ProbeWriteOutcome
     LockTimeout,
 }
 
-/// <summary>
-/// <see cref="Planned"/> is spec v3.1 as written: <c>IX_Job_Claim (Status, NextAttemptAt, Id)</c>, <c>NextAttemptAt</c>
-/// null until a retry or release, and claims ordered by <c>COALESCE(NextAttemptAt, CreatedAt), Id</c>.
-/// <see cref="IndexOrdered"/> is the step 0.2 proposal: <c>NextAttemptAt</c> set to the enqueue time so every active
-/// row carries its eligibility time, <c>IX_Job_Claim (NextAttemptAt, Id)</c> over the active statuses, claims ordered
-/// by <c>NextAttemptAt, Id</c>, and a redundant <c>Status IN (N'Pending', N'InProgress')</c> conjunct on claim and
-/// exhaust, without which SQL Server does not match the filtered index.
-/// </summary>
-public enum ClaimShape
-{
-    Planned,
-    IndexOrdered,
-}
+/// <summary>One committed <c>Exhaust</c> batch: rows changed and the batch transaction's duration.</summary>
+public sealed record ExhaustBatch(int Rows, double Milliseconds);
 
 public sealed record ClaimedProbeJob(long Id, long FencingToken, int AttemptCount);
 
@@ -341,7 +397,8 @@ public sealed record LatencySummary(int Count, double P50, double P95, double P9
 }
 
 /// <summary>
-/// The planned statements. Table and index shapes follow spec §3 with the schema renamed to <c>dmscs_probe</c>.
+/// The spec's statements as amended at the step 0.2 review. Table and index shapes follow spec §3 with the schema
+/// renamed to <c>dmscs_probe</c>.
 /// </summary>
 internal static class JobProbeSql
 {
@@ -357,88 +414,84 @@ internal static class JobProbeSql
     private const string PayloadObjectCheck =
         "ISJSON(Payload) = 1 AND SUBSTRING(Payload, PATINDEX(N'%[^ ' + NCHAR(9) + NCHAR(10) + NCHAR(13) + N']%', Payload), 1) = N'{'";
 
-    private static string ClaimIndex(ClaimShape shape) =>
-        shape == ClaimShape.Planned
-            ? "CREATE INDEX IX_Job_Claim ON dmscs_probe.Job (Status, NextAttemptAt, Id) INCLUDE (LeaseExpiresAt, AttemptCount) WHERE Status IN (N'Pending', N'InProgress');"
-            : "CREATE INDEX IX_Job_Claim ON dmscs_probe.Job (NextAttemptAt, Id) INCLUDE (Status, LeaseExpiresAt, AttemptCount) WHERE Status IN (N'Pending', N'InProgress');";
+    public const string CreateTables = $"""
+        CREATE TABLE dmscs_probe.Tenant (
+            Id BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Tenant PRIMARY KEY,
+            TenantName NVARCHAR(256) NOT NULL
+        );
 
-    public static string CreateTables(ClaimShape shape) =>
-        $"""
-            CREATE TABLE dmscs_probe.Tenant (
-                Id BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Tenant PRIMARY KEY,
-                TenantName NVARCHAR(256) NOT NULL
-            );
+        INSERT INTO dmscs_probe.Tenant (TenantName) VALUES (N'probe-a'), (N'probe-b'), (N'probe-c');
 
-            INSERT INTO dmscs_probe.Tenant (TenantName) VALUES (N'probe-a'), (N'probe-b'), (N'probe-c');
+        CREATE TABLE dmscs_probe.JobSchedule (
+            Id BIGINT IDENTITY(1,1) NOT NULL,
+            TenantId BIGINT NULL,
+            ScheduleType NVARCHAR(100) COLLATE Latin1_General_BIN2 NOT NULL,
+            JobType NVARCHAR(100) COLLATE Latin1_General_BIN2 NOT NULL,
+            PayloadVersion SMALLINT NOT NULL,
+            Payload NVARCHAR(4000) NOT NULL,
+            IntervalMinutes INT NOT NULL,
+            Enabled BIT NOT NULL,
+            NextRunAt DATETIME2 NOT NULL,
+            LastEnqueuedOccurrence DATETIME2 NULL,
+            LeaseOwner NVARCHAR(200) NULL,
+            LeaseExpiresAt DATETIME2 NULL,
+            FencingToken BIGINT NOT NULL CONSTRAINT DF_JobSchedule_FencingToken DEFAULT 0,
+            CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_JobSchedule_CreatedAt DEFAULT SYSUTCDATETIME(),
+            CreatedBy NVARCHAR(256),
+            LastModifiedAt DATETIME2,
+            ModifiedBy NVARCHAR(256),
+            CONSTRAINT PK_JobSchedule PRIMARY KEY (Id),
+            CONSTRAINT FK_JobSchedule_Tenant FOREIGN KEY (TenantId) REFERENCES dmscs_probe.Tenant (Id) ON DELETE NO ACTION,
+            CONSTRAINT CK_JobSchedule_Payload_Object CHECK ({PayloadObjectCheck}),
+            CONSTRAINT CK_JobSchedule_IntervalMinutes CHECK (IntervalMinutes BETWEEN 1 AND 527040)
+        );
 
-            CREATE TABLE dmscs_probe.JobSchedule (
-                Id BIGINT IDENTITY(1,1) NOT NULL,
-                TenantId BIGINT NULL,
-                ScheduleType NVARCHAR(100) COLLATE Latin1_General_BIN2 NOT NULL,
-                JobType NVARCHAR(100) COLLATE Latin1_General_BIN2 NOT NULL,
-                PayloadVersion SMALLINT NOT NULL,
-                Payload NVARCHAR(4000) NOT NULL,
-                IntervalMinutes INT NOT NULL,
-                Enabled BIT NOT NULL,
-                NextRunAt DATETIME2 NOT NULL,
-                LastEnqueuedOccurrence DATETIME2 NULL,
-                LeaseOwner NVARCHAR(200) NULL,
-                LeaseExpiresAt DATETIME2 NULL,
-                FencingToken BIGINT NOT NULL CONSTRAINT DF_JobSchedule_FencingToken DEFAULT 0,
-                CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_JobSchedule_CreatedAt DEFAULT SYSUTCDATETIME(),
-                CreatedBy NVARCHAR(256),
-                LastModifiedAt DATETIME2,
-                ModifiedBy NVARCHAR(256),
-                CONSTRAINT PK_JobSchedule PRIMARY KEY (Id),
-                CONSTRAINT FK_JobSchedule_Tenant FOREIGN KEY (TenantId) REFERENCES dmscs_probe.Tenant (Id) ON DELETE NO ACTION,
-                CONSTRAINT CK_JobSchedule_Payload_Object CHECK ({PayloadObjectCheck}),
-                CONSTRAINT CK_JobSchedule_IntervalMinutes CHECK (IntervalMinutes BETWEEN 1 AND 527040)
-            );
+        CREATE UNIQUE INDEX UX_JobSchedule_Tenant_Type ON dmscs_probe.JobSchedule (TenantId, ScheduleType) WHERE TenantId IS NOT NULL;
+        CREATE UNIQUE INDEX UX_JobSchedule_SingleTenant_Type ON dmscs_probe.JobSchedule (ScheduleType) WHERE TenantId IS NULL;
+        CREATE INDEX IX_JobSchedule_Due ON dmscs_probe.JobSchedule (Enabled, NextRunAt);
+        CREATE INDEX IX_JobSchedule_TenantId ON dmscs_probe.JobSchedule (TenantId);
 
-            CREATE UNIQUE INDEX UX_JobSchedule_Tenant_Type ON dmscs_probe.JobSchedule (TenantId, ScheduleType) WHERE TenantId IS NOT NULL;
-            CREATE UNIQUE INDEX UX_JobSchedule_SingleTenant_Type ON dmscs_probe.JobSchedule (ScheduleType) WHERE TenantId IS NULL;
-            CREATE INDEX IX_JobSchedule_Due ON dmscs_probe.JobSchedule (Enabled, NextRunAt);
-            CREATE INDEX IX_JobSchedule_TenantId ON dmscs_probe.JobSchedule (TenantId);
+        CREATE TABLE dmscs_probe.Job (
+            Id BIGINT IDENTITY(1,1) NOT NULL,
+            JobId NVARCHAR(150) COLLATE Latin1_General_BIN2 NOT NULL,
+            TenantId BIGINT NULL,
+            JobType NVARCHAR(100) COLLATE Latin1_General_BIN2 NOT NULL,
+            PayloadVersion SMALLINT NOT NULL,
+            Payload NVARCHAR(4000) NOT NULL,
+            SourceScheduleId BIGINT NULL,
+            ScheduledOccurrence DATETIME2 NULL,
+            Status NVARCHAR(20) NOT NULL,
+            CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Job_CreatedAt DEFAULT SYSUTCDATETIME(),
+            FinishedAt DATETIME2 NULL,
+            NextAttemptAt DATETIME2 NULL,
+            LeaseExpiresAt DATETIME2 NULL,
+            ErrorMessage NVARCHAR(1000) NULL,
+            AttemptCount INT NOT NULL CONSTRAINT DF_Job_AttemptCount DEFAULT 0,
+            LeaseOwner NVARCHAR(200) NULL,
+            FencingToken BIGINT NOT NULL CONSTRAINT DF_Job_FencingToken DEFAULT 0,
+            CreatedBy NVARCHAR(256),
+            LastModifiedAt DATETIME2,
+            ModifiedBy NVARCHAR(256),
+            CONSTRAINT PK_Job PRIMARY KEY (Id),
+            CONSTRAINT FK_Job_Tenant FOREIGN KEY (TenantId) REFERENCES dmscs_probe.Tenant (Id) ON DELETE NO ACTION,
+            CONSTRAINT FK_Job_JobSchedule FOREIGN KEY (SourceScheduleId) REFERENCES dmscs_probe.JobSchedule (Id) ON DELETE NO ACTION,
+            CONSTRAINT CK_Job_Payload_Object CHECK ({PayloadObjectCheck}),
+            CONSTRAINT CK_Job_Occurrence_Pairing CHECK (
+                (SourceScheduleId IS NULL AND ScheduledOccurrence IS NULL)
+                OR (SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL)),
+            CONSTRAINT CK_Job_Status CHECK (Status IN (N'Pending', N'InProgress', N'Completed', N'Error')),
+            CONSTRAINT CK_Job_AttemptCount CHECK (AttemptCount >= 0),
+            CONSTRAINT CK_Job_NextAttemptAt_Active CHECK (Status IN (N'Completed', N'Error') OR NextAttemptAt IS NOT NULL)
+        );
 
-            CREATE TABLE dmscs_probe.Job (
-                Id BIGINT IDENTITY(1,1) NOT NULL,
-                JobId NVARCHAR(150) COLLATE Latin1_General_BIN2 NOT NULL,
-                TenantId BIGINT NULL,
-                JobType NVARCHAR(100) COLLATE Latin1_General_BIN2 NOT NULL,
-                PayloadVersion SMALLINT NOT NULL,
-                Payload NVARCHAR(4000) NOT NULL,
-                SourceScheduleId BIGINT NULL,
-                ScheduledOccurrence DATETIME2 NULL,
-                Status NVARCHAR(20) NOT NULL,
-                CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Job_CreatedAt DEFAULT SYSUTCDATETIME(),
-                FinishedAt DATETIME2 NULL,
-                NextAttemptAt DATETIME2 NULL,
-                LeaseExpiresAt DATETIME2 NULL,
-                ErrorMessage NVARCHAR(1000) NULL,
-                AttemptCount INT NOT NULL CONSTRAINT DF_Job_AttemptCount DEFAULT 0,
-                LeaseOwner NVARCHAR(200) NULL,
-                FencingToken BIGINT NOT NULL CONSTRAINT DF_Job_FencingToken DEFAULT 0,
-                CreatedBy NVARCHAR(256),
-                LastModifiedAt DATETIME2,
-                ModifiedBy NVARCHAR(256),
-                CONSTRAINT PK_Job PRIMARY KEY (Id),
-                CONSTRAINT FK_Job_Tenant FOREIGN KEY (TenantId) REFERENCES dmscs_probe.Tenant (Id) ON DELETE NO ACTION,
-                CONSTRAINT FK_Job_JobSchedule FOREIGN KEY (SourceScheduleId) REFERENCES dmscs_probe.JobSchedule (Id) ON DELETE NO ACTION,
-                CONSTRAINT CK_Job_Payload_Object CHECK ({PayloadObjectCheck}),
-                CONSTRAINT CK_Job_Occurrence_Pairing CHECK (
-                    (SourceScheduleId IS NULL AND ScheduledOccurrence IS NULL)
-                    OR (SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL)),
-                CONSTRAINT CK_Job_Status CHECK (Status IN (N'Pending', N'InProgress', N'Completed', N'Error')),
-                CONSTRAINT CK_Job_AttemptCount CHECK (AttemptCount >= 0)
-            );
-
-            CREATE UNIQUE INDEX UX_Job_JobId ON dmscs_probe.Job (JobId);
-            CREATE UNIQUE INDEX UX_Job_SourceScheduleId_ScheduledOccurrence ON dmscs_probe.Job (SourceScheduleId, ScheduledOccurrence)
-                WHERE SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL;
-            {ClaimIndex(shape)}
-            CREATE INDEX IX_Job_Retention ON dmscs_probe.Job (Status, FinishedAt) WHERE Status IN (N'Completed', N'Error');
-            CREATE INDEX IX_Job_TenantId ON dmscs_probe.Job (TenantId);
-            """;
+        CREATE UNIQUE INDEX UX_Job_JobId ON dmscs_probe.Job (JobId);
+        CREATE UNIQUE INDEX UX_Job_SourceScheduleId_ScheduledOccurrence ON dmscs_probe.Job (SourceScheduleId, ScheduledOccurrence)
+            WHERE SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL;
+        CREATE INDEX IX_Job_Claim ON dmscs_probe.Job (NextAttemptAt, Id) INCLUDE (Status, LeaseExpiresAt, AttemptCount)
+            WHERE Status IN (N'Pending', N'InProgress');
+        CREATE INDEX IX_Job_Retention ON dmscs_probe.Job (Status, FinishedAt) WHERE Status IN (N'Completed', N'Error');
+        CREATE INDEX IX_Job_TenantId ON dmscs_probe.Job (TenantId);
+        """;
 
     public const string SeedJobs = """
         WITH numbers AS (
@@ -456,7 +509,7 @@ internal static class JobProbeSql
             CONCAT(N'{"dataStoreId":', n, N'}'),
             @Status,
             DATEADD(millisecond, -(@Count - n), DATEADD(second, -@CreatedAgeSeconds, SYSUTCDATETIME())),
-            CASE WHEN @AvailableAtEnqueue = 1 AND @Status IN (N'Pending', N'InProgress')
+            CASE WHEN @Status IN (N'Pending', N'InProgress')
                 THEN DATEADD(millisecond, -(@Count - n), DATEADD(second, -@CreatedAgeSeconds, SYSUTCDATETIME()))
             END,
             CASE WHEN @Status IN (N'Completed', N'Error') THEN DATEADD(second, -@FinishedAgeSeconds, SYSUTCDATETIME()) END,
@@ -469,32 +522,23 @@ internal static class JobProbeSql
         FROM numbers;
         """;
 
-    /// <summary>D-3.</summary>
-    public static string Claim(ClaimShape shape) =>
-        shape == ClaimShape.Planned
-            ? $"""
-                WITH candidate AS (
-                    SELECT TOP (1) Id, Status, LeaseOwner, LeaseExpiresAt, FencingToken, AttemptCount, LastModifiedAt, ModifiedBy
-                    FROM dmscs_probe.Job WITH (UPDLOCK, READPAST, ROWLOCK)
-                    WHERE ((Status = N'Pending' AND (NextAttemptAt IS NULL OR NextAttemptAt <= SYSUTCDATETIME()))
-                        OR (Status = N'InProgress' AND LeaseExpiresAt <= SYSUTCDATETIME()))
-                      AND AttemptCount < @MaxAttempts
-                    ORDER BY COALESCE(NextAttemptAt, CreatedAt), Id
-                )
-                {ClaimUpdate}
-                """
-            : $"""
-                WITH candidate AS (
-                    SELECT TOP (1) Id, Status, LeaseOwner, LeaseExpiresAt, FencingToken, AttemptCount, LastModifiedAt, ModifiedBy
-                    FROM dmscs_probe.Job WITH (UPDLOCK, READPAST, ROWLOCK)
-                    WHERE ((Status = N'Pending' AND NextAttemptAt <= SYSUTCDATETIME())
-                        OR (Status = N'InProgress' AND LeaseExpiresAt <= SYSUTCDATETIME()))
-                      AND Status IN (N'Pending', N'InProgress')
-                      AND AttemptCount < @MaxAttempts
-                    ORDER BY NextAttemptAt, Id
-                )
-                {ClaimUpdate}
-                """;
+    /// <summary>
+    /// D-3 as adopted (A1): an ordered walk of <c>IX_Job_Claim (NextAttemptAt, Id)</c> under <c>TOP (1)</c>. The
+    /// redundant <c>Status IN</c> conjunct is what lets SQL Server match the filtered index; without it the claim
+    /// scans the clustered index.
+    /// </summary>
+    public const string Claim = $"""
+        WITH candidate AS (
+            SELECT TOP (1) Id, Status, LeaseOwner, LeaseExpiresAt, FencingToken, AttemptCount, LastModifiedAt, ModifiedBy
+            FROM dmscs_probe.Job WITH (UPDLOCK, READPAST, ROWLOCK)
+            WHERE ((Status = N'Pending' AND NextAttemptAt <= SYSUTCDATETIME())
+                OR (Status = N'InProgress' AND LeaseExpiresAt <= SYSUTCDATETIME()))
+              AND Status IN (N'Pending', N'InProgress')
+              AND AttemptCount < @MaxAttempts
+            ORDER BY NextAttemptAt, Id
+        )
+        {ClaimUpdate}
+        """;
 
     private const string ClaimUpdate = """
         UPDATE candidate
@@ -534,7 +578,6 @@ internal static class JobProbeSql
         UPDATE dmscs_probe.Job
         SET Status = N'Completed',
             FinishedAt = SYSUTCDATETIME(),
-            NextAttemptAt = NULL,
             LeaseOwner = NULL,
             LeaseExpiresAt = NULL,
             LastModifiedAt = SYSUTCDATETIME(),
@@ -543,22 +586,24 @@ internal static class JobProbeSql
         WHERE {OwnershipPredicate};
         """;
 
-    /// <summary>D-6 Exhaust: single statement, skipping locked rows.</summary>
-    public static string Exhaust(ClaimShape shape) =>
-        $"""
-            UPDATE dmscs_probe.Job WITH (READPAST, ROWLOCK)
-            SET Status = N'Error',
-                FinishedAt = SYSUTCDATETIME(),
-                ErrorMessage = @Message,
-                FencingToken = FencingToken + 1,
-                LeaseOwner = NULL,
-                LeaseExpiresAt = NULL,
-                LastModifiedAt = SYSUTCDATETIME(),
-                ModifiedBy = @Owner
-            WHERE AttemptCount >= @MaxAttempts
-              AND (Status = N'Pending' OR (Status = N'InProgress' AND LeaseExpiresAt <= SYSUTCDATETIME()))
-              {(shape == ClaimShape.Planned ? "" : "AND Status IN (N'Pending', N'InProgress')")};
-            """;
+    /// <summary>
+    /// D-6 <c>Exhaust</c> as adopted (A4): one batch of at most <c>@BatchSize</c> rows, skipping locked rows. The
+    /// <c>Status IN</c> conjunct matches the filtered claim index, as in the claim.
+    /// </summary>
+    public const string Exhaust = """
+        UPDATE TOP (@BatchSize) dmscs_probe.Job WITH (READPAST, ROWLOCK)
+        SET Status = N'Error',
+            FinishedAt = SYSUTCDATETIME(),
+            ErrorMessage = @Message,
+            FencingToken = FencingToken + 1,
+            LeaseOwner = NULL,
+            LeaseExpiresAt = NULL,
+            LastModifiedAt = SYSUTCDATETIME(),
+            ModifiedBy = @Owner
+        WHERE AttemptCount >= @MaxAttempts
+          AND (Status = N'Pending' OR (Status = N'InProgress' AND LeaseExpiresAt <= SYSUTCDATETIME()))
+          AND Status IN (N'Pending', N'InProgress');
+        """;
 
     /// <summary>D-17: one bounded batch.</summary>
     public const string RetentionBatch = """
@@ -602,11 +647,16 @@ internal static class JobProbeSql
         WHERE Id = @Id;
         """;
 
-    /// <summary>D-8 step 3.</summary>
+    /// <summary>
+    /// D-8 step 3. <c>CreatedAt</c> and <c>NextAttemptAt</c> take one <c>SYSUTCDATETIME()</c> sample (A1).
+    /// </summary>
     public const string InsertOccurrence = """
         INSERT INTO dmscs_probe.Job (
-            JobId, TenantId, JobType, PayloadVersion, Payload, SourceScheduleId, ScheduledOccurrence, Status, CreatedBy)
-        SELECT @JobId, @TenantId, @JobType, @PayloadVersion, @Payload, @Id, @Occurrence, N'Pending', N'system'
+            JobId, TenantId, JobType, PayloadVersion, Payload, SourceScheduleId, ScheduledOccurrence, Status,
+            CreatedAt, NextAttemptAt, CreatedBy)
+        SELECT @JobId, @TenantId, @JobType, @PayloadVersion, @Payload, @Id, @Occurrence, N'Pending',
+            t.[now], t.[now], N'system'
+        FROM (SELECT SYSUTCDATETIME() AS [now]) AS t
         WHERE NOT EXISTS (
             SELECT 1 FROM dmscs_probe.Job WHERE SourceScheduleId = @Id AND ScheduledOccurrence = @Occurrence);
         """;
@@ -635,14 +685,10 @@ internal static class JobProbeSql
 /// Probe 1: claim latency with 10 000 pending rows and three concurrent claimers, then idle-poll latency against a
 /// queue whose remaining rows are all leased.
 /// </summary>
-[TestFixture(ClaimShape.Planned)]
-[TestFixture(ClaimShape.IndexOrdered)]
+[TestFixture]
 [Explicit("Operational probe (DMS-1437 step 0.2); run manually with --filter Category=OperationalProbe.")]
-public class Given_three_claimers_draining_a_backlog_of_10000_pending_jobs(ClaimShape shape)
-    : JobOperationalProbeBase
+public class Given_three_claimers_draining_a_backlog_of_10000_pending_jobs : JobOperationalProbeBase
 {
-    protected override ClaimShape Shape => shape;
-
     private const int PendingJobs = 10_000;
     private const int Claimers = 3;
     private const int ClaimsPerClaimer = 1_000;
@@ -666,7 +712,7 @@ public class Given_three_claimers_draining_a_backlog_of_10000_pending_jobs(Claim
         await UpdateStatisticsAsync();
         (_tableLocksHeldByOneClaim, _keyLocksHeldByOneClaim) = await MeasureOneClaimLockFootprintAsync();
         Report(
-            $"claim[{shape}]",
+            "claim",
             "locks_held_by_one_claim",
             $"object_non_intent={_tableLocksHeldByOneClaim} key={_keyLocksHeldByOneClaim}"
         );
@@ -693,15 +739,15 @@ public class Given_three_claimers_draining_a_backlog_of_10000_pending_jobs(Claim
         await UpdateStatisticsAsync();
         await Task.WhenAll(Enumerable.Range(0, Claimers).Select(PollIdleQueueAsync));
 
-        Report($"claim[{shape}]", "backlog_claims", LatencySummary.From(_claimLatencies));
+        Report("claim", "backlog_claims", LatencySummary.From(_claimLatencies));
         Report(
-            $"claim[{shape}]",
+            "claim",
             "backlog_throughput_claims_per_s",
             (_claimedIds.Count / (wallMilliseconds / 1000)).ToString("F0", CultureInfo.InvariantCulture)
         );
-        Report($"claim[{shape}]", "empty_claims_with_backlog", _emptyClaimsWithBacklog);
-        Report($"claim[{shape}]", "claim_errors", string.Join(",", _claimErrors.Order()));
-        Report($"claim[{shape}]", "idle_polls_10000_leased", LatencySummary.From(_idlePollLatencies));
+        Report("claim", "empty_claims_with_backlog", _emptyClaimsWithBacklog);
+        Report("claim", "claim_errors", string.Join(",", _claimErrors.Order()));
+        Report("claim", "idle_polls_10000_leased", LatencySummary.From(_idlePollLatencies));
     }
 
     /// <summary>
@@ -713,7 +759,7 @@ public class Given_three_claimers_draining_a_backlog_of_10000_pending_jobs(Claim
         await using SqlConnection connection = await OpenConnectionAsync();
         await using SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync();
 
-        await using (SqlCommand claim = Command(connection, transaction, JobProbeSql.Claim(Shape)))
+        await using (SqlCommand claim = Command(connection, transaction, JobProbeSql.Claim))
         {
             claim.Parameters.AddWithValue("@Owner", "probe-footprint");
             claim.Parameters.AddWithValue("@LeaseSeconds", LeaseSeconds);
@@ -725,25 +771,7 @@ public class Given_three_claimers_draining_a_backlog_of_10000_pending_jobs(Claim
             }
         }
 
-        (int TableLocks, int KeyLocks) footprint;
-        await using (
-            SqlCommand locks = Command(
-                connection,
-                transaction,
-                """
-                SELECT
-                    COUNT(CASE WHEN resource_type = N'OBJECT' AND request_mode NOT LIKE N'I%' THEN 1 END),
-                    COUNT(CASE WHEN resource_type = N'KEY' THEN 1 END)
-                FROM sys.dm_tran_locks
-                WHERE request_session_id = @@SPID AND resource_database_id = DB_ID();
-                """
-            )
-        )
-        await using (SqlDataReader reader = await locks.ExecuteReaderAsync())
-        {
-            await reader.ReadAsync();
-            footprint = (reader.GetInt32(0), reader.GetInt32(1));
-        }
+        (int TableLocks, int KeyLocks) footprint = await CountHeldLocksAsync(connection, transaction);
 
         await transaction.RollbackAsync();
         return footprint;
@@ -1072,27 +1100,34 @@ public class Given_renewals_waiting_on_a_job_row_lock_held_by_another_session : 
 }
 
 /// <summary>
-/// Probe 3: <c>Exhaust</c> over 100 000 rows (80 000 finished, 10 000 pending under the limit, 9 900 leased under
-/// the limit, 50 pending and 50 expired-leased at the limit), then the steady-state sweep that finds nothing, then
-/// the one-off sweep after <c>MaxAttempts</c> is lowered to 1.
+/// Probe 3: bounded <c>Exhaust</c> sweeps (A4) over 100 000 rows (80 000 finished, 10 000 pending under the limit,
+/// 9 900 leased under the limit, 50 pending and 50 expired-leased at the limit): the first sweep, 50 steady-state
+/// sweeps that find nothing, then the sweep after <c>MaxAttempts</c> is lowered to 1, which must exhaust the 10 000
+/// pending rows in committed batches of at most 1 000 without a table lock, stop at a cancellation between batches,
+/// resume, and leave every live lease alone.
 /// </summary>
-[TestFixture(ClaimShape.Planned)]
-[TestFixture(ClaimShape.IndexOrdered)]
+[TestFixture]
 [Explicit("Operational probe (DMS-1437 step 0.2); run manually with --filter Category=OperationalProbe.")]
-public class Given_an_exhaust_sweep_over_100000_jobs(ClaimShape shape) : JobOperationalProbeBase
+public class Given_bounded_exhaust_sweeps_over_100000_jobs : JobOperationalProbeBase
 {
-    protected override ClaimShape Shape => shape;
-
     private const int SteadyStateSweeps = 50;
+    private const int LoweredLimitRows = 10_000;
+    private const int LiveLeases = 9_900;
 
     private double _firstSweepMilliseconds;
-    private int _firstSweepRows;
+    private IReadOnlyList<ExhaustBatch> _firstSweep = [];
     private readonly List<double> _steadyStateSweeps = [];
-    private readonly List<int> _steadyStateRows = [];
+    private readonly List<IReadOnlyList<ExhaustBatch>> _steadyStateBatches = [];
     private long _exhaustedRows;
     private long _untouchedActiveRows;
-    private double _loweredLimitSweepMilliseconds;
-    private int _loweredLimitSweepRows;
+    private readonly List<ExhaustBatch> _cancelledSweep = [];
+    private bool _cancellationObserved;
+    private long _exhaustedWhenCancelled;
+    private IReadOnlyList<ExhaustBatch> _resumedSweep = [];
+    private long _loweredLimitRowsLeft;
+    private long _loweredLimitRowsExhausted;
+    private long _liveLeasesPreserved;
+    private readonly List<(int TableLocks, int KeyLocks)> _fullBatchFootprints = [];
 
     [OneTimeSetUp]
     public async Task Setup()
@@ -1111,8 +1146,8 @@ public class Given_an_exhaust_sweep_over_100000_jobs(ClaimShape shape) : JobOper
             createdAgeSeconds: 86_400,
             finishedAgeSeconds: 86_000
         );
-        await SeedJobsAsync("Pending", 10_000, attemptCount: 2, createdAgeSeconds: 600);
-        await SeedJobsAsync("InProgress", 9_900, attemptCount: 2, createdAgeSeconds: 600);
+        await SeedJobsAsync("Pending", LoweredLimitRows, attemptCount: 2, createdAgeSeconds: 600);
+        await SeedJobsAsync("InProgress", LiveLeases, attemptCount: 2, createdAgeSeconds: 600);
         await SeedJobsAsync("Pending", 50, attemptCount: MaxAttempts, createdAgeSeconds: 600);
         await SeedJobsAsync(
             "InProgress",
@@ -1126,13 +1161,13 @@ public class Given_an_exhaust_sweep_over_100000_jobs(ClaimShape shape) : JobOper
         await using SqlConnection connection = await OpenConnectionAsync();
 
         long start = Stopwatch.GetTimestamp();
-        _firstSweepRows = await ExhaustAsync(connection);
+        _firstSweep = await ExhaustSweepAsync(connection);
         _firstSweepMilliseconds = ElapsedMilliseconds(start);
 
         for (int i = 0; i < SteadyStateSweeps; i++)
         {
             start = Stopwatch.GetTimestamp();
-            _steadyStateRows.Add(await ExhaustAsync(connection));
+            _steadyStateBatches.Add(await ExhaustSweepAsync(connection));
             _steadyStateSweeps.Add(ElapsedMilliseconds(start));
         }
 
@@ -1149,35 +1184,111 @@ public class Given_an_exhaust_sweep_over_100000_jobs(ClaimShape shape) : JobOper
             "SELECT COUNT_BIG(*) FROM dmscs_probe.Job WHERE Status IN (N'Pending', N'InProgress') AND AttemptCount = 2"
         );
 
-        start = Stopwatch.GetTimestamp();
-        _loweredLimitSweepRows = await ExhaustAsync(connection, maxAttempts: 1);
-        _loweredLimitSweepMilliseconds = ElapsedMilliseconds(start);
+        using (CancellationTokenSource cancellation = new())
+        {
+            try
+            {
+                await ExhaustSweepAsync(
+                    connection,
+                    maxAttempts: 1,
+                    cancellation.Token,
+                    RecordFootprintAsync,
+                    batch =>
+                    {
+                        _cancelledSweep.Add(batch);
+                        cancellation.Cancel();
+                    }
+                );
+            }
+            catch (OperationCanceledException)
+            {
+                _cancellationObserved = true;
+            }
+        }
+        _exhaustedWhenCancelled = await CountLoweredLimitRowsExhaustedAsync();
 
+        _resumedSweep = await ExhaustSweepAsync(
+            connection,
+            maxAttempts: 1,
+            beforeCommit: RecordFootprintAsync
+        );
+
+        _loweredLimitRowsLeft = await ScalarAsync(
+            "SELECT COUNT_BIG(*) FROM dmscs_probe.Job WHERE Status = N'Pending' AND AttemptCount >= 1"
+        );
+        _loweredLimitRowsExhausted = await CountLoweredLimitRowsExhaustedAsync();
+        _liveLeasesPreserved = await ScalarAsync(
+            """
+            SELECT COUNT_BIG(*) FROM dmscs_probe.Job
+            WHERE Status = N'InProgress' AND AttemptCount = 2 AND FencingToken = 2
+              AND LeaseOwner = N'probe-seed' AND LeaseExpiresAt > SYSUTCDATETIME()
+            """
+        );
+
+        IEnumerable<ExhaustBatch> loweredLimitBatches = _cancelledSweep.Concat(_resumedSweep);
         Report(
-            $"exhaust[{shape}]",
+            "exhaust",
             "first_sweep_ms",
             _firstSweepMilliseconds.ToString("F2", CultureInfo.InvariantCulture)
         );
-        Report($"exhaust[{shape}]", "first_sweep_rows", _firstSweepRows);
-        Report($"exhaust[{shape}]", "steady_state_sweeps", LatencySummary.From(_steadyStateSweeps));
+        Report("exhaust", "first_sweep_batches", string.Join(",", _firstSweep.Select(batch => batch.Rows)));
+        Report("exhaust", "steady_state_sweeps", LatencySummary.From(_steadyStateSweeps));
         Report(
-            $"exhaust[{shape}]",
-            "lowered_limit_sweep_ms",
-            _loweredLimitSweepMilliseconds.ToString("F2", CultureInfo.InvariantCulture)
+            "exhaust",
+            "lowered_limit_batches",
+            string.Join(",", loweredLimitBatches.Select(batch => batch.Rows))
         );
-        Report($"exhaust[{shape}]", "lowered_limit_sweep_rows", _loweredLimitSweepRows);
+        Report(
+            "exhaust",
+            "lowered_limit_batch_transactions",
+            LatencySummary.From(loweredLimitBatches.Select(batch => batch.Milliseconds))
+        );
+        Report(
+            "exhaust",
+            "locks_held_by_full_batches",
+            string.Join(
+                ",",
+                _fullBatchFootprints
+                    .Select(footprint => $"object_non_intent={footprint.TableLocks} key={footprint.KeyLocks}")
+                    .Distinct()
+            )
+        );
+        Report("exhaust", "exhausted_when_cancelled_after_first_batch", _exhaustedWhenCancelled);
+        Report("exhaust", "live_leases_preserved", _liveLeasesPreserved);
     }
+
+    /// <summary>
+    /// Counts the locks a batch still holds just before its commit, for every batch that changed a full 1 000 rows.
+    /// </summary>
+    private async Task RecordFootprintAsync(SqlConnection connection, SqlTransaction transaction)
+    {
+        (int TableLocks, int KeyLocks) footprint = await CountHeldLocksAsync(connection, transaction);
+        if (footprint.KeyLocks > 0)
+        {
+            _fullBatchFootprints.Add(footprint);
+        }
+    }
+
+    private Task<long> CountLoweredLimitRowsExhaustedAsync() =>
+        ScalarAsync(
+            """
+            SELECT COUNT_BIG(*) FROM dmscs_probe.Job
+            WHERE Status = N'Error' AND ErrorMessage = @Message AND AttemptCount = 2 AND FencingToken = 3
+            """,
+            ("@Message", ExhaustedMessage)
+        );
 
     [Test]
     public void It_exhausts_exactly_the_rows_at_the_limit()
     {
-        _firstSweepRows.Should().Be(100);
+        _firstSweep.Select(batch => batch.Rows).Should().Equal(100);
         _exhaustedRows.Should().Be(100);
-        _steadyStateRows.Should().OnlyContain(rows => rows == 0);
+        _steadyStateBatches.Should().OnlyContain(sweep => sweep.Count == 1 && sweep[0].Rows == 0);
     }
 
     [Test]
-    public void It_leaves_rows_under_the_limit_untouched() => _untouchedActiveRows.Should().Be(19_900);
+    public void It_leaves_rows_under_the_limit_untouched() =>
+        _untouchedActiveRows.Should().Be(LoweredLimitRows + LiveLeases);
 
     [Test]
     public void It_runs_the_first_sweep_at_or_below_500_ms() =>
@@ -1188,8 +1299,35 @@ public class Given_an_exhaust_sweep_over_100000_jobs(ClaimShape shape) : JobOper
         LatencySummary.From(_steadyStateSweeps).P99.Should().BeLessThanOrEqualTo(500);
 
     [Test]
-    public void It_terminates_every_pending_row_over_a_lowered_limit_in_one_sweep() =>
-        _loweredLimitSweepRows.Should().Be(10_000);
+    public void It_commits_the_first_batch_and_stops_at_the_cancellation_check()
+    {
+        _cancellationObserved.Should().BeTrue();
+        _cancelledSweep.Select(batch => batch.Rows).Should().Equal(ExhaustBatchSize);
+        _exhaustedWhenCancelled.Should().Be(ExhaustBatchSize);
+    }
+
+    [Test]
+    public void It_exhausts_a_lowered_limit_in_batches_of_at_most_1000()
+    {
+        int[] expected = [.. Enumerable.Repeat(ExhaustBatchSize, 10), 0];
+        _cancelledSweep.Concat(_resumedSweep).Select(batch => batch.Rows).Should().Equal(expected);
+        _loweredLimitRowsExhausted.Should().Be(LoweredLimitRows);
+        _loweredLimitRowsLeft.Should().Be(0);
+    }
+
+    [Test]
+    public void It_holds_row_level_locks_only_for_each_full_batch()
+    {
+        _fullBatchFootprints.Should().HaveCount(10);
+        _fullBatchFootprints.Should().OnlyContain(footprint => footprint.TableLocks == 0);
+    }
+
+    [Test]
+    public void It_commits_each_lowered_limit_batch_at_or_below_500_ms() =>
+        _cancelledSweep.Concat(_resumedSweep).Should().OnlyContain(batch => batch.Milliseconds <= 500);
+
+    [Test]
+    public void It_preserves_every_live_lease() => _liveLeasesPreserved.Should().Be(LiveLeases);
 }
 
 /// <summary>
@@ -1293,17 +1431,14 @@ public class Given_retention_batches_over_100000_finished_jobs : JobOperationalP
 }
 
 /// <summary>
-/// Probe 5: three sessions each loop claim → renew → complete over a shared queue, running <c>Exhaust</c> every
-/// tenth iteration as a worker poll would, until at least 1 000 claim/renew/complete operations have run.
+/// Probe 5: three sessions each loop claim → renew → complete over a shared queue, running a bounded
+/// <c>Exhaust</c> sweep every tenth iteration as a worker poll would, until at least 1 000 claim/renew/complete
+/// operations have run.
 /// </summary>
-[TestFixture(ClaimShape.Planned)]
-[TestFixture(ClaimShape.IndexOrdered)]
+[TestFixture]
 [Explicit("Operational probe (DMS-1437 step 0.2); run manually with --filter Category=OperationalProbe.")]
-public class Given_three_sessions_running_1000_mixed_claim_renew_complete_operations(ClaimShape shape)
-    : JobOperationalProbeBase
+public class Given_three_sessions_running_1000_mixed_claim_renew_complete_operations : JobOperationalProbeBase
 {
-    protected override ClaimShape Shape => shape;
-
     private const int Sessions = 3;
     private const int SeededJobs = 500;
     private const int TargetOperations = 1_000;
@@ -1341,14 +1476,14 @@ public class Given_three_sessions_running_1000_mixed_claim_renew_complete_operat
 
         foreach ((string operation, ConcurrentBag<double> samples) in _latencies.OrderBy(pair => pair.Key))
         {
-            Report($"mixed[{shape}]", operation, LatencySummary.From(samples));
+            Report("mixed", operation, LatencySummary.From(samples));
         }
-        Report($"mixed[{shape}]", "operations", _operations);
-        Report($"mixed[{shape}]", "deadlocks", _deadlocks);
-        Report($"mixed[{shape}]", "lock_timeouts", _lockTimeouts);
-        Report($"mixed[{shape}]", "ownership_lost", _ownershipLost);
-        Report($"mixed[{shape}]", "empty_claims_while_jobs_remain", _emptyClaims);
-        Report($"mixed[{shape}]", "unexpected_errors", string.Join(",", _unexpectedErrors));
+        Report("mixed", "operations", _operations);
+        Report("mixed", "deadlocks", _deadlocks);
+        Report("mixed", "lock_timeouts", _lockTimeouts);
+        Report("mixed", "ownership_lost", _ownershipLost);
+        Report("mixed", "empty_claims_while_jobs_remain", _emptyClaims);
+        Report("mixed", "unexpected_errors", string.Join(",", _unexpectedErrors));
     }
 
     private async Task RunSessionAsync(int session)
@@ -1363,7 +1498,10 @@ public class Given_three_sessions_running_1000_mixed_claim_renew_complete_operat
             {
                 if (++iteration % 10 == 0)
                 {
-                    int exhausted = await TimeAsync("exhaust", () => ExhaustAsync(connection));
+                    int exhausted = await TimeAsync(
+                        "exhaust",
+                        async () => (await ExhaustSweepAsync(connection)).Sum(batch => batch.Rows)
+                    );
                     Interlocked.Add(ref _exhaustedRows, exhausted);
                 }
 
@@ -1559,6 +1697,9 @@ public class Given_schedule_coalescing_vectors_and_live_materializations : JobOp
     private readonly List<Materialization> _materializations = [];
     private long _occurrencesMatchingSchedules;
     private long _schedulesWithRecordedOccurrence;
+    private long _occurrencesEligibleAtEnqueue;
+    private readonly List<long> _materializedJobIds = [];
+    private readonly List<long> _claimedMaterializedJobIds = [];
 
     private sealed record Materialization(
         long ScheduleId,
@@ -1648,6 +1789,32 @@ public class Given_schedule_coalescing_vectors_and_live_materializations : JobOp
               AND FencingToken = 1
             """
         );
+
+        _occurrencesEligibleAtEnqueue = await ScalarAsync(
+            "SELECT COUNT_BIG(*) FROM dmscs_probe.Job WHERE SourceScheduleId IS NOT NULL AND NextAttemptAt = CreatedAt"
+        );
+        await using (
+            SqlCommand jobs = Command(
+                connection,
+                null,
+                "SELECT Id FROM dmscs_probe.Job WHERE SourceScheduleId IS NOT NULL ORDER BY Id;"
+            )
+        )
+        await using (SqlDataReader reader = await jobs.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                _materializedJobIds.Add(reader.GetInt64(0));
+            }
+        }
+        for (int guard = 0; guard <= _liveSchedules.Length; guard++)
+        {
+            if (await ClaimAsync(connection, "probe-worker") is not { } claimed)
+            {
+                break;
+            }
+            _claimedMaterializedJobIds.Add(claimed.Id);
+        }
 
         Report("coalescing", "vectors", _vectors.Length);
         Report(
@@ -1788,6 +1955,17 @@ public class Given_schedule_coalescing_vectors_and_live_materializations : JobOp
     }
 
     [Test]
+    public void It_makes_each_materialized_job_eligible_at_its_enqueue_time() =>
+        _occurrencesEligibleAtEnqueue.Should().Be(_liveSchedules.Length);
+
+    [Test]
+    public void It_lets_a_worker_claim_every_materialized_job_in_enqueue_order()
+    {
+        _materializedJobIds.Should().HaveCount(_liveSchedules.Length);
+        _claimedMaterializedJobIds.Should().Equal(_materializedJobIds);
+    }
+
+    [Test]
     public void It_advances_every_live_schedule_to_the_first_boundary_after_the_sampled_time()
     {
         foreach (Materialization m in _materializations)
@@ -1799,5 +1977,184 @@ public class Given_schedule_coalescing_vectors_and_live_materializations : JobOp
                 .Should()
                 .BeOnOrBefore(m.DatabaseNow);
         }
+    }
+}
+
+/// <summary>
+/// Probe 7 (step 0.2 review follow-up): the adopted claim (A1) keeps the planned semantics. Claims come in
+/// <c>NextAttemptAt, Id</c> order (the planned <c>COALESCE(NextAttemptAt, CreatedAt), Id</c> order for rows that
+/// all carry <c>NextAttemptAt</c>); a retry in backoff, a live lease, and a row at the attempt limit are skipped; an
+/// expired lease is reclaimed with a new attempt and token; and <c>CK_Job_NextAttemptAt_Active</c> rejects an active
+/// row without <c>NextAttemptAt</c>, on insert and on update.
+/// </summary>
+[TestFixture]
+[Explicit("Operational probe (DMS-1437 step 0.2); run manually with --filter Category=OperationalProbe.")]
+public class Given_claims_over_fresh_retried_released_and_reclaimable_jobs : JobOperationalProbeBase
+{
+    private static readonly (
+        string Name,
+        string Status,
+        int Attempt,
+        int NextOffsetSeconds,
+        int? LeaseOffsetSeconds
+    )[] _rows =
+    [
+        ("fresh_a", "Pending", 0, -30, null),
+        ("retry_in_backoff", "Pending", 1, 3_600, null),
+        ("reclaimable", "InProgress", 1, -50, -1),
+        ("live_lease", "InProgress", 1, -60, 300),
+        ("released", "Pending", 2, -40, null),
+        ("at_attempt_limit", "Pending", MaxAttempts, -70, null),
+        ("fresh_b", "Pending", 0, -30, null),
+    ];
+
+    private readonly Dictionary<string, long> _ids = [];
+    private readonly List<ClaimedProbeJob> _claims = [];
+    private long _skippedRowsUntouched;
+    private int? _insertWithoutNextAttemptAt;
+    private int? _updateToNullNextAttemptAt;
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        DateTime now;
+        await using (SqlCommand clock = Command(connection, null, "SELECT SYSUTCDATETIME();"))
+        {
+            now = (DateTime)(await clock.ExecuteScalarAsync())!;
+        }
+
+        foreach ((string name, string status, int attempt, int nextOffset, int? leaseOffset) in _rows)
+        {
+            _ids[name] = await InsertAsync(
+                connection,
+                status,
+                attempt,
+                now.AddSeconds(nextOffset),
+                leaseOffset is { } seconds ? now.AddSeconds(seconds) : null
+            );
+        }
+
+        for (int guard = 0; guard <= _rows.Length; guard++)
+        {
+            if (await ClaimAsync(connection, "probe-worker") is not { } claimed)
+            {
+                break;
+            }
+            _claims.Add(claimed);
+        }
+
+        _skippedRowsUntouched = await ScalarAsync(
+            """
+            SELECT COUNT_BIG(*) FROM dmscs_probe.Job
+            WHERE Id IN (@RetryId, @LiveId, @LimitId) AND FencingToken = AttemptCount
+              AND (LeaseOwner IS NULL OR LeaseOwner = N'probe-other')
+            """,
+            ("@RetryId", _ids["retry_in_backoff"]),
+            ("@LiveId", _ids["live_lease"]),
+            ("@LimitId", _ids["at_attempt_limit"])
+        );
+
+        try
+        {
+            await InsertAsync(connection, "Pending", 0, null, null);
+        }
+        catch (SqlException exception)
+        {
+            _insertWithoutNextAttemptAt = exception.Number;
+        }
+
+        try
+        {
+            await ExecuteAsync(
+                "UPDATE dmscs_probe.Job SET NextAttemptAt = NULL WHERE Id = @Id;",
+                ("@Id", _ids["reclaimable"])
+            );
+        }
+        catch (SqlException exception)
+        {
+            _updateToNullNextAttemptAt = exception.Number;
+        }
+
+        Report(
+            "ordering",
+            "claim_order",
+            string.Join(",", _claims.Select(claim => _ids.Single(pair => pair.Value == claim.Id).Key))
+        );
+    }
+
+    private static async Task<long> InsertAsync(
+        SqlConnection connection,
+        string status,
+        int attempt,
+        DateTime? nextAttemptAt,
+        DateTime? leaseExpiresAt
+    )
+    {
+        await using SqlCommand insert = Command(
+            connection,
+            null,
+            """
+            INSERT INTO dmscs_probe.Job (
+                JobId, JobType, PayloadVersion, Payload, Status, NextAttemptAt, LeaseExpiresAt, LeaseOwner,
+                AttemptCount, FencingToken, CreatedBy)
+            OUTPUT inserted.Id
+            VALUES (@JobId, N'DataStore.RefreshEducationOrganizations', 1, N'{"dataStoreId":1}', @Status,
+                @NextAttemptAt, @LeaseExpiresAt, @LeaseOwner, @Attempt, @Attempt, N'probe');
+            """
+        );
+        insert.Parameters.AddWithValue("@JobId", Guid.NewGuid().ToString("N"));
+        insert.Parameters.AddWithValue("@Status", status);
+        insert.Parameters.AddWithValue("@Attempt", attempt);
+        insert.Parameters.Add(
+            new SqlParameter("@NextAttemptAt", SqlDbType.DateTime2)
+            {
+                Scale = 7,
+                Value = (object?)nextAttemptAt ?? DBNull.Value,
+            }
+        );
+        insert.Parameters.Add(
+            new SqlParameter("@LeaseExpiresAt", SqlDbType.DateTime2)
+            {
+                Scale = 7,
+                Value = (object?)leaseExpiresAt ?? DBNull.Value,
+            }
+        );
+        insert.Parameters.Add(
+            new SqlParameter("@LeaseOwner", SqlDbType.NVarChar, 200)
+            {
+                Value = leaseExpiresAt is null ? DBNull.Value : (object)"probe-other",
+            }
+        );
+        return (long)(await insert.ExecuteScalarAsync())!;
+    }
+
+    [Test]
+    public void It_claims_in_next_attempt_order_with_ties_broken_by_id() =>
+        _claims
+            .Select(claim => claim.Id)
+            .Should()
+            .Equal(_ids["reclaimable"], _ids["released"], _ids["fresh_a"], _ids["fresh_b"]);
+
+    [Test]
+    public void It_reclaims_an_expired_lease_with_a_new_attempt_and_token()
+    {
+        ClaimedProbeJob reclaimed = _claims.Single(claim => claim.Id == _ids["reclaimable"]);
+        reclaimed.AttemptCount.Should().Be(2);
+        reclaimed.FencingToken.Should().Be(2);
+    }
+
+    [Test]
+    public void It_skips_a_retry_in_backoff_a_live_lease_and_a_row_at_the_attempt_limit()
+    {
+        _claims.Should().HaveCount(4);
+        _skippedRowsUntouched.Should().Be(3);
+    }
+
+    [Test]
+    public void It_rejects_an_active_row_without_next_attempt_at()
+    {
+        _insertWithoutNextAttemptAt.Should().Be(CheckViolationErrorNumber);
+        _updateToNullNextAttemptAt.Should().Be(CheckViolationErrorNumber);
     }
 }

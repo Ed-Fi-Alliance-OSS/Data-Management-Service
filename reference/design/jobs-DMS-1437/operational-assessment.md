@@ -1,15 +1,65 @@
 # DMS-1437 initial operational assessment (step 0.2)
 
-Status: **for review**. This is the spec §6.2 step 0.2 assessment. Q3 stays open until it is reviewed, and Phase 1 does not start before then. No production code exists yet. Every number below comes from isolated raw-SQL probes against scratch tables, not from repositories or hosted services. Step 2.11 re-verifies these results against the implemented repositories.
+Status: **follow-up for review**. This is the spec §6.2 step 0.2 assessment. Its first version (commit `23294d57c`) was reviewed; §0 records the review decisions and the follow-up verification of the adopted SQL. Q3 stays open until this follow-up is reviewed, and Phase 1 does not start before then. No production code exists yet. Every number below comes from isolated raw-SQL probes against scratch tables, not from repositories or hosted services. Step 2.11 re-verifies these results against the implemented repositories.
+
+## 0. Review decisions and follow-up verification
+
+The review of the first version decided the proposals in §8; spec v3.2 applies them (spec §0.00).
+
+| Item | Decision |
+| --- | --- |
+| A1 index-ordered claim | Adopted on both providers, with `CK_Job_NextAttemptAt_Active` and `NextAttemptAt = CreatedAt` on every enqueue path; retry eligibility, reclaim, and ordering preserved |
+| A2 inline D-9 PostgreSQL form | Approved |
+| A3 timeouts | Approved as a principle, with revised fence wording: acquisition has its own command timeout above its lock wait; the fence deadline comes from fresh database time after the lock and is never raised; `RenewalTimeout` bounds the whole renewal or outcome-write operation |
+| A4 bounded `Exhaust` | Adopted: at most 1 000 rows per batch, each batch its own transaction, cancellation checked between batches |
+| A5 SQL Server exhaust index | Deferred to step 2.11 unless bounded-exhaust measurements show a need sooner. The follow-up does not show one |
+| A6 renewal probe definition, A7 file names | Approved |
+| Candidate defaults | All retained; `RenewalInterval` minimum 12 s and `RetentionBatchSize` maximum 2 000 accepted. The 2 000-row cap rests on these measurements, not on a universal guarantee against escalation, since SQL Server also escalates under lock-memory pressure |
+| PostgreSQL renewal p99 102.2 ms (one of six runs) | Documented step 0.2 exception. The 100 ms threshold stays; step 2.11 re-checks it, and another miss requires investigation, not an automatic threshold increase |
+| Workload assumptions (§2) | Provisional engineering baseline, explicitly unconfirmed by product |
+
+**What the follow-up changed in the probes.**
+
+- The planned claim variant is removed. Its measurements remain in §5 and the Appendix as recorded at `23294d57c`.
+- Every probe now uses the adopted SQL:
+  - the scratch schema carries `CK_Job_NextAttemptAt_Active`;
+  - `IX_Job_Claim` is `(NextAttemptAt, Id)`;
+  - seeded and scheduled jobs get `NextAttemptAt = CreatedAt`. The scheduled insert uses one time sample: PostgreSQL `now()`, SQL Server a single `SYSUTCDATETIME()` assigned to both columns;
+  - `Exhaust` runs as bounded sweeps, each batch committed in its own transaction with a cancellation check before the next.
+- Probe 3 was rewritten to check batch sizes, cancellation between batches, eventual exhaustion, live-lease preservation, and SQL Server lock footprint per batch.
+- Probe 6 now claims the materialized jobs.
+- New probe 7 (`Given_claims_over_fresh_retried_released_and_reclaimable_jobs`) covers claim order, retry eligibility, reclaim, and the active-row constraint.
+
+**Follow-up run.** One run per provider, commands as in §4. PostgreSQL passed **36/36**, SQL Server **38/38**.
+
+| Check | PostgreSQL | SQL Server |
+| --- | --- | --- |
+| Probe 1: claim at a 10 000-job backlog | p99 9.2 ms, max 19.1 ms; 467 claims/s; 0 empty, 0 duplicate | p99 12.3 ms, max 46.1 ms; 543 claims/s; 0 empty, 0 duplicate; one claim holds 2 KEY locks and no table lock |
+| Probe 1: idle poll against 10 000 leased rows | p99 11.4 ms | p99 25.6 ms |
+| Probe 2: renewal after release, 4 s hold | p99 50.7 ms; 100/100 success | p99 59.4 ms; 100/100 success |
+| Probe 2: expired during wait / 6 s hold | 20/20 rejected / 10/10 lock timeout at ≤ 5 018.8 ms | 20/20 rejected / 10/10 lock timeout at ≤ 5 030.7 ms |
+| Probe 3: first sweep (100 at-limit rows) | one batch of 100, 67.6 ms | one batch of 100, 158.5 ms |
+| Probe 3: steady-state sweep (0 rows) | p99 21.7 ms | p99 117.1 ms |
+| Probe 3: `MaxAttempts` lowered to 1 (10 000 rows) | ten committed batches of 1 000, then a batch of 0; batch transaction p99 78.1 ms | the same batches; batch transaction p99 139.5 ms; each full batch holds 3 000 KEY locks (1 000 per index) and no table lock |
+| Probe 3: cancellation after the first batch | the sweep stopped with exactly 1 000 rows committed and resumed to completion | the same |
+| Probe 3: live leases after the sweep | 9 900 / 9 900 untouched | 9 900 / 9 900 untouched |
+| Probe 4: retention batch of 500 | max 13.6 ms | max 88.0 ms |
+| Probe 5: ≥ 1 000 mixed operations | 1 005 operations; 0 deadlocks, lock timeouts, lost ownership, or empty claims | the same |
+| Probe 6: coalescing | 16/16 vectors, 12/12 live; transaction p99 18.1 ms | 17/17 vectors, 12/12 live; transaction p99 74.5 ms |
+| Probe 6: materialized jobs | 12/12 with `NextAttemptAt = CreatedAt`; all 12 claimed, in enqueue order | the same |
+| Probe 7: order and eligibility | claims `reclaimable, released, fresh_a, fresh_b`; the retry in backoff, the live lease, and the row at the limit are untouched; the reclaim has attempt 2 and token 2 | the same |
+| Probe 7: active-row constraint | insert and update without `NextAttemptAt` rejected (`23514`) | rejected (`547`) |
+
+A5 stays deferred. The bounded SQL Server steady-state sweep still scans the clustered index (p99 117.1 ms at 100 000 rows), which is well inside the 500 ms threshold.
 
 ## 1. Summary
 
 - **All §6.1 candidate values: retain.** No probe gives a reason to change any default.
 - **Two validation bounds: adjust.** `RenewalInterval` has a lower bound of 1 s, which lets `RenewalTimeout` fall below `WriteLockWait`. `RetentionBatchSize` has an upper bound of 10 000, which lets SQL Server escalate to a table lock.
-- **Spec SQL: amendments proposed before Phase 1 (§8). None have been applied.** The largest one: on SQL Server, the planned claim (D-3 with the §3 `IX_Job_Claim`) sorts every eligible row and escalates to an **exclusive table lock** at a 10 000-job backlog. When escalation cannot happen, a concurrent claim skips every row the first one read and comes back empty. This happened in all three runs: 4–7 empty claims against a 10 000-row backlog, and 20–155 in the mixed workload. The proposed index-ordered claim (A1) holds two key locks, finds no false empty claims, and roughly triples SQL Server claim throughput. It also speeds up PostgreSQL claims by about 50 %.
-- **Thresholds (§6.2).** Every acceptance threshold was met on both providers under the proposed shape, with one exception. The PostgreSQL renewal-after-release p99 was 102.2 ms against a 100 ms limit, in one of six runs (§5.2).
+- **Spec SQL: amendments A1–A7, decided at review and applied in spec v3.2 (§0, §8).** The largest one: on SQL Server, the planned claim (D-3 with the §3 `IX_Job_Claim`) sorts every eligible row and escalates to an **exclusive table lock** at a 10 000-job backlog. When escalation cannot happen, a concurrent claim skips every row the first one read and comes back empty. This happened in all three runs: 4–7 empty claims against a 10 000-row backlog, and 20–155 in the mixed workload. The adopted index-ordered claim (A1) holds two key locks, finds no false empty claims, and roughly triples SQL Server claim throughput. It also speeds up PostgreSQL claims by about 50 %.
+- **Thresholds (§6.2).** Every acceptance threshold was met on both providers under the proposed shape, with one exception. The PostgreSQL renewal-after-release p99 was 102.2 ms against a 100 ms limit, in one of six runs (§5.2). The review accepted this as a documented step 0.2 exception; step 2.11 re-checks it against the unchanged threshold.
 
-| Probe (threshold) | PostgreSQL, proposed shape | SQL Server, proposed shape | Planned shape (spec v3.1 as written) |
+| Probe (threshold) | PostgreSQL, proposed shape (adopted as A1) | SQL Server, proposed shape (adopted as A1) | Planned shape (v3.1, measured at `23294d57c`; variant since removed) |
 | --- | --- | --- | --- |
 | 1 Claim, 10 000 pending, 3 claimers (p99 ≤ 250 ms) | p99 ≤ 12.5 ms | p99 ≤ 16.0 ms | PG p99 ≤ 15.4 ms. **SQL Server p99 ≤ 38.5 ms, but table-lock escalation and 4–7 false empty claims per run** |
 | 2 Renewal after a held row lock releases (p99 ≤ 100 ms; rejected when expired) | p99 52.5–102.2 ms over six runs; rejection 60/60 | p99 61.3–92.0 ms; rejection 60/60 | shape-independent |
@@ -20,7 +70,7 @@ Status: **for review**. This is the spec §6.2 step 0.2 assessment. Q3 stays ope
 
 ## 2. Workload assumptions
 
-These are carried over from spec §6.2. **Product has not confirmed them.** Each one maps to probe parameters as follows:
+These are carried over from spec §6.2. The review accepted them as a **provisional engineering baseline, explicitly unconfirmed by product**. They do not establish production capacity or product agreement on recovery and retention expectations. Each one maps to probe parameters as follows:
 
 | Assumption | Probe parameter |
 | --- | --- |
@@ -71,12 +121,12 @@ Differences from the step 0.2 text in spec §6.2/§9, each to be confirmed by th
 
 1. **File name.** The files are `JobOperationalProbeTests.cs`, not `JobOperationalProbes.cs`, because `src/.editorconfig` disables S101 (the `Given_*` fixture names) only for `**/*Tests.cs`. Step 2.11's `JobRepositoryProbes.cs` needs the same suffix.
 2. **Probe 2 brackets the lock hold.** The spec says the other session holds the lock for 5 s, but that equals the fixed 5 s `WriteLockWait`, so the outcome would be a race. The probe instead uses three holds: 4 s (the renewal must wait and then succeed), 6 s (the renewal must report a lock timeout), and 3 s over a lease that expires after 2 s (the renewal must be rejected once it holds the lock). The 4 s holders start 100 ms apart so that no two releases coincide. Latency after release is measured from just before the holder's `COMMIT` is sent, so it includes that commit's round trip.
-3. **Two claim shapes.** Probes 1, 3, and 5 run twice, as `ClaimShape.Planned` (spec v3.1 as written) and `ClaimShape.IndexOrdered` (proposal A1). On SQL Server, the planned variant fails four assertions in every run. That failure is the evidence for A1. If A1 is approved, the planned variant should be removed with the step that adopts it.
+3. **Two claim shapes (first version only).** At `23294d57c`, probes 1, 3, and 5 ran twice, as `ClaimShape.Planned` (spec v3.1) and `ClaimShape.IndexOrdered` (A1). On SQL Server the planned variant failed four assertions in every run, and that failure was the evidence for A1. With A1 adopted, the follow-up removed the planned variant; its results stay in §5 and the Appendix.
 4. **Additional measurements.** Probe 1 also measures idle polls against 10 000 leased rows, claim throughput, and, on SQL Server, the locks held by one claim. On PostgreSQL it also records the plan. Probe 3 also measures one sweep after `MaxAttempts` is lowered to 1, which exhausts 10 000 rows. Probe 6 also runs 12 live D-8 materialization transactions and compares each advance with the reference computed from the database time the statement returned.
 
 ## 5. Results
 
-Values are the worst of three runs; the Appendix has each run. Latencies are client-side wall-clock times per statement or transaction, and percentiles are nearest-rank. "Proposed" is `IndexOrdered`; "planned" is spec v3.1.
+Values are the worst of three runs; the Appendix has each run. Latencies are client-side wall-clock times per statement or transaction, and percentiles are nearest-rank. "Proposed" is `IndexOrdered`, since adopted as A1; "planned" is spec v3.1. These are the first-version runs at `23294d57c`, taken before bounded `Exhaust` (A4) was adopted. §0 has the follow-up run of the adopted SQL.
 
 ### 5.1 Probe 1: claim at a 10 000-job backlog, three claimers × 1 000 claims
 
@@ -158,14 +208,14 @@ The table holds 60 000 finished rows past seven days, 40 000 inside the window, 
 | WorkerEnabled / SchedulerEnabled / RetentionEnabled | true (false in Test) | **Retain** | No load concern. Each is an independent switch |
 | PollInterval | 5 s (1 s – 5 min) | **Retain** | An idle poll costs one claim plus one `Exhaust`: p99 ≤ 36 ms and ≤ 86 ms against 10 000–100 000 rows. At 3 replicas that is about 1.2 statements/s. The expected claim delay is about 2.5 s on average and 5 s at worst |
 | LeaseDuration | 5 min (30 s – 1 h) | **Retain** | The §6.3 inequality gives 160 s ≤ 300 s. Measured renewals take ≤ 30 ms uncontended and ≤ 5.03 s when they hit the lock wait, both negligible against the 50 s safety margin. Crash recovery waits at most one lease (5 min), which suits jobs lasting seconds to tens of minutes |
-| RenewalInterval | 60 s (1 s – LeaseDuration/3) | **Retain the value. Adjust the lower bound to 12 s** | `RenewalTimeout = RenewalInterval/2` must exceed the 5 s `WriteLockWait` with at least 1 s of margin (F3), so `RenewalInterval ≥ 12 s`. The §6.3 inequality already puts the effective minimum `LeaseDuration` at 39 s |
+| RenewalInterval | 60 s (1 s – LeaseDuration/3) | **Retain the value. Adjust the lower bound to 12 s** (accepted) | `RenewalTimeout = RenewalInterval/2` must exceed the 5 s `WriteLockWait` with at least 1 s of margin (F3), so `RenewalInterval ≥ 12 s`. The §6.3 inequality already puts the effective minimum `LeaseDuration` at 39 s |
 | FenceTimeout | 10 s (1 s – 1 min) | **Retain; verify at 2.11** | No fence code exists yet. The underlying row-lock wait behaves exactly as measured for renewal (timeout at 5.0 s on both providers). Step 2.11 measures fence-held renewal |
 | MaxAttempts | 5 (1 – 20) | **Retain** | A functional choice; sweep cost does not depend on it. Lowering it later triggers one large sweep, which A4 bounds |
 | RetryBackoffBase / RetryBackoffMaximum | 30 s / 15 min | **Retain** | A functional choice with no database cost. With `MaxAttempts` 5, the four retries wait 30 s, 1 min, 2 min, and 4 min |
 | MaxConcurrentJobs | 2 (1 – 32) | **Retain** | The claim path sustains more than 400 claims/s on both providers under the proposed shape, so throughput is bounded by job duration, not claims. Each running job uses a connection only during renewals and fences, so the worst case is about 3 per replica |
 | FinishedJobRetention | 7 d (1 h – 365 d) | **Retain** | 100 000 rows (about ten bursts) cost nothing measurable in claim or `Exhaust` latency |
 | RetentionInterval | 1 h (1 min – 24 h) | **Retain** | One 500-row batch takes ≤ 107 ms, so an hourly run clears a full burst in about 20 batches (≈ 2 s) |
-| RetentionBatchSize | 500 (1 – 10 000) | **Retain the value. Adjust the upper bound to 2 000** | 2 000 rows do not escalate on SQL Server; 4 000 rows escalate to an exclusive table lock (F5) |
+| RetentionBatchSize | 500 (1 – 10 000) | **Retain the value. Adjust the upper bound to 2 000** (accepted) | In these measurements, 2 000 rows did not escalate on SQL Server and 4 000 rows escalated to an exclusive table lock (F5). The cap rests on these measurements and is not a universal guarantee against escalation, which SQL Server also triggers under lock-memory pressure |
 
 Fixed constants (§6.1): **retain all.**
 
@@ -179,23 +229,27 @@ Fixed constants (§6.1): **retain all.**
 | `ScheduleMaterializationTimeout` 10 s | p99 ≤ 150 ms |
 | Retention batch command timeout 30 s | Batch max ≤ 107 ms |
 
-On the PostgreSQL renewal miss (run 3, 102.2 ms against 100 ms): **no setting depends on it.** Renewal lateness of about 0.1 s is irrelevant against a 50 s safety margin. The reviewer decides whether to accept this run within noise, or to re-run the threshold as-is at step 2.11 and revise it only if the miss repeats (A6).
+On the PostgreSQL renewal miss (run 3, 102.2 ms against 100 ms): **no setting depends on it.** Renewal lateness of about 0.1 s is irrelevant against a 50 s safety margin. **Review decision:** this is a documented step 0.2 exception. The 100 ms threshold stays, step 2.11 re-checks it, and another miss requires investigation, not an automatic threshold increase. The follow-up run measured p99 50.7 ms (§0).
 
-## 8. Proposed spec amendments
+## 8. Spec amendments and review decisions
 
-These require approval. None has been applied to `spec.md`.
+These were decided at the step 0.2 review and applied in spec v3.2 (spec §0.00). Each item keeps its proposal text, followed by the decision.
 
 - **A1: index-ordered claim (D-3, §3), both providers for parity.** Set `NextAttemptAt` to the enqueue time on enqueue and schedule materialization, so every active row carries its eligibility time. It is already set by retry and release (D-6). Enforce this with a check that active rows have a non-null `NextAttemptAt`. Replace `IX_Job_Claim` with:
   - PostgreSQL: `("NextAttemptAt", "Id") WHERE "Status" IN ('Pending','InProgress')`
   - SQL Server: `(NextAttemptAt, Id) INCLUDE (Status, LeaseExpiresAt, AttemptCount) WHERE Status IN (N'Pending', N'InProgress')`
 
-  Order claims by `NextAttemptAt, Id`, which is the planned order for every active row. Add the redundant `Status IN ('Pending','InProgress')` conjunct to the claim; without it, SQL Server does not match the filtered index. Evidence: §5.1 and §5.5.
-- **A2: D-9 PostgreSQL form.** Write the advance expression inline in `SET`, over a single `WITH t AS (SELECT (clock_timestamp() AT TIME ZONE 'UTC') AS now)` sample, as `JobProbeSql.Advance` does. The formula is unchanged.
-- **A3: command timeouts for ownership-dependent writes (D-4, D-5).** Every lock-then-validate statement (`Renew`, `Complete`, `FailTransient`, `FailTerminal`, `ReleaseToPending`, and the fence lock and revalidation) uses a command timeout that exceeds its lock wait by at least 1 s. Use `RenewalTimeout` for the outcome writes. For the fence, use the smaller of `FenceTimeout` and the remaining lease minus 1 s, but never less than `FenceLockWait + 1 s`. `JobOptionsValidator` enforces `RenewalTimeout ≥ WriteLockWait + 1 s`.
-- **A4: bounded `Exhaust` (D-6).** Run `Exhaust` in batches of at most 1 000 rows (`LIMIT` inside the skip-locked subquery / `UPDATE TOP (1000)` with `READPAST`), looping until a batch comes back short. On SQL Server, add the same `Status IN (…)` conjunct as A1. This bounds lock footprint and statement time after `MaxAttempts` is lowered or after a mass lease expiry.
-- **A5 (optional): SQL Server `Exhaust` access path.** Under A1, the steady-state sweep scans the clustered index (p99 86 ms at 100 000 rows, within threshold). An optional `IX_Job_Exhaust (AttemptCount) INCLUDE (Status, LeaseExpiresAt) WHERE Status IN (N'Pending', N'InProgress')` would make it a seek. The decision can wait until step 2.11.
-- **A6: step 2.11 renewal probe definition (§6.2).** Replace the "5 s hold" with the §4 item 2 bracketing (4 s success, 6 s lock timeout, 3 s hold over an expiring 2 s lease), and define "after release" as measured from the holder's `COMMIT` request. Keep p99 ≤ 100 ms; if step 2.11 misses it again on this hardware, revisit the threshold rather than the settings.
-- **A7: file names (§9 steps 0.2 and 2.11).** Use the `*Tests.cs` suffix (§4 item 1).
+  Order claims by `NextAttemptAt, Id`, which is the planned order for every active row. Add the redundant `Status IN ('Pending','InProgress')` conjunct to the claim; without it, SQL Server does not match the filtered index. Evidence: §5.1 and §5.5. **Decision: adopted** on both providers, including the constraint and every enqueue path (manual enqueue and schedule materialization). Retry eligibility, reclaim behavior, and ordering are preserved; probes 6 and 7 verify this (§0).
+- **A2: D-9 PostgreSQL form.** Write the advance expression inline in `SET`, over a single `WITH t AS (SELECT (clock_timestamp() AT TIME ZONE 'UTC') AS now)` sample, as `JobProbeSql.Advance` does. The formula is unchanged. **Decision: approved.**
+- **A3: command timeouts for ownership-dependent writes (D-4, D-5).** Every lock-then-validate statement (`Renew`, `Complete`, `FailTransient`, `FailTerminal`, `ReleaseToPending`, and the fence lock and revalidation) uses a command timeout that exceeds its lock wait by at least 1 s. Use `RenewalTimeout` for the outcome writes. For the fence, use the smaller of `FenceTimeout` and the remaining lease minus 1 s, but never less than `FenceLockWait + 1 s`. `JobOptionsValidator` enforces `RenewalTimeout ≥ WriteLockWait + 1 s`. **Decision: approved as a separation principle, with revised fence wording.** The proposal's fence rule contradicted the existing deadline: it required at least `FenceLockWait + 1 s` while also capping the deadline at `min(FenceTimeout, remaining lease − 1 s)`. With 3 s of lease remaining, both cannot hold. As adopted:
+  - Lock acquisition has its own command timeout above its lock wait (`FenceLockWait + 1 s` for the fence).
+  - After the lock is held, the fence deadline is computed from fresh database time as `min(FenceTimeout, remaining − 1 s)` and preserved through work, revalidation, and commit. It is never raised to satisfy a command-timeout floor.
+  - `RenewalTimeout` bounds the whole renewal or outcome-write operation rather than granting each statement its own allowance.
+  - `RenewalTimeout ≥ WriteLockWait + 1 s` is validated (spec D-4, D-5, §6.3).
+- **A4: bounded `Exhaust` (D-6).** Run `Exhaust` in batches of at most 1 000 rows (`LIMIT` inside the skip-locked subquery / `UPDATE TOP (1000)` with `READPAST`), looping until a batch comes back short. On SQL Server, add the same `Status IN (…)` conjunct as A1. This bounds lock footprint and statement time after `MaxAttempts` is lowered or after a mass lease expiry. **Decision: adopted**, with each batch in its own transaction and a cancellation check between batches. The follow-up verified the actual SQL on both providers (§0): committed batches of at most 1 000, a clean stop at cancellation, eventual exhaustion, live leases preserved, and row-level locks only per SQL Server batch.
+- **A5 (optional): SQL Server `Exhaust` access path.** Under A1, the steady-state sweep scans the clustered index (p99 86 ms at 100 000 rows, within threshold). An optional `IX_Job_Exhaust (AttemptCount) INCLUDE (Status, LeaseExpiresAt) WHERE Status IN (N'Pending', N'InProgress')` would make it a seek. The decision can wait until step 2.11. **Decision: deferred to step 2.11**, unless bounded-exhaust measurements establish a need sooner. The follow-up's steady-state p99 of 117.1 ms on SQL Server does not.
+- **A6: step 2.11 renewal probe definition (§6.2).** Replace the "5 s hold" with the §4 item 2 bracketing (4 s success, 6 s lock timeout, 3 s hold over an expiring 2 s lease), and define "after release" as measured from the holder's `COMMIT` request. Keep p99 ≤ 100 ms; if step 2.11 misses it again on this hardware, revisit the threshold rather than the settings. **Decision: approved**, including the measurement origin. A repeat miss at step 2.11 requires investigation, not an automatic threshold increase.
+- **A7: file names (§9 steps 0.2 and 2.11).** Use the `*Tests.cs` suffix (§4 item 1). **Decision: approved.**
 
 ## 9. Limitations
 
@@ -206,7 +260,7 @@ These require approval. None has been applied to `spec.md`.
 
 ## 10. What step 2.11 re-verifies
 
-Step 2.11 re-verifies probes 1–6 through the implemented repositories and `IJobFence`, with whichever claim shape is approved, and adds fence-held renewal. Each approved or adjusted value above gets a confirm-or-adjust note, and any regression against these thresholds blocks Phase 3.
+Step 2.11 re-verifies probes 1–7 through the implemented repositories and `IJobFence`, with the adopted claim (A1) and bounded `Exhaust` (A4), and adds fence-held renewal. It re-checks the 100 ms renewal threshold (a repeat miss requires investigation) and decides A5. Each approved or adjusted value above gets a confirm-or-adjust note, and any regression against these thresholds blocks Phase 3.
 
 ## Appendix: per-run results
 
