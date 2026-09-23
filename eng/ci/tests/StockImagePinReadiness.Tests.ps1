@@ -438,6 +438,30 @@ Describe 'Stock image pin readiness' {
                 Should -Throw '*does not match*'
         }
 
+        It 'accepts one attempt of a publication run' {
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{
+                        'release.publicationRunUrl' = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1/attempts/2'
+                    }) } | Should -Not -Throw
+        }
+
+        It 'refuses a publication run copied with its <Case>, and says what to strip' -ForEach @(
+            @{ Case = 'query'; Value = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1?pr=1281' }
+            @{ Case = 'fragment'; Value = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1#summary-2' }
+        ) {
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'release.publicationRunUrl' = $Value }) } |
+                Should -Throw '*without the query or fragment*actions/runs/<run id>*'
+        }
+
+        It 'refuses a publication run URL that is not one run of this repository: <Case>' -ForEach @(
+            @{ Case = 'another repository'; Value = 'https://github.com/someone/else/actions/runs/1' }
+            @{ Case = 'a job'; Value = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1/job/2' }
+            @{ Case = 'the runs list'; Value = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs' }
+            @{ Case = 'another host'; Value = 'https://example.org/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/1' }
+        ) {
+            { Invoke-Readiness -Pin (New-PublishedPin -Override @{ 'release.publicationRunUrl' = $Value }) } |
+                Should -Throw '*does not match*'
+        }
+
         It 'refuses <Field> naming another repository' -ForEach @(
             @{ Field = 'edFiApi.repository'; Value = 'someone/else' }
             @{ Field = 'configurationService.repository'; Value = 'someone/else' }
@@ -480,7 +504,10 @@ Describe 'Stock image pin readiness' {
             foreach ($field in @('provisioning.schemaToolsFeedUrl', 'contracts.feedUrl', 'release.publicationRunUrl')) {
                 @{ Field = $field; Case = 'no host'; Value = 'https:///' }
                 @{ Field = $field; Case = 'markup'; Value = 'https://a"/><evil/>' }
-                @{ Field = $field; Case = 'an ampersand'; Value = 'https://feed.example.org/index.json?a=1&b=2' }
+                # A run URL with a query is refused earlier, with its own message; see below.
+                if ($field -ne 'release.publicationRunUrl') {
+                    @{ Field = $field; Case = 'an ampersand'; Value = 'https://feed.example.org/index.json?a=1&b=2' }
+                }
                 @{ Field = $field; Case = 'plain http'; Value = 'http://feed.example.org/index.json' }
                 @{ Field = $field; Case = 'a local folder'; Value = '../local-folder-feed' }
             }

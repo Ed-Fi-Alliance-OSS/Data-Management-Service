@@ -43,7 +43,7 @@ Moving it to `published` means filling all of:
 | --- | --- |
 | `edFiApi.tag`, `edFiApi.digest` | The version-specific tag **and** the digest it resolved to. Both, because a tag alone moves |
 | `configurationService.digest` | Digest alone. This ticket adds version-specific tags to the Ed-Fi API publication only, so the Configuration Service still carries nothing but the moving `pre` tag, and a bare digest is honest about that |
-| `release.githubRelease`, `release.sourceCommit`, `release.publicationRunUrl` | The release that produced the tag, the commit it was cut from, and the run that published it |
+| `release.githubRelease`, `release.sourceCommit`, `release.publicationRunUrl` | The release that produced the tag, the commit it was cut from, and the run that published it, as `https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/<run id>` (an `/attempts/<n>` suffix is allowed; a query or fragment is refused) |
 | `provisioning.schemaToolsPackageVersion`, `provisioning.schemaToolsFeedUrl`, `provisioning.dataStandardVersion`, `provisioning.schemaPackages` | The released SchemaTools version and the feed it installs from, the data-standard label, and the exact schema package identities with their feed. `schemaPackages` is the whole of what selects schema content; `dataStandardVersion` is only a label |
 | `contracts.pluginsPackageVersion`, `contracts.customValidationPackageVersion`, `contracts.feedUrl` | The two published contract packages the fixture compiles against, restored rather than built, and the feed they restore from. Neither the tool nor the contracts borrow a schema package's feed |
 

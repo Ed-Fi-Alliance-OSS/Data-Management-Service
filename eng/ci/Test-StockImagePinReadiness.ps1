@@ -101,6 +101,11 @@ $exactVersionPattern = "^$semVerNumber\.$semVerNumber\.$semVerNumber(-$semVerPre
 $hostLabel = '[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
 $httpsUrlPattern = "^https://$hostLabel(\.$hostLabel)*(:[0-9]{1,5})?(/[A-Za-z0-9._~%!`$()*+,;=:@-]*)*\z"
 
+# The run that published the release, in its canonical form: one run of this repository's
+# workflows, optionally one attempt of it. Not a job, not a filtered view.
+$publicationRunUrlShape = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/<run id>'
+$publicationRunUrlPattern = '^https://github\.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/[1-9][0-9]*(/attempts/[1-9][0-9]*)?\z'
+
 if (-not (Test-Path -LiteralPath $PinFile -PathType Leaf)) {
     throw "The stock image pin file does not exist: $PinFile"
 }
@@ -318,7 +323,13 @@ else {
     }
 
     Assert-PinValue -Path @('release', 'sourceCommit') -Pattern $commitPattern | Out-Null
-    Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern $httpsUrlPattern | Out-Null
+    # A URL copied from the browser usually carries a query or a fragment. Say what to strip rather
+    # than print the pattern at someone who pasted the right run.
+    $publicationRunUrl = Get-PinValue -Path @('release', 'publicationRunUrl')
+    if ($publicationRunUrl -is [string] -and $publicationRunUrl -match '[?#]') {
+        throw "The stock image pin's release.publicationRunUrl is '$publicationRunUrl'. Record it without the query or fragment, as $publicationRunUrlShape."
+    }
+    Assert-PinValue -Path @('release', 'publicationRunUrl') -Pattern $publicationRunUrlPattern | Out-Null
     Assert-PinValue -Path @('provisioning', 'schemaToolsPackageVersion') -Pattern $exactVersionPattern | Out-Null
     Assert-PinValue -Path @('provisioning', 'dataStandardVersion') -Pattern $dataStandardPattern | Out-Null
     Assert-PinValue -Path @('contracts', 'pluginsPackageVersion') -Pattern $exactVersionPattern | Out-Null

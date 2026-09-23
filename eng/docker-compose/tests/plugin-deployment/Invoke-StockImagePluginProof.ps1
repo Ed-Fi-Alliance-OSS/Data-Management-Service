@@ -1081,7 +1081,7 @@ function Get-StartupStatusDocument([string]$container, [switch]$FromStoppedConta
             return $null
         }
 
-        return (Get-Content -LiteralPath $destination -Raw | ConvertFrom-Json)
+        return (ConvertFrom-StartupStatusText (Get-Content -LiteralPath $destination -Raw))
     }
 
     $read = Invoke-Docker -AllowFailure -ArgumentList @('exec', $container, 'cat', '/tmp/dms-startup-status.json')
@@ -1090,7 +1090,18 @@ function Get-StartupStatusDocument([string]$container, [switch]$FromStoppedConta
         return $null
     }
 
-    return ($read.Output | ConvertFrom-Json)
+    return (ConvertFrom-StartupStatusText $read.Output)
+}
+
+# DMS rewrites the status file in place rather than replacing it, so a read can land on a partly
+# written document. That is a read that saw nothing yet, not a failed run: the caller polls again.
+function ConvertFrom-StartupStatusText([string]$text) {
+    try {
+        return ($text | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        return $null
+    }
 }
 
 function Wait-ForDmsReady {
@@ -1386,6 +1397,11 @@ function New-ProofSmokeClient {
     }
 
     $script:secret += @($client.Secret)
+
+    # A client the Configuration Service just created is not yet one its token endpoint will
+    # accept; the first exchange can 401. New-SeedLoaderCredentials waits for the same reason.
+    Write-ProofLog "Wait-CmsClientAvailable $ConfigurationServiceUrl"
+    Wait-CmsClientAvailable -CmsUrl $ConfigurationServiceUrl -ClientId $client.Key -ClientSecret $client.Secret
 
     return [pscustomobject]@{ Client = $client; DataStoreId = $verdict.Id }
 }

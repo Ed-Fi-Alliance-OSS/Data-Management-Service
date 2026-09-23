@@ -338,6 +338,11 @@ function global:Invoke-WebRequest {
         return [pscustomobject]@{ StatusCode = 201; Content = '{}'; Headers = @{ Location = '/v3/vendors/3' } }
     }
 
+    # Wait-CmsClientAvailable polls the token endpoint until the new client is accepted.
+    if ($Uri -match '/connect/token') {
+        return [pscustomobject]@{ StatusCode = 200; Content = '{}'; Headers = @{} }
+    }
+
     # Indexed, so an HTTP answer counts towards the same rule-use accounting as a command answer.
     for ($i = 0; $i -lt @($global:DmsShimPlan).Count; $i++) {
         $rule = @($global:DmsShimPlan)[$i]
@@ -763,6 +768,11 @@ exit 0
 
             return @(
                 @{ phase = $Phase; match = 'req:Post /connect/register'; exitCode = 200; output = '{}'; limit = 1; expect = 1 }
+                # The proof client's own exchange, which is the wait for the Configuration Service
+                # to accept it. Ahead of the rule below, which would otherwise answer it.
+                @{ phase = $Phase; match = 'req:Post /connect/token'; body = 'client_id=proof-client-key'
+                    exitCode = 200; output = '{}'; limit = 1; expect = 1
+                }
                 # Twice per deployment, deliberately: this script asks for a bootstrap-admin token to
                 # read the data stores, and Get-SmokeTestCredential asks for one of its own after
                 # registering its client. Both are the same endpoint and neither is a duplicate.
@@ -1951,6 +1961,19 @@ exit 0
             @($script:strict.Evidence.failure) | Should -HaveCount 0
         }
 
+        It 'waits for the Configuration Service to accept the new client before asking DMS for a token' {
+            $call = @($script:strict.Http | Where-Object { $_.method -eq 'Post' })
+            $index = { param($pattern) for ($i = 0; $i -lt $call.Count; $i++) { if (& $pattern $call[$i]) { return $i } } return -1 }
+
+            $application = & $index { param($c) $c.uri -match '/v3/applications' }
+            $wait = & $index { param($c) $c.uri -match '/connect/token' -and $c.body -match 'client_id=proof-client-key' }
+            $token = & $index { param($c) $c.uri -match '/oauth/token' }
+
+            $application | Should -BeGreaterOrEqual 0
+            $wait | Should -BeGreaterThan $application
+            $token | Should -BeGreaterThan $wait
+        }
+
         It 'asked nothing the plan had no answer for' {
             # The claim this makes possible: every command and every request in the run above was
             # one the plan named. A permissive default would make the rest of this Context vacuous.
@@ -2076,6 +2099,26 @@ exit 0
 
         AfterEach {
             Remove-Item -LiteralPath $script:pinPath -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'reads a partly written startup status as not yet ready, and polls again' {
+            # DMS rewrites the file in place, so a read can catch half a document. The first read in
+            # deployment 1 gets that; the run must poll past it rather than fail on the parse.
+            $torn = (New-StatusDocument).Substring(0, 12)
+            $plan = @(Get-StrictTraversalPlan | ForEach-Object {
+                    if ($_.match -eq 'exec dms-published-dms-1 cat /tmp/dms-startup-status\.json' -and $_['phase'] -eq 1) {
+                        $_['sequence'] = @(
+                            @{ exitCode = 0; output = $torn }
+                            @{ exitCode = 0; output = (New-StatusDocument) }
+                        )
+                    }
+                    $_
+                })
+
+            $run = Invoke-EntryScript -PinPath $script:pinPath -Strict -ShimRule $plan
+
+            $run.ExitCode | Should -Be 0
+            $run.Evidence.recipe1.readyState | Should -BeExactly 'Ready'
         }
 
         It 'fails at the deployment whose prepared schema does not match, having accepted the first' {
