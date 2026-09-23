@@ -59,7 +59,7 @@ API-driven message scenarios belong to [DMS-1325](../design/backend-redesign/epi
 | Deployment, readiness, recovery, and security contracts | [CDC integration design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#authority-and-document-ownership). |
 | Projector/source behavior | [ADR 0001](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md). |
 | Topic/message, consumer, and compatibility contract | [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md). |
-| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); cross-link corrections are pending T12. |
+| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Durable documentation checks and exact live snippet qualification remain pending. |
 
 ## Scope Boundaries and Missing Surfaces
 

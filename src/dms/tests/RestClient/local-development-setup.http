@@ -62,8 +62,11 @@
 #    "ConnectionStrings": {
 #        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 #    },
-# 7. Relational DMS CDC/Kafka support is pending a separate implementation; there is no DMS source
-#    connector registration step for this setup.
+# 7. This manual IDE/RestClient setup has no CDC connector-registration or writer-admission step.
+#    For relational CDC, use the managed local/published bootstrap before starting writers:
+#    [PostgreSQL setup](../../../../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+#    [SQL Server setup](../../../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+#    [Bootstrap/admission owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci)
 # 8. Run these steps from top to bottom.
 
 @configPort=5126

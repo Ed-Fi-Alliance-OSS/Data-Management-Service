@@ -222,5 +222,12 @@ clients, fixture state, and hydration), `Models/`, and `Hooks/` (`SetupHooks.cs`
 
 ## CDC support
 
-Legacy document-store streaming tests have been removed. Relational CDC support is pending a
-separate implementation.
+Legacy document-store streaming tests have been removed. This Instance Management
+route-context setup has no `-EnableKafkaCdc` integration or CDC message scenarios.
+The separate [DMS E2E CDC opt-in](../../../../reference/cdc-documentation/operations-runbook.md#dms-e2e-setup)
+supports its own managed single-target setup under the
+[local bootstrap contract](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci);
+it does not qualify this route-context harness. For local/published relational CDC,
+start with the [CDC operator reference](../../../../reference/cdc-documentation/README.md).
+API-driven message coverage remains owned by
+[DMS-1325](../../../../reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md).

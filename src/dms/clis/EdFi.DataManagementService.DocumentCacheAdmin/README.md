@@ -265,6 +265,12 @@ Writer-fenced JSON requests carry the same offline writer admission token used b
 
 ## Representation Restamp
 
+For CDC-enabled targets, start with the
+[compatible restamp handoff](../../../../reference/cdc-documentation/operations-runbook.md#representation-restamp)
+for connector containment and post-restamp observation under the
+[contract-change owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+This section owns offline preview, execution and verification.
+
 Use representation restamp only for an offline correction that changes composed API or
 stream representation bytes without changing domain fields, keys, or deletion history.
 The operation advances the existing canonical `ContentVersion` and
@@ -416,8 +422,11 @@ state through its normal baseline procedure.
 
 If corrected bytes remove or mask sensitive information previously published to Kafka,
 do not treat a higher-version replacement, tombstone, compaction, or successful restamp as
-purge evidence. Follow the E19 sensitive-data containment and destructive binding-
-generation retirement procedure linked below before restoring CDC access.
+purge evidence. Follow the
+[sensitive-data disclosure response](../../../../reference/cdc-documentation/operations-runbook.md#sensitive-data-response)
+and [guarded generation retirement](../../../../reference/cdc-documentation/operations-runbook.md#generation-retirement)
+under the [contract-change owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations)
+before restoring CDC access.
 
 ## Exit Codes
 
@@ -467,7 +476,8 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
   concerns. Start with
   [CDC operator reference](../../../../reference/cdc-documentation/README.md) and its
   [projection/history handoff](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff).
-  Physical-source replacement remains unsupported in v1.
+  Physical-source replacement remains a
+  [v1 deferral](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 - The CLI story boundary and package verification evidence are in
   [Add a DocumentCache Administration CLI](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
   cross-feature DocumentCache runbook evidence is tracked by

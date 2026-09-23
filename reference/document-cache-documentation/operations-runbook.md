@@ -21,15 +21,19 @@ This runbook covers these DocumentCache operations:
 - SQL Server projection prerequisite correction when lifecycle is `Disabled`; and
 - the required explicit scrub after suspected restore or unsupported direct mutation.
 
-Kafka connector setup, connector status, topic operations, binding retirement, source
-replacement, downstream publication containment, and consumer-state recovery are Kafka/CDC
-runbook concerns. Use this runbook only up to the DMS projection boundary, then follow
+Kafka connector setup, connector status, topic operations, binding retirement,
+downstream publication containment, and consumer evidence are Kafka/CDC runbook concerns.
+Physical-source replacement remains a [v1 deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+Use this runbook only up to the DMS projection boundary, then follow
 [Kafka/CDC projection and history handoff](../cdc-documentation/operations-runbook.md#projection-handoff)
 when connector or downstream state may be affected.
 
 Representation restamp belongs to the independently owned offline byte-changing
 representation correction workflow and is outside this runbook. This runbook does not
-replace that workflow with manual SQL.
+replace that workflow with manual SQL. Use the
+[CDC restamp handoff](../cdc-documentation/operations-runbook.md#representation-restamp)
+to reach the [DocumentCacheAdmin procedure](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+under the [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 
 Owning design sections:
 
@@ -408,3 +412,8 @@ Start with the [CDC projection/history handoff](../cdc-documentation/operations-
 and use [managed lifecycle](../cdc-documentation/operations-runbook.md#managed-lifecycle)
 or [native recovery/containment](../cdc-documentation/operations-runbook.md#native-recovery)
 for publication concerns. This runbook remains the owner of projection administration.
+
+Sensitive-data incidents use the [disclosure response](../cdc-documentation/operations-runbook.md#sensitive-data-response)
+and [guarded retirement](../cdc-documentation/operations-runbook.md#generation-retirement),
+under the [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+Restamp completion is not purge evidence.
