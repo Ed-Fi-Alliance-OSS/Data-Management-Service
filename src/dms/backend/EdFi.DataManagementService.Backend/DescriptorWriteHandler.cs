@@ -101,81 +101,47 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        var request = postRequest with
-        {
-            AuthorizationStrategyEvaluators = PostActionPolicySupport.RequireSharedPolicy(
-                actionAuthorization
-            ),
-        };
-
         // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
         // unsupported strategies resolve before any session opens, so a denial issues no DB roundtrip.
         // The stored and proposed namespace checks run inside the descriptor write session against the
         // resolved target (see the per-path execution helpers below).
-        var authorizationPreflight = ResolveDescriptorWriteAuthorization(
-            request,
-            NamespaceAuthorizationOperation.Update,
-            "descriptor POST",
-            "POST"
-        );
+        var (preLookupTerminal, branches) = PlanDescriptorPostAuthorization(postRequest, actionAuthorization);
 
-        switch (authorizationPreflight)
+        // A terminal both actions share answers before the target is looked up, exactly as one action list
+        // did. It is never a security-configuration failure, so nothing it returns is logged against an action.
+        if (preLookupTerminal is not null)
         {
-            case DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented:
-                await ValidateDescriptorWriteCustomViewsAsync(
-                        request.MappingSet,
-                        notImplemented.CustomViewChecksToValidate,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
-                        request.MappingSet,
-                        notImplemented.SingleRecordCustomViewChecksToValidate,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                return new UpsertResult.UpsertFailureNotImplemented(
-                    notImplemented.FailureMessage,
-                    UpsertFailureNotImplementedReason.StrategyNotEnabled
-                );
-            case DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                await ValidateDescriptorWriteCustomViewsAsync(
-                        request.MappingSet,
-                        configError.CustomViewChecksToValidate,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
-                        request.MappingSet,
-                        configError.SingleRecordCustomViewChecksToValidate,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                return new UpsertResult.UpsertFailureSecurityConfiguration(
-                    configError.Errors,
-                    configError.Diagnostics
-                );
-            case DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
-                await ValidateDescriptorWriteCustomViewsAsync(
-                        request.MappingSet,
-                        namespaceNotAuthorized.CustomViewChecksToValidate,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
-                        request.MappingSet,
-                        namespaceNotAuthorized.SingleRecordCustomViewChecksToValidate,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                return new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure);
+            return await ValidateThenReturnDescriptorPostImmediateAsync(
+                    postRequest.MappingSet,
+                    preLookupTerminal,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
-        var proceed = (DescriptorWriteAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
-        var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
-        var proposedNamespaceAuthorization = proceed.ProposedNamespaceAuthorization;
-        var customViewAuthorization = proceed.CustomViewAuthorization;
+        var selection = new DescriptorPostTargetSelection(branches!);
+        var result = await HandlePostForSelectedTargetAsync(
+                postRequest,
+                postRequest.ReferentialId.Value,
+                selection,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
+        // A security-configuration failure reached once the target selected a branch is logged against that
+        // branch's action.
+        return selection.SelectedAction is { } selectedAction
+            ? AttributeDescriptorPostAction(result, selectedAction)
+            : result;
+    }
+
+    private async Task<UpsertResult> HandlePostForSelectedTargetAsync(
+        DescriptorWriteRequest request,
+        ReferentialId referentialId,
+        DescriptorPostTargetSelection selection,
+        CancellationToken cancellationToken
+    )
+    {
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(
             request.MappingSet,
@@ -198,7 +164,7 @@ internal sealed class DescriptorWriteHandler(
                     .ResolveForPostAsync(
                         request.MappingSet,
                         request.Resource,
-                        request.ReferentialId.Value,
+                        referentialId,
                         request.DocumentUuid,
                         cancellationToken
                     )
@@ -210,6 +176,24 @@ internal sealed class DescriptorWriteHandler(
                         $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor POST."
                     );
 
+                // The lookup ran outside any session, so the branch it selects may be stale by the time the
+                // write runs. Both stale directions fail closed to a retryable conflict: a concurrent create
+                // makes the insert hit the identity's unique constraint, and a concurrent delete or replace
+                // leaves no row under the locked DocumentId. The retry looks up again and reselects.
+                var branch = selection.Select(targetContext);
+
+                if (branch is DescriptorPostBranch.Immediate immediate)
+                {
+                    return await ValidateThenReturnDescriptorPostImmediateAsync(
+                            request.MappingSet,
+                            immediate,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                var authorized = (DescriptorPostBranch.Authorized)branch;
+
                 return targetContext switch
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) =>
@@ -218,8 +202,8 @@ internal sealed class DescriptorWriteHandler(
                                 body,
                                 documentUuid,
                                 resourceKeyId,
-                                proposedNamespaceAuthorization,
-                                customViewAuthorization,
+                                authorized.ProposedNamespaceAuthorization,
+                                authorized.CustomViewAuthorization,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -231,9 +215,9 @@ internal sealed class DescriptorWriteHandler(
                                 documentId,
                                 documentUuid,
                                 resourceKeyId,
-                                storedNamespaceAuthorization,
-                                proposedNamespaceAuthorization,
-                                customViewAuthorization,
+                                authorized.StoredNamespaceAuthorization,
+                                authorized.ProposedNamespaceAuthorization,
+                                authorized.CustomViewAuthorization,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -256,15 +240,22 @@ internal sealed class DescriptorWriteHandler(
                     writeSession,
                     cancellationToken,
                     request.ProfileName,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    body.Namespace,
-                    customViewAuthorization
+                    proposedNamespace: body.Namespace,
+                    postTargetSelection: selection
                 )
                 .ConfigureAwait(false);
 
             switch (preconditionResult)
             {
+                case DescriptorLockedPreconditionResult.BranchImmediate(var immediate):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return await ValidateThenReturnDescriptorPostImmediateAsync(
+                            request.MappingSet,
+                            immediate,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
                 case DescriptorLockedPreconditionResult.CreateNew(var createDocumentUuid):
                     // If-Match on an insert has no current representation to match, so it fails (412).
                     // If-None-Match on an insert is the create-only success case: no current
@@ -1041,13 +1032,10 @@ internal sealed class DescriptorWriteHandler(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
         string? proposedNamespace = null,
-        RelationalCustomViewAuthorization? customViewAuthorization = null
+        RelationalCustomViewAuthorization? customViewAuthorization = null,
+        DescriptorPostTargetSelection? postTargetSelection = null
     )
     {
-        var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionDescriptorCustomViewRuns(
-            customViewAuthorization,
-            storedNamespaceAuthorization
-        );
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(precondition);
         ArgumentNullException.ThrowIfNull(writeSession);
@@ -1123,6 +1111,27 @@ internal sealed class DescriptorWriteHandler(
             default:
                 throw new ArgumentOutOfRangeException(nameof(targetKind), targetKind, null);
         }
+
+        // A POST applies the authorization of the branch the target it just resolved selects, before any stored
+        // check, proposed check, or precondition compare runs against that target.
+        if (postTargetSelection is not null)
+        {
+            switch (postTargetSelection.Select(targetContext))
+            {
+                case DescriptorPostBranch.Immediate immediate:
+                    return new DescriptorLockedPreconditionResult.BranchImmediate(immediate);
+                case DescriptorPostBranch.Authorized authorized:
+                    storedNamespaceAuthorization = authorized.StoredNamespaceAuthorization;
+                    proposedNamespaceAuthorization = authorized.ProposedNamespaceAuthorization;
+                    customViewAuthorization = authorized.CustomViewAuthorization;
+                    break;
+            }
+        }
+
+        var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionDescriptorCustomViewRuns(
+            customViewAuthorization,
+            storedNamespaceAuthorization
+        );
 
         if (targetContext is RelationalWriteTargetContext.CreateNew(var createDocumentUuid))
         {
@@ -2630,6 +2639,207 @@ internal sealed class DescriptorWriteHandler(
         }
     }
 
+    /// <summary>
+    /// What one descriptor POST branch applies once the resolved target selects it.
+    /// </summary>
+    private abstract record DescriptorPostBranch
+    {
+        private DescriptorPostBranch() { }
+
+        public sealed record Authorized(
+            RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization,
+            RelationalCustomViewAuthorization? CustomViewAuthorization
+        ) : DescriptorPostBranch;
+
+        /// <summary>
+        /// The result the branch owes as soon as the target selects it, with the views configured ahead of the
+        /// terminal that produced it, which are validated before the result is returned.
+        /// </summary>
+        public sealed record Immediate(
+            UpsertResult Result,
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordCustomViewChecksToValidate
+        ) : DescriptorPostBranch;
+    }
+
+    private sealed record DescriptorPostBranches(
+        DescriptorPostBranch CreateNew,
+        DescriptorPostBranch ExistingDocument
+    );
+
+    /// <summary>
+    /// The branches a descriptor POST chooses between, and the action the target it resolved selected, recorded
+    /// so whatever the write returns afterward can be attributed to that action.
+    /// </summary>
+    private sealed class DescriptorPostTargetSelection(DescriptorPostBranches branches)
+    {
+        public UpsertTargetAction? SelectedAction { get; private set; }
+
+        public DescriptorPostBranch Select(RelationalWriteTargetContext targetContext)
+        {
+            (SelectedAction, var branch) = targetContext switch
+            {
+                RelationalWriteTargetContext.CreateNew => (UpsertTargetAction.Create, branches.CreateNew),
+                RelationalWriteTargetContext.ExistingDocument => (
+                    UpsertTargetAction.Update,
+                    branches.ExistingDocument
+                ),
+                _ => throw new InvalidOperationException(
+                    $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor POST."
+                ),
+            };
+
+            return branch;
+        }
+    }
+
+    /// <summary>
+    /// Plans a descriptor POST's authorization for each action. When both actions carry the same list, one plan
+    /// serves both branches, and a terminal it reaches answers before any lookup, except a security-configuration
+    /// failure, which waits for the target so it is logged against the action that target selects.
+    /// </summary>
+    private static (
+        DescriptorPostBranch.Immediate? PreLookupTerminal,
+        DescriptorPostBranches? Branches
+    ) PlanDescriptorPostAuthorization(
+        DescriptorWriteRequest postRequest,
+        UpsertActionAuthorization actionAuthorization
+    )
+    {
+        if (actionAuthorization.TryGetSharedPolicy(out var sharedEvaluators))
+        {
+            var sharedOutcome = ResolveDescriptorPostAuthorization(postRequest, sharedEvaluators);
+            var sharedBranch = ToDescriptorPostBranch(sharedOutcome);
+
+            return
+                sharedOutcome
+                    is DescriptorWriteAuthorizationPreflightOutcome.Proceed
+                        or DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError
+                ? (null, new DescriptorPostBranches(sharedBranch, sharedBranch))
+                : ((DescriptorPostBranch.Immediate)sharedBranch, null);
+        }
+
+        return (
+            null,
+            new DescriptorPostBranches(
+                PlanDescriptorPostBranch(postRequest, actionAuthorization.Create, UpsertTargetAction.Create),
+                PlanDescriptorPostBranch(postRequest, actionAuthorization.Update, UpsertTargetAction.Update)
+            )
+        );
+    }
+
+    private static DescriptorPostBranch PlanDescriptorPostBranch(
+        DescriptorWriteRequest postRequest,
+        UpsertActionPolicy policy,
+        UpsertTargetAction action
+    ) =>
+        policy switch
+        {
+            UpsertActionPolicy.Permitted permitted => ToDescriptorPostBranch(
+                ResolveDescriptorPostAuthorization(postRequest, permitted.Evaluators)
+            ),
+            UpsertActionPolicy.NotPermitted => new DescriptorPostBranch.Immediate(
+                new UpsertResult.UpsertFailureTargetActionNotPermitted(action),
+                [],
+                []
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported upsert action policy '{policy.GetType().Name}'."
+            ),
+        };
+
+    private static DescriptorWriteAuthorizationPreflightOutcome ResolveDescriptorPostAuthorization(
+        DescriptorWriteRequest postRequest,
+        AuthorizationStrategyEvaluator[] evaluators
+    ) =>
+        ResolveDescriptorWriteAuthorization(
+            postRequest with
+            {
+                AuthorizationStrategyEvaluators = evaluators,
+            },
+            NamespaceAuthorizationOperation.Update,
+            "descriptor POST",
+            "POST"
+        );
+
+    private static DescriptorPostBranch ToDescriptorPostBranch(
+        DescriptorWriteAuthorizationPreflightOutcome outcome
+    ) =>
+        outcome switch
+        {
+            DescriptorWriteAuthorizationPreflightOutcome.Proceed proceed =>
+                new DescriptorPostBranch.Authorized(
+                    proceed.StoredNamespaceAuthorization,
+                    proceed.ProposedNamespaceAuthorization,
+                    proceed.CustomViewAuthorization
+                ),
+            DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented =>
+                new DescriptorPostBranch.Immediate(
+                    new UpsertResult.UpsertFailureNotImplemented(
+                        notImplemented.FailureMessage,
+                        UpsertFailureNotImplementedReason.StrategyNotEnabled
+                    ),
+                    notImplemented.CustomViewChecksToValidate,
+                    notImplemented.SingleRecordCustomViewChecksToValidate
+                ),
+            DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configError =>
+                new DescriptorPostBranch.Immediate(
+                    new UpsertResult.UpsertFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    ),
+                    configError.CustomViewChecksToValidate,
+                    configError.SingleRecordCustomViewChecksToValidate
+                ),
+            DescriptorWriteAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized =>
+                new DescriptorPostBranch.Immediate(
+                    new UpsertResult.UpsertFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure),
+                    namespaceNotAuthorized.CustomViewChecksToValidate,
+                    namespaceNotAuthorized.SingleRecordCustomViewChecksToValidate
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported descriptor write authorization outcome '{outcome.GetType().Name}'."
+            ),
+        };
+
+    /// <summary>
+    /// Validates the views configured ahead of a branch's terminal, so a missing or nonconforming view keeps its
+    /// own 500, then returns the terminal's result.
+    /// </summary>
+    private async Task<UpsertResult> ValidateThenReturnDescriptorPostImmediateAsync(
+        MappingSet mappingSet,
+        DescriptorPostBranch.Immediate immediate,
+        CancellationToken cancellationToken
+    )
+    {
+        await ValidateDescriptorWriteCustomViewsAsync(
+                mappingSet,
+                immediate.CustomViewChecksToValidate,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
+                mappingSet,
+                immediate.SingleRecordCustomViewChecksToValidate,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return immediate.Result;
+    }
+
+    private static UpsertResult AttributeDescriptorPostAction(
+        UpsertResult result,
+        UpsertTargetAction action
+    ) =>
+        result is UpsertResult.UpsertFailureSecurityConfiguration { TargetAction: null } securityConfiguration
+            ? securityConfiguration with
+            {
+                TargetAction = action,
+            }
+            : result;
+
     private async Task<DescriptorWriteAppliedResult<UpsertResult>> InsertDescriptorAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
@@ -3937,6 +4147,12 @@ internal sealed class DescriptorWriteHandler(
         ) : DescriptorLockedPreconditionResult;
 
         public sealed record Mismatch(ETagPreconditionFailureReason Reason)
+            : DescriptorLockedPreconditionResult;
+
+        /// <summary>
+        /// The result the POST branch selected by the resolved target owes before anything else runs.
+        /// </summary>
+        public sealed record BranchImmediate(DescriptorPostBranch.Immediate Immediate)
             : DescriptorLockedPreconditionResult;
 
         public sealed record Loaded(
