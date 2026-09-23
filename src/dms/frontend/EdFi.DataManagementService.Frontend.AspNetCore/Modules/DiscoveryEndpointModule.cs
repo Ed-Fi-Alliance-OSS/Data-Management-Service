@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -86,7 +87,8 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         IVersionProvider versionProvider,
         IDataModelInfoProvider dataModelInfoProvider,
         IOptions<AppSettings> appSettings,
-        ITenantValidator tenantValidator
+        ITenantValidator tenantValidator,
+        IOptions<CoreAppSettings> coreOptions
     )
     {
         // Validate tenant if multi-tenancy is enabled and tenant is provided in route
@@ -148,6 +150,13 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
                 ["xsdMetadata"] = $"{rootUrl}{routeQualifierPrefix}/metadata/xsd",
             },
         };
+
+        // The identity URL is listed only when AppSettings:EnableIdentityManagement is true
+        // (design.md, Feature Toggle: "the Discovery response has no identity URL" when disabled).
+        if (coreOptions.Value.EnableIdentityManagement)
+        {
+            response["urls"]!["identity"] = $"{rootUrl}{routeQualifierPrefix}/identity/v2/";
+        }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(response);
     }

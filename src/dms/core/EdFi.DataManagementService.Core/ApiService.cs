@@ -1236,6 +1236,17 @@ internal class ApiService : IApiService
         return _changeQueriesOpenApiSpecification.Value is not null;
     }
 
+    /// <summary>
+    /// DMS entry point to get the fixed identity OpenAPI specification (design.md D2). The document
+    /// itself is loaded once by <see cref="OpenApi.IdentityOpenApiDocument" />; this method only adds
+    /// the request-specific servers array and the shared OAuth2 security section, exactly as every
+    /// other served OpenAPI document does.
+    /// </summary>
+    public JsonNode GetIdentityOpenApiSpecification(JsonArray servers)
+    {
+        return AddEndpointSpecificOpenApiMetadata(IdentityOpenApiDocument.Document, servers);
+    }
+
     private JsonNode AddEndpointSpecificOpenApiMetadata(JsonNode cachedSpecification, JsonArray servers)
     {
         JsonNode specification = cachedSpecification.DeepClone();

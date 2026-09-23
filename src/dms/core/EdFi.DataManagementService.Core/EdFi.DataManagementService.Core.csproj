@@ -62,6 +62,12 @@
         </None>
     </ItemGroup>
     <ItemGroup>
+        <!-- The fixed identity OpenAPI document (D2), embedded rather than loaded from disk so the
+             served document travels with the assembly. Precedent:
+             src/config/backend/EdFi.DmsConfigurationService.Backend/EdFi.DmsConfigurationService.Backend.csproj:20. -->
+        <EmbeddedResource Include="OpenApi/identity-v2-openapi.json" />
+    </ItemGroup>
+    <ItemGroup>
         <None Update="ApiSchema\ApiSchema.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>

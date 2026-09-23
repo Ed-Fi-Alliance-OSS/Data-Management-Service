@@ -206,4 +206,10 @@ public interface IApiService
         string requestToken,
         CancellationToken cancellationToken
     );
+
+    /// <summary>
+    /// DMS entry point to get the fixed identity OpenAPI specification (design.md D2).
+    /// Servers array should be provided by the front end.
+    /// </summary>
+    JsonNode GetIdentityOpenApiSpecification(JsonArray servers);
 }

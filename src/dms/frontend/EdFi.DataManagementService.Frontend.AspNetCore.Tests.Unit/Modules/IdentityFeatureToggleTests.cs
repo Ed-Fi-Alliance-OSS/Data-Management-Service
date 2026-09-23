@@ -236,4 +236,120 @@ public class IdentityFeatureToggleTests
                 .MustHaveHappenedOnceExactly();
         }
     }
+
+    /// <summary>
+    /// The metadata/discovery half of C1: the toggle also gates
+    /// <c>/metadata/identity/v2/swagger.json</c>, the "Identity" entry in
+    /// <c>/metadata/specifications</c>, and the <c>identity</c> URL in Discovery's <c>urls</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Metadata_And_Discovery_Surface
+    {
+        private static WebApplicationFactory<Program> CreateFactory(bool enableIdentityManagement)
+        {
+            var apiService = A.Fake<IApiService>();
+
+            return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:EnableIdentityManagement"] = enableIdentityManagement
+                                    ? "true"
+                                    : "false",
+                            }
+                        );
+                    }
+                );
+                builder.ConfigureServices(services =>
+                {
+                    TestMockHelper.AddEssentialMocks(services);
+                    services.AddTransient(_ => apiService);
+                });
+            });
+        }
+
+        [Test]
+        public async Task With_the_toggle_off_the_swagger_route_is_not_found()
+        {
+            await using var factory = CreateFactory(enableIdentityManagement: false);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/metadata/identity/v2/swagger.json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task With_the_toggle_off_the_specifications_listing_has_no_identity_entry()
+        {
+            await using var factory = CreateFactory(enableIdentityManagement: false);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/metadata/specifications");
+            string content = await response.Content.ReadAsStringAsync();
+            JsonArray sections = JsonNode.Parse(content)!.AsArray();
+
+            sections.Any(node => node!["name"]!.GetValue<string>() == "Identity").Should().BeFalse();
+        }
+
+        [Test]
+        public async Task With_the_toggle_off_discovery_has_no_identity_url()
+        {
+            await using var factory = CreateFactory(enableIdentityManagement: false);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+            JsonNode json = JsonNode.Parse(content)!;
+
+            json["urls"]!["identity"].Should().BeNull();
+        }
+
+        [Test]
+        public async Task With_the_toggle_on_the_swagger_route_is_found()
+        {
+            await using var factory = CreateFactory(enableIdentityManagement: true);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/metadata/identity/v2/swagger.json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task With_the_toggle_on_the_specifications_listing_contains_the_identity_entry()
+        {
+            await using var factory = CreateFactory(enableIdentityManagement: true);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/metadata/specifications");
+            string content = await response.Content.ReadAsStringAsync();
+            JsonArray sections = JsonNode.Parse(content)!.AsArray();
+
+            JsonNode? identitySection = sections.SingleOrDefault(node =>
+                node!["name"]!.GetValue<string>() == "Identity"
+            );
+
+            identitySection.Should().NotBeNull();
+            identitySection!["prefix"]!.GetValue<string>().Should().Be("Other");
+        }
+
+        [Test]
+        public async Task With_the_toggle_on_discovery_has_an_identity_url_ending_in_identity_v2()
+        {
+            await using var factory = CreateFactory(enableIdentityManagement: true);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/");
+            string content = await response.Content.ReadAsStringAsync();
+            JsonNode json = JsonNode.Parse(content)!;
+
+            json["urls"]!["identity"]!.GetValue<string>().Should().EndWith("/identity/v2/");
+        }
+    }
 }
