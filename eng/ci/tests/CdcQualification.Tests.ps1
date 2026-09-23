@@ -597,6 +597,30 @@ Describe 'CDC documentation qualification boundary' {
         "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
         (Get-CdcRunbookRecoveryReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
+    It 'requires all PostgreSQL telemetry and live inspection cases (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }, @{ Fault = 'duplicate' }
+    ) {
+        $path = Join-Path $TestDrive 'telemetry.trx'
+        $required = (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider Postgresql).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            for ($i = 0; $i -lt $case.Required; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        if ($Fault -eq 'excluded') { $nodes = @() }
+        if ($Fault -eq 'skipped') { $nodes[0] = $nodes[0].Replace('Passed', 'NotExecuted') }
+        if ($Fault -eq 'partial') { $nodes = $nodes[1..($nodes.Count - 1)] }
+        if ($Fault -eq 'duplicate') { $nodes += $nodes[0] }
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookTelemetryReport $path -Provider Postgresql).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
+    It 'preserves the SQL Server exporter selection until its retention qualification' {
+        (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider Mssql).Cases.TestId |
+            Should -Be 'It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics'
+        Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw |
+            Should -Match 'Get-CdcRunbookTelemetryReport -Path.*-Provider \$selected'
+    }
     It 'requires all record-size rollout and live snippet cases (<Fault>)' -ForEach @(
         @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }, @{ Fault = 'duplicate' }
     ) {

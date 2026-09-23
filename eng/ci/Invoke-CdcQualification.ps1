@@ -99,6 +99,19 @@ try {
                 throw "EnvironmentUnavailable: required $name is missing."
             }
         }
+        if ($Suite -in @('All', 'Telemetry') -and @($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) {
+            $inspectionTools = @('curl')
+            if ('Postgresql' -in $lanes) { $inspectionTools += @('psql', 'timeout') }
+            foreach ($tool in $inspectionTools) {
+                if (-not (Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) {
+                    throw "EnvironmentUnavailable: required telemetry inspection client $tool is missing."
+                }
+            }
+            $curlVersion = & curl --version
+            if ($LASTEXITCODE -ne 0 -or $curlVersion[0] -notmatch '^curl ([0-9]+\.[0-9]+\.[0-9]+)' -or [version]$Matches[1] -lt [version]'8.4.0') {
+                throw 'EnvironmentUnavailable: telemetry inspection requires native curl 8.4 or later.'
+            }
+        }
         $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
         if ($env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE -cne $qualified.image) {
             throw 'EnvironmentUnavailable: Connect must use the shipped qualified exporter image digest.'
@@ -164,6 +177,9 @@ try {
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
                 Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
+                if ($phase -eq 'Telemetry') {
+                    $reports.Add((Get-CdcRunbookTelemetryReport -Path (Join-Path $raw "$name/$name.trx") -Provider $selected))
+                }
                 if ($phase -eq 'RecordSize') {
                     $reports.Add((Get-CdcRunbookRecordSizeReport -Path (Join-Path $raw "$name/$name.trx")))
                 }

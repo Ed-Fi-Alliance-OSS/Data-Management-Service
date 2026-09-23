@@ -14,6 +14,62 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// <summary>Packaged commands over the existing fixture-owned services and original provenance.</summary>
 internal static class CdcRunbookLiveCommands
 {
+    // Only the three reviewed read-only inspection snippets run as PowerShell. Other marked
+    // commands retain their literal argument binder and packaged-command boundary below.
+    internal static async Task<(int ExitCode, string Output, string Error)> InvokeInspectionAsync(
+        string id,
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, string> environment,
+        CancellationToken token
+    )
+    {
+        id.Should().BeOneOf("cdc-telemetry-inspect", "cdc-pg-retention-inspect", "cdc-provider-disk-inspect");
+        string code = CdcRunbookExamples.Read(id);
+        foreach (var input in substitutions)
+        {
+            code.Should().Contain(input.Key);
+            code = code.Replace(
+                input.Key,
+                input.Value.Replace("'", "''", StringComparison.Ordinal),
+                StringComparison.Ordinal
+            );
+        }
+        System.Text.RegularExpressions.Regex.IsMatch(code, "<[a-z][a-z-]+>").Should().BeFalse();
+        var start = new ProcessStartInfo("pwsh")
+        {
+            WorkingDirectory = CdcRunbookExamples.RepositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-NonInteractive");
+        start.ArgumentList.Add("-Command");
+        start.ArgumentList.Add(
+            "$ErrorActionPreference = 'Stop'; $PSNativeCommandUseErrorActionPreference = $false;\n" + code
+        );
+        foreach (var variable in environment)
+        {
+            start.Environment[variable.Key] = variable.Value;
+        }
+        using var process = Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(token);
+        var error = process.StandardError.ReadToEndAsync(token);
+        try
+        {
+            await process.WaitForExitAsync(token);
+            return (process.ExitCode, await output, await error);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+        }
+    }
+
     internal static async Task WriteSettingsAsync(
         CdcProviderAdmissionFixture fixture,
         CdcProvider provider,

@@ -78,6 +78,11 @@ jobs:
         if: (matrix.lane == 'Postgresql' || matrix.lane == 'Mssql') && (matrix.suite == 'Admission' || matrix.suite == 'Lifecycle')
         run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 
+      - name: Install bounded telemetry inspection clients
+        if: matrix.suite == 'Telemetry'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y curl postgresql-client
+
       # History suites use packaged CLIs and isolated admin servers. Other suites
       # provision and clean up their own per-test containers through the runner.
       - name: Start packaged-history PostgreSQL

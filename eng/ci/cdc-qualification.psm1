@@ -316,6 +316,20 @@ function Get-CdcRunbookRecoveryReport {
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-recovery-behavior' -ExactCount
 }
 
+function Get-CdcRunbookTelemetryReport {
+    <# .SYNOPSIS
+    Requires exporter replacement and marked provider inspections in the existing Telemetry lane.
+    #>
+    param([string] $Path, [ValidateSet('Postgresql', 'Mssql')] [string] $Provider)
+    $required = [ordered]@{
+        It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics = 1
+    }
+    if ($Provider -eq 'Postgresql') {
+        $required.It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions = 1
+    }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-telemetry-behavior' -ExactCount
+}
+
 function Get-CdcRunbookRecordSizeReport {
     <# .SYNOPSIS
     Requires live marked acknowledgement/command cases and their rollout/rejection evidence.
@@ -375,4 +389,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport

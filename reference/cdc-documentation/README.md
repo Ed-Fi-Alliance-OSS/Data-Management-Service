@@ -21,7 +21,8 @@ passed T22; [PostgreSQL record-size increase](cdc-inv-evidence.md#postgresql-rec
 passed T23; [SQL Server record-size increase](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
 passed T24; [PostgreSQL history and retirement](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
 passed T25 and [SQL Server history and retirement](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26)
-passed T26, including the status and disclosure-stop handoffs. Remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
+passed T26, including the status and disclosure-stop handoffs. [PostgreSQL telemetry and retention inspections](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27)
+passed T27. Remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.

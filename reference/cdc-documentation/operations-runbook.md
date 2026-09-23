@@ -1667,7 +1667,7 @@ Active, historical, possible or untrusted history rejects with exit `10`:
 
 ## Monitoring and provider retention
 
-**Documented T07; exact live snippets pending T27/T28.** Use the
+**Documented T07; [PostgreSQL exact inspections passed T27](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27). SQL Server qualification remains pending T28.** Use the
 [operations owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
 [telemetry owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry),
 and [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
@@ -1767,7 +1767,7 @@ bracketing or readiness authority.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
-| `<worker-metrics-url>` | Retained configured single worker `/metrics` URI | Live fixture worker URI |
+| `<worker-metrics-url>` | Retained configured single worker `/metrics` URI | Live fixture worker URI; fixture-only unavailable-endpoint variant |
 | `<private-metrics-file>` | New file in operator-owned directory (0700, umask 0077 on Linux) | Private fixture artifact path |
 
 <!-- cdc-snippet: cdc-telemetry-inspect -->
@@ -1798,8 +1798,8 @@ substitutes the quoted variable safely; do not change this to `psql -c`.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
-| `<pg-monitor-service>` | Protected libpq service selecting the exact target and monitor identity | Fixture service/passfile |
-| `<managed-slot>` | Original managed PostgreSQL slot identity | Actual fixture slot |
+| `<pg-monitor-service>` | Protected libpq service selecting the exact target and monitor identity | Fixture service/passfile; missing fixture service for unavailable-access branch |
+| `<managed-slot>` | Original managed PostgreSQL slot identity | Actual fixture slot; nonexistent fixture slot for missing-history branch |
 
 <!-- cdc-snippet: cdc-pg-retention-inspect -->
 ```powershell
@@ -1842,7 +1842,7 @@ values. Also inspect host backing-volume capacity through its storage owner.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
-| `<provider-container>`, `<data-path>`, `<wal-or-log-path>` | Owned container and mounted provider paths | Owned fixture container/mount paths |
+| `<provider-container>`, `<data-path>`, `<wal-or-log-path>` | Owned container and mounted provider paths | Owned fixture container/mount paths; nonexistent fixture WAL path for unavailable-capacity branch |
 
 <!-- cdc-snippet: cdc-provider-disk-inspect -->
 ```powershell
@@ -1858,6 +1858,19 @@ checks after correction, then collect controller status. A stopped connector can
 continue pinning WAL while other database writes continue; a verified stop alone
 is not a disk-pressure resolution. Missing tooling/access is unavailable capacity
 evidence, not a reason to remove managed volumes.
+
+The [T27 PostgreSQL qualification](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27)
+runs these exact inspections against fixture-owned services. It observes active
+retained WAL and two advancing heartbeat/committed-source samples, distinguishes
+unlimited slot retention's null budget from filesystem capacity, and checks missing
+slot, unavailable service and partial disk-observation failure. These are diagnostic
+actions; the missing-slot query does not remove the original slot or exercise a new
+controller recovery path. The fixture uses its administrator for read-only monitoring,
+so this evidence does not certify a minimum monitoring-role grant set. No disk-full
+fault or deployment capacity threshold is claimed. The exporter case also executes
+the marked scrape around task and worker replacement; missing task metrics remain
+unavailable. Status/watch and source-history behavior retain the linked setup/recovery
+evidence, while topic policy/access qualification remains T20.
 
 ### SQL Server capture, cleanup, LSN and version-store inspection
 

@@ -126,7 +126,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             text => CdcTelemetryQualification.HasCurrentLag(text, peerName),
             token
         );
-        string initial = await metrics.GetStringAsync("/metrics", token);
+        string initial = await InspectRunbookMetricsAsync(
+            request.ConnectorName.Value,
+            "initial",
+            true,
+            token
+        );
         CdcTelemetryQualification.AssertStreamingMetrics(initial, Provider, request.ConnectorName.Value);
         CdcTelemetryQualification.AssertStreamingMetrics(initial, Provider, peerName);
         string processIdentity = await QualifyWorkerDeploymentAsync(request, metrics, token);
@@ -145,6 +150,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             text => !CdcTelemetryQualification.HasConnector(text, request.ConnectorName.Value),
             token
         );
+        await InspectRunbookMetricsAsync(request.ConnectorName.Value, "stopped-task", false, token);
         CdcTelemetryQualification.AssertStreamingMetrics(
             await metrics.GetStringAsync("/metrics", token),
             Provider,
@@ -157,7 +163,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         );
         resumed.EnsureSuccessStatusCode();
         await AssertHeartbeatAndCommittedOffsetProgressAsync(request, token);
-        string restartedTask = await metrics.GetStringAsync("/metrics", token);
+        string restartedTask = await InspectRunbookMetricsAsync(
+            request.ConnectorName.Value,
+            "restarted-task",
+            true,
+            token
+        );
         CdcTelemetryQualification.AssertStreamingMetrics(
             restartedTask,
             Provider,
@@ -180,7 +191,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             text => CdcTelemetryQualification.HasCurrentLag(text, peerName),
             token
         );
-        string restartedWorker = await restartedMetrics.GetStringAsync("/metrics", token);
+        string restartedWorker = await InspectRunbookMetricsAsync(
+            request.ConnectorName.Value,
+            "restarted-worker",
+            true,
+            token
+        );
         CdcTelemetryQualification.AssertStreamingMetrics(
             restartedWorker,
             Provider,

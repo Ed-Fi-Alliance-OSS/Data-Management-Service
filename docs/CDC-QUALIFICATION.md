@@ -22,6 +22,16 @@ They describe the evidence below, not a claim that this story qualifies every be
 
 The required [DMS CI gate](../.github/workflows/on-dms-pullrequest.yml) runs only the fast `Contract` qualification lane on relevant ready PR updates, merge groups and manual dispatches. It does not start live CDC provider or Kafka fixtures. Existing non-qualification CI jobs are unchanged.
 
+PostgreSQL Telemetry also executes the marked `cdc-telemetry-inspect`,
+`cdc-pg-retention-inspect` and `cdc-provider-disk-inspect` commands in the existing
+fixture-owned provider/worker/broker topology. The runner requires both exporter
+replacement and inspection methods, rejects missing/skipped/duplicate outcomes,
+and checks native curl 8.4+, psql and timeout availability. Nightly installs the
+inspection clients. Private libpq service/passfiles and raw metrics are removed
+by the fixture; only selected observed fields, snippet hashes and actions enter
+allowlisted `cdc-controller-telemetry-*` attachments. SQL Server keeps its exporter
+selection; its provider-retention snippet qualification remains T28.
+
 All 15 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History and MessageContract for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
 
 For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's seven jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 15 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.
