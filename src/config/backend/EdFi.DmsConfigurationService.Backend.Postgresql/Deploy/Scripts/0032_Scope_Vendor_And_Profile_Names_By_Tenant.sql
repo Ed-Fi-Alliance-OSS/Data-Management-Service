@@ -7,7 +7,8 @@
 --
 -- Uniqueness becomes (TenantId, Company) and (TenantId, ProfileName). NULLS NOT DISTINCT keeps
 -- single-tenant deployments (TenantId IS NULL) rejecting duplicates exactly as before; PostgreSQL
--- would otherwise treat every NULL tenant as distinct.
+-- would otherwise treat every NULL tenant as distinct. NULLS NOT DISTINCT requires PostgreSQL 15
+-- or later; see "Database versions" in docs/OPERATIONS.md.
 --
 -- What happens to profiles that already exist. Nothing recorded which tenant created a profile, so
 -- each existing profile is assigned by the applications that use it, through their vendor's tenant:

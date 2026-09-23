@@ -1659,11 +1659,13 @@ public class VendorModuleTests
         [SetUp]
         public async Task Act()
         {
+            // Rollback runs in reverse order, so the third client is restored first. Rejecting
+            // it is what makes the restorations after it prove the loop kept going.
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureDuplicateCompanyName());
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientNamespaceClaimAsync(
-                        _clients[0].ClientUuid.ToString(),
+                        _clients[2].ClientUuid.ToString(),
                         StoredPrefixes
                     )
                 )
@@ -1678,13 +1680,23 @@ public class VendorModuleTests
             _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         // The rejected rollback is stubbed ahead of the recorder, so it never reaches the
-        // recorded list; the two that did reach it prove the loop kept going.
+        // recorded list; the two restored after it prove the loop kept going.
         [Test]
         public void It_continues_restoring_after_the_rejection() =>
             RollbackCalls
                 .Select(call => call.TargetedUuid)
                 .Should()
-                .BeEquivalentTo(_clients[2].ClientUuid.ToString(), _clients[1].ClientUuid.ToString());
+                .BeEquivalentTo(_clients[1].ClientUuid.ToString(), _clients[0].ClientUuid.ToString());
+
+        [Test]
+        public void It_attempted_the_client_whose_rollback_was_rejected() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[2].ClientUuid.ToString(),
+                        StoredPrefixes
+                    )
+                )
+                .MustHaveHappened();
     }
 
     /// <summary>
