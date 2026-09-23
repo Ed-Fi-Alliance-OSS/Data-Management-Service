@@ -111,7 +111,10 @@ public class TokenEndpointModule : IEndpointModule
             );
         }
         httpContext.Response.StatusCode = (int)response.StatusCode;
-        httpContext.Response.ContentType = "application/json; charset=utf-8";
+        // The manager labels its own problem responses application/problem+json, and a relayed
+        // upstream success carries the identity provider's JSON media type; both are kept.
+        httpContext.Response.ContentType =
+            response.Content.Headers.ContentType?.ToString() ?? "application/json; charset=utf-8";
         await response.Content.CopyToAsync(httpContext.Response.Body);
     }
 }

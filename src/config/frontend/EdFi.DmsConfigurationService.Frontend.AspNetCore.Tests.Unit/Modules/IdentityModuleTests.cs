@@ -952,6 +952,177 @@ public class TokenEndpointTests
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
+
+    /// <summary>
+    /// The token-limit rejection over the real HTTP pipeline. Driving it through
+    /// <c>WebApplicationFactory</c> rather than calling the module directly is what proves the
+    /// status, the content type and every member of the body survive
+    /// <c>GlobalExceptionHandler</c> and <c>FrameworkErrorResponseMiddleware</c> unreshaped.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_that_has_reached_its_token_limit
+    {
+        private ITokenManager _serviceTokenManager = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _serviceTokenManager = A.Fake<ITokenManager>();
+            A.CallTo(() =>
+                    _serviceTokenManager.GetAccessTokenAsync(
+                        A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                    )
+                )
+                .Returns(new TokenResult.FailureTokenLimitExceeded(5));
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient(_ => new TokenRequest.Validator());
+                    collection.AddTransient(_ => _serviceTokenManager);
+                });
+            });
+            _client = _factory.CreateClient();
+
+            var requestContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            ]);
+            _response = await _client.PostAsync("/connect/token", requestContent);
+            _content = await _response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_429() => _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        [Test]
+        public void It_carries_a_correlation_id() =>
+            JsonNode.Parse(_content)!["correlationId"]!.GetValue<string>().Should().NotBeEmpty();
+
+        [Test]
+        public void It_returns_the_tickets_too_many_tokens_contract()
+        {
+            JsonNode actualResponse = JsonNode.Parse(_content)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The caller has authenticated too many times in too short of a time period.",
+                  "type": "urn:ed-fi:api:security:authentication:too-many-tokens",
+                  "title": "Too Many Tokens",
+                  "status": 429,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": [
+                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
+                  ]
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+    }
+
+    /// <summary>
+    /// A grant that could not be serialized against the other grants in flight for the same client.
+    /// Driven over the real pipeline for the same reason the token-limit fixture above is: the
+    /// point is that a transient condition answers as a retriable 409 rather than as the 500 the
+    /// manager's catch-all would otherwise produce.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_grant_that_could_not_be_serialized
+    {
+        private ITokenManager _serviceTokenManager = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _serviceTokenManager = A.Fake<ITokenManager>();
+            A.CallTo(() =>
+                    _serviceTokenManager.GetAccessTokenAsync(
+                        A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                    )
+                )
+                .Returns(new TokenResult.FailureLockTimeout());
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient(_ => new TokenRequest.Validator());
+                    collection.AddTransient(_ => _serviceTokenManager);
+                });
+            });
+            _client = _factory.CreateClient();
+
+            var requestContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            ]);
+            _response = await _client.PostAsync("/connect/token", requestContent);
+            _content = await _response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_409_rather_than_a_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        [Test]
+        public void It_tells_the_caller_to_retry()
+        {
+            JsonNode actualResponse = JsonNode.Parse(_content)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
+                  "type": "urn:ed-fi:api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+    }
 }
 
 /// <summary>

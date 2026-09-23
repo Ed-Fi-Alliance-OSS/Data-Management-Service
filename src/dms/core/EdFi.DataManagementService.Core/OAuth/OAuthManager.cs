@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
@@ -164,6 +165,26 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// </summary>
     private const string LoggedContentTruncationSuffix = "...[truncated]";
 
+    /// <summary>
+    /// The <c>type</c> a CMS token-limit rejection carries. Matched exactly, and it must stay in
+    /// step with what <see cref="Response.FailureResponse.ForTooManyTokens"/> emits.
+    /// </summary>
+    private const string TooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
+
+    /// <summary>
+    /// The canonical token-limit message, split either side of the limit it carries. Each half is
+    /// used twice - as the shape an upstream body must match to be believed, and as a piece the
+    /// returned message is rebuilt from - so the parse and the format cannot drift apart from one
+    /// another. Staying in step with the CMS formatter that writes the upstream body is a separate
+    /// obligation, held by a unit test that feeds this parser the body CMS's own
+    /// <c>FailureResponse.ForTooManyTokens</c> produces: a reworded CMS message fails that test
+    /// rather than silently degrading every token-limit rejection to the generic 429. Separately
+    /// deployed DMS and CMS versions can still disagree, which is what the fallback's warning is for.
+    /// </summary>
+    private const string TokenLimitMessagePrefix = "Too many access tokens have been requested (limit is ";
+
+    private const string TokenLimitMessageSuffix = "). Access tokens should be reused until they expire.";
+
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
         string grantType,
@@ -210,6 +231,25 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     return response;
                 case HttpStatusCode.Unauthorized:
                     return await GenerateUnauthorizedResponse(logger, traceId, response);
+                case HttpStatusCode.TooManyRequests:
+                    return await GenerateTooManyTokensResponse(logger, traceId, response);
+                case HttpStatusCode.Conflict:
+                    // The Configuration Service answers 409 when a token grant timed out waiting
+                    // for a database lock or was chosen as a deadlock victim: contention, which
+                    // retrying resolves. Without this arm it would fall through to the 502 branch
+                    // below, which tells the caller the upstream failed. 503 is DMS's own answer
+                    // to a transient upstream condition, and the one standard retry policies act
+                    // on. The status is the whole signal, so the body is neither parsed nor
+                    // logged, and no Retry-After is sent because nothing upstream supplies one.
+                    logger.LogInformation(
+                        "Upstream identity service reported lock contention on the token grant; "
+                            + "answered 503 so the client retries - {TraceId}",
+                        traceId.Value
+                    );
+                    return GenerateProblemDetailResponse(
+                        HttpStatusCode.ServiceUnavailable,
+                        FailureResponse.ForServiceUnavailable(traceId)
+                    );
                 default:
                     var content = await response.Content.ReadAsStringAsync();
                     logger.LogWarning(
@@ -303,6 +343,142 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 HttpStatusCode.Unauthorized,
                 FailureResponse.ForUnauthorized(traceId, error, errorDescription)
             );
+        }
+
+        // Answers an upstream 429. /oauth/token is what the Discovery document advertises, so
+        // without this arm a client that hit its token limit would fall through to the 502 branch
+        // and receive no status, no type and no reuse guidance.
+        //
+        // The upstream body is evidence, never content: the limit is parsed out of it and the
+        // message is rebuilt here, so nothing the upstream authored reaches the caller. Relaying
+        // its `errors` strings verbatim would reopen the same unauthenticated disclosure that
+        // GenerateUnauthorizedResponse's comment above was written to close.
+        static async Task<HttpResponseMessage> GenerateTooManyTokensResponse(
+            ILogger logger,
+            TraceId traceId,
+            HttpResponseMessage response
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int? limit = TokenLimitFromUpstreamBody(body);
+
+            if (limit is null)
+            {
+                // Still a 429: the upstream *status* is trustworthy even when its body is not,
+                // and the generic rate-limit contract is also the honest answer when the 429 came
+                // from a gateway limiter rather than from the token limit.
+                //
+                // The log gets the same selected summary the 401 fallback writes, never the body
+                // (reference/adr-oauth-upstream-error-disclosure.md): the values of the RFC 6749
+                // error fields and the bare names of every other member, under the trace id the
+                // client was given. A body that is not a JSON object has no members to name.
+                (string standardFields, string otherFieldNames) = JsonObjectOrNull(body) is JsonObject obj
+                    ? SummarizeUpstreamFieldsForLogging(obj)
+                    : (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker);
+
+                logger.LogWarning(
+                    "Unrecognized 429 body from upstream identity service; its values are withheld "
+                        + "- {TraceId} - standard OAuth error fields: {StandardFields} - other field "
+                        + "names present: {OtherFieldNames}",
+                    traceId.Value,
+                    standardFields,
+                    otherFieldNames
+                );
+
+                return GenerateProblemDetailResponse(
+                    HttpStatusCode.TooManyRequests,
+                    FailureResponse.ForTooManyRequests(traceId)
+                );
+            }
+
+            // Rebuilt from a DMS-side template and the parsed integer alone, so the limit survives
+            // while not one character of upstream-authored text reaches the response body. The
+            // correlationId is DMS's own trace id, as on every other branch.
+            string message =
+                TokenLimitMessagePrefix
+                + limit.Value.ToString(CultureInfo.InvariantCulture)
+                + TokenLimitMessageSuffix;
+
+            return GenerateProblemDetailResponse(
+                HttpStatusCode.TooManyRequests,
+                FailureResponse.ForTooManyTokens(traceId, [message])
+            );
+        }
+
+        // The limit carried by a canonical token-limit body, or null when the body deviates from
+        // that shape in any way at all - unparseable, a different type, a mismatched status, an
+        // errors array that is missing or holds anything other than one string, a message that is
+        // not the canonical one, or a limit that is absent, non-numeric, zero, negative or too
+        // large for an int. Every one of those falls back to the generic 429 rather than being
+        // partially believed.
+        static int? TokenLimitFromUpstreamBody(string body)
+        {
+            if (JsonObjectOrNull(body) is not JsonObject obj)
+            {
+                return null;
+            }
+
+            if (!string.Equals(ScalarValueOrNull(obj["type"]), TooManyTokensType, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (
+                obj["status"] is not JsonValue statusValue
+                || !statusValue.TryGetValue(out int status)
+                || status != (int)HttpStatusCode.TooManyRequests
+            )
+            {
+                return null;
+            }
+
+            if (obj["errors"] is not JsonArray errors || errors.Count != 1)
+            {
+                return null;
+            }
+
+            // TryGetValue<string> succeeds only for a JSON string, so a number or a nested object
+            // in the errors array is rejected rather than stringified.
+            if (errors[0] is not JsonValue entry || !entry.TryGetValue(out string? message))
+            {
+                return null;
+            }
+
+            if (
+                !message.StartsWith(TokenLimitMessagePrefix, StringComparison.Ordinal)
+                || !message.EndsWith(TokenLimitMessageSuffix, StringComparison.Ordinal)
+                || message.Length <= TokenLimitMessagePrefix.Length + TokenLimitMessageSuffix.Length
+            )
+            {
+                return null;
+            }
+
+            string limitText = message[TokenLimitMessagePrefix.Length..^TokenLimitMessageSuffix.Length];
+
+            // NumberStyles.None rejects a sign, surrounding whitespace and group separators, and
+            // TryParse itself rejects a value that overflows int.
+            if (
+                !int.TryParse(limitText, NumberStyles.None, CultureInfo.InvariantCulture, out int limit)
+                || limit < 1
+            )
+            {
+                return null;
+            }
+
+            return limit;
+        }
+
+        // The body as a JSON object, or null when it is unparseable or any other JSON value.
+        static JsonObject? JsonObjectOrNull(string body)
+        {
+            try
+            {
+                return JsonNode.Parse(body) as JsonObject;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         // Splits the top-level members of an upstream 401 body into the only two things the log

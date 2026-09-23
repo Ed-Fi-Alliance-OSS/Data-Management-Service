@@ -117,6 +117,11 @@ These will be replaced with the corresponding keycloak or self-contained values 
 | `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `TokenCleanupEnabled`              | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
 | `TokenCleanupIntervalMinutes`      | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
+| `BearerTokenPerClientLimit`        | Maximum active access tokens one client may hold; further grants are rejected with HTTP 429 (self-contained only). Below 1 disables it. Compose variable: `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `5` |
+
+See [CONFIGURATION.md](./CONFIGURATION.md#identity-provider-configuration) for sizing guidance on
+`BearerTokenPerClientLimit`: replicas sharing one client id each hold an active token, and two
+while a refreshed token overlaps the one it replaces.
 
 **JwtAuthentication parameters in `appsettings.json` (dms):**
 

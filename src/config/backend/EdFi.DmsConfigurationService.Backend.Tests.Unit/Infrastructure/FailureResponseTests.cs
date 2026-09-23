@@ -433,4 +433,86 @@ public class FailureResponseTests
             _result["errors"]?.AsArray().Count.Should().Be(0);
         }
     }
+
+    [TestFixture]
+    public class Given_a_too_many_tokens_failure
+    {
+        private const int Limit = 5;
+
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForTooManyTokens(Limit, CorrelationId);
+
+        [Test]
+        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+
+        [Test]
+        public void It_uses_the_too_many_tokens_type() =>
+            _result["type"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:security:authentication:too-many-tokens");
+
+        [Test]
+        public void It_has_the_too_many_tokens_title() =>
+            _result["title"]?.GetValue<string>().Should().Be("Too Many Tokens");
+
+        [Test]
+        public void It_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
+
+        [Test]
+        public void It_has_a_detail() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("The caller has authenticated too many times in too short of a time period.");
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_an_empty_validation_errors_object() =>
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+
+        // This exact sentence is also a parsing contract: the DMS /oauth/token proxy's 429
+        // handler (OAuthManager in src/dms) reads the limit back out of it. Reword it here and
+        // that parser must be reworded in the same change, or DMS silently degrades every
+        // token-limit rejection to a generic rate-limit 429.
+        [Test]
+        public void It_has_a_single_error_naming_the_limit()
+        {
+            _result["errors"]?.AsArray().Count.Should().Be(1);
+            _result["errors"]
+                ?[0]?.GetValue<string>()
+                .Should()
+                .Be(
+                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_too_many_tokens_failure_with_a_different_limit
+    {
+        // A second limit, so the message is proven to vary with its input rather than matching a
+        // constant that a hardcoded 5 would also satisfy.
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForTooManyTokens(12, CorrelationId);
+
+        [Test]
+        public void It_names_the_supplied_limit() =>
+            _result["errors"]
+                ?[0]?.GetValue<string>()
+                .Should()
+                .Be(
+                    "Too many access tokens have been requested (limit is 12). Access tokens should be reused until they expire."
+                );
+
+        [Test]
+        public void It_still_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
+    }
 }

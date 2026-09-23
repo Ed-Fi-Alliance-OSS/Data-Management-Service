@@ -244,6 +244,13 @@ public class IdentityModule : IEndpointModule
                 authenticationFailure.ErrorDescription,
                 httpContext.TraceIdentifier
             ),
+            TokenResult.FailureTokenLimitExceeded tokenLimitExceeded => FailureResults.TooManyTokens(
+                tokenLimitExceeded.Limit,
+                httpContext.TraceIdentifier
+            ),
+            TokenResult.FailureLockTimeout => FailureResults.ConcurrentModification(
+                httpContext.TraceIdentifier
+            ),
             TokenResult.FailureIdentityProvider failureIdentityProvider =>
                 failureIdentityProvider.IdentityProviderError switch
                 {

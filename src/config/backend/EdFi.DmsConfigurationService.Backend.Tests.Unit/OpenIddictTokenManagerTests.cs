@@ -528,4 +528,274 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
         }
     }
+
+    /// <summary>
+    /// A token manager whose only non-default setting is the per-client token limit, so a test
+    /// asserting on that number is asserting on a configured value rather than on the default.
+    /// </summary>
+    private OpenIddictTokenManager CreateTokenManagerWithTokenLimit(int limit) =>
+        new(
+            // EncryptionKey has to be set for the database signing-key path to run at all; the
+            // faked repository ignores its value.
+            Options.Create(
+                new IdentityOptions
+                {
+                    Authority = TestIssuer,
+                    Audience = TestAudience,
+                    EncryptionKey = "test-encryption-key",
+                    BearerTokenPerClientLimit = limit,
+                }
+            ),
+            NullLogger<OpenIddictTokenManager>.Instance,
+            _secretHasher,
+            _tokenRepository
+        );
+
+    /// <summary>
+    /// Arranges an approved client with a matching secret and a usable signing key, which is what
+    /// GetAccessTokenAsync needs before it reaches StoreTokenAsync.
+    /// </summary>
+    private Guid ArrangeGrantableClient()
+    {
+        Guid applicationId = Guid.NewGuid();
+
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    Id = applicationId,
+                    ClientId = GrantClientId,
+                    ClientSecret = "hashed-secret",
+                    IsApproved = true,
+                    ProtocolMappers = "[]",
+                }
+            );
+
+        A.CallTo(() => _secretHasher.VerifySecretAsync(GrantClientSecret, "hashed-secret")).Returns(true);
+
+        using RSA rsa = RSA.Create(2048);
+        A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._))
+            .Returns(
+                new PrivateKeyInfo
+                {
+                    PrivateKey = Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()),
+                    KeyId = Guid.NewGuid().ToString(),
+                }
+            );
+
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns([]);
+
+        return applicationId;
+    }
+
+    private static List<KeyValuePair<string, string>> GrantCredentials() =>
+        [new("client_id", GrantClientId), new("client_secret", GrantClientSecret)];
+
+    /// <summary>
+    /// Makes the faked repository answer every store attempt with the given outcome, and records
+    /// the arguments it was handed.
+    /// </summary>
+    private void ArrangeStoreOutcome(TokenStoreOutcome outcome, Action<StoredTokenCall> capture)
+    {
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._
+                )
+            )
+            .Invokes(
+                (
+                    Guid tokenId,
+                    Guid applicationId,
+                    string subject,
+                    DateTimeOffset expiration,
+                    int maxActiveTokens
+                ) =>
+                    capture(new StoredTokenCall(tokenId, applicationId, subject, expiration, maxActiveTokens))
+            )
+            .Returns(outcome);
+    }
+
+    private sealed record StoredTokenCall(
+        Guid TokenId,
+        Guid ApplicationId,
+        string Subject,
+        DateTimeOffset Expiration,
+        int MaxActiveTokens
+    );
+
+    private const string GrantClientId = "grant-client";
+    private const string GrantClientSecret = "plain-secret";
+
+    // The limit reaching the repository is the whole of the enforcement wiring, and nothing else
+    // in this file asserts the StoreTokenAsync call at all - so without this fixture, dropping the
+    // argument or passing the wrong one would break the feature without failing a test.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_StoresATokenForAnApprovedClient : OpenIddictTokenManagerTests
+    {
+        private const int ConfiguredLimit = 3;
+
+        private StoredTokenCall _call = null!;
+        private Guid _applicationId;
+        private DateTimeOffset _before;
+        private DateTimeOffset _after;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _applicationId = ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _before = DateTimeOffset.UtcNow;
+            _result = await CreateTokenManagerWithTokenLimit(ConfiguredLimit)
+                .GetAccessTokenAsync(GrantCredentials());
+            _after = DateTimeOffset.UtcNow;
+        }
+
+        [Test]
+        public void It_passes_the_configured_limit() => _call.MaxActiveTokens.Should().Be(ConfiguredLimit);
+
+        [Test]
+        public void It_passes_the_application_id() => _call.ApplicationId.Should().Be(_applicationId);
+
+        [Test]
+        public void It_passes_the_client_id_as_the_subject() => _call.Subject.Should().Be(GrantClientId);
+
+        private static string AccessTokenFrom(TokenResult result)
+        {
+            string json = result.Should().BeOfType<TokenResult.Success>().Subject.Token;
+            return System
+                .Text.Json.JsonDocument.Parse(json)
+                .RootElement.GetProperty("access_token")
+                .GetString()!;
+        }
+
+        [Test]
+        public void It_passes_the_token_id_that_was_minted_as_the_jti()
+        {
+            string accessToken = AccessTokenFrom(_result);
+            string jti = new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Id;
+            jti.Should().Be(_call.TokenId.ToString());
+        }
+
+        [Test]
+        public void It_passes_an_expiration_one_token_lifetime_ahead()
+        {
+            // The manager reads its own UtcNow, so the assertion brackets the call rather than
+            // pinning an instant. 30 minutes is the IdentityOptions default this manager was
+            // built with.
+            _call.Expiration.Should().BeOnOrAfter(_before.AddMinutes(30));
+            _call.Expiration.Should().BeOnOrBefore(_after.AddMinutes(30));
+        }
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheClientIsAtItsTokenLimit : OpenIddictTokenManagerTests
+    {
+        private const int ConfiguredLimit = 3;
+
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.LimitExceeded, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(ConfiguredLimit)
+                .GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_token_limit_failure_carrying_the_configured_limit() =>
+            _result.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(ConfiguredLimit));
+
+        [Test]
+        public void It_does_not_return_a_token() => _result.Should().NotBeOfType<TokenResult.Success>();
+    }
+
+    // A client deleted between the lookup and the store must get the unknown-client answer, never
+    // "Too Many Tokens" - the three-state outcome exists precisely so these two cannot be confused.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheClientVanishedBeforeTheStore : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.ClientNotFound, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_the_same_invalid_client_failure_an_unknown_client_receives() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+
+        [Test]
+        public void It_is_not_reported_as_a_token_limit_failure() =>
+            _result.Should().NotBeOfType<TokenResult.FailureTokenLimitExceeded>();
+    }
+
+    // The arm has to sit ahead of the catch-all: without it the repository's contention outcome
+    // would fall through to FailureUnknown and answer a transient queue with a server error.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheGrantCouldNotBeSerialized : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.LockTimeout, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_lock_timeout_failure() =>
+            _result.Should().BeOfType<TokenResult.FailureLockTimeout>();
+    }
+
+    // Disabling is the repository's job, not the manager's: the manager forwards whatever is
+    // configured, so a manager-side shortcut cannot quietly diverge from the disable semantics.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheConfiguredLimitDisablesEnforcement
+        : OpenIddictTokenManagerTests
+    {
+        private StoredTokenCall _call = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _result = await CreateTokenManagerWithTokenLimit(-1).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_forwards_the_disabling_value_verbatim() => _call.MaxActiveTokens.Should().Be(-1);
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+    }
 }

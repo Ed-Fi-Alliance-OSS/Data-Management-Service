@@ -42,6 +42,7 @@ public static class FailureResponse
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
     private static readonly string _authenticationType = $"{_typePrefix}:security:authentication";
+    private static readonly string _tooManyTokensType = $"{_authenticationType}:too-many-tokens";
     private static readonly string _gatewayType = $"{_typePrefix}:bad-gateway";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
@@ -325,6 +326,27 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors: []
+        );
+
+    /// <summary>
+    /// Produces the 429 problem details for an upstream token-limit rejection, which the identity
+    /// provider answers when a client already holds its maximum number of active access tokens.
+    /// Distinct from <see cref="ForTooManyRequests" />: that one is this service's own rate
+    /// limiter, and the two carry different <c>type</c> URIs.
+    /// </summary>
+    /// <param name="errors">
+    /// Built locally by the caller from a DMS-side format string and a parsed integer limit, never
+    /// from upstream-authored text.
+    /// </param>
+    public static JsonNode ForTooManyTokens(TraceId traceId, string[] errors) =>
+        CreateBaseJsonObject(
+            detail: "The caller has authenticated too many times in too short of a time period.",
+            type: _tooManyTokensType,
+            title: "Too Many Tokens",
+            status: 429,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: errors
         );
 
     public static JsonNode ForUnauthorized(TraceId traceId, string error, string description) =>

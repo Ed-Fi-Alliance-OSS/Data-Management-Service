@@ -16,14 +16,21 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             return await dataRepository.GetTokenByIdAsync(tokenId);
         }
 
-        public async Task StoreTokenAsync(
+        public async Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,
             Guid applicationId,
             string subject,
-            DateTimeOffset expiration
+            DateTimeOffset expiration,
+            int maxActiveTokens
         )
         {
-            await dataRepository.StoreTokenAsync(tokenId, applicationId, subject, expiration);
+            return await dataRepository.StoreTokenAsync(
+                tokenId,
+                applicationId,
+                subject,
+                expiration,
+                maxActiveTokens
+            );
         }
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
