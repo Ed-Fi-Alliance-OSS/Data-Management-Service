@@ -1099,6 +1099,7 @@ public class ClaimSetModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            addResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
 
@@ -1143,6 +1144,7 @@ public class ClaimSetModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            addResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
 
@@ -1183,6 +1185,7 @@ public class ClaimSetModuleTests
             );
 
             importResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            importResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
         }
 
@@ -1225,6 +1228,7 @@ public class ClaimSetModuleTests
 
             // Assert
             copyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            copyResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualCopyResponse, expectedCopyResponse).Should().BeTrue();
         }
     }

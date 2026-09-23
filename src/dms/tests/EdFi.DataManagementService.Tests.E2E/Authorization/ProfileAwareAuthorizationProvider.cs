@@ -118,7 +118,7 @@ public static class ProfileAwareAuthorizationProvider
             string errorBody = await response.Content.ReadAsStringAsync();
 
             // Check if it's a duplicate error (profile already exists)
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest && errorBody.Contains("exists"))
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict && errorBody.Contains("exists"))
             {
                 // Profile already exists, try to find it
                 return await FindExistingProfile(profileName);
