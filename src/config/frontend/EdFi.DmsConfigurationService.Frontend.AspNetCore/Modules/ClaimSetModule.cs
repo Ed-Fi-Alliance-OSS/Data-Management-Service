@@ -304,6 +304,13 @@ public class ClaimSetModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
+            ClaimSetResourceActionMutationResult.FailureDuplicateAuthorizationStrategy => Results.Json(
+                FailureResponse.ForBadRequest(
+                    "Authorization strategies must not be duplicated.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             ClaimSetResourceActionMutationResult.FailureMultiUserConflict => Results.Json(
                 FailureResponse.ForConflict(
                     "Unable to update claim set resource actions due to multi-user conflicts. Retry the request.",

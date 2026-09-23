@@ -76,6 +76,8 @@ public abstract record ClaimSetResourceActionMutationResult
 
     public sealed record FailureAuthorizationStrategyMismatch() : ClaimSetResourceActionMutationResult;
 
+    public sealed record FailureDuplicateAuthorizationStrategy() : ClaimSetResourceActionMutationResult;
+
     public sealed record FailureMultipleHierarchiesFound() : ClaimSetResourceActionMutationResult;
 
     public sealed record FailureMultiUserConflict() : ClaimSetResourceActionMutationResult;

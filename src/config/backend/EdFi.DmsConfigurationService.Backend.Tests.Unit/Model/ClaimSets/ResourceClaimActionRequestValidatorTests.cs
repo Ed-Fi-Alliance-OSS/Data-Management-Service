@@ -171,6 +171,63 @@ public class ResourceClaimActionRequestValidatorTests
     }
 
     [Test]
+    public async Task It_rejects_duplicate_override_authorization_strategy_names_case_insensitively()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ActionName = "Read",
+            AuthorizationStrategies = ["NoFurtherAuthorizationRequired", "nofurtherauthorizationrequired"],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthorizationStrategies");
+    }
+
+    [Test]
+    public async Task It_rejects_duplicate_override_authorization_strategy_ids()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ActionName = "Read",
+            AuthStrategyIds = [1, 1],
+            AuthorizationStrategies = ["NoFurtherAuthorizationRequired"],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthStrategyIds");
+    }
+
+    [Test]
+    public async Task It_rejects_a_mixed_duplicate_override_authorization_strategy_request()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ActionName = "Read",
+            AuthStrategyIds = [1, 1],
+            AuthorizationStrategies = ["NoFurtherAuthorizationRequired", "nofurtherauthorizationrequired"],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthStrategyIds");
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthorizationStrategies");
+    }
+
+    [Test]
     public void It_defaults_request_action_and_strategy_collections()
     {
         var actionsRequest = new AddResourceClaimActionsOnClaimSetRequest

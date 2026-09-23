@@ -1714,6 +1714,34 @@ public class ClaimSetModuleTests
         }
 
         [Test]
+        public async Task Should_reject_duplicate_override_authorization_strategies_before_repository_mutation()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/claimSets/1/resourceClaimActions/2/overrideAuthorizationStrategy",
+                JsonContent.Create(
+                    new
+                    {
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        actionName = "Read",
+                        authStrategyIds = new[] { 7, 7 },
+                        authorizationStrategies = new[] { "NamespaceBased", "namespacebased" },
+                    }
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() =>
+                    _claimSetRepository.OverrideAuthorizationStrategy(
+                        A<AuthorizationStrategyOverrideCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
         public async Task Should_return_not_found_when_resource_action_mutation_claim_set_is_not_found()
         {
             A.CallTo(() =>

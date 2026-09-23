@@ -255,4 +255,14 @@ public class Given_the_served_openapi_document
         Schema(schemaName)["required"]!.AsArray().Select(value => value!.GetValue<string>()).Should()
             .BeEquivalentTo(requiredPropertyNames);
     }
+
+    [TestCase("AddResourceClaimActionsOnClaimSetRequest")]
+    [TestCase("EditResourceClaimActionsOnClaimSetRequest")]
+    public void It_uses_the_resource_claim_action_schema_for_write_request_items(string schemaName)
+    {
+        Schema(schemaName)["properties"]!["resourceClaimActions"]!["items"]!["$ref"]!
+            .GetValue<string>()
+            .Should()
+            .Be("#/components/schemas/ResourceClaimAction");
+    }
 }

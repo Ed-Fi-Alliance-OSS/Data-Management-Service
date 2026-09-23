@@ -412,6 +412,28 @@ public class ClaimSetResourceActionMutationTests
         }
 
         [Test]
+        public async Task It_rejects_mixed_duplicate_strategies_without_mutating_the_target_action()
+        {
+            int claimSetId = await CreateVendorClaimSet();
+            await GrantRead(claimSetId, StudentResourceClaimId);
+
+            var result = await Repository.OverrideAuthorizationStrategy(
+                new AuthorizationStrategyOverrideCommand(
+                    claimSetId,
+                    StudentResourceClaimId,
+                    "Read",
+                    [NoFurtherAuthorizationRequired, NoFurtherAuthorizationRequired.ToLowerInvariant()],
+                    [1, 1]
+                )
+            );
+
+            result.Should().BeOfType<ClaimSetResourceActionMutationResult.FailureDuplicateAuthorizationStrategy>();
+            (await ExportResourceClaim(claimSetId, StudentClaimName))
+                .AuthorizationStrategyOverrides.Should()
+                .BeEmpty();
+        }
+
+        [Test]
         public async Task It_rejects_disagreeing_ids_and_names_without_mutating_the_target_action()
         {
             int claimSetId = await CreateVendorClaimSet();
