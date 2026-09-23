@@ -45,6 +45,16 @@ internal static class ExternalDoublesRegistration
     /// scenario can observe the real per-request memoization instead of the always-stable fake. Null keeps
     /// the historical behavior of replacing <c>IApplicationContextProvider</c> outright.
     /// </param>
+    /// <param name="timeProviderOverride">
+    /// When supplied, replaces the host's <c>TimeProvider</c> singleton with a controllable one (for
+    /// example a <c>FakeTimeProvider</c>), so a scenario can advance a cache or snapshot freshness window
+    /// mid-test. Null keeps the production <c>TimeProvider.System</c> registration.
+    /// </param>
+    /// <param name="connectionStringDecryptionServiceOverride">
+    /// When supplied, replaces the host's singleton <c>IConnectionStringDecryptionService</c>, for example
+    /// with one that throws, so a scenario can prove a request path never reaches CMS connection-string
+    /// decryption. Null keeps the production decryption service.
+    /// </param>
     public static void RegisterAll(
         IServiceCollection services,
         FixtureContext fixture,
@@ -64,7 +74,9 @@ internal static class ExternalDoublesRegistration
         IReadOnlyList<string>? assignedProfileNames = null,
         IConfigurationServiceApplicationProvider? applicationContextConfigurationProvider = null,
         IDataStoreProvider? dataStoreProviderOverride = null,
-        IJwtValidationService? jwtValidationServiceOverride = null
+        IJwtValidationService? jwtValidationServiceOverride = null,
+        TimeProvider? timeProviderOverride = null,
+        IConnectionStringDecryptionService? connectionStringDecryptionServiceOverride = null
     )
     {
         if (
@@ -180,5 +192,17 @@ internal static class ExternalDoublesRegistration
             FakeProfileCmsProvider.FromFixture(fixture, assignedProfileNames)
         );
         services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();
+
+        if (timeProviderOverride is not null)
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton(timeProviderOverride);
+        }
+
+        if (connectionStringDecryptionServiceOverride is not null)
+        {
+            services.RemoveAll<IConnectionStringDecryptionService>();
+            services.AddSingleton(connectionStringDecryptionServiceOverride);
+        }
     }
 }
