@@ -205,33 +205,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     return new TokenResult.FailureUnknown("Missing client_id or client_secret");
                 }
 
-                // First, get the application by client ID to retrieve the stored (potentially hashed) secret
-                var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
+                var (applicationInfo, credentialErrorCode) = await ValidateClientSecretAsync(
+                    clientId,
+                    clientSecret
+                );
 
                 if (applicationInfo == null)
                 {
                     return new TokenResult.FailureAuthentication(
-                        "invalid_client",
-                        "Invalid client or Invalid client credentials"
-                    );
-                }
-                // Verify the client secret using the hasher
-                var isValidSecret = await _secretHasher.VerifySecretAsync(
-                    clientSecret,
-                    applicationInfo.ClientSecret ?? string.Empty
-                );
-                if (!isValidSecret)
-                {
-                    return new TokenResult.FailureAuthentication(
-                        "unauthorized_client",
-                        "Invalid client or Invalid client credentials"
-                    );
-                }
-
-                if (!applicationInfo.IsApproved)
-                {
-                    return new TokenResult.FailureAuthentication(
-                        "invalid_client",
+                        credentialErrorCode,
                         "Invalid client or Invalid client credentials"
                     );
                 }
@@ -281,12 +263,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
 
+                // Mint from the stored client id, not the one the caller typed, so that every
+                // token issued to a client carries one identity. This single argument feeds the
+                // "sub", "client_id" and "azp" claims plus the stored token's client id, so all
+                // four become canonical together.
+                string canonicalClientId = CanonicalClientId(applicationInfo, clientId);
+
                 // Generate and store the JWT token. The limit is enforced by the same
                 // statement that stores the token, so the token is minted before the outcome is
                 // known; one that is not stored is never returned to the caller.
                 (TokenStoreOutcome outcome, string token) = await GenerateJwtTokenAsync(
                     applicationInfo,
-                    clientId,
+                    canonicalClientId,
                     listOfScopes
                 );
 
@@ -348,6 +336,71 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
+        /// Authenticates a client_id/client_secret pair for RFC 7009 revocation requests, using
+        /// the same lookup and hash comparison as <see cref="GetAccessTokenAsync"/> so the two
+        /// call sites can never drift on what counts as a valid client secret. Returns the
+        /// stored canonical <c>client_id</c>, which is what tokens are minted from and therefore
+        /// what the ownership comparison must be given.
+        /// </summary>
+        public async Task<string?> AuthenticateClientAsync(string clientId, string clientSecret)
+        {
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            {
+                return null;
+            }
+
+            var (applicationInfo, _) = await ValidateClientSecretAsync(clientId, clientSecret);
+            return applicationInfo is null ? null : CanonicalClientId(applicationInfo, clientId);
+        }
+
+        /// <summary>
+        /// The client's stored spelling of its own id, falling back to the requested spelling
+        /// only when the stored value is empty — minting an empty subject would be worse than
+        /// minting a non-canonical one.
+        ///
+        /// Everything identifying a client is derived from this, so that a client which
+        /// authenticates under a spelling the engine accepts but did not store — SQL Server's
+        /// default collation resolves a mis-cased id; Postgres does not — is still the same
+        /// client everywhere downstream. Without it, the claims minted at the token endpoint and
+        /// the caller id reaching the ownership check disagree, and revocation silently no-ops.
+        /// </summary>
+        private static string CanonicalClientId(ApplicationInfo applicationInfo, string requestedClientId) =>
+            string.IsNullOrEmpty(applicationInfo.ClientId) ? requestedClientId : applicationInfo.ClientId;
+
+        /// <summary>
+        /// Looks up the application by client id and verifies the secret against the stored
+        /// (potentially hashed) value. Returns a null application on failure along with the OAuth
+        /// error code that describes why.
+        /// </summary>
+        private async Task<(ApplicationInfo? Application, string ErrorCode)> ValidateClientSecretAsync(
+            string clientId,
+            string clientSecret
+        )
+        {
+            var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
+            if (applicationInfo == null)
+            {
+                return (null, "invalid_client");
+            }
+
+            var isValidSecret = await _secretHasher.VerifySecretAsync(
+                clientSecret,
+                applicationInfo.ClientSecret ?? string.Empty
+            );
+            if (!isValidSecret)
+            {
+                return (null, "unauthorized_client");
+            }
+
+            if (!applicationInfo.IsApproved)
+            {
+                return (null, "invalid_client");
+            }
+
+            return (applicationInfo, string.Empty);
+        }
+
+        /// <summary>
         /// Mints a JWT and attempts to store it, subject to the configured per-client token limit.
         /// </summary>
         /// <returns>
@@ -403,36 +456,104 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
+        /// Verifies a token's signature, issuer, audience and lifetime against the currently
+        /// active public keys, returning the parsed token, or <c>null</c> when it fails.
+        ///
+        /// Shared by <see cref="ValidateTokenAsync"/> and <see cref="RevokeTokenAsync"/>, which
+        /// apply different database status gates afterwards — do not move a status check in here.
+        /// </summary>
+        private async Task<TokenVerification> VerifyTokenAsync(string rawToken)
+        {
+            var publicKeys = await GetPublicKeysAsync();
+            var signingKeys = publicKeys.ToDictionary(
+                k => k.KeyId,
+                k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
+            );
+
+            var verification = JwtTokenValidator.ValidateToken(
+                rawToken,
+                signingKeys,
+                _identityOptions.Value.Authority,
+                _identityOptions.Value.Audience
+            );
+
+            if (verification.Token is not null)
+            {
+                // Issuer and audience are logged unsanitized deliberately: validation has just
+                // proved them equal to the configured ValidIssuer/ValidAudience, so what is
+                // written is a server-controlled configuration value, not caller input. Subject
+                // is different — nothing constrains it to a known value, and it originates from
+                // a client id supplied at registration — so it is sanitized.
+                _logger.LogDebug(
+                    "JWT token validated successfully. Issuer: {Issuer}, Audience: {Audience}, Subject: {Subject}",
+                    verification.Token.Issuer,
+                    verification.Token.Audiences?.FirstOrDefault(),
+                    LoggingUtility.SanitizeForLog(verification.Token.Subject)
+                );
+            }
+
+            return verification;
+        }
+
+        /// <summary>
+        /// The single place a verification failure is logged. <see cref="JwtTokenValidator"/>
+        /// categorizes but never logs, so the same rejection cannot appear twice at two
+        /// severities; in exchange this has to supply the operation context the validator does
+        /// not know.
+        ///
+        /// An expired token is an ordinary fact of life and goes to Debug. The two untrusted
+        /// cases both go to Warning but say different things, because an issuer/audience
+        /// mismatch is usually a deployment misconfiguration that fails every token at once, and
+        /// letting that share a message with genuine forgery signal would make the latter
+        /// impossible to pick out.
+        /// </summary>
+        private void LogVerificationFailure(string context, TokenVerification verification)
+        {
+            switch (verification.Failure)
+            {
+                case TokenVerificationFailure.Expired:
+                    _logger.LogDebug(
+                        "{Context} the lifetime check (token expired): {Detail}",
+                        context,
+                        verification.Detail
+                    );
+                    break;
+
+                case TokenVerificationFailure.UntrustedIssuerOrAudience:
+                    _logger.LogWarning(
+                        "{Context} the issuer or audience check; verify the configured Authority "
+                            + "and Audience if this affects every token: {Detail}",
+                        context,
+                        verification.Detail
+                    );
+                    break;
+
+                default:
+                    _logger.LogWarning(
+                        "{Context} verification (signature or key id): {Detail}",
+                        context,
+                        verification.Detail
+                    );
+                    break;
+            }
+        }
+
+        /// <summary>
         /// Validates a JWT token and checks its status in the database
         /// </summary>
         public async Task<bool> ValidateTokenAsync(string rawToken)
         {
             try
             {
-                string audience = _identityOptions.Value.Audience;
-                string issuer = _identityOptions.Value.Authority;
-                var publicKeys = await GetPublicKeysAsync();
-                var signingKeys = publicKeys.ToDictionary(
-                    k => k.KeyId,
-                    k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
-                );
-                if (
-                    !JwtTokenValidator.ValidateToken(
-                        rawToken,
-                        signingKeys,
-                        issuer,
-                        audience,
-                        out var jwtToken,
-                        _logger
-                    )
-                )
+                var verification = await VerifyTokenAsync(rawToken);
+                if (verification.Token is not { } jwtToken)
                 {
-                    _logger.LogWarning("Token validation failed (signature, issuer, audience, or lifetime)");
+                    LogVerificationFailure("Token validation failed", verification);
                     return false;
                 }
 
                 // Check token status in repository
-                var jti = jwtToken?.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+                var jti = jwtToken.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 if (!string.IsNullOrEmpty(jti))
                 {
                     var status = await _tokenRepository.GetTokenStatusAsync(Guid.Parse(jti));
@@ -448,14 +569,48 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Revokes a token by setting its status to 'revoked'
+        /// Revokes a token by setting its status to 'revoked', but only when the token belongs to
+        /// the calling client. Anything else is a no-op returning false. See
+        /// reference/design/configuration-service/CS-AUTH.md for the rationale.
         /// </summary>
-        public async Task<bool> RevokeTokenAsync(string token)
+        public async Task<bool> RevokeTokenAsync(string token, string callerClientId)
         {
             try
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var jwtToken = tokenHandler.ReadJwtToken(token);
+                if (string.IsNullOrEmpty(callerClientId))
+                {
+                    _logger.LogWarning("Revocation ignored: the caller presented no client_id claim");
+                    return false;
+                }
+
+                // Verify before trusting any claim: an unverified client_id could be forged to
+                // name the caller while carrying a victim's jti. ValidateTokenAsync is not reused
+                // because its "valid" status gate would break RFC 7009 re-revocation idempotency.
+                var verification = await VerifyTokenAsync(token);
+                if (verification.Token is not { } jwtToken)
+                {
+                    LogVerificationFailure("Revocation ignored: the supplied token failed", verification);
+                    return false;
+                }
+
+                string? tokenClientId = jwtToken
+                    .Claims.FirstOrDefault(x => x.Type == SecurityConstants.ClientIdClaimType)
+                    ?.Value;
+
+                // Ordinal (case-sensitive) on purpose: a case-insensitive comparison would make
+                // the ownership boundary depend on the deployed engine's collation, since
+                // Postgres is case-sensitive and SQL Server is not by default.
+                if (!string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal))
+                {
+                    // Debug, not Warning: an expected no-op any authenticated caller can trigger
+                    // at will, so a higher level would let them flood a severity operators alert on.
+                    _logger.LogDebug(
+                        "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
+                        LoggingUtility.SanitizeForLog(callerClientId)
+                    );
+                    return false;
+                }
+
                 var jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
 
                 if (!string.IsNullOrEmpty(jti))

@@ -28,12 +28,14 @@ public class TestAuthHandler(
             return Task.FromResult(AuthenticateResult.Fail("Scope header is missing."));
         }
 
-        var claims = new[]
-        {
-            new Claim("client_id", identitySettings.Value.ClientId),
-            new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole),
+        string clientId = identitySettings.Value.ClientId;
+
+        List<Claim> claims =
+        [
+            new Claim("client_id", clientId),
             new Claim("scope", scopeHeader),
-        };
+            new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole),
+        ];
 
         var identity = new ClaimsIdentity(claims, JwtBearerDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);

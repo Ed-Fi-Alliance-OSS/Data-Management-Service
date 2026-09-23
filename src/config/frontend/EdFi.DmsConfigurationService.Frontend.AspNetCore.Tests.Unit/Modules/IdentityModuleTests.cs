@@ -3,21 +3,31 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
+using OpenIddictIdentityOptions = EdFi.DmsConfigurationService.Backend.OpenIddict.Models.IdentityOptions;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -1386,8 +1396,16 @@ public class OAuthEndpointErrorTests
             AssertBadRequestContract(_response, _content, "The token parameter is missing.");
     }
 
+    /// <summary>
+    /// This <c>ITokenManager</c> fake implements no <c>ITokenRevocationManager</c>, the same as
+    /// <c>KeycloakTokenManager</c> in production — so there is no local way to check client
+    /// credentials, and the handler's no-op branch answers before authentication is even
+    /// considered. A bearer token presented here (there being no client credentials at all) is
+    /// simply irrelevant to the outcome; see RevocationOwnershipTests for the self-contained-mode
+    /// credential checks this fake cannot exercise.
+    /// </summary>
     [TestFixture]
-    public class Given_a_revocation_request_with_a_token
+    public class Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller
     {
         private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
         private WebApplicationFactory<Program> _factory = null!;
@@ -1399,7 +1417,6 @@ public class OAuthEndpointErrorTests
         {
             _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
             _client = _factory.CreateClient();
-            // RFC 7009 requires 200 OK for revocation regardless of the token; this success is unchanged.
             _response = await _client.PostAsync(
                 "/connect/revoke",
                 new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
@@ -1414,7 +1431,726 @@ public class OAuthEndpointErrorTests
         }
 
         [Test]
+        public void It_still_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+}
+
+/// <summary>
+/// Covers the authentication and <c>client_id</c> ownership rules for <c>POST /connect/revoke</c>
+/// described in reference/design/configuration-service/CS-AUTH.md. Non-fixture container; the
+/// runnable fixtures are the nested <c>Given_…</c> classes.
+///
+/// The test-double strategy differs from the rest of this file deliberately. Elsewhere
+/// <c>IdentityModuleTests</c> fakes <see cref="ITokenManager"/> outright, which is right when the
+/// assertion is about the HTTP contract. Here it would defeat the point: a faked manager would
+/// have to re-implement the ownership rule to answer, so the tests would assert against the fake
+/// rather than the production decision. Registering the real manager over a faked
+/// <see cref="IOpenIddictTokenRepository"/> keeps the signature verification and ownership
+/// comparison genuine while still letting the repository call be observed. The secret hasher is
+/// faked to a blanket "always matches" so these fixtures can focus on authentication and
+/// ownership rather than the hashing algorithm, which OpenIddictTokenManagerTests covers directly.
+/// </summary>
+public class RevocationOwnershipTests
+{
+    private const string TestIssuer = "https://cms.example.test";
+    private const string TestAudience = "ed-fi-cms-tests";
+    private const string OwnerClientId = "revoke-owner-client";
+    private const string OtherClientId = "revoke-other-client";
+    private const string TestClientSecret = "test-secret";
+
+    private static (string KeyId, byte[] PublicKeySpki, RsaSecurityKey SigningKey) CreateSigningKey()
+    {
+        var rsa = RSA.Create(2048);
+        string keyId = Guid.NewGuid().ToString();
+        return (keyId, rsa.ExportSubjectPublicKeyInfo(), new RsaSecurityKey(rsa) { KeyId = keyId });
+    }
+
+    /// <summary>
+    /// Issues a signed JWT for the test issuer/audience. The "kid" header comes from the signing
+    /// key so the token manager can resolve the matching public key.
+    /// </summary>
+    private static string CreateSignedToken(RsaSecurityKey signingKey, string clientId, Guid jti)
+    {
+        var now = DateTime.UtcNow;
+        var jwt = new JwtSecurityToken(
+            issuer: TestIssuer,
+            audience: TestAudience,
+            claims:
+            [
+                new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()),
+                new Claim("client_id", clientId),
+            ],
+            notBefore: now.AddMinutes(-5),
+            expires: now.AddMinutes(10),
+            signingCredentials: new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
+        );
+        return new JwtSecurityTokenHandler().WriteToken(jwt);
+    }
+
+    private static OpenIddictTokenManager CreateTokenManager(
+        IOpenIddictTokenRepository tokenRepository,
+        IClientSecretHasher secretHasher
+    ) =>
+        new(
+            Options.Create(new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
+            NullLogger<OpenIddictTokenManager>.Instance,
+            secretHasher,
+            tokenRepository
+        );
+
+    /// <summary>
+    /// Registers <paramref name="clientId"/> as a real, approved application so
+    /// <c>ValidateClientCredentialsAsync</c> authenticates it. Pair with a secret hasher fake that
+    /// returns true from <c>VerifySecretAsync</c>, which is what actually accepts the secret.
+    /// </summary>
+    private static void RegisterApprovedClient(IOpenIddictTokenRepository tokenRepository, string clientId) =>
+        A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
+            .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
+
+    private static WebApplicationFactory<Program> CreateFactory(ITokenManager tokenManager) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                collection.AddTestAuthentication();
+                collection.AddTransient(_ => tokenManager);
+            });
+        });
+
+    /// <summary>
+    /// Creates a client that authenticates to /connect/revoke with HTTP Basic client credentials
+    /// — the way RFC 7009 §2.1 requires (RFC 6749 §2.3), not a bearer access token.
+    /// </summary>
+    private static HttpClient CreateClientWithCredentials(
+        WebApplicationFactory<Program> factory,
+        string clientId,
+        string clientSecret
+    )
+    {
+        var client = factory.CreateClient();
+        var encodedCredentials = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}")
+        );
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic",
+            encodedCredentials
+        );
+        return client;
+    }
+
+    private static Task<HttpResponseMessage> PostRevocation(HttpClient client, string token) =>
+        client.PostAsync(
+            "/connect/revoke",
+            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", token) })
+        );
+
+    /// <summary>
+    /// Parses the response body as the RFC 6749 §5.2 error object. Returns the root object so
+    /// the fixtures can assert on <c>error</c> and <c>error_description</c> as the top-level
+    /// members a conforming OAuth client reads, rather than matching substrings — a substring
+    /// match passes just as happily when the code is buried inside a problem+json
+    /// <c>errors</c> array, which is the shape this contract exists to rule out.
+    /// </summary>
+    private static async Task<JsonObject> ReadOAuthError(HttpResponseMessage response)
+    {
+        string body = await response.Content.ReadAsStringAsync();
+        JsonNode.Parse(body).Should().BeOfType<JsonObject>($"the body should be a JSON object: {body}");
+        return (JsonObject)JsonNode.Parse(body)!;
+    }
+
+    /// <summary>
+    /// Pins the check-ordering documented on RevokeToken: a request with no credentials at all
+    /// AND no <c>token</c> field gets 400 (structurally invalid request), not 401 (authentication
+    /// failure) — the missing-token check runs before client authentication is even attempted.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_no_token_and_no_credentials
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = _factory.CreateClient(); // No Authorization header, no form fields at all.
+
+            _response = await _client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_400_not_401() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// RFC 6749 §2.3 permits credentials in the request body for clients that cannot use HTTP
+    /// Basic auth; RevokeToken mirrors GetClientAccessToken's fallback for this. No other fixture
+    /// in this class exercises that path — the rest all authenticate via Basic auth.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_credentials_in_the_form_body
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private Guid _jti;
+
+        /// <summary>
+        /// Posts to /connect/revoke with client credentials in the form body instead of an
+        /// Authorization header, exercising the fallback RevokeToken shares with
+        /// GetClientAccessToken. Used only here, so it lives inside this fixture.
+        /// </summary>
+        private static Task<HttpResponseMessage> PostRevocationWithFormCredentials(
+            HttpClient client,
+            string token,
+            string clientId,
+            string clientSecret
+        ) =>
+            client.PostAsync(
+                "/connect/revoke",
+                new FormUrlEncodedContent(
+                    new[]
+                    {
+                        new KeyValuePair<string, string>("token", token),
+                        new KeyValuePair<string, string>("client_id", clientId),
+                        new KeyValuePair<string, string>("client_secret", clientSecret),
+                    }
+                )
+            );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = _factory.CreateClient(); // No Authorization header — credentials go in the form body.
+            _response = await PostRevocationWithFormCredentials(
+                _client,
+                CreateSignedToken(signingKey, OwnerClientId, _jti),
+                OwnerClientId,
+                TestClientSecret
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
         public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_for_a_token_the_caller_owns
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, _jti));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// The casing defect at the HTTP level, where it actually bites. SQL Server's default
+    /// collation resolves a mis-cased <c>client_id</c>, so a caller can authenticate under a
+    /// spelling that was never stored while holding a token minted from the stored one. The
+    /// faked repository stands in for that collation by resolving the mis-cased lookup.
+    ///
+    /// Carrying the caller's own spelling into the ownership comparison — rather than the
+    /// canonical id authentication resolved — makes this the silent no-op the whole change
+    /// exists to prevent: the caller is told <c>200 OK</c> while its own token stays live.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_authenticated_with_non_canonical_casing
+    {
+        private const string NonCanonicalClientId = "REVOKE-Owner-Client";
+
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+
+            // The mis-cased lookup resolves to the application registered under the canonical
+            // spelling, which is what a case-insensitive collation does.
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(NonCanonicalClientId))
+                .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = true });
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, NonCanonicalClientId, TestClientSecret);
+
+            // The token carries the canonical client_id, because that is what minting stamps on
+            // it no matter which spelling the client authenticated with.
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, _jti));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// Guards the RFC 7009 §2.1 requirement itself: with no client credentials presented at all,
+    /// the caller is rejected before the target token is even looked at.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_no_client_credentials
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = _factory.CreateClient(); // No Authorization header and no client_id/secret form fields.
+
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_answers_in_the_oauth_error_format() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_reports_error_as_a_top_level_member() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_reports_error_description_as_a_top_level_member() =>
+            _body["error_description"]!.GetValue<string>().Should().Be("Client authentication is required.");
+
+        /// <summary>
+        /// RFC 6749 §5.2 conditions the challenge on the client having attempted to authenticate
+        /// through the Authorization header. This caller sent no such header, so offering it a
+        /// Basic challenge would invite a scheme it did not choose.
+        /// </summary>
+        [Test]
+        public void It_does_not_send_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A client_id with no matching application (or, equivalently, a wrong secret) fails
+    /// authentication and is reported as such — unlike the ownership/target-token failures below,
+    /// this is not masked as <c>200 OK</c>, since RFC 7009's "always 200" guarantee is about
+    /// whether a token is valid or owned, not whether the caller authenticated.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_invalid_client_credentials
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // No application is registered for this client_id, so the lookup fails regardless of
+            // what the secret hasher would say. Explicit, because FakeItEasy's default dummy
+            // resolver constructs a real (empty) ApplicationInfo — with IsApproved defaulting to
+            // true — for an unconfigured call, rather than returning null.
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("unregistered-client"))
+                .Returns((ApplicationInfo?)null);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, "unregistered-client", TestClientSecret);
+
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        /// <summary>
+        /// An OAuth client reads <c>error</c> off the root of the response body, so the
+        /// endpoint answers in the OAuth error format rather than the Management API's
+        /// <c>application/problem+json</c> contract, which would flatten the code into a
+        /// sentence inside an <c>errors</c> array where no such client will look for it.
+        /// </summary>
+        [Test]
+        public void It_answers_in_the_oauth_error_format() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_reports_error_as_a_top_level_member() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_reports_error_description_as_a_top_level_member() =>
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid client or Invalid client credentials");
+
+        /// <summary>
+        /// RFC 6749 §5.2 requires a challenge matching the scheme the client used, and this
+        /// caller authenticated through the Authorization header.
+        /// </summary>
+        [Test]
+        public void It_sends_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().ContainSingle(header => header.Scheme == "Basic");
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A registered, approved client_id with the wrong secret must fail authentication the same
+    /// way an unregistered client_id does — the failure is in the secret comparison rather than
+    /// the application lookup, but the caller-facing outcome is identical.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_wrong_client_secret
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            // Explicitly false for clarity, though FakeItEasy would default an unconfigured
+            // bool-returning call to false anyway.
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(false);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, "wrong-secret");
+
+            _response = await PostRevocation(_client, "irrelevant-token");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A client_id/secret pair that authenticates correctly but belongs to an unapproved
+    /// application must still be rejected — approval is checked as part of authentication, not
+    /// treated as a separate authorization step.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_from_an_unapproved_client
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = false });
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+
+            _response = await PostRevocation(_client, "irrelevant-token");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_for_a_token_owned_by_another_client
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OtherClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+
+            // The target token belongs to OwnerClientId; the caller authenticates as OtherClientId.
+            _client = CreateClientWithCredentials(_factory, OtherClientId, TestClientSecret);
+            _response = await PostRevocation(
+                _client,
+                CreateSignedToken(signingKey, OwnerClientId, Guid.NewGuid())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        // The mismatch is deliberately indistinguishable from "token not found".
+        [Test]
+        public void It_still_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_does_not_revoke_the_other_clients_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The ownership check is only meaningful if the target token's signature is verified before
+    /// its <c>client_id</c> claim is trusted, so this forges a token naming the caller while
+    /// embedding another client's <c>jti</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_forged_token_naming_the_caller
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, _) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+
+            // Signed with a key the service does not hold, but its "kid" names the real key so
+            // the rejection comes from the signature check itself.
+            var (_, _, attackerKey) = CreateSigningKey();
+            attackerKey.KeyId = keyId;
+
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(
+                _client,
+                CreateSignedToken(attackerKey, OwnerClientId, Guid.NewGuid())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_still_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_does_not_revoke_the_embedded_jti() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_malformed_token
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, "not-even-a-jwt");
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_still_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_does_not_revoke_anything() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
     }
 }
 
@@ -1486,5 +2222,71 @@ public class IdentityProviderErrorParsingTests
         [Test]
         public void It_does_not_leak_the_partial_error_description() =>
             _content.Should().NotContain("Realm does not exist");
+    }
+}
+
+/// <summary>
+/// Guards against any ASP.NET Core authorization requirement leaking onto <c>/connect/revoke</c>'s
+/// sibling endpoints, which must stay anonymous at the framework level — <c>/connect/token</c>
+/// especially, since it is where a client gets its first credential-backed response. The existing
+/// tests for those routes never install an authentication scheme, so they would not notice. These
+/// install the harness's test authentication, present no credentials, and assert the responses are
+/// never 401. Non-fixture container; the runnable fixture is the nested <c>Given_…</c> class.
+/// </summary>
+public class TokenEndpointAnonymityTests
+{
+    [TestFixture]
+    public class Given_an_unauthenticated_request_to_the_sibling_token_endpoints
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _registerResponse = null!;
+        private HttpResponseMessage _tokenResponse = null!;
+        private HttpResponseMessage _introspectResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection => collection.AddTestAuthentication());
+            });
+
+            // No Authorization header and no X-Test-Scope, so the harness authenticates nobody.
+            _client = _factory.CreateClient();
+
+            _registerResponse = await _client.PostAsync(
+                "/connect/register",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+            _tokenResponse = await _client.PostAsync(
+                "/connect/token",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+            _introspectResponse = await _client.PostAsync(
+                "/connect/introspect",
+                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_does_not_require_authentication_for_register() =>
+            _registerResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_does_not_require_authentication_for_token() =>
+            _tokenResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_does_not_require_authentication_for_introspect() =>
+            _introspectResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
     }
 }

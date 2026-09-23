@@ -4,10 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -33,6 +36,11 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
         endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
         endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
+        // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
+        // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
+        // access token. RevokeToken authenticates the caller itself via
+        // ITokenRevocationManager.AuthenticateClientAsync before deciding whether it owns the
+        // token being revoked, so the ASP.NET Core auth pipeline is not involved at all.
         endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
     }
 
@@ -128,6 +136,69 @@ public class IdentityModule : IEndpointModule
         return FailureResults.Authorization(httpContext.TraceIdentifier, ["Registration is disabled."]);
     }
 
+    private const string BasicAuthScheme = "basic ";
+
+    /// <summary>
+    /// Protection space named in the <c>WWW-Authenticate</c> challenge. A single value covers
+    /// client-credential authentication service-wide, since one registered client uses the same
+    /// secret wherever it authenticates.
+    /// </summary>
+    private const string ClientCredentialRealm = "EdFi.DmsConfigurationService";
+
+    /// <summary>
+    /// Parses HTTP Basic auth credentials (client_id:client_secret) from the Authorization
+    /// header, shared by /connect/token and /connect/revoke since both authenticate the caller
+    /// with client credentials rather than a bearer token.
+    /// </summary>
+    private static void TryParseBasicAuthCredentials(
+        HttpContext httpContext,
+        ILogger logger,
+        out string clientId,
+        out string clientSecret
+    )
+    {
+        clientId = string.Empty;
+        clientSecret = string.Empty;
+
+        httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
+        if (
+            string.IsNullOrEmpty(authHeader.ToString())
+            || !authHeader.ToString().StartsWith(BasicAuthScheme, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return;
+        }
+
+        try
+        {
+            var base64Credentials = authHeader.ToString()[BasicAuthScheme.Length..];
+            var credentialBytes = Convert.FromBase64String(base64Credentials);
+            var credentials = System.Text.Encoding.UTF8.GetString(credentialBytes);
+            var parts = credentials.Split(':', 2);
+            if (parts.Length == 2)
+            {
+                clientId = Uri.UnescapeDataString(parts[0]);
+                clientSecret = Uri.UnescapeDataString(parts[1]);
+            }
+        }
+        catch (Exception ex)
+        {
+            // The Authorization header is attacker-controlled input, and Convert.FromBase64String
+            // / UTF8-decoding exceptions can embed fragments of the invalid input in ex.Message.
+            // Passing the raw exception to the logger risks leaking that content, since most
+            // sinks render its unsanitized Message/ToString() independently of the sanitized
+            // template arguments below, so log sanitized fields instead.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Failed to parse Basic Auth credentials: ({ExceptionType}, {ErrorMessage}\n{StackTrace})",
+                LoggingUtility.SanitizeForLog(ex.GetType().Name),
+                LoggingUtility.SanitizeForLog(ex.Message),
+                LoggingUtility.SanitizeForLog(ex.StackTrace)
+            );
+#pragma warning restore S6667
+        }
+    }
+
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
@@ -150,31 +221,7 @@ public class IdentityModule : IEndpointModule
         // For self-contained mode, support HTTP Basic authentication
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
-            // Check for Authorization header (HTTP Basic auth) - only for self-contained
-            httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
-            if (
-                !string.IsNullOrEmpty(authHeader.ToString())
-                && authHeader.ToString().StartsWith("basic ", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                try
-                {
-                    var base64Credentials = authHeader.ToString().Substring(6); // Remove "basic "
-                    var credentialBytes = Convert.FromBase64String(base64Credentials);
-                    var credentials = System.Text.Encoding.UTF8.GetString(credentialBytes);
-                    var parts = credentials.Split(':', 2);
-                    if (parts.Length == 2)
-                    {
-                        clientId = Uri.UnescapeDataString(parts[0]);
-                        clientSecret = Uri.UnescapeDataString(parts[1]);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Log the exception for debugging purposes
-                    logger.LogWarning(ex, "Failed to parse Basic Auth credentials");
-                }
-            }
+            TryParseBasicAuthCredentials(httpContext, logger, out clientId, out clientSecret);
         }
 
         // Read form data for all parameters (and as fallback for credentials in self-contained mode)
@@ -313,7 +360,7 @@ public class IdentityModule : IEndpointModule
         var response = new
         {
             active = true,
-            client_id = validationResult.Principal.FindFirst("client_id")?.Value,
+            client_id = validationResult.Principal.GetClientId(),
             scope = string.Join(" ", validationResult.Principal.FindAll("scope").Select(c => c.Value)),
             exp = validationResult.Principal.FindFirst("exp")?.Value,
             iat = validationResult.Principal.FindFirst("iat")?.Value,
@@ -328,9 +375,15 @@ public class IdentityModule : IEndpointModule
 
     private static async Task<IResult> RevokeToken(
         [FromServices] ITokenManager tokenManager,
+        [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
+        // RFC 7009 §2.1 requires the caller to authenticate with client credentials (RFC 6749
+        // §2.3), the same as at /connect/token — not with a bearer access token, since the token
+        // being revoked is the subject of the request, not proof of who is calling.
+        TryParseBasicAuthCredentials(httpContext, logger, out var clientId, out var clientSecret);
+
         // Manually read form data to handle empty form bodies in .NET 10
         RevocationRequest model = new();
         if (httpContext.Request.HasFormContentType)
@@ -341,31 +394,116 @@ public class IdentityModule : IEndpointModule
                 Token = form["token"].ToString(),
                 Token_Type_Hint = form["token_type_hint"].ToString(),
             };
+
+            // RFC 6749 §2.3 also permits credentials in the request body for clients that
+            // cannot use HTTP Basic auth, mirroring the fallback GetClientAccessToken uses.
+            if (string.IsNullOrEmpty(clientId))
+            {
+                clientId = form["client_id"].ToString();
+            }
+            if (string.IsNullOrEmpty(clientSecret))
+            {
+                clientSecret = form["client_secret"].ToString();
+            }
         }
 
+        // This request-shape check deliberately runs before client authentication and before the
+        // provider-mode branch below: a structurally invalid request — missing the required
+        // `token` parameter — always gets 400, regardless of who is asking or which identity
+        // provider is configured, mirroring how GetClientAccessToken validates `grant_type` before
+        // authenticating. One consequence: an unauthenticated caller who also omits `token` gets
+        // 400, not 401 — the malformed request is reported before authentication is attempted.
         if (string.IsNullOrEmpty(model.Token))
         {
             return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
-        // Check if token manager supports revocation via interface
-        if (tokenManager is ITokenRevocationManager revocationManager)
+        // Check if token manager supports revocation via interface. In Keycloak mode no
+        // ITokenRevocationManager is registered, so this falls through to the bare 200 OK below
+        // and nothing is revoked — revocation is the external IdP's responsibility there.
+        if (tokenManager is not ITokenRevocationManager revocationManager)
         {
-            try
-            {
-                await revocationManager.RevokeTokenAsync(model.Token);
-                return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
-            }
-            catch
-            {
-                // Even if revocation fails, return 200 OK (RFC 7009 requirement)
-                return Results.Ok();
-            }
+            return Results.Ok();
         }
 
-        // If revocation is not supported, still return 200 OK
-        return Results.Ok();
+        // Client-authentication failures are reported, not masked as 200 OK: RFC 7009 only
+        // requires hiding whether a *token* is valid/owned, not whether the *caller* authenticated.
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+        {
+            return InvalidClient(httpContext, "Client authentication is required.");
+        }
+
+        // Authentication hands back the client's stored canonical client_id rather than a bare
+        // success flag, and that is what the ownership check must be given. Tokens are minted
+        // from the canonical value, so passing the caller's own spelling would silently fail
+        // the comparison wherever the engine authenticated a mis-cased id — SQL Server's default
+        // collation does — leaving the caller with 200 OK and a still-live token.
+        string? canonicalClientId = await revocationManager.AuthenticateClientAsync(clientId, clientSecret);
+        if (canonicalClientId is null)
+        {
+            return InvalidClient(httpContext, "Invalid client or Invalid client credentials");
+        }
+
+        try
+        {
+            // A token belonging to another client is left alone by the manager and still
+            // reported as 200 OK, so nothing is leaked about whether it exists or who owns it.
+            await revocationManager.RevokeTokenAsync(model.Token, canonicalClientId);
+            return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
+        }
+        catch (Exception ex)
+        {
+            // Even if revocation fails, return 200 OK (RFC 7009 requirement). The 200 hides
+            // the failure from the caller by design, so log it here or it is lost entirely.
+            logger.LogError(
+                ex,
+                "Revocation failed for client {ClientId}; returning 200 OK per RFC 7009",
+                LoggingUtility.SanitizeForLog(canonicalClientId)
+            );
+            return Results.Ok();
+        }
     }
+
+    /// <summary>
+    /// The RFC 6749 §5.2 error response for a revocation caller that failed client
+    /// authentication: a JSON object whose <c>error</c> and <c>error_description</c> are
+    /// top-level members, plus the <c>WWW-Authenticate</c> challenge §5.2 requires when the
+    /// client attempted to authenticate through the Authorization header.
+    ///
+    /// Deliberately not routed through <c>FailureResults</c>, which is the right contract for
+    /// the Management API's own endpoints but the wrong one here: it emits
+    /// <c>application/problem+json</c> and flattens the code into a sentence inside an
+    /// <c>errors</c> array, where a conforming OAuth client — which reads <c>error</c> off the
+    /// root object — cannot find it. <c>/connect/revoke</c> is an OAuth endpoint and answers in
+    /// the OAuth error format.
+    /// </summary>
+    private static IResult InvalidClient(HttpContext httpContext, string errorDescription)
+    {
+        if (
+            httpContext
+                .Request.Headers.Authorization.ToString()
+                .StartsWith(BasicAuthScheme, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
+        }
+
+        return Results.Json(
+            new OAuthErrorResponse("invalid_client", errorDescription),
+            contentType: "application/json",
+            statusCode: StatusCodes.Status401Unauthorized
+        );
+    }
+
+    /// <summary>
+    /// An RFC 6749 §5.2 error response body. The property names are the wire names the
+    /// specification fixes, so they are spelled that way rather than renamed by a serializer
+    /// policy that a future configuration change could alter.
+    /// </summary>
+    private sealed record OAuthErrorResponse(
+        [property: JsonPropertyName("error")] string Error,
+        [property: JsonPropertyName("error_description")] string ErrorDescription
+    );
 
     public class IntrospectionRequest
     {

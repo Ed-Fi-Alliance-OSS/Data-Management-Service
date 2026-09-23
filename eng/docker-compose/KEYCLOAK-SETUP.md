@@ -43,7 +43,11 @@ Keycloak locally using docker-compose.
 ## Scripted Keycloak Setup
 
 > [!NOTE]
-> See [Manual Keycloak Setup](#appendix-manual-keycloak-setup) below if you are interested in the instructions for setting up Keycloak via the user interface.
+> See [Manual Keycloak Setup](#appendix-manual-keycloak-setup) below if you are
+> interested in the instructions for setting up Keycloak via the user interface.
+
+Run `setup-keycloak.ps1` to automate setup of the Keycloak realm, roles, scopes,
+and initial client.
 
 ## Time to update Configuration Service appsettings
 

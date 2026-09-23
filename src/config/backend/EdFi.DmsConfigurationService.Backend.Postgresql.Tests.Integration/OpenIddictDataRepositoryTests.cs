@@ -338,6 +338,43 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             deletedCount.Should().Be(1);
             (await _repository.GetTokenStatusAsync(_tokenId)).Should().BeNull();
         }
+
+        // RFC 6749: "Unless otherwise noted, all the protocol parameter names and values are case
+        // sensitive." client_id is one of those values, so a mis-cased id must not resolve. This is
+        // pinned deliberately rather than left as an accident of the SQL, because an earlier revision
+        // of this branch made the lookup case-insensitive and that was reversed on purpose.
+        [TestFixture]
+        public class Given_A_Client_Looked_Up_With_Different_Casing : OpenIddictDataRepositoryTests
+        {
+            private OpenIddictDataRepository _repository = null!;
+            private string _registeredClientId = null!;
+
+            [SetUp]
+            public async Task Setup()
+            {
+                _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+                _registeredClientId = $"Casing-Client-{Guid.NewGuid():N}";
+                await RegisterApplicationAsync(_repository, _registeredClientId);
+            }
+
+            [Test]
+            public async Task It_resolves_the_client_on_an_exact_match()
+            {
+                var found = await _repository.GetApplicationByClientIdAsync(_registeredClientId);
+
+                found!.ClientId.Should().Be(_registeredClientId);
+            }
+
+            [Test]
+            public async Task It_does_not_resolve_the_client_when_the_casing_differs()
+            {
+                var found = await _repository.GetApplicationByClientIdAsync(
+                    _registeredClientId.ToLowerInvariant()
+                );
+
+                found.Should().BeNull();
+            }
+        }
     }
 
     [TestFixture]
