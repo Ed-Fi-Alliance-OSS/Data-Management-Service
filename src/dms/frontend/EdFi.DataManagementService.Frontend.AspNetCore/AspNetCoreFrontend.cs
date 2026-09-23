@@ -434,6 +434,47 @@ public static class AspNetCoreFrontend
         "EdFi.DataManagementService.Frontend.CorrelationIdIngestion";
 
     /// <summary>
+    /// The key under which this request's one <c>AppSettings</c> read outcome - the resolved
+    /// value, or the fact that reading it threw <see cref="OptionsValidationException"/> - is
+    /// cached on <see cref="HttpContext.Items"/>, so a second consumer in the same request
+    /// (<c>LoggingMiddleware</c> ingesting the correlation ID and, separately, redacting an
+    /// identity route) reuses it rather than reading, and on a host stuck with invalid
+    /// configuration re-throwing, again.
+    /// </summary>
+    internal const string AppSettingsSnapshotItemsKey =
+        "EdFi.DataManagementService.Frontend.AppSettingsSnapshot";
+
+    /// <summary>
+    /// Reads <see cref="IOptions{TOptions}.Value"/> at most once per request, caching the outcome
+    /// - including an unreadable one - on <see cref="HttpContext.Items"/>. Every other consumer in
+    /// the same request calls this instead of reading <paramref name="options"/> directly, so the
+    /// total cost of a host whose <c>AppSettings</c> fail validation stays one read (and one
+    /// thrown <see cref="OptionsValidationException"/>) per request, not one per consumer.
+    /// </summary>
+    /// <returns>The resolved settings, or null when the options value could not be read.</returns>
+    internal static AppSettings? TryReadAppSettings(HttpContext context, IOptions<AppSettings> options)
+    {
+        IDictionary<object, object?> items = context.Items;
+        if (items.TryGetValue(AppSettingsSnapshotItemsKey, out object? cached))
+        {
+            return cached as AppSettings;
+        }
+
+        AppSettings? result;
+        try
+        {
+            result = options.Value;
+        }
+        catch (OptionsValidationException)
+        {
+            result = null;
+        }
+
+        items[AppSettingsSnapshotItemsKey] = result;
+        return result;
+    }
+
+    /// <summary>
     /// <see cref="ExtractTraceIdFrom"/> plus the derived facts about what normalization did to a
     /// client-supplied value, for the one caller - <c>LoggingMiddleware</c> - that reports them.
     /// </summary>
@@ -460,15 +501,8 @@ public static class AspNetCoreFrontend
             return ingested;
         }
 
-        AppSettings appSettings;
-        try
-        {
-            // The only statement here that can throw OptionsValidationException, and deliberately
-            // the only one inside the try: a validation failure anywhere further down would be a
-            // different fault with a different answer.
-            appSettings = options.Value;
-        }
-        catch (OptionsValidationException)
+        AppSettings? appSettings = TryReadAppSettings(request.HttpContext, options);
+        if (appSettings is null)
         {
             return IngestUnreadableConfiguration(request.HttpContext);
         }
