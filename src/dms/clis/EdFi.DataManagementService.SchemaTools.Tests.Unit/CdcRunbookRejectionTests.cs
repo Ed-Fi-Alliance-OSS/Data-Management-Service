@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.SchemaTools.Cdc;
@@ -54,6 +55,18 @@ internal partial class Given_Cdc_command_managed_start
             .And.NotContain("worker-start");
         A.CallTo(() => _connect.RestartAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+        if (defect == "source-mismatch")
+        {
+            CdcRunbookExamples.AssertExcerpt(
+                "cdc-output-source-mismatch",
+                JsonSerializer.Serialize(result, CdcCommandHost.JsonOptions),
+                "operation",
+                "succeeded",
+                "exitCode",
+                "diagnostics/0/component",
+                "diagnostics/0/failure"
+            );
+        }
         if (defect == "terminal")
         {
             (await _bindings.ExactMatchBindingAsync(_request.Binding))

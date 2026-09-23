@@ -13,53 +13,14 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 /// <summary>Only explicitly selected, marked CDC examples are inputs. This is not a Markdown executor.</summary>
 internal static class CdcRunbookSnippets
 {
-    internal static string RepositoryRoot
-    {
-        get
-        {
-            var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-            while (directory is not null)
-            {
-                if (
-                    File.Exists(
-                        Path.Combine(directory.FullName, "reference/cdc-documentation/operations-runbook.md")
-                    )
-                )
-                {
-                    return directory.FullName;
-                }
-                directory = directory.Parent!;
-            }
-            throw new InvalidOperationException("CDC runbook requires a repository checkout.");
-        }
-    }
+    internal static string RepositoryRoot => CdcRunbookExamples.RepositoryRoot;
+    internal static string Markdown => CdcRunbookExamples.Markdown;
 
-    internal static string Markdown =>
-        File.ReadAllText(Path.Combine(RepositoryRoot, "reference/cdc-documentation/operations-runbook.md"));
+    internal static string Read(string id, string language = "powershell") =>
+        CdcRunbookExamples.Read(id, language);
 
-    internal static string Read(string id, string language = "powershell") => Extract(Markdown, id, language);
-
-    internal static string Extract(string markdown, string id, string language)
-    {
-        string start = $"<!-- cdc-snippet: {id} -->";
-        string end = $"<!-- /cdc-snippet: {id} -->";
-        Regex
-            .Matches(markdown, Regex.Escape(start))
-            .Count.Should()
-            .Be(1, $"snippet {id} must occur exactly once");
-        Regex
-            .Matches(markdown, Regex.Escape(end))
-            .Count.Should()
-            .Be(1, $"snippet {id} must have exactly one end marker");
-        var match = Regex.Match(
-            markdown,
-            Regex.Escape(start) + @"\s*```" + language + @"\r?\n(?<code>.*?)\r?\n```\s*" + Regex.Escape(end),
-            RegexOptions.Singleline
-        );
-        match.Success.Should().BeTrue($"snippet {id} must contain only one {language} fence");
-        match.Groups["code"].Value.Should().NotContain("```", "nested/unrelated blocks must never execute");
-        return match.Groups["code"].Value;
-    }
+    internal static string Extract(string markdown, string id, string language) =>
+        CdcRunbookExamples.Extract(markdown, id, language);
 
     // The marked CLI examples deliberately use a single command with literal or single-quoted arguments.
     // Reject shell expressions instead of attempting to interpret arbitrary PowerShell.

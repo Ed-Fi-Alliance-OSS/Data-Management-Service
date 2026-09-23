@@ -7,14 +7,15 @@ lifecycle, connector restart/resume, recovery classification and the projection
 administration/history handoff, monitoring, provider-retention troubleshooting,
 security and consumer-evidence checklists, coordinated record-size increases, guarded
 generation retirement, destructive stack teardown, compatible restamp handoff and
-sensitive-data disclosure response are documented. Marked CLI commands, settings
-and acknowledgement inputs have
-[focused automated checks](cdc-inv-evidence.md#documentation-verification). Exact live
-snippet qualification, output/link checks and wrapper/qualification integration remain
+sensitive-data disclosure response are documented. Marked CLI commands, settings,
+acknowledgement inputs, serialized result excerpts and touched document links have
+[focused automated checks](cdc-inv-evidence.md#documentation-verification). Packaged host
+checks cover output streams and exits; exact live snippet qualification and wrapper/qualification integration remain
 **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.
+- [Checked JSON excerpts](operations-runbook.md#serialized-result-examples): readiness, optional observations, operation scope and failures.
 - [Evidence index](cdc-inv-evidence.md): procedure-to-test mapping and actual results,
   with unexercised work explicitly pending.
 - [SchemaTools CDC reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands):
@@ -61,7 +62,7 @@ API-driven message scenarios belong to [DMS-1325](../design/backend-redesign/epi
 | Deployment, readiness, recovery, and security contracts | [CDC integration design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#authority-and-document-ownership). |
 | Projector/source behavior | [ADR 0001](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md). |
 | Topic/message, consumer, and compatibility contract | [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md). |
-| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Durable documentation checks and exact live snippet qualification remain pending. |
+| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor and result checks are delivered; wrapper integration and exact live snippet qualification remain pending. |
 
 ## Scope Boundaries and Missing Surfaces
 

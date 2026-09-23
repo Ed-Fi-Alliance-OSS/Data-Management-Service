@@ -59,7 +59,7 @@ owners distinguish writer admission, current observation, shutdown, and purge.
 ## Snippet Conventions
 
 The procedure records reserve exact snippet IDs. Delivered examples wrap only
-their executable fenced block with
+their command/configuration or result-example fenced block with
 HTML comments `<!-- cdc-snippet: ID -->` and `<!-- /cdc-snippet: ID -->`, using the
 same reserved ID at both ends. IDs are unique across this reference set and remain
 stable when prose or headings change. Additional examples may receive new IDs;
@@ -74,9 +74,11 @@ silently replace targets, schemas, endpoints, settings paths, state roots, gener
 or credentials in a test harness. Retained controller outputs are inputs to later
 commands, not fixture-generated provenance.
 
-Only marked runnable examples are inputs to the focused checks. T13 checks CLI
-commands, settings and acknowledgement inputs; T14–T15 add output/link checks and
-wrapper/qualification wiring. Illustrative output is separately identified for
+Marked `cdc-output-*` blocks are JSON result excerpts, never executable input or retained
+provenance. They need no substitutions; tests compare fixed selected fields and omit
+volatile identities/timestamps. All other marked runnable examples are inputs to the focused checks. T13 checks CLI
+commands, settings and acknowledgement inputs; T14 checks result excerpts, packaged
+output and links. T15 owns wrapper/qualification wiring. Illustrative output is separately identified for
 checks against production serialization fixtures. Reserved IDs, unmarked blocks
 and prose must not be executed.
 The [evidence index](cdc-inv-evidence.md#recording-results) distinguishes parser checks
@@ -393,6 +395,7 @@ api-schema-tools cdc watch --settings '<retained-settings-path>' --state-path '<
 ```
 <!-- /cdc-snippet: cdc-pg-watch -->
 
+See [checked JSON excerpts](#serialized-result-examples) for the output shapes.
 The CLI writes one final JSON envelope to stdout (`operation`, `succeeded`,
 `exitCode`, `diagnostics`, and operation-specific `data`; `binding` and
 `deploymentProfile` when available). Diagnostics and watch passes go to stderr.
@@ -1531,6 +1534,36 @@ For rejection, keep the original offline fence while reconciling the incident;
 no failed history check authorizes recovery or reopening publication. Possible
 published cache-ahead values follow the [repair/containment owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 V1 new-generation cutover remains [deferred](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover).
+
+
+The following stable result excerpts apply to all three guarded operations. The
+[packaged history fixtures](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs)
+compare these same fields after the real gate runs; their next provider exercises
+remain T25/T26. Unit serialization checks alone do not prove admission.
+
+An admitted `internalOnly` operation completes with exit `0`:
+
+<!-- cdc-snippet: cdc-output-history-admitted -->
+```json
+{
+  "status": "completed",
+  "classification": "succeeded",
+  "mutated": true
+}
+```
+<!-- /cdc-snippet: cdc-output-history-admitted -->
+
+Active, historical, possible or untrusted history rejects with exit `10`:
+
+<!-- cdc-snippet: cdc-output-history-rejected -->
+```json
+{
+  "status": "rejectedNoMutation",
+  "classification": "downstreamHistoryPresentOrUnknown",
+  "mutated": false
+}
+```
+<!-- /cdc-snippet: cdc-output-history-rejected -->
 
 <a id="monitoring-retention"></a>
 
@@ -2713,3 +2746,276 @@ sensitive content. Neither restamp's bounded claim nor controller cleanup author
 restoring Kafka access or closing the incident. Exact marked command exercises remain
 [pending T25/T26](cdc-inv-evidence.md#procedure-evidence); platform/consumer attestations
 remain deployment-owned even after those fixtures pass.
+
+<a id="serialized-result-examples"></a>
+
+## Checked JSON result excerpts
+
+These excerpts select stable fields from production serialization; they are not
+complete output documents or live qualification evidence. The tests select the
+fields independently, so missing, renamed or incorrectly cased example fields fail.
+Preserve the complete actual result privately. Identity, timestamps and unrelated
+fields are omitted here for readability. See [status interpretation](#monitoring-retention),
+[containment](#native-recovery) and the operation-specific procedures before acting.
+
+A ready established status has current lag but need not have percentile statistics:
+
+<!-- cdc-snippet: cdc-output-ready -->
+```json
+{
+  "operation": "status",
+  "succeeded": true,
+  "exitCode": 0,
+  "data": {
+    "aggregate": {
+      "readiness": "Ready"
+    },
+    "targets": [
+      {
+        "details": {
+          "queuePresence": "Empty",
+          "lagMilliseconds": 1
+        },
+        "incidentPersistence": "NotRequired",
+        "containment": "NotRequired",
+        "status": {
+          "sourceHistory": {
+            "incidentLatched": false
+          }
+        }
+      }
+    ]
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-ready -->
+
+Projection backlog is independently not ready even with low connector lag:
+
+<!-- cdc-snippet: cdc-output-backlog -->
+```json
+{
+  "operation": "status",
+  "succeeded": false,
+  "exitCode": 1,
+  "data": {
+    "aggregate": {
+      "readiness": "NotReady"
+    },
+    "targets": [
+      {
+        "details": {
+          "queuePresence": "NotEmpty",
+          "lagMilliseconds": 1
+        },
+        "incidentPersistence": "NotRequired",
+        "containment": "NotRequired",
+        "status": {
+          "sourceHistory": {
+            "incidentLatched": false
+          }
+        }
+      }
+    ]
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-backlog -->
+
+Unavailable telemetry omits current lag; it does not report zero:
+
+<!-- cdc-snippet: cdc-output-unavailable -->
+```json
+{
+  "operation": "status",
+  "succeeded": false,
+  "exitCode": 1,
+  "data": {
+    "aggregate": {
+      "readiness": "NotReady"
+    },
+    "targets": [
+      {
+        "details": {
+          "queuePresence": "Empty"
+        },
+        "incidentPersistence": "NotRequired",
+        "containment": "NotRequired",
+        "status": {
+          "sourceHistory": {
+            "incidentLatched": false
+          }
+        }
+      }
+    ]
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-unavailable -->
+
+A terminal history incident can persist and stop successfully while remaining not ready:
+
+<!-- cdc-snippet: cdc-output-terminal -->
+```json
+{
+  "operation": "status",
+  "succeeded": false,
+  "exitCode": 1,
+  "data": {
+    "aggregate": {
+      "readiness": "NotReady"
+    },
+    "targets": [
+      {
+        "details": {
+          "queuePresence": "Empty"
+        },
+        "incidentPersistence": "Persisted",
+        "containment": "Stopped",
+        "status": {
+          "sourceHistory": {
+            "incidentLatched": true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-terminal -->
+
+A successful stop verifies only this target's shutdown. It does not establish
+readiness or certify an unsampled interval. The optional `data.observation` is
+absent in this representative result; the recovery explanation is omitted here.
+
+<!-- cdc-snippet: cdc-output-stop -->
+```json
+{
+  "operation": "stop",
+  "succeeded": true,
+  "exitCode": 0,
+  "diagnostics": [],
+  "data": {
+    "operation": "Stop",
+    "succeeded": true,
+    "targetShutdownVerified": true,
+    "ready": false,
+    "boundary": "VerifiedManagedStop",
+    "diagnostics": [],
+    "recovery": {
+      "boundary": "VerifiedManagedStop",
+      "requiresFreshPass": false,
+      "unobservedIntervalCertified": false
+    }
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-stop -->
+
+A retirement result has its own operation ID (a fixed example value here).
+It is not purge confirmation or permission to restart the generation:
+
+<!-- cdc-snippet: cdc-output-retire -->
+```json
+{
+  "operation": "retire",
+  "succeeded": true,
+  "exitCode": 0,
+  "diagnostics": [],
+  "data": {
+    "succeeded": true,
+    "operationId": "11111111-1111-1111-1111-111111111111",
+    "diagnostics": []
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-retire -->
+
+The packaged host emits one final JSON document on stdout. These watch failure
+excerpts omit diagnostic messages but retain the component and process exit.
+Early failures omit `data`; parser rejection uses `operation: "cdc"`. Diagnostic text and cancellation advice use stderr.
+Invalid arguments are rejected by the production executable before controller dispatch.
+
+
+<!-- cdc-snippet: cdc-output-failure -->
+```json
+{
+  "operation": "watch",
+  "succeeded": false,
+  "exitCode": 1,
+  "diagnostics": [
+    {
+      "component": "Request",
+      "failure": "Unavailable"
+    }
+  ]
+}
+```
+<!-- /cdc-snippet: cdc-output-failure -->
+
+<!-- cdc-snippet: cdc-output-invalid -->
+```json
+{
+  "operation": "cdc",
+  "succeeded": false,
+  "exitCode": 2,
+  "diagnostics": [
+    {
+      "component": "Request",
+      "failure": "InvalidInput"
+    }
+  ]
+}
+```
+<!-- /cdc-snippet: cdc-output-invalid -->
+
+<!-- cdc-snippet: cdc-output-cancelled -->
+```json
+{
+  "operation": "watch",
+  "succeeded": false,
+  "exitCode": 130,
+  "diagnostics": [
+    {
+      "component": "Request",
+      "failure": "Unavailable"
+    }
+  ]
+}
+```
+<!-- /cdc-snippet: cdc-output-cancelled -->
+
+For watch, each pass's data document goes to stderr; only the final envelope goes
+to stdout. This controlled process-routing example uses unavailable readiness and
+exit `1`; it is not a live controller observation:
+
+<!-- cdc-snippet: cdc-output-watch -->
+```json
+{
+  "operation": "watch",
+  "succeeded": false,
+  "exitCode": 1,
+  "data": {
+    "aggregate": {
+      "readiness": "Unknown"
+    }
+  }
+}
+```
+<!-- /cdc-snippet: cdc-output-watch -->
+
+An established source mismatch rejects validation without an adoption/replacement
+override. The classification is contextual; this broad diagnostic also serves
+other projection validation failures. Preserve original evidence and follow
+[unsupported provenance/source mismatch](#unsupported-provenance).
+
+<!-- cdc-snippet: cdc-output-source-mismatch -->
+```json
+{
+  "operation": "validate",
+  "succeeded": false,
+  "exitCode": 1,
+  "diagnostics": [{ "component": "Projection", "failure": "ValidationFailed" }]
+}
+```
+<!-- /cdc-snippet: cdc-output-source-mismatch -->

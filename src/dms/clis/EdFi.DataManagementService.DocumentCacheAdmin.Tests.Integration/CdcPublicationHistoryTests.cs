@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.SchemaTools.Tests.Unit;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration;
@@ -412,6 +413,14 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
             }
         );
         result.ExitCode.Should().Be(exitCode, "packaged command {0}: {1}", command, json.ToJsonString());
+        CdcRunbookExamples.AssertExcerpt(
+            exitCode == 0 ? "cdc-output-history-admitted" : "cdc-output-history-rejected",
+            result.StandardOutput,
+            "status",
+            "classification",
+            "mutated",
+            "downstreamPublicationStatus"
+        );
         return json;
     }
 
