@@ -83,6 +83,16 @@ jobs:
         shell: bash
         run: sudo apt-get update && sudo apt-get install -y curl postgresql-client
 
+      - name: Install SQL Server bounded inspection client
+        if: matrix.suite == 'Telemetry' && matrix.lane == 'Mssql'
+        shell: bash
+        run: |
+          curl --fail --location --output "$RUNNER_TEMP/sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $RUNNER_TEMP/sqlcmd.tar.bz2" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/sqlcmd"
+          tar -xjf "$RUNNER_TEMP/sqlcmd.tar.bz2" -C "$RUNNER_TEMP/sqlcmd"
+          echo "$RUNNER_TEMP/sqlcmd" >> "$GITHUB_PATH"
+
       # History suites use packaged CLIs and isolated admin servers. Other suites
       # provision and clean up their own per-test containers through the runner.
       - name: Start packaged-history PostgreSQL

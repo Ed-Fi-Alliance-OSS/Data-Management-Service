@@ -28,7 +28,7 @@ for current command details and the linked design owners for support boundaries.
 | Intact connector restart and resume | [intact-restart](#intact-restart) | PostgreSQL passed T18; SQL Server passed T19 |
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | PostgreSQL T21 / SQL Server T22 — qualified local scope |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; PostgreSQL T25 and SQL Server T26 qualified |
-| Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
+| Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 inspections qualified |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 live qualification passed |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; PostgreSQL T25 and SQL Server T26 qualified |
@@ -1667,7 +1667,7 @@ Active, historical, possible or untrusted history rejects with exit `10`:
 
 ## Monitoring and provider retention
 
-**Documented T07; [PostgreSQL exact inspections passed T27](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27). SQL Server qualification remains pending T28.** Use the
+**Documented T07; [PostgreSQL exact inspections passed T27](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27). [SQL Server exact inspections passed T28](cdc-inv-evidence.md#sql-server-telemetry-and-retention-qualification-t28).** Use the
 [operations owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
 [telemetry owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry),
 and [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
@@ -1842,7 +1842,7 @@ values. Also inspect host backing-volume capacity through its storage owner.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
-| `<provider-container>`, `<data-path>`, `<wal-or-log-path>` | Owned container and mounted provider paths | Owned fixture container/mount paths; nonexistent fixture WAL path for unavailable-capacity branch |
+| `<provider-container>`, `<data-path>`, `<wal-or-log-path>` | Owned container and mounted provider paths | Owned fixture container/mount paths; nonexistent fixture WAL/log path for unavailable-capacity branch |
 
 <!-- cdc-snippet: cdc-provider-disk-inspect -->
 ```powershell
@@ -1880,12 +1880,15 @@ RCSI and `nested triggers` are separate projection prerequisites; their lifecycl
 correction belongs to [E18](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction).
 Do not change them on an active target as monitoring remediation.
 
-PowerShell, repository root; `sqlcmd` on PATH, SQL Server 2025 qualified target.
+PowerShell, repository root; `sqlcmd` (Go) 1.10.0 on PATH, SQL Server 2025 qualified target.
 The DBA supplies a monitoring principal with catalog/CDC/msdb visibility and required
 DMV permissions (including server performance/security state for these views), using
 `SQLCMDPASSWORD` from a protected session. This is not the connector login. Retain the
-normal deployment TLS trust configuration; the example does not bypass certificate
-validation. Login timeout is 5 seconds, batch query timeout 10 seconds, lock timeout
+normal deployment TLS trust configuration; initialize `$sqlcmdTlsOptions = @()`
+in the operator session. `-N true` requires encryption and certificate validation.
+Only the disposable local fixture supplies `@('-C')` for its self-signed server;
+that exception is not deployment TLS qualification. See the
+[sqlcmd connection options](https://learn.microsoft.com/en-us/sql/tools/sqlcmd/sqlcmd-utility?view=sql-server-ver17). Login timeout is 5 seconds, batch query timeout 10 seconds, lock timeout
 1 second; all multirow results are capped, scoped or catalog aggregates. Execute once
 per sample; `TOP` bounds output, not execution time. Missing required rows, denied
 access and NULL facts remain unavailable unless explicitly inapplicable. An empty
@@ -1893,12 +1896,13 @@ active-transaction result with verified visibility simply means none were observ
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
-| `<sqlserver-host,port>`, `<target-database>`, `<monitor-login>` | Selected database and deployment monitoring connection | Owned fixture endpoint/database/monitor |
+| `<sqlserver-host,port>`, `<target-database>`, `<monitor-login>` | Selected database and deployment monitoring connection | Owned fixture endpoint/database/monitor; nonexistent fixture login for denied-access branch |
 | `SQLCMDPASSWORD` | Protected monitor credential environment input, never logged | Fixture-injected monitor secret |
+| `$sqlcmdTlsOptions` | Empty array; normal deployment certificate trust | `@('-C')` only for the isolated self-signed fixture |
 
 <!-- cdc-snippet: cdc-sqlserver-retention-inspect -->
 ```powershell
-sqlcmd -S '<sqlserver-host,port>' -d '<target-database>' -U '<monitor-login>' -b -l 5 -t 10 -Q @'
+sqlcmd -N true @sqlcmdTlsOptions -w 65535 -s '|' -W -S '<sqlserver-host,port>' -d '<target-database>' -U '<monitor-login>' -b -l 5 -t 10 -Q @'
 SET NOCOUNT ON;
 SET LOCK_TIMEOUT 1000;
 SELECT SYSUTCDATETIME() AS observed_at, is_cdc_enabled,
@@ -1974,6 +1978,23 @@ its off-row KiB excludes in-row versions and does not represent total storage us
 A DBA resolves capacity/long-transaction issues, confirms capture and cleanup resume
 with required history still retained, then obtains fresh controller status. Do not
 kill sessions or alter isolation/retention from this inspection recipe.
+
+The [T28 SQL Server qualification](cdc-inv-evidence.md#sql-server-telemetry-and-retention-qualification-t28)
+executes this exact batch twice after real heartbeat/committed-source advancement,
+then checks the unavailable-monitor action. It observes enabled capture/cleanup jobs,
+successful completed cleanup, nonzero ordered retained LSN ranges, scan latency/errors,
+snapshot/ADR settings and both version-store views. Its minimal connector fixture has
+snapshot isolation ON and RCSI OFF: the exported action points to E18 prerequisite
+correction while Disabled, not a healthy DMS projection claim or permission to alter
+an active deployment. No correction is performed by these inspections. Separate
+[T17 admission evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
+qualifies actual DMS prerequisites and missing/lost schema-history rejection;
+[T22 recovery](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22)
+supplies fresh/rejected controller observations. Topic policy/access remains T20.
+The fixture also runs the exact disk command against its database's actual data and
+log files, which share a filesystem, and rejects a missing log path. These samples
+prove neither sustained capacity nor pressure recovery. Administrator visibility and
+the declared self-signed TLS exception qualify only this disposable fixture.
 
 ### Symptom to owner and completion
 

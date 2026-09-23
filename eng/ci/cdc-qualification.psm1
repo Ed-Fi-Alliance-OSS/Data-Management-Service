@@ -326,6 +326,8 @@ function Get-CdcRunbookTelemetryReport {
     }
     if ($Provider -eq 'Postgresql') {
         $required.It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions = 1
+    } else {
+        $required.It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions = 1
     }
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-telemetry-behavior' -ExactCount
 }

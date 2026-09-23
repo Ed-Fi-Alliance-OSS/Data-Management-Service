@@ -23,8 +23,19 @@ internal static class CdcRunbookLiveCommands
         CancellationToken token
     )
     {
-        id.Should().BeOneOf("cdc-telemetry-inspect", "cdc-pg-retention-inspect", "cdc-provider-disk-inspect");
+        id.Should()
+            .BeOneOf(
+                "cdc-telemetry-inspect",
+                "cdc-pg-retention-inspect",
+                "cdc-provider-disk-inspect",
+                "cdc-sqlserver-retention-inspect"
+            );
         string code = CdcRunbookExamples.Read(id);
+        if (id == "cdc-sqlserver-retention-inspect")
+        {
+            // Declared fixture-only TLS input: this isolated provider uses a self-signed certificate.
+            code = "$sqlcmdTlsOptions = @('-C');\n" + code;
+        }
         foreach (var input in substitutions)
         {
             code.Should().Contain(input.Key);

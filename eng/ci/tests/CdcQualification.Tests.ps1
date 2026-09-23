@@ -597,11 +597,15 @@ Describe 'CDC documentation qualification boundary' {
         "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
         (Get-CdcRunbookRecoveryReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
-    It 'requires all PostgreSQL telemetry and live inspection cases (<Fault>)' -ForEach @(
-        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }, @{ Fault = 'duplicate' }
+    It 'requires all <Provider> telemetry and live inspection cases (<Fault>)' -ForEach @(
+        foreach ($provider in @('Postgresql', 'Mssql')) {
+            foreach ($fault in @('none', 'excluded', 'skipped', 'partial', 'duplicate')) {
+                @{ Provider = $provider; Fault = $fault }
+            }
+        }
     ) {
         $path = Join-Path $TestDrive 'telemetry.trx'
-        $required = (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider Postgresql).Cases
+        $required = (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider $Provider).Cases
         $nodes = @($required | ForEach-Object {
             $case = $_
             for ($i = 0; $i -lt $case.Required; $i++) {
@@ -613,11 +617,15 @@ Describe 'CDC documentation qualification boundary' {
         if ($Fault -eq 'partial') { $nodes = $nodes[1..($nodes.Count - 1)] }
         if ($Fault -eq 'duplicate') { $nodes += $nodes[0] }
         "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
-        (Get-CdcRunbookTelemetryReport $path -Provider Postgresql).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+        (Get-CdcRunbookTelemetryReport $path -Provider $Provider).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
-    It 'preserves the SQL Server exporter selection until its retention qualification' {
-        (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider Mssql).Cases.TestId |
-            Should -Be 'It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics'
+    It 'selects only the matching provider inspection and retains the telemetry report guard' {
+        $pg = (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider Postgresql).Cases.TestId
+        $sql = (Get-CdcRunbookTelemetryReport (Join-Path $TestDrive 'missing.trx') -Provider Mssql).Cases.TestId
+        $pg | Should -Contain 'It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions'
+        $sql | Should -Contain 'It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions'
+        $pg | Should -Not -Contain $sql[1]
+        $sql | Should -Not -Contain $pg[1]
         Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw |
             Should -Match 'Get-CdcRunbookTelemetryReport -Path.*-Provider \$selected'
     }

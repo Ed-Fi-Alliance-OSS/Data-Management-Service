@@ -100,11 +100,18 @@ try {
             }
         }
         if ($Suite -in @('All', 'Telemetry') -and @($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) {
-            $inspectionTools = @('curl')
-            if ('Postgresql' -in $lanes) { $inspectionTools += @('psql', 'timeout') }
+            $inspectionTools = @('curl', 'timeout')
+            if ('Mssql' -in $lanes) { $inspectionTools += 'sqlcmd' }
+            if ('Postgresql' -in $lanes) { $inspectionTools += @('psql') }
             foreach ($tool in $inspectionTools) {
                 if (-not (Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) {
                     throw "EnvironmentUnavailable: required telemetry inspection client $tool is missing."
+                }
+            }
+            if ('Mssql' -in $lanes) {
+                $sqlcmdVersion = (& sqlcmd --version) -join "`n"
+                if ($LASTEXITCODE -ne 0 -or $sqlcmdVersion -notmatch 'Version: v1\.10\.0(?:\s|$)') {
+                    throw 'EnvironmentUnavailable: SQL Server telemetry inspection requires sqlcmd (Go) 1.10.0.'
                 }
             }
             $curlVersion = & curl --version

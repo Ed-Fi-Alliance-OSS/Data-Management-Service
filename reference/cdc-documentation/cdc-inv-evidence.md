@@ -74,7 +74,7 @@ described in the [entry point](README.md#supported-deployment).
 | [Projection troubleshooting and administration handoff](operations-runbook.md#projection-handoff) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration) | PostgreSQL | [Given_CdcPublicationHistory_packaged_administration](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs) — `It_allows_all_three_commands_from_managed_non_CDC_creation`; `It_rejects_untrusted_or_exposed_history_without_any_mutation` (all 15 scenarios); `It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source`; `It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early`; `It_holds_the_controller_lock_through_E18_mutation_when_administration_wins` (all three commands). Exact snippet qualified T25 | `cdc-history-internal-only`, `cdc-history-rejected` | LocalSingleBroker / AuthorizationDisabledLocal; immutable images in T25 | [T25 results](#postgresql-history-and-retirement-qualification-t25) | Documented T06; PostgreSQL T25 qualified |
 | [Projection troubleshooting and administration handoff](operations-runbook.md#projection-handoff) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration) | SQL Server | [Given_CdcPublicationHistory_packaged_administration](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs) — `It_allows_all_three_commands_from_managed_non_CDC_creation`; `It_rejects_untrusted_or_exposed_history_without_any_mutation` (all 15 scenarios); `It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source`; `It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early`; `It_holds_the_controller_lock_through_E18_mutation_when_administration_wins` (all three commands). Exact snippet qualified T26 | `cdc-history-internal-only`, `cdc-history-rejected` | LocalSingleBroker / AuthorizationDisabledLocal; immutable images in T26 | [T26 results](#sql-server-history-and-retirement-qualification-t26) | Documented T06; SQL Server T26 qualified |
 | [Monitoring and provider retention](operations-runbook.md#monitoring-retention) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry), [PostgreSQL](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql) | PostgreSQL | [Given_CdcConnectorTelemetryQualification.It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs); [Given_PostgresqlCdcRunbookRetention.It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.Runbook.cs) | `cdc-telemetry-inspect`, `cdc-pg-retention-inspect`, `cdc-provider-disk-inspect`; `cdc-status`/`cdc-watch` reuse T16 | Qualified local single-worker/broker, PostgreSQL 16.8; [immutable images](evidence/t27-postgresql-telemetry/run-details.json); `aclIsolationProven: false` | [11 exact observations](evidence/t27-postgresql-telemetry/inspection-observations.json), [live results/required guard](evidence/t27-postgresql-telemetry/qualification.json), [layered details](#postgresql-telemetry-and-retention-qualification-t27) | T27 passed 2/2 live cases, no skips; task/worker replacement, retention/progress, bounded capacity and unavailable actions. No pressure injection or consumer-progress claim |
-| [Monitoring and provider retention](operations-runbook.md#monitoring-retention) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [SQL Server](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_CdcConnectorTelemetryQualification.It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs) (SqlServer); [Given_MssqlCdcSourcePositionAdapterTests.It_reads_capture_job_and_retained_lsn_metadata_for_healthy_continuity](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCdcSourcePositionAdapterTests.cs); exact inspection wiring pending T28 | `cdc-status`, `cdc-watch`, `cdc-telemetry-inspect`, `cdc-sqlserver-retention-inspect`, `cdc-provider-disk-inspect` | Pending live run; qualified local single-worker/broker, SQL Server 2025 | Pending — no live snippet artifact | T07 source/contract review only; exact snippets pending T28 |
+| [Monitoring and provider retention](operations-runbook.md#monitoring-retention) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations), [telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry), [SQL Server](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_CdcConnectorTelemetryQualification.It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs) (SqlServer); [Given_SqlServerCdcRunbookRetention.It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.SqlServerRunbook.cs) | `cdc-telemetry-inspect`, `cdc-sqlserver-retention-inspect`, `cdc-provider-disk-inspect`; `cdc-status`/`cdc-watch` reuse T17 | Qualified local single-worker/broker, SQL Server 2025; [immutable images](evidence/t28-sqlserver-telemetry/run-details.json); `aclIsolationProven: false` | [10 exact observations](evidence/t28-sqlserver-telemetry/inspection-observations.json), [live results/required guard](evidence/t28-sqlserver-telemetry/qualification.json), [layered details](#sql-server-telemetry-and-retention-qualification-t28) | T28 passed 2/2 live cases, no skips; task/worker replacement, jobs/LSN/version-store observations, capacity and unavailable actions. No DMS projection readiness, pressure recovery or consumer-progress claim |
 | [Topic policy observations](operations-runbook.md#security-consumer-evidence) | [CDC-INV-12/15; offset store](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store), [topic contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) | Both; Kafka policy is provider-neutral, history applies to SQL Server | [Given_authorized_three_broker_cdc_policy](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.cs) — `It_rejects_live_topic_drift_without_repair`; `It_requires_explicit_isr_even_when_the_broker_default_is_two`; `It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention`; `It_rejects_changed_partition_identity_and_actual_weak_replica_assignments`; exact local status snippet wiring pending T20 | `cdc-topic-policy-inspect` | Pending live snippet; local CLI reports ACL isolation false; secured fixtures separately test three-broker policy | Pending — no live snippet artifact | T08 source/contract review only; live exercise pending T20 |
 | [Effective-access qualification](operations-runbook.md#security-consumer-evidence) | [CDC-INV-12/15; security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations) | Provider-neutral Kafka fixture, including SQL Server history artifact | [Given_authorized_three_broker_cdc_policy](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.cs) — `It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts`; `It_allows_only_the_configured_public_topic_and_consumer_group` (a/b); `It_denies_cross_binding_and_internal_reads` (all topic/group cases); `It_denies_consumer_writes_and_connector_access_to_worker_offsets`; `It_preserves_unavailable_acl_authority_when_description_is_denied`; `It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant` (all six cases). Same file: `Given_explicit_authorization_disabled_local_kafka_policy.It_labels_local_policy_without_claiming_acl_or_production_durability_proof` | `cdc-access-inspect` | Pending; authorization-enabled three-broker and explicitly separate authorization-disabled local profiles; exact images recorded by runner | Pending — no live snippet artifact | T08 source/contract review only; live exercise pending T20. Fixture proof never certifies operator resources |
 | [Consumer-owner reference evidence](operations-runbook.md#consumer-owner-proof-and-invalidation-handoff) | [CDC-INV-13/15; public consumer bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap) | Provider-neutral consumer assertions hosted by PostgreSQL fixture | [Given_MessageContractConsumerBroker](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs) — `MC-CONSUMER-BROKER-BOOTSTRAP-DURABILITY`, `MC-CONSUMER-BROKER-ORDERING`, `MC-CONSUMER-BROKER-IDLE-RENEWAL`, `MC-CONSUMER-BROKER-CONTINUATION`, `MC-CONSUMER-BROKER-CHECKPOINT-MISSING`, `MC-CONSUMER-BROKER-CHECKPOINT-CORRUPT`; [bootstrap](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrapTests.cs) and [continuity](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerContinuityTests.cs) unit deadline/fault cases | `cdc-consumer-evidence` | Pending broker snippet; real Kafka transport, synthetic public values, simulated durable store/clock | Pending — no live snippet artifact | T08 source review and unit checks only; exact MessageContract lane pending T20. Independent stores need their own durable/capacity evidence |
@@ -1047,5 +1047,75 @@ route on its own Connect REST service. The full fresh second run supplies accept
 no production behavior changed. Fixture cleanup removed owned services and private
 libpq/metrics files, preserving pre-existing services. Exported attachments contain
 selected fields and actions, with no credentials, raw metrics, offsets or payloads.
-SQL Server exact inspections remain pending T28; this is not API-message, ACL,
+SQL Server exact inspections are recorded separately in [T28](#sql-server-telemetry-and-retention-qualification-t28); this is not API-message, ACL,
 consumer-baseline or deployment-capacity certification.
+
+<a id="sql-server-telemetry-and-retention-qualification-t28"></a>
+
+## SQL Server telemetry and retention qualification (T28)
+
+The fresh complete SQL Server Telemetry selection passed **2/2 live cases**, zero
+failures/skips/startup failures, and both required-method guards. **10 exact marked
+inspections** ran on fixture-owned SQL Server 2025, Redpanda and the shipped immutable
+Connect/exporter image. See [qualification](evidence/t28-sqlserver-telemetry/qualification.json),
+[stable test outcomes](evidence/t28-sqlserver-telemetry/test-results.json),
+[observations/actions](evidence/t28-sqlserver-telemetry/inspection-observations.json),
+[image contract](evidence/t28-sqlserver-telemetry/qualified-image.json) and
+[revision, source/snippet hashes and substitutions](evidence/t28-sqlserver-telemetry/run-details.json).
+The profile remains `LocalSingleBroker` / `AuthorizationDisabledLocal`, with
+`aclIsolationProven: false`.
+
+These procedures map to **CDC-INV-15**, owned by
+[operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
+[qualified telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry)
+and [SQL Server setup/history](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
+
+| Exact snippet | Stable method | Executed outcome |
+| --- | --- | --- |
+| `cdc-telemetry-inspect` (five invocations) | `Given_CdcConnectorTelemetryQualification(SqlServer).It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics` | Current lag and typed optional statistics on initial/restarted task/restarted worker; selected connector/current lag absent after stop (null, never zero); zero scrape error and worker start/heap observed. Unavailable endpoint throws the documented partial-file rejection. |
+| `cdc-sqlserver-retention-inspect` (three invocations) | `Given_SqlServerCdcRunbookRetention.It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions` | Two complete bounded batches after real heartbeat/committed-source advancement: fresh timestamps, CDC/nested triggers, running Agent, enabled capture/cleanup jobs, successful completed job history, bounded scans without errors, all three nonzero ordered retained ranges, snapshot/ADR settings, version-store and tempdb capacity. Nonexistent fixture monitor rejects the entire observation. Raw LSNs and SQL output are not exported. |
+| `cdc-provider-disk-inspect` (two invocations) | Same retention method | Actual fixture database data/log files (same filesystem), observed 1024-byte capacity/usage values; nonexistent log path rejects the partial observation. No disk-full injection or capacity threshold. |
+
+The minimal connector fixture has snapshot isolation ON, RCSI OFF and ADR OFF.
+Its RCSI observation explicitly routes to the existing E18 prerequisite procedure,
+which permits correction only while Disabled; neither the query nor the fixture
+changes that setting. Passing inspection does not declare DMS projection healthy.
+Both version-store queries returned observed numeric values, and no active snapshot
+transactions were observed with administrator visibility. ADR OFF limits the
+persistent-store interpretation; absent rows would remain unavailable, not zero.
+Capture progress and retained min/max LSNs measure neither remaining outage seconds,
+projection backlog nor consumer progress. Cleanup retention is the observed fixture
+setting, not a new DMS default or deployment capacity recommendation.
+
+The shared exporter method separately uses the production adapter to correlate
+worker/task identity and verifies new process measurements plus peer isolation.
+**264 telemetry/native-recovery unit cases** and **five metric-contract cases**
+cover malformed, optional, stale, reused and invalidated observations at their
+explicit unit layer; see [supporting outcomes](evidence/t28-sqlserver-telemetry/supporting-tests.json).
+Runner Pester passed **105 cases**, including both providers' exact required-case
+selection. Source/analyzer and documentation checks appear in run details.
+
+Reuse [T17 setup/status/watch](#sql-server-setup-qualification-t17) and
+[T22 native recovery](#sql-server-native-recovery-qualification-t22) for controller
+observations and containment. The T17 [admission results](evidence/t17-sqlserver-setup/admission-results.json)
+include `Given_SqlServer_Controller_Admission.It_cannot_publish_when_schema_history_inspection_is_unavailable`
+and `It_retains_terminal_schema_history_loss_after_the_topic_is_healthy_again`.
+Those are separate live controller cases, not newly executed telemetry snippets.
+Retained LSNs cannot replace schema-history evidence or authorize repair; exact
+Kafka policy/effective-access inspection remains T20. Existing E18 tuning/workload
+limits and the production-performance deferral remain unchanged.
+
+The first complete live run also passed; the final fresh run strengthens completed
+cleanup-job assertions and supplies actual database data/log file substitutions.
+The second run retained a fixture substitution failure: the scalar reader
+returned trailing newlines in file paths, so `df` rejected them. Trimming those
+values corrected the fixture; the third complete run supplies final acceptance.
+Both prior reports remain separate in run details. No runtime, schema, hash or
+normative contract changed. The sqlcmd (Go) 1.10.0 client
+is pinned by archive hash in nightly CI. The documented command explicitly requires
+encryption/certificate validation; the declared fixture-only `-C` input trusts its
+isolated self-signed server. Administrator monitoring and this TLS exception prove
+neither least-privilege grants nor production transport security. Cleanup removed
+fixture-owned services/private files and preserved pre-existing services. No ACL,
+API-message, consumer-baseline, production pressure or schema-history recovery
+claim is made.

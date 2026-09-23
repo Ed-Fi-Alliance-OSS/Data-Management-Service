@@ -22,15 +22,20 @@ They describe the evidence below, not a claim that this story qualifies every be
 
 The required [DMS CI gate](../.github/workflows/on-dms-pullrequest.yml) runs only the fast `Contract` qualification lane on relevant ready PR updates, merge groups and manual dispatches. It does not start live CDC provider or Kafka fixtures. Existing non-qualification CI jobs are unchanged.
 
-PostgreSQL Telemetry also executes the marked `cdc-telemetry-inspect`,
-`cdc-pg-retention-inspect` and `cdc-provider-disk-inspect` commands in the existing
-fixture-owned provider/worker/broker topology. The runner requires both exporter
-replacement and inspection methods, rejects missing/skipped/duplicate outcomes,
-and checks native curl 8.4+, psql and timeout availability. Nightly installs the
-inspection clients. Private libpq service/passfiles and raw metrics are removed
-by the fixture; only selected observed fields, snippet hashes and actions enter
-allowlisted `cdc-controller-telemetry-*` attachments. SQL Server keeps its exporter
-selection; its provider-retention snippet qualification remains T28.
+Both provider Telemetry selections execute the marked `cdc-telemetry-inspect`
+and `cdc-provider-disk-inspect` commands plus `cdc-pg-retention-inspect` or
+`cdc-sqlserver-retention-inspect` in the existing fixture-owned topology. Each
+requires exporter replacement and its matching provider inspection method; missing,
+skipped or duplicate outcomes fail qualification. The runner checks native curl
+8.4+ and timeout, plus psql for PostgreSQL or sqlcmd (Go) for SQL Server. Nightly
+installs the clients, pinning sqlcmd 1.10.0 by archive digest. SQL Server monitoring
+uses the fixture administrator and the explicitly declared self-signed TLS exception;
+it does not prove least-privilege monitoring grants or deployment TLS. Private
+libpq files and raw metrics are removed by the fixture. Only selected observed
+fields, snippet hashes and actions enter allowlisted `cdc-controller-telemetry-*`
+attachments; raw LSNs and query output stay private. Retained LSNs do not prove
+schema-history continuity: use the separately linked admission/recovery evidence
+and topic-policy inspection.
 
 All 15 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History and MessageContract for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
 

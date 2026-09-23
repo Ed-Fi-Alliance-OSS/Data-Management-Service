@@ -291,66 +291,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 token
             );
 
-            var diskInputs = new Dictionary<string, string>
-            {
-                ["<provider-container>"] = ProviderContainerName,
-                ["<data-path>"] = "/var/lib/postgresql/data",
-                ["<wal-or-log-path>"] = "/var/lib/postgresql/data/pg_wal",
-            };
-            var disk = await CdcRunbookLiveCommands.InvokeInspectionAsync(
-                "cdc-provider-disk-inspect",
-                diskInputs,
+            await QualifyRunbookDiskAsync(
+                "/var/lib/postgresql/data",
+                "/var/lib/postgresql/data/pg_wal",
                 environment,
-                token
-            );
-            disk.ExitCode.Should().Be(0);
-            var capacity = disk
-                .Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Skip(1)
-                .Select(line => line.Split(Array.Empty<char>(), StringSplitOptions.RemoveEmptyEntries))
-                .ToArray();
-            capacity.Should().HaveCount(2);
-            var observations = capacity
-                .Select(row => new
-                {
-                    Blocks1024 = long.Parse(row[1], CultureInfo.InvariantCulture),
-                    Used1024 = long.Parse(row[2], CultureInfo.InvariantCulture),
-                    Available1024 = long.Parse(row[3], CultureInfo.InvariantCulture),
-                    UsedPercent = int.Parse(row[4].TrimEnd('%'), CultureInfo.InvariantCulture),
-                })
-                .ToArray();
-            foreach (var observation in observations)
-            {
-                observation.Blocks1024.Should().BeGreaterThan(0);
-                observation.Used1024.Should().BeGreaterThanOrEqualTo(0);
-                observation.Available1024.Should().BeGreaterThan(0);
-                observation.UsedPercent.Should().BeInRange(0, 100);
-            }
-            await WriteInspectionEvidenceAsync(
-                "cdc-provider-disk-inspect",
-                "capacity",
-                new
-                {
-                    disk.ExitCode,
-                    PathsObserved = 2,
-                    Capacity = observations,
-                    Action = "DeploymentChoosesCapacityThreshold",
-                },
-                token
-            );
-            diskInputs["<wal-or-log-path>"] = "/fixture-missing-wal-path";
-            var unavailableDisk = await CdcRunbookLiveCommands.InvokeInspectionAsync(
-                "cdc-provider-disk-inspect",
-                diskInputs,
-                environment,
-                token
-            );
-            unavailableDisk.ExitCode.Should().NotBe(0);
-            unavailableDisk.Error.Should().Contain("Provider filesystem capacity unavailable.");
-            await WriteInspectionEvidenceAsync(
-                "cdc-provider-disk-inspect",
-                "unavailable-path",
-                new { unavailableDisk.ExitCode, Action = "CapacityUnavailableStorageOwnerMustInvestigate" },
                 token
             );
         }
@@ -358,6 +302,77 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         {
             directory.Delete(recursive: true);
         }
+    }
+
+    private async Task QualifyRunbookDiskAsync(
+        string dataPath,
+        string logPath,
+        IReadOnlyDictionary<string, string> environment,
+        CancellationToken token
+    )
+    {
+        var diskInputs = new Dictionary<string, string>
+        {
+            ["<provider-container>"] = ProviderContainerName,
+            ["<data-path>"] = dataPath,
+            ["<wal-or-log-path>"] = logPath,
+        };
+        var disk = await CdcRunbookLiveCommands.InvokeInspectionAsync(
+            "cdc-provider-disk-inspect",
+            diskInputs,
+            environment,
+            token
+        );
+        disk.ExitCode.Should().Be(0);
+        var capacity = disk
+            .Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Skip(1)
+            .Select(line => line.Split(Array.Empty<char>(), StringSplitOptions.RemoveEmptyEntries))
+            .ToArray();
+        capacity.Should().HaveCount(2);
+        var observations = capacity
+            .Select(row => new
+            {
+                Blocks1024 = long.Parse(row[1], CultureInfo.InvariantCulture),
+                Used1024 = long.Parse(row[2], CultureInfo.InvariantCulture),
+                Available1024 = long.Parse(row[3], CultureInfo.InvariantCulture),
+                UsedPercent = int.Parse(row[4].TrimEnd('%'), CultureInfo.InvariantCulture),
+            })
+            .ToArray();
+        foreach (var observation in observations)
+        {
+            observation.Blocks1024.Should().BeGreaterThan(0);
+            observation.Used1024.Should().BeGreaterThanOrEqualTo(0);
+            observation.Available1024.Should().BeGreaterThan(0);
+            observation.UsedPercent.Should().BeInRange(0, 100);
+        }
+        await WriteInspectionEvidenceAsync(
+            "cdc-provider-disk-inspect",
+            "capacity",
+            new
+            {
+                disk.ExitCode,
+                PathsObserved = 2,
+                Capacity = observations,
+                Action = "DeploymentChoosesCapacityThreshold",
+            },
+            token
+        );
+        diskInputs["<wal-or-log-path>"] = "/fixture-missing-wal-path";
+        var unavailableDisk = await CdcRunbookLiveCommands.InvokeInspectionAsync(
+            "cdc-provider-disk-inspect",
+            diskInputs,
+            environment,
+            token
+        );
+        unavailableDisk.ExitCode.Should().NotBe(0);
+        unavailableDisk.Error.Should().Contain("Provider filesystem capacity unavailable.");
+        await WriteInspectionEvidenceAsync(
+            "cdc-provider-disk-inspect",
+            "unavailable-path",
+            new { unavailableDisk.ExitCode, Action = "CapacityUnavailableStorageOwnerMustInvestigate" },
+            token
+        );
     }
 
     private static DirectoryInfo CreateInspectionDirectory()
