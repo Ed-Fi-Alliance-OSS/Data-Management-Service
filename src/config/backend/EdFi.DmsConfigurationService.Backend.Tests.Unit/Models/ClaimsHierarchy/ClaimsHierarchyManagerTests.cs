@@ -474,7 +474,6 @@ public class ClaimsHierarchyManagerTests
     }
 
     [Test]
-    [Test]
     public void RemoveClaimSetResourceActions_ShouldRemoveOnlyTheTargetAssociation()
     {
         // Arrange

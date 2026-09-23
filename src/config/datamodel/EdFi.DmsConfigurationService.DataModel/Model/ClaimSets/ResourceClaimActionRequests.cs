@@ -11,14 +11,14 @@ public interface IResourceClaimActionsOnClaimSetRequest
 {
     int ClaimSetId { get; set; }
     int ResourceClaimId { get; set; }
-    List<ResourceClaimActionRequest> ResourceClaimActions { get; set; }
+    List<ResourceClaimAction> ResourceClaimActions { get; set; }
 }
 
 public sealed class AddResourceClaimActionsOnClaimSetRequest : IResourceClaimActionsOnClaimSetRequest
 {
     public required int ClaimSetId { get; set; }
     public required int ResourceClaimId { get; set; }
-    public required List<ResourceClaimActionRequest> ResourceClaimActions { get; set; } = [];
+    public required List<ResourceClaimAction> ResourceClaimActions { get; set; } = [];
 
     public sealed class Validator
         : ResourceClaimActionsOnClaimSetRequestValidator<AddResourceClaimActionsOnClaimSetRequest>;
@@ -28,16 +28,10 @@ public sealed class EditResourceClaimActionsOnClaimSetRequest : IResourceClaimAc
 {
     public required int ClaimSetId { get; set; }
     public required int ResourceClaimId { get; set; }
-    public required List<ResourceClaimActionRequest> ResourceClaimActions { get; set; } = [];
+    public required List<ResourceClaimAction> ResourceClaimActions { get; set; } = [];
 
     public sealed class Validator
         : ResourceClaimActionsOnClaimSetRequestValidator<EditResourceClaimActionsOnClaimSetRequest>;
-}
-
-public sealed class ResourceClaimActionRequest
-{
-    public string? Name { get; set; }
-    public bool Enabled { get; set; }
 }
 
 public sealed class OverrideAuthStategyOnClaimSetRequest
@@ -57,6 +51,15 @@ public sealed class OverrideAuthStategyOnClaimSetRequest
             RuleFor(request => request.ActionName).NotEmpty();
             RuleFor(request => request.AuthorizationStrategies).NotNull().NotEmpty();
             RuleForEach(request => request.AuthorizationStrategies).NotNull();
+            RuleFor(request => request.AuthorizationStrategies)
+                .Must(strategies =>
+                    strategies is null
+                    || strategies.Distinct(StringComparer.OrdinalIgnoreCase).Count() == strategies.Count
+                )
+                .WithMessage("Authorization strategy names must not be duplicated.");
+            RuleFor(request => request.AuthStrategyIds)
+                .Must(strategyIds => strategyIds is null || strategyIds.Distinct().Count() == strategyIds.Count)
+                .WithMessage("Authorization strategy IDs must not be duplicated.");
         }
     }
 }

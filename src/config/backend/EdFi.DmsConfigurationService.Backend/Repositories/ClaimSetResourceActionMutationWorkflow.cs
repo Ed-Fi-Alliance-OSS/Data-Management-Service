@@ -330,6 +330,15 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
         }
 
         if (
+            canonicalStrategyNames.Distinct(StringComparer.Ordinal).Count() != canonicalStrategyNames.Count
+            || canonicalStrategyNamesFromIds.Distinct(StringComparer.Ordinal).Count()
+                != canonicalStrategyNamesFromIds.Count
+        )
+        {
+            return new ClaimSetResourceActionMutationResult.FailureDuplicateAuthorizationStrategy();
+        }
+
+        if (
             canonicalStrategyNames.Count > 0
             && canonicalStrategyNamesFromIds.Count > 0
             && !new HashSet<string>(canonicalStrategyNames, StringComparer.Ordinal).SetEquals(
