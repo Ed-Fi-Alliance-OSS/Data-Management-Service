@@ -532,13 +532,21 @@ public class DataStoreOwnershipPublicationTests
 
             Dictionary<string, TaskCompletionSource> fetchGates = new()
             {
-                [firstTenant] = new TaskCompletionSource(),
-                [secondTenant] = new TaskCompletionSource(),
+                [firstTenant] = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                ),
+                [secondTenant] = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                ),
             };
             Dictionary<string, TaskCompletionSource> fetchCompleted = new()
             {
-                [firstTenant] = new TaskCompletionSource(),
-                [secondTenant] = new TaskCompletionSource(),
+                [firstTenant] = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                ),
+                [secondTenant] = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                ),
             };
 
             string aConnection = TenantAPrimary;
@@ -555,7 +563,9 @@ public class DataStoreOwnershipPublicationTests
             HttpMessageHandler handler = new GatedResponseHandler(responses, fetchGates, fetchCompleted);
 
             using ManualResetEventSlim releaseFirstReconcile = new(initialState: false);
-            TaskCompletionSource firstReconcileEntered = new();
+            TaskCompletionSource firstReconcileEntered = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
 
             int inside = 0;
             int maxInside = 0;
