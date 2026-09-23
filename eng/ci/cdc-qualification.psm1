@@ -165,7 +165,7 @@ function Export-CdcQualificationEvidence {
     param([string] $RawDirectory, [string] $Destination)
 
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-    $attachmentPattern = '^(?:cdc-message-contract-|admission-evidence-|cdc-controller-|managed-lifecycle-|native-recovery-|cdc-history-|record-size-|\d+-)[a-zA-Z0-9_.-]+\.json$'
+    $attachmentPattern = '^(?:cdc-runbook-|cdc-message-contract-|admission-evidence-|cdc-controller-|managed-lifecycle-|native-recovery-|cdc-history-|record-size-|\d+-)[a-zA-Z0-9_.-]+\.json$'
     foreach ($file in Get-ChildItem -LiteralPath $RawDirectory -Filter '*.trx' -Recurse) {
         [xml] $trx = Get-Content -LiteralPath $file.FullName -Raw
         # Assertion diffs and stdout can contain a whole record or an unlabelled password.
@@ -201,7 +201,18 @@ function Export-CdcQualificationEvidence {
         # Only test attachments, never runtime settings, workflow journals or source documents.
         if ($file.Name -notmatch $attachmentPattern) { continue }
         $value = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100
-        $safeValue = ConvertTo-CdcSafeEvidence $value
+        if ($file.Name -like 'cdc-runbook-*') {
+            # Narrow procedure attachment schema. Never retain settings, command output or prose,
+            # even innocuous-looking values missed by the general fixture redaction heuristic.
+            $safeValue = @($value.Cases | ForEach-Object {
+                if ($_.TestId -cmatch '^CDC-DOC cdc-[a-z0-9-]+$' -and
+                    $_.SnippetId -cmatch '^cdc-[a-z0-9-]+$' -and
+                    $_.Outcome -cin @('Passed', 'NotPassed', 'Missing', 'Duplicate')) {
+                    [ordered]@{ TestId = $_.TestId; SnippetId = $_.SnippetId; Outcome = $_.Outcome }
+                }
+            })
+        }
+        else { $safeValue = ConvertTo-CdcSafeEvidence $value }
         ConvertTo-Json -InputObject $safeValue -Depth 100 |
             Set-Content -LiteralPath (Join-Path $Destination $file.Name)
     }
@@ -226,4 +237,63 @@ function Get-CdcQualificationProviderSuite {
     return $filters
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite
+function Get-CdcRunbookPesterReport {
+    <# .SYNOPSIS
+    Requires named wrapper cases independently of discovery; exclusions cannot pass qualification.
+    #>
+    param([object[]] $Tests)
+    $required = @(
+        'cdc-pg-bootstrap-local', 'cdc-pg-bootstrap-published',
+        'cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published',
+        'cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup', 'cdc-pg-e2e-build', 'cdc-sqlserver-e2e-build',
+        'cdc-pg-infrastructure', 'cdc-sqlserver-infrastructure',
+        'cdc-managed-stop', 'cdc-managed-start', 'cdc-managed-start-rejected', 'cdc-stack-teardown'
+    )
+    $cases = @($required | ForEach-Object {
+        $id = $_
+        $found = @($Tests | Where-Object ExpandedName -eq "CDC-DOC $id")
+        $outcome = if ($found.Count -eq 0) { 'Missing' } elseif ($found.Count -ne 1) { 'Duplicate' }
+        elseif ($found[0].Result -eq 'Passed') { 'Passed' } else { 'NotPassed' }
+        [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
+    })
+    $passed = @($cases | Where-Object Outcome -eq Passed).Count
+    return [ordered]@{ Name = 'runbook-wrappers'; Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
+        Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
+}
+
+function Get-CdcRunbookCliReport {
+    <# .SYNOPSIS
+    Requires command, configuration, output, packaged and link cases in the Contract CLI report.
+    #>
+    param([string] $Path)
+    # Minimum parameterized counts detect partial discovery as well as whole-fixture exclusion.
+    $required = [ordered]@{
+        It_dispatches_the_marked_command_and_exposes_its_options_in_help = 19
+        It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector = 2
+        It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement = 10
+        It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence = 6
+        It_matches_status_excerpts_and_optional_fields_from_the_controller = 8
+        It_matches_operation_scoped_results = 2
+        It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value = 2
+        It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes = 3
+        It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout = 1
+        It_resolves_relative_links_and_explicit_or_generated_anchors = 12
+    }
+    $results = @()
+    if (Test-Path -LiteralPath $Path) {
+        [xml] $trx = Get-Content -LiteralPath $Path -Raw
+        $results = @($trx.SelectNodes('//*[local-name()="UnitTestResult"]'))
+    }
+    $cases = @($required.Keys | ForEach-Object {
+        $id = $_
+        $found = @($results | Where-Object { $_.testName.Split('(')[0] -eq $id })
+        $passed = @($found | Where-Object outcome -eq Passed).Count
+        [ordered]@{ TestId = $id; Required = $required[$id]; Total = $found.Count; Passed = $passed;
+            Outcome = $(if ($found.Count -ge $required[$id] -and $passed -eq $found.Count) { 'Passed' } else { 'NotPassed' }) }
+    })
+    $passed = @($cases | Where-Object Outcome -eq Passed).Count
+    return [ordered]@{ Name = 'runbook-cli'; Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
+        Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
+}
+
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport

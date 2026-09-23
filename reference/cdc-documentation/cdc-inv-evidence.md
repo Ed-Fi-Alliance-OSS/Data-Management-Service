@@ -28,8 +28,8 @@ For each exercise, retain the exact snippet ID, repository revision, stable fixt
 and method identifier with provider/case arguments, qualification lane/profile,
 resolved image tag and digest, sanitized artifact reference, and actual outcome.
 Use the existing [qualification entry point](../../eng/ci/Invoke-CdcQualification.ps1)
-and [matrix](../../eng/ci/Get-CdcQualificationMatrix.ps1); documentation checks join
-Contract/PR in T13–T15, and live cases reuse provider/nightly and secured Kafka lanes.
+and [matrix](../../eng/ci/Get-CdcQualificationMatrix.ps1); documentation checks run in
+Contract/PR through T13–T15, and live cases reuse provider/nightly and secured Kafka lanes.
 
 Split each `Both` placeholder into separate PostgreSQL and SQL Server result rows
 when evidence arrives. Also split local and authorization-enabled Kafka evidence.
@@ -102,12 +102,52 @@ described in the [entry point](README.md#supported-deployment).
 | Restamp/disclosure handoff source review, snippet syntax/help and existing restamp/lifecycle/CLI contracts | T11 | Passed: 31 Backend restamp, 596 Backend.Cdc lifecycle/retirement, 493 SchemaTools command/configuration and 36 DocumentCacheAdmin parser/result/exit-code tests; 1156 total, zero failed/skipped. Checked 564 relative links/anchors, 47 paired snippets (46 PowerShell + 1 JSON), 16 existing wrapper parameter sets, both new CLI option sets against built help, production stop-result serialization and named evidence methods. No live provider snippet, consumer-access revocation or platform purge claimed; exact exercises remain T25/T26 and durable snippet wiring T13–T15. |
 | Exact marked command/configuration examples through production host/configuration paths | T13 | Passed: 56 focused cases; full SchemaTools `FullyQualifiedName~Cdc` run 771 passed, zero failed/skipped (.NET SDK 10.0.102, PowerShell 7.4.10, Linux; no live images). [Command checks](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookCommandTests.cs) dispatch 19 marked CLI examples and check help/options; [configuration checks](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookConfigurationTests.cs) execute both marked settings blocks with isolated inputs/overrides, load production settings, render templates and parse the marked acknowledgement; [rejection cases](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookRejectionTests.cs) reuse original controller fixtures for both providers. Deliberate temporary option/provider/settings-field/acknowledgement mutations each failed meaningfully and were restored. Live procedures remain pending; no wrapper/output qualification claimed. |
 | Serialized output, packaged stdout/stderr and exit codes, touched links/anchors | T14 | Full SchemaTools `FullyQualifiedName~Cdc`: 810 passed; final focused documentation/packaged rerun: 102 passed, zero failed/skipped; Admin serialization/exit selection: 56 passed, zero failed/skipped (.NET SDK 10.0.102, Linux; no live images). [Output cases](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookOutputTests.cs) compare marked ready/backlog/unavailable/terminal excerpts with both-provider controller results, omitted lag/percentiles and operation-scoped stop/retire models; the existing [source-mismatch case](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookRejectionTests.cs) now checks its serialized excerpt. [Packaged cases](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookPackagedTests.cs) reuse the separate-process harness for marked commands, one stdout JSON value, watch/diagnostics stderr and 0/1/2/130 exits; controlled controller results are not live qualification. [Link checks](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookLinkTests.cs) cover 12 operator documents, owning-design and E18 anchors; copied field/value/removal and broken-anchor mutations must fail. [Admin cases](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/CdcRunbookHistoryOutputTests.cs) serialize admitted/rejected excerpts for all three operations and map exits 0/10. Those same excerpts are asserted in the existing packaged `CdcPublicationHistoryTests.ReadResult` for both providers; build/discovery passed, live gate/exact-command exercises remain T25/T26. Local reports: `/tmp/dms1326-t14-results/{t14-cdc,t14-final,t14-admin}.trx`. No wrapper/CI or live provider qualification claimed. |
-| Wrapper Pester examples and Contract/PR qualification wiring | T15 | Pending |
+| Wrapper Pester examples and Contract/PR qualification wiring | T15 | Passed: [exported Contract report](evidence/t15-contract/qualification.json) and [exported snippet outcomes](evidence/t15-contract/cdc-runbook-wrappers.json), copied unchanged from `TestResults/cdc-docs-contract-t15-20260922-01`. Linux, .NET SDK 10.0.102, PowerShell 7.6.6, Pester 5.7.1; Contract/offline profile, no live images. Controller unit 4614, CLI 810, Admin output 6, controller offline 418, Pester 502: **6350 passed, zero failed/skipped**. Required-case guards confirm all 14 `CDC-DOC` wrapper IDs (13 distinct snippets) and 65 CLI cases across ten methods. [Bootstrap](../../eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1), [E2E](../../eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1), [lifecycle](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1) and [worker](../../eng/docker-compose/tests/CdcWorkerStartup.Tests.ps1) seams check both providers, forwarding, initial failure/retry, retained custom roots, verified stop/start and interrupted cleanup. [Drift checks](../../eng/docker-compose/tests/CdcRunbookWrappers.Tests.ps1) reject missing/duplicate snippets, arguments, environment/provider changes and undeclared expressions; [runner/export checks](../../eng/ci/tests/CdcQualification.Tests.ps1) reject excluded/skipped/unexecuted required cases and strip private attachment fields. Standalone required Pester command: 502 passed; CI budget/classification: 261 passed. PowerShell analysis and whitespace checks clean. Initial 7.4 run failed existing empty-environment retention cases; final 7.6.6 runs resolved them. Initial E2E mock-argument assertions were corrected before final passing runs. No live provider qualification claimed; T16 onward remain pending. |
 
 E18 owns projection performance and lifecycle evidence; link its workload limits
 when adding tuning guidance. [Production-scale qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 is not assigned to this runbook. Consumer conformance examples likewise remain
 DMS-1324 evidence, not certification of third-party consumer stores.
+
+## Shared Helper and Live Qualification Handoff
+
+The [PowerShell helper](../../eng/docker-compose/tests/cdc-runbook-snippets.ps1) is test-only
+parameter binding; the [.NET excerpt helper](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs)
+is linked into the existing Admin unit/integration projects without NUnit fixture/category
+attributes. Reusing a helper must not move tests out of their provider/suite categories.
+T16 owns the small live snippet-to-command helper and PostgreSQL wiring; later tasks reuse
+it and assert their own discovery. No live execution is supplied by T15's wrapper doubles.
+
+The current [suite filter owner](../../eng/ci/cdc-qualification.psm1) and
+[runner project dispatch](../../eng/ci/Invoke-CdcQualification.ps1) select:
+
+| Suite | Project | Filter (plus `Category=PostgresqlIntegration` or `Category=MssqlIntegration`) |
+| --- | --- | --- |
+| Admission | Backend.Cdc.Tests.Integration | `Category=CdcControllerAdmission` |
+| Lifecycle | Backend.Cdc.Tests.Integration | `Category=CdcControllerManagedLifecycle` |
+| Recovery | Backend.Cdc.Tests.Integration | `Category=CdcControllerNativeRecovery` |
+| RecordSize | Backend.Cdc.Tests.Integration | `Category=CdcControllerRecordSize` |
+| Telemetry | Backend.Cdc.Tests.Integration | `Category=CdcConnectorTelemetryQualification` |
+| History | DocumentCacheAdmin.Tests.Integration | `Category=CdcPublicationHistory` |
+| History cleanup sidecar | Backend.Cdc.Tests.Integration | `Category=CdcArtifactCleanup` |
+| MessageContract | Backend.Cdc.Tests.Integration | `(Category=CdcMessageContractSerialized` OR `Category=CdcMessageContractKafka)` |
+
+Keep `DatabaseIntegration` on live fixtures; Contract's backend selection is
+`Category!=DatabaseIntegration`. The separate Kafka lane selects `CdcControllerKafkaPolicy`
+with `CdcAuthorizationEnabled` / `CdcAuthorizationDisabledLocal`. Provider/nightly and
+secured lanes remain the live evidence owners. The shared helper does not confer provider,
+ACL, API-scenario or consumer qualification. Later tasks own any small filter/discovery
+additions their live cases require.
+
+Contract requires the named `CDC-DOC <snippet-id>` Pester cases (including the separate
+`cdc-managed-start-rejected` case for `cdc-managed-start`) and minimum parameterized counts
+for command/configuration/output/packaged/link checks. Missing, duplicated, excluded,
+skipped or unexecuted required wrapper cases fail. The existing PR Pester selection uses
+the same required-case guard. Admin's six history-output cases also run in Contract.
+`qualification.json` retains those checks and actual outcomes; the exporter publishes
+`wrappers/cdc-runbook-wrappers.json` with only `TestId`, `SnippetId`, `Outcome`.
+The narrowly allowlisted `cdc-runbook-*.json` attachment family excludes settings, raw
+command output, credentials and payloads, even when their values look innocuous.
 
 ## SQL Server Initial User Mapping (T29)
 

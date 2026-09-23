@@ -4,6 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 BeforeAll {
+    . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
     $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 }
 
@@ -52,6 +53,7 @@ Export-ModuleMember -Function *
         # below and in the CDC controller tests; this suite executes both real entry-point wrappers.
         @'
 function Read-BootstrapCdcSettings { param($Path, $DatabaseEngine)
+    Set-Content (Join-Path $PSScriptRoot 'selected-settings') $Path
     return @{ Provider = $DatabaseEngine; Cdc = @{ DataStoreId = '42'; DeploymentKey = 'local'; InstanceKey = 'datastore-42'; Generation = 1 }; ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } }
 }
 function Assert-BootstrapCdcOfflineOwnership { param($Project, [switch]$InfrastructureReady, $DatabaseEngine, $CmsPort)
@@ -295,6 +297,36 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
             { & (Join-Path $script:sandbox "guard-$wrapper.ps1") @parameters } | Should -Throw '*survives without*'
         }
         @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Name | Should -Be $before
+    }
+
+    It 'CDC-DOC <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-bootstrap-local'; Provider = 'postgresql'; Flavor = 'local'; Stem = 'postgresql'; State = 'state-pg' },
+        @{ Id = 'cdc-pg-bootstrap-published'; Provider = 'postgresql'; Flavor = 'published'; Stem = 'postgresql'; State = 'state-pg' },
+        @{ Id = 'cdc-sqlserver-bootstrap-local'; Provider = 'mssql'; Flavor = 'local'; Stem = 'sqlserver'; State = 'state-sqlserver' },
+        @{ Id = 'cdc-sqlserver-bootstrap-published'; Provider = 'mssql'; Flavor = 'published'; Stem = 'sqlserver'; State = 'state-sqlserver' }
+    ) {
+        $invocation = Get-CdcRunbookInvocation $Id $script:sandbox
+        $invocation.Path | Should -Be "eng/docker-compose/bootstrap-$Flavor-dms.ps1"
+        $parameters = $invocation.Parameters
+        $parameters.DatabaseEngine | Should -Be $Provider
+        $parameters.CdcSettingsPath | Should -Be (Join-Path $script:sandbox ".local/cdc/$Stem.json")
+        $parameters.CdcBindingStatePath | Should -Be (Join-Path $script:sandbox ".local/cdc/$State")
+        # Existing admission-failure seam retains the handoff and excludes writer/seed.
+        '' | Set-Content (Join-Path $script:sandbox 'fail')
+        { & (Join-Path $script:sandbox ([IO.Path]::GetFileName($invocation.Path))) @parameters } | Should -Throw '*CDC unavailable*'
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        $calls[1] | Should -Be "configure:$Provider`:edfi_cdc"
+        $calls[2] | Should -Be "provision:$Provider`:True:$($parameters.CdcBindingStatePath):datastore-42:True"
+        $calls[3] | Should -Be "cdc:42:Created:$($parameters.CdcBindingStatePath)"
+        @($calls | Where-Object { $_ -match '^(dms|seed):' }).Count | Should -Be 0
+        (Get-Content (Join-Path $script:sandbox 'selected-settings') -Raw).Trim() | Should -Be $parameters.CdcSettingsPath
+        $retained = Get-Content (Join-Path $script:sandbox 'retained.json') -Raw
+        Remove-Item (Join-Path $script:sandbox 'fail')
+        & (Join-Path $script:sandbox ([IO.Path]::GetFileName($invocation.Path))) @parameters
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        @($calls | Where-Object { $_ -match '^provision:' }).Count | Should -Be 1
+        $calls[-1] | Should -Be "dms:$Provider`:False:False:False:$($parameters.CdcBindingStatePath)/dms.json"
+        (Get-Content (Join-Path $script:sandbox 'retained.json') -Raw) | Should -Be $retained
     }
 
     It 'orders <wrapper>/<provider> through CDC before DMS and seed, including UI' -ForEach @(

@@ -9,6 +9,7 @@ param()
 
 Describe 'CDC infrastructure startup' {
     BeforeAll {
+        . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
         $script:root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         function Get-StartupBlock($Name, $Marker) {
             $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:root $Name), [ref]$null, [ref]$null)
@@ -30,6 +31,21 @@ Describe 'CDC infrastructure startup' {
             $script:calls.Add((@($args | ForEach-Object { $_ }) -join ' '))
             $global:LASTEXITCODE = 0
         }
+    }
+
+    It 'CDC-DOC <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-infrastructure'; Provider = 'postgresql' },
+        @{ Id = 'cdc-sqlserver-infrastructure'; Provider = 'mssql' }
+    ) {
+        $invocation = Get-CdcRunbookInvocation $Id $TestDrive
+        $invocation.Path | Should -Be 'eng/docker-compose/start-local-dms.ps1'
+        $invocation.Parameters.DatabaseEngine | Should -Be $Provider
+        foreach ($key in $invocation.Parameters.Keys) { Set-Variable $key $invocation.Parameters[$key] }
+        $files = @()
+        . (Get-StartupBlock 'start-local-dms.ps1' 'CDC database preparation requires')
+        ($files -contains 'mssql-cdc.yml') | Should -Be ($Provider -eq 'mssql')
+        $files | Should -Not -Contain 'kafka-cdc.yml'
+        $script:calls.Count | Should -Be 0
     }
 
     It '<Script> preserves SQL Server preparation without Kafka selection on <Engine>' -ForEach @(

@@ -496,3 +496,77 @@ Describe 'CDC fixture-level evidence retention' {
         Test-Path (Join-Path $destination 'runtime-settings.json') | Should -BeFalse
     }
 }
+
+Describe 'CDC documentation qualification boundary' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+    }
+    It 'requires every named wrapper case to execute once and pass (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
+    ) {
+        $required = (Get-CdcRunbookPesterReport -Tests @()).Cases
+        $tests = @($required | ForEach-Object { [pscustomobject]@{ ExpandedName = $_.TestId; Result = 'Passed' } })
+        if ($Fault -eq 'excluded') { $tests = $tests[1..($tests.Count - 1)] }
+        if ($Fault -eq 'skipped') { $tests[0].Result = 'Skipped' }
+        if ($Fault -eq 'notrun') { $tests[0].Result = 'NotRun' }
+        if ($Fault -eq 'duplicate') { $tests += $tests[0] }
+        (Get-CdcRunbookPesterReport -Tests $tests).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
+    It 'requires the command settings output packaged and link cases (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }
+    ) {
+        $path = Join-Path $TestDrive 'docs.trx'
+        $required = (Get-CdcRunbookCliReport (Join-Path $TestDrive 'absent.trx')).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            for ($i = 0; $i -lt $case.Required; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        if ($Fault -eq 'excluded') { $nodes = @() }
+        if ($Fault -eq 'partial') { $nodes = $nodes[1..($nodes.Count - 1)] }
+        if ($Fault -eq 'skipped') { $nodes[0] = $nodes[0].Replace('Passed', 'NotExecuted') }
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookCliReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
+    It 'exports only stable snippet test IDs and outcomes, including attachment links' {
+        $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'docs-raw')
+        $safe = Join-Path $TestDrive 'docs-safe'
+        '{"Cases":[{"TestId":"CDC-DOC cdc-managed-stop","SnippetId":"cdc-managed-stop","Outcome":"Passed","Settings":{"key":"unlabelled private value"},"RawOutput":"private output","Credential":"opaque"},{"TestId":"private output","SnippetId":"cdc-managed-start","Outcome":"Passed"}],"Payload":"body"}' |
+            Set-Content (Join-Path $raw 'cdc-runbook-wrappers.json')
+        '<TestRun><Results><UnitTestResult outcome="Passed"><ResultFiles><ResultFile path="private/cdc-runbook-wrappers.json"/></ResultFiles><Output>private output</Output></UnitTestResult></Results></TestRun>' |
+            Set-Content (Join-Path $raw 'docs.trx')
+        '{"key":"opaque"}' | Set-Content (Join-Path $raw 'settings.json')
+        Export-CdcQualificationEvidence $raw $safe
+        $cases = Get-Content (Join-Path $safe 'cdc-runbook-wrappers.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $cases.Count | Should -Be 1
+        $cases[0].TestId | Should -Be 'CDC-DOC cdc-managed-stop'
+        $cases[0].SnippetId | Should -Be 'cdc-managed-stop'
+        $cases[0].Outcome | Should -Be 'Passed'
+        @($cases[0].PSObject.Properties.Name | Sort-Object) | Should -Be @('Outcome', 'SnippetId', 'TestId')
+        [xml] $trx = Get-Content (Join-Path $safe 'docs.trx') -Raw
+        Test-Path (Join-Path $safe $trx.TestRun.Results.UnitTestResult.ResultFiles.ResultFile.path) | Should -BeTrue
+        (Get-ChildItem $safe -File | Get-Content -Raw) -join '' | Should -Not -Match 'private|opaque|body|Settings|RawOutput|Credential|Payload'
+        Test-Path (Join-Path $safe 'settings.json') | Should -BeFalse
+    }
+    It 'keeps wrapper checks in Contract and the existing PR Pester selection' {
+        $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-dms-pullrequest.yml') -Raw
+        foreach ($text in @($runner, $workflow)) {
+            $text | Should -Match 'eng/docker-compose/tests/Cdc\*\.Tests.ps1'
+            $text | Should -Match 'Get-CdcRunbookPesterReport'
+        }
+        $runner | Should -Match 'Get-CdcRunbookCliReport'
+    }
+    It 'preserves provider and suite filters for shared helper consumers on <Provider>' -ForEach @(
+        @{ Provider = 'Postgresql' }, @{ Provider = 'Mssql' }
+    ) {
+        $suites = Get-CdcQualificationProviderSuite $Provider
+        $suites.History | Should -Be "Category=CdcPublicationHistory&Category=$($Provider)Integration"
+        $source = Get-Content (Join-Path $PSScriptRoot '../../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs') -Raw
+        $source | Should -Match ('Category = "' + $Provider + 'Integration"')
+        $source | Should -Match '\[Category\("CdcPublicationHistory"\)\]'
+        $source | Should -Match '\[Category\("DatabaseIntegration"\)\]'
+        $source | Should -Match 'CdcRunbookExamples.AssertExcerpt'
+    }
+}

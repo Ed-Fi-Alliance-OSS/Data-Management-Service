@@ -117,6 +117,8 @@ try {
         if ($selected -eq 'Contract') {
             Invoke-QualificationSuite -Name 'controller-unit' -Project 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj'
             Invoke-QualificationSuite -Name 'cli-unit' -Project 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj' -Filter 'FullyQualifiedName~Cdc'
+            $reports.Add((Get-CdcRunbookCliReport -Path (Join-Path $raw 'cli-unit/cli-unit.trx')))
+            Invoke-QualificationSuite -Name 'runbook-admin' -Project 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj' -Filter 'FullyQualifiedName~Given_Cdc_runbook_history_output'
             Invoke-QualificationSuite -Name 'controller-offline' -Project $backend -Filter 'Category!=DatabaseIntegration'
             Import-Module Pester -MinimumVersion 5.7.1
             $config = New-PesterConfiguration
@@ -125,6 +127,12 @@ try {
             $config.Output.Verbosity = 'Detailed'
             & { $script:qualificationPesterResult = Invoke-Pester -Configuration $config } *> (Join-Path $raw 'pester-private.log')
             $result = $script:qualificationPesterResult
+            $documentation = Get-CdcRunbookPesterReport -Tests @($result.Tests)
+            $reports.Add($documentation)
+            $wrapperDirectory = New-Item -ItemType Directory (Join-Path $raw 'wrappers')
+            $documentation | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $wrapperDirectory 'cdc-runbook-wrappers.json')
+            Export-CdcQualificationEvidence -RawDirectory $wrapperDirectory -Destination (Join-Path $destination 'wrappers')
+
             $success = $result.TotalCount -gt 0 -and $result.PassedCount -eq $result.TotalCount -and
                 $result.FailedContainersCount -eq 0 -and $result.FailedBlocksCount -eq 0
             $reports.Add([ordered]@{ Name = 'wrappers'; Status = $(if ($success) { 'Passed' } else { 'Failed' });

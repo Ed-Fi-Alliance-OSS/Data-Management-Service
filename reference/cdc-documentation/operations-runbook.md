@@ -78,11 +78,24 @@ Marked `cdc-output-*` blocks are JSON result excerpts, never executable input or
 provenance. They need no substitutions; tests compare fixed selected fields and omit
 volatile identities/timestamps. All other marked runnable examples are inputs to the focused checks. T13 checks CLI
 commands, settings and acknowledgement inputs; T14 checks result excerpts, packaged
-output and links. T15 owns wrapper/qualification wiring. Illustrative output is separately identified for
+output and links. T15 checks wrapper invocations in the existing Contract/PR fixtures. Illustrative output is separately identified for
 checks against production serialization fixtures. Reserved IDs, unmarked blocks
 and prose must not be executed.
 The [evidence index](cdc-inv-evidence.md#recording-results) distinguishes parser checks
 from live provider exercises.
+
+The test-only [wrapper snippet helper](../../eng/docker-compose/tests/cdc-runbook-snippets.ps1)
+binds the exact selected `pwsh` invocation against the shipped parameter block;
+it does not execute surrounding prose or wrapper infrastructure. Declared fixture
+substitutions map `./.local/cdc/` beneath an owned temporary root and the selected
+`.env`/`.env.e2e` to fixture environment paths. Existing wrapper seams supply the
+CMS-selected target `42`, schema/provisioning receipts and provider admission results;
+the lifecycle fixture supplies its retained peer inventory/custom roots. Provider tokens,
+settings/state basenames, database selection, switches and test filter remain the marked
+inputs. These checks prove binding/forwarding and failure ordering, not live readiness.
+The [qualification handoff](cdc-inv-evidence.md#shared-helper-and-live-qualification-handoff)
+identifies the existing live suite owners.
+
 
 <a id="postgresql-setup"></a>
 
