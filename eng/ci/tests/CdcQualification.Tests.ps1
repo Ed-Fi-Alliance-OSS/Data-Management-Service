@@ -134,6 +134,8 @@ $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Runner) '../..'))
 $qualified = Get-Content (Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
 $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
+$env:CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE = 'fixture-redpanda:latest'
+$env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'fixture-postgres:latest'
 function global:docker {
     $global:LASTEXITCODE = 0
     if ($args[0] -eq 'pull' -and $args[-1] -eq $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE) {
