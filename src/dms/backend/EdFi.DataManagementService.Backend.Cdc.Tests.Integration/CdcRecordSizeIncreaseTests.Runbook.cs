@@ -59,6 +59,9 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
         runtimeSettings["ConfigurationServiceSettings:ClientSecret"] = _commandRuntime.SecretFromEnvironment;
         runtimeSettings["Cdc:Timing:CallMilliseconds"] = "180000";
         runtimeSettings["Cdc:Timing:WaitMilliseconds"] = "300000";
+        // Match the public setup snippets: SQL Server capture/poll cadence can exceed
+        // the shared observation helper's one-second threshold while caught up.
+        runtimeSettings["Cdc:LagThresholdMilliseconds"] = "5000";
         await CdcRunbookLiveCommands.WriteSettingsAsync(
             _fixture,
             provider,

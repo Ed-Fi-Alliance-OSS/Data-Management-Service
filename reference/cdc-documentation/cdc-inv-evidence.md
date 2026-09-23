@@ -79,7 +79,7 @@ described in the [entry point](README.md#supported-deployment).
 | [Effective-access qualification](operations-runbook.md#security-consumer-evidence) | [CDC-INV-12/15; security](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations) | Provider-neutral Kafka fixture, including SQL Server history artifact | [Given_authorized_three_broker_cdc_policy](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.cs) — `It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts`; `It_allows_only_the_configured_public_topic_and_consumer_group` (a/b); `It_denies_cross_binding_and_internal_reads` (all topic/group cases); `It_denies_consumer_writes_and_connector_access_to_worker_offsets`; `It_preserves_unavailable_acl_authority_when_description_is_denied`; `It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant` (all six cases). Same file: `Given_explicit_authorization_disabled_local_kafka_policy.It_labels_local_policy_without_claiming_acl_or_production_durability_proof` | `cdc-access-inspect` | Pending; authorization-enabled three-broker and explicitly separate authorization-disabled local profiles; exact images recorded by runner | Pending — no live snippet artifact | T08 source/contract review only; live exercise pending T20. Fixture proof never certifies operator resources |
 | [Consumer-owner reference evidence](operations-runbook.md#consumer-owner-proof-and-invalidation-handoff) | [CDC-INV-13/15; public consumer bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap) | Provider-neutral consumer assertions hosted by PostgreSQL fixture | [Given_MessageContractConsumerBroker](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs) — `MC-CONSUMER-BROKER-BOOTSTRAP-DURABILITY`, `MC-CONSUMER-BROKER-ORDERING`, `MC-CONSUMER-BROKER-IDLE-RENEWAL`, `MC-CONSUMER-BROKER-CONTINUATION`, `MC-CONSUMER-BROKER-CHECKPOINT-MISSING`, `MC-CONSUMER-BROKER-CHECKPOINT-CORRUPT`; [bootstrap](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrapTests.cs) and [continuity](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerContinuityTests.cs) unit deadline/fault cases | `cdc-consumer-evidence` | Pending broker snippet; real Kafka transport, synthetic public values, simulated durable store/clock | Pending — no live snippet artifact | T08 source review and unit checks only; exact MessageContract lane pending T20. Independent stores need their own durable/capacity evidence |
 | [Coordinated record-size increase](operations-runbook.md#record-size-increase) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase); [CDC-INV-07 sizing](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size) | PostgreSQL | [Given_Cdc_Controller_Record_Size_Increase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.cs) — `It_orders_a_confirmed_increase_and_preserves_identity` (false/true inventories); `It_rejects_incomplete_or_mismatched_confirmation_without_mutation`; `It_requires_renewed_confirmation_at_every_interrupted_boundary`; [producer case](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Producer.cs) — `It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment`. [Given_CdcRecordSizeAcknowledgement](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeAcknowledgementTests.cs) — `It_requires_updated_evidence_for_changed_consumer_deployments`; `It_requires_new_capacity_evidence_for_a_later_higher_ceiling` (unit). [Given_CdcRecordSizeIncrease](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeIncreaseTests.cs) — `It_keeps_fully_aligned_interrupted_rollout_blocking_ordinary_commands`; `It_rejects_out_of_order_or_unknown_limits_without_effects` (unit). [Marked-command fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs) — `It_executes_marked_record_size_increase_with_explicit_inventory` (false/true); `It_executes_marked_record_size_retry_after_partial_broker_change` | `cdc-size-no-consumers`, `cdc-size-consumers`, `cdc-size-increase`, `cdc-size-retry` | LocalSingleBroker / AuthorizationDisabledLocal; immutable images in [run details](evidence/t23-postgresql-record-size/run-details.json) | [T23 qualification](#postgresql-record-size-qualification-t23), [marked commands](evidence/t23-postgresql-record-size/marked-commands.json), [rollout evidence](evidence/t23-postgresql-record-size/rollout-observations.json) | Passed T23: 20 live cases, 9 marked invocations; no independent consumer/ACL certification |
-| [Coordinated record-size increase](operations-runbook.md#record-size-increase) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase); [CDC-INV-07 sizing](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size) | SQL Server | [Given_Cdc_Controller_Record_Size_Increase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.cs) — `It_orders_a_confirmed_increase_and_preserves_identity` (false/true inventories); `It_rejects_incomplete_or_mismatched_confirmation_without_mutation`; `It_requires_renewed_confirmation_at_every_interrupted_boundary`; [producer case](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Producer.cs) — `It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment`. [Given_CdcRecordSizeAcknowledgement](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeAcknowledgementTests.cs) — `It_requires_updated_evidence_for_changed_consumer_deployments`; `It_requires_new_capacity_evidence_for_a_later_higher_ceiling` (unit). [Given_CdcRecordSizeIncrease](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeIncreaseTests.cs) — `It_keeps_fully_aligned_interrupted_rollout_blocking_ordinary_commands`; `It_rejects_out_of_order_or_unknown_limits_without_effects` (unit). Exact live snippet wiring pending | `cdc-size-no-consumers`, `cdc-size-consumers`, `cdc-size-increase`, `cdc-size-retry` | Pending | Pending — no live snippet artifact | Documented T09; live exercise pending T24 |
+| [Coordinated record-size increase](operations-runbook.md#record-size-increase) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase); [CDC-INV-07 sizing](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size) | SQL Server | [Given_Cdc_Controller_Record_Size_Increase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.cs) — `It_orders_a_confirmed_increase_and_preserves_identity` (false/true inventories); `It_rejects_incomplete_or_mismatched_confirmation_without_mutation`; `It_requires_renewed_confirmation_at_every_interrupted_boundary`; [producer case](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Producer.cs) — `It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment`. [Given_CdcRecordSizeAcknowledgement](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeAcknowledgementTests.cs) — `It_requires_updated_evidence_for_changed_consumer_deployments`; `It_requires_new_capacity_evidence_for_a_later_higher_ceiling` (unit). [Given_CdcRecordSizeIncrease](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeIncreaseTests.cs) — `It_keeps_fully_aligned_interrupted_rollout_blocking_ordinary_commands`; `It_rejects_out_of_order_or_unknown_limits_without_effects` (unit). [Marked-command fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs) — `It_executes_marked_record_size_increase_with_explicit_inventory` (false/true); `It_executes_marked_record_size_retry_after_partial_broker_change` | `cdc-size-no-consumers`, `cdc-size-consumers`, `cdc-size-increase`, `cdc-size-retry` | LocalSingleBroker / AuthorizationDisabledLocal; immutable images in [run details](evidence/t24-sqlserver-record-size/run-details.json) | [T24 qualification](#sqlserver-record-size-qualification-t24), [marked commands](evidence/t24-sqlserver-record-size/marked-commands.json), [rollout evidence](evidence/t24-sqlserver-record-size/rollout-observations.json) | Passed T24: 20 live cases, 9 marked invocations; no independent consumer/ACL certification |
 | [Guarded generation retirement](operations-runbook.md#generation-retirement) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding) | PostgreSQL | [Given_CdcArtifactCleanupProviderDatabase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs) — `It_removes_provider_artifacts_and_only_owned_unused_database_jobs`; `It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion`; `It_rejects_broad_or_orphaned_provider_artifacts`; `It_rejects_a_different_live_physical_source`; `It_reconciles_actual_committed_deletion_after_lost_response`. [Managed lifecycle fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history` (offset-removal interruption, partial cleanup, incident/state last, history/peer retention). Live snippet wiring pending | `cdc-retire` | Pending | Pending — no artifact | Documented T10; live exercise pending T25 |
 | [Guarded generation retirement](operations-runbook.md#generation-retirement) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding) | SQL Server | [Given_CdcArtifactCleanupProviderDatabase](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs) — `It_removes_provider_artifacts_and_only_owned_unused_database_jobs`; `It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion`; `It_rejects_broad_or_orphaned_provider_artifacts`; `It_rejects_a_different_live_physical_source`; `It_reconciles_actual_committed_deletion_after_lost_response`. [Managed lifecycle fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history` (offset-removal interruption, partial cleanup, incident/state last, history/peer retention). Live snippet wiring pending | `cdc-retire` | Pending | Pending — no artifact | Documented T10; live exercise pending T26 |
 | [Destructive stack teardown](operations-runbook.md#stack-teardown) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding) | PostgreSQL | [CdcLifecycleOrdering.Tests.ps1](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1) — `performs governed generation cleanup for every peer before removing volumes`; `retains partial cleanup and retries controller retirement before volume deletion`; `restores stopped infrastructure without resuming before destructive cleanup`; `resumes retired <project>/<provider> teardown after removal of <removed>`; `resumes cleanup after one inventoried file was removed and preserves cleanup authority`; `retains nested state at <location> and gives a sanitized protection diagnostic`. [E2ETeardownSafety.Tests.ps1](../../eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1) — `covers both compose projects: the local primitive then the published primitive`. Live snippet wiring pending | `cdc-stack-teardown`, `cdc-e2e-teardown` | Pending | Pending — no artifact | Documented T10; live exercise pending T25 |
@@ -730,5 +730,83 @@ Initial test-helper/compile rehearsals were corrected before qualification; the
 successful three-case rehearsal is separate from this complete fresh lane. Exported
 artifacts use the existing sanitized evidence path and omit raw settings, credentials,
 provider logs and document bodies. No consumer product, ACL isolation, production
-capacity, multi-binding, or SQL Server live procedure qualification is claimed here;
-T24 remains pending.
+capacity or multi-binding qualification is claimed here. SQL Server live procedure
+qualification is recorded separately in [T24](#sqlserver-record-size-qualification-t24).
+
+<a id="sqlserver-record-size-qualification-t24"></a>
+
+## SQL Server record-size qualification (T24)
+
+The fresh `Mssql / RecordSize` selection passed **20/20** cases, with no failures,
+skips or SQL Server startup failures. The separate required-case guard passed all
+seven methods, including the three marked-command cases. See
+[qualification](evidence/t24-sqlserver-record-size/qualification.json),
+[case outcomes](evidence/t24-sqlserver-record-size/controller-results.json),
+[run inputs and immutable images](evidence/t24-sqlserver-record-size/run-details.json),
+[qualified worker](evidence/t24-sqlserver-record-size/qualified-image.json) and
+[focused checks](evidence/t24-sqlserver-record-size/checks.json).
+
+The shared [provider-parameterized fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs)
+uses the T23 packaged command/settings harness with fixture-owned SQL Server 2025,
+Kafka and Connect services, original managed state, and the packaged-test CMS/schema
+workspace. The marked cases use the shipped Compose broker-size adapter. Their
+SQL Server identities come from the admitted binding; the acknowledgement provider
+is `SqlServer`. Only declared fixture substitutions are applied. Immutable image
+identities and source/snippet hashes are retained in the run details. The local
+profile reports `aclIsolationProven: false`.
+
+[Marked command results](evidence/t24-sqlserver-record-size/marked-commands.json)
+record nine invocations:
+
+- Both `cdc-size-no-consumers` and `cdc-size-consumers` load the exact marked JSON
+  and drive `cdc-size-increase` against live services. Each rejects missing
+  `--confirm-consumer-capacity` with exit `2` and unchanged limits, then completes
+  with exit `0`, `succeeded: true`, `data.succeeded: true`, `data.ready: true` and
+  the original operation ID.
+- `cdc-size-retry` follows a fixture-only cancellation after a real broker change.
+  Pending intent, old topic/producer limits, original settings and the broker
+  override remain; ordinary validate/watch/restart stay not ready. Missing renewed
+  confirmation rejects without advancing limits. The packaged retry retains the
+  operation, binding and ceilings, renews revision-2 consumer capacity evidence,
+  retains two distinct invocation acknowledgements and completes without offset reset.
+- Three post-update `cdc-validate` calls return exit `1`, `preStartEligible: true`,
+  `publicationReady: false` and `Projection/Unavailable`. The standalone validator
+  does not start its projector; these observations do not negate or replace the
+  completed increase result.
+
+[Rollout observations](evidence/t24-sqlserver-record-size/rollout-observations.json)
+verify **1,000,000 → 2,000,000** record bytes and
+**33,554,432 → 67,108,864** producer-buffer bytes, broker read-back, retained
+source-partition/topic identity and non-size connector configuration. The CLI leaves
+settings unchanged. After success, the fixture updates only `Cdc:MaxRecordBytes`
+and `Cdc:ProducerBufferBytes` and verifies the broker override remains intact.
+The existing Compose-persistence case also passes broker/worker replacement and
+retained-history checks.
+
+All seven interruption boundaries, six incomplete/mismatched-confirmation cases,
+and real over-budget producer recovery passed. Both-provider unit evidence covers
+changed consumer deployments, reused capacity evidence and changed requested
+ceilings. The T23 invocation-owned projector fix requires no SQL Server-specific
+change; its ordering, rejection and startup-failure regressions passed under the
+[owning rollout contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase).
+The producer case observes `RecordTooLargeException` and replay of the uncommitted
+materialized record after alignment. This bounds operational capacity evidence;
+the [message-size contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size)
+continues to own serialized-size semantics.
+
+The first selection was cancelled after its marked no-consumers command timed out:
+observed lag was 1,012 ms against the shared helper's 1,000 ms threshold. The
+record-size cases now use the 5,000 ms threshold in both public setup snippets;
+SQL Server capture/poll cadence can exceed one second while caught up. The complete
+fresh selection above supplies acceptance. This is a fixture configuration correction;
+production readiness and other observation fixtures are unchanged. A second full
+selection passed 19/20: the marked retry failed during Compose worker startup,
+before its command ran, with SQL Server ready. An isolated retry passed 1/1 with
+no further implementation change. The third complete selection supplies the
+passing evidence above; neither earlier attempt is counted as qualification.
+
+Artifacts use the existing sanitized exporter and omit raw settings,
+credentials, provider logs, document bodies and raw offset positions. Consumer
+attestations remain operator evidence; this run does not certify independent
+consumer products, ACL isolation, production capacity, multi-binding deployments,
+exact serialized thresholds or API-driven message scenarios.

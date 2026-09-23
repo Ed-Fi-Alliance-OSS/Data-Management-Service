@@ -1,0 +1,82 @@
+[
+  {
+    "Test": "It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation(\"outdated\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(3,True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation(\"inventory\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation(\"scope\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(5,True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation(\"omitted\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_orders_a_confirmed_increase_and_preserves_identity(True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(1,True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(0,False)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(1,False)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(False)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_orders_a_confirmed_increase_and_preserves_identity(False)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation(\"deployment\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation(\"ceiling\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_executes_marked_record_size_retry_after_partial_broker_change",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(2,True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_requires_renewed_confirmation_at_every_interrupted_boundary(4,True)",
+    "Outcome": "Passed"
+  }
+]

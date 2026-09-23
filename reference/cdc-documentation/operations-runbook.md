@@ -30,7 +30,7 @@ for current command details and the linked design owners for support boundaries.
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
-| Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 exercise pending |
+| Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 live qualification passed |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; live exercise T25/T26 pending |
 | Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; live exercise T25/T26 pending |
 | Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — documented; T25/T26 exercise pending |
@@ -2226,7 +2226,7 @@ results and their simulated-store limitation, not an inferred consumer conforman
 
 ## Coordinated record-size increase
 
-**Documented in T09; exact live snippets pending T23/T24.** Use the
+**Documented in T09; exact live snippets qualified for [PostgreSQL (T23)](cdc-inv-evidence.md#postgresql-record-size-qualification-t23) and [SQL Server (T24)](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24).** Use the
 [in-place increase owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
 and [ADR sizing contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size).
 The [SchemaTools reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
@@ -2466,9 +2466,9 @@ cover renewal and changed-consumer evidence; the
 cover interruption boundaries, lost responses, not-ready gating and ordered effective
 limits for both providers. [PostgreSQL T23 qualification](cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
 exercises both marked acknowledgement inputs, the increase/retry commands and the
-post-success settings handoff through the packaged CLI. SQL Server live qualification
-remains pending T24. The producer-recovery fixture supplies bounded operational size
-evidence; neither payload length nor an HTTP request limit defines Kafka's exact
+post-success settings handoff through the packaged CLI. [SQL Server T24 qualification](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
+passes the same provider-parameterized cases. The producer-recovery fixture supplies
+bounded operational size evidence; neither payload length nor an HTTP request limit defines Kafka's exact
 serialized-record threshold.
 
 <a id="generation-retirement"></a>
