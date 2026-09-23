@@ -321,6 +321,122 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
+    public async Task It_captures_a_new_post_target_without_validating_an_update_only_custom_view()
+    {
+        // Co-batched, the update branch's view would be validated and sent before the capture decides the
+        // target, applying that branch's configuration to a create.
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract")
+        );
+
+        var resolution = await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+            .ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        resolution.Outcome.ExecutionRequest.CustomViewAuthorization.Should().BeNull();
+        validationExecutor.ExecutedCommands.Should().BeEmpty();
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_validates_an_update_only_custom_view_after_capturing_an_existing_post_target()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract")
+        );
+
+        var act = async () =>
+            await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+                .ResolveAsync(input, session);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithATag");
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_runs_an_update_only_custom_view_as_its_own_segment_after_capturing_an_existing_post_target()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable())
+        );
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        await CreateSut(customViewValidationCommandExecutor: validationExecutor).ResolveAsync(input, session);
+
+        validationExecutor.ExecutedCommands.Should().ContainSingle();
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContain("SchoolWithATag");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_keeps_co_batching_a_custom_view_shared_by_both_post_actions()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+                CreateAuthorizationTable()
+            )
+        );
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        await CreateSut(customViewValidationCommandExecutor: validationExecutor).ResolveAsync(input, session);
+
+        validationExecutor.ExecutedCommands.Should().ContainSingle();
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().Contain("SchoolWithATag");
+    }
+
+    [Test]
     public async Task It_attributes_a_co_batched_stored_security_configuration_failure_on_a_post_to_update()
     {
         var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with

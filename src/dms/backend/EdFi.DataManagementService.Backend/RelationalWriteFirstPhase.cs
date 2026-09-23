@@ -310,7 +310,12 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         // is already executed and validated in configured order.
         var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionCustomViewRuns(input);
 
-        if (customViewsAfterNamespace.Count > 0)
+        if (
+            customViewsAfterNamespace.Count > 0
+            // Distinct POST action policies: a view emitted here is validated and sent before the capture decides
+            // the target, so it would apply the existing-document branch's configuration to a create.
+            || (input.PostTargetAuthorizationBundles is not null && customViewsBeforeNamespace.Count > 0)
+        )
         {
             return null;
         }
