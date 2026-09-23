@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Security.Model;
 
 namespace EdFi.DataManagementService.Core.Pipeline;
 
@@ -182,6 +183,18 @@ internal class RequestInfo(
     /// ResourceActionAuthStrategies for the request
     /// </summary>
     public IReadOnlyList<string> ResourceActionAuthStrategies { get; set; } = [];
+
+    /// <summary>
+    /// What the claim set grants a POST for Create and for Update, kept to render the denial or
+    /// security-configuration failure of whichever action the target selects. Null for other methods.
+    /// </summary>
+    public UpsertActionPolicies? UpsertActionPolicies { get; set; }
+
+    /// <summary>
+    /// The Create and Update policies a POST hands the backend, built from
+    /// <see cref="UpsertActionPolicies"/>. Null for other methods.
+    /// </summary>
+    public UpsertActionAuthorization? UpsertActionAuthorization { get; set; }
 
     /// <summary>
     /// The application context resolved for a request that requires ownership configuration.

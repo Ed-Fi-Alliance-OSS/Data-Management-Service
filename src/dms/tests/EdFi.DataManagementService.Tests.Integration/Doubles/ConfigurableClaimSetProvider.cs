@@ -9,9 +9,13 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 
 namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
+/// <param name="resolveStrategyNames">
+/// The strategies the claim set configures for a resource and action, or <see langword="null"/> when the claim
+/// set does not grant that action on the resource at all.
+/// </param>
 internal sealed class ConfigurableClaimSetProvider(
     FixtureContext fixture,
-    Func<QualifiedResourceName, string, IReadOnlyList<string>> resolveStrategyNames,
+    Func<QualifiedResourceName, string, IReadOnlyList<string>?> resolveStrategyNames,
     bool grantReadChanges = false
 ) : IClaimSetProvider
 {
@@ -36,15 +40,19 @@ internal sealed class ConfigurableClaimSetProvider(
     {
         var resourceClaims = fixture
             .Resources.SelectMany(resource =>
-                Actions.Select(action => new ResourceClaim(
-                    Name: $"{Conventions.EdFiOdsResourceClaimBaseUri}/{resource.ProjectName.ToLowerInvariant()}/{resource.ResourceName.ToLowerInvariant()}",
-                    Action: action,
-                    AuthorizationStrategies:
-                    [
-                        .. resolveStrategyNames(resource, action)
-                            .Select(static strategyName => new AuthorizationStrategy(strategyName)),
-                    ]
-                ))
+                Actions
+                    .Select(action => (Action: action, StrategyNames: resolveStrategyNames(resource, action)))
+                    .Where(static grant => grant.StrategyNames is not null)
+                    .Select(grant => new ResourceClaim(
+                        Name: $"{Conventions.EdFiOdsResourceClaimBaseUri}/{resource.ProjectName.ToLowerInvariant()}/{resource.ResourceName.ToLowerInvariant()}",
+                        Action: grant.Action,
+                        AuthorizationStrategies:
+                        [
+                            .. grant.StrategyNames!.Select(static strategyName => new AuthorizationStrategy(
+                                strategyName
+                            )),
+                        ]
+                    ))
             )
             .ToList();
 

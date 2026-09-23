@@ -7,9 +7,11 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -35,6 +37,12 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var mappingSet = RequireMappingSet(requestInfo, "upsert");
+        var actionAuthorization =
+            requestInfo.UpsertActionAuthorization
+            ?? throw new InvalidOperationException(
+                "A POST reached the upsert handler without its Create and Update authorization policies. "
+                    + "Ensure ResourceActionAuthorizationMiddleware and ProvideAuthorizationFiltersMiddleware run first."
+            );
 
         var upsertResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -61,10 +69,7 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {
-                        // Core still resolves one action list for POST, so both branches receive it.
-                        ActionAuthorization = UpsertActionAuthorization.SamePolicyForCreateAndUpdate(
-                            requestInfo.AuthorizationStrategyEvaluators
-                        ),
+                        ActionAuthorization = actionAuthorization,
                         AuthorizationContext = RelationalAuthorizationContext.Create(
                             requestInfo.ClientAuthorizations,
                             requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
@@ -203,11 +208,13 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            UpsertFailureSecurityConfiguration failure => CreateSecurityConfigurationFailureResponse(
-                _logger,
+            UpsertFailureTargetActionNotPermitted notPermitted => CreateTargetActionNotPermittedResponse(
                 requestInfo,
-                failure.Errors,
-                failure.Diagnostics
+                notPermitted.Action
+            ),
+            UpsertFailureSecurityConfiguration failure => CreateTargetActionSecurityConfigurationResponse(
+                requestInfo,
+                failure
             ),
             UpsertFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
@@ -238,4 +245,68 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
             ),
         };
     }
+
+    /// <summary>
+    /// Renders the action the POST's target selected exactly as the middleware renders an action the request
+    /// maps to: a denial, or a grant that configures no strategies.
+    /// </summary>
+    private FrontendResponse CreateTargetActionNotPermittedResponse(
+        RequestInfo requestInfo,
+        UpsertTargetAction action
+    ) =>
+        RequireUpsertActionPolicies(requestInfo).For(action) switch
+        {
+            UpsertActionPolicyEvidence.Denied denied =>
+                ResourceActionAuthorizationResponses.CreateActionDeniedResponse(
+                    requestInfo,
+                    denied.ActionName,
+                    denied.ResourceClaimName,
+                    denied.ClaimSetName
+                ),
+            UpsertActionPolicyEvidence.NoStrategies noStrategies =>
+                ResourceActionAuthorizationResponses.CreateNoStrategiesSecurityConfigurationResponse(
+                    _logger,
+                    requestInfo,
+                    noStrategies.ActionName,
+                    noStrategies.MatchedResourceClaimUris,
+                    noStrategies.MatchedResourceClaimName
+                ),
+            var evidence => throw new InvalidOperationException(
+                $"The backend refused the {evidence.ActionName} action, which the request's claim set permits."
+            ),
+        };
+
+    /// <summary>
+    /// Logs a POST security-configuration failure against the action its target selected and that action's
+    /// configured strategies. The backend names that action on every such failure.
+    /// </summary>
+    private FrontendResponse CreateTargetActionSecurityConfigurationResponse(
+        RequestInfo requestInfo,
+        UpsertFailureSecurityConfiguration failure
+    )
+    {
+        UpsertTargetAction action =
+            failure.TargetAction
+            ?? throw new InvalidOperationException(
+                "A POST security-configuration failure must name the action its target selected."
+            );
+        UpsertActionPolicyEvidence evidence = RequireUpsertActionPolicies(requestInfo).For(action);
+
+        return CreateSecurityConfigurationFailureResponse(
+            _logger,
+            requestInfo,
+            failure.Errors,
+            failure.Diagnostics,
+            cmsAction: evidence.ActionName,
+            configuredStrategyNames: evidence is UpsertActionPolicyEvidence.Permitted permitted
+                ? permitted.StrategyNames
+                : []
+        );
+    }
+
+    private static UpsertActionPolicies RequireUpsertActionPolicies(RequestInfo requestInfo) =>
+        requestInfo.UpsertActionPolicies
+        ?? throw new InvalidOperationException(
+            "A POST reached the upsert handler without its Create and Update authorization evidence."
+        );
 }

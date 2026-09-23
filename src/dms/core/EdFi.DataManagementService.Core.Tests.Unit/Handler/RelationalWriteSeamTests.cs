@@ -832,21 +832,26 @@ actual: {requestInfo.FrontendResponse.Body}
                 RouteQualifiers: []
             );
 
-            return new RequestInfo(frontendRequest, method, _serviceProvider)
+            var requestInfo = new RequestInfo(frontendRequest, method, _serviceProvider)
             {
                 ResourceInfo = _resourceInfo,
                 DocumentInfo = documentInfo,
                 ParsedBody = parsedBody,
                 MappingSet = mappingSet,
                 BackendProfileWriteContext = backendProfileWriteContext,
-                AuthorizationStrategyEvaluators =
-                    method == RequestMethod.POST ? TestHelper.NoFurtherAuthorizationRequiredEvaluators : [],
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("students"),
                     Operation: new ResourcePathOperation.ById(documentUuid)
                 ),
             };
+
+            if (method == RequestMethod.POST)
+            {
+                SetUpsertActionPolicies(requestInfo, NoFurtherAuthorizationRequiredUpsertActionPolicies);
+            }
+
+            return requestInfo;
         }
     }
 

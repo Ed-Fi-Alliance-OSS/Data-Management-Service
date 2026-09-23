@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -46,8 +47,8 @@ public static class TestHelper
     }
 
     /// <summary>
-    /// A relational request that has passed resource action authorization for a POST, which always leaves
-    /// at least one strategy in place; <c>NoFurtherAuthorizationRequired</c> keeps it free of record checks.
+    /// A relational request that has passed resource action authorization for a POST, with Create and Update
+    /// both granted <c>NoFurtherAuthorizationRequired</c>, which keeps the write free of record checks.
     /// </summary>
     internal static RequestInfo UpsertRequestInfoWithRelationalMappingSet(
         string traceId = "",
@@ -55,18 +56,45 @@ public static class TestHelper
     )
     {
         var requestInfo = RequestInfoWithRelationalMappingSet(traceId, serviceProvider);
-        requestInfo.AuthorizationStrategyEvaluators = NoFurtherAuthorizationRequiredEvaluators;
+        SetUpsertActionPolicies(requestInfo, NoFurtherAuthorizationRequiredUpsertActionPolicies);
         return requestInfo;
     }
 
-    internal static AuthorizationStrategyEvaluator[] NoFurtherAuthorizationRequiredEvaluators =>
-        [
-            new AuthorizationStrategyEvaluator(
-                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
-                [],
-                FilterOperator.Or
+    internal static UpsertActionPolicies NoFurtherAuthorizationRequiredUpsertActionPolicies =>
+        new(
+            new UpsertActionPolicyEvidence.Permitted(
+                "Create",
+                [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
             ),
-        ];
+            new UpsertActionPolicyEvidence.Permitted(
+                "Update",
+                [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+            )
+        );
+
+    /// <summary>
+    /// Places POST authorization evidence on the request with the backend policy pair built from it, as the
+    /// resource action authorization and authorization filter middlewares leave them.
+    /// </summary>
+    internal static void SetUpsertActionPolicies(RequestInfo requestInfo, UpsertActionPolicies policies)
+    {
+        requestInfo.UpsertActionPolicies = policies;
+        requestInfo.UpsertActionAuthorization = new UpsertActionAuthorization(
+            ToPolicy(policies.Create),
+            ToPolicy(policies.Update)
+        );
+
+        static UpsertActionPolicy ToPolicy(UpsertActionPolicyEvidence evidence) =>
+            evidence is UpsertActionPolicyEvidence.Permitted permitted
+                ? new UpsertActionPolicy.Permitted([
+                    .. permitted.StrategyNames.Select(static name => new AuthorizationStrategyEvaluator(
+                        name,
+                        [],
+                        FilterOperator.Or
+                    )),
+                ])
+                : UpsertActionPolicy.NotPermitted.Instance;
+    }
 
     /// <summary>
     /// A scoped service provider carrying the one service the paging middlewares resolve off the

@@ -14,8 +14,12 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -254,20 +258,27 @@ public class UpsertHandlerTests
 
         private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet();
         private readonly Repository _repository = new();
-        private readonly AuthorizationStrategyEvaluator[] _authorizationStrategyEvaluators =
-        [
-            new(
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
-                [],
-                FilterOperator.Or
-            ),
-            new(AuthorizationStrategyNameConstants.NamespaceBased, [], FilterOperator.Or),
-        ];
 
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
+            // Distinct lists, so substituting either action's list for the other is observable.
+            SetUpsertActionPolicies(
+                _requestInfo,
+                new UpsertActionPolicies(
+                    new UpsertActionPolicyEvidence.Permitted(
+                        "Create",
+                        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted]
+                    ),
+                    new UpsertActionPolicyEvidence.Permitted(
+                        "Update",
+                        [
+                            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                            AuthorizationStrategyNameConstants.NamespaceBased,
+                        ]
+                    )
+                )
+            );
             _requestInfo.ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token",
                 ClientId: "client",
@@ -302,23 +313,36 @@ public class UpsertHandlerTests
         }
 
         [Test]
-        public void It_passes_the_raw_strategy_evaluators_as_the_create_policy()
+        public void It_passes_the_request_policy_pair_to_the_repository()
+        {
+            _repository
+                .CapturedRequest.ActionAuthorization.Should()
+                .BeSameAs(_requestInfo.UpsertActionAuthorization);
+        }
+
+        [Test]
+        public void It_passes_the_create_list_as_the_create_policy()
         {
             _repository
                 .CapturedRequest.ActionAuthorization.Create.Should()
                 .BeOfType<UpsertActionPolicy.Permitted>()
-                .Which.Evaluators.Should()
-                .Equal(_authorizationStrategyEvaluators);
+                .Which.Evaluators.Select(static evaluator => evaluator.AuthorizationStrategyName)
+                .Should()
+                .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
         }
 
         [Test]
-        public void It_passes_the_raw_strategy_evaluators_as_the_update_policy()
+        public void It_passes_the_update_list_as_the_update_policy()
         {
             _repository
                 .CapturedRequest.ActionAuthorization.Update.Should()
                 .BeOfType<UpsertActionPolicy.Permitted>()
-                .Which.Evaluators.Should()
-                .Equal(_authorizationStrategyEvaluators);
+                .Which.Evaluators.Select(static evaluator => evaluator.AuthorizationStrategyName)
+                .Should()
+                .Equal(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                    AuthorizationStrategyNameConstants.NamespaceBased
+                );
         }
 
         [Test]
@@ -762,9 +786,12 @@ public class UpsertHandlerTests
         {
             public List<DocumentUuid> CandidateDocumentUuids { get; } = [];
 
+            public List<UpsertActionAuthorization> ActionAuthorizations { get; } = [];
+
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 CandidateDocumentUuids.Add(upsertRequest.DocumentUuid);
+                ActionAuthorizations.Add(upsertRequest.ActionAuthorization);
 
                 return Task.FromResult<UpsertResult>(
                     CandidateDocumentUuids.Count == 1
@@ -801,6 +828,17 @@ public class UpsertHandlerTests
         public void It_retries_the_upsert()
         {
             _repository.CandidateDocumentUuids.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_passes_the_same_policy_pair_on_every_attempt()
+        {
+            _repository
+                .ActionAuthorizations.Should()
+                .HaveCount(2)
+                .And.OnlyContain(actionAuthorization =>
+                    ReferenceEquals(actionAuthorization, _requestInfo.UpsertActionAuthorization)
+                );
         }
 
         [Test]
@@ -1331,7 +1369,12 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureSecurityConfiguration(ResponseErrors));
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureSecurityConfiguration(ResponseErrors)
+                    {
+                        TargetAction = UpsertTargetAction.Update,
+                    }
+                );
             }
         }
 
@@ -1514,6 +1557,253 @@ actual: {requestInfo.FrontendResponse.Body}
         public void It_does_not_disclose_the_failure_message()
         {
             requestInfo.FrontendResponse.Body!.ToJsonString().Should().NotContain("FailureMessage");
+        }
+    }
+
+    internal static readonly string SchoolResourceClaimUri =
+        $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school";
+
+    internal sealed class ReturningRepository(UpsertResult result) : NotImplementedDocumentStoreRepository
+    {
+        public int CallCount { get; private set; }
+
+        public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+        {
+            CallCount++;
+            return Task.FromResult(result);
+        }
+    }
+
+    /// <summary>
+    /// Runs a POST carrying the given Create and Update evidence against a repository that returns
+    /// <paramref name="result"/>, under a retry policy that would replay any retryable result.
+    /// </summary>
+    internal static async Task<RequestInfo> ExecuteWithEvidenceAsync(
+        UpsertResult result,
+        UpsertActionPolicies policies,
+        string traceId,
+        RecordingLogger logger,
+        ReturningRepository repository
+    )
+    {
+        var requestInfo = UpsertRequestInfoWithRelationalMappingSet(traceId);
+        SetUpsertActionPolicies(requestInfo, policies);
+        requestInfo.ClientAuthorizations = new ClientAuthorizations(
+            TokenId: "token",
+            ClientId: "client",
+            ClaimSetName: "SIS-Vendor",
+            EducationOrganizationIds: [],
+            NamespacePrefixes: [],
+            DataStoreIds: []
+        );
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(repository);
+        requestInfo.ScopedServiceProvider = serviceProvider;
+        var resiliencePipeline = new ResiliencePipelineBuilder()
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    MaxRetryAttempts = 2,
+                    Delay = TimeSpan.Zero,
+                    ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
+                }
+            )
+            .Build();
+
+        await new UpsertHandler(logger, resiliencePipeline).Execute(requestInfo, NullNext);
+
+        return requestInfo;
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Refuses_An_Action_The_Claim_Set_Denies : UpsertHandlerTests
+    {
+        [TestCase(UpsertTargetAction.Create, "Create")]
+        [TestCase(UpsertTargetAction.Update, "Update")]
+        public async Task It_renders_that_actions_access_denied_response_without_retrying(
+            UpsertTargetAction action,
+            string actionName
+        )
+        {
+            var denied = new UpsertActionPolicyEvidence.Denied(actionName, "School", "SIS-Vendor");
+            var permitted = new UpsertActionPolicyEvidence.Permitted(
+                action is UpsertTargetAction.Create ? "Update" : "Create",
+                [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+            );
+            var repository = new ReturningRepository(new UpsertFailureTargetActionNotPermitted(action));
+
+            var requestInfo = await ExecuteWithEvidenceAsync(
+                new UpsertFailureTargetActionNotPermitted(action),
+                action is UpsertTargetAction.Create
+                    ? new UpsertActionPolicies(denied, permitted)
+                    : new UpsertActionPolicies(permitted, denied),
+                "post-action-denied",
+                new RecordingLogger(),
+                repository
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Be(
+                    FailureResponse
+                        .ForForbidden(
+                            traceId: new TraceId("post-action-denied"),
+                            errors:
+                            [
+                                $"The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the '{actionName}' action on one of the following resource claims: School",
+                            ],
+                            typeExtension: "access-denied:action"
+                        )
+                        .ToJsonString()
+                );
+            repository.CallCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Refuses_An_Action_Granted_Without_Strategies : UpsertHandlerTests
+    {
+        [TestCase(UpsertTargetAction.Create, "Create")]
+        [TestCase(UpsertTargetAction.Update, "Update")]
+        public async Task It_renders_and_logs_that_actions_security_configuration_failure(
+            UpsertTargetAction action,
+            string actionName
+        )
+        {
+            var noStrategies = new UpsertActionPolicyEvidence.NoStrategies(
+                actionName,
+                [SchoolResourceClaimUri],
+                SchoolResourceClaimUri
+            );
+            var permitted = new UpsertActionPolicyEvidence.Permitted(
+                action is UpsertTargetAction.Create ? "Update" : "Create",
+                [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+            );
+            var logger = new RecordingLogger();
+            var repository = new ReturningRepository(new UpsertFailureTargetActionNotPermitted(action));
+
+            var requestInfo = await ExecuteWithEvidenceAsync(
+                new UpsertFailureTargetActionNotPermitted(action),
+                action is UpsertTargetAction.Create
+                    ? new UpsertActionPolicies(noStrategies, permitted)
+                    : new UpsertActionPolicies(permitted, noStrategies),
+                "post-action-no-strategies",
+                logger,
+                repository
+            );
+
+            string expectedError =
+                $"No authorization strategies were defined for the requested action '{actionName}' against resource URIs ['{SchoolResourceClaimUri}'] matched by the caller's claim '{SchoolResourceClaimUri}'.";
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            JsonNode
+                .DeepEquals(
+                    requestInfo.FrontendResponse.Body,
+                    FailureResponse.ForSecurityConfiguration(
+                        new TraceId("post-action-no-strategies"),
+                        [expectedError]
+                    )
+                )
+                .Should()
+                .BeTrue();
+            var logRecord = logger
+                .Records.Where(static record => record.Level == LogLevel.Error)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            logRecord.Properties["CmsAction"].Should().Be(actionName);
+            ((IEnumerable<string>)logRecord.Properties["MatchedResourceClaimUris"]!)
+                .Should()
+                .Equal(SchoolResourceClaimUri);
+            logRecord.Properties["AssignedClaimSet"].Should().Be("SIS-Vendor");
+            repository.CallCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Refuses_An_Action_The_Claim_Set_Permits : UpsertHandlerTests
+    {
+        [Test]
+        public async Task It_treats_the_refusal_as_a_contract_violation()
+        {
+            var result = new UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update);
+
+            var act = () =>
+                ExecuteWithEvidenceAsync(
+                    result,
+                    NoFurtherAuthorizationRequiredUpsertActionPolicies,
+                    "post-permitted-refused",
+                    new RecordingLogger(),
+                    new ReturningRepository(result)
+                );
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_An_Attributed_Security_Configuration_Failure
+        : UpsertHandlerTests
+    {
+        [TestCase(UpsertTargetAction.Create, "Create", "CreateStrategy")]
+        [TestCase(UpsertTargetAction.Update, "Update", "UpdateStrategy")]
+        public async Task It_logs_the_failure_against_the_selected_action_and_its_strategies(
+            UpsertTargetAction action,
+            string actionName,
+            string strategyName
+        )
+        {
+            var result = new UpsertFailureSecurityConfiguration(["misconfigured"]) { TargetAction = action };
+            var logger = new RecordingLogger();
+
+            var requestInfo = await ExecuteWithEvidenceAsync(
+                result,
+                new UpsertActionPolicies(
+                    new UpsertActionPolicyEvidence.Permitted("Create", ["CreateStrategy"]),
+                    new UpsertActionPolicyEvidence.Permitted("Update", ["UpdateStrategy"])
+                ),
+                "post-security-configuration",
+                logger,
+                new ReturningRepository(result)
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            var logRecord = logger
+                .Records.Where(static record => record.Level == LogLevel.Error)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            logRecord.Properties["CmsAction"].Should().Be(actionName);
+            ((IEnumerable<string>)logRecord.Properties["ConfiguredStrategyNames"]!)
+                .Should()
+                .Equal(strategyName);
+        }
+
+        [Test]
+        public async Task It_treats_an_unattributed_failure_as_a_contract_violation_without_logging_an_action()
+        {
+            var result = new UpsertFailureSecurityConfiguration(["misconfigured"]);
+            var logger = new RecordingLogger();
+
+            var act = () =>
+                ExecuteWithEvidenceAsync(
+                    result,
+                    NoFurtherAuthorizationRequiredUpsertActionPolicies,
+                    "post-unattributed-security-configuration",
+                    logger,
+                    new ReturningRepository(result)
+                );
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+            logger
+                .Records.Should()
+                .NotContain(static record => record.Message.Contains("SecurityConfigurationFailure"));
         }
     }
 }

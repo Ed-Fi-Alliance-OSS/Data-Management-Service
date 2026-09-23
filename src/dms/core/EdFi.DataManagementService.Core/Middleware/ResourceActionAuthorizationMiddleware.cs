@@ -74,21 +74,17 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 return;
             }
 
-            var actionName = GetActionName(requestInfo);
-            ResourceClaim[] authorizedActions = FindAuthorizedActions(matchingClaims, actionName);
+            // A POST is a create or an update depending on whether its target exists, which only the backend
+            // observes, so it resolves both actions here and the backend applies the one its target selects.
+            bool authorized =
+                requestInfo.Method is RequestMethod.POST
+                    ? ResolveUpsertActionPolicies(requestInfo, matchingClaims, claimSet.Name)
+                    : AuthorizeRequestAction(requestInfo, matchingClaims, claimSet.Name);
 
-            if (!ValidateAuthorizedAction(requestInfo, authorizedActions, actionName, claimSet.Name))
+            if (!authorized)
             {
                 return;
             }
-
-            IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedActions);
-            if (!ValidateAuthorizationStrategies(requestInfo, strategies, actionName, authorizedActions))
-            {
-                return;
-            }
-
-            requestInfo.ResourceActionAuthStrategies = strategies;
         }
         catch (Exception ex)
         {
@@ -201,6 +197,114 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         }
         return true;
     }
+
+    /// <summary>
+    /// Authorizes the one action the request maps to and records its strategies.
+    /// </summary>
+    private bool AuthorizeRequestAction(
+        RequestInfo requestInfo,
+        ResourceClaim[] matchingClaims,
+        string claimSetName
+    )
+    {
+        var actionName = GetActionName(requestInfo);
+        ResourceClaim[] authorizedActions = FindAuthorizedActions(matchingClaims, actionName);
+
+        if (!ValidateAuthorizedAction(requestInfo, authorizedActions, actionName, claimSetName))
+        {
+            return false;
+        }
+
+        IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedActions);
+        if (!ValidateAuthorizationStrategies(requestInfo, strategies, actionName, authorizedActions))
+        {
+            return false;
+        }
+
+        requestInfo.ResourceActionAuthStrategies = strategies;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves what the claim set grants a POST for Create and for Update. Only a POST neither action permits
+    /// is refused here, with the Create denial a POST has always answered; any other combination proceeds and
+    /// the action its target selects decides the outcome.
+    /// </summary>
+    private bool ResolveUpsertActionPolicies(
+        RequestInfo requestInfo,
+        ResourceClaim[] matchingClaims,
+        string claimSetName
+    )
+    {
+        var policies = new UpsertActionPolicies(
+            ResolveUpsertActionPolicyEvidence(requestInfo, matchingClaims, CreateActionName, claimSetName),
+            ResolveUpsertActionPolicyEvidence(requestInfo, matchingClaims, UpdateActionName, claimSetName)
+        );
+
+        if (
+            policies is
+            {
+                Create: UpsertActionPolicyEvidence.Denied createDenied,
+                Update: UpsertActionPolicyEvidence.Denied
+            }
+        )
+        {
+            _logger.LogDebug(
+                "ResourceAuthorizationMiddleware: Can not perform {RequestMethod} on the resource {ResourceName} - {TraceId}",
+                requestInfo.Method.ToString(),
+                createDenied.ResourceClaimName,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+            requestInfo.FrontendResponse = ResourceActionAuthorizationResponses.CreateActionDeniedResponse(
+                requestInfo,
+                createDenied.ActionName,
+                createDenied.ResourceClaimName,
+                createDenied.ClaimSetName
+            );
+            return false;
+        }
+
+        requestInfo.UpsertActionPolicies = policies;
+        return true;
+    }
+
+    private UpsertActionPolicyEvidence ResolveUpsertActionPolicyEvidence(
+        RequestInfo requestInfo,
+        ResourceClaim[] matchingClaims,
+        string actionName,
+        string claimSetName
+    )
+    {
+        ResourceClaim[] authorizedActions = FindAuthorizedActions(matchingClaims, actionName);
+
+        if (authorizedActions.Length == 0)
+        {
+            return new UpsertActionPolicyEvidence.Denied(
+                actionName,
+                requestInfo.ResourceSchema.ResourceName.Value,
+                claimSetName
+            );
+        }
+
+        IReadOnlyList<string> strategies = ExtractAuthorizationStrategies(authorizedActions);
+
+        if (strategies.Count == 0)
+        {
+            string[] matchedResourceClaimUris = GetMatchedResourceClaimUris(authorizedActions);
+
+            return new UpsertActionPolicyEvidence.NoStrategies(
+                actionName,
+                matchedResourceClaimUris,
+                matchedResourceClaimUris[0]
+            );
+        }
+
+        return new UpsertActionPolicyEvidence.Permitted(actionName, strategies);
+    }
+
+    private const string CreateActionName = "Create";
+
+    private const string UpdateActionName = "Update";
 
     private const string ReadChangesActionName = "ReadChanges";
 
@@ -386,53 +490,26 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         string actionName,
         string resourceClaimName,
         string claimSetName
-    )
-    {
-        requestInfo.FrontendResponse = new FrontendResponse(
-            StatusCode: (int)HttpStatusCode.Forbidden,
-            Body: FailureResponse.ForForbidden(
-                traceId: requestInfo.FrontendRequest.TraceId,
-                errors:
-                [
-                    $"The API client's assigned claim set (currently '{claimSetName}') must grant permission of the '{actionName}' action on one of the following resource claims: {resourceClaimName}",
-                ],
-                typeExtension: "access-denied:action"
-            ),
-            Headers: [],
-            ContentType: "application/problem+json"
+    ) =>
+        requestInfo.FrontendResponse = ResourceActionAuthorizationResponses.CreateActionDeniedResponse(
+            requestInfo,
+            actionName,
+            resourceClaimName,
+            claimSetName
         );
-    }
 
     private void CreateNoStrategiesSecurityConfigurationResponse(
         RequestInfo requestInfo,
         string actionName,
         IReadOnlyList<string> matchedResourceClaimUris,
         string matchedResourceClaimName
-    )
-    {
-        string[] errors =
-        [
-            SecurityConfigurationFailureMessages.NoAuthorizationStrategies(
+    ) =>
+        requestInfo.FrontendResponse =
+            ResourceActionAuthorizationResponses.CreateNoStrategiesSecurityConfigurationResponse(
+                _logger,
+                requestInfo,
                 actionName,
                 matchedResourceClaimUris,
                 matchedResourceClaimName
-            ),
-        ];
-        SecurityConfigurationFailureLogger.Log(
-            _logger,
-            requestInfo,
-            errors,
-            matchedResourceClaimUris,
-            matchedResourceClaimName,
-            requestInfo.ClientAuthorizations.ClaimSetName,
-            actionName
-        );
-
-        requestInfo.FrontendResponse = new FrontendResponse(
-            StatusCode: (int)HttpStatusCode.InternalServerError,
-            Body: FailureResponse.ForSecurityConfiguration(requestInfo.FrontendRequest.TraceId, errors),
-            Headers: [],
-            ContentType: "application/problem+json"
-        );
-    }
+            );
 }
