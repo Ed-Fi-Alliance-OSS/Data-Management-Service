@@ -26,6 +26,19 @@ start up different configurations:
 7. `keycloak.yml` runs KeyCloak (identity provider).
 8. `swagger-ui.yml` covers SwaggerUI
 
+### Selecting published images
+
+`DMS_IMAGE_TAG` selects a tag for both published images at once, which is what a
+deployment wants when the Ed-Fi API and the Configuration Service are released
+under the same tag. It cannot express a digest: a digest identifies an image
+within one repository, so the same value cannot be correct for both.
+
+`DMS_CONFIG_DOCKER_IMAGE` therefore overrides the Configuration Service's whole
+image reference, the same name and meaning `local-config.yml` already gives it.
+Left unset it expands to `edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}`,
+so the shipped behaviour is unchanged. Set it to pin that service by digest
+independently of the Ed-Fi API.
+
 The scripts read local settings from a `.env` file; on first run they seed it
 automatically as a copy of the tracked `.env.example`, so a clean checkout
 needs no manual step. Edit `.env` to customize — `.env.example` itself is

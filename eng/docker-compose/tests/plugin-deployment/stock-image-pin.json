@@ -1,0 +1,75 @@
+{
+    "$comment": [
+        "The published artifacts the stock-image plugin proof runs against. Every release-specific",
+        "value is null and status is 'pending' because the qualifying release does not exist yet.",
+        "The two repository names are not release-specific and are recorded from the outset.",
+        "",
+        "A release qualifies when all of the following hold. It carries DMS-1499's plugin loader and",
+        "DMS-1433's custom-validator fan-in step, because loading and resolving a validator without",
+        "invoking it cannot produce the custom-validation 400 this proof asserts. It was cut after",
+        "this ticket's version-specific image tagging merged, or there is no version-specific tag to",
+        "pin. And it follows DMS-1501's successful publication of EdFi.Api.Plugins and",
+        "EdFi.Api.CustomValidation together with that story's external-consumer restore and compile",
+        "evidence, because the contracts fields below name published packages this proof restores",
+        "rather than builds, and an unverified contract publication would be pinned here unexamined.",
+        "",
+        "Nothing here may be guessed. A fabricated tag or digest would make the proof a statement",
+        "about an artifact nobody published, which is the one thing this tier exists not to be.",
+        "Test-StockImagePinReadiness.ps1 refuses a half-filled pin in either direction: a 'pending'",
+        "pin carrying values, and a 'published' pin missing any of them, are both invalid rather",
+        "than pending.",
+        "",
+        "edFiApi is pinned by version-specific tag AND digest. configurationService is pinned by",
+        "digest alone: this ticket adds version-specific tags to the Ed-Fi API publication only, so",
+        "the Configuration Service still carries nothing but the moving 'pre' tag, and a bare digest",
+        "is honest about that where a tag plus digest would imply a version-specific tag exists.",
+        "",
+        "provisioning and contracts pin what the harness consumes rather than builds: the released",
+        "SchemaTools package that provisions the database the pinned runtime validates, and the two",
+        "published contract packages the fixture plugin compiles against. Building the fixture from",
+        "this branch against this branch's contracts would test version skew rather than plugin",
+        "loading, and would stop working the moment either contract surface moved. Each of the two",
+        "carries its own feed address: the SchemaTools package and the contract packages are separate",
+        "publications, and neither may borrow the feed a schema package entry happens to name.",
+        "",
+        "schemaPackages is the whole of what selects schema content, and dataStandardVersion is only",
+        "a label. eng/docker-compose/.env.bootstrap.ds52 sets DMS_CONFIG_DATA_STANDARD_VERSION to",
+        "'5.2' and, quite separately, SCHEMA_PACKAGES to exact package identities; a pin carrying",
+        "only the label would take whichever versions this branch's overlay happened to name, which",
+        "is the current-worktree schema content this proof must not be running against. Each entry",
+        "carries name, an exact version, and the feed it came from, so a catalog default or an",
+        "ambient feed cannot substitute an input. The harness writes this set as the one",
+        "SCHEMA_PACKAGES value in the environment file, which is what both the schema preparation",
+        "phase and the container read, so the two cannot disagree."
+    ],
+    "status": "pending",
+    "edFiApi": {
+        "repository": "edfialliance/ed-fi-api",
+        "tag": null,
+        "digest": null
+    },
+    "configurationService": {
+        "repository": "edfialliance/ed-fi-api-configuration-service",
+        "digest": null
+    },
+    "release": {
+        "githubRelease": null,
+        "sourceCommit": null,
+        "publicationRunUrl": null
+    },
+    "provisioning": {
+        "schemaToolsPackageVersion": null,
+        "schemaToolsFeedUrl": null,
+        "dataStandardVersion": null,
+        "schemaPackages": null
+    },
+    "contracts": {
+        "pluginsPackageVersion": null,
+        "customValidationPackageVersion": null,
+        "feedUrl": null
+    },
+    "requires": [
+        "DMS-1499 LoadPlugins startup phase",
+        "DMS-1433 custom-validator fan-in pipeline step"
+    ]
+}

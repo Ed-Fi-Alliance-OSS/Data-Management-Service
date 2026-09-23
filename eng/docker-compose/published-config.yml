@@ -5,7 +5,15 @@
 
 services:
   config:
-    image: edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}
+    # DMS_IMAGE_TAG is one variable shared with published-dms.yml, so it can only ever select a tag
+    # that both repositories publish under the same name. A deployment pinning the Ed-Fi API by
+    # digest cannot use it at all: the digest belongs to one repository, and handing it to the other
+    # asks Docker Hub for an image that does not exist there.
+    #
+    # DMS_CONFIG_DOCKER_IMAGE is the whole reference for this service alone, which is the same name
+    # and the same meaning local-config.yml already gives it. Unset, this expands to exactly the
+    # expression it replaced, so the shipped behavior is unchanged.
+    image: ${DMS_CONFIG_DOCKER_IMAGE:-edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}}
     container_name: ed-fi-api-config-service
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}

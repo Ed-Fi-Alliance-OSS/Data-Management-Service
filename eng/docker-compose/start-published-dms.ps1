@@ -409,6 +409,15 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 if (-not $databaseOnlyStartup) {
     $files += @("-f", "published-dms.yml")
 
+    # The same hook, the same resolver and the same diagnostics as the local launcher. The committed
+    # acquisition overlays describe a deployment, not a build, so they have to reach a stack running
+    # a published image as well as one running a locally built image; without this the recipes
+    # eng/docker-compose/README.md publishes cannot be run against a stock image at all.
+    foreach ($resolvedPluginComposeFile in (Resolve-PluginComposeFile -EnvValues $envValues -ScriptRoot $PSScriptRoot)) {
+        Write-Output "Using plugin Docker Compose file '$resolvedPluginComposeFile'."
+        $files += @("-f", $resolvedPluginComposeFile)
+    }
+
     if ($CdcDatabaseInfrastructure) {
         if (-not $InfraOnly -or $d -or $EnableKafka -or $EnableKafkaUI -or $CdcKafkaInfrastructure) {
             throw "CDC database preparation requires -InfraOnly without Kafka startup or teardown flags."

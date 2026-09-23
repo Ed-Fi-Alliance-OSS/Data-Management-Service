@@ -99,6 +99,9 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
             $first | Should -Not -BeNullOrEmpty
             $last | Should -Not -BeNullOrEmpty
             $selection = $ast.Extent.Text.Substring($first.Extent.StartOffset, $last.Extent.EndOffset - $first.Extent.StartOffset)
+            # A scriptblock built from text has no script file, so $PSScriptRoot inside it is empty.
+            # Bind it to the directory the extracted span would have seen when run as its script.
+            $selection = $selection.Replace('$PSScriptRoot', '$composeRoot')
             $CdcDatabaseInfrastructure = $CdcKafkaInfrastructure = $EnableKafkaUI = $EnableKafka = $d = $false
             $InfraOnly = $EnableSwaggerUI = $usePostgresqlTmpfs = $databaseOnlyStartup = $bootstrapMode = $false
             $CdcBrokerSizeOverrideFile = ''
