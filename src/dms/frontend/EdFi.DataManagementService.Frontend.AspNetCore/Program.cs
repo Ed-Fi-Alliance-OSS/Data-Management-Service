@@ -140,7 +140,11 @@ RunBootstrapPhase(
                 "AllowSwaggerUI",
                 policy =>
                 {
-                    policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+                    policy
+                        .WithOrigins(swaggerUiOrigin)
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .WithExposedHeaders("Location");
                 }
             );
         });
@@ -230,6 +234,8 @@ if (invalidConfigurationException is null)
         }
 
         app.UseRouting();
+
+        app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
