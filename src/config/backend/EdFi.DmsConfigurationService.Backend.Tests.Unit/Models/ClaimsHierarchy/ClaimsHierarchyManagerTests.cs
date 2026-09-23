@@ -486,6 +486,27 @@ public class ClaimsHierarchyManagerTests
     }
 
     [Test]
+    public void ReplaceClaimSetResourceActions_ShouldRejectAMissingAssociationWhenRequired()
+    {
+        // Arrange
+        List<Claim> claims = [new() { Name = "claim-a" }];
+
+        // Act
+        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
+            "SIS Vendor",
+            "claim-a",
+            ["Create"],
+            ["Create"],
+            claims,
+            requireExistingAssociation: true
+        );
+
+        // Assert
+        changed.Should().BeFalse();
+        claims[0].ClaimSets.Should().BeEmpty();
+    }
+
+    [Test]
     public void ReplaceClaimSetResourceActions_ShouldRemoveOnlyExplicitlyDisabledActions()
     {
         // Arrange

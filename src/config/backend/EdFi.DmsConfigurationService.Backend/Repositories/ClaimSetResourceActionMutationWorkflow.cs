@@ -56,9 +56,36 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
         );
     }
 
-    public Task<ClaimSetResourceActionMutationResult> ModifyResourceClaimActions(
+    public async Task<ClaimSetResourceActionMutationResult> ModifyResourceClaimActions(
         ResourceClaimActionMutationCommand command
-    ) => GrantResourceClaimActions(command);
+    )
+    {
+        ClaimSetResourceActionMutationResult? validationResult = ResolveActionNames(
+            command,
+            out List<string> actionNames,
+            out List<string> suppliedActionNames
+        );
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
+        return await MutateClaimSetResourceActions(
+            command.ClaimSetId,
+            command.ResourceClaimId,
+            (claimSetName, resourceClaimName, claims) =>
+                claimsHierarchyManager.ReplaceClaimSetResourceActions(
+                    claimSetName,
+                    resourceClaimName,
+                    actionNames,
+                    suppliedActionNames,
+                    claims,
+                    requireExistingAssociation: true
+                )
+                    ? new ClaimSetResourceActionMutationResult.Success()
+                    : new ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound()
+        );
+    }
 
     public async Task<ClaimSetResourceActionMutationResult> RevokeResourceClaimActions(
         int claimSetId,
