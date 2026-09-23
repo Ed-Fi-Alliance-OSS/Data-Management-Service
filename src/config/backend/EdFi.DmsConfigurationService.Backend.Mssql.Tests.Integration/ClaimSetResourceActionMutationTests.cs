@@ -305,7 +305,7 @@ public class ClaimSetResourceActionMutationTests
             (await Repository.ModifyResourceClaimActions(command))
                 .Should()
                 .BeOfType<ClaimSetResourceActionMutationResult.Success>();
-            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Read", "Create");
         }
 
         [Test]
