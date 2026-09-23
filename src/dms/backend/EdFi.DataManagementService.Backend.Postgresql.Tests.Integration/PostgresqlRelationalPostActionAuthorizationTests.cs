@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -35,6 +36,9 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
     private const string DescriptorProject = "ed-fi";
     private const string DescriptorResource = "SchoolTypeDescriptor";
     private const string UnauthorizedNamespace = "uri://other.example/PostAction";
+    private const string SchoolProject = "ed-fi";
+    private const string SchoolResource = "School";
+    private const string MissingCustomViewStrategyName = "SchoolWithMissingPostActionView";
     private const short CreatorToken = 11;
     private const short ForeignToken = 22;
 
@@ -267,6 +271,48 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
         );
 
         owner.Should().BeOfType<UpsertResult.UpdateSuccess>();
+    }
+
+    // ── Strategy difference: custom view ─────────────────────────────────
+
+    [Test]
+    public async Task It_creates_without_validating_an_update_only_custom_view_and_validates_it_for_an_existing_record()
+    {
+        await _context.SeedSchoolDescriptorDataAsync();
+        var updateNamesAMissingView = Pair(_noFurther, Permitted(MissingCustomViewStrategyName));
+
+        // The update policy's view does not exist. Validated or sent ahead of the capture, it would fail this
+        // create under configuration the create policy does not carry.
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await PostAsync(
+                SchoolProject,
+                SchoolResource,
+                SchoolBody("Original"),
+                _firstUuid,
+                updateNamesAMissingView
+            )
+        );
+        (await _context.CountDocumentsAsync(SchoolProject, SchoolResource)).Should().Be(1);
+        var before = await _context.ReadSideEffectStateAsync(SchoolProject, SchoolResource, _firstUuid);
+
+        Func<Task> updateExisting = () =>
+            PostAsync(
+                SchoolProject,
+                SchoolResource,
+                SchoolBody("Changed"),
+                _secondUuid,
+                updateNamesAMissingView
+            );
+
+        var validation = await updateExisting
+            .Should()
+            .ThrowAsync<CustomViewAuthorizationValidationException>();
+        var providerError = validation.Which.InnerException.Should().BeOfType<PostgresException>().Subject;
+        providerError.SqlState.Should().Be(PostgresErrorCodes.UndefinedTable);
+        providerError.Message.Should().Contain(MissingCustomViewStrategyName);
+        (await _context.ReadSideEffectStateAsync(SchoolProject, SchoolResource, _firstUuid))
+            .Should()
+            .BeEquivalentTo(before);
     }
 
     // ── Differential: only the list selection changes ────────────────────
@@ -717,6 +763,9 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
                 ["shortDescription"] = text,
             },
         };
+
+    private static JsonNode SchoolBody(string nameOfInstitution) =>
+        RelationalQueryAuthorizationRequestBodies.CreateSchoolRequestBody(255901, nameOfInstitution);
 
     private static UpsertActionPolicy Permitted(string strategyName) =>
         new UpsertActionPolicy.Permitted([
