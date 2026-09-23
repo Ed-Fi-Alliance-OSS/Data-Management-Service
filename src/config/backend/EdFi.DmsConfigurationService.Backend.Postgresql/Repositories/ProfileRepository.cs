@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -18,9 +19,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class ProfileRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ProfileRepository> logger,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IProfileRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
     public async Task<ProfileInsertResult> InsertProfile(ProfileInsertCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -28,7 +34,7 @@ public class ProfileRepository(
         try
         {
             string sql =
-                @"INSERT INTO ""dmscs"".""Profile"" (""ProfileName"", ""Definition"", ""CreatedBy"") VALUES (@Name, @Definition, @CreatedBy) RETURNING ""Id"";";
+                @"INSERT INTO ""dmscs"".""Profile"" (""ProfileName"", ""Definition"", ""CreatedBy"", ""TenantId"") VALUES (@Name, @Definition, @CreatedBy, @TenantId) RETURNING ""Id"";";
             var id = await connection.ExecuteScalarAsync<int>(
                 sql,
                 new
@@ -36,13 +42,14 @@ public class ProfileRepository(
                     command.Name,
                     command.Definition,
                     CreatedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 }
             );
             return new ProfileInsertResult.Success(id);
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                && ex.ConstraintName == "UX_Profile_ProfileName"
+                && ex.ConstraintName == "UX_Profile_TenantId_ProfileName"
             )
         {
             logger.LogWarning(
@@ -70,7 +77,7 @@ public class ProfileRepository(
         try
         {
             string sql =
-                @"UPDATE ""dmscs"".""Profile"" SET ""ProfileName""=@Name, ""Definition""=@Definition, ""LastModifiedAt""=NOW(), ""ModifiedBy""=@ModifiedBy WHERE ""Id""=@Id;";
+                $@"UPDATE ""dmscs"".""Profile"" SET ""ProfileName""=@Name, ""Definition""=@Definition, ""LastModifiedAt""=NOW(), ""ModifiedBy""=@ModifiedBy WHERE ""Id""=@Id AND {TenantContext.TenantWhereClause()};";
             int affected = await connection.ExecuteAsync(
                 sql,
                 new
@@ -79,6 +86,7 @@ public class ProfileRepository(
                     command.Name,
                     command.Definition,
                     ModifiedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 }
             );
             if (affected == 0)
@@ -89,7 +97,7 @@ public class ProfileRepository(
         }
         catch (PostgresException ex)
             when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                && ex.ConstraintName == "UX_Profile_ProfileName"
+                && ex.ConstraintName == "UX_Profile_TenantId_ProfileName"
             )
         {
             logger.LogWarning(
@@ -118,8 +126,11 @@ public class ProfileRepository(
         try
         {
             string sql =
-                @"SELECT ""Id"", ""ProfileName"" AS ""Name"", ""Definition"" FROM ""dmscs"".""Profile"" WHERE ""Id""=@Id;";
-            var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(sql, new { Id = id });
+                $@"SELECT ""Id"", ""ProfileName"" AS ""Name"", ""Definition"" FROM ""dmscs"".""Profile"" WHERE ""Id""=@Id AND {TenantContext.TenantWhereClause()};";
+            var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(
+                sql,
+                new { Id = id, TenantId }
+            );
             if (profile is null)
             {
                 return new ProfileGetResult.FailureNotFound();
@@ -133,9 +144,9 @@ public class ProfileRepository(
         }
     }
 
-    private static string BuildFilterClause(ProfileQuery query)
+    private string BuildFilterClause(ProfileQuery query)
     {
-        var conditions = new List<string>();
+        var conditions = new List<string> { TenantContext.TenantWhereClause() };
         if (query.Id.HasValue)
         {
             conditions.Add("\"Id\" = @Id");
@@ -146,7 +157,7 @@ public class ProfileRepository(
             conditions.Add("\"ProfileName\" = @Name");
         }
 
-        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
+        return "WHERE " + string.Join(" AND ", conditions);
     }
 
     private static IEnumerable<ProfileResponse> ApplyOrdering(
@@ -198,7 +209,15 @@ public class ProfileRepository(
                 FROM "dmscs"."Profile"
                 {filterClause}
                 """;
-            var profiles = await connection.QueryAsync<ProfileResponse>(sql, new { query.Id, query.Name });
+            var profiles = await connection.QueryAsync<ProfileResponse>(
+                sql,
+                new
+                {
+                    query.Id,
+                    query.Name,
+                    TenantId,
+                }
+            );
 
             var validProfiles = ApplyOrdering(profiles.Where(IsProfileValid), query).Skip(query.Offset ?? 0);
 
@@ -231,8 +250,9 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"DELETE FROM ""dmscs"".""Profile"" WHERE ""Id""=@Id;";
-            int affected = await connection.ExecuteAsync(sql, new { Id = id });
+            string sql =
+                $@"DELETE FROM ""dmscs"".""Profile"" WHERE ""Id""=@Id AND {TenantContext.TenantWhereClause()};";
+            int affected = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
             if (affected == 0)
             {
                 return new ProfileDeleteResult.FailureNotExists(id);

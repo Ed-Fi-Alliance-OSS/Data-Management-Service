@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using FluentAssertions;
@@ -18,7 +19,8 @@ public class ProfileTests : DatabaseTest
     private readonly IProfileRepository _repository = new ProfileRepository(
         Configuration.DatabaseOptions,
         NullLogger<ProfileRepository>.Instance,
-        new TestAuditContext()
+        new TestAuditContext(),
+        new TenantContextProvider()
     );
 
     private async Task ResetProfiles(params string[] names)
