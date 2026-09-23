@@ -1,6 +1,6 @@
 # DMS-1437 initial operational assessment (step 0.2)
 
-Status: **follow-up for review**. This is the spec §6.2 step 0.2 assessment. Its first version (commit `23294d57c`) was reviewed; §0 records the review decisions and the follow-up verification of the adopted SQL. Q3 stays open until this follow-up is reviewed, and Phase 1 does not start before then. No production code exists yet. Every number below comes from isolated raw-SQL probes against scratch tables, not from repositories or hosted services. Step 2.11 re-verifies these results against the implemented repositories.
+Status: **approved** (2026-09-23). This is the spec §6.2 step 0.2 assessment. Its first version (`23294d57c`) and its follow-up (`5b0b864c5`) were reviewed; §0 records the review decisions and the follow-up verification of the adopted SQL. Step 0.2 is complete, and Q3 is closed for the initial settings decision: spec v3.2, the retained defaults, and both adjusted bounds are approved. Step 2.11 remains required. It verifies the implemented repositories and fences, keeps the 100 ms renewal threshold, and reconsiders A5 only if measurements justify it. The workload assumptions remain provisional. No production code exists yet. Every number below comes from isolated raw-SQL probes against scratch tables, not from repositories or hosted services. Step 2.11 re-verifies these results against the implemented repositories.
 
 ## 0. Review decisions and follow-up verification
 

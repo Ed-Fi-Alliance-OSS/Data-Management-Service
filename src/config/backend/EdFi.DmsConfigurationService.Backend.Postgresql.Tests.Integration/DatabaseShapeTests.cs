@@ -27,6 +27,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "DataStore",
         "DataStoreContext",
         "DataStoreDerivative",
+        "JobSchedule",
         "OpenIddictApplication",
         "OpenIddictApplicationScope",
         "OpenIddictAuthorization",
@@ -127,7 +128,8 @@ public class Given_CMS_PostgreSQL_database_shape
     /// EducationOrganizationId is an Ed-Fi education organization id, not a CMS resource id, and the
     /// draft Management API v3 spec declares it int64. Tenant.Id has no Admin API counterpart and
     /// ClaimsHierarchy.Id is an internal concurrency token; both are out of scope, as are the
-    /// TenantId foreign keys that reference Tenant.Id.
+    /// TenantId foreign keys that reference Tenant.Id. JobSchedule.Id and JobSchedule.FencingToken
+    /// (DMS-1437) are internal job-infrastructure identifiers with no Admin API counterpart.
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
@@ -136,6 +138,9 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("JobSchedule", "FencingToken"),
+        ("JobSchedule", "Id"),
+        ("JobSchedule", "TenantId"),
         ("OwnershipToken", "TenantId"),
         ("Profile", "TenantId"),
         ("ResourceClaim", "TenantId"),
@@ -178,6 +183,19 @@ public class Given_CMS_PostgreSQL_database_shape
         "idx_datastore_context_unique",
         "ix_profile_name",
         "IX_DataStoreDerivative_DataStoreId",
+    ];
+
+    /// <summary>
+    /// The only unique indexes that are not constraint-backed. PostgreSQL cannot declare a partial
+    /// unique constraint, so a uniqueness rule that applies to a subset of rows is a partial unique
+    /// index; every other logical uniqueness rule is a UX_* constraint. JobSchedule (DMS-1437) keys
+    /// tenant schedules on (TenantId, ScheduleType) and single-tenant schedules, whose TenantId is
+    /// NULL and so would never collide in a plain unique index, on ScheduleType alone.
+    /// </summary>
+    private static readonly string[] ExpectedPartialUniqueIndexNames =
+    [
+        "UX_JobSchedule_SingleTenant_Type",
+        "UX_JobSchedule_Tenant_Type",
     ];
 
     private string _databaseName = string.Empty;
@@ -392,10 +410,19 @@ public class Given_CMS_PostgreSQL_database_shape
 
         indexNames.Should().NotContain(RemovedRedundantIndexNames);
 
-        _indexes
+        IndexShape[] uniqueIndexesWithoutConstraint = _indexes
             .Where(index => index.IsUnique && !index.IsConstraintBacked)
+            .ToArray();
+
+        uniqueIndexesWithoutConstraint
+            .Select(index => index.Name)
             .Should()
-            .BeEmpty("logical uniqueness should be represented by UX_* constraints");
+            .BeEquivalentTo(
+                ExpectedPartialUniqueIndexNames,
+                "logical uniqueness should be represented by UX_* constraints, except where only a partial "
+                    + "unique index can express it"
+            );
+        uniqueIndexesWithoutConstraint.Should().OnlyContain(index => index.IsPartial);
 
         foreach (string expectedIndexName in ExpectedNonUniqueLookupIndexes)
         {
@@ -551,7 +578,8 @@ public class Given_CMS_PostgreSQL_database_shape
     private const string IndexesSql = """
         SELECT index_info.relname AS Name,
                index_catalog.indisunique AS IsUnique,
-               constraint_info.oid IS NOT NULL AS IsConstraintBacked
+               constraint_info.oid IS NOT NULL AS IsConstraintBacked,
+               index_catalog.indpred IS NOT NULL AS IsPartial
         FROM pg_index index_catalog
         JOIN pg_class index_info
             ON index_info.oid = index_catalog.indexrelid
@@ -583,5 +611,5 @@ public class Given_CMS_PostgreSQL_database_shape
         bool NullsNotDistinct
     );
 
-    private sealed record IndexShape(string Name, bool IsUnique, bool IsConstraintBacked);
+    private sealed record IndexShape(string Name, bool IsUnique, bool IsConstraintBacked, bool IsPartial);
 }

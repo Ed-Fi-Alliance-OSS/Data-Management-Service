@@ -17,7 +17,8 @@ public class DeployTests : DatabaseTestBase
     /// EducationOrganizationId is an Ed-Fi education organization id, not a CMS resource id, and the
     /// draft Management API v3 spec declares it int64. Tenant.Id has no Admin API counterpart and
     /// ClaimsHierarchy.Id is an internal concurrency token; both are out of scope, as are the
-    /// TenantId foreign keys that reference Tenant.Id.
+    /// TenantId foreign keys that reference Tenant.Id. JobSchedule.Id and JobSchedule.FencingToken
+    /// (DMS-1437) are internal job-infrastructure identifiers with no Admin API counterpart.
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
@@ -26,6 +27,9 @@ public class DeployTests : DatabaseTestBase
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("JobSchedule", "FencingToken"),
+        ("JobSchedule", "Id"),
+        ("JobSchedule", "TenantId"),
         ("OwnershipToken", "TenantId"),
         ("Profile", "TenantId"),
         ("ResourceClaim", "TenantId"),
@@ -103,6 +107,7 @@ public class DeployTests : DatabaseTestBase
                 "apiclientdatastore",
                 "datastorecontext",
                 "datastorederivative",
+                "jobschedule",
                 "tenant",
                 "profile",
                 "applicationprofile",
