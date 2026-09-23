@@ -1,7 +1,7 @@
 # DMS-1437 Implementation Spec — Durable CMS jobs, schedules, and `GET /v3/jobs/{jobId}`
 
-Status: **DRAFT v3.1** for architect review (2026-09-23). Standalone; supersedes v1, v2, and v3. Nothing in the DMS repository has been modified and no repository tests have been run. The only action taken outside review is the upstream OpenAPI generation in an isolated temp checkout (§1.4.1).
-Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1437`, branch `DMS-1437` (clean, at `d61921f09` = `origin/main`).
+Status: **v3.1, approved** as the implementation plan (2026-09-23) and committed at step 0.1. Standalone; supersedes v1, v2, and v3. The §6.1 candidate settings remain pending: the step 0.2 operational assessment (`operational-assessment.md`) awaits review, and Phase 1 does not start until it is approved (Q3).
+Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1437`, branch `DMS-1437`. Review baseline: `d61921f09`, which was `origin/main` when this spec was written and reviewed; it is not the current branch position.
 
 ## 0. Review history and dispositions
 
@@ -90,7 +90,7 @@ $env:DOTNET_ROLL_FORWARD = "Major"
 dotnet tool run swagger tofile --output ../../docs/api-specifications/openapi-yaml/admin-api-v3-ed115fd8.yaml --yaml ./bin/Release/net10.0/EdFi.Ods.AdminApi.dll 3.0.0
 ```
 
-Result: `admin-api-v3-ed115fd8.yaml`, 164 440 bytes, SHA-256 `f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b`, `openapi: 3.0.1`, `info.title: Ed-Fi Management API`, `info.version: 3.0.0`. A copy is in this session's scratchpad next to the spec (`admin-api-v3-ed115fd8.yaml`); it belongs in `reference/design/jobs-DMS-1437/` with the spec at step 0.1. Verbatim fragments:
+Result: `admin-api-v3-ed115fd8.yaml`, 164 440 bytes, SHA-256 `f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b`, `openapi: 3.0.1`, `info.title: Ed-Fi Management API`, `info.version: 3.0.0`. The document is committed as `reference/design/jobs-DMS-1437/admin-api-v3-ed115fd8.yaml`, with its provenance in `reference/design/jobs-DMS-1437/admin-api-v3-provenance.md`. Verbatim fragments:
 
 ```yaml
   '/v3/jobs/{jobId}':
