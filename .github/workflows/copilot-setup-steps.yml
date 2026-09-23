@@ -11,6 +11,14 @@ on:
     paths:
       - ".github/workflows/copilot-setup-steps.yml"
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     paths:
       - ".github/workflows/copilot-setup-steps.yml"
 
@@ -20,6 +28,7 @@ permissions:
 jobs:
   copilot-setup-steps:
     name: Copilot Setup Steps
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

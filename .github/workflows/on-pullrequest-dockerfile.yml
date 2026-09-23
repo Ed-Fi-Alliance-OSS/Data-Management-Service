@@ -10,6 +10,16 @@ on:
     branches:
       - main
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready. converted_to_draft starts a run that skips everything, which cancels the
+    # in-flight run through the concurrency group.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     branches:
       - main
     paths:
@@ -30,6 +40,7 @@ permissions: read-all
 
 jobs:
   docker-analysis:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-24.04
     permissions:
       contents: read

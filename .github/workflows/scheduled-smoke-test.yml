@@ -10,6 +10,16 @@ on:
   schedule:
     - cron: "30 8 * * 6" # Scheduled the job to run every Saturday at 8 AM UTC
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready. converted_to_draft starts a run that skips everything, which cancels the
+    # in-flight run through the concurrency group.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     paths: # Only run on PRs that change relevant files
       - 'src/Directory.Packages.props'
       - '**/OpenApiDocument.cs'
@@ -61,6 +71,7 @@ jobs:
   # downstream jobs below consume via ${{ needs.select-legs.outputs.include }}.
   select-legs:
     name: Select Smoke Legs
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -118,6 +129,7 @@ jobs:
 
   build-ci-docker-images:
     name: Build CI Docker Images
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read

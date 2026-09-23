@@ -109,7 +109,7 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             }
 
             # A job with no condition at all. Distinct from a job whose condition is empty text,
-            # and the correct answer for "is this job draft-gated?" either way.
+            # and the correct answer for "does this job gate itself?" either way.
             return ''
         }
 
@@ -191,14 +191,6 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             return $types
         }
 
-        $script:draftGatedJob = @(
-            'build-ci-docker-images'
-            'build-integration-test-assemblies'
-            'verify-dms-packages'
-            'run-cli-integration-tests'
-            'test-timing-summary'
-        )
-
         function Get-JobNeed {
             # The job-level `needs:`, whether written inline (`needs: a`, `needs: [a, b]`) or as a
             # block sequence.
@@ -254,16 +246,6 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             @{ JobName = 'run-schematools-mssql-integration-tests'; Category = 'schematools_relevant' }
         )
 
-        $script:notDraftGatedJob = @(
-            'detect-fresh-build-changes'
-            'scan-actions-bidi'
-            'run-bootstrap-pester-tests'
-            'verify-document-embeds'
-            'verify-lock-files'
-            'run-unit-tests'
-            'dms-ci-gate'
-        )
-
         function Get-StepChunk {
             # The job's steps as ordered text chunks, split on the six-space `- ` step markers. Order
             # matters here as much as presence: a download step that lands after the step consuming
@@ -316,10 +298,10 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
     Context "Pull request trigger types" {
         It "declares exactly the three default types plus the two draft transitions" {
             # Declaring types replaces the default set outright. Dropping synchronize would stop CI
-            # running on new pushes; omitting ready_for_review would leave a draft-gated pull request
-            # permanently unvalidated once marked ready. converted_to_draft is the cost side of the
-            # same gate: with cancel-in-progress concurrency, converting cancels the in-flight run
-            # and the replacement classifies as a draft, so its expensive jobs skip.
+            # running on new pushes; omitting ready_for_review would leave a pull request opened as a
+            # draft permanently unvalidated once marked ready. converted_to_draft is the cost side of
+            # the same gate: with cancel-in-progress concurrency, converting cancels the in-flight run
+            # and the replacement skips every job.
             @(Get-PullRequestTriggerType) | Sort-Object |
                 Should -Be @('converted_to_draft', 'opened', 'ready_for_review', 'reopened', 'synchronize')
         }
@@ -329,12 +311,7 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         }
     }
 
-    Context "The detector publishes the draft flag" {
-        It "declares draft as a job output" {
-            Get-JobBlock 'detect-fresh-build-changes' |
-                Should -Match '(?m)^      draft:\s*\$\{\{\s*steps\.detect\.outputs\.draft\s*\}\}\s*$'
-        }
-
+    Context "The detector outputs" {
         It "still declares the two pre-existing outputs" {
             $block = Get-JobBlock 'detect-fresh-build-changes'
 
@@ -377,7 +354,7 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         ) {
             # The detector supplies the category output; without it in needs the expression reads
             # empty and the lane never runs. build-integration-test-assemblies supplies the test
-            # assemblies and the inherited draft skip.
+            # assemblies.
             $needs = Get-JobNeed -JobName $JobName
 
             $needs | Should -Contain 'detect-fresh-build-changes'
@@ -424,26 +401,64 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         }
     }
 
-    Context "Draft pull requests skip the expensive jobs" {
-        It "<JobName> is draft-gated" -ForEach @(
-            @{ JobName = 'build-ci-docker-images' }
-            @{ JobName = 'build-integration-test-assemblies' }
-            @{ JobName = 'verify-dms-packages' }
-            @{ JobName = 'run-cli-integration-tests' }
-            @{ JobName = 'test-timing-summary' }
-        ) {
-            Get-JobIfCondition -JobName $JobName |
-                Should -Match "needs\.detect-fresh-build-changes\.outputs\.draft != 'true'"
+    Context "Draft pull requests run no jobs" {
+        It "skips the detector on a draft" {
+            # The detector is the root every other job needs, directly or transitively. merge_group
+            # and workflow_dispatch carry no pull_request, so the comparison is true for them.
+            Get-JobIfCondition -JobName 'detect-fresh-build-changes' |
+                Should -Be 'github.event.pull_request.draft != true'
         }
 
-        It "<JobName> keeps its DMS-relevance gate as well" -ForEach @(
+        It "every job skips on a draft" {
+            # A job skips on a draft when its own condition carries the draft check, or when it needs
+            # a job that skips and has no status function (always(), failure(), cancelled()) to
+            # override that inherited skip. A job with a status function must carry the check itself.
+            $draftCheck = 'github.event.pull_request.draft != true'
+            $skipsOnDraft = @{}
+
+            function Test-SkipsOnDraft {
+                param([Parameter(Mandatory)] [string] $JobName)
+
+                if ($skipsOnDraft.ContainsKey($JobName)) {
+                    return $skipsOnDraft[$JobName]
+                }
+
+                $condition = Get-JobIfCondition -JobName $JobName
+                $result = $false
+
+                if ($condition.Contains($draftCheck)) {
+                    $result = $true
+                }
+                elseif ($condition -notmatch '\b(always|failure|cancelled)\(\)') {
+                    foreach ($need in (Get-JobNeed -JobName $JobName)) {
+                        if (Test-SkipsOnDraft -JobName $need) {
+                            $result = $true
+                            break
+                        }
+                    }
+                }
+
+                $skipsOnDraft[$JobName] = $result
+                return $result
+            }
+
+            $definedJob = Get-DefinedJob
+            $definedJob.Count | Should -BeGreaterThan 0
+
+            foreach ($job in $definedJob) {
+                Test-SkipsOnDraft -JobName $job | Should -BeTrue -Because "job '$job' must not run on a draft pull request"
+            }
+        }
+    }
+
+    Context "The expensive roots stay DMS-gated" {
+        It "<JobName> keeps its DMS-relevance gate" -ForEach @(
             @{ JobName = 'build-ci-docker-images' }
             @{ JobName = 'build-integration-test-assemblies' }
             @{ JobName = 'verify-dms-packages' }
             @{ JobName = 'run-cli-integration-tests' }
             @{ JobName = 'test-timing-summary' }
         ) {
-            # Draft gating narrows; it must not replace the docs-only skip that already existed.
             Get-JobIfCondition -JobName $JobName |
                 Should -Match "needs\.detect-fresh-build-changes\.outputs\.dms_relevant == 'true'"
         }
@@ -455,24 +470,10 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             @{ JobName = 'run-cli-integration-tests' }
             @{ JobName = 'test-timing-summary' }
         ) {
-            # The merge queue is the recovery path for everything this ticket skips at PR time, so
-            # no gate may ever apply to merge_group or workflow_dispatch.
+            # The merge queue is the recovery path for everything skipped at PR time, so no gate may
+            # ever apply to merge_group or workflow_dispatch.
             Get-JobIfCondition -JobName $JobName |
                 Should -Match "github\.event_name != 'pull_request'"
-        }
-    }
-
-    Context "Draft pull requests keep fast feedback and a reporting gate" {
-        It "<JobName> is not draft-gated" -ForEach @(
-            @{ JobName = 'detect-fresh-build-changes' }
-            @{ JobName = 'scan-actions-bidi' }
-            @{ JobName = 'run-bootstrap-pester-tests' }
-            @{ JobName = 'verify-document-embeds' }
-            @{ JobName = 'verify-lock-files' }
-            @{ JobName = 'run-unit-tests' }
-            @{ JobName = 'dms-ci-gate' }
-        ) {
-            Get-JobIfCondition -JobName $JobName | Should -Not -Match 'outputs\.draft'
         }
     }
 
@@ -511,15 +512,17 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         }
     }
 
-    Context "The aggregate gate reports on every pull request" {
-        It "runs unconditionally" {
+    Context "The aggregate gate reports on every ready pull request" {
+        It "runs whatever its dependencies did, except on a draft" {
             # dms-ci-gate is the merge queue's required check. It has to run and report even when
-            # every dependency skipped, which is exactly the draft case.
-            Get-JobIfCondition -JobName 'dms-ci-gate' | Should -Be 'always()'
+            # every dependency skipped, which is the docs-only case. A draft cannot be merged or
+            # enqueued, and ready_for_review re-runs the workflow, so the gate reports then.
+            Get-JobIfCondition -JobName 'dms-ci-gate' |
+                Should -Be 'always() && github.event.pull_request.draft != true'
         }
 
         It "still counts an intentional skip as a pass" {
-            # This is what makes draft gating safe: skipped dependencies must not fail the gate.
+            # This is what makes the docs-only skip safe: skipped dependencies must not fail the gate.
             Get-JobBlock 'dms-ci-gate' | Should -Match "\`$result -ne 'success' -and \`$result -ne 'skipped'"
         }
 
@@ -591,13 +594,8 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             $block | Should -Match 'compression-level: 0'
         }
 
-        It "build-dms-solution runs on DMS relevance and is not draft-gated" {
-            # A draft-gated producer would skip run-unit-tests through the dependency, which is the
-            # opposite of keeping fast feedback on draft pull requests.
-            $condition = Get-JobIfCondition -JobName 'build-dms-solution'
-
-            $condition | Should -Match 'dms_relevant'
-            $condition | Should -Not -Match 'draft'
+        It "build-dms-solution runs on DMS relevance" {
+            Get-JobIfCondition -JobName 'build-dms-solution' | Should -Match 'dms_relevant'
         }
 
         It "<JobName> depends on build-dms-solution" -ForEach $buildOutputConsumer {

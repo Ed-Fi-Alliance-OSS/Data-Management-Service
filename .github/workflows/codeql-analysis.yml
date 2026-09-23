@@ -13,6 +13,16 @@ on:
       - "src/**/*.csproj"
       - "src/**/Directory.Packages.props"
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready. converted_to_draft starts a run that skips everything, which cancels the
+    # in-flight run through the concurrency group.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     branches: [ "main" ]
     paths:
       - "src/**/*.cs"
@@ -28,6 +38,7 @@ concurrency:
 jobs:
   code-analysis:
     name: Code Analysis
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
