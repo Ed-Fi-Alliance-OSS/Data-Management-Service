@@ -6,7 +6,7 @@
 # Adds approved, ready pull requests to the merge queue overnight so merge-queue CI does not compete
 # with in-progress pull requests for runners during the day. Urgent pull requests are still added
 # by hand. A pull request removed from the queue (for example by a flaky test) stays eligible and
-# is retried by the next run. eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1 runs the script.
+# is retried by the next run. The selection rules live in eng/ci/Invoke-ScheduledMergeQueueEnqueue.ps1.
 
 name: Scheduled Merge Queue Enqueue
 
@@ -22,9 +22,10 @@ on:
         type: boolean
         default: true
 
-# The job authenticates with a PAT, not GITHUB_TOKEN: events created with GITHUB_TOKEN do not
-# start other workflows, and an enqueue has to start the merge_group CI.
-permissions: {}
+# Only for the checkout. The script authenticates with a PAT instead: events created with the
+# workflow token do not start other workflows, and an enqueue has to start the merge_group CI.
+permissions:
+  contents: read
 
 concurrency:
   group: scheduled-merge-queue-enqueue
@@ -34,117 +35,18 @@ jobs:
   enqueue:
     name: Enqueue approved pull requests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
     steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Enqueue eligible pull requests
         env:
           GH_TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
           DRY_RUN: ${{ inputs.dry-run == true }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-
-          # Every ruleset's required checks for main; the merge queue enforces the same set.
-          required=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" \
-            | jq -c '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique')
-
-          # shellcheck disable=SC2016 # a GraphQL/jq program, not shell
-          query='query($owner: String!, $name: String!, $endCursor: String) {
-            repository(owner: $owner, name: $name) {
-              pullRequests(states: OPEN, baseRefName: "main", first: 50, after: $endCursor) {
-                pageInfo { hasNextPage endCursor }
-                nodes {
-                  id number title url isDraft isInMergeQueue reviewDecision mergeable
-                  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-                    __typename
-                    ... on CheckRun { name conclusion }
-                    ... on StatusContext { context state }
-                  } } } } } }
-                }
-              }
-            }
-          }'
-
-          # mergeStateStatus is not used: the license/cla ruleset requires up-to-date branches, so
-          # nearly every pull request reports BEHIND, which also hides required checks that have
-          # not reported yet. Required checks are compared by name instead.
-          # shellcheck disable=SC2016 # a GraphQL/jq program, not shell
-          classify='[.[].data.repository.pullRequests.nodes[]
-            | ([.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]? | {key: (.name // .context), value: (.conclusion // .state)}] | from_entries) as $checks
-            | . + {skip: (
-                if .isInMergeQueue then "already in the merge queue"
-                elif .isDraft then "draft"
-                elif .reviewDecision != "APPROVED" then "review decision is \(.reviewDecision // "none")"
-                elif .mergeable != "MERGEABLE" then "mergeable is \(.mergeable)"
-                else [$required[] | select(($checks[.] // "missing") | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not) | "\(.) is \($checks[.] // "missing")"]
-                  | if length > 0 then "required check " + join(", ") else null end
-                end)}]'
-
-          # GitHub computes mergeability lazily, so the first read after main moves often returns
-          # UNKNOWN; reading again a few seconds later returns the real value.
-          for attempt in 1 2 3; do
-            prs=$(gh api graphql --paginate -f query="$query" -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
-              | jq -s --argjson required "$required" "$classify")
-            if ! jq -e 'any(.[]; .skip == "mergeable is UNKNOWN")' <<<"$prs" >/dev/null || [ "$attempt" -eq 3 ]; then
-              break
-            fi
-            sleep "${MERGEABLE_RETRY_SECONDS:-10}"
-          done
-
-          line='"- [#\(.number)](\(.url)) \(.title)"'
-          eligible=$(jq -c '.[] | select(.skip == null)' <<<"$prs")
-          skipped=$(jq -r ".[] | select(.skip != null) | $line + \": \" + .skip" <<<"$prs")
-          count() { if [ -n "$1" ]; then wc -l <<<"$1" | tr -d ' '; else echo 0; fi; }
-
-          enqueued=""
-          failed=""
-          if [ "$DRY_RUN" != "true" ]; then
-            while IFS= read -r pr; do
-              [ -n "$pr" ] || continue
-              number=$(jq -r .number <<<"$pr")
-              # shellcheck disable=SC2016 # a GraphQL/jq program, not shell
-              if gh api graphql -f query='mutation($id: ID!) { enqueuePullRequest(input: {pullRequestId: $id}) { clientMutationId } }' \
-                -f id="$(jq -r .id <<<"$pr")" >/dev/null; then
-                enqueued+="$(jq -r "$line" <<<"$pr")"$'\n'
-                gh pr comment "$number" --repo "$GITHUB_REPOSITORY" \
-                  --body "Added to the merge queue by the scheduled merge queue run: $RUN_URL" >/dev/null \
-                  || echo "::warning::Enqueued #$number but could not comment on it"
-              else
-                echo "::error::Failed to enqueue #$number"
-                failed+="$(jq -r "$line" <<<"$pr")"$'\n'
-              fi
-            done <<<"$eligible"
-          fi
-          enqueued="${enqueued%$'\n'}"
-          failed="${failed%$'\n'}"
-
-          {
-            echo "## Scheduled merge queue run"
-            echo
-            if [ -z "$eligible" ]; then
-              echo "No eligible pull requests."
-            elif [ "$DRY_RUN" = "true" ]; then
-              echo "Dry run: nothing was enqueued."
-              echo
-              echo "### Would enqueue ($(count "$eligible"))"
-              echo
-              jq -r "$line" <<<"$eligible"
-            else
-              echo "### Enqueued ($(count "$enqueued"))"
-              echo
-              [ -z "$enqueued" ] || echo "$enqueued"
-              if [ -n "$failed" ]; then
-                echo
-                echo "### Failed to enqueue ($(count "$failed"))"
-                echo
-                echo "$failed"
-              fi
-            fi
-            if [ -n "$skipped" ]; then
-              echo
-              echo "### Skipped ($(count "$skipped"))"
-              echo
-              echo "$skipped"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          [ -z "$failed" ]
+        run: ./eng/ci/Invoke-ScheduledMergeQueueEnqueue.ps1 -DryRun:($env:DRY_RUN -eq 'true')

@@ -3,30 +3,18 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Runs the enqueue step's bash script exactly as the workflow holds it, against a fake gh on PATH
-# that serves canned branch rules and pull request pages and records every write.
+# Runs Invoke-ScheduledMergeQueueEnqueue.ps1 in a child pwsh, as the workflow step does, against a
+# fake gh on PATH that serves canned branch rules and pull request pages and records every write.
 
 Describe 'Scheduled merge queue enqueue' -Skip:$IsWindows {
     BeforeAll {
-        $script:workflowPath = Join-Path $PSScriptRoot '../../../.github/workflows/scheduled-merge-queue-enqueue.yml'
-        $script:workflow = Get-Content $script:workflowPath -Raw
-
-        [string[]] $lines = Get-Content $script:workflowPath
-        $stepIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -match '^\s+- name: Enqueue eligible pull requests$' })
-        $stepIndex | Should -BeGreaterOrEqual 0
-        $runIndex = [array]::FindIndex($lines, $stepIndex, [Predicate[string]] { param($l) $l -match '^\s+run: \|$' })
-        $bodyIndent = ([regex]::Match($lines[$runIndex], '^\s+').Length) + 2
-        $body = foreach ($line in $lines[($runIndex + 1)..($lines.Count - 1)]) {
-            if ($line.Trim().Length -gt 0 -and -not $line.StartsWith(' ' * $bodyIndent)) { break }
-            if ($line.Length -ge $bodyIndent) { $line.Substring($bodyIndent) } else { '' }
-        }
-        $script:enqueueScript = Join-Path $TestDrive 'enqueue.sh'
-        Set-Content -Path $script:enqueueScript -Value ($body -join "`n") -NoNewline
+        $script:workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/scheduled-merge-queue-enqueue.yml') -Raw
+        $script:enqueueScript = Join-Path $PSScriptRoot '../Invoke-ScheduledMergeQueueEnqueue.ps1'
 
         $script:fakeGh = @'
 #!/usr/bin/env bash
 set -euo pipefail
-if [ "$1" = "api" ] && [ "$2" = "repos/Ed-Fi-Alliance-OSS/Data-Management-Service/rules/branches/main" ]; then
+if [ "$1" = "api" ] && [[ "$2" == repos/Ed-Fi-Alliance-OSS/Data-Management-Service/rules/branches/main* ]]; then
   cat "$FAKE_GH_DIR/rules.json"
   exit 0
 fi
@@ -52,7 +40,8 @@ if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
   echo "fetch $n" >> "$FAKE_GH_LOG"
   page="$FAKE_GH_DIR/prs-$n.json"
   [ -f "$page" ] || page="$FAKE_GH_DIR/prs-1.json"
-  cat "$page"
+  # --paginate --slurp returns every page wrapped in one array.
+  printf '['; cat "$page"; printf ']'
   exit 0
 fi
 if [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
@@ -92,8 +81,11 @@ exit 99
                     if ($key -eq 'license/cla') {
                         [ordered]@{ __typename = 'StatusContext'; context = $key; state = $Checks[$key] }
                     }
+                    elseif ($Checks[$key] -in 'QUEUED', 'IN_PROGRESS') {
+                        [ordered]@{ __typename = 'CheckRun'; name = $key; status = $Checks[$key]; conclusion = $null }
+                    }
                     else {
-                        [ordered]@{ __typename = 'CheckRun'; name = $key; conclusion = $Checks[$key] }
+                        [ordered]@{ __typename = 'CheckRun'; name = $key; status = 'COMPLETED'; conclusion = $Checks[$key] }
                     }
                 })
             [ordered]@{
@@ -120,7 +112,7 @@ exit 99
         function Invoke-Enqueue {
             param(
                 [object[]] $Pages,
-                [string] $DryRun = 'false',
+                [switch] $DryRun,
                 [string[]] $FailIds = @()
             )
             $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString())
@@ -137,23 +129,23 @@ exit 99
             $summary = Join-Path $dir 'summary.md'
             New-Item -ItemType File -Path $log, $summary | Out-Null
 
+            $arguments = @(
+                '-NoProfile', '-File', $script:enqueueScript
+                '-Repository', 'Ed-Fi-Alliance-OSS/Data-Management-Service'
+                '-RunUrl', 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/42'
+                '-SummaryPath', $summary
+                '-MergeableRetrySeconds', '0'
+            )
+            if ($DryRun) { $arguments += '-DryRun' }
+
             $saved = @{}
-            $vars = @{
-                PATH = "$dir$([IO.Path]::PathSeparator)$env:PATH"
-                GITHUB_REPOSITORY = 'Ed-Fi-Alliance-OSS/Data-Management-Service'
-                GITHUB_STEP_SUMMARY = $summary
-                DRY_RUN = $DryRun
-                RUN_URL = 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/42'
-                MERGEABLE_RETRY_SECONDS = '0'
-                FAKE_GH_DIR = $dir
-                FAKE_GH_LOG = $log
-            }
+            $vars = @{ PATH = "$dir$([IO.Path]::PathSeparator)$env:PATH"; FAKE_GH_DIR = $dir; FAKE_GH_LOG = $log }
             foreach ($name in $vars.Keys) {
                 $saved[$name] = [Environment]::GetEnvironmentVariable($name)
                 [Environment]::SetEnvironmentVariable($name, $vars[$name])
             }
             try {
-                $output = & bash $script:enqueueScript 2>&1
+                $output = & pwsh @arguments 2>&1
                 $exitCode = $LASTEXITCODE
             }
             finally {
@@ -178,12 +170,14 @@ exit 99
         It 'defaults manual runs to a dry run and never dry-runs a scheduled run' {
             $script:workflow | Should -Match '(?ms)dry-run:\s+description: .+?type: boolean\s+default: true'
             $script:workflow | Should -Match '(?m)^\s+DRY_RUN: \$\{\{ inputs\.dry-run == true \}\}$'
+            $script:workflow | Should -Match "(?m)^\s+run: \./eng/ci/Invoke-ScheduledMergeQueueEnqueue\.ps1 -DryRun:\(\`$env:DRY_RUN -eq 'true'\)$"
         }
 
-        It 'authenticates with the build agent PAT so enqueues start merge_group CI' {
+        It 'authenticates the script with the build agent PAT so enqueues start merge_group CI' {
             $script:workflow | Should -Match '(?m)^\s+GH_TOKEN: \$\{\{ secrets\.EDFI_BUILD_AGENT_PAT \}\}$'
             $script:workflow | Should -Not -Match 'secrets\.GITHUB_TOKEN|github\.token'
-            $script:workflow | Should -Match '(?m)^permissions: \{\}$'
+            $script:workflow | Should -Match '(?m)^permissions:\r?\n  contents: read$'
+            $script:workflow | Should -Match '(?m)^\s+persist-credentials: false$'
         }
     }
 
@@ -200,6 +194,7 @@ exit 99
                 (Get-FakePullRequest 8 -Checks @{ 'DMS CI Gate' = 'FAILURE'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'SUCCESS' })
                 (Get-FakePullRequest 9 -Checks @{ 'DMS CI Gate' = 'SUCCESS'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'PENDING' })
                 (Get-FakePullRequest 10 -Checks @{ 'DMS CI Gate' = 'SUCCESS'; 'Config CI Gate' = 'SKIPPED'; 'license/cla' = 'SUCCESS'; 'submit-nuget' = 'FAILURE' })
+                (Get-FakePullRequest 11 -Checks @{ 'DMS CI Gate' = 'IN_PROGRESS'; 'Config CI Gate' = 'SUCCESS'; 'license/cla' = 'SUCCESS' })
             )
 
             $result = Invoke-Enqueue -Pages @($page)
@@ -211,7 +206,7 @@ exit 99
                 'comment 10 Added to the merge queue by the scheduled merge queue run: https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/42'
             )
             $result.Summary | Should -Match '(?m)^### Enqueued \(2\)$'
-            $result.Summary | Should -Match '(?m)^### Skipped \(8\)$'
+            $result.Summary | Should -Match '(?m)^### Skipped \(9\)$'
             $result.Summary | Should -Match '(?m)/pull/2\) Pull request 2: draft$'
             $result.Summary | Should -Match '(?m)/pull/3\) Pull request 3: review decision is REVIEW_REQUIRED$'
             $result.Summary | Should -Match '(?m)/pull/4\) Pull request 4: review decision is CHANGES_REQUESTED$'
@@ -220,6 +215,7 @@ exit 99
             $result.Summary | Should -Match '(?m)/pull/7\) Pull request 7: required check DMS CI Gate is missing$'
             $result.Summary | Should -Match '(?m)/pull/8\) Pull request 8: required check DMS CI Gate is FAILURE$'
             $result.Summary | Should -Match '(?m)/pull/9\) Pull request 9: required check license/cla is PENDING$'
+            $result.Summary | Should -Match '(?m)/pull/11\) Pull request 11: required check DMS CI Gate is IN_PROGRESS$'
         }
 
         It 're-reads pull requests while GitHub has not computed mergeability yet' {
@@ -260,7 +256,7 @@ exit 99
         It 'makes no writes on a dry run and lists what it would enqueue' {
             $page = Get-FakePullRequestPage @((Get-FakePullRequest 1), (Get-FakePullRequest 2))
 
-            $result = Invoke-Enqueue -Pages @($page) -DryRun 'true'
+            $result = Invoke-Enqueue -Pages @($page) -DryRun
 
             $result.ExitCode | Should -Be 0 -Because $result.Output
             @($result.Log | Where-Object { $_ -like 'enqueue *' -or $_ -like 'comment *' }).Count | Should -Be 0
