@@ -163,6 +163,32 @@ public class MetadataModuleTests
     }
 
     [Test]
+    public async Task Metadata_Specifications_Requests_The_OpenApi_Document_Under_The_PathBase()
+    {
+        // Arrange
+        // Asserts the URL the endpoint requests, not the status it returns. Under TestServer the
+        // status cannot detect this: UsePathBase only strips a prefix it matches, so a request for
+        // a bare /openapi/v1.json is left untouched and still routes, making both the correct and
+        // the incorrect URL answer 200 in process. A real deployment puts a reverse proxy in front
+        // that routes only the path-base prefix to this service, so the bare path never arrives,
+        // and the resulting 404 reaches the caller of /metadata/specifications as a 500.
+        var requestedUris = new List<Uri?>();
+        await using var factory = CreateFactory(
+            pathBase: "/config/v8.0/ds5.2",
+            recordedRequestUris: requestedUris
+        );
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/config/v8.0/ds5.2/metadata/specifications");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        requestedUris.Should().ContainSingle();
+        requestedUris[0]!.AbsolutePath.Should().Be("/config/v8.0/ds5.2/openapi/v1.json");
+    }
+
+    [Test]
     public async Task MetadataSpecifications_Declares_Id_Parameter_As_Int32()
     {
         // Arrange
@@ -386,7 +412,9 @@ public class MetadataModuleTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         bool multiTenancy = false,
-        ITenantRepository? tenantRepository = null
+        ITenantRepository? tenantRepository = null,
+        string? pathBase = null,
+        ICollection<Uri?>? recordedRequestUris = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -401,12 +429,25 @@ public class MetadataModuleTests
                         // without this the route is absent from the document under test.
                         ["AppSettings:EnableApplicationResetEndpoint"] = "true",
                         ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
+                        // Left null by default so the existing cases keep exercising the no-path-base
+                        // shape; Program only calls UsePathBase when this carries a value.
+                        ["AppSettings:PathBase"] = pathBase,
                     }
                 )
             );
             builder.ConfigureServices(services =>
             {
-                services.AddSingleton<IHttpClientFactory, TestServerHttpClientFactory>();
+                if (recordedRequestUris is null)
+                {
+                    services.AddSingleton<IHttpClientFactory, TestServerHttpClientFactory>();
+                }
+                else
+                {
+                    services.AddSingleton<IHttpClientFactory>(provider => new RecordingHttpClientFactory(
+                        provider.GetRequiredService<IServer>(),
+                        recordedRequestUris
+                    ));
+                }
 
                 if (tenantRepository is not null)
                 {
@@ -425,6 +466,31 @@ public class MetadataModuleTests
     private sealed class TestServerHttpClientFactory(IServer server) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => ((TestServer)server).CreateClient();
+    }
+
+    /// <summary>
+    /// Resolves the self-request through the TestServer as TestServerHttpClientFactory does, and
+    /// additionally records the absolute URL that was requested, so a test can assert on the URL
+    /// the endpoint builds rather than only on the status it ends up returning.
+    /// </summary>
+    private sealed class RecordingHttpClientFactory(IServer server, ICollection<Uri?> requestedUris)
+        : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new RecordingHandler(((TestServer)server).CreateHandler(), requestedUris));
+
+        private sealed class RecordingHandler(HttpMessageHandler inner, ICollection<Uri?> requestedUris)
+            : DelegatingHandler(inner)
+        {
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken
+            )
+            {
+                requestedUris.Add(request.RequestUri);
+                return base.SendAsync(request, cancellationToken);
+            }
+        }
     }
 
     [Test]
