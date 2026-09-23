@@ -93,7 +93,9 @@ internal static class CdcRunbookLiveCommands
         string id,
         string settingsPath,
         string statePath,
-        CancellationToken token
+        CancellationToken token,
+        IReadOnlyDictionary<string, string> inputs = null!,
+        bool confirmConsumerCapacity = true
     )
     {
         string repository = CdcRunbookExamples.RepositoryRoot;
@@ -120,18 +122,25 @@ internal static class CdcRunbookLiveCommands
         {
             start.Environment.Remove(key);
         }
-        foreach (
-            string argument in CdcRunbookArguments.Parse(
-                CdcRunbookExamples.Read(id),
-                new Dictionary<string, string>
-                {
-                    ["<retained-settings-path>"] = settingsPath,
-                    ["<original-state-root>"] = statePath,
-                }
-            )
-        )
+        var substitutions = new Dictionary<string, string>
         {
-            start.ArgumentList.Add(argument);
+            ["<retained-settings-path>"] = settingsPath,
+            ["<original-state-root>"] = statePath,
+        };
+        if (inputs is not null)
+        {
+            foreach (var input in inputs)
+            {
+                substitutions.Add(input.Key, input.Value);
+            }
+        }
+        foreach (string argument in CdcRunbookArguments.Parse(CdcRunbookExamples.Read(id), substitutions))
+        {
+            // Explicit fixture-only negative case; the positive command is unchanged.
+            if (confirmConsumerCapacity || argument != "--confirm-consumer-capacity")
+            {
+                start.ArgumentList.Add(argument);
+            }
         }
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEndAsync(token);
@@ -147,7 +156,13 @@ internal static class CdcRunbookLiveCommands
             var result = json.RootElement.Clone();
             string artifact = Path.Combine(
                 TestContext.CurrentContext.WorkDirectory,
-                "native-recovery-command-" + Guid.NewGuid().ToString("N") + ".json"
+                (
+                    id.StartsWith("cdc-size-", StringComparison.Ordinal)
+                        ? "record-size-command-"
+                        : "native-recovery-command-"
+                )
+                    + Guid.NewGuid().ToString("N")
+                    + ".json"
             );
             var lines = stderr
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -164,6 +179,7 @@ internal static class CdcRunbookLiveCommands
                     {
                         Test = TestContext.CurrentContext.Test.Name,
                         SnippetId = id,
+                        ConfirmConsumerCapacity = confirmConsumerCapacity,
                         ExitCode = process.ExitCode,
                         Result = result,
                         Passes = passes,
@@ -173,7 +189,7 @@ internal static class CdcRunbookLiveCommands
             );
             TestContext.AddTestAttachment(
                 artifact,
-                "Packaged marked command with bounded watch passes; no interval certification"
+                "Packaged marked command result and any bounded watch passes"
             );
             process.ExitCode.Should().Be(result.GetProperty("exitCode").GetInt32());
             result.GetProperty("operation").GetString().Should().Be(start.ArgumentList[1]);

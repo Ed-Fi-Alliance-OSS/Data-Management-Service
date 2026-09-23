@@ -270,7 +270,7 @@ function Get-CdcRunbookCliReport {
     $required = [ordered]@{
         It_dispatches_the_marked_command_and_exposes_its_options_in_help = 19
         It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector = 2
-        It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement = 10
+        It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement = 12
         It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence = 6
         It_matches_status_excerpts_and_optional_fields_from_the_controller = 8
         It_matches_operation_scoped_results = 2
@@ -316,6 +316,23 @@ function Get-CdcRunbookRecoveryReport {
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-recovery-behavior' -ExactCount
 }
 
+function Get-CdcRunbookRecordSizeReport {
+    <# .SYNOPSIS
+    Requires live marked acknowledgement/command cases and their rollout/rejection evidence.
+    #>
+    param([string] $Path)
+    $required = [ordered]@{
+        It_executes_marked_record_size_increase_with_explicit_inventory = 2
+        It_executes_marked_record_size_retry_after_partial_broker_change = 1
+        It_orders_a_confirmed_increase_and_preserves_identity = 2
+        It_rejects_incomplete_or_mismatched_confirmation_without_mutation = 6
+        It_requires_renewed_confirmation_at_every_interrupted_boundary = 7
+        It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment = 1
+        It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation = 1
+    }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-record-size-behavior' -ExactCount
+}
+
 function Get-CdcRequiredMethodReport {
     param([string] $Path, [Collections.IDictionary] $Required, [string] $Name, [switch] $ExactCount)
     $results = @()
@@ -335,4 +352,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport

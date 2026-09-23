@@ -597,6 +597,24 @@ Describe 'CDC documentation qualification boundary' {
         "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
         (Get-CdcRunbookRecoveryReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
+    It 'requires all record-size rollout and live snippet cases (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }, @{ Fault = 'duplicate' }
+    ) {
+        $path = Join-Path $TestDrive 'record-size.trx'
+        $required = (Get-CdcRunbookRecordSizeReport (Join-Path $TestDrive 'missing.trx')).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            for ($i = 0; $i -lt $case.Required; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        if ($Fault -eq 'excluded') { $nodes = @() }
+        if ($Fault -eq 'skipped') { $nodes[0] = $nodes[0].Replace('Passed', 'NotExecuted') }
+        if ($Fault -eq 'partial') { $nodes = $nodes[1..($nodes.Count - 1)] }
+        if ($Fault -eq 'duplicate') { $nodes += $nodes[0] }
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookRecordSizeReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
     It 'requires every named wrapper case to execute once and pass (<Fault>)' -ForEach @(
         @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
     ) {

@@ -2321,13 +2321,48 @@ No deployment mutation occurs when preparing this file.
 ```
 <!-- /cdc-snippet: cdc-size-no-consumers -->
 
-For a nonempty inventory, keep the same complete envelope, set `noConsumers` to
-`false`, and replace `consumers` with one entry per distinct deployment containing
-all four fields: `deploymentIdentity`, `revision`, `confirmingOwner`, and
-`evidenceReference`. For example, the illustrative entry
-`{"deploymentIdentity":"consumer-a","revision":"revision-2","confirmingOwner":"owner-a","evidenceReference":"capacity-20000000-v2"}`
-requires real owner evidence behind each substituted token; it is not an attestation
-to copy unchanged. Operator and consumer fields use lowercase ASCII letters, digits,
+For a nonempty inventory, use `cdc-size-consumers` with one entry per distinct
+consumer deployment. The same identity/limit substitutions above apply. Replace
+`<consumer-deployment-token>`, `<consumer-revision-token>`, `<consumer-owner-token>`
+and `<consumer-evidence-token>` with the current deployment, revision, confirming
+owner and opaque capacity-evidence ID. Fixtures may substitute their owned consumer
+identity and evidence tokens, renewing revision/evidence on interrupted retry.
+These declarations exercise attestation validation; they do not certify an external
+consumer's capacity.
+
+<!-- cdc-snippet: cdc-size-consumers -->
+```json
+{
+  "operationId": "<increase-operation-uuid>",
+  "bindingIdentity": {
+    "deploymentKey": "<binding-deployment-key>",
+    "tenantKey": "<binding-tenant-key>",
+    "dataStoreId": "<binding-data-store-id>",
+    "instanceKey": "<binding-instance-key>",
+    "generation": 1,
+    "provider": "<binding-provider>",
+    "physicalSourceFingerprint": "<binding-physical-source-fingerprint>",
+    "connectorName": "<binding-connector-name>",
+    "topicName": "<binding-topic-name>"
+  },
+  "previousMaxRecordBytes": 10000000,
+  "requestedMaxRecordBytes": 20000000,
+  "requestedProducerBufferBytes": 33554432,
+  "operatorIdentity": "<operator-token>",
+  "noConsumers": false,
+  "consumers": [
+    {
+      "deploymentIdentity": "<consumer-deployment-token>",
+      "revision": "<consumer-revision-token>",
+      "confirmingOwner": "<consumer-owner-token>",
+      "evidenceReference": "<consumer-evidence-token>"
+    }
+  ]
+}
+```
+<!-- /cdc-snippet: cdc-size-consumers -->
+
+Operator and consumer fields use lowercase ASCII letters, digits,
 dot, underscore and hyphen, without leading, trailing or consecutive separators.
 Use opaque evidence IDs, not URLs, credentials or raw private reports. Keep the
 acknowledgement at most 1 MiB. Unknown/duplicate fields and omitted required fields
@@ -2366,10 +2401,13 @@ The [shipped rollout](../../src/dms/backend/EdFi.DataManagementService.Backend.C
 persists intent plus the fresh acknowledgement, verifies connector stop, raises and
 reads back broker limits, then the public-topic limit, then producer buffer, then
 producer request size last. Each producer configuration update requires validated
-stopped/task-free evidence before advancement. The controller resumes only after
-these checks, waits within the deadline for usable fresh lag and projection catch-up,
-and requires publication readiness before completion plus a final ordinary fresh
-pass afterward. Lost mutation responses are reconciled from live state; a REST
+stopped/task-free evidence before advancement. After capacity alignment and fresh eligibility, it starts its
+invocation-owned projection executor (preserving an already running executor), then
+resumes the connector and waits within the deadline for usable fresh lag and
+projection catch-up. It requires publication readiness before completion plus a final
+ordinary fresh pass afterward. Executor startup does not reactivate/rebuild the
+projection or authorize API writers; startup failure keeps intent pending without
+connector resume. Lost mutation responses are reconciled from live state; a REST
 acknowledgement alone does not establish success. No manual broker change, raw
 Connect PUT/resume, offset reset or source projection repair is part of this procedure.
 
@@ -2426,9 +2464,12 @@ The [acknowledgement fixtures](../../src/dms/backend/EdFi.DataManagementService.
 cover renewal and changed-consumer evidence; the
 [rollout fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeIncreaseTests.cs)
 cover interruption boundaries, lost responses, not-ready gating and ordered effective
-limits for both providers. T23/T24 must exercise these exact marked inputs/commands
-through the live fixtures and record artifacts; this documentation does not claim
-those runs have occurred.
+limits for both providers. [PostgreSQL T23 qualification](cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
+exercises both marked acknowledgement inputs, the increase/retry commands and the
+post-success settings handoff through the packaged CLI. SQL Server live qualification
+remains pending T24. The producer-recovery fixture supplies bounded operational size
+evidence; neither payload length nor an HTTP request limit defines Kafka's exact
+serialized-record threshold.
 
 <a id="generation-retirement"></a>
 

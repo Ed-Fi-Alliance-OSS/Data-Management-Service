@@ -24,7 +24,7 @@ public sealed record CdcRecordSizeIncreaseResult(
 /// <summary>
 /// Explicit, acknowledged size rollout. The previous request and scope are retained on retry. The
 /// confirmation callback obtains fresh operator input for this invocation while the controller lock
-/// is held. Projection remains caller-owned; success is observational, never writer authorization.
+/// is held. The caller owns runtime disposal; success is observational, never writer authorization.
 /// </summary>
 public sealed class CdcRecordSizeIncrease
 {
@@ -227,6 +227,13 @@ public sealed class CdcRecordSizeIncrease
                     );
                     await RequireEligible();
 
+                    // The standalone command owns an initialized but unstarted runtime. After
+                    // confirmed capacity alignment and fresh eligibility, start its executor for
+                    // publication-readiness observations. Existing executors are preserved.
+                    component = CdcDeploymentComponent.Projection;
+                    await previousTarget.Runtime.StartProcessingAsync(ct);
+                    ct.ThrowIfCancellationRequested();
+                    component = CdcDeploymentComponent.WorkflowState;
                     resumeId = Guid.NewGuid();
                     await session.RecordIntentAsync(
                         previous.TargetIdentity,

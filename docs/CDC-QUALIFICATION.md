@@ -71,6 +71,26 @@ with nine live cases and eleven marked invocations per provider. SQL Server task
 failure uses a temporary password change on the fixture-owned login, restored
 before controller inspection; this is a test fault, not an operator procedure.
 
+The provider RecordSize selection requires all twenty outcomes across seven methods,
+including the three marked-command cases in
+[CdcRecordSizeIncreaseTests.Runbook.cs](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs).
+The provider-parameterized fixture reuses the packaged command/settings harness and
+shipped Compose services. It loads exact `cdc-size-no-consumers` and
+`cdc-size-consumers` acknowledgements, invokes `cdc-size-increase` and `cdc-size-retry`,
+and rejects missing confirmation on every invocation. A fixture-only interruption
+after the actual broker update leaves original scope and settings pending; the new CLI
+process renews consumer evidence, reconciles the partial changes and completes.
+The acknowledgement is an operator attestation, not independent consumer certification.
+After aligned limits and fresh eligibility, the controller starts its invocation-owned
+projector before resume; a startup failure leaves pending intent without resume.
+The CLI leaves settings unchanged. The fixture then applies only the two documented
+size settings, preserves the broker override and invokes `cdc-validate`; its unstarted
+projector remains unavailable even though pre-start eligibility succeeds. Original
+fixtures retain seven interruption boundaries, changed-scope rejection, producer failure
+recovery and Compose replacement/persistence coverage. Missing/skipped/duplicate required
+cases fail the separate report guard. [PostgreSQL T23 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
+qualifies this procedure; SQL Server's marked-command qualification remains pending T24.
+
 Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.
 
 `qualification.json` records every suite's counts and outcome. Empty selection, missing/inconsistent reports, skipped cases and nonzero process exits fail qualification. Prerequisite failures are labeled `EnvironmentUnavailable`; they are not passing behavior evidence. No automatic retry replaces a failed test scenario or suite run. Structured JSON attachments retain controller boundaries, provider/lag observations, recovery, rollout, history and cleanup evidence, linked from TRX results. Fixture validation diagnostics retain bounded code locations without exception messages or values. Public TRX files omit raw assertion output; raw logs stay in a private temporary directory and are never uploaded.

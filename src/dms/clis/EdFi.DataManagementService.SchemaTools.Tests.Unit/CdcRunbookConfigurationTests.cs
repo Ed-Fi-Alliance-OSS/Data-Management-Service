@@ -254,6 +254,7 @@ public partial class Given_Cdc_command_configuration
     }
 
     [TestCase("")]
+    [TestCase("consumers")]
     [TestCase("missing")]
     [TestCase("unknown")]
     [TestCase("scope")]
@@ -276,7 +277,22 @@ public partial class Given_Cdc_command_configuration
             ["<binding-topic-name>"] = identity.TopicName,
             ["<operator-token>"] = "fixture-operator",
         };
-        var json = JsonNode.Parse(CdcRunbookSnippets.Read("cdc-size-no-consumers", "json"))!;
+        string acknowledgementSnippet =
+            mutation == "consumers" ? "cdc-size-consumers" : "cdc-size-no-consumers";
+        string acknowledgementText = CdcRunbookSnippets.Read(acknowledgementSnippet, "json");
+        foreach (
+            var pair in new Dictionary<string, string>
+            {
+                ["<consumer-deployment-token>"] = "consumer-a",
+                ["<consumer-revision-token>"] = "revision-2",
+                ["<consumer-owner-token>"] = "owner-a",
+                ["<consumer-evidence-token>"] = "capacity-20000000-v2",
+            }
+        )
+        {
+            acknowledgementText = acknowledgementText.Replace(pair.Key, pair.Value, StringComparison.Ordinal);
+        }
+        var json = JsonNode.Parse(acknowledgementText)!;
         foreach (var property in json.AsObject().ToArray())
         {
             if (
@@ -320,7 +336,7 @@ public partial class Given_Cdc_command_configuration
             path,
             mutation != "confirmation"
         );
-        if (mutation.Length > 0)
+        if (mutation.Length > 0 && mutation != "consumers")
         {
             Func<Task> read = () => CdcCommandRunner.ReadAcknowledgementAsync(invocation, request, default);
             if (mutation is "missing" or "unknown")
@@ -336,8 +352,26 @@ public partial class Given_Cdc_command_configuration
         var parsed = await CdcCommandRunner.ReadAcknowledgementAsync(invocation, request, default);
         parsed.OperationId.Should().Be(operation);
         parsed.BindingIdentity.Should().Be(identity);
-        parsed.NoConsumers.Should().BeTrue();
-        parsed.Consumers.Should().BeEmpty();
+        parsed.NoConsumers.Should().Be(mutation != "consumers");
+        if (mutation == "consumers")
+        {
+            parsed
+                .Consumers.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(
+                    new CdcConsumerCapacityEvidence(
+                        "consumer-a",
+                        "revision-2",
+                        "owner-a",
+                        "capacity-20000000-v2"
+                    )
+                );
+        }
+        else
+        {
+            parsed.Consumers.Should().BeEmpty();
+        }
         parsed.PreviousMaxRecordBytes.Should().Be(request.ConnectorPolicy.MaxRecordBytes);
         parsed.RequestedMaxRecordBytes.Should().Be(20000000);
         parsed.RequestedProducerBufferBytes.Should().Be(33554432);

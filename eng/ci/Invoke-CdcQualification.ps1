@@ -164,6 +164,9 @@ try {
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
                 Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
+                if ($phase -eq 'RecordSize') {
+                    $reports.Add((Get-CdcRunbookRecordSizeReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
                 if ($phase -eq 'Recovery') {
                     $reports.Add((Get-CdcRunbookRecoveryReport -Path (Join-Path $raw "$name/$name.trx")))
                 }

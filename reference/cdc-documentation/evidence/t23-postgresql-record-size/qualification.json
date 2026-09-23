@@ -1,0 +1,76 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 20,
+    "Passed": 20,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Postgresql-CdcControllerRecordSize"
+  },
+  {
+    "Name": "runbook-record-size-behavior",
+    "Status": "Passed",
+    "Total": 7,
+    "Passed": 7,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_executes_marked_record_size_increase_with_explicit_inventory",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_executes_marked_record_size_retry_after_partial_broker_change",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_orders_a_confirmed_increase_and_preserves_identity",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation",
+        "Required": 6,
+        "Total": 6,
+        "Passed": 6,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_requires_renewed_confirmation_at_every_interrupted_boundary",
+        "Required": 7,
+        "Total": 7,
+        "Passed": 7,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

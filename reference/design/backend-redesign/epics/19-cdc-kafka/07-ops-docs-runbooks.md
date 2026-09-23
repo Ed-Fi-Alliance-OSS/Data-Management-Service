@@ -254,6 +254,12 @@ login/user name through `Cdc:DatabaseConnectorPrincipal` and the matching connec
   retention, partition barriers, durable checkpoints, deadline/renewal evidence, and
   capacity for the retained log. Reuse the DMS-1324 consumer-conformance evidence as an
   example, not a supported consumer implementation or certification of third-party stores.
+- Qualify the standalone size-increase runtime boundary: after acknowledged capacity
+  alignment and fresh eligibility, start the invocation-owned projection executor
+  before connector resume, preserving any running executor and caller-owned disposal.
+  A start failure retains pending intent without resume. The owning
+  [size-increase contract](../../design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
+  governs this DMS-1326 integration fix; status/watch cannot complete the operation.
 - Document `increase-record-size` using the shipped acknowledgement file and renewed
   confirmation flow, including an explicit no-consumers example and interrupted-rollout
   retry. Link [record sizing](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size)

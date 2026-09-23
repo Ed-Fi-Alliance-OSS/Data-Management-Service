@@ -17,7 +17,8 @@ and observation snippets passed live qualification. [PostgreSQL lifecycle](cdc-i
 passed T18 and [SQL Server lifecycle](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19)
 passed T19; [PostgreSQL native recovery](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21)
 passed T21; [SQL Server native recovery](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22)
-passed T22. Remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
+passed T22; [PostgreSQL record-size increase](cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
+passed T23. Remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.

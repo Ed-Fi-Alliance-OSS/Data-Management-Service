@@ -1549,6 +1549,15 @@ source, public topic, or requested ceiling cannot reuse the acknowledgement. Mis
 mismatched confirmation prevents advancement, and a partially completed increase remains
 not ready. No automatic rollback or lowering of already increased limits is implied.
 
+After confirmed capacity alignment and fresh pre-start eligibility, the size-increase
+controller starts its invocation-owned projection executor before connector resume.
+An already running executor is preserved; this does not reactivate the projection,
+rebuild the source, authorize API writers, or change the caller's disposal ownership.
+An executor-start failure leaves the operation pending and does not resume the
+connector. Standalone completion requires this executor's fresh observations as well
+as the ordinary provider, broker, connector, offset and lag checks. Status/watch remain
+observation-only and cannot complete a pending size increase.
+
 ### Deferred new-topic cutover
 
 Changing the topic partition count or `partitionerAlgorithm` token creates a new binding
