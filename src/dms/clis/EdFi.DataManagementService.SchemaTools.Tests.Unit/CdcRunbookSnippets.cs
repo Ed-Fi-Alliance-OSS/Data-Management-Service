@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.SchemaTools.Cdc;
 using FluentAssertions;
 
@@ -22,35 +21,8 @@ internal static class CdcRunbookSnippets
     internal static string Extract(string markdown, string id, string language) =>
         CdcRunbookExamples.Extract(markdown, id, language);
 
-    // The marked CLI examples deliberately use a single command with literal or single-quoted arguments.
-    // Reject shell expressions instead of attempting to interpret arbitrary PowerShell.
-    internal static string[] Arguments(string code, IReadOnlyDictionary<string, string> inputs)
-    {
-        var tokens = Regex.Matches(code, @"\G\s*(?:'(?<quoted>[^'\r\n]*)'|(?<literal>[a-zA-Z0-9_./:-]+))");
-        tokens
-            .Sum(t => t.Length)
-            .Should()
-            .Be(code.TrimEnd().Length, "only literal CLI arguments are supported");
-        var values = tokens
-            .Select(t => t.Groups["quoted"].Success ? t.Groups["quoted"].Value : t.Groups["literal"].Value)
-            .ToArray();
-        values[0].Should().Be("api-schema-tools");
-        return values
-            .Skip(1)
-            .Select(value =>
-            {
-                if (!value.StartsWith('<'))
-                {
-                    return value;
-                }
-                inputs
-                    .ContainsKey(value)
-                    .Should()
-                    .BeTrue($"fixture input {value} must be explicitly declared");
-                return inputs[value];
-            })
-            .ToArray();
-    }
+    internal static string[] Arguments(string code, IReadOnlyDictionary<string, string> inputs) =>
+        CdcRunbookArguments.Parse(code, inputs);
 
     internal static Dictionary<string, string> CommandInputs(
         string settings,

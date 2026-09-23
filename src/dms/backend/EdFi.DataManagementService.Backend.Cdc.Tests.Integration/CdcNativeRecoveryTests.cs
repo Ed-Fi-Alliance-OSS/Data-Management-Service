@@ -7,7 +7,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Integration.CdcProviderAdmissionFixture;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
@@ -40,14 +43,70 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         );
 
     private readonly List<object> _evidence = [];
+    private string _settingsPath = null!;
+    private DocumentCacheAdminCliProcessHarness _commandRuntime = null!;
 
     [SetUp]
     public async Task Setup()
     {
         _evidence.Clear();
         _timeout = new(TimeSpan.FromMinutes(10));
-        _fixture = await CdcProviderAdmissionFixture.StartAsync(provider, Token);
+        string schemaWorkspace = DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory;
+        var manifest = ApiSchemaAssetManifestReader.ReadFromFile(
+            schemaWorkspace,
+            Path.Combine(schemaWorkspace, ApiSchemaAssetManifestReader.ManifestFileName)
+        );
+        _fixture = await CdcProviderAdmissionFixture.StartAsync(
+            provider,
+            Token,
+            schemaFiles: manifest.Projects.Select(p => Path.Combine(schemaWorkspace, p.SchemaPath)).ToArray()
+        );
         await _fixture.RegisterAsync(Token);
+        _settingsPath = Path.Combine(_fixture.Infrastructure.StateRoot, "recovery-settings.json");
+        _commandRuntime = await DocumentCacheAdminCliProcessHarness.CreateAsync(
+            DocumentCacheAdminCliTarget.ForManagedSource(
+                provider == CdcProvider.SqlServer,
+                _fixture.ConnectionString
+            )
+        );
+        var fullSettings = new ConfigurationBuilder().AddJsonFile(_commandRuntime.SettingsPath).Build();
+        using var settingsLifetime = (IDisposable)fullSettings;
+        var runtimeSettings = fullSettings
+            .AsEnumerable()
+            .Where(p => p.Value is not null)
+            .ToDictionary(p => p.Key, p => p.Value!);
+        runtimeSettings["ConfigurationServiceSettings:ClientSecret"] = _commandRuntime.SecretFromEnvironment;
+        await CdcRunbookLiveCommands.WriteSettingsAsync(
+            _fixture,
+            provider,
+            _settingsPath,
+            Token,
+            runtimeSettings
+        );
+        var images = new Dictionary<string, string>();
+        foreach (string role in new[] { "provider", "broker", "connect" })
+        {
+            var inspected = await new DockerCli().RunAsync(
+                [
+                    "inspect",
+                    _fixture.Infrastructure.Resources.ControllerProject + "-" + role,
+                    "--format",
+                    "{{.Image}}",
+                ],
+                Token
+            );
+            string image = inspected.StandardOutput.Trim();
+            image.Should().MatchRegex("^sha256:[a-f0-9]{64}$");
+            images[role] = image;
+        }
+        _evidence.Add(
+            new
+            {
+                Provider = provider.ToString(),
+                Profile = "LocalSingleBroker/AuthorizationDisabledLocal",
+                Images = images,
+            }
+        );
     }
 
     [TearDown]
@@ -67,6 +126,10 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             path,
             "Timestamped native recovery, publication and containment evidence; no interval certification"
         );
+        if (_commandRuntime is not null)
+        {
+            await _commandRuntime.DisposeAsync();
+        }
         if (_fixture is not null)
         {
             await _fixture.DisposeAsync();
@@ -117,6 +180,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
                 UnobservedIntervalCertified = false,
             }
         );
+        await ObserveSnippetAsync("cdc-native-recovery-watch", "worker-crash-before-revalidation");
         var recovered = await ObserveAsync();
         RequireInvalidated(recovered);
         _fixture.TransformMetrics = _ => retained;
@@ -227,6 +291,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             .SequenceEqual(config.OrderBy(p => p.Key, StringComparer.Ordinal));
         unchanged.Should().BeTrue();
         RequireNoResume(calls);
+        await ObserveSnippetAsync("cdc-native-recovery-watch", "same-worker-task-recovered");
         _evidence.Add(
             new
             {
@@ -294,6 +359,11 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         var recovery = await ObserveAsync();
         recovery.Recovery.Boundary.Should().Be(CdcRecoveryBoundary.NativeRecovery);
         recovery.Status.Readiness.Should().Be(CoreCdc.CdcReadiness.NotReady);
+        await ObserveSnippetAsync(
+            "cdc-incomplete-shutdown-status",
+            acknowledged ? "unverified-shutdown" : "failed-shutdown"
+        );
+        await ObserveSnippetAsync("cdc-native-recovery-watch", "incomplete-shutdown");
         int calls = _fixture.Infrastructure.ConnectCalls.Count;
         var start = await _fixture.Controllers.Lifecycle.ExecuteAsync(
             Target,
@@ -403,6 +473,11 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             {
                 (await ObserveAsync()).Status.Readiness.Should().Be(CoreCdc.CdcReadiness.NotReady);
                 await RequireRejectedAsync(directory);
+                await ObserveSnippetAsync(
+                    "cdc-incomplete-shutdown-status",
+                    "missing-" + directory,
+                    expectTarget: directory != "bindings"
+                );
                 File.Exists(path).Should().BeFalse();
             }
             finally
@@ -453,6 +528,16 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
                 .State.Should()
                 .Be(CdcConnectOffsetState.Missing);
         }
+        var contained = await ObserveSnippetAsync(
+            "cdc-native-recovery-watch",
+            retained ? "retained-terminal" : "new-history-loss"
+        );
+        var containedTarget = contained.GetProperty("data").GetProperty("targets")[0];
+        containedTarget.GetProperty("containment").GetString().Should().Be("Stopped");
+        containedTarget.GetProperty("incidentPersistence").GetString().Should().Be("Persisted");
+        Observed(await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, Token))
+            .IsStopped.Should()
+            .BeTrue();
         var lost = await ObserveAsync();
         lost.Status.Readiness.Should().Be(CoreCdc.CdcReadiness.NotReady);
         lost.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
@@ -538,6 +623,97 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
                 FreshInitialAuthorization = true,
             }
         );
+    }
+
+    private async Task<JsonElement> ObserveSnippetAsync(string id, string scenario, bool expectTarget = true)
+    {
+        var result = await CdcRunbookLiveCommands.InvokeAsync(
+            id,
+            _settingsPath,
+            _fixture.Infrastructure.StateRoot,
+            Token
+        );
+        // Standalone status does not start its invocation-owned projector or borrow the
+        // in-process projector's health. It still collects real provider/worker/offset evidence.
+        result.GetProperty("exitCode").GetInt32().Should().Be(expectTarget ? 1 : 2);
+        result.GetProperty("succeeded").GetBoolean().Should().BeFalse();
+        if (expectTarget)
+        {
+            var target = result.GetProperty("data").GetProperty("targets")[0];
+            target.GetProperty("status").GetProperty("readiness").GetString().Should().Be("NotReady");
+            if (scenario is "worker-crash-before-revalidation" or "same-worker-task-recovered")
+            {
+                target
+                    .GetProperty("status")
+                    .GetProperty("providerSetup")
+                    .GetProperty("state")
+                    .GetString()
+                    .Should()
+                    .Be("Satisfied");
+                target
+                    .GetProperty("status")
+                    .GetProperty("sourceHistory")
+                    .GetProperty("continuity")
+                    .GetString()
+                    .Should()
+                    .Be("Healthy");
+                target
+                    .GetProperty("status")
+                    .GetProperty("connectorConfig")
+                    .GetProperty("state")
+                    .GetString()
+                    .Should()
+                    .Be("Satisfied");
+                target
+                    .GetProperty("status")
+                    .GetProperty("connectorRuntime")
+                    .GetProperty("state")
+                    .GetString()
+                    .Should()
+                    .Be("Satisfied");
+                target
+                    .GetProperty("status")
+                    .GetProperty("projection")
+                    .GetProperty("state")
+                    .GetString()
+                    .Should()
+                    .Be("Unknown");
+                _commandRuntime.ConfigurationService.DataStoresRequestCount.Should().BeGreaterThan(0);
+            }
+            if (scenario is "failed-shutdown" or "unverified-shutdown" or "incomplete-shutdown")
+            {
+                target
+                    .GetProperty("recovery")
+                    .GetProperty("boundary")
+                    .GetString()
+                    .Should()
+                    .Be("NativeRecovery");
+            }
+            target
+                .GetProperty("recovery")
+                .GetProperty("unobservedIntervalCertified")
+                .GetBoolean()
+                .Should()
+                .BeFalse();
+        }
+        if (!expectTarget)
+        {
+            result.TryGetProperty("data", out _).Should().BeFalse();
+            var diagnostic = result.GetProperty("diagnostics").EnumerateArray().Single();
+            diagnostic.GetProperty("component").GetString().Should().Be("Request");
+            diagnostic.GetProperty("failure").GetString().Should().Be("InvalidInput");
+        }
+        _evidence.Add(
+            new
+            {
+                At = DateTimeOffset.UtcNow,
+                SnippetId = id,
+                Scenario = scenario,
+                Layer = "PackagedCliLiveServices",
+                Result = result,
+            }
+        );
+        return result;
     }
 
     private async Task CrashAsync()

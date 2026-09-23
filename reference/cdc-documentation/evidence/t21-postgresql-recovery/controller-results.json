@@ -1,0 +1,38 @@
+[
+  {
+    "Test": "It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_contains_recovered_connectors_and_retains_terminal_history_loss(False)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery(True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_contains_recovered_connectors_and_retains_terminal_history_loss(True)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery(False)",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness",
+    "Outcome": "Passed"
+  }
+]

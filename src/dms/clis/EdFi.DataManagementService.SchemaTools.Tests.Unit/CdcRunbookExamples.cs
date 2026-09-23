@@ -9,7 +9,7 @@ using FluentAssertions;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
-// Shared only by the three CDC documentation test consumers; never executes Markdown.
+// Shared by CDC documentation tests; never executes Markdown.
 internal static class CdcRunbookExamples
 {
     internal static string RepositoryRoot

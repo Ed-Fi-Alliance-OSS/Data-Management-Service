@@ -1,0 +1,76 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 9,
+    "Passed": 9,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Postgresql-CdcControllerNativeRecovery"
+  },
+  {
+    "Name": "runbook-recovery-behavior",
+    "Status": "Passed",
+    "Total": 7,
+    "Passed": 7,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_contains_recovered_connectors_and_retains_terminal_history_loss",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

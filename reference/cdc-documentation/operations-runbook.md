@@ -1400,7 +1400,7 @@ occurred. Keep the result and inspect before issuing another operation.
 
 ## Native recovery and incomplete shutdown
 
-**Documented in T05; live exercise pending T21/T22.** Native worker recovery, task
+**PostgreSQL passed [T21](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21); SQL Server live exercise remains pending T22.** Native worker recovery, task
 reassignment/internal recovery and incomplete shutdown follow the
 [design-owned recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
 Records may be consumed and published **before** controller revalidation. Later
@@ -1414,7 +1414,7 @@ on the same worker can be unobservable; polling is not a consumption fence.
 | Authority/offline window | Deployment/incident owner preserves any existing writer or consumer fence and coordinates response. Status/watch do not create an API routing fence. After failed managed startup, keep external writers excluded and do not launch DMS. |
 | Retained inputs | Original settings/state/inventory, lifecycle intents/completions, incident files, sanitized operation diagnostics/timestamps, and fresh provider/offset/connector/task/metrics observations. |
 | Invocation | `cdc-incomplete-shutdown-status` for bounded inspection; `cdc-native-recovery-watch` for bounded repeated observations. Both may persist incidents and attempt connector containment; they are not guaranteed read-only. |
-| JSON/exit status | `status`/`watch` stdout is the final envelope; watch pass JSON goes to stderr. Exit `0` requires final `data.aggregate.readiness: "Ready"`; `1` includes not-ready, rejection, unavailable evidence or timeout; `2` invalid input; `130` cancellation. Use `data.targets[]` fields listed below, when present; early failures may omit `data`. |
+| JSON/exit status | `status`/`watch` stdout is the final envelope; watch pass JSON and final safe diagnostic lines go to stderr. Exit `0` requires final `data.aggregate.readiness: "Ready"`; `1` includes not-ready, rejection, unavailable evidence or timeout; `2` invalid input; `130` cancellation. Use `data.targets[]` fields listed below, when present; early failures may omit `data`. |
 | Postcondition | Fresh observation classifies current readiness and reports persistence/containment separately. A recoverable observation can become ready only after a fresh pass; a terminal incident remains terminal. Neither outcome verifies whole-worker shutdown. |
 | Rejection/timeout action | Follow the table below. Keep original infrastructure/evidence available; escalate failed persistence or stop and missing provenance. Never infer containment from an attempted action or a generic nonzero/zero exit. |
 
@@ -1447,6 +1447,20 @@ recovery invalidates prior readiness/telemetry; the controller recollects proven
 provider history, committed offsets, worker/task state and metrics. Missing telemetry
 or provider/offset evidence is unavailable, not zero lag or proof of continuity.
 Watch retains identity comparisons across its passes, not earlier readiness.
+A new CLI process has no earlier worker/task sample: a recovered running task may
+therefore report `recovery.boundary: "Unobserved"`. It cannot reconstruct a crash
+between processes. Durable incomplete-stop intent can still establish
+`NativeRecovery`. Neither value changes the uncertified interval.
+
+The provider recovery fixture substitutes complete private settings and its
+original state root for the two declared paths. It reuses the packaged-test CMS
+endpoint and runtime-compatible schema workspace while observing live provider,
+broker, worker, offsets and telemetry. The standalone observer does not start its
+projector, so its projection health remains unavailable; it cannot borrow readiness
+from the fixture's in-process projector. Separate controller assertions exercise
+stale telemetry invalidation and fresh current readiness. Fixture-only crash,
+task configuration, offset deletion and missing-state faults are never operator
+recovery instructions.
 
 | Observation/diagnostic | Action and completion criterion |
 | --- | --- |
@@ -1456,6 +1470,7 @@ Watch retains identity comparisons across its passes, not earlier readiness.
 | One peer started, later peer failed, or DMS launch failed | Keep the outage fence; do not assume rollback. Inspect all peers and use fresh managed stop before repeating the startup sequence. |
 | Settings/selection/identity-provider mismatch, unreadable inventory, or surviving infrastructure without inventory | Retain files and infrastructure; use [state/provenance diagnosis](#unsupported-provenance). Correct caller selection to the original retained values only when that evidence is intact; no new defaults, backup rollback, or recreated inventory supplies continuity. |
 | `recovery.requiresFreshPass: true` or current evidence unavailable | Discard earlier readiness. Resolve observation access to the same services and obtain a fresh bounded pass. Missing/unknown history cannot authorize restart/resume. Three watch passes are not a guaranteed recovery deadline. |
+| Missing retained binding; `Request/InvalidInput`, exit `2`, no `data` | The command cannot select its original binding. Preserve remaining provenance and escalate under [unsupported provenance](#unsupported-provenance); do not recreate binding state or treat this as a transient healthy observation. This broad code alone does not identify the missing file. |
 | Terminal history loss or retained incident | Generation stays terminal even after provider/offset/metrics become healthy. Status/watch attempt durable incident persistence and connector stop; retain both results and escalate under [unsupported provenance](#unsupported-provenance). No deletion/restoration or replacement workflow is supplied here. |
 | `incidentPersistence: "Persisted"`, `containment: "Stopped"` | Incident was durably recorded and affected connector stop was verified for that observation. This neither clears terminal status nor verifies every peer or purges previously published data. |
 | `incidentPersistence: "Failed"` with `WorkflowState/Unavailable` | Preserve the failure report externally and escalate durable-state access; even `containment: "Stopped"` does not provide durable incident protection. Keep the generation fenced; later healthy status cannot resolve the missing persistence. |

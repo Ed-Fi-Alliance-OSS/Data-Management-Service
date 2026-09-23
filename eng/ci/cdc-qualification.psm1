@@ -299,6 +299,23 @@ function Get-CdcRunbookLifecycleReport {
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-lifecycle-behavior' -ExactCount
 }
 
+function Get-CdcRunbookRecoveryReport {
+    <# .SYNOPSIS
+    Requires every native recovery case, including packaged marked-command observations.
+    #>
+    param([string] $Path)
+    $required = [ordered]@{
+        It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics = 1
+        It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap = 1
+        It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery = 2
+        It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations = 1
+        It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state = 1
+        It_contains_recovered_connectors_and_retains_terminal_history_loss = 2
+        It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness = 1
+    }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-recovery-behavior' -ExactCount
+}
+
 function Get-CdcRequiredMethodReport {
     param([string] $Path, [Collections.IDictionary] $Required, [string] $Name, [switch] $ExactCount)
     $results = @()
@@ -318,4 +335,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport

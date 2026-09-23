@@ -15,7 +15,8 @@ in Contract/PR. [PostgreSQL local/direct-E2E setup](cdc-inv-evidence.md#postgres
 and [SQL Server local/published/direct-E2E setup](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
 and observation snippets passed live qualification. [PostgreSQL lifecycle](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18)
 passed T18 and [SQL Server lifecycle](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19)
-passed T19; remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
+passed T19; [PostgreSQL native recovery](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21)
+passed T21. Remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.

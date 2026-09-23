@@ -49,13 +49,31 @@ mismatch rejection; those fixture mutations are not operator recovery procedures
 The runner builds SchemaTools in the selected configuration and in Debug, which
 the shipped wrapper resolver prefers when present, before executing the snippets.
 
+The provider Recovery selection also requires all nine native-recovery outcomes across
+seven methods. The existing provider fixture invokes the exact marked
+`cdc-native-recovery-watch` and `cdc-incomplete-shutdown-status` commands through
+the packaged SchemaTools executable, using its original state and private fixture
+settings. The shared snippet extractor and literal-argument binder reject undeclared
+substitutions. No local bootstrap stack or additional Pester process is needed for
+Recovery. Each native-recovery attachment records snippet/scenario IDs, command
+results and immutable service image IDs. Test hooks supply failed/unverified shutdown
+and unavailable observations; real worker/task recovery, offset loss, state-file
+absence and CLI containment operate only on fixture-owned services. The fixture
+reuses the packaged-administration test CMS endpoint and runtime-compatible schema
+workspace; the CLI loads complete matching settings and inspects live
+provider, broker, worker, offsets and metrics. Its invocation-owned projector is
+not started by status/watch, so projection health remains unavailable. Separate
+in-process assertions qualify fresh readiness and invalidation of retained telemetry.
+Neither layer certifies the unobserved interval. See the
+[operator evidence index](../reference/cdc-documentation/cdc-inv-evidence.md).
+
 Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.
 
 `qualification.json` records every suite's counts and outcome. Empty selection, missing/inconsistent reports, skipped cases and nonzero process exits fail qualification. Prerequisite failures are labeled `EnvironmentUnavailable`; they are not passing behavior evidence. No automatic retry replaces a failed test scenario or suite run. Structured JSON attachments retain controller boundaries, provider/lag observations, recovery, rollout, history and cleanup evidence, linked from TRX results. Fixture validation diagnostics retain bounded code locations without exception messages or values. Public TRX files omit raw assertion output; raw logs stay in a private temporary directory and are never uploaded.
 
 With `-PullImages`, each prerequisite image gets at most three pull attempts, with waits of five and fifteen seconds after failures. Exhausting those attempts reports `EnvironmentUnavailable` before any suite starts. The uploaded `image-pulls.jsonl` retains one JSON record per attempt, including failures followed by a successful retry: image reference, attempt/budget, UTC start time, duration, exit code, outcome, failure category, next retry delay, and private log filename. Categories distinguish rate limits, authorization, missing images, disk exhaustion, DNS, TLS, timeouts, connection failures, and registry availability; unrecognized errors are `Unknown`. These classifications are diagnostic hints from Docker output, not confirmed underlying causes. The corresponding `pull-<id>-<attempt>.log` files preserve complete output under the private temporary directory printed by the runner. Raw logs are never uploaded, and unsafe image references are redacted from public evidence and console messages.
 
-Full operator runbooks belong to E19-S07; plugin publication belongs to the companion repository. API-driven Kafka scenarios belong to E19-S06. Documentation, command help, examples and this index are authored artifacts, excluded from validation tests; executable E19-S05 scenario-to-invariant traceability remains covered by Contract tests.
+Operator runbooks and documentation checks belong to E19-S07; plugin publication belongs to the companion repository. API-driven Kafka scenarios belong to E19-S06. Explanatory prose remains human-reviewed; marked operator examples and relative links have focused documentation checks. Executable E19-S05 scenario-to-invariant traceability remains covered by Contract tests.
 
 Compose persistence qualification starts with newly provisioned Kafka volumes. The storage change does not migrate logs from older containers' writable layers.
 

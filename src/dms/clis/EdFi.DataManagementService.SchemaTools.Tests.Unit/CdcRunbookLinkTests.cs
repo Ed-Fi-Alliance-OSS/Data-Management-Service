@@ -24,6 +24,7 @@ public class Given_Cdc_runbook_links
         "eng/docker-compose/README.md",
         "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md",
         "docs/CONFIGURATION.md",
+        "docs/CDC-QUALIFICATION.md",
         "docs/RELATIONAL-BACKEND.md",
         "src/dms/tests/RestClient/local-development-setup.http",
     ];
