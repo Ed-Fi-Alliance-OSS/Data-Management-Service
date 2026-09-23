@@ -1,0 +1,468 @@
+# DMS-1437 Implementation Spec — Durable CMS jobs, schedules, and `GET /v3/jobs/{jobId}`
+
+Status: **DRAFT v3.1** for architect review (2026-09-23). Standalone; supersedes v1, v2, and v3. Nothing in the DMS repository has been modified and no repository tests have been run. The only action taken outside review is the upstream OpenAPI generation in an isolated temp checkout (§1.4.1).
+Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1437`, branch `DMS-1437` (clean, at `d61921f09` = `origin/main`).
+
+## 0. Review history and dispositions
+
+### 0.0 Round 3 findings (v3 → v3.1)
+
+| Finding | Disposition |
+| --- | --- |
+| 1 SQL Server coalescing skips the first future interval (`DATEDIFF_BIG(second)` counts boundaries) | Fixed. Both providers now advance with one database-time sample per statement and a boundary-corrected formula: estimate `j0` from the elapsed seconds, take `B = NextRunAt + j0·Interval`, and choose `B` if `B > now` else `B + Interval` (D-9). Tests assert `nextRunAt > now` **and** `nextRunAt − interval <= now` for fractional-second cases immediately before, at, and after a boundary on both providers. |
+| 2 Q15 recovery description wrong | Q15 approved as policy (stop local execution; no retry of the ambiguous write; no status re-read). §4.4 now describes recovery by actual persisted state (committed terminal rows stay terminal; committed retry/release stays `Pending`; rolled-back outcome stays `InProgress` for expiry; committed fence without completion is reconciled by later executions). Uncertainty does not increment the attempt. Tests for committed-but-unacknowledged and rolled-back outcomes added. |
+| 3 Shared diagnostics referenced provider exceptions | Fixed. `Backend` keeps only the provider-neutral `JobFailureDiagnostic` record and the exception-type-chain builder. `PostgresqlJobDiagnostics` (`PostgresException.SqlState`) lives in `Backend.Postgresql`; `MssqlJobDiagnostics` (`SqlException.Number`) in `Backend.Mssql`; provider tests sit with those adapters (steps 2.3/2.4). No new package reference in `Backend`. |
+| 4 Operational review still followed substantial implementation | Fixed. New **step 0.2** runs an initial operational assessment before Phase 1 using documented workload assumptions and isolated provider SQL probes against scratch tables that mirror the planned shape (no production repositories). Candidate values are decided there; step 2.11 becomes verification against the implemented repositories. Latency/throughput statements are now estimates with stated assumptions; the renewal inequality carries a positive safety margin (§6.3). |
+| U-1 | Closed; step 0.1 now commits the generated YAML and its provenance alongside the spec. |
+
+### 0.1 Round 2 findings (v2 → v3)
+
+| Finding | Disposition |
+| --- | --- |
+| 1 Ownership uncertainty not synchronized with fences/outcome writes | Fixed by an execution-owned ownership state (`Owned → Uncertain \| Finalizing → Finalized`) guarded by one async gate shared by renewal, fences, and finalization. Renewal and fences are mutually exclusive under the gate (renewal has priority); finalization stops the renewal loop, awaits any in-flight renewal to its bounded timeout, then decides under the gate. A write whose database result is unknown (timeout, connection loss after send) transitions to `Uncertain` and is never retried. Deterministic tests: renewal failure between fences, immediately before completion, during shutdown (D-7a, §4.4). |
+| 2 Lease checks using time captured before a lock wait | Fixed. Every ownership-dependent write (renew, complete, fail-transient, fail-terminal, release) is **lock-then-validate**: one short transaction that first acquires the job row lock with a bounded lock wait and then runs the guarded `UPDATE` as a separate statement whose predicate evaluates fresh time (`clock_timestamp()` / `SYSUTCDATETIME()`) after the lock is held. Tests block renewal and completion until after expiry without reclaim and require rejection on both providers (D-4). |
+| 3 Secret-safe logging | Fixed. Routine job diagnostics contain no runtime exception messages and no stack traces: only exception type chain, vetted provider error code (`PostgresException.SqlState`, `SqlException.Number`), operation name, correlation identifiers, and identifiers read from rows passed through `LoggingUtility.SanitizeForLog`. Repository results in this subsystem carry a `JobFailureDiagnostic` record, not `ex.Message`. Tests for unlabelled secrets, nested exceptions, provider detail carrying payload values, control characters in stored identifiers (D-16a). |
+| 4 Coalescing sampled time too early | Fixed. The advancing `UPDATE` is the coalescing decision point and computes the new `NextRunAt` from fresh database time inside that statement, after the insert; its predicate re-checks owner, token, live lease, and `Enabled`. The materialization transaction is bounded by a fixed deadline. Test seam pauses **after** the insert. Crash rollback vs defensive recovery of a persisted expired lease distinguished (D-8, D-9). |
+| 5 JSON checks not provider-equivalent | Fixed. SQL Server object check uses `PATINDEX` over the four JSON whitespace characters so leading tab/LF/CR are accepted exactly as PostgreSQL's `jsonb_typeof`; tests cover all whitespace prefixes and non-object roots on both providers. Registry and schedule keys have an explicit bounded syntax (`^[A-Za-z][A-Za-z0-9_.\-]{0,99}$`) validated at registration and upsert (D-13, D-14). |
+| 6 Not standalone; steps compressed | Fixed. Sources, risks, test matrix, and per-step detail restored; test namespaces and filters specified and verified by `--list-tests` in each step's completion criteria; dependency types ordered before first use (observability helpers in 2.1). |
+| U-1 / Q14 OpenAPI | Generated locally from an isolated checkout at the full pinned revision; command, toolchain, configuration, and resulting fragment recorded in §1.4.1. |
+| U-2 Defaults | New step 2.11 (operational assessment with explicit workload assumptions, provider probes, and measurable thresholds) runs **before** Phase 3; step 3.7 stays as validation of the finished implementation. |
+| U-3 / Q13 Attempt credit | Withdrawn. Increment is kept on graceful release; a released final attempt becomes terminal `AttemptsExhausted` on the next exhaustion sweep; documented and tested (D-6). |
+| Q12 Fence timeout | Configurable `FenceTimeout`, validated together with lock waits, renewal timeout, renewal interval, and lease duration (§6.3), plus renewal priority at the execution gate so successive fences cannot starve renewal. |
+
+### 0.2 Round 1 findings (v1 → v2), still in force
+
+Live-lease predicate on all ownership writes; any renewal failure cancels and suppresses later writes; stranded-job exhaustion path; unknown types fail terminally; single-transaction schedule materialization; structurally constrained identifier-only payloads and registered fixed error codes; one schedule row per (tenant, type) with stable `Id`; BIN2 collation plus `DATALENGTH` exact matching; defaults are candidates; three independent hosted-service switches, all off in Test; incremental repository interfaces; migration steps update both providers' table lists and bigint allowlists; upgrade-from-pre-ticket coverage.
+
+Question dispositions: Q1 keep `urn:ed-fi:api:not-found`; Q2 source pin plus generated fragment (§1.4.1); Q3 decided at step 0.2 and re-verified at 2.11; Q4 GUID `N`, no route constraint; Q5 claim-time counting, no credit; Q6 single transaction; Q7 terminal failure; Q8 BIN2 + `DATALENGTH`; Q9 commit spec after approval; Q10 one retention window; Q11 resolved (D-10); Q12 configurable, validated; Q13 no credit; Q14 generated.
+
+## 1. Scope, non-goals, sources, decisions, assumptions, open questions
+
+### 1.1 Scope (Jira DMS-1437, Story, fixVersion "Ed-Fi API v8.1", parent epic DMS-1072, blocks DMS-1439 and DMS-1441, relates to DMS-1334)
+
+CMS infrastructure under `src/config`:
+
+- Provider-equivalent PostgreSQL and SQL Server persistence for jobs (attempts, leases, fencing, retry timing, sanitized error) and durable schedules (interval, enabled flag, next run, lease, fencing, occurrence identity).
+- Transaction-composable enqueue so a consumer writes its control-plane row and the job in one CMS transaction.
+- Allowlisted, versioned, size-bounded payloads containing CMS identifiers only.
+- In-process hosted workers: claim/reclaim, renewal, fenced transitions, bounded retry/backoff, shutdown cancellation, schedule dispatch with coalescing, retention, validated options, structured logs, metrics, tenant-scoped execution.
+- `GET /v3/jobs/{jobId}` returning `jobId`, `status`, `createdAt`, nullable `finishedAt`, nullable `errorMessage`; statuses `Pending`, `InProgress`, `Completed`, `Error`.
+
+### 1.2 Non-goals
+
+Managed lifecycle handlers (DMS-1439); education-organization refresh handlers and tenant schedule reconciliation (DMS-1441); public enqueue or schedule-management APIs; arbitrary user-authored jobs; cancellation endpoints; prioritization; progress percentages; Quartz; brokers; new deployable services; CMS→DMS project references; metrics exporters. `SchemaHashConstants.RelationalMappingVersion` stays `v3`.
+
+### 1.3 Sources read
+
+- **Jira DMS-1437**: all fields (description equals the spike document), 20 acceptance criteria, one comment (Samuel Lugo, 2026-09-23), links (blocks DMS-1439, DMS-1441; relates to DMS-1334).
+- **Spike documents** under `reference/spikes/DMS-1334/`: `DMS-1437-durable-jobs-and-schedules.md`, `candidate-implementation-stories.md`, `data-store-lifecycle-findings.md` (current state, gap matrix G08/G09/G10/G18/G21, durable-jobs analysis, authorization/observability, resolved decisions), `DMS-1439-managed-data-store-lifecycle.md`, `DMS-1441-edorg-refresh-and-tenant-aggregate.md`.
+- **CMS code**: `Backend/Services/{TenantContext,ITenantContext,AuditContext,SystemAuditContext}.cs`; `Backend/{DatabaseOptions,IApplicationLockManager}.cs`; `Backend/Repositories/{IClaimsHierarchyRepository,IOwnershipTokenRepository,ITenantRepository}.cs`; `Backend.Postgresql/{PostgresqlServiceExtensions,PostgresqlApplicationLockManager}.cs`, `Repositories/{ClaimsHierarchyRepository,DataStoreRepository,OwnershipTokenRepository,TenantRepository,PostgresqlTenantContextExtensions,PostgresqlIdentifier}.cs`, `Deploy/DatabaseDeploy.cs`, scripts `0021,0024,0025,0028,0029,0030,0031`; `Backend.Mssql/{MssqlServiceExtensions,MssqlApplicationLockManager,MssqlExceptionExtensions}.cs`, `Repositories/{ClaimsHierarchyRepository,OwnershipTokenRepository,MssqlTenantContextExtensions}.cs`, `Deploy/DatabaseDeploy.cs`, matching scripts; `Backend.OpenIddict/Services/TokenCleanupService.cs`, `Models/IdentityOptions.cs`, csproj; `Frontend.AspNetCore/Program.cs`, `Infrastructure/{WebApplicationBuilderExtensions,WebApplicationExtensions,FailureResults,FailureResponseWriter,GlobalExceptionHandler,LoggingConfigurator}.cs`, `Infrastructure/Authorization/{EndpointBuilderExtensions,AuthorizationPolicies,ScopePolicy,ScopePolicyHandler}.cs`, `Middleware/TenantResolutionMiddleware.cs`, `Modules/{IEndpointModule,OwnershipTokenModule,DataStoreModule,TenantModule,MetadataModule}.cs`, `Configuration/{AppSettings,IdentitySettings}.cs`, `appsettings.json`, `appsettings.Test.json`, csproj; `DataModel/Infrastructure/FailureResponse.cs`, `Model/{PagingQuery}.cs`, `Model/Authorization/AuthorizationScopes.cs`, `LoggingUtility.cs`; `src/Directory.Packages.props`, `src/config/Directory.Build.props`.
+- **CMS tests**: `Backend.Postgresql.Tests.Integration/{DatabaseTest,DatabaseTestBase,Configuration,TestAuditContext,DatabaseShapeTests,DataStoreDerivativeUpgradeTests,OwnershipTokenSchemaTests,WorkflowConcurrencyTests,DataStoreTests}.cs`, `appsettings.json`; `Backend.Mssql.Tests.Integration/{DatabaseTest,DatabaseTestBase,MssqlTestConfiguration,DeployTests}.cs`; `Backend.Tests.Unit/{TokenCleanupServiceTests,ApplicationLockOptionsValidatorTests}.cs`, csproj; `Frontend.AspNetCore.Tests.Unit/{TestAuthHandler,AuthenticationConstants,AuthorizationTests}.cs`, `Infrastructure/{TestWebApplicationBuilderExtensions,WebApplicationFactoryTracker}.cs`, `Modules/{OwnershipTokenModuleTests,ApiClientOpenApiContractTests}.cs`, `Middleware/TenantResolutionMiddlewareTests.cs`; `Tests.E2E/{setup-local-cms.ps1,Hooks/SetupHooks.cs,StepDefinitions/StepDefinitions.cs,Features/OwnershipTokens.feature}`.
+- **Repo tooling/docs**: `.github/workflows/on-config-pullrequest.yml`, `build-config.ps1`, `eng/docker-compose/{.env.config.e2e,local-config.yml,postgresql.yml,mssql.yml}`, `docs/{CONFIGURATION,MULTI-TENANCY-GETTING-STARTED,LOGGING,OPERATIONS}.md` outlines, `reference/design/` layout.
+- **Upstream ODS-Admin-API** (`gh api`, and the isolated checkout at `ed115fd8`): `Application/EdFi.Ods.AdminApi.V3/Features/Jobs/GetJobStatus.cs`, `Infrastructure/Services/Jobs/JobStatusService.cs`, `Features/DataStores/RefreshEducationOrganizations.cs`, `Artifacts/{PgSql,MsSql}/Structure/Admin/{00004-AddJobStatus,00006-AddJobStatusTimestamps}.sql`, `EdFi.Ods.AdminApi.Common/Infrastructure/Jobs/{JobStatus,IJobStatusService,JobConstants}.cs`, `V3.UnitTests/Features/Jobs/GetJobStatusTests.cs`, Bruno `v3/Jobs/*.bru`, `docs/design/{2026-05-15-job-status-tracking-design,2026-07-30-openapi-artifact-workflow-design}.md`, `.github/workflows/openapi-md.yml`, `build.ps1`, `.config/dotnet-tools.json`, `Application/EdFi.Ods.AdminApi/appsettings.json`, releases and tags.
+
+### 1.4 Contract evidence for `GET /v3/jobs/{jobId}` (AC 1, 3, 15)
+
+No Admin API v3 OpenAPI document is checked in upstream (`docs/swagger.yaml` is `version: v2`, last changed 2025-12-19; `docs/api-specifications/openapi-yaml/` ends at `admin-api-2.3.0.yaml`). The v3 document is produced by `openapi-md.yml` as a workflow artifact (Swashbuckle CLI 7.1.0 against the built app, `AdminApiMode=v3`).
+
+Pinned source: `GetJobStatus.cs` at commit `ed115fd8c0cb3e17dcfefc86966582c74e39f277` (2026-08-28, "[ADMINAPI-1495] v3 - Correct inaccurate Swagger/OpenAPI documentation (#448)"), unchanged through main head `2967c2c9b407ce4f5f90511c8ed5aaad41d5ab8e` (2026-09-23). `JobStatusResult { string JobId; string Status; DateTime CreatedAt; DateTime? FinishedAt; string? ErrorMessage; }`; responses 200 and 404; 400 problem details when multi-tenant context is missing. Upstream storage: `JobId (N)VARCHAR(150) UNIQUE`, `Status (N)VARCHAR(50)`, `ErrorMessage (N)VARCHAR(1000)`, `CreatedAt TIMESTAMP/DATETIME2 NOT NULL`, `FinishedAt NULL`. Upstream job ID: `$"{JobName}-{tenantIdentifier}-{Guid}_{Guid:N}"` (opaque string). Bruno E2E asserts required string `jobId/status/createdAt`, string-or-null `finishedAt/errorMessage`, and 404 problem type `urn:ed-fi:management-api:not-found` (CMS keeps `urn:ed-fi:api:not-found` per Q1).
+
+#### 1.4.1 Generated upstream fragment (U-1)
+
+Method: isolated checkout of `Ed-Fi-Alliance-OSS/ODS-Admin-API` at `ed115fd8c0cb3e17dcfefc86966582c74e39f277` in `C:\Users\Sam\AppData\Local\Temp\claude-adminapi\repo` (outside every DMS worktree); toolchain .NET SDK 10.0.401, Swashbuckle.AspNetCore.Cli 7.1.0 from the repo's `.config/dotnet-tools.json` (`dotnet tool restore`); command identical to the upstream workflow step:
+
+```powershell
+$p = @{ Authority="http://api"; IssuerUrl="https://localhost"; DatabaseEngine="PostgreSql"; PathBase="adminapi"; SigningKey="test";
+        AdminDB="host=db-admin;port=5432;username=username;password=password;database=EdFi_Admin;Application Name=EdFi.Ods.AdminApi;";
+        SecurityDB="host=db-admin;port=5432;username=username;password=password;database=EdFi_Security;Application Name=EdFi.Ods.AdminApi;" }
+./build.ps1 -APIVersion "ed115fd8" -Configuration Release -DockerEnvValues $p -Command GenerateOpenAPI
+```
+
+The script rewrites `Application/EdFi.Ods.AdminApi/appsettings.json` (`AdminApiMode`, the values above) and runs `dotnet tool run swagger tofile … v3`. The build (`dotnet build -c Release`, 0 warnings, 0 errors) succeeded; the script itself failed twice, and both obstacles were worked around without changing upstream code:
+
+1. `swashbuckle.aspnetcore.cli 7.1.0` is a `net9.0` tool with `rollForward: false`; only .NET 8.0.31 and 10.0.12 runtimes are installed. Worked around with `DOTNET_ROLL_FORWARD=Major` (the upstream 2026-07-30 design doc records the same workaround).
+2. The upstream script passes the document name `v3`, but the app at `ed115fd8` registers Swagger documents `1.4.4`, `2.4.0`, `3.0.0` (`UnknownSwaggerDocument`). The v3 document is `3.0.0`. This is an upstream script defect at this revision, reported here as an observation only.
+
+Final command (after `AdminApiMode` was set to `v3` by the script's own function and the app rebuilt):
+
+```powershell
+$env:DOTNET_ROLL_FORWARD = "Major"
+dotnet tool run swagger tofile --output ../../docs/api-specifications/openapi-yaml/admin-api-v3-ed115fd8.yaml --yaml ./bin/Release/net10.0/EdFi.Ods.AdminApi.dll 3.0.0
+```
+
+Result: `admin-api-v3-ed115fd8.yaml`, 164 440 bytes, SHA-256 `f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b`, `openapi: 3.0.1`, `info.title: Ed-Fi Management API`, `info.version: 3.0.0`. A copy is in this session's scratchpad next to the spec (`admin-api-v3-ed115fd8.yaml`); it belongs in `reference/design/jobs-DMS-1437/` with the spec at step 0.1. Verbatim fragments:
+
+```yaml
+  '/v3/jobs/{jobId}':
+    get:
+      tags:
+        - Jobs
+      summary: Get job status
+      description: Get the status of a job by its ID
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '401': { description: Unauthorized. The request requires authentication, content: { application/problem+json: { schema: { $ref: '#/components/schemas/problemDetails' } } } }
+        '403': { description: 'Forbidden. The request is authenticated, but not authorized to access this resource', content: { application/problem+json: { schema: { $ref: '#/components/schemas/problemDetails' } } } }
+        '500': { description: Internal server error. An unhandled error occurred on the server. See the response body for details., content: { application/problem+json: { schema: { $ref: '#/components/schemas/problemDetails' } } } }
+        '404': { description: Not found. A resource with given identifier could not be found., content: { application/problem+json: { schema: { $ref: '#/components/schemas/problemDetails' } } } }
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/jobStatusResult' } } } }
+```
+
+```yaml
+    jobStatusResult:
+      type: object
+      properties:
+        jobId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+      additionalProperties: false
+```
+
+(`jobQueuedResult`, for DMS-1441's reference: `jobId` and `message`, both `string`, `nullable: true`, `additionalProperties: false`.)
+
+What the fragment establishes for CMS conformance: schema component name `jobStatusResult`; camelCase property names; exactly five properties; `createdAt` non-nullable `date-time`; `finishedAt` nullable `date-time`; `errorMessage` nullable `string`; no `required` list; `additionalProperties: false`; `jobId` path parameter `string`, required, no format; 404 (and 401/403/500) as `application/problem+json` `problemDetails`. Two generator artifacts are noted and **not** copied: upstream marks `jobId` and `status` `nullable: true` although the source never returns null for them (Swashbuckle 7.1 emits `nullable: true` for reference types without a nullability annotation); CMS emits them non-nullable, which is stricter and consistent with the Bruno runtime assertion that they are required strings. CMS's `Microsoft.AspNetCore.OpenApi` document may name the schema `JobStatusResponse` and may omit `additionalProperties: false`; the CMS contract test (step 4.1) asserts the property set, types, nullability of `finishedAt`/`errorMessage`, non-nullability of `createdAt`, the path parameter, and the `application/problem+json` 404, and records any residual generator differences in `docs/CMS-BACKGROUND-JOBS.md`. U-1 is closed.
+
+### 1.5 Architectural decisions
+
+- **D-1 Location.** Contracts, options, enqueuer, executor, hosted services, registry, metrics, diagnostics in `EdFi.DmsConfigurationService.Backend` (`Jobs/` namespace); SQL in `Backend.Postgresql`/`Backend.Mssql` (`Jobs/` and `Repositories/`); route in `Frontend.AspNetCore/Modules`; response model in `DataModel/Model/Job`. `Backend.csproj` adds `Microsoft.Extensions.Hosting.Abstractions` (central version exists; precedent `Backend.OpenIddict`).
+- **D-2 Database UTC everywhere.** Persisted times come from SQL. PostgreSQL: `(clock_timestamp() AT TIME ZONE 'UTC')` in every predicate or assignment that may run after a lock wait or inside a multi-statement transaction; `(now() AT TIME ZONE 'UTC')` only as the `CreatedAt` column default and in pure inserts. SQL Server: `SYSUTCDATETIME()` (evaluated per statement; freshness is obtained by issuing the guarded statement after the lock is held, D-4). Durations are integer-second parameters added in SQL. Reads apply `DateTime.SpecifyKind(…, Utc)`. Column types follow CMS convention (`TIMESTAMP`/`DATETIME2`).
+- **D-3 Claim.** One statement per claim, in its own transaction: lock one eligible row (`FOR UPDATE SKIP LOCKED` / `WITH (UPDLOCK, READPAST, ROWLOCK)`) and set `Status='InProgress'`, `LeaseOwner=@Owner`, `LeaseExpiresAt = dbnow + @LeaseSeconds`, `FencingToken = FencingToken + 1`, `AttemptCount = AttemptCount + 1`, audit columns; return the row plus `dbnow`. Eligible: (`Pending` AND (`NextAttemptAt IS NULL OR NextAttemptAt <= dbnow`)) OR (`InProgress` AND `LeaseExpiresAt <= dbnow`), AND `AttemptCount < @MaxAttempts`; ordered by `COALESCE(NextAttemptAt, CreatedAt), Id`. `SKIP LOCKED`/`READPAST` means a claim never waits on a row lock, so the transaction-start time is fresh enough for the eligibility test; the claimed row's own predicate is evaluated under the lock just taken.
+- **D-4 Ownership predicate and lock-then-validate writes.** Predicate P: `"Id"=@Id AND "LeaseOwner"=@Owner AND "FencingToken"=@Token AND "Status"='InProgress' AND "LeaseExpiresAt" > <fresh dbnow>`. Every ownership-dependent write (`Renew`, `Complete`, `FailTransient`, `FailTerminal`, `ReleaseToPending`) runs as one short transaction: (1) `SET LOCAL lock_timeout` / `SET LOCK_TIMEOUT` to `WriteLockWait` (fixed 5 s); (2) `SELECT "Id" FROM "dmscs"."Job" WHERE "Id"=@Id FOR UPDATE` (MSSQL `WITH (UPDLOCK, ROWLOCK)`) — acquires the row lock, possibly after waiting; (3) `UPDATE … WHERE P` as a separate statement, whose fresh time is evaluated after the lock is held; (4) commit. Zero rows in (3) → `OwnershipLost`; lock timeout → `FailureUnknown(WriteLockTimeout)`; command timeout or connection loss after send → `ResultUnknown` (the caller treats it as uncertainty, D-7a). An expired lease is never authorized even without reclaim.
+- **D-5 `IJobFence` (atomic consumer writes).** `ExecuteAsync(Func<DbTransaction, CancellationToken, Task> work, CancellationToken ct)`, executed under the execution gate (D-7a): (1) if a renewal is pending, wait for it; acquire the gate; if execution state ≠ `Owned` → throw `JobLeaseLostException` without touching the database; (2) open connection, begin transaction, set `lock_timeout`/`LOCK_TIMEOUT` = `FenceLockWait` (fixed 5 s); (3) `SELECT "LeaseExpiresAt", <fresh dbnow> FROM "dmscs"."Job" WHERE P FOR UPDATE` (MSSQL `UPDLOCK, HOLDLOCK`); zero rows → rollback, `JobLeaseLostException`; lock timeout → rollback, `JobFenceUnavailableException` (transient); remaining lease `LeaseExpiresAt − dbnow` below `FenceMinimumRemainingLease` (fixed 2 s) → rollback, `JobLeaseLostException`; (4) deadline = `min(FenceTimeout, remaining − 1 s)`; run `work(transaction, linkedToken)` with `linkedToken` = execution token + `CancelAfter(deadline)`; any exception or cancellation → rollback, rethrow; (5) after `work` returns, check the linked token and the execution state again (still under the gate) → cancelled/≠ `Owned` → rollback, throw; (6) pre-commit revalidation `SELECT 1 FROM "dmscs"."Job" WHERE P` with fresh time → zero rows → rollback, `JobLeaseLostException`; (7) commit; a commit whose result is unknown → state `Uncertain`, throw `JobLeaseLostException`; (8) release the gate. The row lock from (3) to (7) excludes reclaims; claims skip the locked row. External operations must stay outside the fence.
+- **D-6 Attempt accounting.** `AttemptCount` = executions started. Claim increments before any handler code runs. Graceful release (`ReleaseToPending`, predicate P) keeps the increment and sets `NextAttemptAt = dbnow`. Transient failure: `AttemptCount < MaxAttempts` → `Pending` with `NextAttemptAt = dbnow + backoff(AttemptCount)`, lease cleared, `FinishedAt` null; otherwise terminal `Error(AttemptsExhausted)`. `Exhaust` (each worker poll; not ownership-dependent) sets `Status='Error'`, `FinishedAt`, `ErrorMessage(AttemptsExhausted)`, `FencingToken + 1`, lease cleared for (a) `InProgress` rows with `LeaseExpiresAt <= dbnow AND AttemptCount >= @MaxAttempts` and (b) `Pending` rows with `AttemptCount >= @MaxAttempts`. Consequences, documented and tested: a job released on its final attempt during shutdown becomes `Error(AttemptsExhausted)` on the next sweep without another execution; lowering `MaxAttempts` terminates already-over-limit jobs on the next sweep.
+- **D-7 Failure classification and public error text.** `JobPermanentException(JobErrorCode)` → terminal with that code's registered message; `OperationCanceledException` while the host is stopping and state is `Owned` → graceful release; any other exception → transient (or `AttemptsExhausted`). Public `ErrorMessage` is only ever a registered fixed string: infrastructure codes `UnsupportedJobType`, `UnsupportedPayloadVersion`, `InvalidPayload`, `TenantUnavailable`, `AttemptsExhausted`, `HandlerFailed`; consumer codes via `AddJobErrorCode(code, message)` validated at startup (`^[A-Za-z][A-Za-z0-9]{0,63}$`, message ≤ 1000 printable characters, no placeholders).
+- **D-7a Execution ownership state and gate.** Each execution owns `JobExecutionOwnership { State: Owned|Uncertain|Finalizing|Finalized; Reason }` and a `SemaphoreSlim(1,1)` gate. Renewal loop: every `RenewalInterval` (TimeProvider) it sets `RenewalPending`, acquires the gate, exits if state ≠ `Owned`, issues `Renew` with `RenewalTimeout` and `WriteLockWait`, and transitions under the gate: `Success` → record new expiry; anything else (`OwnershipLost`, `FailureUnknown`, `ResultUnknown`, exception, timeout, cancellation of the renewal call) → `Uncertain(reason)` and cancel the execution CTS; then releases the gate. Fences acquire the same gate (yielding to a pending renewal), so a renewal never runs during a fence and a fence never commits while a renewal outcome is being applied. Finalization: signal the renewal loop to stop; await the loop task (an in-flight renewal completes within `RenewalTimeout`); acquire the gate; if `Owned` → `Finalizing` and issue exactly one outcome write (D-4): `Success` → `Finalized`; `OwnershipLost` → log `LateWriteRejected`; `ResultUnknown`/exception → `Uncertain(WriteOutcomeUnknown)`, never retried; if already `Uncertain` → no write, log `OwnershipUncertainExit{reason}`. The row is then left to lease expiry and reclaim; handler idempotency covers the re-execution.
+- **D-8 Schedule materialization is one bounded transaction.** Per due schedule, with a deadline of `ScheduleMaterializationTimeout` (fixed 10 s, `CancelAfter` → rollback): (1) lock one row `Enabled AND NextRunAt <= dbnow AND (LeaseExpiresAt IS NULL OR LeaseExpiresAt <= dbnow)` with `FOR UPDATE SKIP LOCKED` / `UPDLOCK, READPAST, ROWLOCK`, returning `Id, TenantId, JobType, PayloadVersion, Payload, IntervalMinutes, NextRunAt, FencingToken`; (2) `UPDATE` the locked row: `LeaseOwner=@Owner`, `LeaseExpiresAt = <fresh dbnow> + @LeaseSeconds`, `FencingToken = FencingToken + 1`, returning the new token; (3) insert the `Pending` job with `SourceScheduleId=@Id`, `ScheduledOccurrence=@NextRunAt` (values copied from the locked row), `JobId=@NewJobId`, `CreatedBy='system'`: PG `INSERT … ON CONFLICT ("SourceScheduleId","ScheduledOccurrence") WHERE "SourceScheduleId" IS NOT NULL AND "ScheduledOccurrence" IS NOT NULL DO NOTHING`; MSSQL `INSERT … SELECT … WHERE NOT EXISTS (<same occurrence>)`; rows affected 0 → `AlreadyEnqueued` (logged Warning; only reachable through defensive recovery, see below); any other unique violation → rollback, `FailureUnknown` (unexpected); (4) **coalescing decision point**: `UPDATE "dmscs"."JobSchedule" SET "LastEnqueuedOccurrence" = "NextRunAt", "NextRunAt" = <advance("NextRunAt","IntervalMinutes", fresh dbnow)>, "LeaseOwner"=NULL, "LeaseExpiresAt"=NULL WHERE "Id"=@Id AND "LeaseOwner"=@Owner AND "FencingToken"=@NewToken AND "LeaseExpiresAt" > <fresh dbnow> AND "Enabled"` — zero rows → rollback, `OwnershipLost`; (5) commit. `Disable`/`Upsert` block on the row lock and apply afterwards; the row lock also makes "another replica's reclaim" impossible during the transaction, and step (4)'s predicate rejects the previous owner if one somehow occurred. **Crash rollback** (process dies before (5)) leaves no persisted lease: the transaction rolls back, `NextRunAt` is unchanged, and the occurrence is re-materialized on the next poll. **Defensive recovery** covers a persisted expired lease (only possible from a future code path or manual edit): the eligibility predicate in (1) treats an expired lease as free, and (3)'s conflict handling prevents a duplicate occurrence. Tested by seeding such a row.
+- **D-9 Coalescing formula (in SQL, at D-8 step 4).** Goal: the smallest boundary `B_j = NextRunAt + j·Interval` with `B_j > now`, where `now` is **one** database-time sample taken inside the advancing statement. Both providers use the same two-step form so that second-boundary counting cannot overshoot: `j0 = GREATEST(FLOOR(elapsedSeconds / (IntervalMinutes·60)), 0)`, `B = NextRunAt + j0·Interval`, result `= CASE WHEN B > now THEN B ELSE B + Interval END`. Because `elapsedSeconds` may overestimate the true elapsed time by less than one second (SQL Server `DATEDIFF_BIG(second, …)` counts second boundaries), `j0` is either the exact floor or one too high; the `CASE` corrects the overshoot by full-timestamp comparison and also yields the strictly-future boundary at an exact hit. PG: `WITH t AS (SELECT (clock_timestamp() AT TIME ZONE 'UTC') AS now) UPDATE … SET "NextRunAt" = CASE WHEN b > t.now THEN b ELSE b + iv END … FROM t, LATERAL (SELECT "IntervalMinutes" * interval '1 minute' AS iv, "NextRunAt" + GREATEST(floor(extract(epoch from (t.now - "NextRunAt")) / ("IntervalMinutes" * 60)), 0) * ("IntervalMinutes" * interval '1 minute') AS b) x … RETURNING "NextRunAt", t.now`. MSSQL (`SYSUTCDATETIME()` is a runtime constant within one statement, so a `CROSS APPLY (SELECT SYSUTCDATETIME() AS now) t` provides the single sample): `b = DATEADD(minute, j0 * IntervalMinutes, NextRunAt)` with `j0 = IIF(DATEDIFF_BIG(second, NextRunAt, t.now) < 0, 0, DATEDIFF_BIG(second, NextRunAt, t.now) / (IntervalMinutes * 60))` (integer division), `NextRunAt = IIF(b > t.now, b, DATEADD(minute, IntervalMinutes, b))`, `OUTPUT inserted.NextRunAt, t.now`. Worked example from the review: `NextRunAt 12:00:00.900`, `now 12:01:00.100`, interval 1 min → `DATEDIFF_BIG(second) = 60`, `j0 = 1`, `b = 12:01:00.900 > now` → result `12:01:00.900` (correct; the naive `j0 + 1` gave `12:02:00.900`). Exactly one occurrence (identity = the pre-advance `NextRunAt`) per materialization. Tests (both providers) seed fractional-second `NextRunAt` values and assert on the returned pair `(NextRunAt', now)`: `NextRunAt' > now` and `NextRunAt' − Interval <= now`, for `NextRunAt` 100 ms before, exactly at, and 100 ms after a boundary relative to `now`, plus a multi-interval downtime case. `ScheduleOccurrenceMath.Advance(nextRunAt, interval, now)` is a C# reference implementation used only to compute expected values in tests.
+- **D-10 Schedule identity.** One row per natural key (tenant, `ScheduleType`) for all enabled states; unique indexes `UX_JobSchedule_Tenant_Type (TenantId, ScheduleType) WHERE TenantId IS NOT NULL` and `UX_JobSchedule_SingleTenant_Type (ScheduleType) WHERE TenantId IS NULL` (PG treats NULLs as distinct, MSSQL as equal). `Id` is stable across disable/re-enable. `Upsert`: insert if absent (`NextRunAt = dbnow + Interval`, or `dbnow` when `RunFirstOccurrenceImmediately`); if present: `Enabled=true`, set `JobType/PayloadVersion/Payload`; interval changed → `NextRunAt = LEAST(NextRunAt, dbnow + newInterval)`; re-enable with past `NextRunAt` → `dbnow + Interval`; otherwise `NextRunAt` untouched; identical upsert is a no-op (`LastModifiedAt` unchanged). PG `INSERT … ON CONFLICT DO UPDATE`; MSSQL transaction with `UPDLOCK, HOLDLOCK` key read then insert/update. `Disable(scheduleType)` tenant-scoped, `DisableById(id)`, `ListByType(scheduleType)` cross-tenant internal read (Id, TenantId, Enabled, IntervalMinutes, NextRunAt).
+- **D-11 Tenant context in workers.** Per execution: `CreateAsyncScope()`; `ITenantContextProvider.Context` = `NotMultitenant` when `TenantId` null and `MultiTenancy=false`; `Multitenant(id, name)` after `ITenantRepository.GetTenant(id)` when set and `MultiTenancy=true`; missing tenant or either mismatch → `FailTerminal(TenantUnavailable)` before handler resolution. `JobRuntimeEnvironment(bool MultiTenancy)` singleton registered by the frontend from `AppSettings`.
+- **D-12 Unknown types and versions fail terminally.** Claims take any job; the executor checks the registry before deserialization: unknown type → `Error(UnsupportedJobType)`, unsupported version → `Error(UnsupportedPayloadVersion)`. `IJobEnqueuer` rejects them at enqueue too. Deployment sequencing (documented): every worker-enabled replica must register every type/version that may be enqueued; for a rolling upgrade introducing a new type, complete the rollout before exposing the enqueuing feature or run old replicas with `JobSettings:WorkerEnabled=false`. No compatibility mechanism overrides the AC.
+- **D-13 Payload contract.** `AddJobHandler<THandler, TPayload, TValidator>(jobType, versions)`; `jobType` must match `^[A-Za-z][A-Za-z0-9_.\-]{0,99}$` (ordinal, case-sensitive). At registration the framework verifies `TPayload` structurally or fails startup: sealed `record`/`class`; public properties only of `int`, `long`, `short`, `Guid`, `bool`, enum, `string` annotated `[JobIdentifier(MaxLength ≤ 256)]`, `IReadOnlyList<>` of those, or nested types meeting the same rules; disallowed: `object`, `JsonElement`/`JsonNode`, dictionaries, `DateTime*`, floating point, unannotated strings. `[JobIdentifier]` values must match `^[A-Za-z0-9][A-Za-z0-9_.:\-]*$` within the declared length. `TValidator : IJobPayloadValidator<TPayload>` applies consumer semantics (e.g., identifier ranges). Serialization: `JsonSerializerDefaults.Web`, `UnmappedMemberHandling.Disallow`, `MaxDepth = 8`, `AllowTrailingCommas = false`, no polymorphism. Size: `Payload.Length ≤ 4000` UTF-16 code units, no unpaired surrogates, root object.
+- **D-14 Identifiers and exact matching.** `JobId = Guid.NewGuid().ToString("N")`; route parameter `string`, no constraint. Lookups: PG `"JobId" = @JobId`; MSSQL `JobId = @JobId AND DATALENGTH(JobId) = DATALENGTH(@JobId)` with `JobId`, `JobType`, `ScheduleType` columns `COLLATE Latin1_General_BIN2`. `ScheduleType` and `JobType` values must match the key syntax above (no spaces), validated at enqueue/upsert/registration.
+- **D-15 Options.** `JobSettings` bound with `AddOptions<JobOptions>().Bind(…).ValidateOnStart()` and `IValidateOptions<JobOptions>` (precedent `ApplicationLockOptions`). Independent switches `WorkerEnabled`, `SchedulerEnabled`, `RetentionEnabled` control hosted-service registration; `appsettings.Test.json` sets all three `false`.
+- **D-16 Metrics.** `System.Diagnostics.Metrics.Meter` `EdFi.DmsConfigurationService.Jobs` owned by singleton `JobMetrics`; no exporter; tests via `MeterListener`.
+- **D-16a Diagnostics safety.** No runtime exception message and no stack trace is logged anywhere in this subsystem. Repository operations catch exceptions and return `FailureUnknown(JobFailureDiagnostic)` where `JobFailureDiagnostic(string ExceptionTypeChain, string? ProviderErrorCode, string Operation)` is a provider-neutral record in `Backend`; `ExceptionTypeChain` = `/`-joined full type names of the exception and its inner exceptions, built by `JobDiagnostics.TypeChain(Exception)` in `Backend` (no provider knowledge). Provider error codes are extracted only inside the provider projects: `Backend.Postgresql/Jobs/PostgresqlJobDiagnostics.From(Exception, operation)` reads `PostgresException.SqlState` (and `55P03` for lock timeout), `Backend.Mssql/Jobs/MssqlJobDiagnostics.From(Exception, operation)` reads `SqlException.Number` (and `1222` for lock timeout); both return the shared record. `Backend` therefore gains no reference to Npgsql or Microsoft.Data.SqlClient. Handler exceptions are logged the same way plus `JobErrorCode` when permanent. Identifiers read from rows (`JobId`, `JobType`, `LeaseOwner`, `ScheduleType`) pass through `LoggingUtility.SanitizeForLog` before logging; `TenantId` is numeric. The frontend module logs `JobFailureDiagnostic` fields, never a message. Payload content is never logged.
+- **D-17 Retention.** Bounded `DELETE` batches where `Status IN ('Completed','Error') AND FinishedAt <= dbnow − @RetentionSeconds`; `Pending`/`InProgress` are excluded by the predicate and asserted by tests.
+- **D-18 Composable transaction.** `ICmsTransactionFactory.BeginAsync(ct)` → `ICmsTransaction : IAsyncDisposable { DbTransaction Transaction; CommitAsync(ct); RollbackAsync(ct) }`; provider implementations own one connection and dispose it with the transaction. `IJobEnqueuer.EnqueueAsync(command, DbTransaction?, ct)` validates (registry, payload contract, validator, key syntax) then calls `IJobRepository.EnqueueJob(validatedCommand, transaction, ct)`, which follows the `ClaimsHierarchyRepository` precedent (`transaction.Connection` when supplied, otherwise its own connection). Consumers add `DbTransaction?` parameters to their own repository methods; `DataStoreRepository` is unchanged here.
+
+### 1.6 Assumptions
+
+A-1 consumers ship in the same CMS binary as their handlers. A-2 tenant deletion stays unexposed (FK `RESTRICT`/`NO ACTION` as `OwnershipToken`). A-3 PostgreSQL ≥ 9.5 and SQL Server 2019+ (CI/compose: PG 16.x, MSSQL 2025; no 2022-only T-SQL used). A-4 host `ShutdownTimeout` (30 s default) is the shutdown grace. A-5 multi-tenant HTTP tests use `UseSetting("AppSettings:MultiTenancy","true")` (precedent `PipelineExceptionBoundaryTests`). A-6 SQL Server statement-scoped functions such as `SYSUTCDATETIME()` are evaluated per statement, so freshness after a lock wait requires the guarded write to be a separate statement issued after the lock is held (D-4).
+
+### 1.7 Open questions
+
+- **Q3** Approve or adjust the candidate defaults at step 0.2 (initial assessment, before Phase 1); step 2.11 re-verifies against the implemented repositories.
+- **Q15** Approved in round 3: stop local execution on `ResultUnknown`, no retry of the ambiguous write, no status re-read; recovery by persisted state (§4.4).
+
+## 2. Traceability matrix
+
+Test names are NUnit fixture/test identifiers; `×2` = identical fixtures in the PostgreSQL and SQL Server integration projects.
+
+| AC | Design | Steps | Evidence |
+| --- | --- | --- | --- |
+| 1 | §3.1 `dmscs.Job` on both providers | 1.2 | `JobSchemaTests` ×2 (columns, types, constraints, filtered indexes, BIN2 collation on MSSQL); `DatabaseShapeTests`/`DeployTests` allowlists; `JobUpgradeTests` ×2 |
+| 2 | Enqueue inside caller transaction; commit before response | 2.3, 2.4, 4.2 | `JobRepositoryTests.It_enqueues_pending_inside_caller_transaction` ×2 (commit visible; rollback absent); `JobApiIntegrationTests.It_returns_200_immediately_after_enqueue_commit` ×2 |
+| 3 | `JobModule`, tenant-scoped read, 404 absent/cross-tenant | 4.1, 4.2 | `JobModuleTests` (404 body is CMS not-found problem details); `JobApiIntegrationTests.It_returns_404_for_other_tenants_job` ×2 |
+| 4 | `MapSecuredGet`; five-field model; five-column projection; diagnostics without messages | 4.1 | `JobModuleTests`: admin 200, readonly 200, authMetadata-readonly 403, anonymous 401; `It_exposes_exactly_the_five_contract_properties`; `It_logs_repository_failure_diagnostics_without_messages` |
+| 5 | D-3, D-4, D-5, D-7a | 2.5, 2.6, 3.3 | `JobLeaseRepositoryTests` ×2: `It_permits_at_most_one_unexpired_lease_under_concurrent_claims`, `It_increments_fencing_token_on_claim_and_reclaim`, `It_rejects_every_ownership_write_when_expired_without_reclaim`, `It_rejects_stale_token_after_reclaim`, `It_rejects_renewal_that_waited_on_a_lock_past_expiry`, `It_rejects_completion_that_waited_on_a_lock_past_expiry`, `It_rolls_back_fenced_write_when_reclaimed_before_fence`, `It_rolls_back_fenced_write_when_lease_expires_during_work`, `It_fails_fence_when_lock_wait_outlasts_lease`, `It_uses_database_time_not_process_time`; `JobExecutorTests.It_suppresses_fence_and_completion_after_renewal_failure` |
+| 6 | D-11 | 3.3 | `JobExecutorTests`: scope per job; tenant installed before handler resolution; scope disposed on every path; missing/mismatched tenant → `TenantUnavailable` without handler |
+| 7 | D-4 writes; registered codes | 2.5, 2.6, 3.3 | `It_sets_completed_and_finished_at`, `It_sets_error_finished_at_and_registered_message`; `JobErrorCodeRegistryTests` |
+| 8 | D-6 | 2.5, 2.6, 2.7, 2.8, 3.3, 3.4 | `It_returns_to_pending_with_backoff_cleared_lease_null_finished_at`; `It_exhausts_pending_rows_at_or_over_the_limit`; `JobExecutorTests.It_marks_error_when_attempts_exhausted`; `JobWorkerServiceTests.It_terminates_released_final_attempt_on_next_sweep`, `It_keeps_attempt_count_across_repeated_shutdowns`; `RetryBackoffTests` |
+| 9 | Expired `InProgress` reclaimable; token bump; late commit rejected | 2.5, 2.6, 3.7 | reclaim tests above; `JobRuntimeIntegrationTests.It_recovers_abandoned_in_progress_job_after_restart` ×2 |
+| 10 | D-4 renewal; D-7a; D-5; §4.4 recovery table | 2.5, 2.6, 3.3, 3.7 | `It_extends_lease_on_renewal_using_database_time`; `JobExecutorTests.It_marks_uncertain_and_cancels_on_renewal_{ownership_lost,failure_unknown,result_unknown,exception,timeout}`, `It_suppresses_fence_and_completion_after_renewal_failure`, `It_suppresses_completion_when_in_flight_renewal_fails_during_finalization`, `It_suppresses_release_when_renewal_fails_during_shutdown`, `It_leaves_committed_completion_terminal_when_acknowledgement_is_lost`, `It_leaves_in_progress_for_reclaim_when_outcome_rolled_back`; `JobRuntimeIntegrationTests.It_lets_current_owner_renew_while_execution_outlives_original_lease` ×2 and the same two recovery tests ×2 with an injected post-commit fault |
+| 11 | Stop claims, cancel, fenced release; failed release left for expiry; late completion fenced; released final attempt exhausted | 3.4, 3.7 | `JobWorkerServiceTests.It_stops_claiming_and_releases_owned_jobs_on_shutdown`, `It_terminates_released_final_attempt_on_next_sweep`; `JobRuntimeIntegrationTests.It_fences_late_completion_after_shutdown_release_and_reclaim` ×2 |
+| 12 | D-12, D-13 | 2.2, 3.2, 3.3 | `JobPayloadContractTests` (each structural rejection; unexpected member; `$type`; oversize; surrogate; non-object root; key syntax); `JobExecutorTests.It_fails_terminally_before_handler_for_{unknown_type,unsupported_version,invalid_payload}`; `JobLeaseRepositoryTests.It_claims_persisted_unknown_type_for_executor_to_terminate` ×2 |
+| 13 | D-17 | 2.7, 2.8, 3.6 | `JobRetentionRepositoryTests.It_deletes_only_finished_rows_older_than_retention` ×2 |
+| 14 | D-15, §6 | 0.2, 2.11, 3.1 | operational assessment document from step 0.2 (decision on every candidate) and re-verification at 2.11; `JobOptionsValidatorTests` (each rule incl. the margin inequality with each term reported); `JobOptionsStartupTests` |
+| 15 | §6.3, D-16a, `Z` timestamps | 2.1, 3.3, 3.4, 4.1 | `JobDiagnosticsTests` (unlabelled secret, nested chain, provider detail with payload, control characters in identifiers); `JobExecutorTests.It_logs_outcome_fields_without_payload_or_messages`; `JobMetricsTests`; `JobModuleTests.It_serializes_utc_timestamps_with_Z_and_nulls_present` |
+| 16 | No new packages beyond the central Hosting.Abstractions reference | all | `Directory.Packages.props` unchanged; `--locked-mode` restore |
+| 17 | §3.2, D-10 | 1.1 | `JobScheduleSchemaTests` ×2 (duplicate key rejected regardless of `Enabled`; null-tenant duplicate rejected; other tenant allowed) |
+| 18 | D-8 | 2.9, 2.10, 3.5 | `JobScheduleRepositoryTests` ×2: `It_materializes_in_one_transaction` (injected failure after insert → no job, `NextRunAt` unchanged), `It_serializes_two_dispatchers_to_one_occurrence`, `It_blocks_disable_until_commit_then_stops_enqueue`, `It_serializes_concurrent_upsert`, `It_recovers_seeded_expired_lease_exactly_once`, `It_rejects_advance_when_owner_or_token_changed` |
+| 19 | Same `Job` row and path; disable keeps history and `Id` | 2.9, 2.10, 3.7 | `It_disable_keeps_jobs_and_id`; `JobRuntimeIntegrationTests.It_executes_scheduled_job_through_same_worker_path` ×2 |
+| 20 | D-9 | 0.2, 2.9, 2.10 | `ScheduleOccurrenceMathTests` (reference); probe 6 at step 0.2; `It_enqueues_one_job_after_multi_interval_downtime` ×2; `It_advances_from_fresh_time_when_paused_after_insert` ×2; `It_advances_to_first_future_boundary_with_fractional_seconds` ×2 (before/at/after boundary; asserts `NextRunAt' > now` and `NextRunAt' − Interval <= now` on the returned pair) |
+
+## 3. Persistence
+
+### 3.1 `dmscs.Job` (`0033_Create_Job_Table.sql`, both providers)
+
+| Column | PostgreSQL | SQL Server | Notes |
+| --- | --- | --- | --- |
+| Id | BIGINT identity, `PK_Job` | BIGINT IDENTITY PK | FIFO key |
+| JobId | VARCHAR(150) NOT NULL | NVARCHAR(150) COLLATE Latin1_General_BIN2 NOT NULL | `UX_Job_JobId` |
+| TenantId | BIGINT NULL, `FK_Job_Tenant` ON DELETE RESTRICT | ON DELETE NO ACTION | `IX_Job_TenantId` |
+| JobType | VARCHAR(100) NOT NULL | NVARCHAR(100) COLLATE Latin1_General_BIN2 | key syntax enforced in code |
+| PayloadVersion | SMALLINT NOT NULL | SMALLINT | |
+| Payload | VARCHAR(4000) NOT NULL, `CK_Job_Payload_Object CHECK (jsonb_typeof(("Payload")::jsonb) = 'object')` | NVARCHAR(4000) NOT NULL, `CK_Job_Payload_Object CHECK (ISJSON(Payload) = 1 AND SUBSTRING(Payload, PATINDEX(N'%[^ ' + NCHAR(9) + NCHAR(10) + NCHAR(13) + N']%', Payload), 1) = N'{')` | same accepted shape: JSON object with any JSON whitespace prefix |
+| SourceScheduleId | BIGINT NULL, `FK_Job_JobSchedule` RESTRICT | NO ACTION | |
+| ScheduledOccurrence | TIMESTAMP NULL | DATETIME2 NULL | `CK_Job_Occurrence_Pairing`: both null or both set |
+| Status | VARCHAR(20) NOT NULL, `CK_Job_Status` | NVARCHAR(20) | four values |
+| CreatedAt | TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC') | DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME() | |
+| FinishedAt, NextAttemptAt, LeaseExpiresAt | TIMESTAMP NULL | DATETIME2 NULL | |
+| ErrorMessage | VARCHAR(1000) NULL | NVARCHAR(1000) NULL | registered fixed text |
+| AttemptCount | INT NOT NULL DEFAULT 0, `CK_Job_AttemptCount CHECK (>= 0)` | same | |
+| LeaseOwner | VARCHAR(200) NULL | NVARCHAR(200) NULL | |
+| FencingToken | BIGINT NOT NULL DEFAULT 0 | same | |
+| CreatedBy, LastModifiedAt, ModifiedBy | audit convention | | |
+
+Indexes: `UX_Job_JobId`; `UX_Job_SourceScheduleId_ScheduledOccurrence` unique partial/filtered `WHERE SourceScheduleId IS NOT NULL AND ScheduledOccurrence IS NOT NULL`; `IX_Job_Claim (Status, NextAttemptAt, Id) WHERE Status IN ('Pending','InProgress')` (MSSQL `INCLUDE (LeaseExpiresAt, AttemptCount)`); `IX_Job_Retention (Status, FinishedAt) WHERE Status IN ('Completed','Error')`; `IX_Job_TenantId`.
+
+### 3.2 `dmscs.JobSchedule` (`0032_Create_JobSchedule_Table.sql`, both providers)
+
+`Id` BIGINT identity PK; `TenantId` BIGINT NULL FK Tenant (RESTRICT/NO ACTION), `IX_JobSchedule_TenantId`; `ScheduleType` (N)VARCHAR(100) NOT NULL (MSSQL BIN2); `JobType`, `PayloadVersion`, `Payload` (same types and object check as Job); `IntervalMinutes` INT NOT NULL `CHECK (BETWEEN 1 AND 527040)`; `Enabled` BOOLEAN/BIT NOT NULL; `NextRunAt` NOT NULL; `LastEnqueuedOccurrence` NULL; `LeaseOwner` (200) NULL; `LeaseExpiresAt` NULL; `FencingToken` BIGINT NOT NULL DEFAULT 0; audit columns. Indexes: `UX_JobSchedule_Tenant_Type (TenantId, ScheduleType) WHERE TenantId IS NOT NULL`; `UX_JobSchedule_SingleTenant_Type (ScheduleType) WHERE TenantId IS NULL`; `IX_JobSchedule_Due (Enabled, NextRunAt)`.
+
+### 3.3 Migration behavior, upgrade coverage, provider differences
+
+- DbUp embedded scripts journaled in `public.dmscs_SchemaVersions` / `dbo.dmscs_SchemaVersions`; idempotent guards; `0032` before `0033`.
+- Upgrade-from-pre-ticket (both providers; isolated database per fixture like `DataStoreDerivativeUpgradeTests`): new internal seam `Func<string,bool>? ScriptFilter { get; init; }` on both `DatabaseDeploy` (mirrors `ScriptOutputLog`, unset in production) deploys only scripts `< 0032`; assert tables absent; full deploy; assert both tables, exactly two new journal rows; second full deploy adds none.
+- Harness updates in the migration steps: Respawn lists ×2; `DatabaseShapeTests.ExpectedTableNames` and `ExpectedBigintColumns` (PG); `DeployTests.ExpectedBigintColumns` (MSSQL): `Job.Id`, `Job.TenantId`, `Job.SourceScheduleId`, `Job.FencingToken`, `JobSchedule.Id`, `JobSchedule.TenantId`, `JobSchedule.FencingToken`.
+- Provider differences: partial vs filtered index syntax; `clock_timestamp()/now()` vs `SYSUTCDATETIME()`; `jsonb_typeof` vs `ISJSON + PATINDEX`; `RESTRICT` vs `NO ACTION`; `FOR UPDATE SKIP LOCKED` vs `UPDLOCK, READPAST, ROWLOCK`; `RETURNING` vs `OUTPUT inserted`; `ON CONFLICT … DO NOTHING` vs `WHERE NOT EXISTS`; `SET LOCAL lock_timeout` vs `SET LOCK_TIMEOUT`; BIN2 + `DATALENGTH` on MSSQL; `interval` arithmetic vs `DATEADD/DATEDIFF_BIG`.
+
+### 3.4 Transaction boundaries
+
+| Operation | Boundary |
+| --- | --- |
+| Enqueue (manual) | caller's `ICmsTransaction` or implicit single statement |
+| Claim / reclaim; Exhaust | single statement each (no lock wait: skip-locked) |
+| Renew / Complete / FailTransient / FailTerminal / ReleaseToPending | one short transaction: bounded row lock, then guarded `UPDATE` with fresh time (D-4) |
+| Fenced consumer write | one transaction under the execution gate: bounded row lock, work, gate/state re-check, fresh-time revalidation, commit (D-5) |
+| Schedule materialization | one bounded transaction: lock, mark, insert-or-skip, advance-with-fresh-time, commit (D-8) |
+| Schedule upsert / disable | single statement (PG) or short transaction (MSSQL upsert) |
+| Retention | bounded `DELETE` batches, autocommit |
+
+## 4. Contracts, state machine, execution, cancellation
+
+### 4.1 Backend contracts (`Backend/Jobs/…`); every operation takes a `CancellationToken`
+
+```text
+JobStatuses; JobErrorCode(Code, Message); IJobErrorCodeRegistry
+JobFailureDiagnostic(ExceptionTypeChain, ProviderErrorCode?, Operation)             // D-16a, provider-neutral record; JobDiagnostics.TypeChain(Exception) in Backend
+PostgresqlJobDiagnostics.From(Exception, operation) / MssqlJobDiagnostics.From(...)  // provider projects only; the sole readers of PostgresException/SqlException
+JobStatusResponse (DataModel)                                                       // JobId, Status, CreatedAt, FinishedAt?, ErrorMessage?
+JobEnqueueCommand(JobType, PayloadVersion, PayloadJson)
+JobEnqueueResult   : Success(JobId) | FailureUnsupportedType | FailureUnsupportedVersion | FailurePayloadInvalid(reasonCode) | FailureUnknown(JobFailureDiagnostic)
+JobStatusQueryResult: Success(JobStatusResponse) | FailureNotFound | FailureUnknown(JobFailureDiagnostic)
+ClaimedJob(Id, JobId, TenantId, JobType, PayloadVersion, PayloadJson, AttemptCount, FencingToken, LeaseOwner, LeaseExpiresAt, CreatedAt, NextAttemptAt, DatabaseUtcNow)
+JobClaimResult     : Claimed(ClaimedJob) | NoneAvailable | FailureUnknown(JobFailureDiagnostic)
+JobWriteResult     : Success(NewLeaseExpiresAt?, DatabaseUtcNow) | OwnershipLost | ResultUnknown(JobFailureDiagnostic) | FailureUnknown(JobFailureDiagnostic)
+
+IJobRepository          (2.3/2.4)  EnqueueJob(command, DbTransaction?, ct); GetJobStatus(jobId, ct)
+ICmsTransactionFactory  (2.3/2.4)  BeginAsync(ct) → ICmsTransaction
+IJobLeaseRepository     (2.5/2.6)  ClaimNext(owner, leaseSeconds, maxAttempts, ct); Exhaust(maxAttempts, errorCode, ct);
+                                   Renew(id, owner, token, leaseSeconds, ct); Complete(id, owner, token, ct);
+                                   FailTransient(id, owner, token, backoffSeconds, ct); FailTerminal(id, owner, token, errorCode, ct);
+                                   ReleaseToPending(id, owner, token, ct)
+IJobFenceFactory        (2.5/2.6)  Create(ClaimedJob, JobExecutionOwnership) → IJobFence.ExecuteAsync(work, ct)
+IJobRetentionRepository (2.7/2.8)  DeleteFinishedOlderThan(retentionSeconds, batchSize, ct)
+IJobScheduleRepository  (2.9/2.10) Upsert(command, ct); Disable(scheduleType, ct); DisableById(id, ct); ListByType(scheduleType, ct);
+                                   MaterializeNextDue(owner, leaseSeconds, newJobId, ct)
+                                     → Materialized(scheduleId, jobId, occurrence, newNextRunAt) | AlreadyEnqueued(scheduleId, occurrence) | NoneDue | OwnershipLost | FailureUnknown
+IJobEnqueuer            (3.2)      EnqueueAsync(command, DbTransaction?, ct)
+IJobHandler<TPayload>.ExecuteAsync(JobExecutionContext, TPayload, CancellationToken)
+IJobPayloadValidator<TPayload>.Validate(TPayload) → IReadOnlyList<string> failures
+JobExecutionContext(JobId, TenantContext, Attempt, MaxAttempts, IJobFence Fence)
+JobExecutionOwnership { State; Reason; Gate }                                       // D-7a, created in 2.1
+JobPermanentException(JobErrorCode); JobLeaseLostException; JobFenceUnavailableException
+JobOptions; JobOptionsValidator; JobRuntimeEnvironment; RetryBackoff; ScheduleOccurrenceMath (reference); JobPayloadContract; JobPayloadSerializer; JobDiagnostics; JobMetrics
+Hosted: JobWorkerService; JobScheduleDispatcherService; JobRetentionService
+```
+
+### 4.2 State transitions
+
+```text
+enqueue ─────────────────────────────► Pending(attempt 0, token 0)
+Pending ──claim──────────────────────► InProgress(attempt+1, token+1, lease)                     [single stmt]
+InProgress ─complete─────────────────► Completed(finishedAt, lease cleared)                      [D-4, live lease]
+InProgress ─terminal─────────────────► Error(finishedAt, registered message, lease cleared)      [D-4]
+InProgress ─transient, attempt<max──► Pending(nextAttemptAt=dbnow+backoff, lease cleared)        [D-4]
+InProgress ─transient, attempt>=max─► Error(AttemptsExhausted)                                   [D-4]
+InProgress ─graceful release────────► Pending(attempt unchanged, nextAttemptAt=dbnow, lease cleared) [D-4]
+InProgress(expired) ─reclaim (attempt<max)─► InProgress(attempt+1, token+1, new owner)
+InProgress(expired) ─exhaust (attempt>=max)─► Error(AttemptsExhausted, token+1)
+Pending(attempt>=max) ─exhaust──────► Error(AttemptsExhausted, token+1)   // released final attempt, or lowered limit
+Completed/Error ─retention──────────► deleted after FinishedAt + retention
+```
+
+### 4.3 Executor algorithm
+
+1. `CreateAsyncScope()`; install tenant (D-11) or `FailTerminal(TenantUnavailable)`.
+2. Registry check (D-12), deserialize and validate payload (D-13), or `FailTerminal(...)`. Handler not yet resolved.
+3. Create `JobExecutionOwnership` (state `Owned`), execution CTS linked to host stop, start renewal loop (D-7a).
+4. Resolve handler; invoke with `JobExecutionContext` (fence bound to the same ownership object) and the CTS token.
+5. Finalize (D-7a): stop and await the renewal loop; under the gate decide: `Uncertain` → no write; `Owned` → exactly one outcome write chosen by D-7; record result; log; metrics; dispose scope.
+
+### 4.4 Cancellation and coordination
+
+- Host stopping: worker stops claiming; cancels execution CTSs; awaits executions up to the host shutdown timeout; each execution finalizes as above (release when `Owned`, nothing when `Uncertain`).
+- Renewal loop stop vs failure: the loop has its own stop signal (finalization) distinct from ownership loss; a stop merely ends the loop after the in-flight renewal completes; only an unsuccessful renewal moves the state to `Uncertain`.
+- Fence and renewal never overlap (gate); renewal has priority (pending flag); a fence observes `Uncertain` before starting, after `work` returns, and through the fresh-time database check before commit.
+- Unknown database results (`ResultUnknown`) end the execution's certainty (Q15, approved): local execution stops, the ambiguous write is not retried, and no status re-read is attempted. Uncertainty does not change `AttemptCount`; the claim already counted this attempt. What happens next depends only on what the database actually persisted:
+
+  | Actual database outcome | Subsequent behavior |
+  | --- | --- |
+  | `Completed`/`Error` committed | Row is terminal and ineligible for claim, reclaim, or exhaustion; retention removes it later |
+  | Retry (`FailTransient`) or release committed | Row is `Pending`; normal eligibility (`NextAttemptAt`) and exhaustion (`AttemptCount >= MaxAttempts`) apply |
+  | Outcome transaction rolled back | Row stays `InProgress` with the old lease; after expiry it is reclaimed (`AttemptCount < MaxAttempts`, attempt + 1) or exhausted |
+  | Consumer fence committed, completion absent | Consumer effects persist; every later execution must reconcile them idempotently before acting |
+
+  Later executions may themselves fail; nothing bounds re-execution to a single occurrence except `MaxAttempts`. Tests: `It_leaves_committed_completion_terminal_when_acknowledgement_is_lost` (fake repository commits `Complete` then reports `ResultUnknown`; a subsequent claim sees nothing) and `It_leaves_in_progress_for_reclaim_when_outcome_rolled_back` (fake reports `ResultUnknown` without committing; after backdated expiry a new claim succeeds with attempt + 1 and token + 1), in `JobExecutorTests` (unit, scripted repository) and `JobRuntimeIntegrationTests` ×2 (real repositories with an injected post-commit fault).
+- Fence bound: `FenceLockWait` (5 s), `FenceTimeout` (option), remaining lease, execution cancellation; renewal lateness bound proven by the §6.3 inequality.
+
+## 5. API
+
+`JobModule : IEndpointModule` → `MapSecuredGet("/v3/jobs/{jobId}", GetById).Produces<JobStatusResponse>(200)`. `jobId` bound as `string`, no constraint; repository lookup parameterized and tenant-scoped (`TenantWhereClause`, D-14); `FailureNotFound` → `FailureResults.NotFound("Job not found.", trace)` (`urn:ed-fi:api:not-found`); `FailureUnknown(diagnostic)` → log diagnostic fields + `FailureResults.Unknown`. Response model: five properties, default framework JSON (camelCase, nulls present, UTC `Z`). Authorization: ReadOnlyOrAdmin. Multi-tenant missing/invalid header → existing middleware 400; cross-tenant → 404. OpenAPI contract test on `/openapi/v1.json`: path present; `jobId` path parameter `string`, required; 200 schema has exactly `jobId`, `status`, `createdAt`, `finishedAt`, `errorMessage` with `string`/`date-time` types and nullable `finishedAt`/`errorMessage`; 404 declared. Conformance to the upstream generated fragment is asserted against §1.4.1.
+
+## 6. Configuration, operational assessment, validation, observability
+
+### 6.1 Candidate settings (`JobSettings`) — pending step 0.2; re-verified at step 2.11 (Q3)
+
+| Setting | Candidate | Bounds |
+| --- | --- | --- |
+| WorkerEnabled / SchedulerEnabled / RetentionEnabled | true | — |
+| PollInterval | 00:00:05 | 1 s – 5 min |
+| LeaseDuration | 00:05:00 | 30 s – 1 h |
+| RenewalInterval | 00:01:00 | 1 s – LeaseDuration/3 |
+| FenceTimeout | 00:00:10 | 1 s – 1 min |
+| MaxAttempts | 5 | 1 – 20 |
+| RetryBackoffBase / RetryBackoffMaximum | 00:00:30 / 00:15:00 | 1 s – 1 h / ≥ Base, ≤ 24 h |
+| MaxConcurrentJobs | 2 | 1 – 32 |
+| FinishedJobRetention | 7.00:00:00 | 1 h – 365 d |
+| RetentionInterval | 01:00:00 | 1 min – 24 h |
+| RetentionBatchSize | 500 | 1 – 10000 |
+
+Fixed constants: payload 4000 UTF-16 units; error message 1000; lease owner 200; `WriteLockWait` 5 s; `FenceLockWait` 5 s; `FenceMinimumRemainingLease` 2 s; `RenewalTimeout` = `RenewalInterval/2` (min 1 s); claim/exhaust command timeout 5 s; `ScheduleMaterializationTimeout` 10 s; retention batch command timeout 30 s.
+
+Estimates, not guarantees: with an idle queue and a healthy database, the expected delay from commit to claim is about `PollInterval/2` on average and at most `PollInterval` plus one claim round trip, assuming each replica's poll loop is not stalled by an earlier claim exception (which adds one `PollInterval`). Under backlog, sustained throughput is approximately `replicas × MaxConcurrentJobs ÷ mean job duration`, assuming durations dominate claim/renewal overhead, the database serves claims within the §6.2 thresholds, and consumers do not serialize on shared external resources. Both estimates are validated by the step 0.2 probes and re-verified at step 2.11.
+
+### 6.2 Operational assessment (step 0.2 before Phase 1; step 2.11 re-verification)
+
+Workload assumptions (to confirm with product, recorded in the assessment document): ≤ 3 CMS replicas; steady queue < 100 jobs; burst ≤ 10 000 (bulk refresh); durations from seconds (single-store refresh) to tens of minutes (DMS-1439 provisioning); database round trip < 50 ms; CMS database shared with request traffic; SQL Server 2025 and PostgreSQL 16 as in CI/compose.
+
+**Step 0.2 (initial, no production code):** an `[Explicit]`, `[Category("OperationalProbe")]` fixture in each integration project creates its own scratch tables (`dmscs_probe.Job`, `dmscs_probe.JobSchedule`) with exactly the §3 column shapes and indexes, seeds them, and runs the planned SQL statements verbatim (claim with skip-locked, lock-then-validate renewal under a held row lock, `Exhaust`, retention batch, schedule materialization) through raw Npgsql/SqlClient commands. It depends on no repository, option, or hosted-service code and drops its schema afterwards. Probes: (1) claim latency p50/p99 with 10 000 pending rows and 3 concurrent claimers; (2) renewal latency p99 while another session holds the row lock for 5 s, and renewal rejection when the lease expires during that wait; (3) `Exhaust` sweep at 100 000 rows; (4) retention batch of 500 at 100 000 finished rows; (5) 1 000 mixed claim/renew/complete operations across 3 sessions with deadlock count; (6) coalescing formula results for the fractional-second vectors of D-9. Acceptance thresholds (both providers): (1) p99 ≤ 250 ms; (2) p99 ≤ 100 ms after the lock releases, and rejection when expired; (3) ≤ 500 ms; (4) ≤ 1 s; (5) zero deadlocks, zero lost updates; (6) exact match with the reference implementation. Output: `reference/design/jobs-DMS-1437/operational-assessment.md` with machine, commands, numbers, and an explicit approve/adjust decision for every candidate in §6.1. Phase 1 does not start until that decision is recorded and approved (Q3).
+
+**Step 2.11 (verification):** the same probes re-run through the implemented repositories, plus fence-held renewal (probe 2 via `IJobFence`); any threshold regression blocks Phase 3.
+
+### 6.3 Validation
+
+`JobOptionsValidator` + `ValidateOnStart`: every bound above; `RenewalInterval * 3 <= LeaseDuration`; `RetryBackoffMaximum >= RetryBackoffBase`; renewal lateness inequality with a positive safety margin: `RenewalInterval + FenceLockWait + FenceTimeout + WriteLockWait + RenewalTimeout + SafetyMargin <= LeaseDuration` where `SafetyMargin = max(10 s, LeaseDuration / 6)` (candidates: 60 + 5 + 10 + 5 + 30 + 50 = 160 ≤ 300); the margin absorbs clock skew between replicas' timers and the database, GC pauses, and one slow renewal round trip, so renewal can never be scheduled to land at expiry. Messages name `JobSettings:<Property>`, the accepted range, and, for the inequality, each term's value.
+
+### 6.4 Observability, retention, recovery, deployment surface
+
+Logs (fields `JobId`, `JobType`, `TenantId`, `Attempt`, `QueueDelayMs`, `DurationMs`, `Outcome`, `LeaseOwner`, `FencingToken`, and on failure `ExceptionTypeChain`, `ProviderErrorCode`, `Operation`, `JobErrorCode`): `JobClaimed`, `JobReclaimed`, `JobCompleted`, `JobRetryScheduled`, `JobFailed`, `OwnershipUncertainExit`, `LateWriteRejected`, `WriteOutcomeUnknown`, `JobReleasedOnShutdown`, `JobsExhausted`, `ScheduleOccurrenceEnqueued`, `ScheduleOccurrenceAlreadyEnqueued`, `RetentionDeleted`. Metrics: `dmscs.jobs.claimed{job_type,reclaimed}`, `dmscs.jobs.finished{job_type,outcome}`, `dmscs.jobs.ownership_uncertain{job_type,reason}`, `dmscs.jobs.queue_delay`, `dmscs.jobs.duration`, `dmscs.schedules.occurrences_enqueued{schedule_type}`, `dmscs.jobs.retention_deleted`.
+Recovery: crash → expiry → reclaim or exhaust; loops catch exceptions (logged as diagnostics), wait `PollInterval`; workers start after `InitializeDatabase`; missing schema → warnings, no host fault.
+Deployment surface: `local-config.yml`/`published-config.yml` `JobSettings__*: ${DMS_CONFIG_JOBS_*:-<candidate>}`; `docs/CONFIGURATION.md` table; `docs/CMS-BACKGROUND-JOBS.md`.
+
+## 7. Compatibility and regression risks
+
+- **Startup/DI:** up to three new hosted services in both identity-provider modes and both datastores, each behind its own flag; `ValidateOnStart` adds a startup-failure class (intended). `Backend.csproj` adds `Microsoft.Extensions.Hosting.Abstractions` → `packages.lock.json` changes for Backend and dependents (lock-file CI gate; local `dotnet restore --force-evaluate`).
+- **Existing tests:** `WebApplicationFactory` suites unaffected (all flags false in Test); exact-set schema tests (`DatabaseShapeTests`, `DeployTests`) updated in the migration commits; DbUp `ScriptFilter` seam internal and unset in production.
+- **Existing behavior:** no existing table or route changes; `TenantResolutionMiddleware` already covers `/v3/jobs`; `MapRouteEndpoints` auto-maps the module; existing repositories keep their `ex.Message` convention — only the job subsystem uses `JobFailureDiagnostic`.
+- **Database upgrade:** two additive tables; rolling deployment note in D-12; downgrade leaves tables (harmless).
+- **Operational:** lowering `MaxAttempts` terminates over-limit jobs; a released final attempt terminates on the next sweep; transient DB blips during renewal or outcome writes forfeit the attempt (D-7a); `SET LOCAL lock_timeout` scope is the transaction (PG) and `SET LOCK_TIMEOUT` is per session (MSSQL: reset to `-1` after each guarded write on the pooled connection).
+- **Performance:** claim uses `IX_Job_Claim`; idle cost ≤ 1 claim + 1 exhaust statement per `PollInterval` per replica; renewal ≤ `MaxConcurrentJobs` two-statement transactions per `RenewalInterval`.
+- **Time zones:** job SQL is session-time-zone independent (D-2); existing tables untouched.
+- **Formatting gate:** `dotnet csharpier check src/config` (whole-tree drift is pre-existing and unrelated).
+
+## 8. Test matrix
+
+Namespaces: `EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs`, `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs`, `EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs`, `EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs`. Every step's completion criteria include `dotnet test --list-tests --filter <filter>` showing the fixtures it added.
+
+| Layer | Project | Coverage | Command / prerequisites |
+| --- | --- | --- | --- |
+| Unit | `Backend.Tests.Unit` | options validator, backoff, occurrence reference math, diagnostics, payload contract/serializer, registry, enqueuer, executor (fakes, `FakeTimeProvider`, `FakeLogger`), worker/dispatcher/retention services, metrics | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit --filter "FullyQualifiedName~Backend.Tests.Unit.Jobs"` |
+| Unit (HTTP) | `Frontend.AspNetCore.Tests.Unit` | `JobModuleTests`, `JobOpenApiContractTests`, `JobOptionsStartupTests` | `dotnet test src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit --filter "FullyQualifiedName~Frontend.AspNetCore.Tests.Unit.Jobs"` |
+| PostgreSQL | `Backend.Postgresql.Tests.Integration` | schema, upgrade, repositories, fence, schedules, runtime, API-level, `[Explicit]` probes | PostgreSQL `localhost:5432`, trust auth, db `edfi_configurationservice`; `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration --filter "FullyQualifiedName~Postgresql.Tests.Integration.Jobs"` |
+| SQL Server | `Backend.Mssql.Tests.Integration` | same | `docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 1434:1433 -d mcr.microsoft.com/mssql/server:2025-latest`; `$env:ConnectionStrings__MssqlAdmin="Server=localhost,1434;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"`; `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration --filter "Category=MssqlIntegration&FullyQualifiedName~Mssql.Tests.Integration.Jobs"`; absent variable ⇒ skips reported as skips |
+| E2E | `Tests.E2E` `Jobs.feature` | 401 anonymous, 403 authMetadata-only, 404 unknown id with CMS problem details, `@MultitenantOnly` 400 | `./build-config.ps1 Build -Configuration Release`; `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained`; MSSQL lane `-EnvironmentFile ./.env.config.mssql.e2e -E2ETestFilter "TestCategory=MssqlRepresentative"` |
+| Gates | | `./build-config.ps1 UnitTest -Configuration Release`; `./build-config.ps1 IntegrationTest -Configuration Release`; `dotnet csharpier check src/config`; `dotnet restore src/config/EdFi.DmsConfigurationService.sln --locked-mode` | |
+
+## 9. Phases and steps
+
+Conventions: CSharpier on touched files; NUnit `Given_…`/`It_…`; each commit builds `src/config/EdFi.DmsConfigurationService.sln`; one local commit per step; an explicit approval stop after each step; each step's report lists SHA, files, behavior, AC coverage, exact commands and results, remaining risks.
+
+### Phase 0
+
+**0.1 Commit the approved spec and contract evidence.** Purpose: durable design record and the pinned upstream contract. Files: `reference/design/jobs-DMS-1437/spec.md` (this document), `reference/design/jobs-DMS-1437/admin-api-v3-ed115fd8.yaml` (the generated document, SHA-256 `f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b`), `reference/design/jobs-DMS-1437/admin-api-v3-provenance.md` (source commit, toolchain versions, exact commands, the two workarounds from §1.4.1, and the CMS nullability differences that are intentionally kept). Deps: approval. Tests: none. Risks: none. Done: three files present, no code. Commit `[DMS-1437] Add durable jobs implementation spec and pinned contract`.
+
+**0.2 Initial operational assessment.** Purpose: AC 14 operational review of the candidate settings before any production implementation. Files: `…Postgresql.Tests.Integration/Jobs/JobOperationalProbes.cs`, `…Mssql.Tests.Integration/Jobs/JobOperationalProbes.cs` (`[Explicit]`, `[Category("OperationalProbe")]`, self-contained scratch schema `dmscs_probe`, raw SQL only), `reference/design/jobs-DMS-1437/operational-assessment.md`. Behavior: §6.2 step 0.2 probes and thresholds. Deps: 0.1; a PostgreSQL and a SQL Server instance. Tests: the probes themselves (`dotnet test … --filter "Category=OperationalProbe"`, run manually, excluded from CI by `[Explicit]`). Risks: local hardware differs from production (recorded in the document); scratch schema dropped in teardown. Done: document committed with numbers for both providers and an approve/adjust decision per candidate value; the reviewer records Q3 as decided. Commit `[DMS-1437] Record initial job settings operational assessment`.
+
+### Phase 1 — Persistence
+
+**1.1 `JobSchedule` table.** Purpose: AC 17 persistence and D-10 identity. Files: `Backend.Postgresql/Deploy/Scripts/0032_Create_JobSchedule_Table.sql`, `Backend.Mssql/Deploy/Scripts/0032_Create_JobSchedule_Table.sql`, `Backend.Postgresql/Deploy/DatabaseDeploy.cs` and `Backend.Mssql/Deploy/DatabaseDeploy.cs` (`ScriptFilter` seam), `…Postgresql.Tests.Integration/Jobs/JobScheduleSchemaTests.cs`, `…Mssql.Tests.Integration/Jobs/JobScheduleSchemaTests.cs`, `…/Jobs/JobScheduleUpgradeTests.cs` ×2, `DatabaseTestBase.cs` ×2 (Respawn), `DatabaseShapeTests.cs` (table list, bigint allowlist), `DeployTests.cs` (bigint allowlist). Behavior: §3.2. Deps: none. Tests: column set and types; constraints and indexes present; duplicate (tenant,type) rejected regardless of `Enabled`; null-tenant duplicate rejected; different tenant allowed; payload object check accepts `{}`, ` {}`, `\t{}`, `\n{}`, `\r\n{}` and rejects `[]`, `1`, `"x"`, invalid JSON on both providers; upgrade from pre-0032 adds exactly this table and one journal row; repeat deploy adds none. Risks: exact-set shape tests. Done: `dotnet test --list-tests --filter "FullyQualifiedName~Tests.Integration.Jobs"` lists the two schema and two upgrade fixtures; both integration suites green (MSSQL with the env var). Commit `[DMS-1437] Add JobSchedule table`.
+
+**1.2 `Job` table.** Purpose: AC 1. Files: `0033_Create_Job_Table.sql` ×2, `Jobs/JobSchemaTests.cs` ×2, `Jobs/JobUpgradeTests.cs` ×2, harness lists as in 1.1. Behavior: §3.1. Deps: 1.1 (FK). Tests: columns/types; `UX_Job_JobId`; occurrence index filter (two manual jobs with null pairs coexist; identical scheduled pair rejected); status, pairing, attempt, JSON-object checks (same whitespace matrix); MSSQL `JobId` exact match: same id with trailing space, upper-case variant → no row; upgrade adds exactly this table and one journal row. Risks: as 1.1. Done: fixtures listed; suites green. Commit `[DMS-1437] Add Job table`.
+
+### Phase 2 — Contracts and repositories
+
+**2.1 Contracts and pure helpers.** Purpose: compile-time foundation for every later step. Files: `Backend/Jobs/{JobStatuses,JobErrorCode,IJobErrorCodeRegistry,JobFailureDiagnostic,JobDiagnostics,JobEnqueueCommand,JobEnqueueResult,JobStatusQueryResult,ClaimedJob,JobClaimResult,JobWriteResult,IJobRepository,ICmsTransactionFactory,ICmsTransaction,IJobLeaseRepository,IJobFence,IJobFenceFactory,IJobRetentionRepository,IJobScheduleRepository,JobScheduleUpsertCommand,JobExecutionOwnership,JobPermanentException,JobLeaseLostException,JobFenceUnavailableException,RetryBackoff,ScheduleOccurrenceMath}.cs`; `DataModel/Model/Job/JobStatusResponse.cs`; `Backend.Tests.Unit/Jobs/{RetryBackoffTests,ScheduleOccurrenceMathTests,JobDiagnosticsTests,JobExecutionOwnershipTests}.cs`. Behavior: §4.1; `JobDiagnostics.TypeChain(Exception)` builds the `/`-joined type chain only (no provider types, no messages); `JobExecutionOwnership` state transitions and gate semantics (renewal priority). Deps: none. Tests: backoff sequence/cap; reference math for 0/1/3.5/100 missed intervals, exact boundary, and the D-9 fractional-second vectors; diagnostics: a message containing an unlabelled secret never appears in the record, nested exceptions yield the type chain only, identifiers with control characters are sanitized by the logging helper; ownership: `Owned→Uncertain` wins over a later `Finalizing`, gate gives priority to a pending renewal over a waiting fence. Risks: none at runtime. Done: `--filter "FullyQualifiedName~Backend.Tests.Unit.Jobs"` lists the four fixtures and passes; `Backend.csproj` has no Npgsql or SqlClient reference; solution builds. Commit `[DMS-1437] Add job contracts and helpers`.
+
+**2.2 Payload contract.** Purpose: AC 12 structural guarantees. Files: `Backend/Jobs/{JobIdentifierAttribute,JobPayloadContract,JobPayloadSerializer,IJobPayloadValidator,JobKeySyntax}.cs`; `Backend.Tests.Unit/Jobs/JobPayloadContractTests.cs`. Behavior: D-13/D-14 rules. Deps: 2.1. Tests: each disallowed member kind rejected at registration; unannotated string rejected; `[JobIdentifier]` pattern/length enforced; unexpected member, `$type`, oversize (4001 units), unpaired surrogate, array root, non-object rejected; valid payload round-trips; key syntax accepts/rejects vectors incl. trailing space. Risks: none. Done: fixture listed, green. Commit `[DMS-1437] Add job payload contract`.
+
+**2.3 PostgreSQL enqueue/read, transaction factory, provider diagnostics.** Files: `Backend.Postgresql/Repositories/JobRepository.cs`, `Backend.Postgresql/Jobs/{PostgresqlCmsTransactionFactory,PostgresqlJobDiagnostics}.cs`, `…Postgresql.Tests.Integration/Jobs/{JobRepositoryTests,PostgresqlJobDiagnosticsTests}.cs`. Behavior: `EnqueueJob` (own or supplied transaction; `CreatedBy` from `IAuditContext`; tenant from provider), `GetJobStatus` (five columns, tenant clause, exact match), `PostgresqlJobDiagnostics.From` (D-16a: `SqlState`, type chain, operation; never the message). Deps: 1.2, 2.1. Tests: commit visible / rollback absent; tenant isolation; `FailureNotFound`; diagnostics from real errors: a unique violation yields `23505` and no row values, a lock timeout yields `55P03`, a `PostgresException` whose `Detail` carries a payload literal contributes only its code, a wrapped exception yields the full chain. Risks: none. Done: fixtures listed, green. Commit `[DMS-1437] Add PostgreSQL job enqueue, read, and diagnostics`.
+
+**2.4 SQL Server enqueue/read, transaction factory, provider diagnostics.** Mirror of 2.3 with `DATALENGTH` guard, BIN2, and `MssqlJobDiagnostics.From` (`SqlException.Number`: `2627`/`2601` unique, `1222` lock timeout); real-error tests as in 2.3. Commit `[DMS-1437] Add SQL Server job enqueue, read, and diagnostics`.
+
+**2.5 PostgreSQL lease repository and fence.** Files: `Backend.Postgresql/Repositories/JobLeaseRepository.cs`, `Backend.Postgresql/Jobs/PostgresqlJobFenceFactory.cs`, `…/Jobs/JobLeaseRepositoryTests.cs`. Behavior: D-3, D-4 lock-then-validate, D-5 fence, D-6 `Exhaust`. Deps: 2.3. Tests: all §2 rows 5/7/8/9/10/12 fixtures for PG, including the two lock-wait-past-expiry tests (a second connection holds `FOR UPDATE` on the row until after a 2 s lease expires; renewal/completion then rejected), fence expiry during work (probe write into `dmscs.OwnershipToken` rolled back), fence lock wait outlasting lease, persisted unknown-type row claimable, `Exhaust` on `Pending` over-limit rows. Risks: PG `lock_timeout` error code `55P03` mapping. Cannot be smaller: `Renew` alone is untestable for AC 5 without `ClaimNext`, and the fence needs both. Done: fixture listed, green. Commit `[DMS-1437] Add PostgreSQL job lease and fence`.
+
+**2.6 SQL Server lease repository and fence.** Mirror of 2.5 (`UPDLOCK/READPAST/ROWLOCK`, `SET LOCK_TIMEOUT` reset to `-1`, lock-timeout error 1222, `OUTPUT inserted`). Commit `[DMS-1437] Add SQL Server job lease and fence`.
+
+**2.7 PostgreSQL retention repository.** Files: `Backend.Postgresql/Repositories/JobRetentionRepository.cs`, `…/Jobs/JobRetentionRepositoryTests.cs`. Behavior: D-17. Deps: 2.3. Tests: seeded Pending, InProgress (expired), retryable Pending with future `NextAttemptAt`, Completed recent, Completed old, Error old → only the two old finished rows deleted; batch size respected. Commit `[DMS-1437] Add PostgreSQL job retention`.
+
+**2.8 SQL Server retention repository.** Mirror. Commit `[DMS-1437] Add SQL Server job retention`.
+
+**2.9 PostgreSQL schedule repository.** Files: `Backend.Postgresql/Repositories/JobScheduleRepository.cs` (internal `Func<Task>? AfterInsertHook` seam), `…/Jobs/JobScheduleRepositoryTests.cs`. Behavior: D-8, D-9, D-10. Deps: 1.1, 2.3. Tests: §2 rows 18/19/20 incl. `It_advances_from_fresh_time_when_paused_after_insert` (hook pauses until a 1-minute interval boundary passes; `NextRunAt` strictly future; exactly one job), `It_advances_to_first_future_boundary_with_fractional_seconds` (D-9 vectors, asserting both inequalities on the returned `(NextRunAt', now)` pair), concurrent upsert, disable blocking, seeded expired lease, `AlreadyEnqueued` path, idempotent upsert (no `LastModifiedAt` change), re-enable does not burst. Risks: `ON CONFLICT` inference on a partial index. Done: fixture listed, green. Commit `[DMS-1437] Add PostgreSQL job schedule repository`.
+
+**2.10 SQL Server schedule repository.** Mirror (`WHERE NOT EXISTS`, `DATEDIFF_BIG`, `UPDLOCK, HOLDLOCK` upsert). Commit `[DMS-1437] Add SQL Server job schedule repository`.
+
+**2.11 Operational assessment re-verification.** Purpose: confirm the step 0.2 decision against the implemented repositories before runtime services exist. Files: `…/Jobs/JobRepositoryProbes.cs` ×2 (`[Explicit]`, `[Category("OperationalProbe")]`, using the real repositories and `IJobFence`), an appended "Verification" section in `reference/design/jobs-DMS-1437/operational-assessment.md`. Behavior: §6.2 step 2.11. Deps: 2.5–2.10. Tests: the probes themselves (not CI). Risks: a regression against a 0.2 threshold blocks Phase 3 until the SQL or index shape is corrected. Done: section committed with numbers for both providers and an explicit confirm/adjust note per candidate. Commit `[DMS-1437] Verify job settings assessment against repositories`.
+
+### Phase 3 — Runtime
+
+**3.1 Options, validation, registration.** Files: `Backend/Jobs/{JobOptions,JobOptionsValidator,JobRuntimeEnvironment}.cs`, `Backend/EdFi.DmsConfigurationService.Backend.csproj` (Hosting.Abstractions), `Frontend/Infrastructure/WebApplicationBuilderExtensions.cs` (bind + validate; register repositories, factories, `JobRuntimeEnvironment` per provider), `Frontend/appsettings.json` (approved defaults), `Frontend/appsettings.Test.json` (three flags false), `eng/docker-compose/{local-config,published-config}.yml`, `docs/CONFIGURATION.md`, `Backend.Tests.Unit/Jobs/JobOptionsValidatorTests.cs`, `Frontend…Tests.Unit/Jobs/JobOptionsStartupTests.cs`, lock files. Deps: 2.11 decision. Tests: every rule incl. the lateness inequality; startup fails with actionable text on each invalid setting; defaults start. Risks: lock-file churn. Done: fixtures listed in both unit filters; `--locked-mode` restore passes after `--force-evaluate`. Commit `[DMS-1437] Add JobSettings options and registration`.
+
+**3.2 Registry, error codes, enqueuer.** Files: `Backend/Jobs/{IJobHandler,JobExecutionContext,JobHandlerRegistration,IJobHandlerRegistry,JobHandlerRegistry,JobErrorCodeRegistry,JobServiceCollectionExtensions,IJobEnqueuer,JobEnqueuer}.cs`; unit tests `JobHandlerRegistryTests`, `JobErrorCodeRegistryTests`, `JobEnqueuerTests`. Deps: 2.2, 3.1. Tests: duplicate type registration fails startup; invalid key syntax fails; enqueuer rejects unknown type/version/invalid payload/validator failure and passes the supplied `DbTransaction` through (fake repository captures it). Commit `[DMS-1437] Add handler registry and enqueuer`.
+
+**3.3 Executor.** Files: `Backend/Jobs/JobExecutor.cs`, `Backend.Tests.Unit/Jobs/JobExecutorTests.cs`. Behavior: §4.3, D-7a. Deps: 3.2. Tests: §2 rows 5, 6, 7, 8, 10, 12, 15 (fake lease repository with scripted results incl. `ResultUnknown`, fake fence, `FakeTimeProvider`, `FakeLogger`); coordination cases: renewal fails between fences → second fence throws without DB call and completion suppressed; in-flight renewal fails during finalization → no write; renewal fails during shutdown → no release; `ResultUnknown` on completion → `Uncertain`, no retry, no re-read; recovery-by-state cases: the scripted repository records a committed `Completed` while reporting `ResultUnknown` and a later claim returns nothing; it records no change while reporting `ResultUnknown` and a later claim (after scripted expiry) returns the job with attempt + 1 and token + 1. Risks: async gate deadlock — covered by a test that a fence waiting on a pending renewal completes once the renewal finishes. Done: fixture listed, green. Commit `[DMS-1437] Add job executor`.
+
+**3.4 Worker service and metrics.** Files: `Backend/Jobs/{JobWorkerService,JobMetrics}.cs`, frontend registration under `WorkerEnabled`, unit tests `JobWorkerServiceTests`, `JobMetricsTests`. Behavior: poll loop, `Exhaust` per poll, `MaxConcurrentJobs`, shutdown sequence, loop resilience. Deps: 3.3. Tests: claims up to concurrency then waits; stop token stops claims and finalizes executions; released final attempt terminates on next sweep; repeated shutdown keeps count; claim exception does not fault the service; metrics tags. Commit `[DMS-1437] Add job worker hosted service`.
+
+**3.5 Schedule dispatcher service.** Files: `Backend/Jobs/JobScheduleDispatcherService.cs`, registration under `SchedulerEnabled`, `JobScheduleDispatcherServiceTests`. Behavior: per poll call `MaterializeNextDue` until `NoneDue`; log outcomes; exception resilience. Deps: 3.1, 2.9/2.10. Commit `[DMS-1437] Add schedule dispatcher hosted service`.
+
+**3.6 Retention service.** Files: `Backend/Jobs/JobRetentionService.cs`, registration under `RetentionEnabled`, `JobRetentionServiceTests`. Behavior: sweep at start then per `RetentionInterval` (`PeriodicTimer`, `TimeProvider`), batch loop. Deps: 3.1, 2.7/2.8. Commit `[DMS-1437] Add job retention hosted service`.
+
+**3.7 Runtime integration tests.** Files: `…/Jobs/JobRuntimeIntegrationTests.cs` ×2 (real repositories, real executor and services constructed explicitly with short leases, fake handlers; an internal lease-repository seam injects a fault after commit or before commit of the outcome write). Tests: §2 rows 9, 10 (including both recovery-by-state cases against the real database), 11, 19. Deps: 3.4–3.6. Risks: timing; leases of 2–3 s with DB-time assertions, no wall-clock sleeps beyond lease waits. Done: fixtures listed, green on both providers. Commit `[DMS-1437] Add runtime recovery integration tests`.
+
+### Phase 4 — API
+
+**4.1 `GET /v3/jobs/{jobId}`.** Files: `Frontend/Modules/JobModule.cs`, `Frontend…Tests.Unit/Jobs/{JobModuleTests,JobOpenApiContractTests}.cs`. Behavior: §5. Deps: 2.1 (`JobStatusResponse`), 3.1 (repository registration). Tests: §2 rows 3, 4, 15 plus multi-tenant 400 via `UseSetting` and faked `ITenantRepository`; contract test also compares against the §1.4.1 fragment (property names, types, nullability). Commit `[DMS-1437] Add GET /v3/jobs/{jobId}`.
+
+**4.2 API-level integration tests.** Files: `…/Jobs/JobApiIntegrationTests.cs` ×2 (`WebApplicationFactory` against the real DB, flags false, enqueue through `IJobEnqueuer`). Tests: §2 rows 2, 3 plus each status representation and readonly scope. Deps: 4.1. Commit `[DMS-1437] Add job polling API integration tests`.
+
+**4.3 E2E.** Files: `Tests.E2E/Features/Jobs.feature`. Scenarios per §8 (one `@MssqlRepresentative`). Deps: 4.1. Commit `[DMS-1437] Add jobs E2E scenarios`.
+
+### Phase 5
+
+**5.1 Documentation.** Files: `docs/CMS-BACKGROUND-JOBS.md` (configuration, recovery, retention, observability, handler contract, fence rules, idempotency, deployment sequencing, attempt semantics), `docs/CONFIGURATION.md` link, spec finalization. Commit `[DMS-1437] Document CMS background jobs`. **5.2 Final validation:** all §8 lanes and gates; AC evidence table; request push authorization.
+
+## 10. Explicitly unresolved items
+
+- **U-2 (AC 14).** Candidate defaults remain unapproved until the step 0.2 assessment document is reviewed; Phase 1 does not start before that decision, and step 2.11 re-verifies it before Phase 3.
+- **Q15:** approved (round 3); closed.
+- **U-1:** closed by §1.4.1 and step 0.1.
