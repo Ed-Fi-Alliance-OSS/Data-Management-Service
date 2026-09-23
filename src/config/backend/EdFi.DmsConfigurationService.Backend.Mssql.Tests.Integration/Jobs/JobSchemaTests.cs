@@ -15,7 +15,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs;
 /// Shared setup for the DMS-1437 <c>dmscs.Job</c> schema fixtures (spec §3.1). Tenants created here are
 /// removed in teardown, jobs and schedules first, since both foreign keys block deleting a referenced row.
 /// </summary>
-public abstract class JobSchemaTestBase : DatabaseTest
+public abstract partial class JobSchemaTestBase : DatabaseTest
 {
     protected const int CheckOrForeignKeyViolation = 547;
     protected const int UniqueIndexViolation = 2601;
@@ -105,6 +105,23 @@ public abstract class JobSchemaTestBase : DatabaseTest
             return exception.Number;
         }
     }
+
+    /// <summary>Runs a statement and returns "Number:ConstraintName" when it fails, or null.</summary>
+    protected async Task<string?> ViolatedConstraintAsync(string sql, object parameters)
+    {
+        try
+        {
+            await Connection!.ExecuteAsync(sql, parameters);
+            return null;
+        }
+        catch (SqlException exception)
+        {
+            return $"{exception.Number}:{ConstraintName().Match(exception.Message).Groups[1].Value}";
+        }
+    }
+
+    [GeneratedRegex("constraint \"([^\"]+)\"")]
+    private static partial Regex ConstraintName();
 
     private static SqlParameter Nullable(string name, SqlDbType type, object? value) =>
         new(name, type) { Value = value ?? DBNull.Value };
@@ -513,6 +530,65 @@ public class Given_job_statuses_and_attempt_counts : JobSchemaTestBase
     }
 }
 
+/// <summary>
+/// SQL Server pads the shorter operand with spaces when it compares strings, so <c>N'Pending ' = N'Pending'</c>
+/// is true even under a binary collation; <c>CK_Job_Status</c> adds a <c>DATALENGTH</c> check to each value.
+/// </summary>
+[TestFixture]
+public class Given_statuses_with_a_trailing_space : JobSchemaTestBase
+{
+    private static readonly string[] _statuses = ["Pending", "InProgress", "Completed", "Error"];
+
+    private readonly Dictionary<string, int?> _exactInserts = [];
+    private readonly Dictionary<string, string?> _paddedInserts = [];
+    private readonly Dictionary<string, string?> _paddedUpdates = [];
+
+    [SetUp]
+    public async Task Setup()
+    {
+        foreach (string status in _statuses)
+        {
+            _paddedInserts[status] = await ViolatedConstraintAsync(
+                """
+                INSERT INTO dmscs.Job (JobId, JobType, PayloadVersion, Payload, Status, NextAttemptAt)
+                VALUES (@JobId, N'DataStore.RefreshEducationOrganizations', 1, N'{}', @Status, SYSUTCDATETIME());
+                """,
+                new { JobId = Guid.NewGuid().ToString("N"), Status = status + " " }
+            );
+
+            string jobId = Guid.NewGuid().ToString("N");
+            _exactInserts[status] = await TryInsertJobAsync(jobId, status: status);
+            _paddedUpdates[status] = await ViolatedConstraintAsync(
+                "UPDATE dmscs.Job SET Status = @Status WHERE JobId = @JobId;",
+                new { JobId = jobId, Status = status + " " }
+            );
+        }
+    }
+
+    [Test]
+    public void It_rejects_inserting_each_status_with_a_trailing_space()
+    {
+        foreach (string status in _statuses)
+        {
+            _paddedInserts[status]
+                .Should()
+                .Be($"{CheckOrForeignKeyViolation}:CK_Job_Status", $"'{status} ' is not a job status");
+        }
+    }
+
+    [Test]
+    public void It_rejects_updating_a_job_to_each_status_with_a_trailing_space()
+    {
+        foreach (string status in _statuses)
+        {
+            _exactInserts[status].Should().BeNull(status);
+            _paddedUpdates[status]
+                .Should()
+                .Be($"{CheckOrForeignKeyViolation}:CK_Job_Status", $"'{status} ' is not a job status");
+        }
+    }
+}
+
 [TestFixture]
 public class Given_jobs_without_a_next_attempt_time : JobSchemaTestBase
 {
@@ -618,7 +694,7 @@ public class Given_job_payloads : JobSchemaTestBase
 }
 
 [TestFixture]
-public partial class Given_a_tenant_and_a_schedule_referenced_by_jobs : JobSchemaTestBase
+public class Given_a_tenant_and_a_schedule_referenced_by_jobs : JobSchemaTestBase
 {
     private int? _scheduledJobInsert;
     private int? _manualJobInsert;
@@ -646,23 +722,6 @@ public partial class Given_a_tenant_and_a_schedule_referenced_by_jobs : JobSchem
             new { Id = tenantId }
         );
     }
-
-    /// <summary>Runs a statement and returns "Number:ConstraintName" when it fails, or null.</summary>
-    private async Task<string?> ViolatedConstraintAsync(string sql, object parameters)
-    {
-        try
-        {
-            await Connection!.ExecuteAsync(sql, parameters);
-            return null;
-        }
-        catch (SqlException exception)
-        {
-            return $"{exception.Number}:{ConstraintName().Match(exception.Message).Groups[1].Value}";
-        }
-    }
-
-    [GeneratedRegex("constraint \"([^\"]+)\"")]
-    private static partial Regex ConstraintName();
 
     [Test]
     public void It_restricts_deleting_a_schedule_that_has_jobs()

@@ -7,7 +7,11 @@
 -- carries NextAttemptAt, its eligibility time, so a claim is an ordered walk of IX_Job_Claim. A scheduled
 -- occurrence is identified by (SourceScheduleId, ScheduledOccurrence); manual jobs leave both NULL.
 -- JobId, JobType, and Status use a binary collation so that matching, the status check, and the filtered
--- index predicates are exact and case-sensitive, as on PostgreSQL.
+-- index predicates are case-sensitive, as on PostgreSQL. A binary collation does not make them exact: SQL
+-- Server pads the shorter operand with spaces before comparing, so N'Pending ' = N'Pending' is true.
+-- CK_Job_Status therefore also compares DATALENGTH for each value (LEN ignores trailing spaces), and
+-- lookups by JobId add the same DATALENGTH guard. With no padded status stored, the filtered index
+-- predicates select exactly the rows they name.
 IF OBJECT_ID('dmscs.Job', 'U') IS NULL
 BEGIN
     CREATE TABLE dmscs.Job (
@@ -72,7 +76,12 @@ END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_Job_Status' AND parent_object_id = OBJECT_ID('dmscs.Job'))
 BEGIN
-    ALTER TABLE dmscs.Job ADD CONSTRAINT CK_Job_Status CHECK (Status IN (N'Pending', N'InProgress', N'Completed', N'Error'));
+    ALTER TABLE dmscs.Job ADD CONSTRAINT CK_Job_Status CHECK (
+        (Status = N'Pending' AND DATALENGTH(Status) = DATALENGTH(N'Pending'))
+        OR (Status = N'InProgress' AND DATALENGTH(Status) = DATALENGTH(N'InProgress'))
+        OR (Status = N'Completed' AND DATALENGTH(Status) = DATALENGTH(N'Completed'))
+        OR (Status = N'Error' AND DATALENGTH(Status) = DATALENGTH(N'Error'))
+    );
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_Job_AttemptCount' AND parent_object_id = OBJECT_ID('dmscs.Job'))
