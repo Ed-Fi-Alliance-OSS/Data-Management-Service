@@ -261,6 +261,7 @@ public class Given_a_multitenant_database_upgraded_to_tenant_scoped_names : Tena
     private int _unassignedApplication;
     private int _tenant1Application;
     private int _tenant2Application;
+    private int _tenant2SecondApplication;
     private int _tenant3Application;
     private int _singleUseProfileId;
     private int _sharedProfileId;
@@ -295,6 +296,11 @@ public class Given_a_multitenant_database_upgraded_to_tenant_scoped_names : Tena
                 await InsertVendorAsync(connection, _tenant2, "Tenant 2 Vendor"),
                 "Tenant 2 Application"
             );
+            _tenant2SecondApplication = await InsertApplicationAsync(
+                connection,
+                await InsertVendorAsync(connection, _tenant2, "Tenant 2 Second Vendor"),
+                "Tenant 2 Second Application"
+            );
             _tenant3Application = await InsertApplicationAsync(
                 connection,
                 await InsertVendorAsync(connection, _tenant3, "Tenant 3 Vendor"),
@@ -309,6 +315,7 @@ public class Given_a_multitenant_database_upgraded_to_tenant_scoped_names : Tena
             await AssignAsync(connection, _tenant1Application, _singleUseProfileId);
             await AssignAsync(connection, _tenant1Application, _sharedProfileId);
             await AssignAsync(connection, _tenant2Application, _sharedProfileId);
+            await AssignAsync(connection, _tenant2SecondApplication, _sharedProfileId);
             await AssignAsync(connection, _tenant3Application, _sharedProfileId);
             await AssignAsync(connection, _unassignedApplication, _mixedProfileId);
             await AssignAsync(connection, _tenant2Application, _mixedProfileId);
@@ -368,6 +375,22 @@ public class Given_a_multitenant_database_upgraded_to_tenant_scoped_names : Tena
         AssignedProfileId(_tenant3Application, SharedName)
             .Should()
             .Be(copies.Single(copy => copy.TenantId == _tenant3).Id);
+    }
+
+    // Several applications of one tenant share one usage row, so the tenant gets exactly one copy
+    // and every one of its assignments moves to it; a second copy would violate
+    // UX_Profile_TenantId_ProfileName and stop the upgrade.
+    [Test]
+    public void It_should_create_one_copy_per_tenant_however_many_applications_share_it()
+    {
+        ProfileRow tenant2Copy = CopiesOf(_sharedProfileId)
+            .Where(copy => copy.TenantId == _tenant2)
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        AssignedProfileId(_tenant2Application, SharedName).Should().Be(tenant2Copy.Id);
+        AssignedProfileId(_tenant2SecondApplication, SharedName).Should().Be(tenant2Copy.Id);
     }
 
     [Test]

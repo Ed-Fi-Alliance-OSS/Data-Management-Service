@@ -54,7 +54,7 @@ public class ProfileRepository(
                 "Profile name must be unique: {ProfileName}",
                 LoggingUtility.SanitizeForLog(command.Name)
             );
-            return new ProfileInsertResult.FailureDuplicateName(command.Name);
+            return new ProfileInsertResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {
@@ -99,7 +99,7 @@ public class ProfileRepository(
                 "Profile name must be unique: {ProfileName}",
                 LoggingUtility.SanitizeForLog(command.Name)
             );
-            return new ProfileUpdateResult.FailureDuplicateName(command.Name);
+            return new ProfileUpdateResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {

@@ -1379,8 +1379,8 @@ public class ClaimSetTests : DatabaseTest
     }
 
     /// <summary>
-    /// Claim set names stay unique across the whole deployment, not per tenant (DMS-1530 Resolved
-    /// Decision 1): the claims hierarchy keys every claim set's permissions by name alone, so two
+    /// Claim set names stay unique across the whole deployment, not per tenant (DMS-1530; see
+    /// Jira comment 99227): the claims hierarchy keys every claim set's permissions by name alone, so two
     /// tenants holding the same name would share, overwrite and delete each other's permissions.
     /// These tests fail loudly if the unique constraint is ever narrowed to a tenant.
     /// </summary>

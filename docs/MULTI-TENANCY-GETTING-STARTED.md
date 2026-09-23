@@ -12,9 +12,10 @@ Multi-tenancy in DMS provides two layers of data isolation:
    and their API clients, data stores with their contexts and derivatives,
    ownership tokens, and profiles each belong to one tenant, and each tenant sees
    only its own. Vendor company names and profile names need only be unique
-   within a tenant. Claim sets are shared across the deployment: system-reserved
-   claim sets are visible to every tenant, and claim set names are unique across
-   all tenants
+   within a tenant. System-reserved claim sets are visible to every tenant. A
+   claim set a tenant creates is listed and managed only in that tenant, but
+   claim set names are unique across all tenants, so a name another tenant
+   already uses is rejected with 409 even though it is not listed
 2. **Instance Routing** - Each tenant can have multiple data stores (databases),
    accessible via URL-based routing or credential-based routing
 
@@ -464,9 +465,11 @@ the tenant of each application's vendor:
 - Single-tenant deployments are unchanged.
 
 The upgrade preserves only the profile assignments recorded on applications. A
-client whose application has no assigned profile can still select a profile
-through the profile header, but only one from its own tenant. After the upgrade
-it loses a profile that ended up unassigned or in another tenant, until you
+client can select, through the profile header, a profile that is not assigned
+to its application (when the application has no assignments, or none that
+covers the requested resource), but only one from its own tenant. After the
+upgrade it loses such a profile if it ended up unassigned or in another tenant,
+until you
 re-create that profile in the client's tenant. The same applies to a profile
 assigned in one tenant and selected by header in another.
 

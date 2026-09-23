@@ -31,7 +31,7 @@ public abstract record ProfileInsertResult
 {
     public record Success(int Id) : ProfileInsertResult;
 
-    public record FailureDuplicateName(string Name) : ProfileInsertResult;
+    public record FailureDuplicateName() : ProfileInsertResult;
 
     public record FailureUnknown(string Message) : ProfileInsertResult;
 }
@@ -40,7 +40,7 @@ public abstract record ProfileUpdateResult
 {
     public record Success : ProfileUpdateResult;
 
-    public record FailureDuplicateName(string Name) : ProfileUpdateResult;
+    public record FailureDuplicateName() : ProfileUpdateResult;
 
     public record FailureNotExists(int Id) : ProfileUpdateResult;
 

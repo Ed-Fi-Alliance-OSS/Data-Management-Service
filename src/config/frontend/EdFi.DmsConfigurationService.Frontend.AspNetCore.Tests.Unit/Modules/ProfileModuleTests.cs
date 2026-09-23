@@ -136,7 +136,7 @@ public class ProfileModuleTests
             definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource></Profile>",
         };
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
-            .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
+            .Returns(new ProfileInsertResult.FailureDuplicateName());
         using var client = SetUpClient();
         using var content = new StringContent(
             JsonSerializer.Serialize(duplicateProfile),
@@ -478,7 +478,7 @@ public class ProfileModuleTests
             definition = "<Profile name=\"ExistingProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
         };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
-            .Returns(new ProfileUpdateResult.FailureDuplicateName("ExistingProfile"));
+            .Returns(new ProfileUpdateResult.FailureDuplicateName());
         using var client = SetUpClient();
         using var content = new StringContent(
             JsonSerializer.Serialize(updateProfile),
