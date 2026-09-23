@@ -73,6 +73,12 @@ request logging layer:
   normalization](#correlation-id-normalization).
 * `Method`: sanitized HTTP method.
 * `Path`: sanitized request path without the query string.
+  For an identity get-by-id or results-poll route, the identifier segment is
+  replaced by a placeholder before sanitizing, so it never reaches the log;
+  every other route is unaffected. The existing sanitizer allowlist strips `{`
+  and `}` from every path like it always has, so the placeholder itself is not
+  literally bracketed in the logged value (for example
+  `/identity/v2/identities/id`, not `/identity/v2/identities/{id}`).
 * `StatusCode`: HTTP response status code. An unhandled exception before a
   response is produced is logged as `500`.
 * `DurationMs`: elapsed request duration in milliseconds as a numeric `long`.

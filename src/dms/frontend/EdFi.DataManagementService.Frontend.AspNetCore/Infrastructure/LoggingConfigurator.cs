@@ -147,7 +147,12 @@ public static class LoggingConfigurator
 
         var loggerConfiguration = new LoggerConfiguration()
             .ReadFrom.Configuration(configuration, configurationReaderOptions)
-            .Enrich.FromLogContext();
+            .Enrich.FromLogContext()
+            // D11: the framework's own hosting-diagnostics request-start and request-finish events
+            // carry the raw, unredacted request path regardless of what the DMS logging layers
+            // redact, so this drops exactly those events for an identity get-by-id or results-poll
+            // route; every other route keeps its framework events.
+            .Filter.ByExcluding(IdentityHostingDiagnosticsFilter.Matches);
 
         ApplyOtlpSink(loggerConfiguration, BindOtlpLoggingOptions(configuration));
 
