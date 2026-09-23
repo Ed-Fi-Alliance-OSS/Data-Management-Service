@@ -1,35 +1,21 @@
 # CDC Operator References
 
-This is the shared PostgreSQL and SQL Server operator reference set for relational
-CDC. Delivery is in progress under [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
-PostgreSQL and SQL Server setup, their DMS E2E opt-in variants, deployment-state preservation, managed
-lifecycle, connector restart/resume, recovery classification and the projection
-administration/history handoff, monitoring, provider-retention troubleshooting,
-security and consumer-evidence checklists, coordinated record-size increases, guarded
-generation retirement, destructive stack teardown, compatible restamp handoff and
-sensitive-data disclosure response are documented. Marked CLI commands, settings,
-acknowledgement inputs, serialized result excerpts and touched document links have
-[focused automated checks](cdc-inv-evidence.md#documentation-verification). Packaged host
-checks cover output streams and exits. Wrapper snippet checks and required-case guards run
-in Contract/PR. [PostgreSQL local/direct-E2E setup](cdc-inv-evidence.md#postgresql-setup-qualification-t16)
-and [SQL Server local/published/direct-E2E setup](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
-and observation snippets passed live qualification. [PostgreSQL lifecycle](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18)
-passed T18 and [SQL Server lifecycle](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19)
-passed T19; [PostgreSQL native recovery](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21)
-passed T21; [SQL Server native recovery](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22)
-passed T22; [PostgreSQL record-size increase](cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
-passed T23; [SQL Server record-size increase](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
-passed T24; [PostgreSQL history and retirement](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
-passed T25 and [SQL Server history and retirement](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26)
-passed T26, including the status and disclosure-stop handoffs. [PostgreSQL telemetry and retention inspections](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27)
-passed T27; [SQL Server telemetry and retention inspections](cdc-inv-evidence.md#sql-server-telemetry-and-retention-qualification-t28)
-passed T28. Remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
+This shared PostgreSQL and SQL Server reference set delivers
+[DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+The [reconciled evidence index](cdc-inv-evidence.md#final-reconciliation-t20) links
+setup, lifecycle, native recovery, record-size increases, history/retirement and
+telemetry/retention qualification for both providers, plus separate secured Kafka
+access and DMS-1324 consumer conformance results. Exact commands, declared fixture
+substitutions, images, revisions and outcomes are recorded with each procedure.
+Contract checks cover marked settings, commands, JSON excerpts, wrapper wiring and
+relative links. Alternatives with only Contract coverage are identified explicitly;
+no fixture result certifies an operator's deployment or consumer store.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.
 - [Checked JSON excerpts](operations-runbook.md#serialized-result-examples): readiness, optional observations, operation scope and failures.
 - [Evidence index](cdc-inv-evidence.md): procedure-to-test mapping and actual results,
-  with unexercised work explicitly pending.
+  with test layers and unexercised alternatives explicitly identified.
 - [SchemaTools CDC reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands):
   shipped commands, options, configuration, output, and wrapper examples.
 
@@ -74,7 +60,7 @@ API-driven message scenarios belong to [DMS-1325](../design/backend-redesign/epi
 | Deployment, readiness, recovery, and security contracts | [CDC integration design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#authority-and-document-ownership). |
 | Projector/source behavior | [ADR 0001](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md). |
 | Topic/message, consumer, and compatibility contract | [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md). |
-| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; setup for both providers and PostgreSQL lifecycle have live evidence; remaining live procedures are pending. |
+| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; both providers have live procedure evidence; [T20 reconciliation](cdc-inv-evidence.md#final-reconciliation-t20) records scope and alternatives. |
 
 ## Scope Boundaries and Missing Surfaces
 

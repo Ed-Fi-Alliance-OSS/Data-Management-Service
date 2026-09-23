@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// actual authenticated clients exercise access. No substitute provider, producer-capacity or ACL evidence.
 /// SASL/PLAIN is confined to an isolated Docker network and loopback ports, with ephemeral credentials.
 /// </summary>
-internal sealed class CdcKafkaPolicyFixture(bool secured)
+internal sealed partial class CdcKafkaPolicyFixture(bool secured)
     : IAsyncDisposable,
         ICdcKafkaAuthorizationInspection,
         ICdcWorkerStartupTransport,
@@ -146,6 +146,10 @@ internal sealed class CdcKafkaPolicyFixture(bool secured)
             ["KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS"] = "0",
             ["KAFKA_AUTO_CREATE_TOPICS_ENABLE"] = "false",
             ["KAFKA_REPLICA_FETCH_MAX_BYTES"] = replicaFetchBytes.ToString(CultureInfo.InvariantCulture),
+            ["JMX_PORT"] = "9999",
+            ["KAFKA_JMX_HOSTNAME"] = "127.0.0.1",
+            ["KAFKA_JMX_OPTS"] =
+                "-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.host=127.0.0.1 -Dcom.sun.management.jmxremote.rmi.port=9999 -Djava.rmi.server.hostname=127.0.0.1",
             ["KAFKA_HEAP_OPTS"] = "-Xms256m -Xmx512m",
         };
         if (secured)
@@ -254,7 +258,7 @@ internal sealed class CdcKafkaPolicyFixture(bool secured)
             /opt/kafka/bin/kafka-acls.sh --bootstrap-server localhost:9092 --command-config "$f" --list
             """;
         var result = await _docker.RunAllowingFailureAsync(
-            ["exec", "-e", "PROBE_PASSWORD=" + _password, Broker(0), "sh", "-ec", script],
+            ["exec", "-e", "JMX_PORT=", "-e", "PROBE_PASSWORD=" + _password, Broker(0), "sh", "-ec", script],
             token
         );
         return result.ExitCode != 0

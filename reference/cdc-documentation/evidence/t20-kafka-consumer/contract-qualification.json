@@ -1,0 +1,230 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 4649,
+    "Passed": 4649,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "controller-unit"
+  },
+  {
+    "Status": "Passed",
+    "Total": 819,
+    "Passed": 819,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "cli-unit"
+  },
+  {
+    "Name": "runbook-cli",
+    "Status": "Passed",
+    "Total": 10,
+    "Passed": 10,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_dispatches_the_marked_command_and_exposes_its_options_in_help",
+        "Required": 19,
+        "Total": 19,
+        "Passed": 19,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement",
+        "Required": 12,
+        "Total": 12,
+        "Passed": 12,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence",
+        "Required": 6,
+        "Total": 6,
+        "Passed": 6,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_matches_status_excerpts_and_optional_fields_from_the_controller",
+        "Required": 8,
+        "Total": 8,
+        "Passed": 8,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_matches_operation_scoped_results",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes",
+        "Required": 3,
+        "Total": 3,
+        "Passed": 3,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_resolves_relative_links_and_explicit_or_generated_anchors",
+        "Required": 12,
+        "Total": 13,
+        "Passed": 13,
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Status": "Passed",
+    "Total": 6,
+    "Passed": 6,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "runbook-admin"
+  },
+  {
+    "Status": "Passed",
+    "Total": 418,
+    "Passed": 418,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "controller-offline"
+  },
+  {
+    "Name": "runbook-wrappers",
+    "Status": "Passed",
+    "Total": 14,
+    "Passed": 14,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+        "SnippetId": "cdc-pg-bootstrap-local",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-pg-bootstrap-published",
+        "SnippetId": "cdc-pg-bootstrap-published",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+        "SnippetId": "cdc-sqlserver-bootstrap-local",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+        "SnippetId": "cdc-sqlserver-bootstrap-published",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-pg-e2e-setup",
+        "SnippetId": "cdc-pg-e2e-setup",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+        "SnippetId": "cdc-sqlserver-e2e-setup",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-pg-e2e-build",
+        "SnippetId": "cdc-pg-e2e-build",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-e2e-build",
+        "SnippetId": "cdc-sqlserver-e2e-build",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-pg-infrastructure",
+        "SnippetId": "cdc-pg-infrastructure",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-infrastructure",
+        "SnippetId": "cdc-sqlserver-infrastructure",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-managed-stop",
+        "SnippetId": "cdc-managed-stop",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-managed-start",
+        "SnippetId": "cdc-managed-start",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-managed-start-rejected",
+        "SnippetId": "cdc-managed-start",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-stack-teardown",
+        "SnippetId": "cdc-stack-teardown",
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Name": "wrappers",
+    "Status": "Passed",
+    "Total": 579,
+    "Passed": 579,
+    "Failed": 0,
+    "Skipped": 0
+  }
+]

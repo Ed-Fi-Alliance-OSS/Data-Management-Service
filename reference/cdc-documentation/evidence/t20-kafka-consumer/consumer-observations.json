@@ -1,0 +1,628 @@
+{
+  "Evidence": "Real Kafka transport; synthetic E18-derived public values; simulated durable persistence and clock",
+  "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+  "States": [
+    {
+      "Phase": "READ",
+      "Valid": false,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "0001-01-01T00:00:00-05:51",
+      "NextOffsets": {
+        "0": 0,
+        "1": 0,
+        "2": 0
+      },
+      "Checkpoints": {},
+      "DocumentCount": 0
+    },
+    {
+      "Phase": "PENDING-APPLY",
+      "Valid": false,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "0001-01-01T00:00:00-05:51",
+      "NextOffsets": {
+        "0": 6,
+        "1": 5,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6
+      },
+      "DocumentCount": 3
+    },
+    {
+      "Phase": "APPLIED",
+      "Valid": false,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "0001-01-01T00:00:00-05:51",
+      "NextOffsets": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6
+      },
+      "DocumentCount": 2
+    },
+    {
+      "Phase": "ACTIVE-CHECKPOINTS",
+      "Valid": false,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "0001-01-01T00:00:00-05:51",
+      "NextOffsets": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6,
+        "1": 6
+      },
+      "DocumentCount": 2
+    },
+    {
+      "Phase": "BOOTSTRAP",
+      "Valid": true,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "2026-09-04T21:00:00-05:00",
+      "NextOffsets": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "DocumentCount": 2
+    },
+    {
+      "Phase": "IDLE-READ",
+      "Valid": true,
+      "RenewalInProgress": true,
+      "Attempt": 1,
+      "ProofCompletedAt": "2026-09-04T21:00:00-05:00",
+      "NextOffsets": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "DocumentCount": 2
+    },
+    {
+      "Phase": "IDLE-PENDING-CHECKPOINT",
+      "Valid": true,
+      "RenewalInProgress": true,
+      "Attempt": 1,
+      "ProofCompletedAt": "2026-09-04T21:00:00-05:00",
+      "NextOffsets": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "DocumentCount": 2
+    },
+    {
+      "Phase": "IDLE",
+      "Valid": true,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "2026-09-05T20:00:00-05:00",
+      "NextOffsets": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 6,
+        "1": 6,
+        "2": 0
+      },
+      "DocumentCount": 2
+    },
+    {
+      "Phase": "CONTINUATION",
+      "Valid": true,
+      "RenewalInProgress": false,
+      "Attempt": 1,
+      "ProofCompletedAt": "2026-09-05T20:00:00-05:00",
+      "NextOffsets": {
+        "0": 7,
+        "1": 7,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 7,
+        "1": 7,
+        "2": 0
+      },
+      "DocumentCount": 1
+    },
+    {
+      "Phase": "MISSING-INVALIDATED",
+      "Valid": false,
+      "RenewalInProgress": false,
+      "Attempt": 2,
+      "ProofCompletedAt": "0001-01-01T00:00:00-05:51",
+      "NextOffsets": {
+        "0": 0,
+        "1": 0,
+        "2": 0
+      },
+      "Checkpoints": {},
+      "DocumentCount": 0
+    },
+    {
+      "Phase": "MISSING",
+      "Valid": true,
+      "RenewalInProgress": false,
+      "Attempt": 2,
+      "ProofCompletedAt": "2026-09-05T20:00:00-05:00",
+      "NextOffsets": {
+        "0": 7,
+        "1": 7,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 7,
+        "1": 7,
+        "2": 0
+      },
+      "DocumentCount": 1
+    },
+    {
+      "Phase": "CORRUPT-INVALIDATED",
+      "Valid": false,
+      "RenewalInProgress": false,
+      "Attempt": 3,
+      "ProofCompletedAt": "0001-01-01T00:00:00-05:51",
+      "NextOffsets": {
+        "0": 0,
+        "1": 0,
+        "2": 0
+      },
+      "Checkpoints": {},
+      "DocumentCount": 0
+    },
+    {
+      "Phase": "CORRUPT",
+      "Valid": true,
+      "RenewalInProgress": false,
+      "Attempt": 3,
+      "ProofCompletedAt": "2026-09-05T20:00:00-05:00",
+      "NextOffsets": {
+        "0": 7,
+        "1": 7,
+        "2": 0
+      },
+      "Checkpoints": {
+        "0": 7,
+        "1": 7,
+        "2": 0
+      },
+      "DocumentCount": 1
+    }
+  ],
+  "Scans": [
+    {
+      "Phase": "BOOTSTRAP",
+      "Bounds": [
+        {
+          "Partition": 0,
+          "StartOffset": 0,
+          "EndOffset": 6
+        },
+        {
+          "Partition": 1,
+          "StartOffset": 0,
+          "EndOffset": 6
+        },
+        {
+          "Partition": 2,
+          "StartOffset": 0,
+          "EndOffset": 0
+        }
+      ],
+      "Records": [
+        {
+          "Partition": 0,
+          "Offset": 0,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 478
+        },
+        {
+          "Partition": 0,
+          "Offset": 1,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 0,
+          "Offset": 2,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 478
+        },
+        {
+          "Partition": 0,
+          "Offset": 3,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 0,
+          "Offset": 4,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 567
+        },
+        {
+          "Partition": 0,
+          "Offset": 5,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        },
+        {
+          "Partition": 1,
+          "Offset": 0,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 938
+        },
+        {
+          "Partition": 1,
+          "Offset": 1,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 944
+        },
+        {
+          "Partition": 1,
+          "Offset": 2,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 938
+        },
+        {
+          "Partition": 1,
+          "Offset": 3,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 944
+        },
+        {
+          "Partition": 1,
+          "Offset": 4,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 526
+        },
+        {
+          "Partition": 1,
+          "Offset": 5,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        }
+      ]
+    },
+    {
+      "Phase": "IDLE",
+      "Bounds": [
+        {
+          "Partition": 0,
+          "StartOffset": 6,
+          "EndOffset": 6
+        },
+        {
+          "Partition": 1,
+          "StartOffset": 6,
+          "EndOffset": 6
+        },
+        {
+          "Partition": 2,
+          "StartOffset": 0,
+          "EndOffset": 0
+        }
+      ],
+      "Records": []
+    },
+    {
+      "Phase": "CONTINUATION",
+      "Bounds": [
+        {
+          "Partition": 0,
+          "StartOffset": 6,
+          "EndOffset": 7
+        },
+        {
+          "Partition": 1,
+          "StartOffset": 6,
+          "EndOffset": 7
+        },
+        {
+          "Partition": 2,
+          "StartOffset": 0,
+          "EndOffset": 0
+        }
+      ],
+      "Records": [
+        {
+          "Partition": 0,
+          "Offset": 6,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 1,
+          "Offset": 6,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        }
+      ]
+    },
+    {
+      "Phase": "MISSING",
+      "Bounds": [
+        {
+          "Partition": 0,
+          "StartOffset": 0,
+          "EndOffset": 7
+        },
+        {
+          "Partition": 1,
+          "StartOffset": 0,
+          "EndOffset": 7
+        },
+        {
+          "Partition": 2,
+          "StartOffset": 0,
+          "EndOffset": 0
+        }
+      ],
+      "Records": [
+        {
+          "Partition": 0,
+          "Offset": 0,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 478
+        },
+        {
+          "Partition": 0,
+          "Offset": 1,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 0,
+          "Offset": 2,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 478
+        },
+        {
+          "Partition": 0,
+          "Offset": 3,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 0,
+          "Offset": 4,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 567
+        },
+        {
+          "Partition": 0,
+          "Offset": 5,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        },
+        {
+          "Partition": 0,
+          "Offset": 6,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 1,
+          "Offset": 0,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 938
+        },
+        {
+          "Partition": 1,
+          "Offset": 1,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 944
+        },
+        {
+          "Partition": 1,
+          "Offset": 2,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 938
+        },
+        {
+          "Partition": 1,
+          "Offset": 3,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 944
+        },
+        {
+          "Partition": 1,
+          "Offset": 4,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 526
+        },
+        {
+          "Partition": 1,
+          "Offset": 5,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        },
+        {
+          "Partition": 1,
+          "Offset": 6,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        }
+      ]
+    },
+    {
+      "Phase": "CORRUPT",
+      "Bounds": [
+        {
+          "Partition": 0,
+          "StartOffset": 0,
+          "EndOffset": 7
+        },
+        {
+          "Partition": 1,
+          "StartOffset": 0,
+          "EndOffset": 7
+        },
+        {
+          "Partition": 2,
+          "StartOffset": 0,
+          "EndOffset": 0
+        }
+      ],
+      "Records": [
+        {
+          "Partition": 0,
+          "Offset": 0,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 478
+        },
+        {
+          "Partition": 0,
+          "Offset": 1,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 0,
+          "Offset": 2,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 478
+        },
+        {
+          "Partition": 0,
+          "Offset": 3,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 0,
+          "Offset": 4,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 567
+        },
+        {
+          "Partition": 0,
+          "Offset": 5,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        },
+        {
+          "Partition": 0,
+          "Offset": 6,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 484
+        },
+        {
+          "Partition": 1,
+          "Offset": 0,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 938
+        },
+        {
+          "Partition": 1,
+          "Offset": 1,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 944
+        },
+        {
+          "Partition": 1,
+          "Offset": 2,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 938
+        },
+        {
+          "Partition": 1,
+          "Offset": 3,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 944
+        },
+        {
+          "Partition": 1,
+          "Offset": 4,
+          "KafkaNull": false,
+          "KeyBytes": 36,
+          "ValueBytes": 526
+        },
+        {
+          "Partition": 1,
+          "Offset": 5,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        },
+        {
+          "Partition": 1,
+          "Offset": 6,
+          "KafkaNull": true,
+          "KeyBytes": 36,
+          "ValueBytes": 0
+        }
+      ]
+    }
+  ]
+}

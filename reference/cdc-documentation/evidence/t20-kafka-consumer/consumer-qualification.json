@@ -1,0 +1,69 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 502,
+    "Passed": 502,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Postgresql-MessageContract"
+  },
+  {
+    "Name": "runbook-consumer-reference",
+    "Status": "Passed",
+    "Total": 6,
+    "Passed": 6,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_requires_durable_application_and_every_checkpoint_including_the_empty_partition",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_reconstructs_independently_expected_state_from_higher_lower_duplicate_and_null_records",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_renews_an_idle_proof_from_real_unchanged_ends_only_after_all_checkpoints_complete",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_continues_from_durable_next_offsets_without_replaying_bootstrap",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_reconstructs_from_earliest_after_checkpoint_loss",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_reconstructs_from_earliest_after_checkpoint_corruption",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

@@ -79,7 +79,8 @@ try {
     $lanes = if ($Lane -eq 'All') { @('Contract', 'Postgresql', 'Mssql', 'Kafka') } else { @($Lane) }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
-        if ('Postgresql' -in $lanes -or 'Mssql' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
+        if ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
+        if ('Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE' }
         if ('Postgresql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
             if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
@@ -98,6 +99,9 @@ try {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
                 throw "EnvironmentUnavailable: required $name is missing."
             }
+        }
+        if ('Kafka' -in $lanes -and -not (Get-Command timeout -CommandType Application -ErrorAction SilentlyContinue)) {
+            throw 'EnvironmentUnavailable: Kafka runbook inspections require native timeout.'
         }
         if ($Suite -in @('All', 'Telemetry') -and @($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) {
             $inspectionTools = @('curl', 'timeout')
@@ -167,7 +171,9 @@ try {
         }
         elseif ($selected -eq 'Kafka') {
             Invoke-QualificationSuite -Name 'kafka-secured' -Project $backend -Filter 'Category=CdcControllerKafkaPolicy&Category=CdcAuthorizationEnabled'
+            $reports.Add((Get-CdcRunbookKafkaReport -Path (Join-Path $raw 'kafka-secured/kafka-secured.trx') -KafkaProfile Secured))
             Invoke-QualificationSuite -Name 'kafka-local' -Project $backend -Filter 'Category=CdcControllerKafkaPolicy&Category=CdcAuthorizationDisabledLocal'
+            $reports.Add((Get-CdcRunbookKafkaReport -Path (Join-Path $raw 'kafka-local/kafka-local.trx') -KafkaProfile Local))
         }
         else {
             $filters = Get-CdcQualificationProviderSuite -Provider $selected
@@ -184,6 +190,9 @@ try {
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
                 Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
+                if ($phase -eq 'MessageContract' -and $selected -eq 'Postgresql') {
+                    $reports.Add((Get-CdcRunbookConsumerReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
                 if ($phase -eq 'Telemetry') {
                     $reports.Add((Get-CdcRunbookTelemetryReport -Path (Join-Path $raw "$name/$name.trx") -Provider $selected))
                 }

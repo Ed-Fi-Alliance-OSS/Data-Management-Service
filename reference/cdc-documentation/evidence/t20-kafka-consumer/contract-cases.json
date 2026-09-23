@@ -1,0 +1,2216 @@
+{
+  "controller-unit": [
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_discards_all_partitions_and_reobserves_current_earliest_offsets(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_accepts_a_delete_without_any_previously_seen_upsert",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_requires_every_partition_including_the_idle_partition",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_withholds_validity_when_another_partition_has_an_unflushed_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_accepts_a_delete_without_any_previously_seen_upsert",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_after_incremental_progress",
+      "Test": "It_renews_from_ends_at_or_above_durable_progress(13)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_captures_exclusive_ends_without_advancing_progress",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_preserves_the_complete_shared_document_and_opaque_etag",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_idle_renewal",
+      "Test": "It_renews_repeatedly_with_unchanged_offsets_without_waiting_for_records",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_completes_state_before_the_separate_checkpoint",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_cannot_checkpoint_an_unflushed_state_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_ignores_lower_version_corrective_republishing_at_a_later_offset",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_does_not_apply_one_documents_version_to_another_key",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_discards_all_state_one_tick_after_an_unrenewed_deadline(\"no-renewal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_reports_equal_version_correction_as_a_producer_violation",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_keeps_state_when_a_delivered_delete_has_not_been_durably_applied",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_continues_after_durable_concurrent_writes_even_if_the_checkpoint_only_covers_the_barrier",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_compares_signed_int64_without_rounding_or_subtraction_overflow(long.MinValue,-9223372036854775807L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_inserts_the_first_non_null_record",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_keeps_state_when_a_delivered_delete_has_not_been_durably_applied",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "[redacted]",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"deployment\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"revision\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(DuplicatePartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_can_finish_a_complete_reconstruction_with_a_new_first_scan_deadline(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_uncertain_barrier_observations",
+      "Test": "It_cannot_renew_before_reconstruction_is_durable",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(ReplacedPartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_replaces_only_with_a_higher_version",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_discards_all_partitions_and_reobserves_current_earliest_offsets(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(ReplacedPartition)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(DuplicatePartition)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_does_not_extend_the_deadline_when_restarting_a_scan",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_reports_equal_version_correction_as_a_producer_violation",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_reports_even_semantically_equivalent_byte_different_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(UncertainProgress)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_exposes_controlled_time_without_completing_pending_work",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(MissingCheckpoint)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_versions_outside_the_signed_int64_wire_contract(\"9223372036854775808\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_ignores_lower_version_corrective_republishing_at_a_later_offset",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_does_not_wait_for_an_unflushed_concurrent_record_beyond_an_already_durable_barrier",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_after_incremental_progress",
+      "Test": "It_renews_from_ends_at_or_above_durable_progress(12)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_allows_renewal_up_to_and_including_the_deadline(0L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(AddedPartition)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_compares_signed_int64_without_rounding_or_subtraction_overflow(9007199254740992L,9007199254740993L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_exposes_corruption_and_prevents_further_checkpoint_completion",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(DuplicatePartition)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(CorruptCheckpoint)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_ignores_identical_equal_version_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_rejects_delayed_callbacks_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_becomes_valid_only_after_both_barriers_are_durable",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_preserves_the_complete_shared_document_and_opaque_etag",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_restarts_when_state_or_checkpoint_persistence_misses_the_deadline(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_requires_every_assigned_partition_even_when_empty",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"owner\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_requires_another_new_proof_after_a_successful_renewal_interval",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_measures_the_first_renewal_interval_from_durable_bootstrap_completion",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(CorruptCheckpoint)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_requires_both_envelope_and_document_ids_to_match_the_canonical_key(\"documentUuid\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_preserves_the_complete_shared_document_and_opaque_etag",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_unassigned_partition_delivery",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_requires_both_envelope_and_document_ids_to_match_the_canonical_key(\"id\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_reports_equal_version_correction_as_a_producer_violation",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_has_no_materialized_state_before_apply",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_applies_a_strictly_higher_correction_after_rejected_lower_and_equal_corrections",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_uncertain_barrier_observations",
+      "Test": "It_invalidates_incomplete_mismatched_or_regressing_barrier_observations(\"regressed\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(MissingCheckpoint)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_compares_signed_int64_without_rounding_or_subtraction_overflow(-1L,0L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(ReplacedPartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_temporarily_restores_a_lower_replayed_upsert_after_delete_then_converges",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_starts_each_partition_at_its_own_earliest_offset",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_requires_unquoted_lowercase_d_format_uuid_key_bytes(\"\\\"aaaaaaaa-bbbb-cccc-dddd-000000000101\\\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_a_kafka_null_flag_with_non_null_value_bytes",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_compares_signed_int64_without_rounding_or_subtraction_overflow(9223372036854775806L,long.MaxValue)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "[redacted]",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_after_incremental_progress",
+      "Test": "It_rejects_delayed_callbacks_from_the_invalidated_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_restarts_when_state_or_checkpoint_persistence_misses_the_deadline(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_reports_even_semantically_equivalent_byte_different_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(MissingCheckpoint)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_reports_equal_version_correction_as_a_producer_violation",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_applies_the_last_retained_record_and_scans_a_compacted_tail",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_deletes_with_keyed_kafka_null_and_no_delete_body",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_advances_delivery_checkpoints_for_ignored_records_without_replacing_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_rejects_delayed_callbacks_from_the_discarded_attempt(\"stage\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_reports_even_semantically_equivalent_byte_different_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_non_null_bytes_that_are_not_public_upserts(\"null\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_keeps_state_when_a_delivered_delete_has_not_been_durably_applied",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(ReplacedPartition)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_includes_the_delete_in_the_durable_bootstrap_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_reports_even_semantically_equivalent_byte_different_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(RemovedPartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_inserts_the_first_non_null_record",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_ignores_identical_equal_version_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(UncertainProgress)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"revision\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_does_not_renew_the_proof_from_capture_or_delivery_alone",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_advances_delivery_checkpoints_for_ignored_records_without_replacing_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_keeps_the_active_barriers_frozen",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(AddedPartition)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_rejects_missing_incomplete_or_stale_confirmation(\"null-consumer\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_exposes_exclusive_end_offsets_without_advancing_durable_progress",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_discards_all_state_one_tick_after_an_unrenewed_deadline(\"pending-checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(RemovedPartition)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_starts_the_next_interval_only_when_the_entire_proof_is_durable",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_permits_durable_completion_up_to_and_including_the_deadline(-1L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_keeps_state_when_a_delivered_delete_has_not_been_durably_applied",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_idle_renewal",
+      "Test": "It_does_not_count_delayed_scan_and_checkpoint_callbacks_from_an_older_proof",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_requires_unquoted_lowercase_d_format_uuid_key_bytes(\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_discards_all_state_one_tick_after_an_unrenewed_deadline(\"idle-partition-unproven\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_uncertain_barrier_observations",
+      "Test": "It_invalidates_incomplete_mismatched_or_regressing_barrier_observations(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_advances_delivery_checkpoints_for_ignored_records_without_replacing_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"revision\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_compares_signed_int64_without_rounding_or_subtraction_overflow(long.MinValue,long.MaxValue)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(MissingCheckpoint)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_idle_renewal",
+      "Test": "It_does_not_reuse_partition_completion_evidence_in_the_next_renewal",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_keeps_partition_completion_independent_and_accepts_an_empty_partition",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(CorruptCheckpoint)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_idle_renewal",
+      "Test": "It_allows_an_older_pending_apply_to_finish_without_certifying_the_new_proof",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_does_not_advertise_successful_reads_as_durable_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_rejects_delayed_callbacks_from_the_discarded_attempt(\"scan\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"owner\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_allows_renewal_up_to_and_including_the_deadline(-1L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_remains_invalid_at_the_deadline_without_completion_and_restarts_one_tick_later",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_rejects_superuser_service_or_consumer_identities(\"worker-principal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_temporarily_restores_a_lower_replayed_upsert_after_delete_then_converges",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_rejects_missing_incomplete_or_stale_confirmation(\"no-consumers-with-inventory\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(RemovedPartition)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(MissingCheckpoint)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(AddedPartition)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(AddedPartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_deletes_with_keyed_kafka_null_and_no_delete_body",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_inserts_the_first_non_null_record",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_requires_unquoted_lowercase_d_format_uuid_key_bytes(\"AAAAAAAA-BBBB-CCCC-DDDD-000000000101\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_idle_renewal",
+      "Test": "It_preserves_incremental_continuation_after_in_window_downtime",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_keeps_delivered_state_pending_until_durable_completion",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_rejects_ambiguous_or_nonliteral_role_intent(\"consumer\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_deletes_with_keyed_kafka_null_and_no_delete_body",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_permits_durable_completion_up_to_and_including_the_deadline(0L)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_applies_a_strictly_higher_correction_after_rejected_lower_and_equal_corrections",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_continues_incrementally_from_durable_next_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_distinguishes_literal_worker_connector_consumer_and_administrator_roles",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_owns_bytes_independently_of_transport_and_state_reader_buffers",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_cannot_scan_past_an_unflushed_state_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_refuses_checkpoint_regression",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_after_incremental_progress",
+      "Test": "It_discards_state_and_restarts_every_partition_when_the_end_contradicts_durable_progress",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(CorruptCheckpoint)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(AddedPartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_ignores_lower_version_corrective_republishing_at_a_later_offset",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(DuplicatePartition)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_accepts_durable_progress_beyond_the_captured_barrier",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(RemovedPartition)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_rejects_missing_incomplete_or_stale_confirmation(\"no-consumers-with-inventory\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_refuses_to_scan_past_an_unfinished_state_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_does_not_wait_for_the_record_at_the_exclusive_end",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_temporarily_restores_a_lower_replayed_upsert_after_delete_then_converges",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_cannot_checkpoint_a_pending_state_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(DuplicatePartition)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_rejects_ends_below_durable_progress_before_changing_any_partition_barrier",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_uncertain_barrier_observations",
+      "Test": "It_invalidates_incomplete_mismatched_or_regressing_barrier_observations(\"unexpected\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_requires_unquoted_lowercase_d_format_uuid_key_bytes(\"aaaaaaaabbbbccccdddd000000000101\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_after_incremental_progress",
+      "Test": "It_rejects_delayed_callbacks_from_the_invalidated_attempt(\"scan\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_rejects_superuser_service_or_consumer_identities(\"consumer\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_requires_checkpoint_persistence_after_application",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(ReplacedPartition)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"owner\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_accepts_a_delete_without_any_previously_seen_upsert",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_rejects_missing_incomplete_or_stale_confirmation(\"null-consumer\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_ignores_lower_version_corrective_republishing_at_a_later_offset",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_non_null_bytes_that_are_not_public_upserts(\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_requires_checkpoints_even_after_all_state_writes_finish",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"deployment\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_starts_the_budget_with_the_first_partition_scan",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_versions_outside_the_signed_int64_wire_contract(\"\\\"222\\\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcWorkflowJournal",
+      "Test": "It_rejects_incomplete_or_mismatched_increase_scope_before_persisting_intent(\"omitted-consumers\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_exact_versions",
+      "Test": "It_preserves_exact_nested_json_numbers_without_reserializing_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_preserves_the_complete_shared_document_and_opaque_etag",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(UncertainProgress)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_ignores_identical_equal_version_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_cannot_silently_reuse_a_durable_checkpoint_after_long_downtime",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(RemovedPartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_replaces_only_with_a_higher_version",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_exposes_checkpoint_loss_and_a_full_state_discard_hook",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_replaces_only_with_a_higher_version",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(DuplicatePartition)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_temporarily_restores_a_lower_replayed_upsert_after_delete_then_converges",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcConnectorTemplateContractTests",
+      "Test": "It_exposes_a_consumer_facing_result_with_registration_payload_artifact_hash_and_diagnostics",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_preserves_valid_state_during_ordinary_in_window_lag",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(AddedPartition)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_cannot_scan_past_an_unflushed_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_durability",
+      "Test": "It_requires_the_last_partition_checkpoint",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_refuses_to_checkpoint_an_unfinished_state_write",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_rejects_delayed_callbacks_from_the_discarded_attempt(\"checkpoint\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(CorruptCheckpoint)",
+      "Test": "It_fences_delayed_persistence_from_the_discarded_attempt(\"apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"deployment\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_owns_bytes_independently_of_transport_and_state_reader_buffers",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"deployment\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_discards_all_state_one_tick_after_an_unrenewed_deadline(\"pending-apply\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(ReplacedPartition)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(UncertainProgress)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_completes_an_all_empty_topic_without_waiting_for_a_record",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_ignores_identical_equal_version_duplicates",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_replaces_only_with_a_higher_version",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(CorruptCheckpoint)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_deadline",
+      "Test": "It_includes_skew_stalls_retries_and_rebalance_time_in_one_budget",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_allows_deployment_administration_outside_consumer_grants",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_deadline",
+      "Test": "It_discards_all_state_one_tick_after_an_unrenewed_deadline(\"lagging\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_advances_delivery_checkpoints_for_ignored_records_without_replacing_state",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_versions_outside_the_signed_int64_wire_contract(\"1.5\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_renewal_durability",
+      "Test": "It_requires_a_checkpoint_through_the_captured_exclusive_end",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(Postgresql)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"owner\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(RemovedPartition)",
+      "Test": "It_removes_a_stale_document_even_when_its_tombstone_is_no_longer_retained",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_durability",
+      "Test": "It_accepts_transport_scan_positions_across_compacted_gaps",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(UncertainProgress)",
+      "Test": "It_restarts_every_current_partition_at_fresh_earliest_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(UncertainProgress)",
+      "Test": "It_immediately_revokes_and_discards_the_complete_state_before_the_deadline",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_rejects_other_principals_accessing_a_configured_consumer_group",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_inserts_the_first_non_null_record",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_can_finish_a_complete_reconstruction_with_a_new_first_scan_deadline(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_recovery",
+      "Test": "It_cannot_restart_from_old_bounds_when_a_fresh_observation_fails",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_owns_bytes_independently_of_transport_and_state_reader_buffers",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_accepts_a_delete_without_any_previously_seen_upsert",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcDeploymentKafkaPolicy",
+      "Test": "It_rejects_superuser_service_or_consumer_identities(\"kafka-connector-principal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering_invalid_public_records",
+      "Test": "It_rejects_versions_outside_the_signed_int64_wire_contract(\"-9223372036854775809\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"ordinary-link-bearing-student-school-...\")",
+      "Test": "It_applies_a_strictly_higher_correction_after_rejected_lower_and_equal_corrections",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"extension-student-school-association\")",
+      "Test": "It_owns_bytes_independently_of_transport_and_state_reader_buffers",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_CdcRecordSizeAcknowledgement(SqlServer)",
+      "Test": "It_requires_updated_evidence_for_changed_consumer_deployments(\"revision\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"school-address-property-absence\")",
+      "Test": "It_applies_a_strictly_higher_correction_after_rejected_lower_and_equal_corrections",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerOrdering(\"descriptor-school-type\")",
+      "Test": "It_deletes_with_keyed_kafka_null_and_no_delete_body",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerContinuity_fault_recovery(MissingCheckpoint)",
+      "Test": "It_revokes_validity_even_when_fresh_bounds_cannot_be_observed",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Unit.Given_MessageContractConsumerBootstrap_offset_boundaries",
+      "Test": "It_does_not_move_captured_barriers_when_the_source_grows",
+      "Outcome": "Passed"
+    }
+  ],
+  "cli-unit": [
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"command\",False,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "It_rejects_a_mutated_copy_of_the_marked_result(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-recreated\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"source-mismatch\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_rejects_a_broken_copy(\"[owner](operations-runbook.md#missing-cdc-anchor)\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_packaged_command",
+      "Test": "It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"preflight\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"worker-start\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-pg-watch\",Watch,20)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"managed-stop\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-status\",\"--state-path '<original-state-root>'\",\"--state-paht '<original-state-root>'\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"config-drift\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"scope\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"post-after\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"unknown\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"broker-start\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-recreated\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"healthy\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"missing-history\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-watch\",\"--maximum-passes 3\",\"--maximum-passes 10001\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(Postgresql)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"ready\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-intact-restart\",Restart,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"preflight\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"worker-start\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"command\",False,False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_rejects_a_broken_anchor_in_a_copied_operator_document",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_requires_unique_paired_ids_across_the_operator_reference_set",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-size-increase\",\"--confirm-consumer-capacity\",\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"managed-stop\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(Postgresql)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"terminal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"provider-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_binds_declared_history_variables_without_interpreting_their_values",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(SqlServer)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"backlog\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "It_rejects_a_mutated_copy_of_the_marked_result(\"field\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_retained_history_loss_while_enable_waits_for_the_barrier",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_preserves_combined_initial_containment_failures_in_command_json(\"readback\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_preserves_combined_initial_containment_failures_in_command_json(\"stop\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"config-drift\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-missing\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_managed_start(SqlServer)",
+      "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"terminal\",\"cdc-intact-restart\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(SqlServer)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"unavailable\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/cdc-inv-evidence.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-size-retry\",IncreaseRecordSize,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"broker-start\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"worker-start\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "It_rejects_a_mutated_copy_of_the_marked_result(\"value\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"command\",True,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"metrics\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_managed_start(Postgresql)",
+      "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"source-mismatch\",\"cdc-provenance-rejection\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-intact-resume\",Resume,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "[redacted]",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-missing\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"consumers\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"cache-ahead\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"field\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-native-recovery-watch\",Watch,3)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"command\",False,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-provenance-rejection\",Validate,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_undeclared_or_executable_history_expressions(\"dms-document-cache $(Get-Content private)\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"provider-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"connector-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/README.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-validate\",\"cdc validate\",\"cdc adopt\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"nonempty\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(Postgresql)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"unavailable\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_managed_start(Postgresql)",
+      "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"terminal\",\"cdc-intact-restart\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"cache-ahead\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"field\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_undeclared_or_executable_history_expressions(\"dms-document-cache $Undeclared\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"source-mismatch\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"broker-start\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"corrupt\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"cache-ahead\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"workflow\",False,False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-restamp-handoff-status\",Status,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"worker-start\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"source-history-only\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/tests/RestClient/local-development-setup.http\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"cache-ahead\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_managed_start(SqlServer)",
+      "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"source-mismatch\",\"cdc-provenance-rejection\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"healthy\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"worker-start\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(Postgresql)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"backlog\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_undeclared_or_executable_history_expressions(\"dms-document-cache status; exit\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"missing-binding\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"workflow\",False,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/document-cache-documentation/README.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-status\",\"--settings '<retained-settings-path>'\",\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-retire\",\"--destructive-cleanup\",\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"provider-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-sqlserver-watch\",Watch,20)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_contract",
+      "Test": "It_requires_renewed_consumer_confirmation_before_entering_rollout",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-topic-policy-inspect\",Status,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"command\",True,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"broker-start\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"offset-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "[redacted]",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"nonempty\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"missing-history\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"workflow\",False,False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_preserves_combined_initial_containment_failures_in_command_json(\"readback\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"offset-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"command\",False,False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"barrier\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_CdcWorkerStartup_serializes_initial_command_infrastructure(\"worker-start\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "[redacted]",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"scope\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"nonempty\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"consumers\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-watch\",Watch,3)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_missing_or_duplicate_selected_markers(\"missing-end\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_packaged_command",
+      "Test": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes(\"failure\",1,\"cdc-output-failure\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"barrier\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-size-increase\",IncreaseRecordSize,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_initial_loss_across_enclosing_deadlines_during_persistence(\"workflow\",False,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-size-retry\",\"--acknowledgement '<acknowledgement-path>'\",\"\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-missing\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/operations-runbook.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-sqlserver-status\",Status,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"eng/docker-compose/README.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/CDC-QUALIFICATION.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"corrupt\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_managed_start(Postgresql)",
+      "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"missing-state\",\"cdc-provenance-rejection\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-validate\",Validate,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_packaged_command",
+      "Test": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes(\"invalid\",2,\"cdc-output-invalid\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-validate\",\"cdc validate\",\"cdc replace-source\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_reads_scoped_consumer_evidence_without_accepting_an_old_invocation_confirmation",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_packaged_command",
+      "Test": "It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value(\"retire\",\"cdc-retire\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_rejects_a_broken_copy(\"[owner](missing-cdc-document.md)\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(SqlServer)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"ready\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"contradictory-provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_preserves_combined_initial_containment_failures_in_command_json(\"stop\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"broker-start\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-pg-status\",Status,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_reads_scoped_consumer_evidence_without_accepting_an_old_invocation_confirmation",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"metrics\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"confirmation\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-retire\",\"'<binding-generation>'\",\"0\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-incomplete-shutdown-status\",Status,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/RELATIONAL-BACKEND.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-disclosure-containment-result\",Stop,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-status\",Status,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/CONFIGURATION.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"connector-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_managed_start(SqlServer)",
+      "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"missing-state\",\"cdc-provenance-rejection\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "It_matches_operation_scoped_results(\"stop\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"broker-start\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"nonempty\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"source-history-only\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"offset-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_undeclared_or_executable_history_expressions(\"dms-document-cache status | command\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"contradictory-provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-recreated\",True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"unknown\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_undeclared_or_executable_history_expressions(\"dms-document-cache $HistoryCommand.Length\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_resumes_the_same_command_after_a_stage_interruption(\"post-after\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_contains_retained_history_loss_while_enable_waits_for_the_barrier",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "It_matches_operation_scoped_results(\"retire\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_missing_or_duplicate_selected_markers(\"missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/document-cache-documentation/operations-runbook.md\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"postgresql\",Postgresql)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"unknown\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_packaged_command",
+      "Test": "It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value(\"stop\",\"cdc-disclosure-containment-result\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"unknown\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-recreated\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_links",
+      "Test": "It_handles_repeated_headings_explicit_anchors_and_ignores_fenced_examples",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_rejects_missing_or_duplicate_selected_markers(\"duplicate\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects(\"missing-binding\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_status_output(SqlServer)",
+      "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"terminal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_packaged_command",
+      "Test": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes(\"cancel\",130,\"cdc-output-cancelled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-retire\",Retire,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_commands",
+      "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-enable-retry\",Enable,1)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_inspects_initial_retry_continuity_before_failed_runtime_preparation(\"provider-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(SqlServer)",
+      "Test": "It_rejects_changed_live_evidence_after_interrupted_readiness(\"offset-missing\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_enable_retry(Postgresql)",
+      "Test": "It_contains_provider_loss_before_enable_retry_setup_rejects_it(\"provider-missing\",False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_runbook_result_output",
+      "Test": "[redacted]",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.SchemaTools.Tests.Unit.Given_Cdc_command_configuration(\"sqlserver\",SqlServer)",
+      "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"confirmation\")",
+      "Outcome": "Passed"
+    }
+  ],
+  "runbook-admin": [
+    {
+      "Class": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.Given_Cdc_runbook_history_output",
+      "Test": "It_matches_shared_result_excerpts_for_all_three_guarded_operations(InternalOnlyCacheAheadRecovery,False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.Given_Cdc_runbook_history_output",
+      "Test": "It_matches_shared_result_excerpts_for_all_three_guarded_operations(OfflineDeactivation,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.Given_Cdc_runbook_history_output",
+      "Test": "It_matches_shared_result_excerpts_for_all_three_guarded_operations(OfflineActivation,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.Given_Cdc_runbook_history_output",
+      "Test": "It_matches_shared_result_excerpts_for_all_three_guarded_operations(InternalOnlyCacheAheadRecovery,True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.Given_Cdc_runbook_history_output",
+      "Test": "It_matches_shared_result_excerpts_for_all_three_guarded_operations(OfflineActivation,False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.Given_Cdc_runbook_history_output",
+      "Test": "It_matches_shared_result_excerpts_for_all_three_guarded_operations(OfflineDeactivation,False)",
+      "Outcome": "Passed"
+    }
+  ],
+  "controller-offline": [],
+  "wrapperSnippets": [
+    {
+      "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+      "SnippetId": "cdc-pg-bootstrap-local",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-pg-bootstrap-published",
+      "SnippetId": "cdc-pg-bootstrap-published",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+      "SnippetId": "cdc-sqlserver-bootstrap-local",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+      "SnippetId": "cdc-sqlserver-bootstrap-published",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-pg-e2e-setup",
+      "SnippetId": "cdc-pg-e2e-setup",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+      "SnippetId": "cdc-sqlserver-e2e-setup",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-pg-e2e-build",
+      "SnippetId": "cdc-pg-e2e-build",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-sqlserver-e2e-build",
+      "SnippetId": "cdc-sqlserver-e2e-build",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-pg-infrastructure",
+      "SnippetId": "cdc-pg-infrastructure",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-sqlserver-infrastructure",
+      "SnippetId": "cdc-sqlserver-infrastructure",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-managed-stop",
+      "SnippetId": "cdc-managed-stop",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-managed-start",
+      "SnippetId": "cdc-managed-start",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-managed-start-rejected",
+      "SnippetId": "cdc-managed-start",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-stack-teardown",
+      "SnippetId": "cdc-stack-teardown",
+      "Outcome": "Passed"
+    }
+  ]
+}

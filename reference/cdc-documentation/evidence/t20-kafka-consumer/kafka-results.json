@@ -1,0 +1,261 @@
+{
+  "kafka-secured": [
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(Public,\"delete.retention.ms\",\"604799999\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"status\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"progress\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"configs\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"history\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"public\",\"worker-group\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"offsets\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"public\",\"peer-group\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant(\"deny\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments(SchemaHistory)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant(\"wildcard-principal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(Public,\"max.message.bytes\",\"1048577\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_cleans_only_the_governed_binding_topics_and_exact_topic_grants",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(SchemaHistory,\"cleanup.policy\",\"compact\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"public\",\"peer-group\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(Public,\"min.insync.replicas\",\"1\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant(\"peer\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments(Progress)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"offsets\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(SchemaHistory,\"retention.bytes\",\"1048576\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_allows_only_the_configured_public_topic_and_consumer_group(\"b\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_allows_only_the_configured_public_topic_and_consumer_group(\"a\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(Progress,\"cleanup.policy\",\"delete\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant(\"internal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_reads_capacity_from_every_broker_and_rejects_one_under_capacity_replica",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant(\"wildcard\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_reconciles_only_missing_safe_grants_and_observation_cannot_repair_them",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_preserves_unavailable_acl_authority_when_description_is_denied",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(Public,\"max.message.bytes\",\"1048575\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_requires_explicit_isr_even_when_the_broker_default_is_two(SharedOffsets)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_consumer_writes_and_connector_access_to_worker_offsets",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(SchemaHistory,\"retention.ms\",\"3600000\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"public\",\"worker-group\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant(\"prefix\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments(Public)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"peer\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(Public,\"cleanup.policy\",\"compact,delete\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(SharedOffsets,\"min.insync.replicas\",\"1\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"history\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"peer\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"progress\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_rejects_live_topic_drift_without_repair(SharedOffsets,\"cleanup.policy\",\"delete\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"a\",\"status\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_denies_cross_binding_and_internal_reads(\"b\",\"configs\",\"topic\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_requires_explicit_isr_even_when_the_broker_default_is_two(Public)",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_authorized_three_broker_cdc_policy",
+      "Test": "It_inspects_retirement_offsets_with_existing_admin_authority_and_rejects_denied_access",
+      "Outcome": "Passed"
+    }
+  ],
+  "kafka-local": [
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_Cdc_runbook_local_topic_policy",
+      "Test": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+      "Outcome": "Passed"
+    },
+    {
+      "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_explicit_authorization_disabled_local_kafka_policy",
+      "Test": "It_labels_local_policy_without_claiming_acl_or_production_durability_proof",
+      "Outcome": "Passed"
+    }
+  ]
+}

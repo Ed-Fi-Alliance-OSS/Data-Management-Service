@@ -1,0 +1,143 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 49,
+    "Passed": 49,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "kafka-secured"
+  },
+  {
+    "Name": "runbook-kafka-secured",
+    "Status": "Passed",
+    "Total": 11,
+    "Passed": 11,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_allows_only_the_configured_public_topic_and_consumer_group",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_denies_cross_binding_and_internal_reads",
+        "Required": 16,
+        "Total": 16,
+        "Passed": 16,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_denies_consumer_writes_and_connector_access_to_worker_offsets",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_preserves_unavailable_acl_authority_when_description_is_denied",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant",
+        "Required": 6,
+        "Total": 6,
+        "Passed": 6,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_live_topic_drift_without_repair",
+        "Required": 11,
+        "Total": 11,
+        "Passed": 11,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_requires_explicit_isr_even_when_the_broker_default_is_two",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments",
+        "Required": 3,
+        "Total": 3,
+        "Passed": 3,
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Status": "Passed",
+    "Total": 2,
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "kafka-local"
+  },
+  {
+    "Name": "runbook-kafka-local",
+    "Status": "Passed",
+    "Total": 2,
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_labels_local_policy_without_claiming_acl_or_production_durability_proof",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

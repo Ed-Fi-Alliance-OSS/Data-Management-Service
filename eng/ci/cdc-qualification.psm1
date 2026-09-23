@@ -372,6 +372,46 @@ function Get-CdcRunbookHistoryReport {
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name "runbook-$($Selection.ToLowerInvariant())-behavior" -ExactCount
 }
 
+function Get-CdcRunbookKafkaReport {
+    <# .SYNOPSIS
+    Requires exact marked Kafka inspections and authenticated policy cases for each separate profile.
+    #>
+    param([string] $Path, [ValidateSet('Secured', 'Local')] [string] $KafkaProfile)
+    $required = if ($KafkaProfile -eq 'Secured') { [ordered]@{
+        It_executes_marked_broker_retention_inspections_and_rejects_denied_authority = 1
+        It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts = 1
+        It_allows_only_the_configured_public_topic_and_consumer_group = 2
+        It_denies_cross_binding_and_internal_reads = 16
+        It_denies_consumer_writes_and_connector_access_to_worker_offsets = 1
+        It_preserves_unavailable_acl_authority_when_description_is_denied = 1
+        It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant = 6
+        It_rejects_live_topic_drift_without_repair = 11
+        It_requires_explicit_isr_even_when_the_broker_default_is_two = 2
+        It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention = 1
+        It_rejects_changed_partition_identity_and_actual_weak_replica_assignments = 3
+    } } else { [ordered]@{
+        It_labels_local_policy_without_claiming_acl_or_production_durability_proof = 1
+        It_executes_marked_topic_policy_status_with_shared_offset_drift = 1
+    } }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name "runbook-kafka-$($KafkaProfile.ToLowerInvariant())" -ExactCount
+}
+
+function Get-CdcRunbookConsumerReport {
+    <# .SYNOPSIS
+    Requires all six existing provider-neutral consumer broker conformance scenarios.
+    #>
+    param([string] $Path)
+    $required = [ordered]@{
+        It_requires_durable_application_and_every_checkpoint_including_the_empty_partition = 1
+        It_reconstructs_independently_expected_state_from_higher_lower_duplicate_and_null_records = 1
+        It_renews_an_idle_proof_from_real_unchanged_ends_only_after_all_checkpoints_complete = 1
+        It_continues_from_durable_next_offsets_without_replaying_bootstrap = 1
+        It_reconstructs_from_earliest_after_checkpoint_loss = 1
+        It_reconstructs_from_earliest_after_checkpoint_corruption = 1
+    }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-consumer-reference' -ExactCount
+}
+
 function Get-CdcRequiredMethodReport {
     param([string] $Path, [Collections.IDictionary] $Required, [string] $Name, [switch] $ExactCount)
     $results = @()
@@ -391,4 +431,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport

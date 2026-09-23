@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// <summary>Packaged commands over the existing fixture-owned services and original provenance.</summary>
 internal static class CdcRunbookLiveCommands
 {
-    // Only the three reviewed read-only inspection snippets run as PowerShell. Other marked
+    // Only the reviewed read-only inspection snippets run as PowerShell. Other marked
     // commands retain their literal argument binder and packaged-command boundary below.
     internal static async Task<(int ExitCode, string Output, string Error)> InvokeInspectionAsync(
         string id,
@@ -28,7 +28,8 @@ internal static class CdcRunbookLiveCommands
                 "cdc-telemetry-inspect",
                 "cdc-pg-retention-inspect",
                 "cdc-provider-disk-inspect",
-                "cdc-sqlserver-retention-inspect"
+                "cdc-sqlserver-retention-inspect",
+                "cdc-kafka-retention-inspect"
             );
         string code = CdcRunbookExamples.Read(id);
         if (id == "cdc-sqlserver-retention-inspect")
@@ -230,6 +231,7 @@ internal static class CdcRunbookLiveCommands
                 (
                     id switch
                     {
+                        "cdc-topic-policy-inspect" or "cdc-enable-retry" => "cdc-controller-kafka-command-",
                         "cdc-retire" or "cdc-restamp-handoff-status" or "cdc-disclosure-containment-result" =>
                             "managed-lifecycle-command-",
                         _ when id.StartsWith("cdc-size-", StringComparison.Ordinal) => "record-size-command-",

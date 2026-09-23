@@ -37,6 +37,18 @@ attachments; raw LSNs and query output stay private. Retained LSNs do not prove
 schema-history continuity: use the separately linked admission/recovery evidence
 and topic-policy inspection.
 
+The Kafka lane requires the marked broker retention inspection, local packaged
+`cdc-topic-policy-inspect`, authenticated allow/deny probes and separate secured/local
+required-case reports. The local case uses the existing PostgreSQL admission fixture,
+so this lane also requires the PostgreSQL and Redpanda image inputs (no external admin
+server). It exercises the shared initial-enable retry before status. Secured inspections
+use the pinned Kafka image's client tools and privately scoped broker JMX; administrator
+and denied-consumer samples retain only selected fields. Missing or duplicate cases fail
+qualification even if the remaining suite passed. The PostgreSQL MessageContract lane
+also requires all six DMS-1324 consumer broker cases. No lane or production adapter was added.
+See [T20's final procedure reconciliation](../reference/cdc-documentation/cdc-inv-evidence.md#final-reconciliation-t20)
+for retained prior-provider results, images/revisions and the consumer unit/broker split.
+
 All 15 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History and MessageContract for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
 
 For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's seven jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 15 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.

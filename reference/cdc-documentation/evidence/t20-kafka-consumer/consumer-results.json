@@ -1,0 +1,2518 @@
+[
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-C-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRING-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-UUID-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-T-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-VALUE-BYTE-BUFFER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRING-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ETAG-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_accepts_the_unmodified_shared_baseline",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-TYPED-NULL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"SIGNED-INT64-MIN\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"EXACT-NUMBERS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"NESTED-TRANSPORT-FIELDS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_rejects_conflicts_and_unavailable_markers_outside_the_pinned_delete_shape(\"DELETE-CONFLICT\",\"DOCUMENT_UUID_MISMATCH\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-TYPED-NULL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-C-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"r\",\"NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-EXTRA-FIELD\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"NESTED-TRANSPORT-FIELDS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-R-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-MICRO\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-DECIMAL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"SIGNED-INT64-MIN\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-D-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-INVALID-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-RUNTIME-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"NESTED-TRANSPORT-FIELDS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractKafkaFixturePostgresql",
+    "Test": "It_verifies_the_live_source_layout_and_exercises_shared_rows_and_bounded_byte_observations",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRUCT-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-U-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-R-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-OP-NUMERIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"NESTED-TRANSPORT-FIELDS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-R-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-EMPTY-PROGRESS-TOPIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-MALFORMED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"DIAGNOSTIC-TOPIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-MISSING-PROGRESS-TOPIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-U-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-OPTIONAL-STRUCT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-C-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"EXACT-NUMBERS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractConsumerBroker",
+    "Test": "It_continues_from_durable_next_offsets_without_replaying_bootstrap",
+    "Outcome": "Passed",
+    "ScenarioId": "MC-CONSUMER-BROKER-CONTINUATION"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"DocumentCache\",\"t\",\"VALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractPostgresql",
+    "Test": "It_publishes_structured_and_native_heartbeats_with_the_fixed_key_only_on_progress",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"FRACTIONAL-SECOND\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"t\",\"INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-U-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-D-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-OP-UNKNOWN\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-WRONG-SCHEMA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-UUID-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MIXED\",\"00112233-4455-6677-8899-aabbccddeeff\",1,0)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-NULL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-D-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-LASTMODIFIEDDATE-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-NULL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-T-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"EXACT-NUMBERS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRING-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"DESCRIPTOR-SCHOOL-TYPE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-C-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-R-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"DIAGNOSTIC-OP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-LASTMODIFIEDAT-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_uses_the_authoritative_key_without_requiring_a_prior_upsert(\"BEFORE-NO-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"EXACT-NUMBERS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-NULL-SCHEMA-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_rejects_conflicts_and_unavailable_markers_outside_the_pinned_delete_shape(\"DELETE-UNAVAILABLE-OPTIONAL\",\"UNSUPPORTED_DOCUMENT_UUID_SHAPE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractPostgresql",
+    "Test": "It_publishes_complete_shared_snapshot_and_live_envelopes_on_fixed_key_partitions",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"TEMPLATE\",\"00000000-0000-0000-0000-000000000001\",17,6)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_accepts_the_unavailable_before_uuid_only_for_the_pinned_sql_server_delete",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"FRACTIONAL-SECOND\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-LASTMODIFIEDAT-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"TOPIC-CASE\",\"MISSING_SOURCE_METADATA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"FRACTIONAL-SECOND\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"FRACTIONAL-SECOND\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_uses_the_authoritative_key_without_requiring_a_prior_upsert(\"MATCHING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-SCHEMALESS-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-R-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"u\",\"INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-DECIMAL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"FRACTIONAL-SECOND\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"VERSIONED\",\"123e4567-e89b-12d3-a456-426614174000\",3,2)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"NESTED-TRANSPORT-FIELDS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ID-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-NULL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-R-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"VERSION-INTEGER-OBJECT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"c\",\"NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"VERSIONED\",\"123e4567-e89b-12d3-a456-426614174000\",7,5)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-R-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"TOPIC-EXTRA-SUFFIX\",\"MISSING_SOURCE_METADATA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-NULL-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"DESCRIPTOR-SCHOOL-TYPE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"u\",\"NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-TABLE-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRING-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"DESCRIPTOR-SCHOOL-TYPE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"DESCRIPTOR-SCHOOL-TYPE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"EXACT-NUMBERS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractPostgresql",
+    "Test": "It_emits_one_true_tombstone_per_canonical_delete_and_drops_excluded_operations",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-TRAILING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-MALFORMED-DELEGATED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-UUID-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-PLAIN\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRUCT-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-RAW-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"NESTED-TRANSPORT-FIELDS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"DocumentCache\",\"d\",\"VALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-MISSING-FIELD\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-T-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRetry(Postgresql,\"MC-RETRY-PG\")",
+    "Test": "It_keeps_all_replayed_upserts_and_tombstones_on_the_original_key_partition",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-MISSING-TARGET-TOPIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-VALUE-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"DESCRIPTOR-SCHOOL-TYPE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-NUMBER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-CONTENTVERSION-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"NESTED-TRANSPORT-FIELDS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"FRACTIONAL-SECOND\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"SIGNED-INT64-MIN\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-UUID-RUNTIME-OBJECT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRUCT-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-U-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-LASTMODIFIEDAT-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRUCT-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"VERSIONED\",\"123e4567-e89b-12d3-a456-426614174000\",17,14)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"EXACT-NUMBERS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"NESTED-TRANSPORT-FIELDS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-WORK-TABLE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"COLLISION-HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-D-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-UUID-SCHEMA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRUCT-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-T-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"SIGNED-INT64-MIN\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-U-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-NUMERIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-R-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-VALUE-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-OTHER-NAMED-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRING-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-MISSING-PROVIDER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MAX\",\"ffffffff-ffff-ffff-ffff-ffffffffffff\",3,0)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"FRACTIONAL-SECOND\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-NULL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-EXTRA-FIELD\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-U-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractConsumerBroker",
+    "Test": "It_reconstructs_independently_expected_state_from_higher_lower_duplicate_and_null_records",
+    "Outcome": "Passed",
+    "ScenarioId": "MC-CONSUMER-BROKER-ORDERING"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"NESTED-TRANSPORT-FIELDS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MAX\",\"ffffffff-ffff-ffff-ffff-ffffffffffff\",10,6)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-DECIMAL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ID-NUMBER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-UUID-OBJECT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"SERVER-NULL\",\"MALFORMED_NATIVE_HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"TEMPLATE\",\"00000000-0000-0000-0000-000000000001\",1,0)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"SIGNED-INT64-MIN\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"r\",\"INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-LOGICAL-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"DESCRIPTOR-SCHOOL-TYPE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-EMPTY-PROVIDER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-TABLE-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"SIGNED-INT64-MIN\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-UUID-OBJECT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-SCHEMALESS-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRING-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"NESTED-TRANSPORT-FIELDS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgressAcknowledgement(Postgresql,\"MC-PROGRESS-ACK-PG\")",
+    "Test": "It_requires_the_complete_focused_observation_sequence_after_acknowledgement",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"EXACT-NUMBERS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRUCT-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-D-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-EXACT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"SERVER-EMPTY\",\"MALFORMED_NATIVE_HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRING-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"VERSION-DECIMAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-ENVELOPE-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-TYPED-NULL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"COLLISION-HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_rejects_conflicts_and_unavailable_markers_outside_the_pinned_delete_shape(\"DELETE-UNAVAILABLE-NAMED\",\"UNSUPPORTED_DOCUMENT_UUID_SHAPE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-UUID-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-RAW-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-NULL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-RESERVED-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRING-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"FRACTIONAL-SECOND\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"c\",\"INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"SIGNED-INT64-MIN\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-U-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"u\",\"VALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_uses_the_authoritative_key_without_requiring_a_prior_upsert(\"UPPERCASE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRUCT-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-RUNTIME-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRING-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-SCHEMALESS-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-T-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"EXACT-NUMBERS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"DESCRIPTOR-SCHOOL-TYPE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"SIGNED-INT64-MIN\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-OP-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-DECIMAL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-DECIMAL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"EXACT-NUMBERS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-PROVIDER-WHITESPACE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-NULL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-RUNTIME-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-U-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"t\",\"NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-DECIMAL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-LASTMODIFIEDDATE-MISMATCH\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRING-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-C-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MIXED\",\"00112233-4455-6677-8899-aabbccddeeff\",7,3)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"DESCRIPTOR-SCHOOL-TYPE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"DIAGNOSTIC-SCHEMA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-NULL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-DECIMAL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_serializes_the_shared_upsert_with_the_real_converters",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-T-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-R-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"VERSIONED\",\"123e4567-e89b-12d3-a456-426614174000\",1,0)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-CONTENTVERSION-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"COLLISION-HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"FRACTIONAL-SECOND\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"TEMPLATE\",\"00000000-0000-0000-0000-000000000001\",10,0)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"SIGNED-INT64-MIN\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-PROVIDER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MAX\",\"ffffffff-ffff-ffff-ffff-ffffffffffff\",7,4)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"EXACT-NUMBERS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"EXACT-NUMBERS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-TYPED-NULL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-SCHEMALESS-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_reports_a_true_kafka_null_and_same_partition_for_the_delete",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ARRAY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"SERVER-NUMBER\",\"MALFORMED_NATIVE_HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"FRACTIONAL-SECOND\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-UUID-RUNTIME-OBJECT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"c\",\"VALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-TYPED-NULL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-UUID-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-UNAVAILABLE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"TOPIC-EMPTY-SUFFIX\",\"MISSING_SOURCE_METADATA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-MISSING-FIELD\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"DIAGNOSTIC-TABLE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"SERVER-OBJECT\",\"MALFORMED_NATIVE_HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRetry(Postgresql,\"MC-RETRY-PG\")",
+    "Test": "It_eventually_converges_to_deleted_state_after_the_provider_recovery_fence",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-LASTMODIFIEDDATE-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"FRACTIONAL-SECOND\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"NESTED-TRANSPORT-FIELDS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"SIGNED-INT64-MIN\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-RUNTIME-NUMBER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"NESTED-TRANSPORT-FIELDS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"DESCRIPTOR-SCHOOL-TYPE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRUCT-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_rejects_conflicts_and_unavailable_markers_outside_the_pinned_delete_shape(\"UPSERT-UNAVAILABLE-ROW\",\"INVALID_DOCUMENT_UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-D-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractConsumerBroker",
+    "Test": "It_renews_an_idle_proof_from_real_unchanged_ends_only_after_all_checkpoints_complete",
+    "Outcome": "Passed",
+    "ScenarioId": "MC-CONSUMER-BROKER-IDLE-RENEWAL"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-UUID-UNAVAILABLE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"DocumentCache\",\"d\",\"NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_records_the_immutable_runtime_provenance",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-NULL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"TEMPLATE\",\"00000000-0000-0000-0000-000000000001\",7,1)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-SCHEMALESS-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-DECIMAL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"TOPIC-MISMATCH\",\"MISSING_SOURCE_METADATA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-PROGRESS-MISMATCH\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-UUID-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-T-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-T-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MAX\",\"ffffffff-ffff-ffff-ffff-ffffffffffff\",17,16)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-SCHEMALESS-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRecordSize(Postgresql,\"MC-RECORD-SIZE-PG\")",
+    "Test": "It_publishes_the_complete_synthetic_record_one_byte_below_the_pinned_producer_boundary",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ID-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"DocumentCache\",\"t\",\"NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_uses_the_authoritative_key_without_requiring_a_prior_upsert(\"BEFORE-OMITTED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-CONTENTVERSION-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-D-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"t\",\"VALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"EXACT-NUMBERS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-UNKNOWN-TABLE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-T-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"DESCRIPTOR-SCHOOL-TYPE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-RUNTIME-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-ENVELOPE-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-NULL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"FRACTIONAL-SECOND\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"NESTED-TRANSPORT-FIELDS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-SCHEMALESS-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-C-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-TYPED-NULL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"SIGNED-INT64-MIN\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-SCHEMALESS-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-SCHEMALESS-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-C-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-STREAMETAG-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"SIGNED-INT64-MIN\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MIXED\",\"00112233-4455-6677-8899-aabbccddeeff\",17,13)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"DESCRIPTOR-SCHOOL-TYPE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-C-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-OP-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-TYPED-NULL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-R-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-NULL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-SCHEMALESS-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-UUID-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-DOCUMENTJSON-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"DESCRIPTOR-SCHOOL-TYPE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-UPSERT-SCHEMALESS-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-C-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"DESCRIPTOR-SCHOOL-TYPE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_distinguishes_retained_dropped_and_failed_records",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"EXACT-NUMBERS\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"FRACTIONAL-SECOND\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MIXED\",\"00112233-4455-6677-8899-aabbccddeeff\",3,2)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-D-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-REQUIRED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"DESCRIPTOR-SCHOOL-TYPE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"FRACTIONAL-SECOND\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-D-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-U-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-R-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-DECIMAL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRUCT-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRUCT-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-C-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-SCHEMALESS-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-DECIMAL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRecordSize(Postgresql,\"MC-RECORD-SIZE-PG\")",
+    "Test": "It_fails_without_partial_publication_and_blocks_the_evaluator_with_synthetic_healthy_lag",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-R-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"VERSION-STRING-OBJECT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"DIAGNOSTIC-ROW-METADATA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-OP-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-DECIMAL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-U-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-NULL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-UNNAMED-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-NULL-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_preserves_progress_source_metadata_and_uses_the_real_string_converter",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-LASTMODIFIEDAT-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"SIGNED-INT64-MIN\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-VERSION-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"EXACT-NUMBERS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"DocumentCache\",\"d\",\"INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgressAcknowledgement(Postgresql,\"MC-PROGRESS-ACK-PG\")",
+    "Test": "It_publishes_keyed_progress_and_commits_without_any_public_document_activity",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-D-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractConsumerBroker",
+    "Test": "It_requires_durable_application_and_every_checkpoint_including_the_empty_partition",
+    "Outcome": "Passed",
+    "ScenarioId": "MC-CONSUMER-BROKER-BOOTSTRAP-DURABILITY"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"TEMPLATE\",\"00000000-0000-0000-0000-000000000001\",3,2)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractConsumerBroker",
+    "Test": "It_reconstructs_from_earliest_after_checkpoint_corruption",
+    "Outcome": "Passed",
+    "ScenarioId": "MC-CONSUMER-BROKER-CHECKPOINT-CORRUPT"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"NESTED-TRANSPORT-FIELDS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-SCHEMALESS-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_omits_bodies_from_an_intentional_assertion_failure",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"TOPIC-DELIMITER\",\"MISSING_SOURCE_METADATA\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-T-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-STRUCT-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-STRING-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-DECIMAL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONFIG-EMPTY-TARGET-TOPIC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_copies_the_opaque_etag_only_into_the_document_and_excludes_internal_fields(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_uses_the_authoritative_key_without_requiring_a_prior_upsert(\"BEFORE-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"FRACTIONAL-SECOND\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-C-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"CONVERTER-VERSION-TWO\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"DESCRIPTOR-SCHOOL-TYPE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRetry(Postgresql,\"MC-RETRY-PG\")",
+    "Test": "It_exercises_broker_interruption_and_restarts_the_same_worker_before_catch_up",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-ABSENT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_uses_the_authoritative_key_without_requiring_a_prior_upsert(\"BEFORE-ABSENT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ID-MISMATCH\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-OPTIONAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRUCT-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-U-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-OPTIONAL-STRUCT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-T-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-SCHEMALESS-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-UNAVAILABLE\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"NATIVE-TYPED-NULL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"EXACT-NUMBERS\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-ETAG-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"ROW-UUID-MISMATCH\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"Document\",\"r\",\"VALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"NESTED-TRANSPORT-FIELDS\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-T-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-D-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"SOURCE-ENVELOPE-SCHEMALESS\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-CONTENTVERSION-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_classifies_heartbeat_prefix_collisions_using_relational_metadata",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-TYPED-NULL-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_fails_closed_for_malformed_native_heartbeat_identity(\"SERVER-MISSING\",\"MALFORMED_NATIVE_HEARTBEAT\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-JSON-NULL-BYTES\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-TYPED-NULL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-LASTMODIFIEDDATE-NUMBER\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"VERSION-INT32\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_uses_the_exact_logical_bytes_handshake_and_converter_defensive_copy(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_reports_a_missing_published_class_without_plugin_logs",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_distinguishes_exact_public_bytes_from_delegation_and_kafka_null(\"CONVERTER-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-INVALID-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"VERSIONED\",\"123e4567-e89b-12d3-a456-426614174000\",10,6)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-LOCAL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_rejects_conflicts_and_unavailable_markers_outside_the_pinned_delete_shape(\"UPSERT-UNAVAILABLE-KEY\",\"INVALID_DOCUMENT_UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-TYPED-NULL-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"EXTENSION-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_drops_excluded_operations_without_public_or_progress_output(\"DocumentCache\",\"t\",\"INVALID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRecordSize(Postgresql,\"MC-RECORD-SIZE-PG\")",
+    "Test": "It_replays_after_a_direct_limit_change_and_restores_focused_evaluator_classification",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_emits_the_complete_public_envelope_with_exact_document_values(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractConsumerBroker",
+    "Test": "It_reconstructs_from_earliest_after_checkpoint_loss",
+    "Outcome": "Passed",
+    "ScenarioId": "MC-CONSUMER-BROKER-CHECKPOINT-MISSING"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"NATIVE-STRING-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"VERSION-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_values_or_substitutes_only_native_nulls_and_delegates_json_conversion(\"RELATIONAL-D-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MAX\",\"ffffffff-ffff-ffff-ffff-ffffffffffff\",1,0)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRunner_smoke(Postgresql)",
+    "Test": "It_exposes_only_bounded_artifact_failure_metadata",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgressAcknowledgement(Postgresql,\"MC-PROGRESS-ACK-PG\")",
+    "Test": "It_keeps_live_committed_offsets_below_the_barrier_while_only_source_production_is_blocked",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"RELATIONAL-U-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-SCHEMALESS-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCEVERSION-MISSING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION\",\"u\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_routes_to_the_binding_progress_topic_with_exact_fixed_key_bytes(\"RELATIONAL-C-INVALID-PUBLIC-UUID\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractPostgresql",
+    "Test": "It_excludes_work_activity_from_capture_and_fenced_public_and_progress_observations",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-EMPTY\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"SIGNED-INT64-MIN\",\"c\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"TIME-NON-UTC\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-RESOURCENAME-NAME\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-NULL-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"JSON-STRING\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"KEY-DELETE-NULL\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_routes_the_unquoted_lowercase_uuid_key_to_the_derived_public_topic(\"SIGNED-INT64-MIN\",\"r\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractFailure(Postgresql)",
+    "Test": "It_fails_at_the_owned_boundary_with_stable_reasons_and_bounded_diagnostics(\"FIELD-PROJECTNAME-RUNTIME-MAP\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractRouting(Postgresql)",
+    "Test": "It_matches_fixed_partition_vectors_for_both_upserts_and_tombstones(\"MIXED\",\"00112233-4455-6677-8899-aabbccddeeff\",10,2)",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractProgress(Postgresql)",
+    "Test": "It_preserves_source_metadata_headers_and_connect_timestamp(\"NATIVE-TYPED-NULL-STRUCTURED\")",
+    "Outcome": "Passed"
+  },
+  {
+    "Class": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_MessageContractUpsert(Postgresql)",
+    "Test": "It_publishes_whole_second_document_time_and_removes_connect_metadata(\"SCHOOL-ADDRESS-PROPERTY-ABSENCE\",\"r\")",
+    "Outcome": "Passed"
+  }
+]

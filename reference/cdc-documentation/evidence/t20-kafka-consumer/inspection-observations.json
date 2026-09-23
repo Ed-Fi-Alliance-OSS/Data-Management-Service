@@ -1,0 +1,936 @@
+[
+  {
+    "ObservedAt": "2026-09-23T09:22:18.4038222-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 0,
+      "Sample": 0,
+      "ExitCode": 0,
+      "Role": "DeploymentAdministrator",
+      "Topics": [
+        {
+          "Role": "Public",
+          "PartitionReplicas": {
+            "0": [
+              3,
+              1,
+              2
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": true
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": true
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "Progress",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "SchemaHistory",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": true
+            },
+            "retention.bytes": {
+              "IsTopicOverride": true
+            }
+          }
+        },
+        {
+          "Role": "SharedOffsets",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        }
+      ],
+      "RetainedBytes": 624,
+      "PartitionCount": 1,
+      "BoundsObservedAndOrdered": true,
+      "CleanerMetrics": {
+        "kafka.log:type=LogCleaner,name=DeadThreadCount:Value": 0,
+        "kafka.log:type=LogCleaner,name=cleaner-recopy-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-buffer-utilization-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-clean-time-secs:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-compaction-delay-secs:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=max-dirty-percent:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=time-since-last-run-ms:Value": 11346,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-bytes,logDirectory=\"/tmp/kafka-logs\":Value": 0,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-partitions-count,logDirectory=\"/tmp/kafka-logs\":Value": 0
+      },
+      "AvailableKilobytes": 580706736,
+      "Action": "RepeatUnderWorkloadNoPurgeOrCapacityCertification"
+    }
+  },
+  {
+    "ObservedAt": "2026-09-23T09:22:35.68854-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 1,
+      "Sample": 0,
+      "ExitCode": 0,
+      "Role": "DeploymentAdministrator",
+      "Topics": [
+        {
+          "Role": "Public",
+          "PartitionReplicas": {
+            "0": [
+              3,
+              1,
+              2
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": true
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": true
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "Progress",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "SchemaHistory",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": true
+            },
+            "retention.bytes": {
+              "IsTopicOverride": true
+            }
+          }
+        },
+        {
+          "Role": "SharedOffsets",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        }
+      ],
+      "RetainedBytes": 624,
+      "PartitionCount": 1,
+      "BoundsObservedAndOrdered": true,
+      "CleanerMetrics": {
+        "kafka.log:type=LogCleaner,name=DeadThreadCount:Value": 0,
+        "kafka.log:type=LogCleaner,name=cleaner-recopy-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-buffer-utilization-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-clean-time-secs:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-compaction-delay-secs:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=max-dirty-percent:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=time-since-last-run-ms:Value": 13738,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-bytes,logDirectory=\"/tmp/kafka-logs\":Value": 0,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-partitions-count,logDirectory=\"/tmp/kafka-logs\":Value": 0
+      },
+      "AvailableKilobytes": 580757068,
+      "Action": "RepeatUnderWorkloadNoPurgeOrCapacityCertification"
+    }
+  },
+  {
+    "ObservedAt": "2026-09-23T09:22:52.1577849-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 2,
+      "Sample": 0,
+      "ExitCode": 0,
+      "Role": "DeploymentAdministrator",
+      "Topics": [
+        {
+          "Role": "Public",
+          "PartitionReplicas": {
+            "0": [
+              3,
+              1,
+              2
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": true
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": true
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "Progress",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "SchemaHistory",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": true
+            },
+            "retention.bytes": {
+              "IsTopicOverride": true
+            }
+          }
+        },
+        {
+          "Role": "SharedOffsets",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        }
+      ],
+      "RetainedBytes": 624,
+      "PartitionCount": 1,
+      "BoundsObservedAndOrdered": true,
+      "CleanerMetrics": {
+        "kafka.log:type=LogCleaner,name=DeadThreadCount:Value": 0,
+        "kafka.log:type=LogCleaner,name=cleaner-recopy-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-buffer-utilization-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-clean-time-secs:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-compaction-delay-secs:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=max-dirty-percent:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=time-since-last-run-ms:Value": 172,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-bytes,logDirectory=\"/tmp/kafka-logs\":Value": 0,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-partitions-count,logDirectory=\"/tmp/kafka-logs\":Value": 0
+      },
+      "AvailableKilobytes": 580753752,
+      "Action": "RepeatUnderWorkloadNoPurgeOrCapacityCertification"
+    }
+  },
+  {
+    "ObservedAt": "2026-09-23T09:23:09.1440003-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 0,
+      "Sample": 1,
+      "ExitCode": 0,
+      "Role": "DeploymentAdministrator",
+      "Topics": [
+        {
+          "Role": "Public",
+          "PartitionReplicas": {
+            "0": [
+              3,
+              1,
+              2
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": true
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": true
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "Progress",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "SchemaHistory",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": true
+            },
+            "retention.bytes": {
+              "IsTopicOverride": true
+            }
+          }
+        },
+        {
+          "Role": "SharedOffsets",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        }
+      ],
+      "RetainedBytes": 936,
+      "PartitionCount": 1,
+      "BoundsObservedAndOrdered": true,
+      "CleanerMetrics": {
+        "kafka.log:type=LogCleaner,name=DeadThreadCount:Value": 0,
+        "kafka.log:type=LogCleaner,name=cleaner-recopy-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-buffer-utilization-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-clean-time-secs:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-compaction-delay-secs:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=max-dirty-percent:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=time-since-last-run-ms:Value": 2121,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-bytes,logDirectory=\"/tmp/kafka-logs\":Value": 0,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-partitions-count,logDirectory=\"/tmp/kafka-logs\":Value": 0
+      },
+      "AvailableKilobytes": 580751072,
+      "Action": "RepeatUnderWorkloadNoPurgeOrCapacityCertification"
+    }
+  },
+  {
+    "ObservedAt": "2026-09-23T09:23:25.9083701-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 1,
+      "Sample": 1,
+      "ExitCode": 0,
+      "Role": "DeploymentAdministrator",
+      "Topics": [
+        {
+          "Role": "Public",
+          "PartitionReplicas": {
+            "0": [
+              3,
+              1,
+              2
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": true
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": true
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "Progress",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "SchemaHistory",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": true
+            },
+            "retention.bytes": {
+              "IsTopicOverride": true
+            }
+          }
+        },
+        {
+          "Role": "SharedOffsets",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        }
+      ],
+      "RetainedBytes": 936,
+      "PartitionCount": 1,
+      "BoundsObservedAndOrdered": true,
+      "CleanerMetrics": {
+        "kafka.log:type=LogCleaner,name=DeadThreadCount:Value": 0,
+        "kafka.log:type=LogCleaner,name=cleaner-recopy-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-buffer-utilization-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-clean-time-secs:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-compaction-delay-secs:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=max-dirty-percent:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=time-since-last-run-ms:Value": 3938,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-bytes,logDirectory=\"/tmp/kafka-logs\":Value": 0,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-partitions-count,logDirectory=\"/tmp/kafka-logs\":Value": 0
+      },
+      "AvailableKilobytes": 580747336,
+      "Action": "RepeatUnderWorkloadNoPurgeOrCapacityCertification"
+    }
+  },
+  {
+    "ObservedAt": "2026-09-23T09:23:42.4965079-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 2,
+      "Sample": 1,
+      "ExitCode": 0,
+      "Role": "DeploymentAdministrator",
+      "Topics": [
+        {
+          "Role": "Public",
+          "PartitionReplicas": {
+            "0": [
+              3,
+              1,
+              2
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": true
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": true
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "Progress",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        },
+        {
+          "Role": "SchemaHistory",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": true
+            },
+            "retention.bytes": {
+              "IsTopicOverride": true
+            }
+          }
+        },
+        {
+          "Role": "SharedOffsets",
+          "PartitionReplicas": {
+            "0": [
+              2,
+              3,
+              1
+            ]
+          },
+          "Configuration": {
+            "cleanup.policy": {
+              "IsTopicOverride": true
+            },
+            "min.insync.replicas": {
+              "IsTopicOverride": true
+            },
+            "delete.retention.ms": {
+              "IsTopicOverride": false
+            },
+            "max.message.bytes": {
+              "IsTopicOverride": false
+            },
+            "retention.ms": {
+              "IsTopicOverride": false
+            },
+            "retention.bytes": {
+              "IsTopicOverride": false
+            }
+          }
+        }
+      ],
+      "RetainedBytes": 936,
+      "PartitionCount": 1,
+      "BoundsObservedAndOrdered": true,
+      "CleanerMetrics": {
+        "kafka.log:type=LogCleaner,name=DeadThreadCount:Value": 0,
+        "kafka.log:type=LogCleaner,name=cleaner-recopy-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-buffer-utilization-percent:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-clean-time-secs:Value": 0,
+        "kafka.log:type=LogCleaner,name=max-compaction-delay-secs:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=max-dirty-percent:Value": 0,
+        "kafka.log:type=LogCleanerManager,name=time-since-last-run-ms:Value": 5471,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-bytes,logDirectory=\"/tmp/kafka-logs\":Value": 0,
+        "kafka.log:type=LogCleanerManager,name=uncleanable-partitions-count,logDirectory=\"/tmp/kafka-logs\":Value": 0
+      },
+      "AvailableKilobytes": 580747288,
+      "Action": "RepeatUnderWorkloadNoPurgeOrCapacityCertification"
+    }
+  },
+  {
+    "ObservedAt": "2026-09-23T09:23:44.4052654-05:00",
+    "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+    "SnippetId": "cdc-kafka-retention-inspect",
+    "SnippetSha256": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "Profile": "AuthorizationEnabled/ProductionDurability",
+    "BrokerImage": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Observation": {
+      "Broker": 0,
+      "Sample": 0,
+      "ExitCode": 1,
+      "Role": "InstanceConsumer",
+      "Action": "InspectionUnavailableNeverSafeIsolation"
+    }
+  }
+]

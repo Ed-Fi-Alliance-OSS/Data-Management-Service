@@ -2,14 +2,12 @@
 
 [Entry point](README.md) · [Evidence index](cdc-inv-evidence.md)
 
-This shared PostgreSQL/SQL Server runbook is under construction. Both providers’ setup
-and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
-projection handoffs, monitoring, retention, security, consumer-evidence checklists and
-coordinated record-size increases, retirement/teardown and restamp/disclosure handoffs
-are documented. Setup and observation snippets passed T16/T17; lifecycle
-snippets passed [T18 (PostgreSQL)](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18)
-and [T19 (SQL Server)](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19). Remaining
-live procedure qualification is **pending** its named tasks.
+This shared PostgreSQL/SQL Server runbook covers setup and DMS E2E opt-in,
+state preservation, lifecycle/recovery, projection handoffs, monitoring, security,
+consumer evidence, record-size increases, retirement and disclosure response.
+The [final evidence reconciliation](cdc-inv-evidence.md#final-reconciliation-t20)
+records executed examples and the limits of each test layer, including alternatives
+checked only in Contract.
 Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
 
@@ -29,7 +27,7 @@ for current command details and the linked design owners for support boundaries.
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | PostgreSQL T21 / SQL Server T22 — qualified local scope |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; PostgreSQL T25 and SQL Server T26 qualified |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 inspections qualified |
-| Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
+| Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 documented; T20 Kafka/consumer qualification |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 live qualification passed |
 | Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; PostgreSQL T25 and SQL Server T26 qualified |
 | Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; prior live stack cleanup and T25/T26 wrapper ordering linked separately |
@@ -38,8 +36,7 @@ for current command details and the linked design owners for support boundaries.
 
 ## Procedure Record
 
-Each procedure uses the same record. Before a procedure becomes runnable, replace
-its pending entries with verified implementation details:
+Each procedure uses the same record of verified implementation details:
 
 | Field | Required content |
 | --- | --- |
@@ -407,7 +404,7 @@ settings and original state paths. Copy those exact paths for subsequent operati
 do not choose the newest file by timestamp or return to the un-staged input settings.
 Preserve the whole retained handoff, including `.bootstrap` schema/configuration data,
 `.cdc-deployments/<project>.json`, all custom controller roots and broker-size override.
-See [deployment state](#deployment-state) (documented; live exercise pending).
+See [deployment state](#deployment-state) and its T18/T19 live evidence.
 
 PowerShell, repository root; `api-schema-tools` is the matching installed/resolved
 SchemaTools executable. Requires retained paths from the wrapper's printed command.
@@ -1048,9 +1045,12 @@ or incident-history deletion remains an incident even when files parse and live 
 
 ## Interrupted initial-enable retry
 
-**Exact `cdc-enable-retry` snippet unexercised.** Intact wrapper retries have
+**The exact shared CLI retry is exercised on PostgreSQL in [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).** Intact provider wrapper retries retain
 [T16](cdc-inv-evidence.md#postgresql-setup-qualification-t16) and
-[T17](cdc-inv-evidence.md#sql-server-setup-qualification-t17) setup evidence. Follow the
+[T17](cdc-inv-evidence.md#sql-server-setup-qualification-t17) setup evidence. The T20 fixture pauses after durable connector registration, resumes the original
+workflow, verifies writer authorization, then confirms a second initial retry rejects.
+SQL Server retains T17 wrapper evidence plus both-provider Contract coverage; no separate
+SQL Server live execution of this exact CLI snippet is claimed. Follow the
 [initial retry classification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 and [initial-admission sequence](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
 
@@ -1147,7 +1147,7 @@ selects `RunningPublication`, not `PreStart`. Thus a stopped connector can retur
 `1` without proving history loss. Even `data.preStartEligible: true` is only an
 observation, never reusable start authority. There is no CLI `--mode PreStart` flag.
 Use [managed startup](#managed-lifecycle) or [intact restart/resume](#intact-restart)
-(T05 detail pending; current [command handoff](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#managed-stack-lifecycle)).
+([command handoff](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#managed-stack-lifecycle)).
 Those controllers revalidate under their own session immediately before acting.
 
 Serialized `data.continuity` values are `Healthy`, `Unknown` or `Lost`. `Unknown`
@@ -1870,7 +1870,7 @@ so this evidence does not certify a minimum monitoring-role grant set. No disk-f
 fault or deployment capacity threshold is claimed. The exporter case also executes
 the marked scrape around task and worker replacement; missing task metrics remain
 unavailable. Status/watch and source-history behavior retain the linked setup/recovery
-evidence, while topic policy/access qualification remains T20.
+evidence, with separate [T20 topic policy/access evidence](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).
 
 ### SQL Server capture, cleanup, LSN and version-store inspection
 
@@ -1990,7 +1990,7 @@ an active deployment. No correction is performed by these inspections. Separate
 [T17 admission evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
 qualifies actual DMS prerequisites and missing/lost schema-history rejection;
 [T22 recovery](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22)
-supplies fresh/rejected controller observations. Topic policy/access remains T20.
+supplies fresh/rejected controller observations. Topic policy/access has separate [T20 evidence](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).
 The fixture also runs the exact disk command against its database's actual data and
 log files, which share a filesystem, and rejects a missing log path. These samples
 prove neither sustained capacity nor pressure recovery. Administrator visibility and
@@ -2073,7 +2073,7 @@ thresholds.
 
 ## Security, topic retention and consumer evidence
 
-**Documented in T08; live snippet qualification pending T20.** Use the
+**Qualified in [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20), with secured and local evidence kept separate.** Use the
 [security owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
 [topology/offset-store owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store),
 [public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap)
@@ -2158,6 +2158,52 @@ Exit `0` requires the current aggregate `Ready`; `1` covers not-ready/rejected/t
 Local `aclIsolationProven: false` remains false even when policy components pass.
 For full field nesting and freshness see [monitoring](#monitoring-retention).
 
+For the pinned Apache Kafka qualification image, the following read-only inspection
+samples public/progress/history/offset policy, actual replicas, public retained bytes across replicas
+and partition bounds, broker-local cleaner gauges and disk headroom. Run on each broker,
+repeat samples, and retain raw output privately. Other brokers require their platform's
+equivalent tooling. Missing metrics or denied commands mean unavailable evidence;
+nonzero exit rejects the whole sample. GNU `timeout` is required on the host and in
+the tooling container: the inner deadline terminates the remote command, while the
+outer deadline bounds the Docker client. Configuration and an idle cleaner do not prove
+compaction progress or physical purge. Observe cleaner errors/backlog and changes under
+the deployment's workload before accepting capacity. JMX must already be privately
+configured by the platform owner; this command does not enable it.
+
+| Literal/input | Operator source | Permitted fixture replacement |
+| --- | --- | --- |
+| `<kafka-broker-container>` | Authorized broker tooling container, Kafka scripts in `/opt/kafka/bin` | Owned pinned Apache Kafka broker |
+| `<kafka-inspection-properties>` | Existing owner-only client properties inside that container; authenticated admin inspection authority, never pasted credentials | Ephemeral admin properties; consumer properties for denied-authority case, removed after inspection |
+| `<public-topic>`, `<progress-topic>`, `<history-topic>`, `<offset-topic>` | Original artifact inventory; omit history entry for PostgreSQL | Existing fixture binding and configured shared offset topic |
+| `<private-jmx-url>` | Existing private broker JMX endpoint accessible inside tooling container | Loopback-only fixture JMX port; no exposed host port |
+| `<kafka-data-path>` | Actual broker log directory | Actual log directory verified by the fixture's live `DescribeLogDirs` result |
+
+<!-- cdc-snippet: cdc-kafka-retention-inspect -->
+```powershell
+$broker = '<kafka-broker-container>'
+$properties = '<kafka-inspection-properties>'
+$topics = @('<public-topic>', '<progress-topic>', '<history-topic>', '<offset-topic>')
+foreach ($topic in $topics) {
+    & timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --command-config $properties --entity-type topics --entity-name $topic --describe --all
+    if ($LASTEXITCODE -ne 0) { throw 'Topic configuration unavailable.' }
+    & timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --command-config $properties --topic $topic --describe
+    if ($LASTEXITCODE -ne 0) { throw 'Topic assignments unavailable.' }
+}
+& timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-log-dirs.sh --bootstrap-server localhost:9092 --command-config $properties --topic-list '<public-topic>' --describe
+if ($LASTEXITCODE -ne 0) { throw 'Retained bytes unavailable.' }
+foreach ($bound in @('earliest', 'latest')) {
+    & timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --command-config $properties --topic '<public-topic>' --time $bound
+    if ($LASTEXITCODE -ne 0) { throw 'Partition bounds unavailable.' }
+}
+foreach ($bean in @('kafka.log:type=LogCleaner,*', 'kafka.log:type=LogCleanerManager,*')) {
+    & timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-run-class.sh kafka.tools.JmxTool --jmx-url '<private-jmx-url>' --object-name $bean --one-time true
+    if ($LASTEXITCODE -ne 0) { throw 'Cleaner metrics unavailable.' }
+}
+& timeout 30s docker exec $broker timeout 25s df -Pk -- '<kafka-data-path>'
+if ($LASTEXITCODE -ne 0) { throw 'Broker disk headroom unavailable.' }
+```
+<!-- /cdc-snippet: cdc-kafka-retention-inspect -->
+
 The existing [Kafka qualification lane](../../eng/ci/Invoke-CdcQualification.ps1)
 performs authenticated broker probes and live policy inspection in disposable fixtures.
 It intentionally changes grants, topic configuration and replica assignments, denies
@@ -2171,13 +2217,14 @@ loopback listeners; this is no production transport-security recipe.
 PowerShell, repository root; .NET 10, PowerShell 7 and working Docker Engine with permission
 to create/remove isolated containers/networks/volumes. Verify `systemctl status docker
 --no-pager` and `docker ps` on Linux. Have the repository-pinned Kafka image and qualified
-Connect image locally, or deliberately add the runner's `-PullImages` option. No provider
-admin connection is needed for the Kafka lane. The runner uses a fresh results directory
+Connect image locally, or deliberately add the runner's `-PullImages` option. The local status case also requires the declared PostgreSQL and Redpanda images;
+no external provider admin connection is needed for the Kafka lane. The runner uses a fresh results directory
 and the existing allowlisted exporter; never upload the printed private log directory.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
 | `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` | Shipped `CdcQualifiedWorkerImage.json` loaded below | Same exact qualified digest; no arbitrary tag |
+| `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE` | Approved immutable fixture images, set privately before execution | Same pinned provider/broker used by the local admission fixture |
 | `<new-kafka-evidence-directory>` | New private results location, not already present | Fresh isolated fixture results path |
 | Binding/principal/topic/group names and credentials | Created internally by the existing fixture | Existing fixture-owned synthetic identities only; no deployment settings/state substitution |
 
@@ -2213,6 +2260,13 @@ principal. Kafka group lag or fetched offsets do not prove durable application.
 | Capacity and cleaner evidence | Measure the largest retained log claimed, dirty/uncompacted versions, skew, maximum-sized records, durable state writes and concurrent mutations, including persistence/stalls in elapsed time. Record fetch capacity against the accepted record ceiling and cleaner/storage observations. Repeated missed deadlines require more throughput/parallelism before production use. |
 | Completion and responsibility | Consumer owner attests its store's actual evidence and supported workload. Reference fixtures and deployment topic validation cannot certify that store; live-key counts, a healthy connector or a larger retention setting cannot substitute. |
 
+The [T20 consumer evidence](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20)
+links exact broker scenario IDs and Contract unit methods for these checklist rows:
+partition barriers/durable checkpoints, bootstrap deadline boundaries, idle renewal,
+checkpoint loss/corruption and stale callback invalidation. Its source hashes and
+pinned images identify the tested DMS-1324 revision; simulated durability and clock
+remain explicit. Capacity and correctness of independent stores remain owner obligations.
+
 Consumer invalidation is scoped to consumer-owned state. It does **not** authorize deleting
 controller provenance, resetting Connect offsets, changing binding generation or executing
 the deferred [new-topic cutover](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover).
@@ -2233,7 +2287,7 @@ product, benchmark or certification of an independently operated persistence sys
 PowerShell, repository root; disposable Docker qualification environment and runner
 prerequisites above. This broader existing MessageContract lane also exercises provider
 and transform cases; it does not run against the retained operator deployment. Exact
-execution and sanitized artifacts remain T20 work.
+execution and sanitized artifacts are recorded in [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
