@@ -283,20 +283,24 @@ JobWriteResult     : Success(NewLeaseExpiresAt?, DatabaseUtcNow) | OwnershipLost
 
 IJobRepository          (2.3/2.4)  EnqueueJob(command, DbTransaction?, ct); GetJobStatus(jobId, ct)
 ICmsTransactionFactory  (2.3/2.4)  BeginAsync(ct) → ICmsTransaction
-IJobLeaseRepository     (2.5/2.6)  ClaimNext(owner, leaseSeconds, maxAttempts, ct); Exhaust(maxAttempts, errorCode, ct);
+IJobLeaseRepository     (2.5/2.6)  ClaimNext(owner, leaseSeconds, maxAttempts, ct); Exhaust(maxAttempts, errorCode, ct) → JobExhaustResult: Success(ExhaustedCount) | FailureUnknown;
                                    Renew(id, owner, token, leaseSeconds, ct); Complete(id, owner, token, ct);
                                    FailTransient(id, owner, token, backoffSeconds, ct); FailTerminal(id, owner, token, errorCode, ct);
                                    ReleaseToPending(id, owner, token, ct)
 IJobFenceFactory        (2.5/2.6)  Create(ClaimedJob, JobExecutionOwnership) → IJobFence.ExecuteAsync(work, ct)
-IJobRetentionRepository (2.7/2.8)  DeleteFinishedOlderThan(retentionSeconds, batchSize, ct)
-IJobScheduleRepository  (2.9/2.10) Upsert(command, ct); Disable(scheduleType, ct); DisableById(id, ct); ListByType(scheduleType, ct);
+IJobRetentionRepository (2.7/2.8)  DeleteFinishedOlderThan(retentionSeconds, batchSize, ct) → JobRetentionResult: Success(DeletedCount) | FailureUnknown
+IJobScheduleRepository  (2.9/2.10) Upsert(command, ct) → JobScheduleUpsertResult: Success(ScheduleId) | FailureUnknown;
+                                   Disable(scheduleType, ct), DisableById(id, ct) → JobScheduleDisableResult: Success | FailureNotFound | FailureUnknown;
+                                   ListByType(scheduleType, ct) → JobScheduleListResult: Success(JobScheduleSummary(Id, TenantId, Enabled, IntervalMinutes, NextRunAt)[]) | FailureUnknown;
                                    MaterializeNextDue(owner, leaseSeconds, newJobId, ct)
                                      → Materialized(scheduleId, jobId, occurrence, newNextRunAt) | AlreadyEnqueued(scheduleId, occurrence) | NoneDue | OwnershipLost | FailureUnknown
 IJobEnqueuer            (3.2)      EnqueueAsync(command, DbTransaction?, ct)
 IJobHandler<TPayload>.ExecuteAsync(JobExecutionContext, TPayload, CancellationToken)
 IJobPayloadValidator<TPayload>.Validate(TPayload) → IReadOnlyList<string> failures
 JobExecutionContext(JobId, TenantContext, Attempt, MaxAttempts, IJobFence Fence)
-JobExecutionOwnership { State; Reason; Gate }                                       // D-7a, created in 2.1
+JobExecutionOwnership { State: JobOwnershipState; Reason;                           // D-7a, created in 2.1
+                         TryMarkUncertain(reason); TryBeginFinalizing(); TryMarkFinalized();   // compare-and-set; Uncertain is sticky and keeps its first reason
+                         EnterForRenewalAsync(ct); EnterAsync(ct) → IDisposable gate lease }  // waiting renewals are admitted before fences and finalization
 JobPermanentException(JobErrorCode); JobLeaseLostException; JobFenceUnavailableException
 JobOptions; JobOptionsValidator; JobRuntimeEnvironment; RetryBackoff; ScheduleOccurrenceMath (reference); JobPayloadContract; JobPayloadSerializer; JobDiagnostics; JobMetrics
 Hosted: JobWorkerService; JobScheduleDispatcherService; JobRetentionService
