@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -502,6 +503,216 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                     a.Id == approvedAppId
                 );
                 app.Enabled.Should().BeTrue();
+            }
+        }
+
+        /// <summary>
+        /// Creates a tenant with a unique name and a tenant context for it.
+        /// </summary>
+        private static async Task<TenantContextProvider> CreateTenantProvider(string suffix)
+        {
+            var tenantRepository = new TenantRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<TenantRepository>.Instance,
+                new TestAuditContext()
+            );
+            var tenantName = $"VendorTenant{suffix}-{Guid.NewGuid()}";
+            var tenantResult = await tenantRepository.InsertTenant(
+                new TenantInsertCommand { Name = tenantName }
+            );
+            tenantResult.Should().BeOfType<TenantInsertResult.Success>();
+            return new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(
+                    ((TenantInsertResult.Success)tenantResult).Id,
+                    tenantName
+                ),
+            };
+        }
+
+        private static VendorRepository CreateVendorRepository(TenantContextProvider tenantContextProvider) =>
+            new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+
+        private static VendorInsertCommand VendorCommand(
+            string company,
+            string contactName = "Tenant Tester"
+        ) =>
+            new()
+            {
+                Company = company,
+                ContactName = contactName,
+                ContactEmailAddress = "tenant@test.com",
+                NamespacePrefixes = "uri://tenant-test.example",
+            };
+
+        private static async Task<VendorInsertResult.Success> InsertVendor(
+            IVendorRepository repository,
+            VendorInsertCommand command
+        )
+        {
+            var result = await repository.InsertVendor(command);
+            result.Should().BeOfType<VendorInsertResult.Success>();
+            return (VendorInsertResult.Success)result;
+        }
+
+        private static async Task<VendorResponse> GetVendor(IVendorRepository repository, int id)
+        {
+            var result = await repository.GetVendor(id);
+            result.Should().BeOfType<VendorGetResult.Success>();
+            return ((VendorGetResult.Success)result).VendorResponse;
+        }
+
+        [TestFixture]
+        public class Given_vendors_with_the_same_company_in_two_tenants : VendorTests
+        {
+            private const string SharedCompany = "DMS1530 Shared Company";
+
+            private IVendorRepository _tenantARepository = null!;
+            private IVendorRepository _tenantBRepository = null!;
+            private VendorInsertResult.Success _tenantAInsert = null!;
+            private VendorInsertResult.Success _tenantBInsert = null!;
+
+            private static async Task<int[]> QueryVendorIds(IVendorRepository repository)
+            {
+                var result = await repository.QueryVendor(new VendorQuery());
+                result.Should().BeOfType<VendorQueryResult.Success>();
+                return [.. ((VendorQueryResult.Success)result).VendorResponses.Select(vendor => vendor.Id)];
+            }
+
+            [SetUp]
+            public async Task Setup()
+            {
+                _tenantARepository = CreateVendorRepository(await CreateTenantProvider("A"));
+                _tenantBRepository = CreateVendorRepository(await CreateTenantProvider("B"));
+
+                _tenantAInsert = await InsertVendor(_tenantARepository, VendorCommand(SharedCompany));
+                _tenantBInsert = await InsertVendor(_tenantBRepository, VendorCommand(SharedCompany));
+            }
+
+            [Test]
+            public void It_should_create_a_new_vendor_in_each_tenant()
+            {
+                _tenantAInsert.IsNewVendor.Should().BeTrue();
+                _tenantBInsert.IsNewVendor.Should().BeTrue();
+                _tenantBInsert.Id.Should().NotBe(_tenantAInsert.Id);
+            }
+
+            [Test]
+            public async Task It_should_list_only_its_own_tenants_vendor()
+            {
+                (await QueryVendorIds(_tenantARepository)).Should().Equal(_tenantAInsert.Id);
+                (await QueryVendorIds(_tenantBRepository)).Should().Equal(_tenantBInsert.Id);
+            }
+
+            [Test]
+            public async Task It_should_not_get_another_tenants_vendor()
+            {
+                (await _tenantBRepository.GetVendor(_tenantAInsert.Id))
+                    .Should()
+                    .BeOfType<VendorGetResult.FailureNotFound>();
+                (await GetVendor(_tenantARepository, _tenantAInsert.Id)).Company.Should().Be(SharedCompany);
+            }
+
+            // Reject-on-duplicate for POST belongs to DMS-1341; until it lands, a repeat within one
+            // tenant keeps updating the existing vendor.
+            [Test]
+            public async Task It_should_still_upsert_a_repeat_within_a_tenant()
+            {
+                var repeat = await InsertVendor(
+                    _tenantARepository,
+                    VendorCommand(SharedCompany, contactName: "Updated Contact")
+                );
+
+                repeat.IsNewVendor.Should().BeFalse();
+                repeat.Id.Should().Be(_tenantAInsert.Id);
+                (await GetVendor(_tenantARepository, _tenantAInsert.Id))
+                    .ContactName.Should()
+                    .Be("Updated Contact");
+                (await GetVendor(_tenantBRepository, _tenantBInsert.Id))
+                    .ContactName.Should()
+                    .Be("Tenant Tester");
+            }
+
+            [Test]
+            public async Task It_should_still_upsert_a_repeat_in_single_tenant_mode()
+            {
+                var first = await InsertVendor(_repository, VendorCommand("DMS1530 Single Tenant Company"));
+                var repeat = await InsertVendor(
+                    _repository,
+                    VendorCommand("DMS1530 Single Tenant Company", contactName: "Updated Contact")
+                );
+
+                repeat.IsNewVendor.Should().BeFalse();
+                repeat.Id.Should().Be(first.Id);
+            }
+
+            [Test]
+            public async Task It_should_let_a_single_tenant_vendor_share_a_tenants_company()
+            {
+                var singleTenant = await InsertVendor(_repository, VendorCommand(SharedCompany));
+
+                singleTenant.IsNewVendor.Should().BeTrue();
+                singleTenant.Id.Should().NotBe(_tenantAInsert.Id).And.NotBe(_tenantBInsert.Id);
+            }
+        }
+
+        [TestFixture]
+        public class Given_a_vendor_renamed_onto_an_existing_company_in_its_tenant : VendorTests
+        {
+            private const string TakenCompany = "DMS1530 Taken Company";
+            private const string OriginalCompany = "DMS1530 Original Company";
+            private const string OtherTenantCompany = "DMS1530 Other Tenant Company";
+
+            private IVendorRepository _tenantARepository = null!;
+            private int _vendorId;
+
+            [SetUp]
+            public async Task Setup()
+            {
+                _tenantARepository = CreateVendorRepository(await CreateTenantProvider("A"));
+                IVendorRepository tenantBRepository = CreateVendorRepository(await CreateTenantProvider("B"));
+
+                await InsertVendor(_tenantARepository, VendorCommand(TakenCompany));
+                _vendorId = (await InsertVendor(_tenantARepository, VendorCommand(OriginalCompany))).Id;
+                await InsertVendor(tenantBRepository, VendorCommand(OtherTenantCompany));
+            }
+
+            private Task<VendorUpdateResult> RenameTo(string company) =>
+                _tenantARepository.UpdateVendor(
+                    new VendorUpdateCommand
+                    {
+                        Id = _vendorId,
+                        Company = company,
+                        ContactName = "Renamer",
+                        ContactEmailAddress = "renamer@test.com",
+                        NamespacePrefixes = "uri://renamed.example",
+                    }
+                );
+
+            [Test]
+            public async Task It_should_reject_a_company_taken_in_its_tenant()
+            {
+                (await RenameTo(TakenCompany))
+                    .Should()
+                    .BeOfType<VendorUpdateResult.FailureDuplicateCompanyName>();
+
+                VendorResponse unchanged = await GetVendor(_tenantARepository, _vendorId);
+                unchanged.Company.Should().Be(OriginalCompany);
+                unchanged.ContactName.Should().Be("Tenant Tester");
+                unchanged.NamespacePrefixes.Should().Be("uri://tenant-test.example");
+            }
+
+            [Test]
+            public async Task It_should_allow_a_company_that_exists_only_in_another_tenant()
+            {
+                (await RenameTo(OtherTenantCompany)).Should().BeOfType<VendorUpdateResult.Success>();
+
+                (await GetVendor(_tenantARepository, _vendorId)).Company.Should().Be(OtherTenantCompany);
             }
         }
     }
