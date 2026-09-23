@@ -106,7 +106,8 @@ cleanup using original state. It also executes `cdc-restamp-handoff-status` and
 shared offset storage are checked independently of the successful CLI result.
 Missing, skipped or duplicate required cases fail separate History/Cleanup guards.
 [PostgreSQL T25 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
-records this live qualification; SQL Server T26 remains pending. Shared-volume
+and [SQL Server T26 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26)
+record this live qualification. Shared-volume
 teardown ordering remains separately qualified by the wrapper tests; controller
 cleanup supplies no platform purge or independent consumer-store evidence.
 

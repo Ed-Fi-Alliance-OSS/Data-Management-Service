@@ -27,14 +27,14 @@ for current command details and the linked design owners for support boundaries.
 | Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | PostgreSQL passed T18; SQL Server passed T19 |
 | Intact connector restart and resume | [intact-restart](#intact-restart) | PostgreSQL passed T18; SQL Server passed T19 |
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | PostgreSQL T21 / SQL Server T22 — qualified local scope |
-| Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; PostgreSQL T25 qualified; SQL Server T26 pending |
+| Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; PostgreSQL T25 and SQL Server T26 qualified |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
 | Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 — documented; T20 exercise pending |
 | Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 live qualification passed |
-| Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; PostgreSQL T25 qualified; SQL Server T26 pending |
-| Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; prior live stack cleanup and T25 wrapper ordering linked separately |
-| Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — documented; PostgreSQL T25 command handoffs qualified; SQL Server T26 pending |
-| Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) | T11 — documented; PostgreSQL T25 command handoffs qualified; SQL Server T26 pending |
+| Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; PostgreSQL T25 and SQL Server T26 qualified |
+| Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; prior live stack cleanup and T25/T26 wrapper ordering linked separately |
+| Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — documented; PostgreSQL T25 and SQL Server T26 command handoffs qualified |
+| Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) | T11 — documented; PostgreSQL T25 and SQL Server T26 command handoffs qualified |
 
 ## Procedure Record
 
@@ -1493,7 +1493,7 @@ the [disclosure-response handoff](#sensitive-data-response); connector stop is n
 
 ## Projection troubleshooting and administration handoff
 
-**Documented T06; [PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25) qualified; SQL Server T26 pending.** E18 owns projection
+**Documented T06; [PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25) and [SQL Server T26](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) qualified.** E18 owns projection
 administration. This procedure selects that workflow and explains its production
 history gate under the [projection administration owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration)
 and [cache-ahead recovery owner](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery).
@@ -1636,8 +1636,8 @@ V1 new-generation cutover remains [deferred](../design/backend-redesign/design-d
 
 The following stable result excerpts apply to all three guarded operations. The
 [packaged history fixtures](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs)
-compare these same fields after the real gate runs. PostgreSQL T25 executes both
-marked snippets; SQL Server T26 remains pending. Unit serialization checks alone do not prove admission.
+compare these same fields after the real gate runs. PostgreSQL T25 and SQL Server T26 execute both
+marked snippets. Unit serialization checks alone do not prove admission.
 
 An admitted `internalOnly` operation completes with exit `0`:
 
@@ -2542,13 +2542,13 @@ not an operator assumption that nothing was created.
 These scopes are exercised by the
 [provider cleanup cases](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcArtifactCleanupProviderTests.cs)
 and [interrupted-retirement fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs).
-The PostgreSQL History qualification invokes the exact retirement snippet with
-missing destructive confirmation and a wrong-generation substitution, then completes
-and repeats it after fixture-only interruptions at connector and topic deletion.
+Both provider History qualifications invoke the exact retirement snippet with
+missing destructive confirmation and a wrong-generation substitution, then complete
+and repeat it after fixture-only interruptions at connector and topic deletion.
 Those negative requests and injected faults are test cases, not operator steps.
 The same case executes the status/restamp handoff and disclosure stop snippets;
 stop preserves offsets and binding. [T25 evidence](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
-separates these command outcomes from restamp execution, consumer fencing and purge.
+and [T26 evidence](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) separate these command outcomes from restamp execution, consumer fencing and purge.
 They do not authorize deleting shared artifacts outside the binding.
 
 ### Partial cleanup and rejection actions
@@ -2682,9 +2682,10 @@ per-binding cleanup is not authority to remove shared files or volumes.
 [Lifecycle wrapper fixtures](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1)
 cover peer ordering, interrupted retirement/Compose/file cleanup, settings conflicts
 and nested state. [Provider-specific evidence rows](cdc-inv-evidence.md#procedure-evidence)
-link the T16/T18 stack-teardown snippet and T25 wrapper-ordering results separately
+link the T16/T18 PostgreSQL and T17/T19 SQL Server stack-teardown snippets and
+T25/T26 wrapper-ordering results separately
 from per-binding retirement. The E2E teardown alternative is covered by wrapper
-checks, not a new T25 live stack. Neither
+checks, not a new T25/T26 live stack. Neither
 wrapper exit `0` nor removed local volumes supplies platform byte-purge evidence,
 initial eligibility, migration continuity or a supported new-generation cutover.
 Use the [sensitive-data handoff](#sensitive-data-response) for disclosure evidence.
@@ -2773,7 +2774,7 @@ record versions/ETags without copying payloads into evidence. The existing
 checks this separate projection-and-publication outcome for both providers; it is
 not purge evidence or a live exercise of this marked status command. Exact snippet
 qualification passed [PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25);
-SQL Server T26 remains pending.
+[SQL Server T26](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) also passed.
 
 <a id="sensitive-data-response"></a>
 
@@ -2894,7 +2895,7 @@ and sanitized administrative outcomes; verify record differences without copying
 sensitive content. Neither restamp's bounded claim nor controller cleanup authorizes
 restoring Kafka access or closing the incident. Exact marked stop/retire commands passed
 [PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25);
-SQL Server T26 remains pending. Platform/consumer attestations
+[SQL Server T26](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) also passed. Platform/consumer attestations
 remain deployment-owned even after those fixtures pass.
 
 <a id="serialized-result-examples"></a>
