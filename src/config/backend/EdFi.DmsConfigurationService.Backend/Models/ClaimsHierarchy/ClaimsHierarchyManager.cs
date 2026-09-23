@@ -24,8 +24,7 @@ public interface IClaimsHierarchyManager
         string resourceClaimName,
         IReadOnlyCollection<string> enabledActionNames,
         IReadOnlyCollection<string> suppliedActionNames,
-        List<Claim> claims,
-        bool requireExistingAssociation = false
+        List<Claim> claims
     );
 
     bool RemoveClaimSetResourceActions(string claimSetName, string resourceClaimName, List<Claim> claims);
@@ -121,8 +120,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         string resourceClaimName,
         IReadOnlyCollection<string> enabledActionNames,
         IReadOnlyCollection<string> suppliedActionNames,
-        List<Claim> claims,
-        bool requireExistingAssociation = false
+        List<Claim> claims
     )
     {
         Claim? claim = FindClaim(resourceClaimName, claims);
@@ -134,11 +132,6 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         ClaimSet? claimSet = FindClaimSet(claim, claimSetName);
         if (claimSet is null)
         {
-            if (requireExistingAssociation)
-            {
-                return false;
-            }
-
             claimSet = new ClaimSet { Name = claimSetName, Actions = [] };
             claim.ClaimSets.Add(claimSet);
         }

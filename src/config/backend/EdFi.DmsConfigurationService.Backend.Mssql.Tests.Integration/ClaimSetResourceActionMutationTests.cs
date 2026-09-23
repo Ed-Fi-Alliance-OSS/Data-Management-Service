@@ -263,7 +263,7 @@ public class ClaimSetResourceActionMutationTests
         }
 
         [Test]
-        public async Task It_rejects_a_missing_target_association_without_mutating_other_associations()
+        public async Task It_adds_a_missing_target_association_without_mutating_other_associations()
         {
             int claimSetId = await CreateVendorClaimSet();
             await GrantRead(claimSetId, SchoolResourceClaimId);
@@ -276,15 +276,12 @@ public class ClaimSetResourceActionMutationTests
             var firstResult = await Repository.ModifyResourceClaimActions(command);
             var secondResult = await Repository.ModifyResourceClaimActions(command);
 
-            firstResult
-                .Should()
-                .BeOfType<ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound>();
-            secondResult
-                .Should()
-                .BeOfType<ClaimSetResourceActionMutationResult.FailureTargetAssociationNotFound>();
+            firstResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
+            secondResult.Should().BeOfType<ClaimSetResourceActionMutationResult.Success>();
             ((ClaimSetExportResult.Success)await Repository.Export(claimSetId))
                 .ClaimSetExportResponse.ResourceClaims.Should()
-                .NotContain(resourceClaim => resourceClaim.ClaimName == StudentClaimName);
+                .ContainSingle(resourceClaim => resourceClaim.ClaimName == StudentClaimName);
+            (await ExportEnabledActions(claimSetId, StudentClaimName)).Should().Equal("Create");
             (await ExportEnabledActions(claimSetId, SchoolClaimName)).Should().Equal("Read");
         }
     }
