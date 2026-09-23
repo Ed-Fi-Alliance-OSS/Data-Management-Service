@@ -852,7 +852,8 @@ public partial class Given_Cdc_command_configuration
 [TestFixture(Ddl.CdcProvider.Postgresql)]
 [TestFixture(Ddl.CdcProvider.SqlServer)]
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
-internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcReadinessTestBase(provider)
+internal partial class Given_Cdc_command_managed_start(Ddl.CdcProvider provider)
+    : CdcReadinessTestBase(provider)
 {
     private string _settingsPath = null!;
     private bool _stopped;
@@ -956,7 +957,8 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
     private Task<CdcCommandResult> CommandAsync(
         CdcCommandOperation operation = CdcCommandOperation.Start,
         CancellationToken token = default,
-        string settingsPath = ""
+        string settingsPath = "",
+        string snippetId = ""
     )
     {
         var runner = new CdcCommandRunner(
@@ -994,6 +996,16 @@ internal class Given_Cdc_command_managed_start(Ddl.CdcProvider provider) : CdcRe
             ConfigureManagedLifecycle = _ =>
                 new(_root, _provider, _templates, _kafka, _connect, _worker, _metrics, [_positions]),
         };
+        if (snippetId.Length > 0)
+        {
+            return CdcRunbookSnippets.InvokeAsync(
+                snippetId,
+                runner,
+                _settingsPath,
+                _root,
+                Target.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            );
+        }
         return runner.RunAsync(
             new(
                 operation,

@@ -7,9 +7,11 @@ lifecycle, connector restart/resume, recovery classification and the projection
 administration/history handoff, monitoring, provider-retention troubleshooting,
 security and consumer-evidence checklists, coordinated record-size increases, guarded
 generation retirement, destructive stack teardown, compatible restamp handoff and
-sensitive-data disclosure response are documented. Exact live snippet qualification
-and documentation-check integration remain **pending**. A reserved procedure or
-snippet ID is not an executable procedure or evidence of a successful deployment.
+sensitive-data disclosure response are documented. Marked CLI commands, settings
+and acknowledgement inputs have
+[focused automated checks](cdc-inv-evidence.md#documentation-verification). Exact live
+snippet qualification, output/link checks and wrapper/qualification integration remain
+**pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.

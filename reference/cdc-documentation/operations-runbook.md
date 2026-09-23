@@ -74,9 +74,11 @@ silently replace targets, schemas, endpoints, settings paths, state roots, gener
 or credentials in a test harness. Retained controller outputs are inputs to later
 commands, not fixture-generated provenance.
 
-Only marked runnable examples are inputs to the focused checks planned in T13–T15.
-Illustrative output is separately identified and checked against production
-serialization fixtures. Reserved IDs, unmarked blocks and prose must not be executed.
+Only marked runnable examples are inputs to the focused checks. T13 checks CLI
+commands, settings and acknowledgement inputs; T14–T15 add output/link checks and
+wrapper/qualification wiring. Illustrative output is separately identified for
+checks against production serialization fixtures. Reserved IDs, unmarked blocks
+and prose must not be executed.
 The [evidence index](cdc-inv-evidence.md#recording-results) distinguishes parser checks
 from live provider exercises.
 
