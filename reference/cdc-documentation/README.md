@@ -12,6 +12,7 @@ acknowledgement inputs, serialized result excerpts and touched document links ha
 [focused automated checks](cdc-inv-evidence.md#documentation-verification). Packaged host
 checks cover output streams and exits. Wrapper snippet checks and required-case guards run
 in Contract/PR. [PostgreSQL local/direct-E2E setup](cdc-inv-evidence.md#postgresql-setup-qualification-t16)
+and [SQL Server local/published/direct-E2E setup](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
 and observation snippets passed live qualification; remaining procedures are **pending**. A reserved procedure or snippet ID is not an executable procedure or evidence of a successful deployment.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
@@ -63,7 +64,7 @@ API-driven message scenarios belong to [DMS-1325](../design/backend-redesign/epi
 | Deployment, readiness, recovery, and security contracts | [CDC integration design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#authority-and-document-ownership). |
 | Projector/source behavior | [ADR 0001](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md). |
 | Topic/message, consumer, and compatibility contract | [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md). |
-| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; PostgreSQL setup has live evidence; remaining live procedures are pending. |
+| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; setup for both providers has live evidence; remaining live procedures are pending. |
 
 ## Scope Boundaries and Missing Surfaces
 
@@ -83,7 +84,9 @@ retries to validation-only; missing users and conflicting SIDs then fail without
 provider/controller qualification and wrapper ordering checks for this former setup gap.
 The [SQL Server operator procedure](operations-runbook.md#sql-server-setup) and
 [E2E variant](operations-runbook.md#sql-server-e2e-variant) are documented in T03.
-T17 still owns their exact public runbook-snippet qualification; live results remain pending.
+[T17 live evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17) now covers local,
+published and direct E2E setup from the restricted login, including the production
+user mapping and writer-publication boundary. Build-based E2E remains unexercised.
 
 If a later procedure needs a missing capability, record the command/fixture, expected
 surface, and observed gap here. Required runtime integration work belongs to DMS-1326,

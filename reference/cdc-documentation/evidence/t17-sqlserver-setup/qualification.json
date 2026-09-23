@@ -1,0 +1,44 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 42,
+    "Passed": 42,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Mssql-CdcControllerAdmission",
+    "EvidenceSource": "Full Mssql Admission runner, 2026-09-22"
+  },
+  {
+    "Name": "Mssql-runbook-setup",
+    "Status": "Passed",
+    "Total": 3,
+    "Passed": 3,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+        "SnippetId": "cdc-sqlserver-bootstrap-local",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+        "SnippetId": "cdc-sqlserver-bootstrap-published",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+        "SnippetId": "cdc-sqlserver-e2e-setup",
+        "Outcome": "Passed"
+      }
+    ],
+    "EvidenceSource": "Final shared Mssql setup fixture with the same required-case guard, 2026-09-23"
+  }
+]

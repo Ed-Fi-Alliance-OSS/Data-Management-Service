@@ -54,8 +54,9 @@ described in the [entry point](README.md#supported-deployment).
 | Procedure | Design link / invariant contribution | Provider | Stable test identifiers (reuse candidates; method/case wiring pending) | Snippet ID (documented or reserved) | Qualification profile/image | Sanitized artifact reference | Actual result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [PostgreSQL local setup](operations-runbook.md#postgresql-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | PostgreSQL | `CDC-DOC cdc-pg-bootstrap-local` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); [behavioral cases](#postgresql-setup-qualification-t16) | `cdc-pg-infrastructure`, `cdc-pg-settings`, `cdc-pg-bootstrap-local`, `cdc-pg-status`, `cdc-pg-watch` | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t16-postgresql-setup/run-details.json) | [Live outcomes](evidence/t16-postgresql-setup/cdc-runbook-live-setup.json), [qualification](evidence/t16-postgresql-setup/qualification.json) | Passed T16; observation exits 1 with projection Unknown. Interactive role prompt and published alternative not exercised. |
-| [SQL Server local setup](operations-runbook.md#sql-server-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_CdcProjectionPrerequisite_Managed_Provisioning](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcProjectionPrerequisiteTests.cs) — `It_prepares_before_schema_and_requires_separate_server_authority`, `It_inspects_current_prerequisites_on_retry_without_repair`; [T29 mapping fixtures](#sql-server-initial-user-mapping-t29); exact snippet case pending | `cdc-sqlserver-infrastructure`, `cdc-sqlserver-settings`, `cdc-sqlserver-bootstrap-local`, `cdc-sqlserver-bootstrap-published`, `cdc-sqlserver-status`, `cdc-sqlserver-watch` | Pending | Pending — no artifact | Documented T03; live exercise pending T17 |
-| [DMS E2E opt-in](operations-runbook.md#dms-e2e-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | PostgreSQL; SQL Server pending | `CDC-DOC cdc-pg-e2e-setup` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); both `Given_CdcE2ESetup` smoke tests | `cdc-pg-e2e-setup`, `cdc-pg-e2e-test`; build and SQL Server alternatives pending | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t16-postgresql-setup/run-details.json) | [Live outcomes](evidence/t16-postgresql-setup/cdc-runbook-live-setup.json), [smoke details](evidence/t16-postgresql-setup/run-details.json) | PostgreSQL direct setup passed T16, smoke 2 passed/0 skipped. Build alternative not exercised; SQL Server pending T17. No API-driven message certification. |
+| [SQL Server local / published setup](operations-runbook.md#sql-server-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | `CDC-DOC cdc-sqlserver-bootstrap-local`, `CDC-DOC cdc-sqlserver-bootstrap-published` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); [E18 prerequisite evidence](#sql-server-setup-qualification-t17) | `cdc-sqlserver-infrastructure`, `cdc-sqlserver-settings`, `cdc-sqlserver-bootstrap-local`, `cdc-sqlserver-bootstrap-published`, `cdc-sqlserver-status`, `cdc-sqlserver-watch` | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t17-sqlserver-setup/run-details.json) | [Live outcomes](evidence/t17-sqlserver-setup/cdc-runbook-live-setup.json), [assertions](evidence/t17-sqlserver-setup/run-details.json) | Both passed T17, zero skips; production user mapping, narrow grants and writer publication from an absent target database. Published images are fixture-packaged branch builds. |
+| [DMS E2E opt-in](operations-runbook.md#dms-e2e-setup) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | PostgreSQL | `CDC-DOC cdc-pg-e2e-setup` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); both `Given_CdcE2ESetup` smoke tests | `cdc-pg-e2e-setup`, `cdc-pg-e2e-test`; build alternative unexercised | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t16-postgresql-setup/run-details.json) | [Live outcomes](evidence/t16-postgresql-setup/cdc-runbook-live-setup.json), [smoke details](evidence/t16-postgresql-setup/run-details.json) | PostgreSQL direct setup passed T16, smoke 2 passed/0 skipped. Build alternative not exercised. No API-driven message certification. |
+| [DMS E2E opt-in](operations-runbook.md#sql-server-e2e-variant) | [CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | SQL Server | `CDC-DOC cdc-sqlserver-e2e-setup` in [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1); both `Given_CdcE2ESetup` smoke tests | `cdc-sqlserver-e2e-setup`, shared `cdc-pg-e2e-test` with documented SQL Server inputs | LocalSingleBroker / AuthorizationDisabledLocal; [images/substitutions](evidence/t17-sqlserver-setup/run-details.json) | [Live outcomes](evidence/t17-sqlserver-setup/cdc-runbook-live-setup.json), [snapshot/smoke assertions](evidence/t17-sqlserver-setup/run-details.json) | Direct setup passed T17; distinct snapshot, smoke 2 passed/0 skipped. Build alternative unexercised. No API-driven message certification. |
 | [Preserve deployment state](operations-runbook.md#deployment-state) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral) | PostgreSQL | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume` (missing/corrupt/unsafe-permissions/contradictory bindings, workflows and source-history; incomplete completions; integrity reports); live snippet wiring pending | `cdc-state-inventory` | Pending | Pending — no artifact | Documented T04; live exercise pending T18 |
 | [Preserve deployment state](operations-runbook.md#deployment-state) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral) | SQL Server | [Given_Cdc_Controller_Managed_Lifecycle](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs) — `It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume` (missing/corrupt/unsafe-permissions/contradictory bindings, workflows and source-history; incomplete completions; integrity reports); live snippet wiring pending | `cdc-state-inventory` | Pending | Pending — no artifact | Documented T04; live exercise pending T19 |
 | [Interrupted initial-enable retry](operations-runbook.md#initial-enable-retry) | [CDC-INV-14; CDC-INV-15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | PostgreSQL | [Given_Cdc_command_enable_retry](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandEnableRetryTests.cs) — `It_resumes_the_same_command_after_a_stage_interruption` (provider/broker-start/worker-start/preflight/post-after/barrier/metrics); `It_rejects_ineligible_original_evidence_before_provider_or_Kafka_effects`; `It_preserves_combined_initial_containment_failures_in_command_json`; unit reuse candidates, live snippet wiring pending | `cdc-enable-retry` | Pending | Pending — no artifact | Documented T04; live exercise pending T18 |
@@ -125,6 +126,7 @@ The current [suite filter owner](../../eng/ci/cdc-qualification.psm1) and
 | --- | --- | --- |
 | Admission | Backend.Cdc.Tests.Integration | `Category=CdcControllerAdmission` |
 | PostgreSQL Admission setup | RunbookSetup.Live.Tests.ps1 | Explicit selection, both `CDC-DOC cdc-pg-bootstrap-local` and `CDC-DOC cdc-pg-e2e-setup` required; excluded from Contract glob |
+| SQL Server Admission setup | RunbookSetup.Live.Tests.ps1 | Explicit `Mssql` selection; `CDC-DOC cdc-sqlserver-bootstrap-local`, `CDC-DOC cdc-sqlserver-bootstrap-published` and `CDC-DOC cdc-sqlserver-e2e-setup` required; excluded from Contract glob |
 | Lifecycle | Backend.Cdc.Tests.Integration | `Category=CdcControllerManagedLifecycle` |
 | Recovery | Backend.Cdc.Tests.Integration | `Category=CdcControllerNativeRecovery` |
 | RecordSize | Backend.Cdc.Tests.Integration | `Category=CdcControllerRecordSize` |
@@ -172,15 +174,15 @@ login; its elevated-user rejection case explicitly injects an existing invalid u
 
 | Procedure / layer | Design / invariant | Provider | Stable test identifiers | Snippet ID | Profile / image | Sanitized artifact | Actual result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Initial user mapping / controller admission | [SQL Server setup; CDC-INV-14/15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_SqlServer_Controller_Admission](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcMssqlAdmissionTests.cs): `It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag`; `It_rejects_initial_connector_mapping_before_registration_or_publication` (4 cases); `It_never_repairs_connector_mapping_after_durable_provider_completion` (2 cases); `It_reconciles_exact_capture_after_lost_provider_evidence_without_repair` | None: runtime prerequisite; `cdc-sqlserver-bootstrap-*` remains T17 | Mssql Admission category selection; qualified Connect digest, pinned SQL Server 2025 and resolved Kafka digest in artifact; `aclIsolationProven: false` | [Admission cases](evidence/t29-sqlserver-initial-user-mapping.json) | 8 final cases passed; no skips. Happy path verifies absent user before setup, same login SID afterward, and eventual writer publication. Initial rejection and post-completion removal/conflict keep publication unauthorized. |
+| Initial user mapping / controller admission | [SQL Server setup; CDC-INV-14/15](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_SqlServer_Controller_Admission](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcMssqlAdmissionTests.cs): `It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag`; `It_rejects_initial_connector_mapping_before_registration_or_publication` (4 cases); `It_never_repairs_connector_mapping_after_durable_provider_completion` (2 cases); `It_reconciles_exact_capture_after_lost_provider_evidence_without_repair` | None: runtime prerequisite; [public commands qualified in T17](#sql-server-setup-qualification-t17) | Mssql Admission category selection; qualified Connect digest, pinned SQL Server 2025 and resolved Kafka digest in artifact; `aclIsolationProven: false` | [Admission cases](evidence/t29-sqlserver-initial-user-mapping.json) | 8 final cases passed; no skips. Happy path verifies absent user before setup, same login SID afterward, and eventual writer publication. Initial rejection and post-completion removal/conflict keep publication unauthorized. |
 | Mapping, narrow grants and effective access / provider integration | [SQL Server provider](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_MssqlCdcProviderAccessRetry](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCdcProviderAccessRetryTests.cs); every executed method/case appears in artifact | None: provider regression | Fixture-owned SQL Server 2025; restricted connector live probe | [Provider cases](evidence/t29-sqlserver-initial-user-mapping.json) | 29 final cases passed; no skips. Includes a connector-credential boundary probe and exact retry after a missing-login rejection. |
 | Mapping and interruption / unit | [SQL Server provider](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server) | SQL Server | [Given_MssqlCdcPrincipalAccess_Initial_Setup / ValidateOnly](../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs); filter `FullyQualifiedName~MssqlCdc\|FullyQualifiedName~CdcProviderRetry` | None | In-memory executor | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 82 passed, plus 6 work-table exclusion checks; includes absent/unsupported/elevated login, conflicting SID/type, safe quoting, insufficient setup authority, interrupted mapping/grants, exact retry and validation-only rejection. |
 | Durable completion and initial retry / unit | [Managed setup boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence) | Both provider variants | [Given_CdcProviderSetupOrchestration](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcProviderSetupOrchestrationTests.cs); [Given_Cdc_command_enable_retry](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcCommandEnableRetryTests.cs) | None | Controller/CLI fakes | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 68 controller + 86 CLI cases passed; no skips. |
-| Shared public-wrapper handoff / Pester | [Local bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | Both provider variants | [CdcBootstrapWorkflow.Tests.ps1](../../eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1), [CdcE2EWorkflow.Tests.ps1](../../eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1): retained-state retry before writer/seed; SQL Server local/published E2E provider-admission rejection | None: mocked wiring | PowerShell 7.6.6 / Pester | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 131 passed; no skips. Public command/snippet live exercise remains T17. |
+| Shared public-wrapper handoff / Pester | [Local bootstrap](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci) | Both provider variants | [CdcBootstrapWorkflow.Tests.ps1](../../eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1), [CdcE2EWorkflow.Tests.ps1](../../eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1): retained-state retry before writer/seed; SQL Server local/published E2E provider-admission rejection | None: mocked wiring | PowerShell 7.6.6 / Pester | [Check totals](evidence/t29-sqlserver-initial-user-mapping.json) | 131 passed; no skips. Public command/snippet live evidence is recorded separately in [T17](#sql-server-setup-qualification-t17). |
 
 T03 documents the [SQL Server setup examples](operations-runbook.md#sql-server-setup)
-and [E2E variant](operations-runbook.md#sql-server-e2e-variant). T17 must still execute those exact
-marked examples through the public local, published and DMS E2E surfaces. These results
+and [E2E variant](operations-runbook.md#sql-server-e2e-variant). [T17](#sql-server-setup-qualification-t17)
+now supplies the exact marked examples through public local, published and direct DMS E2E surfaces. These results
 are provider/controller qualification, not DMS-1325 API-driven message evidence, ACL
 isolation proof, or production deployment qualification. No relational mapping/hash or
 `RelationalMappingVersion` change was made.
@@ -260,3 +262,80 @@ from the new runbook invocation cases.
 | [Given_A_Postgresql_DocumentCacheOfflineActivation_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheOfflineActivationTests.cs) | `It_resumes_rebuilding_without_repeating_destructive_clearing` | Passed, 1 |
 | [Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheOnlineCacheRebuildTests.cs) | `It_resumes_rebuilding_without_repeating_cache_clearing` | Passed, 1 |
 | [Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Command](../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDocumentCacheInternalOnlyCacheAheadRecoveryTests.cs) | `It_resumes_resetting_with_the_latch_set_without_reentering_resetting`, `It_resumes_rebuilding_with_clear_latch_without_repeating_destructive_clearing` | Passed, 2 |
+
+## SQL Server Setup Qualification (T17)
+
+The existing [Mssql Admission selection](../../eng/ci/Invoke-CdcQualification.ps1)
+passed all [42 controller cases](evidence/t17-sqlserver-setup/admission-results.json),
+zero failed/skipped. These behavioral cases cover initial admission, intact retries,
+rejected prerequisites and stale/unavailable observations. This baseline started
+before the clock correction below. The final marked wrapper runs and full controller
+unit run qualify the corrected build.
+
+The live production path exposed a clock-domain integration gap: three of six fresh
+SQL Server reads returned database timestamps earlier than their host request-start
+times. [Sanitized reproduction and regression identifiers](evidence/t17-sqlserver-setup/projection-clock.json)
+record the result. The [controller adapter](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcControllerObservations.cs)
+now correlates the fresh durable read on the host clock, under the
+[owning readiness contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
+The [clock regression fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcControllerProjectionObservationTests.cs)
+and existing readiness fixtures passed 158 cases for both providers; the full CDC
+controller unit project passed 4,628 cases, zero failed/skipped.
+No relational mapping, schema hash, status payload timestamp or provider-position
+comparison changed.
+
+**Passed:** all three required marked setup cases and both E2E smoke tests, zero
+failed/skipped. The [qualification report](evidence/t17-sqlserver-setup/qualification.json)
+combines the 42-case Admission baseline with the final shared-fixture setup run;
+[named outcomes](evidence/t17-sqlserver-setup/cdc-runbook-live-setup.json) and
+[assertions, images and substitutions](evidence/t17-sqlserver-setup/run-details.json)
+record the final run. The [initial complete Admission runner report](evidence/t17-sqlserver-setup/initial-qualification.json)
+also passed 42 controller and three setup cases. Its published image lookup used
+the local container name; after making image inspection fail closed and resolving
+by Compose project/service, all three setup cases were rerun successfully. No
+incomplete image evidence is used in the final assertions.
+
+The shared [live fixture](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1)
+and Mssql Admission selection require local, published and direct E2E setup separately.
+Missing, skipped, duplicate or unexecuted cases fail the required-case report.
+The final local and published wrappers each required one intact initial retry;
+per-case attempt counts are recorded in the assertions. Production setup created
+the user from the fixture's restricted login and absent target database; assertions verified
+matching SID, narrow effective access, writer-publication authority, CMS target 1,
+original state and matching schema projects. No fixture-side user creation or SQL
+repair occurred between provisioning and admission. Capture includes only
+`CdcHeartbeat`, `Document` and `DocumentCache`; `DocumentProjectionWork` is excluded.
+
+The settings blocks use declared private paths/credentials, base datastore tokens
+`mssql`, host port 1435, 180-second calls, 600-second waits, the documented 60-second
+observation-age bound and two watch passes. Local/published setup uses Ed-Fi/TPDM;
+direct E2E uses Ed-Fi/Homograph/Sample/TPDM and separate primary/snapshot databases.
+Snapshot assertions require one `EffectiveSchema` row and no connector user.
+Published fixtures package matching branch application/CMS images under the
+published Compose names and record immutable image IDs; they do not certify a
+registry release.
+
+Exact SQL Server status/watch commands return exit 1 with provider/connector
+`Satisfied`, standalone projection `Unknown`, aggregate `NotReady` and
+`aclIsolationProven: false`. Writer-publication success does not change this
+standalone observation limitation. Smoke tests check HTTP/database health only;
+DMS-1325 API-driven messages, secured Kafka and the build-based E2E alternative
+remain unqualified here. Governed teardown completed for every selected case;
+the complete retirement/fault matrix remains with T25/T26. Raw settings, output,
+credentials, SIDs, offsets and document data remain outside the committed evidence.
+
+The following behavioral evidence reuses E18/provider fixtures on an exclusively
+owned SQL Server 2025 instance. It does not substitute for the marked setup commands.
+Server-setting faults restore the original settings in teardown. No source scans,
+new projector implementation or production recovery workflow were added.
+
+| Setting / procedure | Stable test identifiers | Actual result / artifact |
+| --- | --- | --- |
+| RCSI and nested triggers: initialization rejection; Disabled correction/restart | [Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer](../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/CdcProjectionPrerequisiteTests.cs).`It_rejects_drift_on_retry_and_E18_initialization_without_repair` (`rcsi` / `nested triggers`, `Disabled`); same method with `Tracking`, `Resetting`, `Rebuilding` classifies unsupported incidents without correction or renewed-readiness assertions | All 8 parameter cases passed in the 15-case [prerequisite run](evidence/t17-sqlserver-setup/e18/prerequisites.json), zero failed/skipped |
+| RCSI and nested triggers: activation rejection then correction/retry | [Given_DocumentCacheAdminMssqlActivationPrerequisite](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/Given_DocumentCacheAdminMssqlStatusAndPrerequisites.cs).`It_rejects_activation_when_read_committed_snapshot_is_disabled_without_mutation_then_succeeds_after_correction`; `It_rejects_activation_when_nested_triggers_are_disabled_without_mutation_then_succeeds_after_correction` | Both packaged command cases [passed](evidence/t17-sqlserver-setup/e18/activation.json), zero failed/skipped |
+| Restart from durable queue; indexed no-scan paging; reset/rebuild crash recovery; prerequisite validator | Existing [Mssql projector](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheProjectorTests.cs), [query-plan](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheQueryPlanTests.cs), [rebuild](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheOnlineCacheRebuildTests.cs), [deactivation](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheOfflineDeactivationTests.cs), [cache-ahead](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheInternalOnlyCacheAheadRecoveryTests.cs) and [validator](../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlDocumentCacheProviderPrerequisiteValidatorTests.cs) fixtures; every exact method/case in artifact | [14 passed](evidence/t17-sqlserver-setup/e18/e18.json), zero failed/skipped |
+
+Changes after successful active validation remain outside v1 support; the above
+rejection evidence supplies no active recovery or renewed-readiness guarantee. Follow
+the [SQL Server prerequisite boundary](operations-runbook.md#sql-server-prerequisite-and-failure-handoffs)
+and [owning contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).

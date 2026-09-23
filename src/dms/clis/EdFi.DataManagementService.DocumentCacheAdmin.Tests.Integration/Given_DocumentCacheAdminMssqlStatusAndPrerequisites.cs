@@ -418,7 +418,7 @@ public sealed class Given_DocumentCacheAdminMssqlActivationPrerequisite
     }
 
     [Test]
-    public async Task It_rejects_activation_when_nested_triggers_are_disabled_without_mutation()
+    public async Task It_rejects_activation_when_nested_triggers_are_disabled_without_mutation_then_succeeds_after_correction()
     {
         await using DocumentCacheAdminCliTarget target = await DocumentCacheAdminCliTarget.CreateMssqlAsync();
         await target.State.SetMssqlReadCommittedSnapshotAsync(enabled: true);
@@ -440,6 +440,17 @@ public sealed class Given_DocumentCacheAdminMssqlActivationPrerequisite
                 commandResult["mutated"]!.GetValue<bool>().Should().BeFalse();
                 await AssertEmptyDisabledTargetAsync(target);
                 (await target.State.ReadMssqlNestedTriggersEnabledAsync()).Should().BeFalse();
+                await target.State.SetMssqlNestedTriggersAsync(enabled: true);
+                DocumentCacheAdminCliProcessResult successResult = await RunActivateNewEmptyAsync(target);
+                JsonObject success = AssertActivationResult(
+                    successResult,
+                    target,
+                    DocumentCacheAdminExitCodes.Success
+                );
+                success["status"]!.GetValue<string>().Should().Be("completed");
+                success["mutated"]!.GetValue<bool>().Should().BeTrue();
+                success["lifecycle"]!.GetValue<string>().Should().Be("tracking");
+                (await target.State.ReadLifecycleAsync()).ProjectionLifecycleState.Should().Be("Tracking");
             }
         );
     }

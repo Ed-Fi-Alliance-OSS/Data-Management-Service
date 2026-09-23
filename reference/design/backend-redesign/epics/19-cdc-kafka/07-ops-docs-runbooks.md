@@ -72,6 +72,11 @@ complete the SQL Server initial connector-user mapping needed by the public setu
 - Cross-link E18 projection/restamp guidance and the design-owned deferred workflows.
 - Add documentation checks against command help, templates, status output, and test
   fixtures.
+- Qualify the real SQL Server projection observation path. Correlate fresh standalone
+  reads with the controller clock under the owning readiness contract; database-clock
+  granularity/skew must not reject fresh reads. Keep stale/missing evidence and elapsed
+  call bounds fail-closed. T17 owns this runtime integration fix and its regression
+  coverage; it changes no relational mapping or schema hash.
 
 ## Resolved Runbook Delivery and Verification Scope
 

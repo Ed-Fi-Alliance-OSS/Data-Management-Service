@@ -1,0 +1,23 @@
+{
+  "Provider": "SqlServer",
+  "Reproduction": "Six successive production standalone projection observations on the owned local SQL Server 2025 fixture; no cached status or fabricated provider output.",
+  "FreshReads": 6,
+  "DatabaseTimestampEarlierThanHostCallStart": 3,
+  "OperationalReads": 6,
+  "UnitFixture": "Given_Cdc_projection_observation_clocks(Postgresql/SqlServer)",
+  "RegressionMethods": [
+    "It_correlates_a_fresh_durable_read_on_the_controller_clock(-300/300)",
+    "It_rejects_missing_durable_evidence_and_stale_or_uncorrelated_host_observations(stale-response/future-response/mismatched-process/missing-durable/expired-call)"
+  ],
+  "FocusedReadinessAndClockTests": {
+    "Passed": 158,
+    "Failed": 0,
+    "Skipped": 0
+  },
+  "Contract": "Host envelope and bounded fresh durable read, correlated at host completion; database clock retained for diagnostics only.",
+  "FullControllerUnitTests": {
+    "Passed": 4628,
+    "Failed": 0,
+    "Skipped": 0
+  }
+}

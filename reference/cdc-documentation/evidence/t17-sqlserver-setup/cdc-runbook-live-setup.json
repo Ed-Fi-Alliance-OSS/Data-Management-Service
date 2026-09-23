@@ -1,0 +1,17 @@
+[
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+    "SnippetId": "cdc-sqlserver-bootstrap-local",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+    "SnippetId": "cdc-sqlserver-bootstrap-published",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+    "SnippetId": "cdc-sqlserver-e2e-setup",
+    "Outcome": "Passed"
+  }
+]

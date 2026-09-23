@@ -486,6 +486,17 @@ and [`SubmittedRecords`](https://github.com/apache/kafka/blob/4.3.0/connect/runt
 The heartbeat table is not projection work, completeness evidence, a public event source,
 or part of the immutable binding record.
 
+Projection observation freshness is measured on the controller host clock. The
+production standalone status call must perform a new durable read, return its host
+process-observation envelope within the current call interval, and complete within
+the configured observation-age bound. Correlate the completed read with a host-clock
+completion timestamp before capturing the provider barrier. The database's durable
+observation timestamp remains diagnostic data for projection status and queue age;
+it is not compared with the host request-start time. SQL Server clock granularity
+and cross-host clock skew cannot establish or invalidate that call ordering. Missing
+durable evidence, stale or mismatched host envelopes, and expired calls still reject
+readiness. Provider positions, not wall-clock comparison, prove barrier coverage.
+
 For initial combined readiness only, deployment automation performs this sequence:
 
 1. Verify that the setup controller created the selected new physical database and has not

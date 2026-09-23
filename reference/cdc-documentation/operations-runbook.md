@@ -16,8 +16,8 @@ for current command details and the linked design owners for support boundaries.
 | Need | Procedure | Documentation task |
 | --- | --- | --- |
 | PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 local setup passed |
-| SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 exercise pending |
-| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL direct setup passed T16; SQL Server pending T17 |
+| SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 local/published setup passed |
+| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL / SQL Server direct setup passed T16/T17; build alternatives unexercised |
 | Preserve deployment state | [deployment-state](#deployment-state) | T04 — documented; T18/T19 exercise pending |
 | Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; T18/T19 exercise pending |
 | Established validation and restart preflight | [established-validation](#established-validation) | T04 — documented; T18/T19 exercise pending |
@@ -473,7 +473,7 @@ is not gated by CDC status; see [readiness scope](../design/backend-redesign/des
 
 ## SQL Server local setup
 
-**Documented in T03; exact public snippets await T17 live exercise.** Use the same
+**Local and published setup passed [T17 live qualification](cdc-inv-evidence.md#sql-server-setup-qualification-t17).** Use the same
 [owned local profile](README.md#supported-deployment), Linux/Docker/toolchain,
 private-file protections, writer/seed exclusion, complete normal DMS settings and
 CMS-selection rules in [shared preparation](#prepare-the-owned-deployment). Follow
@@ -506,12 +506,13 @@ SQL Server Agent when `-CdcDatabaseInfrastructure` or CDC bootstrap is selected.
 A successful SQL connection or container/HTTP health check does not prove Agent,
 projection prerequisites, capture progress or CDC readiness.
 
-Prepare the protected `eng/docker-compose/.env` with effective `MSSQL_PORT=1435`,
+Prepare the protected `eng/docker-compose/.env` with `DMS_DATASTORE=mssql`,
+`DMS_CONFIG_DATASTORE=mssql`, effective `MSSQL_PORT=1435`,
 `MSSQL_DB_NAME=edfi_datamanagementservice` and a private `MSSQL_SA_PASSWORD`, plus
 normal CMS/identity settings and the connector's `CDC_DATABASE_PASSWORD`.
 The shipped [engine resolver](../../eng/docker-compose/env-utility.psm1) applies
 [.env.mssql](../../eng/docker-compose/.env.mssql), preserving nonblank custom MSSQL
-credentials/names/ports and producing an effective file under `.derived` when needed.
+credentials/names/ports **when the base file declares MSSQL** and producing an effective file under `.derived` when needed.
 Reconcile ambient overrides before preparation. Retain base and effective files;
 all phases must use the same resolved values. SQL Server hosts CMS too; use
 `-SeparateConfigDatabase` so the dedicated CMS database differs from the new CDC
@@ -565,7 +566,10 @@ restricted login and owner-only `.local/cdc` directory. Creates new settings/sta
 use retained inputs for retries. The masked setup connection has the shape
 `Server=127.0.0.1,1435;Database=edfi_cdc;User Id=sa;Password=…;Encrypt=true;TrustServerCertificate=true;Command Timeout=180`.
 Use a connection-string builder for escaped values. The 180-second SQL command and
-controller call budgets match; the bounded admission wait is 600 seconds.
+controller call budgets match; the bounded admission wait is 600 seconds. The
+one-minute observation-age policy includes live read-back and projector shutdown,
+as in the existing SQL Server qualification fixture. Each retry still collects new
+observations; expiry never supplies publication authority.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
@@ -621,7 +625,7 @@ $settings.Cdc = @{
     }
     Timing = @{
         CallMilliseconds = 180000; WaitMilliseconds = 600000
-        PollMilliseconds = 1000; MaximumObservationAgeMilliseconds = 10000
+        PollMilliseconds = 1000; MaximumObservationAgeMilliseconds = 60000
     }
 }
 $null = New-Item -ItemType Directory -Path $statePath -Force
@@ -671,6 +675,9 @@ if ($LASTEXITCODE -ne 0) { throw 'CDC bootstrap failed; retain state and keep wr
 
 PowerShell, repository root; same substitutions, but requires published infrastructure
 and matching published application/schema-tool inputs in its own fresh workspace.
+For qualification, `DMS_IMAGE_TAG` may select fixture-packaged images built from this
+same branch and tagged under the published Compose image names; this exercises the
+published wrapper, not a registry release. Record their immutable local image IDs.
 The wrapper selects project `dms-published` in the emitted settings.
 
 <!-- cdc-snippet: cdc-sqlserver-bootstrap-published -->
@@ -739,14 +746,16 @@ schema history; raw Connect mutation is not the managed handoff.
 
 The owning [SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
 and [T29 implementation evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
-define the mapping/retry boundary. T17 still must exercise these exact public commands,
-including E2E variants, from a restricted login with no precreated target user.
+define the mapping/retry boundary. [T17 procedure evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
+exercises local, published and direct E2E setup from a restricted login with no target
+database or precreated user. Published qualification uses matching branch images,
+not a registry release.
 
 <a id="dms-e2e-setup"></a>
 
 ## DMS E2E opt-in
 
-**PostgreSQL direct setup passed T16; SQL Server exercise remains T17.** These alternatives qualify setup wiring. API-driven message
+**PostgreSQL and SQL Server direct setup passed T16/T17; build alternatives remain unexercised.** These alternatives qualify setup wiring. API-driven message
 scenarios remain [DMS-1325](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md).
 [Local bootstrap/CI owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
 This is the DMS E2E suite, not Instance Management E2E.
@@ -906,7 +915,9 @@ and the worker's internal `1433` in connector properties.
 
 Both entry points use the shipped `.env.mssql` composition after any Data Standard
 overlay; build additionally applies its optional `-EnvironmentOverlayFile` first.
-The resolver preserves custom nonblank MSSQL credentials/ports/names, replaces
+Set `DMS_DATASTORE=mssql` and `DMS_CONFIG_DATASTORE=mssql` in the base E2E
+environment before infrastructure preparation. The resolver preserves custom nonblank
+MSSQL credentials/ports/names only when the base file declares MSSQL, replaces
 PostgreSQL-shaped database connection strings and forces both datastore tokens to
 `mssql`. Ambient values still take precedence in Compose: clear stale PostgreSQL
 connection-string overrides before starting. Use the wrapper's retained effective

@@ -1,0 +1,180 @@
+{
+  "Source": "Mssql Admission qualification runner; projection of sanitized exported TRX outcomes",
+  "Provider": "SqlServer",
+  "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+  "BuildScope": "Controller baseline started before the host-clock adapter correction; final marked wrapper cases and 4,628 unit tests exercise the corrected build.",
+  "Total": 42,
+  "Passed": 42,
+  "Failed": 0,
+  "Skipped": 0,
+  "Cases": [
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_blocks_publication_with_a_stopped_job_without_repairing_capture(\"capture\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_blocks_publication_with_a_stopped_job_without_repairing_capture(\"cleanup\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_blocks_publication_with_a_stopped_job_without_repairing_capture(\"failed-capture\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_cannot_publish_when_schema_history_inspection_is_unavailable",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_cannot_reconstruct_initial_ownership_after_creation_receipt_interruption(\"lost-create-result\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_cannot_reconstruct_initial_ownership_after_creation_receipt_interruption(\"receipt-flushed\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_cannot_reconstruct_initial_ownership_after_creation_receipt_interruption(\"receipt-replaced\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_forbids_initial_retry_after_atomic_publication_intent_loses_its_reply",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_never_repairs_connector_mapping_after_durable_provider_completion(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_never_repairs_connector_mapping_after_durable_provider_completion(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_reconciles_a_lost_registration_response_without_recreating_the_connector",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_reconciles_exact_capture_after_lost_provider_evidence_without_repair",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_records_reused_database_without_granting_initial_eligibility",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_a_mismatched_binding_without_rewriting_the_existing_generation",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"cache\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"canonical\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"latch\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"rebuilding\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"source-mismatch\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"unbound-tracking\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_ineligible_live_databases_without_mutating_binding_or_capture(\"work\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_initial_connector_mapping_before_registration_or_publication(\"absent-login\",\"CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_initial_connector_mapping_before_registration_or_publication(\"conflicting-sid\",\"CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_initial_connector_mapping_before_registration_or_publication(\"elevated-login\",\"CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_initial_connector_mapping_before_registration_or_publication(\"unsupported-user\",\"CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_unavailable_projection_prerequisites_before_runtime_or_capture(\"denied-server-authority\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_rejects_unavailable_projection_prerequisites_before_runtime_or_capture(\"inspect-only\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"barrier\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"handoff\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"heartbeat-capture\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"queue\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_repeats_fresh_readiness_after_an_interrupted_offline_wait(\"second-observation\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"cancelled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"expired\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"timeout\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_requires_independent_fresh_lag_even_after_idle_heartbeat_barrier_progress(\"unavailable\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_retains_terminal_schema_history_loss_after_the_topic_is_healthy_again",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Activation,After,\"Tracking\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Activation,Before,\"Disabled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Binding,After,\"Disabled\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission.It_retries_exact_empty_binding_after_interrupted_binding_or_activation(Binding,Before,\"Disabled\")",
+      "Outcome": "Passed"
+    }
+  ]
+}

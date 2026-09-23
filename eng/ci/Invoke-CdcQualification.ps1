@@ -89,6 +89,9 @@ try {
         }
         if ('Mssql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE'
+            if ($Suite -in @('All', 'Admission') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: Mssql Admission requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__MssqlAdmin' }
         }
         foreach ($name in $required) {
@@ -161,25 +164,29 @@ try {
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
                 Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
-                if ($selected -eq 'Postgresql' -and $phase -eq 'Admission') {
-                    $liveDirectory = Join-Path $raw 'Postgresql-runbook-setup'
+                if ($phase -eq 'Admission') {
+                    $liveDirectory = Join-Path $raw "$selected-runbook-setup"
                     New-Item -ItemType Directory -Path $liveDirectory | Out-Null
                     $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $liveDirectory
                     $env:CDC_RUNBOOK_CONFIGURATION = $Configuration
-                    & dotnet build 'src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj' -c $Configuration --nologo *> (Join-Path $liveDirectory 'build-private.log')
-                    if ($LASTEXITCODE -ne 0) { throw 'The live runbook command build failed; see private diagnostics.' }
+                    # The shipped wrapper resolver prefers Debug when present. Refresh both it and
+                    # the selected direct-command build so a stale local binary cannot qualify.
+                    foreach ($toolConfiguration in @($Configuration, 'Debug') | Select-Object -Unique) {
+                        & dotnet build 'src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj' -c $toolConfiguration --nologo *> (Join-Path $liveDirectory "build-$toolConfiguration-private.log")
+                        if ($LASTEXITCODE -ne 0) { throw 'The live runbook command build failed; see private diagnostics.' }
+                    }
                     Import-Module Pester -MinimumVersion 5.7.1
                     $liveConfig = New-PesterConfiguration
-                    $liveConfig.Run.Path = 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1'
+                    $liveConfig.Run.Container = New-PesterContainer -Path 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1' -Data @{ Provider = $selected }
                     $liveConfig.Run.PassThru = $true
                     $liveConfig.Output.Verbosity = 'Detailed'
                     & { $script:liveRunbookResult = Invoke-Pester -Configuration $liveConfig } *> (Join-Path $liveDirectory 'pester-private.log')
-                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile PostgresqlSetup
+                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile "$($selected)Setup"
                     if ($script:liveRunbookResult.FailedCount -gt 0 -or $script:liveRunbookResult.FailedBlocksCount -gt 0) { $liveReport.Status = 'Failed' }
                     $reports.Add($liveReport)
                     $liveReport | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $liveDirectory 'cdc-runbook-live-setup.json')
-                    Export-CdcQualificationEvidence -RawDirectory $liveDirectory -Destination (Join-Path $destination 'Postgresql-runbook-setup')
-                    Write-Output "Postgresql-runbook-setup: $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
+                    Export-CdcQualificationEvidence -RawDirectory $liveDirectory -Destination (Join-Path $destination "$selected-runbook-setup")
+                    Write-Output "$selected-runbook-setup: $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
                 }
                 if ($phase -eq 'History') {
                     $env:CDC_ARTIFACT_CLEANUP_FAIL_FAST = 'true'

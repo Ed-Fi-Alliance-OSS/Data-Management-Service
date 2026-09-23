@@ -53,9 +53,10 @@ internal static class CdcControllerObservations
         var target = response.Targets[0];
         Require(
             target.DurableObservedAt is not null
-                && target.DurableObservedAt >= started
-                && target.DurableObservedAt <= now
-                && now - target.DurableObservedAt.Value <= request.Timing.MaximumObservationAge
+                && response.ObservedAt >= started
+                && response.ObservedAt <= now
+                && target.ProcessObservedAt == response.ObservedAt
+                && now - started <= request.Timing.MaximumObservationAge
                 && CdcProviderToken.TryToRelationalProviderToken(request.Binding.Provider, out var provider)
                 && target.Provider == provider.Value
                 && target.PhysicalSourceFingerprint == request.Binding.PhysicalSourceFingerprint
@@ -69,7 +70,9 @@ internal static class CdcControllerObservations
             request.TargetIdentity,
             request.Binding.Provider,
             target.PhysicalSourceFingerprint,
-            target.DurableObservedAt!.Value,
+            // The awaited standalone observation reads durable state in this call. Correlate
+            // its completion on the controller clock; SQL clock precision/skew is not ordering proof.
+            now,
             new(target.TargetKey.TenantKey.ToLowerInvariant(), target.TargetKey.DataStoreId),
             CdcProjectionCorrelationState.Matched,
             target.OperationalHealth.Status,
