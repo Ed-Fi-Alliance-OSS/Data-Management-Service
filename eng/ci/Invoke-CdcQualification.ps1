@@ -82,8 +82,8 @@ try {
         if ('Postgresql' -in $lanes -or 'Mssql' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
         if ('Postgresql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
-            if ($Suite -in @('All', 'Admission') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
-                throw 'EnvironmentUnavailable: PostgreSQL Admission requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: PostgreSQL Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__DatabaseConnection' }
         }
@@ -164,8 +164,12 @@ try {
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
                 Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
-                if ($phase -eq 'Admission') {
-                    $liveDirectory = Join-Path $raw "$selected-runbook-setup"
+                if ($phase -eq 'Lifecycle' -and $selected -eq 'Postgresql') {
+                    $reports.Add((Get-CdcRunbookLifecycleReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
+                if ($phase -eq 'Admission' -or ($phase -eq 'Lifecycle' -and $selected -eq 'Postgresql')) {
+                    $procedure = if ($phase -eq 'Admission') { 'Setup' } else { 'Lifecycle' }
+                    $liveDirectory = Join-Path $raw "$selected-runbook-$($procedure.ToLowerInvariant())"
                     New-Item -ItemType Directory -Path $liveDirectory | Out-Null
                     $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $liveDirectory
                     $env:CDC_RUNBOOK_CONFIGURATION = $Configuration
@@ -177,16 +181,16 @@ try {
                     }
                     Import-Module Pester -MinimumVersion 5.7.1
                     $liveConfig = New-PesterConfiguration
-                    $liveConfig.Run.Container = New-PesterContainer -Path 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1' -Data @{ Provider = $selected }
+                    $liveConfig.Run.Container = New-PesterContainer -Path 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1' -Data @{ Provider = $selected; Procedure = $procedure }
                     $liveConfig.Run.PassThru = $true
                     $liveConfig.Output.Verbosity = 'Detailed'
                     & { $script:liveRunbookResult = Invoke-Pester -Configuration $liveConfig } *> (Join-Path $liveDirectory 'pester-private.log')
-                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile "$($selected)Setup"
+                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile "$selected$procedure"
                     if ($script:liveRunbookResult.FailedCount -gt 0 -or $script:liveRunbookResult.FailedBlocksCount -gt 0) { $liveReport.Status = 'Failed' }
                     $reports.Add($liveReport)
-                    $liveReport | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $liveDirectory 'cdc-runbook-live-setup.json')
-                    Export-CdcQualificationEvidence -RawDirectory $liveDirectory -Destination (Join-Path $destination "$selected-runbook-setup")
-                    Write-Output "$selected-runbook-setup: $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
+                    $liveReport | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $liveDirectory "cdc-runbook-live-$($procedure.ToLowerInvariant()).json")
+                    Export-CdcQualificationEvidence -RawDirectory $liveDirectory -Destination (Join-Path $destination "$selected-runbook-$($procedure.ToLowerInvariant())")
+                    Write-Output "$selected-runbook-$($procedure.ToLowerInvariant()): $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
                 }
                 if ($phase -eq 'History') {
                     $env:CDC_ARTIFACT_CLEANUP_FAIL_FAST = 'true'

@@ -78,6 +78,12 @@ complete the SQL Server initial connector-user mapping needed by the public setu
   call bounds fail-closed. T17 owns this runtime integration fix and its regression
   coverage; it changes no relational mapping or schema hash.
 
+- Qualify standalone restart/resume with an initially unstarted invocation-owned
+  projector. After eligible established preflight, start that executor once for fresh
+  readiness, preserving already running executors and rejecting invalid provenance before
+  processing. T18 owns this integration fix and its regression coverage under the
+  [managed lifecycle contract](../../design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
+
 ## Resolved Runbook Delivery and Verification Scope
 
 These choices define the documentation artifacts, implementation handoffs, and evidence

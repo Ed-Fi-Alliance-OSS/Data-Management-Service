@@ -1,0 +1,2150 @@
+[
+  {
+    "TestId": "It_rejects_unavailable_live_evidence_while_stopped(\"provider\")",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:35:29.4295067-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:35:29.4803733-05:00",
+        "Scenario": "provider",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:35:29.481631-05:00",
+        "Scenario": "provider",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:35:29.4827858-05:00",
+        "Scenario": "provider",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:44:14.8717606-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:44:20.3354697-05:00",
+        "Scenario": "retained-terminal-incident",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 5
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "sourceHistoryLost",
+          "SourceHistory": {
+            "State": "notSatisfied",
+            "Category": "sourceHistoryLost",
+            "Continuity": "lost",
+            "IncidentLatched": true
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:44:22.8470768-05:00",
+        "Scenario": "retained-terminal-incident",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 5
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "sourceHistoryLost",
+          "SourceHistory": {
+            "State": "notSatisfied",
+            "Category": "sourceHistoryLost",
+            "Continuity": "lost",
+            "IncidentLatched": true
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:44:25.4024243-05:00",
+        "Scenario": "retained-terminal-incident",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 5
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "sourceHistoryLost",
+          "SourceHistory": {
+            "State": "notSatisfied",
+            "Category": "sourceHistoryLost",
+            "Continuity": "lost",
+            "IncidentLatched": true
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_waits_for_retained_projection_work_in_the_single_start_invocation(False)",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:38:11.3107137-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "Result": {
+          "Operation": 1,
+          "Succeeded": true,
+          "TargetShutdownVerified": false,
+          "Ready": true,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "Readiness": "ready",
+          "PrimaryBlockingCategory": "none",
+          "SourceHistory": {
+            "State": "satisfied",
+            "Category": "none",
+            "Continuity": "healthy",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_waits_for_retained_projection_work_in_the_single_start_invocation(True)",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:39:23.9817865-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [
+            {
+              "Component": 6,
+              "Failure": 2
+            },
+            {
+              "Component": 1,
+              "Failure": 2
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "satisfied",
+            "Category": "none",
+            "Continuity": "healthy",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:41:10.6357151-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:41:28.6183194-05:00",
+        "Stopped": true,
+        "TaskCount": 0,
+        "OffsetUnchanged": true
+      },
+      {
+        "At": "2026-09-23T01:41:29.6343676-05:00",
+        "Stopped": true,
+        "TaskCount": 0,
+        "OffsetUnchanged": true
+      },
+      {
+        "At": "2026-09-23T01:41:30.6627616-05:00",
+        "Stopped": true,
+        "TaskCount": 0,
+        "OffsetUnchanged": true
+      },
+      {
+        "At": "2026-09-23T01:41:31.6870766-05:00",
+        "Stopped": true,
+        "TaskCount": 0,
+        "OffsetUnchanged": true
+      },
+      {
+        "At": "2026-09-23T01:41:32.7135348-05:00",
+        "Stopped": true,
+        "TaskCount": 0,
+        "OffsetUnchanged": true
+      },
+      {
+        "At": "2026-09-23T01:41:52.8518682-05:00",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": true,
+          "TargetShutdownVerified": false,
+          "Ready": true,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "Readiness": "ready",
+          "PrimaryBlockingCategory": "none",
+          "SourceHistory": {
+            "State": "satisfied",
+            "Category": "none",
+            "Continuity": "healthy",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_rejects_unavailable_live_evidence_while_stopped(\"offset\")",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:34:32.3988838-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:34:37.7473531-05:00",
+        "Scenario": "offset",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 5,
+              "Failure": 5
+            },
+            {
+              "Component": 3,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "connectorConfigInvalid",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:34:40.4766016-05:00",
+        "Scenario": "offset",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 5,
+              "Failure": 5
+            },
+            {
+              "Component": 3,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "connectorConfigInvalid",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:34:43.1763456-05:00",
+        "Scenario": "offset",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 5,
+              "Failure": 5
+            },
+            {
+              "Component": 3,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "connectorConfigInvalid",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either(False)",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:32:58.3118662-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:32:58.7960526-05:00",
+        "Scenario": "empty-independent-source",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:32:58.939368-05:00",
+        "Scenario": "empty-independent-source",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:32:59.0059828-05:00",
+        "Scenario": "empty-independent-source",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:42:37.4543121-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4589046-05:00",
+        "Scenario": "bindings:missing",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.460245-05:00",
+        "Scenario": "bindings:missing",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4615117-05:00",
+        "Scenario": "bindings:missing",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4694691-05:00",
+        "Scenario": "bindings:corrupt",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4705066-05:00",
+        "Scenario": "bindings:corrupt",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4717693-05:00",
+        "Scenario": "bindings:corrupt",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4795783-05:00",
+        "Scenario": "bindings:unsafe-permissions",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4808072-05:00",
+        "Scenario": "bindings:unsafe-permissions",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4820885-05:00",
+        "Scenario": "bindings:unsafe-permissions",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4886325-05:00",
+        "Scenario": "bindings:contradictory",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4899029-05:00",
+        "Scenario": "bindings:contradictory",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4911416-05:00",
+        "Scenario": "bindings:contradictory",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4955175-05:00",
+        "Scenario": "workflows:missing",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4965218-05:00",
+        "Scenario": "workflows:missing",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.4973697-05:00",
+        "Scenario": "workflows:missing",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.501569-05:00",
+        "Scenario": "workflows:corrupt",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5024306-05:00",
+        "Scenario": "workflows:corrupt",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.503177-05:00",
+        "Scenario": "workflows:corrupt",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5068095-05:00",
+        "Scenario": "workflows:unsafe-permissions",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5075494-05:00",
+        "Scenario": "workflows:unsafe-permissions",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5083217-05:00",
+        "Scenario": "workflows:unsafe-permissions",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5123592-05:00",
+        "Scenario": "workflows:contradictory",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5132295-05:00",
+        "Scenario": "workflows:contradictory",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5139942-05:00",
+        "Scenario": "workflows:contradictory",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5184367-05:00",
+        "Scenario": "source-history:missing",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5194857-05:00",
+        "Scenario": "source-history:missing",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.520444-05:00",
+        "Scenario": "source-history:missing",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5260344-05:00",
+        "Scenario": "source-history:corrupt",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5270632-05:00",
+        "Scenario": "source-history:corrupt",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5278977-05:00",
+        "Scenario": "source-history:corrupt",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5327097-05:00",
+        "Scenario": "source-history:unsafe-permissions",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5336368-05:00",
+        "Scenario": "source-history:unsafe-permissions",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5346333-05:00",
+        "Scenario": "source-history:unsafe-permissions",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5409866-05:00",
+        "Scenario": "source-history:contradictory",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5419613-05:00",
+        "Scenario": "source-history:contradictory",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.542985-05:00",
+        "Scenario": "source-history:contradictory",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5477174-05:00",
+        "Scenario": "incomplete:CreateProvider",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5485428-05:00",
+        "Scenario": "incomplete:CreateProvider",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5493545-05:00",
+        "Scenario": "incomplete:CreateProvider",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5539634-05:00",
+        "Scenario": "incomplete:RegisterConnector",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5550881-05:00",
+        "Scenario": "incomplete:RegisterConnector",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5561778-05:00",
+        "Scenario": "incomplete:RegisterConnector",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5611706-05:00",
+        "Scenario": "incomplete:EstablishConnector",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5621964-05:00",
+        "Scenario": "incomplete:EstablishConnector",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5630416-05:00",
+        "Scenario": "incomplete:EstablishConnector",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5675243-05:00",
+        "Scenario": "IncidentHistoryDeletion",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5682425-05:00",
+        "Scenario": "IncidentHistoryDeletion",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5688299-05:00",
+        "Scenario": "IncidentHistoryDeletion",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5732565-05:00",
+        "Scenario": "StateRollback",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5740392-05:00",
+        "Scenario": "StateRollback",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:42:37.5746502-05:00",
+        "Scenario": "StateRollback",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "statusObservationUnavailable",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence(Resume)",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:37:25.7967336-05:00",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": true,
+          "TargetShutdownVerified": false,
+          "Ready": true,
+          "Boundary": 2,
+          "Diagnostics": [],
+          "Readiness": "ready",
+          "PrimaryBlockingCategory": "none",
+          "SourceHistory": {
+            "State": "satisfied",
+            "Category": "none",
+            "Continuity": "healthy",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence(Restart)",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:36:28.0926846-05:00",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": true,
+          "TargetShutdownVerified": false,
+          "Ready": true,
+          "Boundary": 2,
+          "Diagnostics": [],
+          "Readiness": "ready",
+          "PrimaryBlockingCategory": "none",
+          "SourceHistory": {
+            "State": "satisfied",
+            "Category": "none",
+            "Continuity": "healthy",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  },
+  {
+    "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either(True)",
+    "Evidence": [
+      {
+        "At": "2026-09-23T01:33:45.5161877-05:00",
+        "Result": {
+          "Operation": 0,
+          "Succeeded": true,
+          "TargetShutdownVerified": true,
+          "Ready": false,
+          "Boundary": 1,
+          "Diagnostics": [],
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:33:45.9926848-05:00",
+        "Scenario": "populated-independent-source",
+        "Result": {
+          "Operation": 1,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:33:46.056389-05:00",
+        "Scenario": "populated-independent-source",
+        "Result": {
+          "Operation": 2,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      },
+      {
+        "At": "2026-09-23T01:33:46.1208793-05:00",
+        "Scenario": "populated-independent-source",
+        "Result": {
+          "Operation": 3,
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1
+            },
+            {
+              "Component": 1,
+              "Failure": 5
+            }
+          ],
+          "Readiness": "notReady",
+          "PrimaryBlockingCategory": "statusObservationUnavailable",
+          "SourceHistory": {
+            "State": "unknown",
+            "Category": "providerHistoryUnknown",
+            "Continuity": "unknown",
+            "IncidentLatched": false
+          },
+          "UnobservedIntervalCertified": false
+        }
+      }
+    ]
+  }
+]

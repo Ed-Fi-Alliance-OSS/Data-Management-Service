@@ -3,11 +3,14 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Explicit live Admission selection only; excluded from the Contract's Cdc*.Tests.ps1 glob.
+# Explicit live Admission/Lifecycle selection only; excluded from Contract's Cdc*.Tests.ps1 glob.
 # Uses the shipped wrappers on an exclusively owned local stack. Retains private files on failure.
-param([ValidateSet('Postgresql', 'Mssql')][string] $Provider = 'Postgresql')
+param(
+    [ValidateSet('Postgresql', 'Mssql')][string] $Provider = 'Postgresql',
+    [ValidateSet('Setup', 'Lifecycle')][string] $Procedure = 'Setup'
+)
 
-Describe '<Provider> live runbook setup' -ForEach @(@{ Provider = $Provider }) {
+Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provider; Procedure = $Procedure }) {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
         $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
@@ -49,7 +52,9 @@ Describe '<Provider> live runbook setup' -ForEach @(@{ Provider = $Provider }) {
     }
 
     It 'CDC-DOC <Id>' -ForEach @(
-        if ($Provider -eq 'Postgresql') {
+        if ($Procedure -eq 'Lifecycle') {
+            @{ Id = 'cdc-managed-start'; E2e = $false; Published = $false; SqlServer = ($Provider -eq 'Mssql') }
+        } elseif ($Provider -eq 'Postgresql') {
             @{ Id = 'cdc-pg-bootstrap-local'; E2e = $false; Published = $false; SqlServer = $false }
             @{ Id = 'cdc-pg-e2e-setup'; E2e = $true; Published = $false; SqlServer = $false }
         } else {
@@ -74,6 +79,9 @@ Describe '<Provider> live runbook setup' -ForEach @(@{ Provider = $Provider }) {
         $connectorPassword = [guid]::NewGuid().ToString('N') + 'Ab1!'
         $environmentText = Get-Content $environmentFile -Raw
         $fixtureValues = @{ POSTGRES_USER = 'postgres'; POSTGRES_PASSWORD = $password; POSTGRES_PORT = '5435'; CDC_DATABASE_PASSWORD = $connectorPassword }
+        # Cold plugin scans need headroom on high-core qualification hosts. Keep the
+        # declared worker policy and Compose heap identical from initial creation.
+        if ($Procedure -eq 'Lifecycle') { $fixtureValues.CDC_WORKER_HEAP_MIB = '1024' }
         if ($SqlServer) {
             $fixtureValues.MSSQL_SA_PASSWORD = $password; $fixtureValues.MSSQL_PORT = '1435'
             $fixtureValues.DMS_DATASTORE = 'mssql'; $fixtureValues.DMS_CONFIG_DATASTORE = 'mssql'
@@ -151,6 +159,7 @@ Describe '<Provider> live runbook setup' -ForEach @(@{ Provider = $Provider }) {
         $settings = $settings.Replace("$providerName.json", "$providerName$suffix.json").Replace("$stateName'", "$stateName$suffix'")
         # Declared supported fixture budgets allow cold broker/worker health checks to finish.
         $settings = $settings.Replace('CallMilliseconds = 30000', 'CallMilliseconds = 120000').Replace('WaitMilliseconds = 300000', 'WaitMilliseconds = 600000')
+        if ($Procedure -eq 'Lifecycle') { $settings = $settings.Replace('HeapBytes = 536870912', 'HeapBytes = 1073741824') }
         $settings = "function Read-Host { param([string]`$Prompt, [switch]`$MaskInput) return (Get-Content -LiteralPath '$inputPath' -Raw).Trim() }`n" + $settings
         (Invoke-PrivateScript "$prefix-settings" $settings).ExitCode | Should -Be 0
         Test-Path $settingsPath | Should -BeTrue
@@ -158,7 +167,8 @@ Describe '<Provider> live runbook setup' -ForEach @(@{ Provider = $Provider }) {
         # intact initial workflow, never a generation that authorized writers.
         $maximumAttempts = if ($E2e) { 1 } else { 3 }
         for ($attempt = 1; $attempt -le $maximumAttempts; $attempt++) {
-            $result = Invoke-CdcRunbookLiveWrapper -Id $Id -FixtureRoot $script:fixture
+            $setupId = if ($Procedure -eq 'Lifecycle') { "$prefix-bootstrap-local" } else { $Id }
+            $result = Invoke-CdcRunbookLiveWrapper -Id $setupId -FixtureRoot $script:fixture
             if ($result.ExitCode -ne 1 -or $result.FailureKind -ne 'None') { break }
             $journalPath = Join-Path $statePath 'workflows/local/datastore-1/1.json'
             if (-not (Test-Path $journalPath)) { break }
@@ -221,6 +231,12 @@ REVERT;
             $output.data.targets[0].status.projection.state | Should -Be 'Unknown'
             $output.data.aggregate.readiness | Should -Be 'NotReady'
         }
+        if ($Procedure -eq 'Lifecycle') {
+            # Reuse the established deployment and custom root. Each command below is
+            # extracted from its marked operator example; faults affect only this fixture.
+            . (Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1')
+            Invoke-CdcRunbookLifecycle -Entry $entry -InventoryPath $inventoryPath -StatePath $statePath -Project $project -FixtureRoot $script:fixture -Provider $Provider
+        }
         if ($E2e -and $SqlServer) {
             $snapshot = Invoke-FixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
             $snapshot.ExitCode | Should -Be 0
@@ -279,7 +295,7 @@ REVERT;
 
     AfterAll {
         if ($script:results -and $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
-            @{ Cases = @($script:results) } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'cdc-runbook-live-setup.json')
+            @{ Cases = @($script:results) } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY "cdc-runbook-live-$($Procedure.ToLowerInvariant()).json")
         }
         if ($script:originalLocation) { Set-Location $script:originalLocation }
     }

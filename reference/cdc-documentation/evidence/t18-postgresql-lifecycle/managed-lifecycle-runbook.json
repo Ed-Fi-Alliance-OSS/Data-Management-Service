@@ -1,0 +1,428 @@
+{
+  "RejectedResumeOffsetsUnchanged": true,
+  "RetainedSettingsUnchanged": true,
+  "Provider": "Postgresql",
+  "SnippetIds": [
+    "cdc-state-inventory",
+    "cdc-managed-stop",
+    "cdc-managed-start",
+    "cdc-intact-restart",
+    "cdc-intact-resume",
+    "cdc-validate",
+    "cdc-provenance-rejection",
+    "cdc-disclosure-containment-result"
+  ],
+  "TestId": "CDC-DOC cdc-managed-start",
+  "InitialWriterIntentCount": 1,
+  "Results": [
+    {
+      "Ready": true,
+      "SnippetId": "cdc-intact-restart",
+      "ExitCode": 0
+    },
+    {
+      "Ready": true,
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 0
+    },
+    {
+      "SnippetId": "cdc-validate",
+      "PreStartEligible": true,
+      "ExitCode": 1,
+      "Succeeded": false,
+      "Diagnostics": [
+        {
+          "component": "Projection",
+          "failure": "Unavailable"
+        }
+      ],
+      "PublicationReady": false
+    },
+    {
+      "TargetShutdownVerified": true,
+      "SharedWorkerRunning": true,
+      "SnippetId": "cdc-disclosure-containment-result",
+      "ExitCode": 0
+    },
+    {
+      "Scenario": "bindings-missing",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-missing",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-corrupt",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-corrupt",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-unsafe-permissions",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-unsafe-permissions",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-contradictory",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "bindings-contradictory",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-missing",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-missing",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-corrupt",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-corrupt",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-unsafe-permissions",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-unsafe-permissions",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-contradictory",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "workflows-contradictory",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-missing",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-missing",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-corrupt",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-corrupt",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-unsafe-permissions",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-unsafe-permissions",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-contradictory",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "source-history-contradictory",
+      "Diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "empty-independent-source",
+      "Diagnostics": [
+        {
+          "component": "Connect",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "Projection",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "Metrics",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "empty-independent-source",
+      "Diagnostics": [
+        {
+          "component": "Connect",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "populated-independent-source",
+      "Diagnostics": [
+        {
+          "component": "Connect",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "Projection",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "Metrics",
+          "failure": "Unavailable"
+        }
+      ],
+      "SnippetId": "cdc-provenance-rejection",
+      "ExitCode": 1
+    },
+    {
+      "Scenario": "populated-independent-source",
+      "Diagnostics": [
+        {
+          "component": "Connect",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "ValidationFailed"
+        },
+        {
+          "component": "ProviderSetup",
+          "failure": "Unavailable"
+        },
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed"
+        }
+      ],
+      "SnippetId": "cdc-intact-resume",
+      "ExitCode": 1
+    }
+  ],
+  "SharedWorkerStopped": true,
+  "Images": {
+    "Worker": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Provider": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "Broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f"
+  },
+  "CustomStateRootPreserved": true,
+  "BindingUnchanged": true
+}

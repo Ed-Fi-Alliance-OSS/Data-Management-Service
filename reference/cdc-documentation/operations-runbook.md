@@ -6,7 +6,8 @@ This shared PostgreSQL/SQL Server runbook is under construction. Both providers�
 and DMS E2E opt-in variants, state preservation, managed lifecycle, recovery and
 projection handoffs, monitoring, retention, security, consumer-evidence checklists and
 coordinated record-size increases, retirement/teardown and restamp/disclosure handoffs
-are documented. PostgreSQL local/direct-E2E setup and observation snippets passed T16; remaining
+are documented. Setup and observation snippets passed T16/T17; PostgreSQL lifecycle
+snippets passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18). Remaining
 live procedure qualification is **pending** its named tasks.
 Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
@@ -18,12 +19,12 @@ for current command details and the linked design owners for support boundaries.
 | PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 local setup passed |
 | SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 local/published setup passed |
 | DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL / SQL Server direct setup passed T16/T17; build alternatives unexercised |
-| Preserve deployment state | [deployment-state](#deployment-state) | T04 — documented; T18/T19 exercise pending |
-| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; T18/T19 exercise pending |
-| Established validation and restart preflight | [established-validation](#established-validation) | T04 — documented; T18/T19 exercise pending |
-| Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | T04 — documented; T18/T19 exercise pending |
-| Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | T05 — documented; live exercise pending |
-| Intact connector restart and resume | [intact-restart](#intact-restart) | T05 — documented; live exercise pending |
+| Preserve deployment state | [deployment-state](#deployment-state) | PostgreSQL passed T18; SQL Server pending T19 |
+| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; exact retry snippet unexercised |
+| Established validation and restart preflight | [established-validation](#established-validation) | PostgreSQL passed T18; SQL Server pending T19 |
+| Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | PostgreSQL passed T18; SQL Server pending T19 |
+| Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | PostgreSQL passed T18; SQL Server pending T19 |
+| Intact connector restart and resume | [intact-restart](#intact-restart) | PostgreSQL passed T18; SQL Server pending T19 |
 | Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | T05 — documented; live exercise pending |
 | Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; T25/T26 exercise pending |
 | Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 exercise pending |
@@ -165,7 +166,10 @@ The concrete endpoints below assume `POSTGRES_PORT=5432`,
 `DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081`, `CONNECT_SOURCE_PORT=8083`,
 `CDC_METRICS_PORT=9404`, `KAFKA_PORT=9092`, worker key `local-worker`, offset topic
 `dms-connect-offsets`, and worker heap `512` MiB. If changing these, change every
-corresponding setting together. Leave multitenancy disabled and route qualifiers
+corresponding setting together. Lifecycle qualification uses `CDC_WORKER_HEAP_MIB=1024`
+and `Cdc.Worker.HeapBytes=1073741824` from initial creation for cold plugin-scan
+headroom. Do not change a retained worker policy to retry a failed operation.
+Leave multitenancy disabled and route qualifiers
 empty. Use `-SeparateConfigDatabase`; shared CMS/DMS database topology is rejected.
 The new `edfi_cdc` database must not exist and must differ from `POSTGRES_DB_NAME`
 and the reserved CMS/system databases. Do not create it manually: the wrapper's
@@ -980,7 +984,7 @@ these setup commands; DMS-1325 owns API-driven message scenarios.
 
 ## Preserve deployment state
 
-**Documented in T04; live exercise pending T18/T19.** Apply to both providers from
+**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server pending T19.** Apply to both providers from
 first managed provisioning onward. The [continuity/adoption owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 defines why current artifact health cannot replace historical evidence.
 
@@ -1043,7 +1047,9 @@ or incident-history deletion remains an incident even when files parse and live 
 
 ## Interrupted initial-enable retry
 
-**Documented in T04; live exercise pending T18/T19.** Follow the
+**Exact `cdc-enable-retry` snippet unexercised.** Intact wrapper retries have
+[T16](cdc-inv-evidence.md#postgresql-setup-qualification-t16) and
+[T17](cdc-inv-evidence.md#sql-server-setup-qualification-t17) setup evidence. Follow the
 [initial retry classification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 and [initial-admission sequence](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
 
@@ -1104,7 +1110,7 @@ completed. Use the [containment handoff](#native-recovery); The procedure distin
 
 ## Established validation and restart preflight
 
-**Documented in T04; live exercise pending T18/T19.** The
+**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server pending T19.** The
 [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
 and [managed/native recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
 define the scope of fresh observations.
@@ -1157,7 +1163,7 @@ publish before revalidation; a later healthy result cannot certify the unsampled
 
 ## Missing provenance and source mismatch
 
-**Documented in T04; live rejection exercises pending T18/T19.** Use the
+**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server pending T19.** Use the
 [adoption/state-loss boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 and [physical-source replacement deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 
@@ -1175,7 +1181,11 @@ PowerShell, repository root; original settings/state paths are still known and C
 available. Observe the already affected deployment; do not change its target to
 manufacture a mismatch. Fixture substitutions may select only disposable fixture-owned
 state already damaged by the existing test's fault seam; operators do not perform
-those mutations. See the private path substitution table in `cdc-validate`.
+those mutations. A source-mismatch fixture may supply a private copy of the same
+settings with its setup connection selecting an independent fixture-owned empty or
+populated database. The original settings, CMS selection, binding and source remain
+unchanged; this is a deliberate invalid-selection test, not a replacement procedure.
+See the private path substitution table in `cdc-validate`.
 
 <!-- cdc-snippet: cdc-provenance-rejection -->
 ```powershell
@@ -1222,7 +1232,7 @@ state supplies none and retirement does not erase source publication history.
 
 ## Managed shutdown and startup
 
-**Documented in T05; live exercise pending T18/T19.** Use the
+**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server pending T19.** Use the
 [managed/native recovery owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
 and the shipped [lifecycle wrapper](../../eng/docker-compose/cdc-lifecycle.psm1).
 These operations retain the generation; [destructive teardown](#stack-teardown)
@@ -1326,7 +1336,7 @@ no whole-stack rollback. Keep external writers fenced and follow the recovery ta
 
 ## Intact connector restart and resume
 
-**Documented in T05; live exercise pending T18/T19.** These are selected-connector
+**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server pending T19.** These are selected-connector
 operations on reachable existing infrastructure. For a stopped **stack**, use
 [managed startup](#managed-lifecycle). The
 [recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
@@ -1363,6 +1373,13 @@ api-schema-tools cdc restart --settings '<retained-settings-path>' --state-path 
 api-schema-tools cdc resume --settings '<retained-settings-path>' --state-path '<original-state-root>' --json
 ```
 <!-- /cdc-snippet: cdc-intact-resume -->
+
+The packaged lifecycle commands start their invocation-owned projector after eligible
+preflight so they can collect fresh process-health evidence. An already started
+executor is retained. This explains why a successful restart/resume can report
+`ready: true` while a separate standalone `validate` or status observation reports
+unobserved runtime health. The result does not certify another DMS process's health;
+see the [managed lifecycle owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
 
 Both operations require fresh affirmative pre-start evidence before the Connect
 mutation, then fresh readiness after durable completion. A prior ready status or

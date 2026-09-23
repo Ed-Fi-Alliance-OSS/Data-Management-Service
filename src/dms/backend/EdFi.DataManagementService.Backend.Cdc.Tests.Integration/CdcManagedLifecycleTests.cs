@@ -255,11 +255,14 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         }
     }
 
-    [Test]
-    public async Task It_restarts_an_intact_running_connector_with_fresh_ready_evidence()
+    [TestCase(CdcManagedLifecycleOperation.Restart)]
+    [TestCase(CdcManagedLifecycleOperation.Resume)]
+    public async Task It_restarts_an_intact_running_connector_with_fresh_ready_evidence(
+        CdcManagedLifecycleOperation operation
+    )
     {
-        await _fixture.Runtime.StartProcessingAsync(Token);
-        var result = await ExecuteAsync(CdcManagedLifecycleOperation.Restart);
+        // Setup deliberately reopens an unstarted runtime, as each packaged CLI invocation does.
+        var result = await ExecuteAsync(operation);
         result.Succeeded.Should().BeTrue("{0}", string.Join(", ", result.Diagnostics));
         result.Ready.Should().BeTrue();
         (await _fixture.JournalAsync(Token))

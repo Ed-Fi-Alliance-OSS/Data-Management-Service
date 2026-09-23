@@ -531,10 +531,49 @@ Describe 'CDC documentation qualification boundary' {
     }
     It 'selects the shared live setup fixture for each owned provider Admission path' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
-        $runner | Should -Match "if \(\`$phase -eq 'Admission'\)"
+        $runner | Should -Match "if \(\`$phase -eq 'Admission' -or"
         $runner | Should -Match 'New-PesterContainer.*RunbookSetup.Live.Tests.ps1.*Provider = \$selected'
         $runner | Should -Match 'Mssql Admission requires CDC_RUNBOOK_OWNED_STACK=1'
-        $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile "\$\(\$selected\)Setup"'
+        $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile "\$selected\$procedure"'
+    }
+    It 'requires the live PostgreSQL lifecycle case (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
+    ) {
+        $tests = @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Passed' })
+        if ($Fault -eq 'excluded') { $tests = @() }
+        if ($Fault -eq 'skipped') { $tests[0].Result = 'Skipped' }
+        if ($Fault -eq 'notrun') { $tests[0].Result = 'NotRun' }
+        if ($Fault -eq 'duplicate') { $tests += $tests[0] }
+        $report = Get-CdcRunbookPesterReport -Tests $tests -QualificationProfile PostgresqlLifecycle
+        $report.Name | Should -Be 'Postgresql-runbook-lifecycle'
+        $report.Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
+    It 'selects the owned PostgreSQL Lifecycle commands and their required behavior report' {
+        $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
+        $runner | Should -Match "\`$phase -eq 'Lifecycle' -and \`$selected -eq 'Postgresql'"
+        $runner | Should -Match 'Get-CdcRunbookLifecycleReport -Path'
+        $runner | Should -Match 'New-PesterContainer.*Procedure = \$procedure'
+        $runner | Should -Match 'PostgreSQL Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1'
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
+        $workflow | Should -Match "matrix.lane == 'Postgresql' && matrix.suite == 'Lifecycle'"
+    }
+    It 'requires all lifecycle persistence and rejection cases (<Fault>)' -ForEach @(
+        @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'partial' }, @{ Fault = 'duplicate' }
+    ) {
+        $path = Join-Path $TestDrive 'lifecycle.trx'
+        $required = (Get-CdcRunbookLifecycleReport (Join-Path $TestDrive 'missing.trx')).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            for ($i = 0; $i -lt $case.Required; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        if ($Fault -eq 'excluded') { $nodes = @() }
+        if ($Fault -eq 'skipped') { $nodes[0] = $nodes[0].Replace('Passed', 'NotExecuted') }
+        if ($Fault -eq 'partial') { $nodes = $nodes[1..($nodes.Count - 1)] }
+        if ($Fault -eq 'duplicate') { $nodes += $nodes[0] }
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookLifecycleReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
     It 'requires every named wrapper case to execute once and pass (<Fault>)' -ForEach @(
         @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }

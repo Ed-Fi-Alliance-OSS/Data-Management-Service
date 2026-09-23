@@ -241,8 +241,8 @@ function Get-CdcRunbookPesterReport {
     <# .SYNOPSIS
     Requires named wrapper cases independently of discovery; exclusions cannot pass qualification.
     #>
-    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup', 'MssqlSetup')][string] $QualificationProfile = 'Contract')
-    $required = if ($QualificationProfile -eq 'PostgresqlSetup') { @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup') } elseif ($QualificationProfile -eq 'MssqlSetup') { @('cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published', 'cdc-sqlserver-e2e-setup') } else { @(
+    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup', 'MssqlSetup', 'PostgresqlLifecycle')][string] $QualificationProfile = 'Contract')
+    [string[]] $required = if ($QualificationProfile -eq 'PostgresqlLifecycle') { @('cdc-managed-start') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup') } elseif ($QualificationProfile -eq 'MssqlSetup') { @('cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published', 'cdc-sqlserver-e2e-setup') } else { @(
         'cdc-pg-bootstrap-local', 'cdc-pg-bootstrap-published',
         'cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published',
         'cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup', 'cdc-pg-e2e-build', 'cdc-sqlserver-e2e-build',
@@ -257,7 +257,7 @@ function Get-CdcRunbookPesterReport {
         [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
     })
     $passed = @($cases | Where-Object Outcome -eq Passed).Count
-    return [ordered]@{ Name = $(if ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } elseif ($QualificationProfile -eq 'MssqlSetup') { 'Mssql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
+    return [ordered]@{ Name = $(if ($QualificationProfile -eq 'PostgresqlLifecycle') { 'Postgresql-runbook-lifecycle' } elseif ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } elseif ($QualificationProfile -eq 'MssqlSetup') { 'Mssql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
@@ -279,6 +279,28 @@ function Get-CdcRunbookCliReport {
         It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout = 1
         It_resolves_relative_links_and_explicit_or_generated_anchors = 12
     }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-cli'
+}
+
+function Get-CdcRunbookLifecycleReport {
+    <# .SYNOPSIS
+    Requires retained-offset, restart and rejection cases from the existing provider Lifecycle selection.
+    #>
+    param([string] $Path)
+    # Exact provider case counts also reject duplicate discovery.
+    $required = [ordered]@{
+        It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start = 1
+        It_restarts_an_intact_running_connector_with_fresh_ready_evidence = 2
+        It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume = 1
+        It_rejects_unavailable_live_evidence_while_stopped = 2
+        It_rejects_an_independent_empty_or_populated_source_without_mutating_either = 2
+        It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence = 1
+    }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-lifecycle-behavior' -ExactCount
+}
+
+function Get-CdcRequiredMethodReport {
+    param([string] $Path, [Collections.IDictionary] $Required, [string] $Name, [switch] $ExactCount)
     $results = @()
     if (Test-Path -LiteralPath $Path) {
         [xml] $trx = Get-Content -LiteralPath $Path -Raw
@@ -289,11 +311,11 @@ function Get-CdcRunbookCliReport {
         $found = @($results | Where-Object { $_.testName.Split('(')[0] -eq $id })
         $passed = @($found | Where-Object outcome -eq Passed).Count
         [ordered]@{ TestId = $id; Required = $required[$id]; Total = $found.Count; Passed = $passed;
-            Outcome = $(if ($found.Count -ge $required[$id] -and $passed -eq $found.Count) { 'Passed' } else { 'NotPassed' }) }
+            Outcome = $(if (($found.Count -eq $required[$id] -or (-not $ExactCount -and $found.Count -gt $required[$id])) -and $passed -eq $found.Count) { 'Passed' } else { 'NotPassed' }) }
     })
     $passed = @($cases | Where-Object Outcome -eq Passed).Count
-    return [ordered]@{ Name = 'runbook-cli'; Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
+    return [ordered]@{ Name = $Name; Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport

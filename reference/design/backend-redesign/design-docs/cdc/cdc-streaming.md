@@ -714,6 +714,15 @@ inspection without task consumption. A worker startup that recovers a connector 
 a verified stopped state follows the native recovery boundary, even if startup was requested
 through a bootstrap wrapper.
 
+A standalone start, restart, or resume starts its invocation-owned projection executor
+only after fresh eligible preflight under the controller session (including verified
+`STOPPED` evidence for start). Reusing an already started executor is idempotent.
+Initialization and rejected preflight do not start processing. This supplies the process
+health observation needed for fresh post-operation readiness; it does not certify another
+DMS process's health, authorize initial writers, or renew a snapshot barrier. Read-only
+status/watch/validate retain their existing standalone observation limits. DMS-1326
+qualifies this command/runtime integration through marked lifecycle invocations.
+
 After an unclean worker exit, unverified shutdown, native task reassignment, or internal
 recovery, records may be consumed and published before the controller revalidates continuity.
 When the controller observes recovery, it invalidates prior readiness observations and
