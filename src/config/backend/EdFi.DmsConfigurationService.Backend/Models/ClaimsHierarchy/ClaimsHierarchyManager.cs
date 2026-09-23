@@ -23,6 +23,7 @@ public interface IClaimsHierarchyManager
         string claimSetName,
         string resourceClaimName,
         IReadOnlyCollection<string> enabledActionNames,
+        IReadOnlyCollection<string> suppliedActionNames,
         List<Claim> claims
     );
 
@@ -118,6 +119,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         string claimSetName,
         string resourceClaimName,
         IReadOnlyCollection<string> enabledActionNames,
+        IReadOnlyCollection<string> suppliedActionNames,
         List<Claim> claims
     )
     {
@@ -134,20 +136,26 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
             claim.ClaimSets.Add(claimSet);
         }
 
-        claimSet.Actions =
-        [
-            .. enabledActionNames.Select(actionName => new ClaimSetAction
-            {
-                Name = actionName,
-                AuthorizationStrategyOverrides =
-                    claimSet
-                        .Actions.Find(existing =>
-                            existing.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
-                        )
-                        ?.AuthorizationStrategyOverrides
-                    ?? [],
-            }),
-        ];
+        HashSet<string> enabledActions = new(enabledActionNames, StringComparer.OrdinalIgnoreCase);
+        HashSet<string> disabledActions = new(
+            suppliedActionNames.Where(actionName => !enabledActions.Contains(actionName)),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        claimSet.Actions.RemoveAll(action => disabledActions.Contains(action.Name));
+
+        foreach (
+            string actionName in enabledActionNames.Where(actionName =>
+                !claimSet.Actions.Exists(action =>
+                    action.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+        )
+        {
+            claimSet.Actions.Add(
+                new ClaimSetAction { Name = actionName, AuthorizationStrategyOverrides = [] }
+            );
+        }
 
         return true;
     }

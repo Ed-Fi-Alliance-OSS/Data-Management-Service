@@ -32,7 +32,8 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
     {
         ClaimSetResourceActionMutationResult? validationResult = ResolveActionNames(
             command,
-            out List<string> actionNames
+            out List<string> actionNames,
+            out List<string> suppliedActionNames
         );
         if (validationResult is not null)
         {
@@ -47,6 +48,7 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
                     claimSetName,
                     resourceClaimName,
                     actionNames,
+                    suppliedActionNames,
                     claims
                 )
                     ? new ClaimSetResourceActionMutationResult.Success()
@@ -95,8 +97,11 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
             };
         }
 
-        List<AuthorizationStrategyLookup> configuredStrategies = success.AuthorizationStrategy
-            .Select(strategy => new AuthorizationStrategyLookup(strategy.Id, strategy.AuthorizationStrategyName))
+        List<AuthorizationStrategyLookup> configuredStrategies = success
+            .AuthorizationStrategy.Select(strategy => new AuthorizationStrategyLookup(
+                strategy.Id,
+                strategy.AuthorizationStrategyName
+            ))
             .ToList();
         ClaimSetResourceActionMutationResult? validationResult = ResolveAuthorizationStrategyNames(
             command,
@@ -238,13 +243,15 @@ public sealed class ClaimSetResourceActionMutationWorkflow(
 
     private ClaimSetResourceActionMutationResult? ResolveActionNames(
         ResourceClaimActionMutationCommand command,
-        out List<string> canonicalActionNames
+        out List<string> canonicalActionNames,
+        out List<string> canonicalSuppliedActionNames
     )
     {
         canonicalActionNames = [];
+        canonicalSuppliedActionNames = [];
         ClaimSetResourceActionMutationResult? validationResult = ResolveActionNames(
             command.SuppliedActionNames,
-            out _
+            out canonicalSuppliedActionNames
         );
         if (validationResult is not null)
         {
