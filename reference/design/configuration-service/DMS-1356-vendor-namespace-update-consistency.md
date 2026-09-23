@@ -79,7 +79,8 @@ P4  Provider ...... for each client c in S1.Clients (ordered by ApplicationId, t
                       r = UpdateClientNamespaceClaimAsync(c.ClientUuid, command.NamespacePrefixes)
                       r is Success(u) → SyncApiClientUuid(c.Id, expected: c.ClientUuid, new: u)
                       any failure → §5.3 compensation → error response
-P5  Repository .... UpdateVendor(command) → 204 / vanished → §5.3 / ambiguous → D-4
+P5  Repository .... UpdateVendor(command) → 204 / vanished → §5.3 / duplicate company → §5.3 409 /
+                    ambiguous → D-4
 P6  Release ....... every held lock disposed on every path (success, failure, throw, cancel)
 ```
 
@@ -111,6 +112,7 @@ All compensation runs **under the held locks**. "Roll back" a client means `Upda
 | P4 sync returns `FailureNotExists` (row missing, UUID referenced elsewhere) | Nothing deleted; roll back the claim of *k*, then 1..*k*-1 | **500** | **500** |
 | P4 sync returns `FailureUnknown`, unrecognized, or throws | Treated as stale: roll back the claim of *k*, then 1..*k*-1 | **500** | **500** |
 | P5 `UpdateVendor` → `FailureNotExists` (vendor vanished under our locks; cascades delete its applications and rows) | Roll back every client's claim (provider `FailureNotFound` is idempotent success; sync `FailureNotExists*` accepted as the expected row absence; a rotated recreated client that is `SafeToDelete` is deleted) | **404** | **500** |
+| P5 `UpdateVendor` → `FailureDuplicateCompanyName` (rename onto a company that already exists in the tenant; the unique violation proves the vendor row did not commit) | Roll back every client's claim; never enters D-4 resolution | **409** `urn:ed-fi:api:conflict:non-unique-identity` | **500** |
 | P5 `UpdateVendor` → `FailureUnknown` or throws | D-4 resolution: matches the command **and not** the original → nothing; matches the original (including the no-op overlap, where the commit stays unproven) → roll back every client; partial/unresolvable/vanished → log, no compensation beyond the vanished-vendor rule above | **204** / **500** / **500** | **500** |
 | P2 lock timeout (any position in the set) | The lock manager releases the locks the session already took before it reports the timeout | **409** conflict (retry) | — |
 | P2 lock infrastructure failure | Same release inside the lock manager | **500** | — |

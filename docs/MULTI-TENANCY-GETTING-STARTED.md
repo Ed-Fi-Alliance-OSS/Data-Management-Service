@@ -7,9 +7,14 @@ This guide walks you through deploying and configuring a multi-tenant Ed-Fi API
 
 Multi-tenancy in DMS provides two layers of data isolation:
 
-1. **Tenant Isolation** - Configuration data (vendors, applications, instances)
-   is isolated between tenants via the `Tenant` HTTP header in Configuration
-   Service requests
+1. **Tenant Isolation** - Configuration data is isolated between tenants via the
+   `Tenant` HTTP header in Configuration Service requests. Vendors, applications
+   and their API clients, data stores with their contexts and derivatives,
+   ownership tokens, and profiles each belong to one tenant, and each tenant sees
+   only its own. Vendor company names and profile names need only be unique
+   within a tenant. Claim sets are shared across the deployment: system-reserved
+   claim sets are visible to every tenant, and claim set names are unique across
+   all tenants
 2. **Instance Routing** - Each tenant can have multiple data stores (databases),
    accessible via URL-based routing or credential-based routing
 
@@ -439,6 +444,61 @@ When using Swagger UI with multi-tenancy:
 
 Note: API credentials are tenant-specific. A credential created for "DistrictA"
 will only work when the DistrictA tenant is selected.
+
+## Upgrading an Existing Multi-Tenant Deployment
+
+Earlier releases stored profiles without a tenant, so every tenant saw every
+profile. When the Configuration Service upgrades its database, it assigns each
+existing profile to a tenant according to the applications that use it, through
+the tenant of each application's vendor:
+
+- A profile used only by one tenant's applications is assigned to that tenant.
+  Its id does not change.
+- A profile used by several tenants keeps its original id. That original stays
+  unassigned if an application of an unassigned vendor uses it; otherwise it goes
+  to the tenant with the lowest id that uses it. Every other tenant that uses it
+  gets a copy with the same name and definition, **under a new id**, and that
+  tenant's application assignments are moved to the copy.
+- A profile that no application uses stays unassigned. In multi-tenant mode no
+  tenant lists it any more; in single-tenant mode it is visible as before.
+- Single-tenant deployments are unchanged.
+
+The upgrade preserves only the profile assignments recorded on applications. A
+client whose application has no assigned profile can still select a profile
+through the profile header, but only one from its own tenant. After the upgrade
+it loses a profile that ended up unassigned or in another tenant, until you
+re-create that profile in the client's tenant. The same applies to a profile
+assigned in one tenant and selected by header in another.
+
+### Before upgrading: inventory the profiles
+
+Do this before the upgrade. Afterwards an unassigned profile is visible to no
+tenant, so it can no longer be read through the API in multi-tenant mode.
+
+1. List the profile catalog with `GET /v3/profiles`. The list returns only each
+   profile's `id` and `name`.
+2. Fetch the definition of each profile you need with `GET /v3/profiles/{id}`.
+3. Identify the profiles that clients select through the profile header without
+   an assignment, and record which tenants use each one.
+4. Save each definition together with its tenant mapping.
+
+### Upgrade order
+
+Copies get new ids, and each Ed-Fi API (DMS) process keeps an in-memory cache of
+the profile catalog and of application assignments. A process still holding the
+pre-upgrade catalog can miss a copy's new id and treat the application as having
+no profile, so it is not restricted by one until that cache entry expires.
+Draining traffic does not clear the cache. Upgrade as a coordinated deployment,
+not a rolling one:
+
+1. Stop every Ed-Fi API (DMS) process and every Configuration Service instance.
+2. Start one upgraded Configuration Service instance, so the database upgrade
+   runs once.
+3. Re-create the inventoried profiles in each tenant that uses them with
+   `POST /v3/profiles` (with the `Tenant` header), using the saved name and
+   definition. Then start any further Configuration Service instances.
+4. Start every Ed-Fi API (DMS) process, so every cache starts empty, and only
+   then admit traffic.
 
 ## Troubleshooting
 

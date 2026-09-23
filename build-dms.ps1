@@ -1748,8 +1748,8 @@ function Register-InstanceE2EFixture {
         foreach ($tenantName in $tenantOrder) {
             Add-Tenant -CmsUrl $cmsUrl -AccessToken $accessToken -TenantName $tenantName | Out-Null
 
-            # Vendor Company is globally unique in CMS (UX_Vendor_Company), so each canonical fixture
-            # tenant must register a distinct, deterministic company name.
+            # Vendor Company is unique only within a tenant in CMS; each canonical fixture tenant
+            # still registers a distinct, deterministic company name so the fixtures read clearly.
             $vendorId = Add-Vendor `
                 -CmsUrl $cmsUrl `
                 -AccessToken $accessToken `
