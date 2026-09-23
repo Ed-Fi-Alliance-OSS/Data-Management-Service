@@ -29,15 +29,15 @@ The gate is therefore the first release carrying **both** draft 04 and DMS-1433.
 ## What Is Built, and What Is Still Waiting
 
 The harness, its gating, its evidence and its lane are implemented and tested.
-No qualifying image has been published, the pin is still `pending`, and **the proof has never run against a real image**.
+The qualifying image is published and the pin is `published`, but **the proof has not yet run against it**.
 Everything below describes what will happen when it does, except where it says otherwise.
 
 ### The pin, and what completing it requires
 
 `eng/docker-compose/tests/plugin-deployment/stock-image-pin.json` names the published artifacts the proof runs against.
-Its `status` is `pending` and every release-specific value is `null`; the two repository names are not release-specific and are recorded from the outset.
+Its `status` is `published`, pinned to `dms-pre-8.0.1-alpha.0.155`; the pin's `$comment` records where each value came from.
 
-Moving it to `published` means filling all of:
+A `published` pin carries all of:
 
 | Field | What it records |
 | --- | --- |
@@ -131,18 +131,18 @@ The proof job runs only when readiness is true.
 Per-PR validation stays at the Pester level, where the harness is driven against a fail-closed shim with no daemon, no registry and no stack: `StockImageProofEntryScript.Tests.ps1`, `StockImageProofOrchestration.Tests.ps1`, `StockImageProofDecisions.Tests.ps1`, `StockImagePinReadiness.Tests.ps1` and `StockImageProofWorkflow.Tests.ps1`.
 Nothing that pulls an image is added to the pull-request checks.
 
-### What remains external to this ticket
+### External checkpoints
 
 1. DMS-1501 merges and publishes `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation`, with its external-consumer restore and compile evidence.
 2. A qualifying `edfialliance/ed-fi-api` release is published, carrying DMS-1499's loader and DMS-1433's fan-in step and cut after this ticket's version-specific image tagging.
 3. The pin is completed from that publication and its status moved to `published`.
 4. The first green scheduled or dispatched proof run is recorded on the ticket.
 
-None of the four has happened.
+The first three have happened. The first green proof run has not.
 
 ## Acceptance Criteria
 
-- A test under `eng/` pins an `edfialliance/ed-fi-api` tag at or after the first release carrying **both** `LoadPlugins` and DMS-1433's fan-in pipeline step, pulls it, and never invokes `docker build`. The pin is a committed document with a `pending` state that gates the lane, and the story records which release qualifies and why both are required.
+- A test under `eng/` pins an `edfialliance/ed-fi-api` tag at or after the first release carrying **both** `LoadPlugins` and DMS-1433's fan-in pipeline step, pulls it, and never invokes `docker build`. The pin is a committed document whose readiness gates the lane. It is now `published`, pinned to `dms-pre-8.0.1-alpha.0.155`, and the first proof run against it is still pending. The story records which release qualifies and why both are required.
 - Both acquisition recipes run as the committed overlay files under `eng/docker-compose/`, unedited, in **two** deployments rather than one. Unedited means env-driven, as in draft 04: Recipe 1 supplies `DMS_PLUGINS_MOUNT_SOURCE` and Recipe 2 supplies `PLUGIN_PACKAGE_URL`, `PLUGIN_PACKAGE_SHA256`, and `PLUGIN_NAME`, all of which the committed files declare with `:?`. They cannot share a deployment because both end at the single `/app/plugins` mount target, and merging them would mean running something neither document publishes.
 - Recipe 2's package is served to `fetch-plugins` over **HTTP**, from a test-owned Compose overlay added with its own `-f`, and the published overlay is not edited to accommodate the harness.
 - The DMS-1436 fixture validator is the payload for both, packed asset-only, and a POST failing its check returns the custom-validation 400 over HTTP against the pulled image, matched exactly and per arm.
@@ -157,4 +157,4 @@ None of the four has happened.
 2. ~~Add the four runs.~~ Done: `recipe1`, `recipe2`, `wrongDigest`, `misspelledAllowlist`, each its own deployment.
 3. ~~Add the read-only mount assertion.~~ Done, from the mount table and a write probe inside the container.
 4. ~~Wire the test into the scheduled lane.~~ Done: `.github/workflows/scheduled-stock-plugin-proof.yml`, gated on pin readiness.
-5. Record the first green run against the first qualifying published tag on the ticket. **Outstanding**, and blocked on the four external items above.
+5. Record the first green run against the first qualifying published tag on the ticket. **Outstanding**. The first three external checkpoints are complete; only the first green proof run remains.
