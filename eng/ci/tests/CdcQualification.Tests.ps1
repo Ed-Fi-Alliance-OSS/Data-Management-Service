@@ -615,6 +615,34 @@ Describe 'CDC documentation qualification boundary' {
         "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
         (Get-CdcRunbookRecordSizeReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
+    It 'requires all packaged history and retirement cases (<Selection>, <Fault>)' -ForEach @(
+        foreach ($selection in @('History', 'Cleanup')) {
+            foreach ($fault in @('none', 'excluded', 'skipped', 'partial', 'duplicate')) {
+                @{ Selection = $selection; Fault = $fault }
+            }
+        }
+    ) {
+        $path = Join-Path $TestDrive 'history.trx'
+        $required = (Get-CdcRunbookHistoryReport (Join-Path $TestDrive 'missing.trx') -Selection $Selection).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            for ($i = 0; $i -lt $case.Required; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        if ($Fault -eq 'excluded') { $nodes = @() }
+        if ($Fault -eq 'skipped') { $nodes[0] = $nodes[0].Replace('Passed', 'NotExecuted') }
+        if ($Fault -eq 'partial') { $nodes = $nodes[1..($nodes.Count - 1)] }
+        if ($Fault -eq 'duplicate') { $nodes += $nodes[0] }
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookHistoryReport $path -Selection $Selection).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+    }
+    It 'selects the marked retirement retry with provider cleanup in both History lanes' {
+        $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
+        $runner | Should -Match 'Category=CdcArtifactCleanup\|Category=CdcRunbookRetirement'
+        $runner | Should -Match 'Get-CdcRunbookHistoryReport -Path.*-Selection Cleanup'
+        $runner | Should -Match 'Get-CdcRunbookHistoryReport -Path.*\$name/\$name.trx'
+    }
     It 'requires every named wrapper case to execute once and pass (<Fault>)' -ForEach @(
         @{ Fault = 'none' }, @{ Fault = 'excluded' }, @{ Fault = 'skipped' }, @{ Fault = 'notrun' }, @{ Fault = 'duplicate' }
     ) {

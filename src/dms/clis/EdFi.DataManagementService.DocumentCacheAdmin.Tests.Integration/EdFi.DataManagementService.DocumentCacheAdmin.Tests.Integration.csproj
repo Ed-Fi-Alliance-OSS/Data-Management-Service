@@ -30,6 +30,13 @@
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="../EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs" Link="Shared/CdcRunbookExamples.cs" />
+        <Compile
+            Include="../EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookArguments.cs"
+            Link="Shared/CdcRunbookArguments.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs"
+            Link="Shared/CdcRunbookExamples.cs"
+        />
     </ItemGroup>
 </Project>

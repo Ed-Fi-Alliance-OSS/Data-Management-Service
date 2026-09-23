@@ -95,7 +95,8 @@ internal static class CdcRunbookLiveCommands
         string statePath,
         CancellationToken token,
         IReadOnlyDictionary<string, string> inputs = null!,
-        bool confirmConsumerCapacity = true
+        bool confirmConsumerCapacity = true,
+        bool confirmDestructiveCleanup = true
     )
     {
         string repository = CdcRunbookExamples.RepositoryRoot;
@@ -137,7 +138,10 @@ internal static class CdcRunbookLiveCommands
         foreach (string argument in CdcRunbookArguments.Parse(CdcRunbookExamples.Read(id), substitutions))
         {
             // Explicit fixture-only negative case; the positive command is unchanged.
-            if (confirmConsumerCapacity || argument != "--confirm-consumer-capacity")
+            if (
+                (confirmConsumerCapacity || argument != "--confirm-consumer-capacity")
+                && (confirmDestructiveCleanup || argument != "--destructive-cleanup")
+            )
             {
                 start.ArgumentList.Add(argument);
             }
@@ -157,9 +161,13 @@ internal static class CdcRunbookLiveCommands
             string artifact = Path.Combine(
                 TestContext.CurrentContext.WorkDirectory,
                 (
-                    id.StartsWith("cdc-size-", StringComparison.Ordinal)
-                        ? "record-size-command-"
-                        : "native-recovery-command-"
+                    id switch
+                    {
+                        "cdc-retire" or "cdc-restamp-handoff-status" or "cdc-disclosure-containment-result" =>
+                            "managed-lifecycle-command-",
+                        _ when id.StartsWith("cdc-size-", StringComparison.Ordinal) => "record-size-command-",
+                        _ => "native-recovery-command-",
+                    }
                 )
                     + Guid.NewGuid().ToString("N")
                     + ".json"
@@ -180,6 +188,7 @@ internal static class CdcRunbookLiveCommands
                         Test = TestContext.CurrentContext.Test.Name,
                         SnippetId = id,
                         ConfirmConsumerCapacity = confirmConsumerCapacity,
+                        ConfirmDestructiveCleanup = confirmDestructiveCleanup,
                         ExitCode = process.ExitCode,
                         Result = result,
                         Passes = passes,

@@ -1,0 +1,2621 @@
+[
+  {
+    "Test": "It_allows_all_three_commands_from_managed_non_CDC_creation",
+    "SourceAttachment": "cdc-history-0-1001-87bdefcaf46e47b4b9c44a54ed67bed3.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "internalOnly",
+        "ExitCode": 0,
+        "at": "2026-09-23T07:53:53.6825041-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "completed",
+          "classification": "succeeded",
+          "mutated": true,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:04e51f6f84ecd24e585eafa762c123cf74a607eb5e0106f623b15989bfc72b3d",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.2654592
+        }
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "internalOnly",
+        "ExitCode": 0,
+        "at": "2026-09-23T07:53:54.7360905-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "completed",
+          "classification": "succeeded",
+          "mutated": true,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:04e51f6f84ecd24e585eafa762c123cf74a607eb5e0106f623b15989bfc72b3d",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1253884
+        }
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "internalOnly",
+        "ExitCode": 0,
+        "at": "2026-09-23T07:53:55.9825935-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "completed",
+          "classification": "succeeded",
+          "mutated": true,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:04e51f6f84ecd24e585eafa762c123cf74a607eb5e0106f623b15989bfc72b3d",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.3024638
+        }
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime(False)",
+    "SourceAttachment": "cdc-history-0-1002-938474c2919c4300ba694e0171e3c523.json",
+    "Evidence": [
+      {
+        "Operation": "enable",
+        "RejectedSourceHistoryOnly": true,
+        "PreviouslyWritten": false,
+        "UnchangedDatabaseAndJournal": true
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime(True)",
+    "SourceAttachment": "cdc-history-0-1003-abdd64b7a1724c6b8a946ead1bb94165.json",
+    "Evidence": [
+      {
+        "Operation": "enable",
+        "RejectedSourceHistoryOnly": true,
+        "PreviouslyWritten": true,
+        "UnchangedDatabaseAndJournal": true
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"possible\")",
+    "SourceAttachment": "cdc-history-0-1005-941cc6e4f32f4f83b32bb7716d1bf2ac.json",
+    "Evidence": [
+      {
+        "phase": "valid-retained-history",
+        "status": "possible"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "possible",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:53.870004-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:06cdc6391bac6e5670dd344ab2746f82d59fa3085b811efc18b8099dbf46fcb9",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1055001
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "96FE1862A89C41F44CF6745609772613410021ABB84CE9A994CC37B54727BEC9",
+        "after": "96FE1862A89C41F44CF6745609772613410021ABB84CE9A994CC37B54727BEC9"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "possible"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "possible",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:54.9871678-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:06cdc6391bac6e5670dd344ab2746f82d59fa3085b811efc18b8099dbf46fcb9",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1181803
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "2C63FC6F3411B967D12C36D2439037CEB18978C1FFABDB04B71DAAB89D5C41CA",
+        "after": "2C63FC6F3411B967D12C36D2439037CEB18978C1FFABDB04B71DAAB89D5C41CA"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "possible"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "possible",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:56.0746747-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:06cdc6391bac6e5670dd344ab2746f82d59fa3085b811efc18b8099dbf46fcb9",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0946514
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "C63263E3DDD0DC3D08AB12C91B72FD7D126A754DAFD33210C51D6DFFFF11E96F",
+        "after": "C63263E3DDD0DC3D08AB12C91B72FD7D126A754DAFD33210C51D6DFFFF11E96F"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"active\")",
+    "SourceAttachment": "cdc-history-0-1006-471ed2dd78364d35ba4d519458806ba6.json",
+    "Evidence": [
+      {
+        "phase": "valid-retained-history",
+        "status": "active"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "active",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:57.6848348-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:5ba0ccd632070936507ec1b1459624ace9aa668f29ea23e4667d186213d7d297",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0847833
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "8226A3B95C5FA2CAD4B68D105DC38E19E0CDC77B060BFCCD6EF53505744E13E8",
+        "after": "8226A3B95C5FA2CAD4B68D105DC38E19E0CDC77B060BFCCD6EF53505744E13E8"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "active"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "active",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:58.8747097-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:5ba0ccd632070936507ec1b1459624ace9aa668f29ea23e4667d186213d7d297",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1097772
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "2737DE6FCB9CAFE22979CF246FC21027BC20341B996D7DFB4609F161F38F0A34",
+        "after": "2737DE6FCB9CAFE22979CF246FC21027BC20341B996D7DFB4609F161F38F0A34"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "active"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "active",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:00.0947455-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:5ba0ccd632070936507ec1b1459624ace9aa668f29ea23e4667d186213d7d297",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1059978
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "CBA670A667968E6656D7ABA10225133455B3B2B4759AAEB810C8529B1C98B5EA",
+        "after": "CBA670A667968E6656D7ABA10225133455B3B2B4759AAEB810C8529B1C98B5EA"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"historical\")",
+    "SourceAttachment": "cdc-history-0-1007-80cbc118eb004c818290ff2c8c8f74c4.json",
+    "Evidence": [
+      {
+        "phase": "valid-retained-history",
+        "status": "historical"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "historical",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:01.9842282-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b1fd2851b4e793c5f1a60b3a003a87e7dc3c0159a18727192d78ff5fef34a514",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1125959
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "17F8B222D7C2A3B2648CD2C8C64D05ACC8E446BE8DA1E6C91A4D6E4FD2915A95",
+        "after": "17F8B222D7C2A3B2648CD2C8C64D05ACC8E446BE8DA1E6C91A4D6E4FD2915A95"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "historical"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "historical",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:03.1307242-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b1fd2851b4e793c5f1a60b3a003a87e7dc3c0159a18727192d78ff5fef34a514",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1057859
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "797FC9FBB8B4B90D6BE2D218E1E2AE705440F99EFBA66254637CB4F73A895F6C",
+        "after": "797FC9FBB8B4B90D6BE2D218E1E2AE705440F99EFBA66254637CB4F73A895F6C"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "historical"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "historical",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:04.2239349-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b1fd2851b4e793c5f1a60b3a003a87e7dc3c0159a18727192d78ff5fef34a514",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0921036
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "B6FCE5289932EDC566E9F35CA7CC4EAC71E3DCB16B8A63BCAF7B30723E98D0E9",
+        "after": "B6FCE5289932EDC566E9F35CA7CC4EAC71E3DCB16B8A63BCAF7B30723E98D0E9"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"unknown\")",
+    "SourceAttachment": "cdc-history-0-1008-b6062459bfb4476889cb551bd9eab5ec.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "unknown",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:05.9579135-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:26ae4e83ac236484a93c4f8544d97ef43836ac43f35583e1b5b8185d8a520a25",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0445412
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "49E9C145A521D8D957537D8B312F73D5360A792EB39FC7E63BF615FF032E444F",
+        "after": "49E9C145A521D8D957537D8B312F73D5360A792EB39FC7E63BF615FF032E444F"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "unknown",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:06.9451354-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:26ae4e83ac236484a93c4f8544d97ef43836ac43f35583e1b5b8185d8a520a25",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0479533
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "646DCBF183372E004E2FC88D471C9584B3E7DE7B1F4E44D7C3EAA94BDD9C8380",
+        "after": "646DCBF183372E004E2FC88D471C9584B3E7DE7B1F4E44D7C3EAA94BDD9C8380"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "unknown",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:07.9675397-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:26ae4e83ac236484a93c4f8544d97ef43836ac43f35583e1b5b8185d8a520a25",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0403571
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "8ACF1F43B24593405B3B1239E04537C8BED37A7FF0DD17BD82700B55A3A26A4F",
+        "after": "8ACF1F43B24593405B3B1239E04537C8BED37A7FF0DD17BD82700B55A3A26A4F"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"absent-root\")",
+    "SourceAttachment": "cdc-history-0-1009-ceb0e6d5e8a2403aa35dc0123022900e.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "absent-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:09.8124989-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b7274d7bc74adf2b0a80d0ea20139b2f2c9459b5dfe6e67fdd6f7b95635b6797",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0581504
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "F82CA33A6F057DABEE9F9030BFB98CB75175233EF54E1A36399D98028FCF181A",
+        "after": "F82CA33A6F057DABEE9F9030BFB98CB75175233EF54E1A36399D98028FCF181A"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "absent-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:10.9094092-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b7274d7bc74adf2b0a80d0ea20139b2f2c9459b5dfe6e67fdd6f7b95635b6797",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0414732
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "D68F9AC23B0A5BC44E48486BE3923C63D20F3A9EDA26875E256F9DF6F8DE6A98",
+        "after": "D68F9AC23B0A5BC44E48486BE3923C63D20F3A9EDA26875E256F9DF6F8DE6A98"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "absent-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:11.9293174-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b7274d7bc74adf2b0a80d0ea20139b2f2c9459b5dfe6e67fdd6f7b95635b6797",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0398811
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "EF0BD9E318BA10A5F437BCC51678E403C851AE9D5E81563F70B055DC673E6D3C",
+        "after": "EF0BD9E318BA10A5F437BCC51678E403C851AE9D5E81563F70B055DC673E6D3C"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"empty-root\")",
+    "SourceAttachment": "cdc-history-0-1010-e220d1c14fd941ddb45b915b464b6f93.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "empty-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:13.8038976-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": null,
+          "physicalSourceFingerprint": null,
+          "lifecycle": null,
+          "cacheAheadRecoveryRequired": null,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Trusted downstream publication history could not be locked no command was executed."
+            }
+          ],
+          "offlineWriterAdmission": null,
+          "elapsedCommandTimeSeconds": null
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "93C06D4E2D912D45CA76BFF8C9584BB675EF24580F8346E4CE96BAFF40A68315",
+        "after": "93C06D4E2D912D45CA76BFF8C9584BB675EF24580F8346E4CE96BAFF40A68315"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "empty-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:15.0907321-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": null,
+          "physicalSourceFingerprint": null,
+          "lifecycle": null,
+          "cacheAheadRecoveryRequired": null,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Trusted downstream publication history could not be locked no command was executed."
+            }
+          ],
+          "offlineWriterAdmission": null,
+          "elapsedCommandTimeSeconds": null
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "90C16BF3817F4EAA6FE81ADE9E58F0D037A4D9557E78AE496DDF26423F7298FA",
+        "after": "90C16BF3817F4EAA6FE81ADE9E58F0D037A4D9557E78AE496DDF26423F7298FA"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "empty-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:16.3814353-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": null,
+          "physicalSourceFingerprint": null,
+          "lifecycle": null,
+          "cacheAheadRecoveryRequired": null,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Trusted downstream publication history could not be locked no command was executed."
+            }
+          ],
+          "offlineWriterAdmission": null,
+          "elapsedCommandTimeSeconds": null
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "7D83956F644D73DBA5458190E966FEADF037B3A79D3A8A05CFCA58FD443746B3",
+        "after": "7D83956F644D73DBA5458190E966FEADF037B3A79D3A8A05CFCA58FD443746B3"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"unreadable\")",
+    "SourceAttachment": "cdc-history-0-1011-bc22a9953e2e49aaa1baf0f640a62903.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "unreadable",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:18.394875-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:ea7dc0bbbdc860644d7dedbefd14dfbb45db94377a590fcff0d82abc8ea63fc8",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0471751
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "43D8FCBFB46007DF2CDA13FF23065D3183A6F84143C6C05E5D2DE7D55A0E5ED3",
+        "after": "43D8FCBFB46007DF2CDA13FF23065D3183A6F84143C6C05E5D2DE7D55A0E5ED3"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "unreadable",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:19.6693471-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:ea7dc0bbbdc860644d7dedbefd14dfbb45db94377a590fcff0d82abc8ea63fc8",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0533161
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "7B3A923E95F2E48DECF9FA6CD960EC4A7ECACFB86ED5DBE4A7194E53C4EE5DBF",
+        "after": "7B3A923E95F2E48DECF9FA6CD960EC4A7ECACFB86ED5DBE4A7194E53C4EE5DBF"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "unreadable",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:20.8336067-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:ea7dc0bbbdc860644d7dedbefd14dfbb45db94377a590fcff0d82abc8ea63fc8",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0473194
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "B1E4EEF9805C924B920594E1F0A0688E3483885A0189889A16F5A061F36C69A1",
+        "after": "B1E4EEF9805C924B920594E1F0A0688E3483885A0189889A16F5A061F36C69A1"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"wrong-target\")",
+    "SourceAttachment": "cdc-history-0-1012-d32194ed04ce48808bf128243d8561f4.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-target",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:22.4596015-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:1b27768eba38a9ccca10d29d4cad5009e04a6ba3afe97f279d366281c71805b0",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0584564
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "AF4AD58A3E109DD4B0D91FB2AAA84FA29BF2413521EA481A09CAC3785FF1BB06",
+        "after": "AF4AD58A3E109DD4B0D91FB2AAA84FA29BF2413521EA481A09CAC3785FF1BB06"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-target",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:23.5160896-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:1b27768eba38a9ccca10d29d4cad5009e04a6ba3afe97f279d366281c71805b0",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0619588
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "024EAC62007920C0F21480BBEA3B2398FA574E4686DD5A27FE240FBD9705CD2C",
+        "after": "024EAC62007920C0F21480BBEA3B2398FA574E4686DD5A27FE240FBD9705CD2C"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-target",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:24.5906302-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:1b27768eba38a9ccca10d29d4cad5009e04a6ba3afe97f279d366281c71805b0",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0673824
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "7BDB86B57049A873D8767BA3A3D0F84E4B7927673E8228E679146D1790D0D7E1",
+        "after": "7BDB86B57049A873D8767BA3A3D0F84E4B7927673E8228E679146D1790D0D7E1"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"wrong-deployment\")",
+    "SourceAttachment": "cdc-history-0-1013-a6177bdaed0e4e6798e6a2cf7d0e7854.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-deployment",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:26.1950124-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:25ad394f85655e01b97e7bea872692d2b4bfc16d17febe0ac2768e2f003b9dfe",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0416276
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "288F06601CDAEF85BAF6DAA3DCD47C079CC4092963FBF71BDBD6A33A05A03E95",
+        "after": "288F06601CDAEF85BAF6DAA3DCD47C079CC4092963FBF71BDBD6A33A05A03E95"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-deployment",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:27.2013215-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:25ad394f85655e01b97e7bea872692d2b4bfc16d17febe0ac2768e2f003b9dfe",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0461598
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "4D99DF2A05AF4CEC54A2EB801DE2F406269A6F5BE5FB69BCC63E040C31DA426A",
+        "after": "4D99DF2A05AF4CEC54A2EB801DE2F406269A6F5BE5FB69BCC63E040C31DA426A"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-deployment",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:28.3056411-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:25ad394f85655e01b97e7bea872692d2b4bfc16d17febe0ac2768e2f003b9dfe",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0534384
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "A226D2923DCE98AA480FB5138E12294C0BD405646143D0C4B5F30A7F276C3EEF",
+        "after": "A226D2923DCE98AA480FB5138E12294C0BD405646143D0C4B5F30A7F276C3EEF"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"wrong-source\")",
+    "SourceAttachment": "cdc-history-0-1014-0090a77908eb4b3a98b5ece6ad613c88.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-source",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:30.0675491-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:316655516974914774856001dabd018792ee82f99d47a4e9b132067e51d56ad8",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0452919
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "EF99EC23145124A54553FF5BE22B70B670D8676ADD2C539940C7D4EA5580A605",
+        "after": "EF99EC23145124A54553FF5BE22B70B670D8676ADD2C539940C7D4EA5580A605"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-source",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:31.1335739-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:316655516974914774856001dabd018792ee82f99d47a4e9b132067e51d56ad8",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0442393
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "9BF5C88E9FD1EA8AEC9B84A2CA0F3F2692DFCE2102EE9C0C01A183CF007BC194",
+        "after": "9BF5C88E9FD1EA8AEC9B84A2CA0F3F2692DFCE2102EE9C0C01A183CF007BC194"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "wrong-source",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:32.1914026-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:316655516974914774856001dabd018792ee82f99d47a4e9b132067e51d56ad8",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0477751
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "9145BD7E8F6B6770B6FAD21139A7CED9C4791D879D9FEE8C588FFE5A69415E4A",
+        "after": "9145BD7E8F6B6770B6FAD21139A7CED9C4791D879D9FEE8C588FFE5A69415E4A"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"missing-receipt\")",
+    "SourceAttachment": "cdc-history-0-1015-6fd53b500964419fa36e4d2ec7224a10.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-receipt",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:33.9645269-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:e5858ca1fd8aeb6f2bfc6617a9be3c61798116ed87aa2b6cde5a3d1f2977c8d1",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0998625
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "7140FF73632B2D0C4F9F9C40B58D62BBE6B0DCD20221CCFDF482920D27FC3198",
+        "after": "7140FF73632B2D0C4F9F9C40B58D62BBE6B0DCD20221CCFDF482920D27FC3198"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-receipt",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:35.0147626-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:e5858ca1fd8aeb6f2bfc6617a9be3c61798116ed87aa2b6cde5a3d1f2977c8d1",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0914386
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "343167DE269441130C684F5A2B44FAA9499523416CEA1907985326CA26837107",
+        "after": "343167DE269441130C684F5A2B44FAA9499523416CEA1907985326CA26837107"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-receipt",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:36.079462-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:e5858ca1fd8aeb6f2bfc6617a9be3c61798116ed87aa2b6cde5a3d1f2977c8d1",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0832126
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "AC27BCCB60C86F6478599186C02F42D925467983368309DB8AFBCA53F9A86B34",
+        "after": "AC27BCCB60C86F6478599186C02F42D925467983368309DB8AFBCA53F9A86B34"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"missing-journal\")",
+    "SourceAttachment": "cdc-history-0-1016-f5427f79ad4843698b5c80da7772ccc8.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-journal",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:37.7169367-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:db6cb04a5b81a2aaf02d2cbce15c8063f491e5c4671c6d4dbdc62a39c7bdd442",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0692904
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "B2E0AC12371FF35277A1C4660D12013208B3671669AB78E8596AC814A47DDD82",
+        "after": "B2E0AC12371FF35277A1C4660D12013208B3671669AB78E8596AC814A47DDD82"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-journal",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:38.7500126-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:db6cb04a5b81a2aaf02d2cbce15c8063f491e5c4671c6d4dbdc62a39c7bdd442",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0680861
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "26F533DD3BE5022BBA86E3EC894D93F00DDDF0CD31B56DDB32235717286CBABE",
+        "after": "26F533DD3BE5022BBA86E3EC894D93F00DDDF0CD31B56DDB32235717286CBABE"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-journal",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:39.8615712-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:db6cb04a5b81a2aaf02d2cbce15c8063f491e5c4671c6d4dbdc62a39c7bdd442",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0689432
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "5638D75925CFA1255A7EC33A0F57C0BAD6BE729A3CA295094FA3DB79A4129D5A",
+        "after": "5638D75925CFA1255A7EC33A0F57C0BAD6BE729A3CA295094FA3DB79A4129D5A"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"missing-history\")",
+    "SourceAttachment": "cdc-history-0-1017-789d1de357874c1c99637e2358a465f6.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-history",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:41.9472501-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:db4ead012a30675b8951a83fe22fd69880186c22d60c6479d18de05a914d4ec0",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0543796
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "F3100272168764C5EA3C46C0D9931E0AE3EDD2A8456F555DBBD15FE607ED6D9A",
+        "after": "F3100272168764C5EA3C46C0D9931E0AE3EDD2A8456F555DBBD15FE607ED6D9A"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-history",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:43.3503646-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:db4ead012a30675b8951a83fe22fd69880186c22d60c6479d18de05a914d4ec0",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0558144
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "B9986918EBD4D4D3240F836E8AECE077F3DA6FE6F01BD8CD36C88D77CCE5AC82",
+        "after": "B9986918EBD4D4D3240F836E8AECE077F3DA6FE6F01BD8CD36C88D77CCE5AC82"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "missing-history",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:44.6615379-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:db4ead012a30675b8951a83fe22fd69880186c22d60c6479d18de05a914d4ec0",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0443096
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "08248E992D8ABF6157F2513DF9B6B601ADBC3DC35365C4FEBD6F494D93C571DE",
+        "after": "08248E992D8ABF6157F2513DF9B6B601ADBC3DC35365C4FEBD6F494D93C571DE"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"corrupt-history\")",
+    "SourceAttachment": "cdc-history-0-1018-80aeb96fc5d641ceaff81b94a9e12471.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "corrupt-history",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:46.30229-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:0fd13b911def7a3aae9dbc9a87da54c5f81c8f847ef9f80981d2a1fbcc5b22f6",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.041102
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "4839AAF4821361593E8C70D4FA3D10389F490684402ED8DD81FCF53F60F781A4",
+        "after": "4839AAF4821361593E8C70D4FA3D10389F490684402ED8DD81FCF53F60F781A4"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "corrupt-history",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:47.272468-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:0fd13b911def7a3aae9dbc9a87da54c5f81c8f847ef9f80981d2a1fbcc5b22f6",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0424967
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "FE7A9B09B991FB4B481A81F3B60BC17E7C0F6B79B857E8E84EF50C9549AB911A",
+        "after": "FE7A9B09B991FB4B481A81F3B60BC17E7C0F6B79B857E8E84EF50C9549AB911A"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "corrupt-history",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:48.3041673-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:0fd13b911def7a3aae9dbc9a87da54c5f81c8f847ef9f80981d2a1fbcc5b22f6",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0384821
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "B58AA797B9FB9FA6E222D521B15DA87814EF5F59FF6713069BA2D41CCABF4411",
+        "after": "B58AA797B9FB9FA6E222D521B15DA87814EF5F59FF6713069BA2D41CCABF4411"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"corrupt-journal\")",
+    "SourceAttachment": "cdc-history-0-1019-35275b1663e54f1daea2ab0fdd56c2e9.json",
+    "Evidence": [
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "corrupt-journal",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:49.9384567-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:d0a9783b1b00d6fcb6714ee22d37194e73b3ff5cca7079b075041abb329ddfde",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0656364
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "023ECA8B2DEEF7DDEFEDE32F47EAC61F20EA4C70584984557C14365359664E1A",
+        "after": "023ECA8B2DEEF7DDEFEDE32F47EAC61F20EA4C70584984557C14365359664E1A"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "corrupt-journal",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:50.8958165-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:d0a9783b1b00d6fcb6714ee22d37194e73b3ff5cca7079b075041abb329ddfde",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0616285
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "052FF4662C35A25FFE7B0BB314B793FE555521DE9ED42A70CC8D70F205B40240",
+        "after": "052FF4662C35A25FFE7B0BB314B793FE555521DE9ED42A70CC8D70F205B40240"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "corrupt-journal",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:51.8626019-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:d0a9783b1b00d6fcb6714ee22d37194e73b3ff5cca7079b075041abb329ddfde",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.059148
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "F2B00EEA34EE7912FDDFCED0866EE491647E71C22816F0F07675ADC51679CD9E",
+        "after": "F2B00EEA34EE7912FDDFCED0866EE491647E71C22816F0F07675ADC51679CD9E"
+      }
+    ]
+  },
+  {
+    "Test": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+    "SourceAttachment": "cdc-history-0-1021-4c45ab9a0ef94e59a2879d11cbf6d601.json",
+    "Evidence": [
+      {
+        "phase": "valid-retained-history",
+        "status": "historical"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:57.644934-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:43ea0be1613602398c76ec05e5aea18cef483089ec0a6770a6a87bd9d49e0a38",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0850131
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "E7A8BF1DC9E435077EABE1E66F8C47CCEC1865CFC1B1995D406EBED8F4E7B1ED",
+        "after": "E7A8BF1DC9E435077EABE1E66F8C47CCEC1865CFC1B1995D406EBED8F4E7B1ED"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "historical"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:58.7076954-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:43ea0be1613602398c76ec05e5aea18cef483089ec0a6770a6a87bd9d49e0a38",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0979627
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "F19EB02D7549458755905687358E4E0E442ADFC967DED87E461057E90CE21B64",
+        "after": "F19EB02D7549458755905687358E4E0E442ADFC967DED87E461057E90CE21B64"
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "historical"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:53:59.7549682-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:43ea0be1613602398c76ec05e5aea18cef483089ec0a6770a6a87bd9d49e0a38",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1036817
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "245B9386BF7A295E3842A4A586D1270514321CE9B9579383D9336B95B5EBC94A",
+        "after": "245B9386BF7A295E3842A4A586D1270514321CE9B9579383D9336B95B5EBC94A"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "empty-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:54:00.661581-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": null,
+          "physicalSourceFingerprint": null,
+          "lifecycle": null,
+          "cacheAheadRecoveryRequired": null,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Trusted downstream publication history could not be locked no command was executed."
+            }
+          ],
+          "offlineWriterAdmission": null,
+          "elapsedCommandTimeSeconds": null
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "308528AE39B288C1DA5CCDB08FE50079C2018FB04DC39F832C4647A2DB52A4EC",
+        "after": "308528AE39B288C1DA5CCDB08FE50079C2018FB04DC39F832C4647A2DB52A4EC"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "empty-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:54:01.6480881-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": null,
+          "physicalSourceFingerprint": null,
+          "lifecycle": null,
+          "cacheAheadRecoveryRequired": null,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Trusted downstream publication history could not be locked no command was executed."
+            }
+          ],
+          "offlineWriterAdmission": null,
+          "elapsedCommandTimeSeconds": null
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "7B9509D27FF6A296158E73F2C0041F2CE5B10A8DA7A83D6E69F814A1B5FED8BC",
+        "after": "7B9509D27FF6A296158E73F2C0041F2CE5B10A8DA7A83D6E69F814A1B5FED8BC"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "empty-root",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:54:02.5398065-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": null,
+          "physicalSourceFingerprint": null,
+          "lifecycle": null,
+          "cacheAheadRecoveryRequired": null,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Trusted downstream publication history could not be locked no command was executed."
+            }
+          ],
+          "offlineWriterAdmission": null,
+          "elapsedCommandTimeSeconds": null
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "D7350A920EF3F7D7FBB3BDE01F2183E5087A72306B2609B3C4CEF0BB16765231",
+        "after": "D7350A920EF3F7D7FBB3BDE01F2183E5087A72306B2609B3C4CEF0BB16765231"
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early(\"activate-offline\")",
+    "SourceAttachment": "cdc-history-0-1022-79f9a62aeaec4da4ac869f0ab97c96be.json",
+    "Evidence": [
+      {
+        "phase": "reservation-durable",
+        "at": "2026-09-23T07:52:44.0841344-05:00"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:44.3272682-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:b46e63b8eb7882ca276d0a21c1193fc7ddac78dafb14442b268e4ecaffccfd72",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.164122
+        }
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early(\"deactivate-offline\")",
+    "SourceAttachment": "cdc-history-0-1023-3f5b8210e9134cfda766c51252dcc3a0.json",
+    "Evidence": [
+      {
+        "phase": "reservation-durable",
+        "at": "2026-09-23T07:52:46.5945329-05:00"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:46.8843911-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:ea7b89ec39889768f7df18c96d12979d4375f037ae276e5dfa7f8c58c43d8f59",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1476981
+        }
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early(\"recover-cache-ahead\")",
+    "SourceAttachment": "cdc-history-0-1024-948baf79199d41d9af1e3f8886819a9e.json",
+    "Evidence": [
+      {
+        "phase": "reservation-durable",
+        "at": "2026-09-23T07:52:49.3297114-05:00"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:49.5443279-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:4c73ac35a58b8431662a7711894a52d58f07eb1c8e44d77d31dbb932c632c4ed",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1455229
+        }
+      }
+    ]
+  },
+  {
+    "Test": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins(\"activate-offline\")",
+    "SourceAttachment": "cdc-history-0-1026-f61fefbf057e4ff592ed71d18c80c72f.json",
+    "Evidence": [
+      {
+        "phase": "E18-waiting-on-provider-mutex",
+        "at": "2026-09-23T07:52:31.8707515-05:00"
+      },
+      {
+        "phase": "history-accepted-cache-delete-blocked",
+        "at": "2026-09-23T07:52:32.3177427-05:00"
+      },
+      {
+        "phase": "E18-mutation-visible-before-reservation",
+        "at": "2026-09-23T07:52:32.9049885-05:00"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "ExitCode": 0,
+        "at": "2026-09-23T07:52:32.9417546-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "completed",
+          "classification": "succeeded",
+          "mutated": true,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:de3a6d561e07e92f131339eafc279278e0fa617c196eff5c0381aeae3be44fbe",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 1.0352668
+        }
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "possible"
+      },
+      {
+        "command": "activate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:34.0182768-05:00",
+        "result": {
+          "command": "offlineActivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:de3a6d561e07e92f131339eafc279278e0fa617c196eff5c0381aeae3be44fbe",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineActivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.0934889
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "activate-offline",
+        "before": "85A866D3D1614BD44FAADE95455B685A7E96E3EDC6A3BC435E10DC4D3EF44DF8",
+        "after": "85A866D3D1614BD44FAADE95455B685A7E96E3EDC6A3BC435E10DC4D3EF44DF8"
+      }
+    ]
+  },
+  {
+    "Test": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins(\"deactivate-offline\")",
+    "SourceAttachment": "cdc-history-0-1027-2b1df59a805541cc8c9d0795942c0cd6.json",
+    "Evidence": [
+      {
+        "phase": "E18-waiting-on-provider-mutex",
+        "at": "2026-09-23T07:52:35.7510694-05:00"
+      },
+      {
+        "phase": "history-accepted-cache-delete-blocked",
+        "at": "2026-09-23T07:52:36.2005317-05:00"
+      },
+      {
+        "phase": "E18-mutation-visible-before-reservation",
+        "at": "2026-09-23T07:52:36.5736443-05:00"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "ExitCode": 0,
+        "at": "2026-09-23T07:52:36.6019691-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "completed",
+          "classification": "succeeded",
+          "mutated": true,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:8742cc55d07cfc9b3d68b90d352523e08bbf70d34a7e8a1663d05bca0f5585eb",
+          "lifecycle": "disabled",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.8298727
+        }
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "possible"
+      },
+      {
+        "command": "deactivate-offline",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:37.8021363-05:00",
+        "result": {
+          "command": "offlineDeactivation",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:8742cc55d07cfc9b3d68b90d352523e08bbf70d34a7e8a1663d05bca0f5585eb",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "offlineDeactivationWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.110023
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "deactivate-offline",
+        "before": "96EB30CF08C50D674CEE57A76F02B0FF477114D0C1C88584371B2EA40B087D7A",
+        "after": "96EB30CF08C50D674CEE57A76F02B0FF477114D0C1C88584371B2EA40B087D7A"
+      }
+    ]
+  },
+  {
+    "Test": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins(\"recover-cache-ahead\")",
+    "SourceAttachment": "cdc-history-0-1028-dd9c98e9c1764105a457331496500653.json",
+    "Evidence": [
+      {
+        "phase": "E18-waiting-on-provider-mutex",
+        "at": "2026-09-23T07:52:39.6247049-05:00"
+      },
+      {
+        "phase": "history-accepted-cache-delete-blocked",
+        "at": "2026-09-23T07:52:40.0682032-05:00"
+      },
+      {
+        "phase": "E18-mutation-visible-before-reservation",
+        "at": "2026-09-23T07:52:40.6059597-05:00"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-internal-only",
+        "Scenario": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "ExitCode": 0,
+        "at": "2026-09-23T07:52:40.6355355-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "completed",
+          "classification": "succeeded",
+          "mutated": true,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:05e3c1c7fddc52210be0fd627a892e8db95c64fb73af236797f83806ddc6081d",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": false,
+          "phaseDiagnostics": [],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 1.0194522
+        }
+      },
+      {
+        "phase": "valid-retained-history",
+        "status": "possible"
+      },
+      {
+        "command": "recover-cache-ahead",
+        "SnippetId": "cdc-history-rejected",
+        "Scenario": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "ExitCode": 10,
+        "at": "2026-09-23T07:52:41.8429447-05:00",
+        "result": {
+          "command": "internalOnlyCacheAheadRecovery",
+          "targetKey": {
+            "tenantKey": "",
+            "dataStoreId": 1
+          },
+          "status": "rejectedNoMutation",
+          "classification": "downstreamHistoryPresentOrUnknown",
+          "mutated": false,
+          "targetGeneration": 1,
+          "physicalSourceFingerprint": "sha256:05e3c1c7fddc52210be0fd627a892e8db95c64fb73af236797f83806ddc6081d",
+          "lifecycle": "tracking",
+          "cacheAheadRecoveryRequired": true,
+          "phaseDiagnostics": [
+            {
+              "currentPhase": "preflight",
+              "lastCompletedPhase": "resolveTarget",
+              "retryable": false,
+              "diagnosticCategory": "downstreamPublicationHistoryPresentOrUnknown",
+              "affectedDocumentIds": [],
+              "message": "Downstream publication history is not internal-only."
+            }
+          ],
+          "offlineWriterAdmission": "internalOnlyCacheAheadRecoveryWritersClosedAndDrained",
+          "elapsedCommandTimeSeconds": 0.1207809
+        }
+      },
+      {
+        "phase": "rejection-state-comparison",
+        "command": "recover-cache-ahead",
+        "before": "A8365A8F8B7D0C90ABE72CEC2042A349D5D04FD8014A6FEB77FFD6FC981BF5F7",
+        "after": "A8365A8F8B7D0C90ABE72CEC2042A349D5D04FD8014A6FEB77FFD6FC981BF5F7"
+      }
+    ]
+  }
+]

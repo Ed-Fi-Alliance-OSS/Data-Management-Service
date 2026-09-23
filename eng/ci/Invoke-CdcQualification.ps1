@@ -199,10 +199,12 @@ try {
                     Write-Output "$selected-runbook-$($procedure.ToLowerInvariant()): $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
                 }
                 if ($phase -eq 'History') {
+                    $reports.Add((Get-CdcRunbookHistoryReport -Path (Join-Path $raw "$name/$name.trx")))
                     $env:CDC_ARTIFACT_CLEANUP_FAIL_FAST = 'true'
                     if ($selected -eq 'Postgresql') { $env:CDC_CLEANUP_POSTGRESQL_ADMIN = $env:ConnectionStrings__DatabaseConnection }
                     else { $env:CDC_CLEANUP_MSSQL_ADMIN = $env:ConnectionStrings__MssqlAdmin }
-                    Invoke-QualificationSuite -Name "$selected-provider-cleanup" -Project $backend -Filter "Category=CdcArtifactCleanup&Category=$($selected)Integration"
+                    Invoke-QualificationSuite -Name "$selected-provider-cleanup" -Project $backend -Filter "(Category=CdcArtifactCleanup|Category=CdcRunbookRetirement)&Category=$($selected)Integration"
+                    $reports.Add((Get-CdcRunbookHistoryReport -Path (Join-Path $raw "$selected-provider-cleanup/$selected-provider-cleanup.trx") -Selection Cleanup))
                 }
             }
         }

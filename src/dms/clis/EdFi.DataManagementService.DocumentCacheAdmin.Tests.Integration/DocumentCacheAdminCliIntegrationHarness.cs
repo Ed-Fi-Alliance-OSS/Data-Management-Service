@@ -1670,8 +1670,11 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
         {
             process.StartInfo.ArgumentList.Add(argument);
         }
-        process.StartInfo.ArgumentList.Add(DocumentCacheAdminCommandSurface.SettingsOptionName);
-        process.StartInfo.ArgumentList.Add(_settingsPath);
+        if (!arguments.Contains(DocumentCacheAdminCommandSurface.SettingsOptionName, StringComparer.Ordinal))
+        {
+            process.StartInfo.ArgumentList.Add(DocumentCacheAdminCommandSurface.SettingsOptionName);
+            process.StartInfo.ArgumentList.Add(_settingsPath);
+        }
 
         process.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "";
         process.StartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "";

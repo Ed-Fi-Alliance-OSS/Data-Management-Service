@@ -333,6 +333,29 @@ function Get-CdcRunbookRecordSizeReport {
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-record-size-behavior' -ExactCount
 }
 
+function Get-CdcRunbookHistoryReport {
+    <# .SYNOPSIS
+    Requires exact packaged history cases and the live provider/marked retirement follow-on.
+    #>
+    param([string] $Path, [ValidateSet('History', 'Cleanup')] [string] $Selection = 'History')
+    $required = if ($Selection -eq 'History') { [ordered]@{
+        It_allows_all_three_commands_from_managed_non_CDC_creation = 1
+        It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime = 2
+        It_rejects_untrusted_or_exposed_history_without_any_mutation = 15
+        It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source = 1
+        It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early = 3
+        It_holds_the_controller_lock_through_E18_mutation_when_administration_wins = 3
+    } } else { [ordered]@{
+        It_removes_provider_artifacts_and_only_owned_unused_database_jobs = 1
+        It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion = 1
+        It_rejects_broad_or_orphaned_provider_artifacts = 1
+        It_rejects_a_different_live_physical_source = 1
+        It_reconciles_actual_committed_deletion_after_lost_response = 1
+        It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history = 1
+    } }
+    Get-CdcRequiredMethodReport -Path $Path -Required $required -Name "runbook-$($Selection.ToLowerInvariant())-behavior" -ExactCount
+}
+
 function Get-CdcRequiredMethodReport {
     param([string] $Path, [Collections.IDictionary] $Required, [string] $Name, [switch] $ExactCount)
     $results = @()
@@ -352,4 +375,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport
+Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport

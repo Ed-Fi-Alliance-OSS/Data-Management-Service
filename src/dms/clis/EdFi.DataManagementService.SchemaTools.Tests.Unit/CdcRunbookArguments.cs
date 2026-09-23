@@ -10,11 +10,19 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
 internal static class CdcRunbookArguments
 {
-    // The marked CLI examples deliberately use a single command with literal or single-quoted arguments.
+    // Marked examples use one command, literal/quoted arguments, and explicitly bound named variables.
     // Reject shell expressions instead of attempting to interpret arbitrary PowerShell.
-    internal static string[] Parse(string code, IReadOnlyDictionary<string, string> inputs)
+    internal static string[] Parse(
+        string code,
+        IReadOnlyDictionary<string, string> inputs,
+        string executable = "api-schema-tools"
+    )
     {
-        var tokens = Regex.Matches(code, @"\G\s*(?:'(?<quoted>[^'\r\n]*)'|(?<literal>[a-zA-Z0-9_./:-]+))");
+        code = Regex.Replace(code, @"`\r?\n", " ");
+        var tokens = Regex.Matches(
+            code,
+            @"\G\s*(?:'(?<quoted>[^'\r\n]*)'|(?<literal>\$[a-zA-Z][a-zA-Z0-9]*|[a-zA-Z0-9_./:-]+))(?=\s|$)"
+        );
         tokens
             .Sum(t => t.Length)
             .Should()
@@ -22,12 +30,12 @@ internal static class CdcRunbookArguments
         var values = tokens
             .Select(t => t.Groups["quoted"].Success ? t.Groups["quoted"].Value : t.Groups["literal"].Value)
             .ToArray();
-        values[0].Should().Be("api-schema-tools");
+        values[0].Should().Be(executable);
         return values
             .Skip(1)
             .Select(value =>
             {
-                if (!value.StartsWith('<'))
+                if (!value.StartsWith('<') && !value.StartsWith('$'))
                 {
                     return value;
                 }

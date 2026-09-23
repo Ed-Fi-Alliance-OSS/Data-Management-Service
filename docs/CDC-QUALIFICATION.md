@@ -93,6 +93,23 @@ cases fail the separate report guard. [PostgreSQL T23 evidence](../reference/cdc
 and [SQL Server T24 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
 qualify this procedure with 20 live cases and nine marked invocations per provider.
 
+The provider History selection requires all 25 packaged-history cases and six
+provider-cleanup/retirement cases. The history fixture binds the exact
+`cdc-history-internal-only` and `cdc-history-rejected` snippets to its normal settings,
+normalized target and provider-read physical-source fingerprint. It invokes published
+DocumentCacheAdmin through the existing process harness; no history result is mocked.
+The narrow `CdcRunbookRetirement` category adds the existing interrupted-retirement
+case to the provider-cleanup follow-on. That case executes `cdc-retire` through
+SchemaTools, rejects missing confirmation and wrong generation, and retries partial
+cleanup using original state. It also executes `cdc-restamp-handoff-status` and
+`cdc-disclosure-containment-result`. Retained historical exposure, peer topics and
+shared offset storage are checked independently of the successful CLI result.
+Missing, skipped or duplicate required cases fail separate History/Cleanup guards.
+[PostgreSQL T25 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
+records this live qualification; SQL Server T26 remains pending. Shared-volume
+teardown ordering remains separately qualified by the wrapper tests; controller
+cleanup supplies no platform purge or independent consumer-store evidence.
+
 Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.
 
 `qualification.json` records every suite's counts and outcome. Empty selection, missing/inconsistent reports, skipped cases and nonzero process exits fail qualification. Prerequisite failures are labeled `EnvironmentUnavailable`; they are not passing behavior evidence. No automatic retry replaces a failed test scenario or suite run. Structured JSON attachments retain controller boundaries, provider/lag observations, recovery, rollout, history and cleanup evidence, linked from TRX results. Fixture validation diagnostics retain bounded code locations without exception messages or values. Public TRX files omit raw assertion output; raw logs stay in a private temporary directory and are never uploaded.

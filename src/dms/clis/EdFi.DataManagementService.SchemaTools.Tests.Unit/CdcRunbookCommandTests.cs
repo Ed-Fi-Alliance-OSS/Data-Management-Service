@@ -120,6 +120,40 @@ public class Given_Cdc_runbook_commands
     }
 
     [Test]
+    public void It_binds_declared_history_variables_without_interpreting_their_values()
+    {
+        CdcRunbookArguments
+            .Parse(
+                "dms-document-cache $HistoryCommand `\n --tenant-key $HistoryTenant --settings $HistorySettings",
+                new Dictionary<string, string>
+                {
+                    ["$HistoryCommand"] = "activate-offline",
+                    ["$HistoryTenant"] = "",
+                    ["$HistorySettings"] = "/private settings/$(literal).json",
+                },
+                "dms-document-cache"
+            )
+            .Should()
+            .Equal("activate-offline", "--tenant-key", "", "--settings", "/private settings/$(literal).json");
+    }
+
+    [TestCase("dms-document-cache $Undeclared")]
+    [TestCase("dms-document-cache $(Get-Content private)")]
+    [TestCase("dms-document-cache status; exit")]
+    [TestCase("dms-document-cache status | command")]
+    [TestCase("dms-document-cache $HistoryCommand.Length")]
+    public void It_rejects_undeclared_or_executable_history_expressions(string code)
+    {
+        Action act = () =>
+            CdcRunbookArguments.Parse(
+                code,
+                new Dictionary<string, string> { ["$HistoryCommand"] = "status" },
+                "dms-document-cache"
+            );
+        act.Should().Throw<AssertionException>();
+    }
+
+    [Test]
     public void It_requires_unique_paired_ids_across_the_operator_reference_set()
     {
         string documents = string.Join(
