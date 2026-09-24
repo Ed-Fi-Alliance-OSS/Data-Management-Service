@@ -517,34 +517,50 @@ public sealed class JobExecutor(
                         return;
                     }
 
-                    if (await RenewOnceAsync(settings) is { } failure)
+                    if (await RenewOnceAsync(settings) is not { } failure)
                     {
-                        ownership.TryMarkUncertain(failure);
-                        try
-                        {
-                            await execution.CancelAsync();
-                        }
-                        catch (AggregateException)
-                        {
-                            // A handler's cancellation callback failed; the execution is cancelled all the same.
-                        }
-
-                        return;
+                        continue;
                     }
+
+                    // Under the gate, so no fence can start or commit between the failure and the state change.
+                    ownership.TryMarkUncertain(failure);
                 }
+
+                // The gate is released before the consumer's cancellation callbacks run: a callback may wait for a
+                // fence, which needs the gate. The state is already uncertain, so such a fence is rejected before it
+                // reaches the database.
+                try
+                {
+                    await execution.CancelAsync();
+                }
+                catch (AggregateException)
+                {
+                    // A handler's cancellation callback failed; the execution is cancelled all the same.
+                }
+
+                return;
             }
         }
 
         /// <summary>One renewal, bounded by <see cref="JobOptions.RenewalTimeout"/>. Returns the failure reason, or null.</summary>
         private async Task<string?> RenewOnceAsync(JobOptions settings)
         {
-            Task<JobWriteResult> renewal = executor.Leases.Renew(
-                job.Id,
-                job.LeaseOwner,
-                job.FencingToken,
-                (int)settings.LeaseDuration.TotalSeconds,
-                CancellationToken.None
-            );
+            Task<JobWriteResult> renewal;
+            try
+            {
+                // Inside the boundary: a repository that throws before returning a task is a failed renewal too.
+                renewal = executor.Leases.Renew(
+                    job.Id,
+                    job.LeaseOwner,
+                    job.FencingToken,
+                    (int)settings.LeaseDuration.TotalSeconds,
+                    CancellationToken.None
+                );
+            }
+            catch (Exception)
+            {
+                return "RenewalException";
+            }
 
             try
             {

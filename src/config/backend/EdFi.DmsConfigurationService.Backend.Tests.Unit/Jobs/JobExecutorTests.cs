@@ -104,6 +104,7 @@ public class JobExecutorTests
     [TestFixture("failure unknown", "RenewalFailureUnknown")]
     [TestFixture("result unknown", "RenewalResultUnknown")]
     [TestFixture("exception", "RenewalException")]
+    [TestFixture("synchronous exception", "RenewalException")]
     [TestFixture("timeout", "RenewalTimeout")]
     public class Given_a_renewal_that_does_not_succeed(string failure, string expectedReason)
     {
@@ -134,6 +135,7 @@ public class JobExecutorTests
                 "failure unknown" => () => Task.FromResult<JobWriteResult>(FailureUnknown()),
                 "result unknown" => () => Task.FromResult<JobWriteResult>(ResultUnknown()),
                 "exception" => () => Task.FromException<JobWriteResult>(new InvalidOperationException()),
+                "synchronous exception" => () => throw new InvalidOperationException(),
                 _ => () => new TaskCompletionSource<JobWriteResult>().Task,
             };
 
@@ -237,6 +239,68 @@ public class JobExecutorTests
             _result
                 .Should()
                 .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "RenewalOwnershipLost"));
+    }
+
+    [TestFixture]
+    public class Given_a_cancellation_callback_that_waits_for_a_fence
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private Exception? _callbackFence;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _callbackFence = null;
+            _harness = new ExecutorHarness();
+            _harness.Leases.NextRenewal = () =>
+                Task.FromResult<JobWriteResult>(new JobWriteResult.OwnershipLost());
+            _harness.Script.Run = async (context, _, token) =>
+            {
+                // A consumer's callback that blocks until a fence with its own token finishes. Were the renewal
+                // loop to run callbacks while it holds the gate, this fence could never enter it.
+                using CancellationTokenRegistration registration = token.Register(() =>
+                {
+                    try
+                    {
+                        context
+                            .Fence.ExecuteAsync((_, _) => Task.CompletedTask, CancellationToken.None)
+                            .GetAwaiter()
+                            .GetResult();
+                    }
+                    catch (Exception exception)
+                    {
+                        _callbackFence = exception;
+                    }
+                });
+                await Task.Delay(Timeout.Infinite, token);
+            };
+
+            Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(),
+                CancellationToken.None
+            );
+            await _harness.Script.Started.Task.WaitAsync(_wait);
+            await _harness.TriggerRenewalAsync();
+            _result = await running.WaitAsync(_wait);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_finishes_the_execution() =>
+            _result
+                .Should()
+                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "RenewalOwnershipLost"));
+
+        [Test]
+        public void It_rejects_the_callback_fence_before_the_database()
+        {
+            _callbackFence.Should().BeOfType<JobLeaseLostException>();
+            _harness.Fences.DatabaseCalls.Should().Be(0);
+            _harness.Leases.OutcomeWrites.Should().BeEmpty();
+        }
     }
 
     [TestFixture]

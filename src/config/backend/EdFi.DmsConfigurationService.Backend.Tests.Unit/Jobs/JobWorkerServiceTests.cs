@@ -37,6 +37,9 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
     /// <summary>The next this many claims throw, as a lost connection would.</summary>
     public int ClaimsThatThrow { get; set; }
 
+    /// <summary>The next this many sweeps return <c>FailureUnknown</c>, as a repository that caught an error does.</summary>
+    public int SweepsThatFail { get; set; }
+
     public SimulatedJob Add(int attemptCount = 0)
     {
         lock (_sync)
@@ -112,6 +115,16 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
         Calls.Enqueue("Exhaust");
         lock (_sync)
         {
+            if (SweepsThatFail > 0)
+            {
+                SweepsThatFail--;
+                return Task.FromResult<JobExhaustResult>(
+                    new JobExhaustResult.FailureUnknown(
+                        new JobFailureDiagnostic("Npgsql.PostgresException", "57014", "Exhaust")
+                    )
+                );
+            }
+
             int exhausted = 0;
             foreach (
                 SimulatedJob row in Rows.Where(row =>
@@ -535,6 +548,59 @@ public class JobWorkerServiceTests
                     (string?)entry.Field("ExceptionTypeChain") == "System.InvalidOperationException"
                     && !entry.Message.Contains("connection was lost")
                 );
+    }
+
+    [TestFixture]
+    public class Given_a_sweep_that_returns_a_failure
+    {
+        private WorkerHarness _harness = null!;
+        private SimulatedJob _stranded = null!;
+        private string _statusAfterTheFailedSweep = "";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new WorkerHarness(maxAttempts: 3);
+            _harness.Table.SweepsThatFail = 1;
+            _stranded = _harness.Table.Add(attemptCount: 3);
+
+            await _harness.Worker.StartAsync(CancellationToken.None);
+            await WorkerHarness.Until(
+                () => _harness.Logger.Entries.Any(entry => entry.EventId.Name == "WorkerPollFailed"),
+                "the failed sweep was logged"
+            );
+            _statusAfterTheFailedSweep = _stranded.Status;
+            await _harness.AdvanceUntil(
+                () => _stranded.Status == JobStatuses.Error,
+                "a later sweep exhausted the job"
+            );
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            await _harness.StopAsync();
+            _harness.Dispose();
+        }
+
+        [Test]
+        public void It_logs_the_sweep_failure_with_its_safe_diagnostic_fields() =>
+            _harness
+                .Logger.Entries.Single(entry => entry.EventId.Name == "WorkerPollFailed")
+                .Should()
+                .Match<LogEntry>(entry =>
+                    (string?)entry.Field("Operation") == "Exhaust"
+                    && (string?)entry.Field("ProviderErrorCode") == "57014"
+                    && (string?)entry.Field("ExceptionTypeChain") == "Npgsql.PostgresException"
+                );
+
+        [Test]
+        public void It_exhausts_the_stranded_job_on_a_later_poll()
+        {
+            _statusAfterTheFailedSweep.Should().Be(JobStatuses.Pending);
+            _stranded.ErrorCode.Should().Be(JobErrorCode.AttemptsExhausted.Code);
+            _harness.Worker.ExecuteTask!.IsFaulted.Should().BeFalse();
+        }
     }
 
     [TestFixture]

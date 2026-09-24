@@ -99,9 +99,8 @@ public sealed class ScriptedLeaseRepository : IJobLeaseRepository
     {
         Calls.Enqueue("Renew");
         LastLeaseSeconds = leaseSeconds;
-        Task<JobWriteResult> renewal = NextRenewal();
         RenewCalled.TrySetResult();
-        return renewal;
+        return NextRenewal();
     }
 
     public int LastLeaseSeconds { get; private set; }

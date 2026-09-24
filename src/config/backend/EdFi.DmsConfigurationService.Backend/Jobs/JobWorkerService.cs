@@ -95,18 +95,24 @@ public sealed class JobWorkerService(
     /// <summary>One poll: an <c>Exhaust</c> sweep, then claims until the queue is empty or the worker is at capacity.</summary>
     private async Task PollAsync(JobOptions settings, CancellationToken stoppingToken)
     {
-        if (
+        switch (
             await leaseRepository.Exhaust(settings.MaxAttempts, JobErrorCode.AttemptsExhausted, stoppingToken)
-            is JobExhaustResult.Success { ExhaustedCount: > 0 } exhausted
         )
         {
-            logger.LogWarning(
-                JobsExhausted,
-                "{Event} Count={Count} MaxAttempts={MaxAttempts}",
-                nameof(JobsExhausted),
-                exhausted.ExhaustedCount,
-                settings.MaxAttempts
-            );
+            case JobExhaustResult.Success { ExhaustedCount: > 0 } exhausted:
+                logger.LogWarning(
+                    JobsExhausted,
+                    "{Event} Count={Count} MaxAttempts={MaxAttempts}",
+                    nameof(JobsExhausted),
+                    exhausted.ExhaustedCount,
+                    settings.MaxAttempts
+                );
+                break;
+            case JobExhaustResult.FailureUnknown failure:
+                // Rows over the limit stay where they are until a sweep succeeds; the next poll retries it. Claims
+                // are unaffected: a row at the limit is never claimable.
+                LogPollFailure(failure.Diagnostic);
+                break;
         }
 
         while (RunningCount < settings.MaxConcurrentJobs && !stoppingToken.IsCancellationRequested)
@@ -121,15 +127,7 @@ public sealed class JobWorkerService(
             {
                 if (claim is JobClaimResult.FailureUnknown failure)
                 {
-                    logger.LogWarning(
-                        WorkerPollFailed,
-                        "{Event} LeaseOwner={LeaseOwner} ExceptionTypeChain={ExceptionTypeChain} ProviderErrorCode={ProviderErrorCode} Operation={Operation}",
-                        nameof(WorkerPollFailed),
-                        JobDiagnostics.SafeIdentifier(Owner),
-                        failure.Diagnostic.ExceptionTypeChain,
-                        failure.Diagnostic.ProviderErrorCode,
-                        failure.Diagnostic.Operation
-                    );
+                    LogPollFailure(failure.Diagnostic);
                 }
 
                 return;
@@ -138,6 +136,18 @@ public sealed class JobWorkerService(
             Start(claimed.Job, stoppingToken);
         }
     }
+
+    /// <summary>A repository call the poll made returned a failure; only its safe diagnostic fields are logged.</summary>
+    private void LogPollFailure(JobFailureDiagnostic diagnostic) =>
+        logger.LogWarning(
+            WorkerPollFailed,
+            "{Event} LeaseOwner={LeaseOwner} ExceptionTypeChain={ExceptionTypeChain} ProviderErrorCode={ProviderErrorCode} Operation={Operation}",
+            nameof(WorkerPollFailed),
+            JobDiagnostics.SafeIdentifier(Owner),
+            diagnostic.ExceptionTypeChain,
+            diagnostic.ProviderErrorCode,
+            diagnostic.Operation
+        );
 
     private int RunningCount
     {
