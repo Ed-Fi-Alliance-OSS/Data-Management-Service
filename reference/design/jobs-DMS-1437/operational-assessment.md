@@ -1,6 +1,6 @@
 # DMS-1437 initial operational assessment (step 0.2)
 
-Status: **approved** (2026-09-23). This is the spec §6.2 step 0.2 assessment. Its first version (`23294d57c`) and its follow-up (`5b0b864c5`) were reviewed; §0 records the review decisions and the follow-up verification of the adopted SQL. Step 0.2 is complete, and Q3 is closed for the initial settings decision: spec v3.2, the retained defaults, and both adjusted bounds are approved. Step 2.11 remains required. It verifies the implemented repositories and fences, keeps the 100 ms renewal threshold, and reconsiders A5 only if measurements justify it. The workload assumptions remain provisional. No production code exists yet. Every number below comes from isolated raw-SQL probes against scratch tables, not from repositories or hosted services. Step 2.11 re-verifies these results against the implemented repositories.
+Status: **approved** (2026-09-23). This is the spec §6.2 step 0.2 assessment. Its first version (`23294d57c`) and its follow-up (`5b0b864c5`) were reviewed; §0 records the review decisions and the follow-up verification of the adopted SQL. Step 0.2 is complete, and Q3 is closed for the initial settings decision: spec v3.2, the retained defaults, and both adjusted bounds are approved. Step 2.11 remains required. It verifies the implemented repositories and fences, keeps the 100 ms renewal threshold, and reconsiders A5 only if measurements justify it. The workload assumptions remain provisional. No production code exists yet. Every number below comes from isolated raw-SQL probes against scratch tables, not from repositories or hosted services. Step 2.11 re-verifies these results against the implemented repositories. **Step 2.11 is complete (§11): every threshold held on both providers through the implemented repositories and fences; A5 is not adopted, and every value is confirmed.**
 
 ## 0. Review decisions and follow-up verification
 
@@ -260,7 +260,208 @@ These were decided at the step 0.2 review and applied in spec v3.2 (spec §0.00)
 
 ## 10. What step 2.11 re-verifies
 
-Step 2.11 re-verifies probes 1–7 through the implemented repositories and `IJobFence`, with the adopted claim (A1) and bounded `Exhaust` (A4), and adds fence-held renewal. It re-checks the 100 ms renewal threshold (a repeat miss requires investigation) and decides A5. Each approved or adjusted value above gets a confirm-or-adjust note, and any regression against these thresholds blocks Phase 3.
+Step 2.11 re-verifies probes 1–7 through the implemented repositories and `IJobFence`, with the adopted claim (A1) and bounded `Exhaust` (A4), and adds fence-held renewal. It re-checks the 100 ms renewal threshold (a repeat miss requires investigation) and decides A5. Each approved or adjusted value above gets a confirm-or-adjust note, and any regression against these thresholds blocks Phase 3. The results are in §11.
+
+## 11. Verification (step 2.11)
+
+Status: **complete; awaiting the Phase 3 gate review** (2026-09-24). Step 2.11 re-ran the step 0.2 probes through the implemented repositories and `IJobFence`, and added fence-held renewal. **Every §6.2 threshold and every correctness invariant held in all three runs on both providers**. No regression blocks Phase 3. The 100 ms renewal threshold held with a wide margin, so the step 0.2 exception did not recur. A5 is not adopted. Every §6.1 value is confirmed.
+
+### 11.1 Method
+
+The probes live in `src/config/backend/EdFi.DmsConfigurationService.Backend.{Postgresql,Mssql}.Tests.Integration/Jobs/JobRepositoryProbeTests.cs`. Every concrete fixture carries `[Explicit]`, and the base class carries `[Category("OperationalProbe")]` and `[Category("RepositoryProbe")]`.
+
+What changed from step 0.2:
+
+- **Real schema.** Each fixture drops and recreates the database `edfi_cms_job_repository_probe`, then deploys the full CMS schema with the real DbUp migrations (`DatabaseDeploy`, through `0033`). Step 0.2 used scratch tables that copied §3. The database is dropped when the fixture ends.
+- **Real code path.** Seeding is raw SQL, since it is not under test. Every measured operation is a repository or fence call, with its deadlines, `JobDatabaseSession`, result classification, and seams:
+  - claims, renewals, completions, and `Exhaust` go through `JobLeaseRepository`;
+  - fences go through `PostgresqlJobFenceFactory`/`MssqlJobFenceFactory`;
+  - retention goes through `JobRetentionRepository`;
+  - materialization goes through `JobScheduleRepository`.
+
+  The timings are the §6.1 candidates: `RenewalTimeout` 30 s (`RenewalInterval / 2`) and `FenceTimeout` 10 s.
+- **Environment.** The same host and the same containers as §3 (`cms-probe-pg-1437` on 55432, `cms-probe-mssql-1437` on 14334), with the same client libraries. Runs were sequential, one process at a time, alternating providers: PostgreSQL 1, SQL Server 1, PostgreSQL 2, SQL Server 2, and so on. Each run takes about 1.5 minutes per provider.
+
+```powershell
+$env:ConnectionStrings__JobProbePostgresql = 'host=127.0.0.1;port=55432;username=postgres;database=postgres'
+$env:CMS_JOB_PROBE_RESULTS = "$PWD/pg-run1.tsv"
+dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration --filter "Category=RepositoryProbe"
+
+$env:ConnectionStrings__MssqlAdmin = 'Server=127.0.0.1,14334;User Id=sa;Password=<password>;TrustServerCertificate=true'
+$env:CMS_JOB_PROBE_RESULTS = "$PWD/mssql-run1.tsv"
+dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration --filter "Category=RepositoryProbe"
+```
+
+Differences from the step 0.2 probe set, each for the reviewer to confirm:
+
+1. **Probe 2, expiring lease.** The lock holder sets the lease to expire 2 s later inside its own transaction, immediately after it takes the row lock. This makes the expiry deterministic relative to the wait, so the step 0.2 F6 care about connection order is not needed. The renewal still waits about 3 s and is then refused by the fresh-time predicate.
+2. **Probe 2, fence-held (added).** Two variants:
+   - **At the database.** The row lock is held by a fence's transaction, with fence work of 4 s (released 100 ms apart) or 6 s, while a `Renew` waits on that lock. Latency after release is measured from the fence session's `Commit` operation (the `BeforeOperation` hook), the fence counterpart of the holder's `COMMIT` request.
+   - **At the execution gate**, which is how the runtime serializes them. A renewal of the same execution calls `EnterForRenewalAsync` during a 1 s fence. The probe asserts that it enters only after the fence's commit and measures its completion from the fence's return.
+3. **Probe 6, live only.** The injected-time vectors test the SQL expression, not the repository. The repository-level equivalents are already in the integration suites:
+   - `It_advances_to_first_future_boundary_with_fractional_seconds` on both providers;
+   - `It_advances_from_fresh_time_when_paused_after_insert`;
+   - on SQL Server, the deterministic overshoot fixture `Given_a_next_run_whose_fraction_is_later_than_now`.
+4. **Probe 7, active-row constraint.** Not repeated: a repository cannot produce the row the constraint rejects, and `JobSchemaTests` covers it on both providers.
+5. **Lock footprints (SQL Server).** Measured through the repositories' `BeforeClaimCommit` and `BeforeExhaustBatchCommit` seams for one claim at the backlog and for every batch of the lowered-limit sweep. The retention batch's footprint was not re-measured: its statement shape is unchanged since step 0.2, and `RetentionBatchSize` stays capped at 2 000.
+
+### 11.2 Results
+
+Values are the worst of three runs. §11.5 has each run. Latencies are client-side wall-clock times per repository or fence call, with nearest-rank percentiles.
+
+| Probe (threshold) | PostgreSQL | SQL Server | Verdict |
+| --- | --- | --- | --- |
+| 1 Claim, 10 000 pending, 3 claimers × 1 000 (p99 ≤ 250 ms) | p99 4.2 ms, max 13.3 ms; 1 266–1 304 claims/s; 0 empty, 0 duplicate, 0 failed | p99 11.0 ms, max 142.3 ms; 562–582 claims/s; 0 empty, 0 duplicate, 0 failed; one claim holds 2 KEY locks and no coarse lock | met |
+| 1 Idle poll against 10 000 leased rows (p99 ≤ 250 ms) | p99 5.1 ms; 0 claims | p99 12.6 ms; 0 claims | met |
+| 2 Renewal after a raw-SQL holder releases, 4 s hold (p99 ≤ 100 ms) | p99 27.4 ms; 300/300 success | p99 27.1 ms; 300/300 success | met |
+| 2 Renewal after a fence commits, 4 s fence work (p99 ≤ 100 ms) | p99 9.7 ms; 90/90 success | p99 10.7 ms; 90/90 success | met |
+| 2 Renewal behind a fence at the execution gate (p99 ≤ 100 ms) | p99 5.7 ms; 30/30 success, none entered before the fence's commit | p99 10.6 ms; the same | met |
+| 2 Lease expired during a 3 s hold (rejected) | 60/60 `OwnershipLost`; no lease extended | the same | met |
+| 2 6 s hold / 6 s fence work (lock timeout at `WriteLockWait`) | 30/30 and 30/30 `FailureUnknown(55P03)` at ≤ 5 017.4 ms; every fence committed (120/120) | 30/30 and 30/30 `FailureUnknown(1222)` at ≤ 5 013.0 ms; the same | met |
+| 3 `Exhaust`, first sweep over 100 000 rows (≤ 500 ms) | exactly 100 rows, ≤ 26.1 ms | exactly 100 rows, ≤ 82.0 ms | met |
+| 3 `Exhaust`, steady-state sweep (≤ 500 ms) | p99 6.8 ms, 0 rows | p99 11.4 ms, 0 rows | met |
+| 3 `MaxAttempts` lowered to 1: 10 000 rows (≤ 500 ms per batch) | stopped after 1 committed batch of 1 000, resumed as 9 × 1 000 then 0; batch p99 28.8 ms | the same batches; batch p99 61.2 ms; each full batch holds 3 000 KEY locks and no coarse lock | met |
+| 3 Live leases after the sweeps | 9 900 / 9 900 untouched | 9 900 / 9 900 untouched | met |
+| 4 Retention, 20 batches of 500 over 102 000 rows (≤ 1 s) | 500 each; max 7.2 ms; 40 000 recent and 2 000 active rows kept | 500 each; max 64.3 ms; the same | met |
+| 5 Three sessions, ≥ 1 000 mixed operations (0 deadlocks, 0 lost updates) | 1 002–1 005 operations, all `Success`; 0 empty claims, 0 jobs claimed twice, every claim completed | the same | met |
+| 6 Live D-8 materializations, 12 schedules from 100 ms to 800 days overdue (exact match) | 12/12 match `ScheduleOccurrenceMath.Advance` on the returned pair; transaction p99 21.4 ms; then `NoneDue` | 12/12; transaction p99 47.0 ms; then `NoneDue` | met |
+| 6 Materialized jobs | 12/12 with `NextAttemptAt = CreatedAt`, all claimed, in materialization order | the same | met |
+| 7 Claim order and eligibility | `reclaimable, released, fresh_a, fresh_b`; the reclaim has attempt 2 and token 2; the live lease, the backoff, and the row at the limit are untouched | the same | met |
+
+The repository numbers are lower than the step 0.2 raw-SQL numbers on the same containers. Examples:
+
+- the PostgreSQL renewal after release, p99 27.4 ms against 50.7–102.2 ms;
+- the SQL Server steady-state `Exhaust`, p99 11.4 ms against 117.1 ms.
+
+Both measure the same statements, now running in the migrated schema. This step did not investigate the difference. The verdicts compare against the §6.2 thresholds, not against step 0.2.
+
+### 11.3 Re-checks required by step 0.2
+
+- **PostgreSQL renewal after release, 100 ms threshold (the step 0.2 exception): no miss.** The worst p99 across three runs was 27.4 ms against a raw-SQL holder, 9.7 ms behind a fence, and 5.7 ms at the gate. The threshold stays at 100 ms, and no investigation is needed.
+- **A5 (SQL Server `IX_Job_Exhaust`): not adopted.** Through the repository, the steady-state sweep over 100 000 rows runs at p99 11.4 ms, and a full lowered-limit batch at p99 61.2 ms with row locks only. Both are far inside the 500 ms threshold, so the measurements show no need for another index and its write cost.
+- **Fence timings.** `FenceLockWait` (5 s) ends a renewal waiting on a fence's row lock in the provider's lock timeout at 5.0 s on both providers, and every fence still commits. The 10 s `FenceTimeout` cap left the 4 s and 6 s fence work well inside the deadline in all 120 counted fences per provider. The probes do not exercise `FenceMinimumRemainingLease` (2 s), because every lease was 300 s. Its rejection path is covered by the fence tests of steps 2.5 and 2.6.
+
+### 11.4 Confirm or adjust, per candidate (Q3 re-verified)
+
+| Setting (§6.1) | Step 0.2 decision | Step 2.11 | Evidence |
+| --- | --- | --- | --- |
+| WorkerEnabled / SchedulerEnabled / RetentionEnabled | retain | **confirm** | independent switches; no load concern |
+| PollInterval 5 s (1 s – 5 min) | retain | **confirm** | an idle poll through the repository: claim p99 ≤ 12.6 ms plus a steady `Exhaust` p99 ≤ 11.4 ms |
+| LeaseDuration 5 min (30 s – 1 h) | retain | **confirm** | renewals take ≤ 27.4 ms after contention, or end at 5.0 s when they hit the lock wait; negligible against the 50 s margin |
+| RenewalInterval 60 s (12 s – LeaseDuration/3) | retain; bound adjusted | **confirm** | `RenewalTimeout` 30 s held every renewal and outcome write; lock timeouts arrived as the provider's code at 5.0 s, never as a client timeout |
+| FenceTimeout 10 s (1 s – 1 min) | retain; verify at 2.11 | **confirm** | 120 fences per provider with 4–6 s of work, all committed inside the deadline; a renewal behind a fence at the gate completes ≤ 10.6 ms after the fence |
+| MaxAttempts 5 (1 – 20) | retain | **confirm** | a lowered limit exhausts 10 000 rows in committed batches of 1 000, each ≤ 61.2 ms |
+| RetryBackoffBase / RetryBackoffMaximum 30 s / 15 min | retain | **confirm** | no database cost |
+| MaxConcurrentJobs 2 (1 – 32) | retain | **confirm** | the repository claim path sustains ≥ 562 claims/s |
+| FinishedJobRetention 7 d (1 h – 365 d) | retain | **confirm** | 100 000 finished rows cost nothing measurable in claim or `Exhaust` latency |
+| RetentionInterval 1 h (1 min – 24 h) | retain | **confirm** | a 500-row batch takes ≤ 64.3 ms |
+| RetentionBatchSize 500 (1 – 2 000) | retain; bound adjusted | **confirm** | the batch statement is unchanged since step 0.2 (row locks only at 2 000) |
+
+| Fixed constant | Step 2.11 | Evidence |
+| --- | --- | --- |
+| `WriteLockWait` 5 s | **confirm** | lock timeouts at ≤ 5 017.4 ms (PostgreSQL) and ≤ 5 013.0 ms (SQL Server) |
+| `FenceLockWait` 5 s | **confirm** | the same mechanics, behind a fence: ≤ 5 008.6 ms and ≤ 5 007.1 ms |
+| `FenceMinimumRemainingLease` 2 s | **confirm** | not exercised by the probes (300 s leases); covered functionally by the step 2.5/2.6 fence tests |
+| `RenewalTimeout = RenewalInterval/2` | **confirm** | 30 s, above `WriteLockWait + 1 s`; no renewal reached it |
+| Claim/`Exhaust` command timeout 5 s | **confirm** | worst claim 142.3 ms; worst `Exhaust` sweep 82.0 ms |
+| `ExhaustBatchSize` 1 000 | **confirm** | 3 000 KEY locks per full batch on SQL Server, no escalation |
+| `ScheduleMaterializationTimeout` 10 s | **confirm** | materialization p99 ≤ 47.0 ms |
+| Schedule upsert, disable, and list deadline 30 s (added at step 2.9) | **confirm** | not a probe subject. It exceeds the 10 s materialization a write may wait behind (spec D-10) |
+| Retention batch deadline 30 s | **confirm** | batch max ≤ 64.3 ms |
+
+The limitations in §9 still apply, except that repository code, connection handling, the execution gate, and fences are now covered. The workload assumptions (§2) are still unconfirmed by product.
+
+### 11.5 Per-run results (step 2.11)
+
+Each value is as the probes recorded it (`CMS_JOB_PROBE_RESULTS`), and "worst" is the maximum across runs. The renewal counts in §11.2 sum the three runs.
+
+#### PostgreSQL (runs 1–3)
+| probe | metric | run 1 | run 2 | run 3 | worst |
+| --- | --- | --- | --- | --- | --- |
+| exhaust | first_sweep | 100 rows in 26.08ms | 100 rows in 24.95ms | 100 rows in 24.34ms | 100 rows, max 26.08 ms |
+| exhaust | steady_state_sweeps | p50 2.93 / p99 5.48 / max 5.48 (n=50) | p50 2.88 / p99 5.91 / max 5.91 (n=50) | p50 2.99 / p99 6.84 / max 6.84 (n=50) | p99 6.84 / max 6.84 |
+| exhaust | lowered_limit_batches | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 |
+| exhaust | lowered_limit_batch | p50 27.13 / p99 28.80 / max 28.80 (n=11) | p50 26.59 / p99 28.15 / max 28.15 (n=11) | p50 25.63 / p99 28.47 / max 28.47 (n=11) | p99 28.80 / max 28.80 |
+| exhaust | live_leases_untouched | 9900 | 9900 | 9900 | 9900 |
+| order | claims | reclaimable,released,fresh_a,fresh_b | reclaimable,released,fresh_a,fresh_b | reclaimable,released,fresh_a,fresh_b | reclaimable,released,fresh_a,fresh_b |
+| coalescing | live_materializations | 12 | 12 | 12 | 12 |
+| coalescing | live_mismatches | 0 | 0 | 0 | 0 |
+| coalescing | materialization_transaction | p50 5.09 / p99 21.24 / max 21.24 (n=12) | p50 4.70 / p99 21.20 / max 21.20 (n=12) | p50 4.72 / p99 21.41 / max 21.41 (n=12) | p99 21.41 / max 21.41 |
+| coalescing | materialized_jobs_claimed_in_order | True | True | True | True |
+| renewal | after_release_4s_hold | p50 6.38 / p99 27.44 / max 34.73 (n=100) | p50 6.41 / p99 12.74 / max 13.67 (n=100) | p50 6.47 / p99 12.04 / max 12.15 (n=100) | p99 27.44 / max 34.73 |
+| renewal | outcomes_4s_hold | Success=100 | Success=100 | Success=100 | Success=100 |
+| renewal | outcomes_6s_hold | FailureUnknown:55P03=10 | FailureUnknown:55P03=10 | FailureUnknown:55P03=10 | FailureUnknown:55P03=10 |
+| renewal | time_to_lock_timeout_6s_hold | p50 5012.36 / p99 5012.52 / max 5012.52 (n=10) | p50 5017.37 / p99 5017.39 / max 5017.39 (n=10) | p50 5011.97 / p99 5012.00 / max 5012.00 (n=10) | p99 5017.39 / max 5017.39 |
+| renewal | outcomes_expired_during_3s_hold | OwnershipLost=20 | OwnershipLost=20 | OwnershipLost=20 | OwnershipLost=20 |
+| renewal | expiring_leases_extended | 0 | 0 | 0 | 0 |
+| renewal | after_fence_commit_4s_fence | p50 5.09 / p99 9.68 / max 9.68 (n=30) | p50 5.22 / p99 6.32 / max 6.32 (n=30) | p50 5.03 / p99 6.70 / max 6.70 (n=30) | p99 9.68 / max 9.68 |
+| renewal | outcomes_4s_fence | Success=30 | Success=30 | Success=30 | Success=30 |
+| renewal | outcomes_6s_fence | FailureUnknown:55P03=10 | FailureUnknown:55P03=10 | FailureUnknown:55P03=10 | FailureUnknown:55P03=10 |
+| renewal | time_to_lock_timeout_6s_fence | p50 5005.61 / p99 5005.64 / max 5005.64 (n=10) | p50 5008.55 / p99 5008.61 / max 5008.61 (n=10) | p50 5006.11 / p99 5006.16 / max 5006.16 (n=10) | p99 5008.61 / max 5008.61 |
+| renewal | fences_committed | 40 | 40 | 40 | 40 |
+| renewal | after_fence_release_at_gate | p50 5.27 / p99 5.67 / max 5.67 (n=10) | p50 5.08 / p99 5.57 / max 5.57 (n=10) | p50 5.27 / p99 5.57 / max 5.57 (n=10) | p99 5.67 / max 5.67 |
+| renewal | outcomes_behind_fence_at_gate | Success=10 | Success=10 | Success=10 | Success=10 |
+| retention | batch_500 | p50 2.76 / p99 7.24 / max 7.24 (n=20) | p50 2.41 / p99 7.12 / max 7.12 (n=20) | p50 2.30 / p99 6.61 / max 6.61 (n=20) | p99 7.24 / max 7.24 |
+| retention | rows_left | expired=50000 recent=40000 active=2000 | expired=50000 recent=40000 active=2000 | expired=50000 recent=40000 active=2000 | expired=50000 recent=40000 active=2000 |
+| claim | backlog_claims | p50 2.28 / p99 4.04 / max 11.95 (n=3000) | p50 2.25 / p99 3.43 / max 13.27 (n=3000) | p50 2.31 / p99 4.21 / max 11.73 (n=3000) | p99 4.21 / max 13.27 |
+| claim | backlog_throughput_claims_per_s | 1288 | 1304 | 1266 | 1266–1304 |
+| claim | empty_claims_with_backlog | 0 | 0 | 0 | 0 |
+| claim | claim_failures | 0 | 0 | 0 | 0 |
+| claim | duplicate_claims | 0 | 0 | 0 | 0 |
+| claim | idle_polls_10000_leased | p50 2.87 / p99 4.56 / max 5.72 (n=300) | p50 2.86 / p99 5.09 / max 5.80 (n=300) | p50 2.77 / p99 4.90 / max 7.33 (n=300) | p99 5.09 / max 7.33 |
+| mixed | claim | p50 2.20 / p99 5.65 / max 12.26 (n=335) | p50 2.01 / p99 5.74 / max 12.36 (n=335) | p50 2.26 / p99 4.27 / max 13.53 (n=334) | p99 5.74 / max 13.53 |
+| mixed | complete | p50 3.91 / p99 9.54 / max 9.99 (n=335) | p50 3.72 / p99 6.40 / max 8.79 (n=335) | p50 4.23 / p99 6.72 / max 8.78 (n=334) | p99 9.54 / max 9.99 |
+| mixed | exhaust | p50 1.39 / p99 2.79 / max 2.79 (n=33) | p50 1.30 / p99 4.33 / max 4.33 (n=33) | p50 1.45 / p99 2.02 / max 2.02 (n=33) | p99 4.33 / max 4.33 |
+| mixed | renew | p50 3.89 / p99 8.28 / max 8.87 (n=335) | p50 3.71 / p99 8.17 / max 10.82 (n=335) | p50 4.21 / p99 7.46 / max 9.53 (n=334) | p99 8.28 / max 10.82 |
+| mixed | operations | 1005 | 1005 | 1002 | 1002–1005 |
+| mixed | outcomes | complete:Success=335 exhaust:Success=33 renew:Success=335 | complete:Success=335 exhaust:Success=33 renew:Success=335 | complete:Success=334 exhaust:Success=33 renew:Success=334 | every operation Success |
+| mixed | claimed_twice | 0 | 0 | 0 | 0 |
+| mixed | completed | 335 of 335 claimed | 335 of 335 claimed | 334 of 334 claimed | every claim completed |
+
+#### SQL Server (runs 1–3)
+| probe | metric | run 1 | run 2 | run 3 | worst |
+| --- | --- | --- | --- | --- | --- |
+| exhaust | first_sweep | 100 rows in 82.04ms | 100 rows in 77.02ms | 100 rows in 75.74ms | 100 rows, max 82.04 ms |
+| exhaust | steady_state_sweeps | p50 7.30 / p99 11.15 / max 11.15 (n=50) | p50 7.18 / p99 10.61 / max 10.61 (n=50) | p50 8.10 / p99 11.43 / max 11.43 (n=50) | p99 11.43 / max 11.43 |
+| exhaust | lowered_limit_batches | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 | 1000 \| 1000,1000,1000,1000,1000,1000,1000,1000,1000,0 |
+| exhaust | lowered_limit_batch | p50 41.14 / p99 58.20 / max 58.20 (n=11) | p50 38.88 / p99 61.19 / max 61.19 (n=11) | p50 39.93 / p99 58.59 / max 58.59 (n=11) | p99 61.19 / max 61.19 |
+| exhaust | locks_held_by_one_batch | max_coarse=0 max_key=3000 | max_coarse=0 max_key=3000 | max_coarse=0 max_key=3000 | max_coarse=0 max_key=3000 |
+| exhaust | live_leases_untouched | 9900 | 9900 | 9900 | 9900 |
+| order | claims | reclaimable,released,fresh_a,fresh_b | reclaimable,released,fresh_a,fresh_b | reclaimable,released,fresh_a,fresh_b | reclaimable,released,fresh_a,fresh_b |
+| coalescing | live_materializations | 12 | 12 | 12 | 12 |
+| coalescing | live_mismatches | 0 | 0 | 0 | 0 |
+| coalescing | materialization_transaction | p50 6.37 / p99 46.96 / max 46.96 (n=12) | p50 6.46 / p99 37.84 / max 37.84 (n=12) | p50 6.78 / p99 39.38 / max 39.38 (n=12) | p99 46.96 / max 46.96 |
+| coalescing | materialized_jobs_claimed_in_order | True | True | True | True |
+| renewal | after_release_4s_hold | p50 7.80 / p99 13.53 / max 21.30 (n=100) | p50 7.76 / p99 12.49 / max 24.23 (n=100) | p50 7.72 / p99 27.14 / max 30.54 (n=100) | p99 27.14 / max 30.54 |
+| renewal | outcomes_4s_hold | Success=100 | Success=100 | Success=100 | Success=100 |
+| renewal | outcomes_6s_hold | FailureUnknown:1222=10 | FailureUnknown:1222=10 | FailureUnknown:1222=10 | FailureUnknown:1222=10 |
+| renewal | time_to_lock_timeout_6s_hold | p50 5005.71 / p99 5013.04 / max 5013.04 (n=10) | p50 5003.99 / p99 5007.21 / max 5007.21 (n=10) | p50 5004.65 / p99 5009.93 / max 5009.93 (n=10) | p99 5013.04 / max 5013.04 |
+| renewal | outcomes_expired_during_3s_hold | OwnershipLost=20 | OwnershipLost=20 | OwnershipLost=20 | OwnershipLost=20 |
+| renewal | expiring_leases_extended | 0 | 0 | 0 | 0 |
+| renewal | after_fence_commit_4s_fence | p50 5.90 / p99 8.16 / max 8.16 (n=30) | p50 5.92 / p99 10.71 / max 10.71 (n=30) | p50 6.05 / p99 10.04 / max 10.04 (n=30) | p99 10.71 / max 10.71 |
+| renewal | outcomes_4s_fence | Success=30 | Success=30 | Success=30 | Success=30 |
+| renewal | outcomes_6s_fence | FailureUnknown:1222=10 | FailureUnknown:1222=10 | FailureUnknown:1222=10 | FailureUnknown:1222=10 |
+| renewal | time_to_lock_timeout_6s_fence | p50 5006.08 / p99 5006.67 / max 5006.67 (n=10) | p50 5006.76 / p99 5007.05 / max 5007.05 (n=10) | p50 5006.33 / p99 5006.88 / max 5006.88 (n=10) | p99 5007.05 / max 5007.05 |
+| renewal | fences_committed | 40 | 40 | 40 | 40 |
+| renewal | after_fence_release_at_gate | p50 10.06 / p99 10.64 / max 10.64 (n=10) | p50 8.97 / p99 9.88 / max 9.88 (n=10) | p50 10.03 / p99 10.44 / max 10.44 (n=10) | p99 10.64 / max 10.64 |
+| renewal | outcomes_behind_fence_at_gate | Success=10 | Success=10 | Success=10 | Success=10 |
+| retention | batch_500 | p50 9.17 / p99 56.86 / max 56.86 (n=20) | p50 8.04 / p99 56.73 / max 56.73 (n=20) | p50 8.13 / p99 64.27 / max 64.27 (n=20) | p99 64.27 / max 64.27 |
+| retention | rows_left | expired=50000 recent=40000 active=2000 | expired=50000 recent=40000 active=2000 | expired=50000 recent=40000 active=2000 | expired=50000 recent=40000 active=2000 |
+| claim | backlog_claims | p50 4.91 / p99 10.69 / max 136.88 (n=3000) | p50 4.89 / p99 11.00 / max 142.27 (n=3000) | p50 4.84 / p99 8.42 / max 133.91 (n=3000) | p99 11.00 / max 142.27 |
+| claim | backlog_throughput_claims_per_s | 562 | 566 | 582 | 562–582 |
+| claim | empty_claims_with_backlog | 0 | 0 | 0 | 0 |
+| claim | claim_failures | 0 | 0 | 0 | 0 |
+| claim | duplicate_claims | 0 | 0 | 0 | 0 |
+| claim | locks_held_by_one_claim | coarse=0 key=2 | coarse=0 key=2 | coarse=0 key=2 | coarse=0 key=2 |
+| claim | idle_polls_10000_leased | p50 6.39 / p99 11.52 / max 18.54 (n=300) | p50 6.30 / p99 10.56 / max 23.51 (n=300) | p50 6.13 / p99 12.55 / max 24.20 (n=300) | p99 12.55 / max 24.20 |
+| mixed | claim | p50 4.47 / p99 16.23 / max 130.47 (n=335) | p50 4.43 / p99 12.05 / max 126.33 (n=335) | p50 4.87 / p99 20.58 / max 126.57 (n=334) | p99 20.58 / max 130.47 |
+| mixed | complete | p50 7.08 / p99 13.84 / max 15.47 (n=335) | p50 6.85 / p99 11.39 / max 13.74 (n=335) | p50 7.68 / p99 14.17 / max 19.43 (n=334) | p99 14.17 / max 19.43 |
+| mixed | exhaust | p50 3.09 / p99 11.08 / max 11.08 (n=33) | p50 2.90 / p99 13.59 / max 13.59 (n=33) | p50 3.23 / p99 13.52 / max 13.52 (n=33) | p99 13.59 / max 13.59 |
+| mixed | renew | p50 7.00 / p99 14.44 / max 17.15 (n=335) | p50 6.97 / p99 13.25 / max 14.19 (n=335) | p50 7.72 / p99 13.40 / max 16.42 (n=334) | p99 14.44 / max 17.15 |
+| mixed | operations | 1005 | 1005 | 1002 | 1002–1005 |
+| mixed | outcomes | complete:Success=335 exhaust:Success=33 renew:Success=335 | complete:Success=335 exhaust:Success=33 renew:Success=335 | complete:Success=334 exhaust:Success=33 renew:Success=334 | every operation Success |
+| mixed | claimed_twice | 0 | 0 | 0 | 0 |
+| mixed | completed | 335 of 335 claimed | 335 of 335 claimed | 334 of 334 claimed | every claim completed |
 
 ## Appendix: per-run results
 
