@@ -2019,6 +2019,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     [TestCase("conflicting-sid", "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH")]
     [TestCase("unsupported-user", "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH")]
     [TestCase("metadata-authority", "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")]
+    [TestCase("metadata-authority-hidden-login", "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")]
     public async Task It_should_reject_invalid_mapping_without_user_or_grant_mutation(
         string scenario,
         string code
@@ -2029,12 +2030,13 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             {
                 GatingRoleExists = true,
                 ConnectorExists = scenario is "conflicting-sid" or "unsupported-user" or "metadata-authority",
-                LoginExists = scenario != "absent-login",
+                LoginExists = scenario is not ("absent-login" or "metadata-authority-hidden-login"),
                 LoginSupported = scenario != "unsupported-login",
                 LoginElevated = scenario == "elevated-login",
                 MappingMatches = scenario != "conflicting-sid",
                 ConnectorIsDatabasePrincipal = scenario != "unsupported-user",
-                MappingMetadataVisible = scenario != "metadata-authority",
+                MappingMetadataVisible =
+                    scenario is not ("metadata-authority" or "metadata-authority-hidden-login"),
             }
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);

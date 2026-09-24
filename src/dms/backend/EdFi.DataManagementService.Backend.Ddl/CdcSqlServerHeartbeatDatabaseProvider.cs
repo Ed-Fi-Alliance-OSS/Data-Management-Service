@@ -838,14 +838,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         CdcProviderSetupStepMode mode
     )
     {
-        if (rows.Count != 1 || !ReadBool(rows[0], "login_exists"))
-        {
-            return "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING";
-        }
-        var row = rows[0];
-        if (!ReadBool(row, "mapping_metadata_visible"))
+        if (rows.Count != 1 || !ReadBool(rows[0], "mapping_metadata_visible"))
         {
             throw new InvalidOperationException("Connector identity metadata is unavailable.");
+        }
+        var row = rows[0];
+        if (!ReadBool(row, "login_exists"))
+        {
+            return "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING";
         }
         if (!ReadBool(row, "login_supported"))
         {
