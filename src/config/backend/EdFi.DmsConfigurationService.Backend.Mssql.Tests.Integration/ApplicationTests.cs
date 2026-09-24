@@ -1623,6 +1623,44 @@ public class ApplicationTests : DatabaseTest
             (await CountApplicationProfileRows(_tenantAProfileId)).Should().Be(0);
         }
 
+        // SQL Server caps a request at 2,100 parameters, and the tenant check expands its id list into
+        // one parameter per element, so repeated ids must be collapsed before that query.
+        [Test]
+        public async Task It_should_insert_an_application_with_its_own_profile_repeated_many_times()
+        {
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Repeated Profile Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = [.. Enumerable.Repeat(_tenantBProfileId, 3000)],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.Success>();
+
+            (await GetProfileIds(_tenantBRepository, ((ApplicationInsertResult.Success)result).Id))
+                .Should()
+                .Equal(_tenantBProfileId);
+            (await CountApplicationProfileRows(_tenantBProfileId)).Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_should_update_an_application_with_its_own_profile_repeated_many_times()
+        {
+            var result = await UpdateTenantBApplicationProfiles([
+                .. Enumerable.Repeat(_tenantBProfileId, 3000),
+            ]);
+            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+
+            (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
+                .Should()
+                .Equal(_tenantBProfileId);
+            (await CountApplicationProfileRows(_tenantBProfileId)).Should().Be(1);
+        }
+
         [Test]
         public async Task It_should_allow_the_same_vendor_company_and_application_name_in_both_tenants()
         {

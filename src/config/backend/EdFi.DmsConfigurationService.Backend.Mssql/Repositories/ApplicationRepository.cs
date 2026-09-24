@@ -68,16 +68,17 @@ public class ApplicationRepository(
         int[] profileIds
     )
     {
+        int[] distinctProfileIds = [.. profileIds.Distinct()];
         string sql = $"""
             SELECT COUNT(1) FROM dmscs.Profile
             WHERE Id IN @ProfileIds AND {TenantContext.TenantWhereClause()};
             """;
         int count = await connection.ExecuteScalarAsync<int>(
             sql,
-            new { ProfileIds = profileIds, TenantId },
+            new { ProfileIds = distinctProfileIds, TenantId },
             transaction
         );
-        return count == profileIds.Distinct().Count();
+        return count == distinctProfileIds.Length;
     }
 
     private async Task<bool> ApplicationExistsForTenant(
