@@ -188,7 +188,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 param(
     [switch] `$InfraOnly,
     [switch] `$DmsOnly,
+    [switch] `$r,
     [switch] `$EnableConfig,
+    [switch] `$SuppressWriterGuidance,
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
     [string] `$DmsBaseUrl,
@@ -201,7 +203,10 @@ param(
           elseif (`$InfraOnly) { "start-infra" }
           elseif (`$DmsOnly)  { "start-dms" }
           else                { "start-legacy" }
-Add-Content -LiteralPath '$CallLogPath' -Value "`$label DmsBaseUrl=`$DmsBaseUrl"
+Add-Content -LiteralPath '$CallLogPath' -Value "`$label DmsBaseUrl=`$DmsBaseUrl rebuild=`$(`$r.IsPresent) writerGuidanceSuppressed=`$(`$SuppressWriterGuidance.IsPresent)"
+if (`$InfraOnly -and -not `$hasDmsBaseUrl -and -not `$SuppressWriterGuidance) {
+    Write-Output "Infrastructure phase complete. DMS service was not started."
+}
 $forwardRecording
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -584,12 +589,13 @@ $failureStatement
     # R2 - bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 param surfaces
     # =========================================================================
     Context "wrapper entry-script parameter surfaces" {
-        It "bootstrap-local-dms.ps1 declares -InfraOnly and -DmsBaseUrl" {
+        It "bootstrap-local-dms.ps1 declares -InfraOnly, -DmsBaseUrl, and -Rebuild" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
             )
             $params | Should -Contain "InfraOnly"
             $params | Should -Contain "DmsBaseUrl"
+            $params | Should -Contain "Rebuild"
         }
 
         It "bootstrap-published-dms.ps1 does not declare -InfraOnly or -DmsBaseUrl" {
@@ -632,6 +638,43 @@ $failureStatement
                     -LoadSeedData `
                     -SeedDataPath $script:repo.DockerComposeRoot
             } | Should -Throw "*-LoadSeedData with -InfraOnly requires -DmsBaseUrl*"
+        }
+    }
+
+    Context "normal local wrapper startup controls" {
+        It "forwards explicit rebuild only to the initial infrastructure startup and suppresses its terminal guidance" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-rebuild.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -Rebuild `
+                *>&1 | Out-String
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=True writerGuidanceSuppressed=True"
+            $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
+            $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
+        }
+
+        It "does not rebuild by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-default-start.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                *>&1 | Out-String
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
+            $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
+            $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
         }
     }
 
@@ -776,6 +819,7 @@ param(
             # configure and provision must appear
             $log | Should -Contain "configure smoke=False"
             $log | Should -Contain "provision"
+            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
 
             # -DmsOnly start must NOT appear
             $log | Where-Object { $_ -like "start-dms*" } | Should -BeNullOrEmpty
@@ -785,6 +829,7 @@ param(
 
             # IDE guidance must mention appsettings or DmsBaseUrl workflow hint
             $output | Should -Match "(?i)(appsettings|DmsBaseUrl|IDE)"
+            $output | Should -Match "Infrastructure phase complete\. DMS service was not started\." -Because "terminal InfraOnly startup retains direct/manual writer guidance"
 
             # AC: terminal output must not present a second start-local-dms.ps1 run as a resume
             # mechanism; the fresh wrapper continuation invocation is the supported follow-up.
@@ -1126,6 +1171,7 @@ param(
 
             @(Get-PrintedWrapperContinuationArgumentList -Line $guidance).Count |
                 Should -Be 0 -Because "the wrapper owns this hint and holds the state needed to build it"
+            $guidance | Should -Contain "Infrastructure phase complete. DMS service was not started." -Because "direct InfraOnly guidance remains available for manual phase execution"
             $guidance -join "`n" | Should -Not -Match "wrapper-managed health-wait" -Because "the preamble must go with the command it introduces"
             $guidance -join "`n" | Should -Match "configure-local-data-store\.ps1" -Because "the manual phase next-steps are unaffected"
             $guidance -join "`n" | Should -Match "provision-dms-schema\.ps1"
@@ -1306,7 +1352,7 @@ param(
 
             # start-infra invocation must NOT carry any DmsBaseUrl
             $startLine = $log | Where-Object { $_ -like "start-infra*" } | Select-Object -First 1
-            $startLine | Should -Match "DmsBaseUrl=$"
+            $startLine | Should -Match "DmsBaseUrl= rebuild="
         }
     }
 
@@ -1431,7 +1477,7 @@ param(
             $log[3] | Should -Match "^start-infra-healthwait "
 
             # First start invocation must NOT carry a DmsBaseUrl
-            $log[0] | Should -Match "DmsBaseUrl=$"
+            $log[0] | Should -Match "DmsBaseUrl= rebuild="
 
             # Health-wait invocation must carry the DmsBaseUrl
             $log[3] | Should -Match "DmsBaseUrl=http://localhost:8080"
@@ -2076,7 +2122,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
-                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials',
+                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials', 'Rebuild',
                 # -SeparateConfigDatabase changes which database CMS targets, never which compose
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
@@ -2111,6 +2157,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -AddExtensionSecurityMetadata `
                 -NoDataStore `
                 -AddSmokeTestCredentials `
+                -Rebuild `
                 -SeparateConfigDatabase `
                 -DataStoreDatabaseName ignored_by_teardown `
                 -d

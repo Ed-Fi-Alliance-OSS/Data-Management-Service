@@ -517,7 +517,8 @@ function Invoke-BootstrapWrapper {
         # Shared E2E composition preserves its already selected package surface and prepares
         # its separate snapshot before admission. Ordinary bootstrap keeps its defaults.
         [switch]$UseEnvironmentFileSchemaSettings,
-        [switch]$RebuildLocalImages,
+        [Alias("RebuildLocalImages")]
+        [switch]$Rebuild,
         [scriptblock]$BeforeCdcAdmission,
         [string]$OriginalEnvironmentFile,
 
@@ -950,7 +951,10 @@ function Invoke-BootstrapWrapper {
             # hint, and start-published-dms.ps1 does not declare the switch.
             if ($StartScriptName -eq "start-local-dms.ps1") {
                 $startArgs.SuppressWrapperContinuationGuidance = $true
-                if ($RebuildLocalImages) { $startArgs.r = $true }
+                if (-not $InfraOnly) {
+                    $startArgs.SuppressWriterGuidance = $true
+                }
+                if ($Rebuild) { $startArgs.r = $true }
             }
 
             # Reset the native exit-code sentinel so the check below reflects only this start invocation and

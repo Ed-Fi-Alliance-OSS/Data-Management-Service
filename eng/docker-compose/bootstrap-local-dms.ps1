@@ -102,6 +102,11 @@
 .PARAMETER IdentityProvider
     Forwarded to all phase commands for OAuth endpoint selection.
 
+.PARAMETER Rebuild
+    Rebuild local DMS container images before the initial infrastructure startup. The switch is
+    forwarded only to the first `start-local-dms.ps1 -InfraOnly` invocation and is not repeated
+    for the later `-DmsOnly` startup.
+
 .PARAMETER EnableKafkaCdc
     Run the deployment controller after schema provisioning and before DMS or seed writes.
     Requires -SeparateConfigDatabase, -CdcSettingsPath and a dedicated -DataStoreDatabaseName.
@@ -235,6 +240,9 @@ param(
     # only to override the env-file resolution.
     [ValidateSet("keycloak", "self-contained")]
     [string]$IdentityProvider,
+
+    [Alias("r")]
+    [Switch]$Rebuild,
 
     [Switch]$EnableKafkaUI,
 
