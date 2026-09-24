@@ -598,6 +598,30 @@ $failureStatement
             $params | Should -Contain "Rebuild"
         }
 
+        It "bootstrap-local-dms.ps1 exposes -r as the public alias for -Rebuild" {
+            $tokens = $null
+            $errors = $null
+            $scriptPath = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $scriptPath,
+                [ref]$tokens,
+                [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+                throw "Failed to parse $scriptPath"
+            }
+
+            $rebuildParameter = $ast.ParamBlock.Parameters |
+                Where-Object { $_.Name.VariablePath.UserPath -eq "Rebuild" }
+            $aliases = @(
+                $rebuildParameter.Attributes |
+                    Where-Object { $_.TypeName.Name -eq "Alias" } |
+                    ForEach-Object { $_.PositionalArguments.Value }
+            )
+
+            $aliases | Should -Contain "r"
+        }
+
         It "bootstrap-published-dms.ps1 does not declare -InfraOnly or -DmsBaseUrl" {
             $params = Get-DeclaredScriptParameters -Path (
                 Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
