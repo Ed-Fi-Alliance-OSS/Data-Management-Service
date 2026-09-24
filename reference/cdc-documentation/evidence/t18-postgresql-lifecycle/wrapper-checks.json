@@ -1,0 +1,44 @@
+{
+  "Infrastructure": "Mocked wrapper/worker ordering; live persistence separately qualified",
+  "Selection": [
+    "CdcLifecycleOrdering.Tests.ps1",
+    "CdcWorkerStartup.Tests.ps1",
+    "CdcQualification.Tests.ps1"
+  ],
+  "Total": 349,
+  "Passed": 349,
+  "Failed": 0,
+  "Skipped": 0,
+  "SelectedCases": [
+    {
+      "TestId": "CDC-DOC cdc-managed-stop",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "does not shutdown the worker after delayed/unverified final task status",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-managed-start",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "CDC-DOC cdc-managed-start-rejected",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "blocks DMS and a later unmanaged startup retry after one resume fails",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "rechecks fresh connector shutdown on a stop retry when infrastructure shutdown failed",
+      "Outcome": "Passed"
+    }
+  ],
+  "FinalQualificationGuards": {
+    "Total": 68,
+    "Passed": 68,
+    "Failed": 0,
+    "Skipped": 0
+  }
+}

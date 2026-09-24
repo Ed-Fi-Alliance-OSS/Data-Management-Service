@@ -4,6 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 BeforeAll {
+    . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
     $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 }
 
@@ -52,6 +53,7 @@ Export-ModuleMember -Function *
         # below and in the CDC controller tests; this suite executes both real entry-point wrappers.
         @'
 function Read-BootstrapCdcSettings { param($Path, $DatabaseEngine)
+    Set-Content (Join-Path $PSScriptRoot 'selected-settings') $Path
     return @{ Provider = $DatabaseEngine; Cdc = @{ DataStoreId = '42'; DeploymentKey = 'local'; InstanceKey = 'datastore-42'; Generation = 1 }; ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } }
 }
 function Assert-BootstrapCdcOfflineOwnership { param($Project, [switch]$InfrastructureReady, $DatabaseEngine, $CmsPort)
@@ -297,6 +299,36 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Name | Should -Be $before
     }
 
+    It 'CDC-DOC <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-bootstrap-local'; Provider = 'postgresql'; Flavor = 'local'; Stem = 'postgresql'; State = 'state-pg' },
+        @{ Id = 'cdc-pg-bootstrap-published'; Provider = 'postgresql'; Flavor = 'published'; Stem = 'postgresql'; State = 'state-pg' },
+        @{ Id = 'cdc-sqlserver-bootstrap-local'; Provider = 'mssql'; Flavor = 'local'; Stem = 'sqlserver'; State = 'state-sqlserver' },
+        @{ Id = 'cdc-sqlserver-bootstrap-published'; Provider = 'mssql'; Flavor = 'published'; Stem = 'sqlserver'; State = 'state-sqlserver' }
+    ) {
+        $invocation = Get-CdcRunbookInvocation $Id $script:sandbox
+        $invocation.Path | Should -Be "eng/docker-compose/bootstrap-$Flavor-dms.ps1"
+        $parameters = $invocation.Parameters
+        $parameters.DatabaseEngine | Should -Be $Provider
+        $parameters.CdcSettingsPath | Should -Be (Join-Path $script:sandbox ".local/cdc/$Stem.json")
+        $parameters.CdcBindingStatePath | Should -Be (Join-Path $script:sandbox ".local/cdc/$State")
+        # Existing admission-failure seam retains the handoff and excludes writer/seed.
+        '' | Set-Content (Join-Path $script:sandbox 'fail')
+        { & (Join-Path $script:sandbox ([IO.Path]::GetFileName($invocation.Path))) @parameters } | Should -Throw '*CDC unavailable*'
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        $calls[1] | Should -Be "configure:$Provider`:edfi_cdc"
+        $calls[2] | Should -Be "provision:$Provider`:True:$($parameters.CdcBindingStatePath):datastore-42:True"
+        $calls[3] | Should -Be "cdc:42:Created:$($parameters.CdcBindingStatePath)"
+        @($calls | Where-Object { $_ -match '^(dms|seed):' }).Count | Should -Be 0
+        (Get-Content (Join-Path $script:sandbox 'selected-settings') -Raw).Trim() | Should -Be $parameters.CdcSettingsPath
+        $retained = Get-Content (Join-Path $script:sandbox 'retained.json') -Raw
+        Remove-Item (Join-Path $script:sandbox 'fail')
+        & (Join-Path $script:sandbox ([IO.Path]::GetFileName($invocation.Path))) @parameters
+        $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
+        @($calls | Where-Object { $_ -match '^provision:' }).Count | Should -Be 1
+        $calls[-1] | Should -Be "dms:$Provider`:False:False:False:$($parameters.CdcBindingStatePath)/dms.json"
+        (Get-Content (Join-Path $script:sandbox 'retained.json') -Raw) | Should -Be $retained
+    }
+
     It 'orders <wrapper>/<provider> through CDC before DMS and seed, including UI' -ForEach @(
         @{ wrapper = 'local'; provider = 'postgresql' }, @{ wrapper = 'local'; provider = 'mssql' },
         @{ wrapper = 'published'; provider = 'postgresql' }, @{ wrapper = 'published'; provider = 'mssql' }
@@ -319,6 +351,8 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         '' | Set-Content (Join-Path $script:sandbox 'fail')
         { & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider } | Should -Throw '*CDC unavailable*'
         $retained = Get-Content (Join-Path $script:sandbox 'retained.json') -Raw
+        # Provider/user admission failure must not reach either writer startup or seed.
+        @(Get-Content (Join-Path $script:sandbox 'calls') | Where-Object { $_ -match '^(dms|seed):' }).Count | Should -Be 0
         Remove-Item (Join-Path $script:sandbox 'fail')
         & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
         $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
@@ -503,7 +537,7 @@ Describe 'CDC local ownership inspection' {
     It 'requires live CMS and database evidence after startup' {
         { Assert-BootstrapCdcOfflineOwnership -Project 'dms-local' -InfrastructureReady -CmsPort 8081 -DatabaseEngine postgresql } | Should -Throw '*exclusively owned local*'
     }
-    It 'accepts scoped loopback infrastructure for <provider>' -ForEach @(
+    It 'accepts scoped loopback infrastructure with an unpublished exposed port for <provider>' -ForEach @(
         @{ provider = 'postgresql'; database = '/dms-postgresql' }, @{ provider = 'mssql'; database = '/dms-mssql' }
     ) {
         $script:databaseContainerName = $database
@@ -512,7 +546,7 @@ Describe 'CDC local ownership inspection' {
             if ($Arguments[0] -eq 'ps') { return @('cms', 'db') }
             foreach ($entry in @(@{ name = '/ed-fi-api-config-service'; service = 'config'; port = '8081' }, @{ name = $script:databaseContainerName; service = 'db'; port = '15432' })) {
                 @{ name = $entry.name; service = $entry.service; project = 'dms-local'; directory = $script:composeRoot;
-                    ports = @{ '1234/tcp' = @(@{ HostIp = '127.0.0.1'; HostPort = $entry.port }) }; networks = @{ dms = @{} }; command = @(); entrypoint = @()
+                    ports = @{ '8080/tcp' = $null; '1234/tcp' = @(@{ HostIp = '127.0.0.1'; HostPort = $entry.port }) }; networks = @{ dms = @{} }; command = @(); entrypoint = @()
                 } | ConvertTo-Json -Depth 10 -Compress
             }
         }

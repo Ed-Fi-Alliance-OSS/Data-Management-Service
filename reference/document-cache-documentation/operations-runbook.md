@@ -21,15 +21,19 @@ This runbook covers these DocumentCache operations:
 - SQL Server projection prerequisite correction when lifecycle is `Disabled`; and
 - the required explicit scrub after suspected restore or unsupported direct mutation.
 
-Kafka connector setup, connector status, topic operations, binding retirement, source
-replacement, downstream publication containment, and consumer-state recovery are Kafka/CDC
-runbook concerns. Use this runbook only up to the DMS projection boundary, then follow
-[Kafka/CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
+Kafka connector setup, connector status, topic operations, binding retirement,
+downstream publication containment, and consumer evidence are Kafka/CDC runbook concerns.
+Physical-source replacement remains a [v1 deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+Use this runbook only up to the DMS projection boundary, then follow
+[Kafka/CDC projection and history handoff](../cdc-documentation/operations-runbook.md#projection-handoff)
 when connector or downstream state may be affected.
 
 Representation restamp belongs to the independently owned offline byte-changing
 representation correction workflow and is outside this runbook. This runbook does not
-replace that workflow with manual SQL.
+replace that workflow with manual SQL. Use the
+[CDC restamp handoff](../cdc-documentation/operations-runbook.md#representation-restamp)
+to reach the [DocumentCacheAdmin procedure](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+under the [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 
 Owning design sections:
 
@@ -83,10 +87,14 @@ Mutating commands and required tokens:
 Current packaged production behavior intentionally rejects offline activation, offline
 deactivation, and internal-only cache-ahead recovery unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
-physical-source fingerprint. The default provider reports `unknown` because durable CDC
-binding/history evidence is not available in this product scope. Treat
-`downstreamHistoryPresentOrUnknown` as expected in that default state and use the
-Kafka/CDC containment path instead of these internal-only workflows.
+physical-source fingerprint. The shipped DocumentCacheAdmin production reader uses
+`Cdc:PublicationHistory` to read the original managed creation/source history under the
+controller lock. Without that configuration, the default provider reports `unknown`;
+missing, unreadable or mismatched evidence also rejects. Configure the reader through the
+[Admin configuration reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#configuration)
+and use the [CDC history decision/examples](../cdc-documentation/operations-runbook.md#projection-handoff)
+for admission or containment routing. Stopping a connector, removing runtime targets,
+binding absence or successful retirement does not establish internal-only history.
 
 Command result statuses are:
 
@@ -174,11 +182,11 @@ dms-document-cache activate-new-empty --data-store-id 1 --confirm newEmptyActiva
 
 Existing `Disabled` target activation is admitted only after trusted downstream
 publication history proves `internalOnly` for the same target and physical-source
-fingerprint. In the default packaged production state this proof is unavailable and the
-command rejects with `downstreamHistoryPresentOrUnknown`. When that proof exists, stop
-every DMS replica, projector/direct-fill writer, bulk loader, administrative writer,
-external writer, and other canonical writer, then drain in-flight transactions before
-asserting `closedAndDrained`:
+fingerprint. Without configured trusted matching evidence, the command rejects with
+`downstreamHistoryPresentOrUnknown`; use the [production history handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
+When that proof exists, stop every DMS replica, projector/direct-fill writer, bulk
+loader, administrative writer, external writer, and other canonical writer, then drain
+in-flight transactions before asserting `closedAndDrained`:
 
 ```bash
 dms-document-cache activate-offline --data-store-id 1 --confirm offlineActivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
@@ -214,8 +222,9 @@ restart-safe only for an explicitly reissued operation.
 Offline deactivation is allowed only when trusted downstream publication history proves
 `internalOnly` for the same target and physical-source fingerprint. A data store with an
 active, historical, possible, or unknown downstream consumer or CDC binding is not
-eligible for the simple deactivation toggle. In the default packaged production state,
-the command rejects with `downstreamHistoryPresentOrUnknown`.
+eligible for the simple deactivation toggle. Absent trusted matching internal-only evidence,
+the command rejects with `downstreamHistoryPresentOrUnknown`; use the
+[production history handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
 
 When internal-only proof exists, close and drain writers before using
 `closedAndDrained`:
@@ -269,11 +278,13 @@ seeding and work drain must complete before `Tracking`, operational health, and
 caught-up success return.
 
 If the higher cache value may have been published, or downstream observation is
-uncertain, do not run internal-only recovery. In the default packaged production state,
-downstream observation is uncertain and the command rejects with
-`downstreamHistoryPresentOrUnknown`. Stop publication, preserve cache/work/latch
-evidence, and follow the Kafka/CDC containment and new downstream namespace path. V1
-never publishes a lower canonical version as an in-place correction to the old namespace.
+uncertain, do not run internal-only recovery. Without trusted matching internal-only
+evidence the command rejects with `downstreamHistoryPresentOrUnknown`. Stop publication,
+preserve cache/work/latch evidence, and follow the
+[CDC history/containment handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
+V1 never publishes a lower canonical version as an in-place correction to the old namespace;
+[new-generation cutover is deferred](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover),
+not an executable recovery step.
 
 ## Persistent Projection Failure and Poison Remediation
 
@@ -396,3 +407,13 @@ an incident involves connector registration, Connect offsets, PostgreSQL
 slots/publications, SQL Server CDC capture artifacts, public or progress topics, source
 binding history, consumer state, possibly published cache-ahead values, sensitive-data
 containment, or destructive topic/binding cleanup.
+
+Start with the [CDC projection/history handoff](../cdc-documentation/operations-runbook.md#projection-handoff)
+and use [managed lifecycle](../cdc-documentation/operations-runbook.md#managed-lifecycle)
+or [native recovery/containment](../cdc-documentation/operations-runbook.md#native-recovery)
+for publication concerns. This runbook remains the owner of projection administration.
+
+Sensitive-data incidents use the [disclosure response](../cdc-documentation/operations-runbook.md#sensitive-data-response)
+and [guarded retirement](../cdc-documentation/operations-runbook.md#generation-retirement),
+under the [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+Restamp completion is not purge evidence.

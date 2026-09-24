@@ -1,0 +1,276 @@
+[
+  {
+    "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "SnippetId": "cdc-pg-retention-inspect",
+    "SnippetSha256": "67cdfbe464d0bbb80c608ab55f54163a636a7cdb58afab7fa3923fde7ddf5153",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "missing-slot",
+    "Observation": {
+      "ExitCode": 0,
+      "SlotRows": 0,
+      "Action": "UnavailableHistoryIncidentNeverHealthyEmpty"
+    }
+  },
+  {
+    "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "SnippetId": "cdc-pg-retention-inspect",
+    "SnippetSha256": "67cdfbe464d0bbb80c608ab55f54163a636a7cdb58afab7fa3923fde7ddf5153",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "sample-0",
+    "Observation": {
+      "ExitCode": 0,
+      "ObservedAt": "2026-09-23 13:20:31.723209+00",
+      "Active": true,
+      "WalStatus": "reserved",
+      "RetainedWalBytes": 6256,
+      "UnconfirmedWalBytes": 184,
+      "RemainingSlotBudgetAvailable": false,
+      "InvalidationReasonAvailable": false,
+      "Settings": [
+        {
+          "Name": "max_slot_wal_keep_size",
+          "Setting": "-1",
+          "Unit": "MB"
+        },
+        {
+          "Name": "max_wal_size",
+          "Setting": "1024",
+          "Unit": "MB"
+        },
+        {
+          "Name": "wal_keep_size",
+          "Setting": "0",
+          "Unit": "MB"
+        }
+      ],
+      "HeartbeatAndCommittedSourceProgress": "Advanced",
+      "ConsumerProgress": "NotMeasured",
+      "Action": "FreshControllerContinuityRequired"
+    }
+  },
+  {
+    "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "SnippetId": "cdc-pg-retention-inspect",
+    "SnippetSha256": "67cdfbe464d0bbb80c608ab55f54163a636a7cdb58afab7fa3923fde7ddf5153",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "sample-1",
+    "Observation": {
+      "ExitCode": 0,
+      "ObservedAt": "2026-09-23 13:20:36.340655+00",
+      "Active": true,
+      "WalStatus": "reserved",
+      "RetainedWalBytes": 6400,
+      "UnconfirmedWalBytes": 144,
+      "RemainingSlotBudgetAvailable": false,
+      "InvalidationReasonAvailable": false,
+      "Settings": [
+        {
+          "Name": "max_slot_wal_keep_size",
+          "Setting": "-1",
+          "Unit": "MB"
+        },
+        {
+          "Name": "max_wal_size",
+          "Setting": "1024",
+          "Unit": "MB"
+        },
+        {
+          "Name": "wal_keep_size",
+          "Setting": "0",
+          "Unit": "MB"
+        }
+      ],
+      "HeartbeatAndCommittedSourceProgress": "Advanced",
+      "ConsumerProgress": "NotMeasured",
+      "Action": "FreshControllerContinuityRequired"
+    }
+  },
+  {
+    "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "SnippetId": "cdc-pg-retention-inspect",
+    "SnippetSha256": "67cdfbe464d0bbb80c608ab55f54163a636a7cdb58afab7fa3923fde7ddf5153",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "unavailable-service",
+    "Observation": {
+      "ExitCode": 1,
+      "Action": "CorrectMonitoringAccessAndResample"
+    }
+  },
+  {
+    "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "SnippetId": "cdc-provider-disk-inspect",
+    "SnippetSha256": "0aba00ed46858df7c97b8212caf0ff220b2f21429fc7461674e24239aefde7b1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "capacity",
+    "Observation": {
+      "ExitCode": 0,
+      "PathsObserved": 2,
+      "Capacity": [
+        {
+          "Blocks1024": 1076416456,
+          "Used1024": 442007948,
+          "Available1024": 579655792,
+          "UsedPercent": 43
+        },
+        {
+          "Blocks1024": 1076416456,
+          "Used1024": 442007948,
+          "Available1024": 579655792,
+          "UsedPercent": 43
+        }
+      ],
+      "Action": "DeploymentChoosesCapacityThreshold"
+    }
+  },
+  {
+    "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "SnippetId": "cdc-provider-disk-inspect",
+    "SnippetSha256": "0aba00ed46858df7c97b8212caf0ff220b2f21429fc7461674e24239aefde7b1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "unavailable-path",
+    "Observation": {
+      "ExitCode": 1,
+      "Action": "CapacityUnavailableStorageOwnerMustInvestigate"
+    }
+  },
+  {
+    "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+    "SnippetId": "cdc-telemetry-inspect",
+    "SnippetSha256": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "initial",
+    "Observation": {
+      "ExitCode": 0,
+      "ScrapeError": 0,
+      "CurrentLagPresent": true,
+      "CurrentLagMilliseconds": 1,
+      "OptionalStatistics": {
+        "min": 1,
+        "max": 77,
+        "average": 26.666666666666668,
+        "p50": 1.9813812853544068,
+        "p95": 1.9813812853544068,
+        "p99": 1.9813812853544068
+      },
+      "WorkerStartTimeSeconds": 1790169532.573,
+      "WorkerHeapMaxBytes": 2147483648,
+      "Action": "FreshControllerPassRequired"
+    }
+  },
+  {
+    "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+    "SnippetId": "cdc-telemetry-inspect",
+    "SnippetSha256": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "restarted-task",
+    "Observation": {
+      "ExitCode": 0,
+      "ScrapeError": 0,
+      "CurrentLagPresent": true,
+      "CurrentLagMilliseconds": 2,
+      "OptionalStatistics": {
+        "min": 2,
+        "max": 2,
+        "average": 2,
+        "p50": 1.9813812853544068,
+        "p95": 1.9813812853544068,
+        "p99": 1.9813812853544068
+      },
+      "WorkerStartTimeSeconds": 1790169532.573,
+      "WorkerHeapMaxBytes": 2147483648,
+      "Action": "FreshControllerPassRequired"
+    }
+  },
+  {
+    "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+    "SnippetId": "cdc-telemetry-inspect",
+    "SnippetSha256": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "restarted-worker",
+    "Observation": {
+      "ExitCode": 0,
+      "ScrapeError": 0,
+      "CurrentLagPresent": true,
+      "CurrentLagMilliseconds": 8,
+      "OptionalStatistics": {
+        "min": 8,
+        "max": 8,
+        "average": 8,
+        "p50": 7.925884200121824,
+        "p95": 7.925884200121824,
+        "p99": 7.925884200121824
+      },
+      "WorkerStartTimeSeconds": 1790169579.895,
+      "WorkerHeapMaxBytes": 2147483648,
+      "Action": "FreshControllerPassRequired"
+    }
+  },
+  {
+    "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+    "SnippetId": "cdc-telemetry-inspect",
+    "SnippetSha256": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "stopped-task",
+    "Observation": {
+      "ExitCode": 0,
+      "ScrapeError": 0,
+      "CurrentLagPresent": false,
+      "CurrentLagMilliseconds": null,
+      "OptionalStatistics": {
+        "min": null,
+        "max": null,
+        "average": null,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "WorkerStartTimeSeconds": 1790169532.573,
+      "WorkerHeapMaxBytes": 2147483648,
+      "Action": "CurrentLagUnavailableNeverZero"
+    }
+  },
+  {
+    "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+    "SnippetId": "cdc-telemetry-inspect",
+    "SnippetSha256": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "Provider": "Postgresql",
+    "ConnectImage": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "AuthorizationProfile": "AuthorizationDisabledLocal",
+    "AclIsolationProven": false,
+    "Phase": "unavailable-endpoint",
+    "Observation": {
+      "ExitCode": 1,
+      "Action": "DiscardPartialFileAndCorrectEndpoint"
+    }
+  }
+]

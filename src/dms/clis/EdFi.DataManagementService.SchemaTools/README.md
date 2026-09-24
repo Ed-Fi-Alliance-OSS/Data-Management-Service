@@ -276,11 +276,21 @@ The `hash` subcommand is now required.
 
 ## CDC deployment commands
 
+For ordered setup and operations, start with the
+[CDC operator reference](../../../../reference/cdc-documentation/README.md).
+This section owns the command/configuration catalog; the runbook supplies prerequisites,
+retained inputs, completion criteria and failure actions. Its
+[evidence index](../../../../reference/cdc-documentation/cdc-inv-evidence.md)
+distinguishes qualified fixtures from pending live snippet exercises.
+
 `api-schema-tools cdc` uses the deployment controllers in `Backend.Cdc`. The shipped
 CLI composes the qualified single-worker, single-broker local Compose deployment
 (`LocalSingleBroker` / `AuthorizationDisabledLocal`); it reports that this profile
 has no ACL isolation proof. Other deployments must supply their own live deployment
-authority adapters. DMS HTTP startup does not register connectors.
+authority adapters. DMS HTTP startup does not register connectors. See the
+[topology](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup)
+and [security](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations)
+owners; changing profile tokens does not install a production deployment.
 
 Use the **original** managed provisioning state root and the same DMS settings and
 selected target as the eventual DMS host. The database must already have its managed
@@ -289,7 +299,12 @@ CREATE receipt and source-history record (`ddl provision --managed-state-path ..
 writer or seed process starts. It returns a writer-publication receipt only after
 the temporary projection runtime has stopped. Configuration is not provenance.
 
-These invocation shapes apply to PostgreSQL and SQL Server respectively:
+These are independent command shapes, not a sequence to execute. Settings paths and
+generation `1` are illustrative: use the actual retained settings, original state root
+and generation from the [setup](../../../../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+or [retirement](../../../../reference/cdc-documentation/operations-runbook.md#generation-retirement)
+procedure. Initial `enable` and established lifecycle commands have different admission
+requirements.
 
 ```bash
 api-schema-tools cdc enable --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --json
@@ -306,8 +321,10 @@ api-schema-tools cdc retire --settings ./cdc-postgresql.json --state-path "$PWD/
 
 Each settings file contains the normal DMS configuration (including CMS access,
 schema packages, and `DataManagement:DocumentCache:Targets`) plus a `Cdc` section. For example,
-merge the following into your PostgreSQL DMS settings, replacing local paths and
-principals with those of your deployment:
+merge the following fragment into your PostgreSQL DMS settings, replacing local paths and
+principals with those of your deployment. `42` denotes the actual CMS-selected target ID,
+not a target this fragment creates. For complete settings preparation and host/worker
+endpoints, use the [PostgreSQL setup procedure](../../../../reference/cdc-documentation/operations-runbook.md#postgresql-setup).
 
 ```json
 {
@@ -369,7 +386,14 @@ principals with those of your deployment:
 
 For SQL Server use `AppSettings:Datastore=mssql`, `Cdc:Provider=sqlserver`, the
 SQL Server setup/connector principals, port `1433`, and `database.names` instead of
-`database.dbname`. The schema inputs must match the deployed schema, including
+`database.dbname`. Set the connector's JDBC `driver.encrypt` and
+`driver.trustServerCertificate` properties for the deployment; the
+[SQL Server setup](../../../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+example uses TLS with local certificate trust. The deployment supplies a restricted SQL
+login; initial provider setup can map the missing same-name database user. After durable
+provider completion, retry is validation-only, as specified by the
+[SQL Server provider contract](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
+The schema inputs must match the deployed schema, including
 extensions. `KafkaBootstrapServers` is the address seen by the worker;
 `KafkaAdminBootstrapServers` is reachable from the CLI. Worker identity, offset topic,
 heap, image, ports and project must match the selected Compose deployment. The image
@@ -384,7 +408,8 @@ prefix, such as `DMS_CDC__ConfigurationServiceSettings__ClientSecret`. Connector
 properties must contain externalized references resolved by the worker; literal
 connector passwords are rejected. The controller never emits connector payloads.
 
-Commands emit one JSON result on stdout (also the default without `--json`), with
+Under the [managed lifecycle contract](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary),
+commands emit one JSON result on stdout (also the default without `--json`), with
 safe diagnostics and watch passes on stderr. Exit codes: `0` successful operation or
 ready observation; `1` rejected/not-ready/unavailable/timed-out operation; `2` invalid
 command/configuration input; `130` cancellation. `data` contains the operation's
@@ -414,9 +439,12 @@ fetch/deserialization capacity maintained through consumption, or an explicit
 Every invocation requires the confirmation flag again; it creates a fresh invocation
 ID and confirmation time. Retain the previous settings and the same acknowledgement
 scope while retrying a partial rollout. After success, update normal settings to the
-new ceilings. Increase `CallMilliseconds` (at most 300000) and `WaitMilliseconds`
-when broker recreation requires more time. The same durable broker-size override
-path is used for size changes and subsequent worker startup.
+new ceilings. Use invocation-local timing overrides if broker recreation needs longer;
+do not change wrapper-hashed retained timing settings. The
+[record-size procedure](../../../../reference/cdc-documentation/operations-runbook.md#record-size-increase)
+contains the complete acknowledgement example and interrupted-rollout retry, including
+override cleanup before wrapper use. The same durable broker-size override path is used
+for size changes and subsequent worker startup.
 
 Intact binding, journal, source history and provider/offset evidence are required.
 There is no adoption, force, import, or physical-source replacement operation. Native
@@ -433,112 +461,59 @@ and [source replacement deferral](../../../../reference/design/backend-redesign/
 
 ### Bootstrap CDC handoff
 
-On an exclusively owned Linux local deployment, supply the DMS/CDC settings above with
-one explicit `DataManagement:DocumentCache:Targets` entry for the ID the configure phase
-will select. Keep the CMS URL on its published loopback port and use a dedicated database
-name distinct from the infrastructure initialization database:
+Use the complete repository-root [PostgreSQL setup](../../../../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+or [SQL Server setup](../../../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+procedure for both local and published bootstrap. They cover the protected complete
+settings file, separate CMS topology, selected target ID, dedicated new database,
+restricted connector principal, schema inputs and initial writer/seed exclusion required
+by the [local bootstrap contract](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
 
-```powershell
-pwsh eng/docker-compose/bootstrap-local-dms.ps1 -EnableKafkaCdc -SeparateConfigDatabase -DataStoreDatabaseName edfi_cdc -CdcSettingsPath ./cdc-postgresql.json -CdcBindingStatePath ./.cdc-state -EnableKafkaUI
-pwsh eng/docker-compose/bootstrap-published-dms.ps1 -DatabaseEngine mssql -EnableKafkaCdc -SeparateConfigDatabase -DataStoreDatabaseName edfi_cdc -CdcSettingsPath ./cdc-mssql.json -CdcBindingStatePath ./.cdc-state
-```
+The bootstrap parameter handoff is:
 
-The wrappers require no running DMS/IDE writers or unrelated containers on the selected
-CMS/database network. Shared CMS/database topology, route-qualified or multiple targets,
-`-NoDataStore`, and `-DmsBaseUrl` are unsupported for initial CDC bootstrap. The physical
-CREATE DATABASE receipt remains authoritative; preexisting databases do not qualify.
-A selected-ID mismatch rejects before schema provisioning; it never inserts target membership.
+| Parameter | Purpose |
+| --- | --- |
+| `-EnableKafkaCdc` | Explicit initial managed CDC opt-in. |
+| `-SeparateConfigDatabase` | Required separate CMS topology. |
+| `-DataStoreDatabaseName` | Dedicated new DMS database selected with the settings' CMS target. |
+| `-CdcSettingsPath` | Protected complete DMS plus CDC input settings. |
+| `-CdcBindingStatePath` | Original persistent managed provisioning/controller state root. |
+| `-DatabaseEngine` | `postgresql` or `mssql`; the latter uses `Cdc:Provider=sqlserver`. |
 
-The shared phase snapshots supplied settings into owner-only files under
-`.bootstrap/cdc-runtime`, binds ordinary staged schema inputs, and uses the selected Compose
-environment, project and original state root. Host-side runtime connections translate only
-the known CMS Compose database address to its published loopback port. The eventual DMS
-receives the same projection settings and CMS credentials through an explicit Compose
-override; Kafka credentials stay with the controller. Bootstrap does not accept `DMS_CDC__`
-environment overrides; place required controller secrets in the protected supplied settings.
-
-`-LoadSeedData` runs only after publication authorization and DMS startup. Local `-InfraOnly`
-completes CDC and remains offline; the controller's printed status command identifies its
-retained settings and state. On failure, retain those files and use the controller to inspect
-or resume the original unfinished workflow while writers remain stopped. This bootstrap
-entry point resumes established deployments through the retained lifecycle inventory described below.
+Bootstrap snapshots settings under `.bootstrap/cdc-runtime` and stages the selected schema
+inputs. Subsequent direct CLI calls use the emitted retained settings/state paths.
+Bootstrap rejects `DMS_CDC__` overrides; place its required secrets in the protected input
+settings. See [deployment-state preservation](../../../../reference/cdc-documentation/operations-runbook.md#deployment-state)
+and [initial-enable retry](../../../../reference/cdc-documentation/operations-runbook.md#initial-enable-retry),
+governed by the [state-continuity owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
+The setup procedures distinguish local `-InfraOnly`, published startup and seed-after-admission.
 
 ### Managed stack lifecycle
 
-The DMS E2E harness accepts the same explicit CDC settings and original state root:
+The [DMS E2E opt-in](../../../../reference/cdc-documentation/operations-runbook.md#dms-e2e-setup)
+and [SQL Server variant](../../../../reference/cdc-documentation/operations-runbook.md#sql-server-e2e-variant)
+provide exact repository-root `setup-local-dms.ps1` and `build-dms.ps1 E2ETest` examples.
+Both accept `-EnableKafkaCdc`, `-CdcSettingsPath` and `-CdcBindingStatePath`; their
+settings must select the actual `E2E_DATABASE_NAME`, schema and CMS target together.
+This setup wiring does not qualify the separate
+[API-driven message scenarios](../../../../reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md)
+or add CDC to [Instance Management E2E](../../tests/EdFi.InstanceManagement.Tests.E2E/README.md#cdc-support).
 
-```powershell
-pwsh src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnableKafkaCdc -CdcSettingsPath ./cdc-postgresql.json -CdcBindingStatePath ./.cdc-e2e -EnvironmentFile ./eng/docker-compose/.env.e2e
-pwsh ./build-dms.ps1 E2ETest -DatabaseEngine mssql -EnableKafkaCdc -CdcSettingsPath ./cdc-mssql.json -CdcBindingStatePath ./.cdc-e2e-mssql -EnvironmentFile ./.env.e2e -Configuration Release -TestFilter 'FullyQualifiedName~Given_CdcE2ESetup'
-```
+The local and published bootstrap wrappers and `start-*-dms.ps1` primitives use retained
+`.cdc-deployments/<project>.json` inventory for established deployments. Under the
+[managed lifecycle contract](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary),
+the wrappers own whole-worker shutdown/startup; direct `cdc start-worker` is only the
+infrastructure building block. Use the procedure for each intent:
 
-Use a fresh owned stack and settings for the actual `E2E_DATABASE_NAME`, CMS-selected
-data store ID, provider, worker, and metrics endpoint. Supply a pre-existing restricted
-connector login (and database user on SQL Server); provider setup grants its CDC access.
-E2E uses separate CMS topology, enables SQL Server Agent for the CDC lane,
-and uses the selected E2E schema packages, including test extensions. Managed provisioning
-creates the primary and retains its receipt; the legacy reset provisioner only prepares
-the distinct `E2E_SNAPSHOT_DATABASE_NAME`. CDC admission completes before DMS or API
-tests start. `-SkipDockerBuild` reuses existing local images in either entry point.
+| Intent | Procedure |
+| --- | --- |
+| Stop infrastructure with volumes retained, then resume | [Managed shutdown/startup](../../../../reference/cdc-documentation/operations-runbook.md#managed-lifecycle) (`-d` and subsequent startup on the same wrapper). |
+| Inspect or restart one intact connector | [Established validation](../../../../reference/cdc-documentation/operations-runbook.md#established-validation) and [restart/resume](../../../../reference/cdc-documentation/operations-runbook.md#intact-restart). |
+| Diagnose native recovery or an unverified stop | [Native recovery/incomplete shutdown](../../../../reference/cdc-documentation/operations-runbook.md#native-recovery). |
+| Retire one generation | [Guarded retirement](../../../../reference/cdc-documentation/operations-runbook.md#generation-retirement). |
+| Delete shared stack volumes | [Destructive stack/E2E teardown](../../../../reference/cdc-documentation/operations-runbook.md#stack-teardown) (`-d -v` on either bootstrap wrapper; separate E2E teardown entry point). |
 
-Failures prevent test launch, retain sanitized `.cdc-diagnostics` artifacts and original
-CDC settings/state, and attempt governed stop. If shutdown cannot be verified,
-infrastructure remains available for reconciliation. The standard E2E teardown invokes
-governed retirement before volume deletion and retains source history and CDC settings.
-Subsequent E2E reset attempts reject a retained CDC workspace; finish retirement and
-archive its configuration/history before preparing a new workspace. Detailed API-driven
-Kafka message scenarios remain part of the separate CDC E2E suite. The explicitly
-selected `Given_CdcE2ESetup` fixture checks HTTP/database health without feature reset
-hooks, so setup qualification retains the admitted source for governed teardown.
-
-After initial bootstrap, both bootstrap wrappers and both `start-*-dms.ps1` primitives
-recognize `.cdc-deployments/<project>.json`. This private, durable inventory is separate
-from the bootstrap manifest and the controller journals. It retains every registered
-settings snapshot, custom state root, generation, worker identity, effective environment,
-and shared broker-size override. Removing command-line opt-in flags does not remove a
-connector from management. Missing inventory with surviving managed containers or labeled
-Kafka volumes rejects startup and teardown.
-
-```powershell
-# Stop all managed connectors, verify STOPPED/no tasks, then stop infrastructure; retain volumes.
-pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d
-# Restore infrastructure and worker REST; validate retained stopped connectors and resume them.
-pwsh eng/docker-compose/bootstrap-local-dms.ps1
-# Governed generation retirement before deleting this project's volumes.
-pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v
-# The published wrapper accepts the same lifecycle switches.
-pwsh eng/docker-compose/bootstrap-published-dms.ps1 -d -v
-```
-
-Omit environment/provider/settings/state arguments to inherit the original selection.
-Explicit arguments must agree with the retained deployment; the original base environment
-path is also accepted. Compose environment overrides must match the original process
-values. Settings identity, credentials, endpoints, schemas and worker policy remain fixed;
-after a successful acknowledged size rollout, update only `Cdc:MaxRecordBytes` and
-`Cdc:ProducerBufferBytes` in the retained settings. Controllers validate these operational
-ceilings against live evidence before resuming.
-
-The deployment lock serializes wrapper operations across all registered bindings. Each
-binding still takes its own controller state lock and uses its original provenance.
-`stop` requires each command's fresh `TargetShutdownVerified` result and an independent
-complete REST inventory check before stopping the worker. Startup consumes that deployment
-shutdown checkpoint, exposes REST through `cdc start-worker` with observational shared-offset
-policy checks, verifies every retained connector is STOPPED, then invokes guarded `cdc start`
-for each. The start command temporarily runs the existing selected projection executor so
-retained work can drain while the HTTP host is offline; it disposes that executor on every
-exit. No initial barrier or exact baseline is recertified. Unknown state, native recovery,
-failed validation or resume prevents DMS startup; reconcile via controller inspection and a
-fresh managed stop before retrying. Direct `start-worker` is an infrastructure building block;
-the wrappers own the complete worker inventory and it never resumes connectors.
-
-Multiple registered bindings may use separate original state roots but must share the same
-worker, environment and broker-size override path. Additional explicitly provisioned handoffs
-are registered with `Register-CdcDeploymentHandoff` from `cdc-lifecycle.psm1` before their
-controller enable call. Automatic DMS startup combines their explicit DocumentCache targets
-and requires matching other DMS host settings; local `-InfraOnly` restores CDC without launching
-an HTTP host. Partial retirement retains infrastructure and inventory and retries each
-controller's resumable cleanup. Per-binding retirement retains shared offset topics, peers and
-source-history journals. Destructive stack teardown removes volumes only after all governed
-cleanup and an empty worker inventory. The CDC settings workspace and all controller roots
-remain retained, including through shared E2E teardown, so cleanup cannot accidentally erase
-nested history or another deployment's settings.
+Ordinary lifecycle and direct retirement retain original settings. Stack teardown may
+remove eligible inventoried generated settings, while source history, custom settings
+and protected roots remain. Teardown is governed by the
+[binding lifecycle owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding);
+it does not establish internal-only publication history or continuity-preserving replacement.

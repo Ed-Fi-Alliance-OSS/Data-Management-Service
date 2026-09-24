@@ -1,0 +1,171 @@
+{
+  "RunStartedLocal": "2026-09-22",
+  "CompletedLocal": "2026-09-23",
+  "Runtime": {
+    "Platform": "Linux/amd64",
+    "PowerShell": "7.6.6",
+    "Pester": "5.7.1",
+    ".NET SDK": "10.0.102"
+  },
+  "Provider": "SqlServer",
+  "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "WrapperBroker": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ControllerFixtureBroker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "Connect": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "SqlServer": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a"
+  },
+  "FixtureSubstitutions": {
+    "Paths": "owner-only temporary settings/state/environment paths",
+    "Credentials": "private generated fixture values; only restricted SQL login prepared before managed database creation",
+    "BaseDatastoreTokens": [
+      "DMS_DATASTORE=mssql",
+      "DMS_CONFIG_DATASTORE=mssql"
+    ],
+    "SqlServerHostPort": 1435,
+    "CmsTargetId": 1,
+    "CallMilliseconds": 180000,
+    "WaitMilliseconds": 600000,
+    "MaximumObservationAgeMilliseconds": 60000,
+    "WatchMaximumPasses": 2,
+    "PublishedImages": "matching branch-built application/CMS images tagged under published Compose names; not registry-release qualification"
+  },
+  "Cases": [
+    {
+      "Provider": "sqlserver",
+      "TargetId": 1,
+      "Generation": 1,
+      "Projection": "Unknown",
+      "StatusExitCode": 1,
+      "Database": "edfi_cdc",
+      "ApplicationImage": "sha256:393363b87c17bfdf5d977d6b5cbdd7e04a37b13752615060e55048fb2f78868c",
+      "WatchExitCode": 1,
+      "WorkTableCaptured": false,
+      "ConfigurationImage": "sha256:84aca810756b98c7c046bd1022eb60204decd62b5cfa341a5482322e3d84a64f",
+      "SnippetId": "cdc-sqlserver-bootstrap-local",
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "WriterPublicationAuthorized": true,
+      "NarrowEffectiveAccessVerified": true,
+      "LoginUserSidMatched": true,
+      "AggregateReadiness": "NotReady",
+      "WrapperAttempts": 2,
+      "InitialDatabaseAbsenceChecked": true
+    },
+    {
+      "Provider": "sqlserver",
+      "TargetId": 1,
+      "Generation": 1,
+      "Projection": "Unknown",
+      "StatusExitCode": 1,
+      "Database": "edfi_cdc",
+      "ApplicationImage": "sha256:393363b87c17bfdf5d977d6b5cbdd7e04a37b13752615060e55048fb2f78868c",
+      "WatchExitCode": 1,
+      "WorkTableCaptured": false,
+      "ConfigurationImage": "sha256:84aca810756b98c7c046bd1022eb60204decd62b5cfa341a5482322e3d84a64f",
+      "SnippetId": "cdc-sqlserver-bootstrap-published",
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "WriterPublicationAuthorized": true,
+      "NarrowEffectiveAccessVerified": true,
+      "LoginUserSidMatched": true,
+      "AggregateReadiness": "NotReady",
+      "WrapperAttempts": 2,
+      "InitialDatabaseAbsenceChecked": true
+    },
+    {
+      "Provider": "sqlserver",
+      "TargetId": 1,
+      "Generation": 1,
+      "Projection": "Unknown",
+      "StatusExitCode": 1,
+      "Database": "edfi_datamanagementservice_e2e",
+      "ApplicationImage": "sha256:72a5fd3e435ec3fff302ab80e6c2b2b1a55b5601586676e606c986aa2a41cbbb",
+      "WatchExitCode": 1,
+      "WorkTableCaptured": false,
+      "ConfigurationImage": "sha256:f36b9cb5947701fcd303b867195ac7959f2e6c68442716456ac35035645a5ab5",
+      "SnippetId": "cdc-sqlserver-e2e-setup",
+      "SchemaProjects": [
+        "Ed-Fi",
+        "Homograph",
+        "Sample",
+        "TPDM"
+      ],
+      "WriterPublicationAuthorized": true,
+      "NarrowEffectiveAccessVerified": true,
+      "LoginUserSidMatched": true,
+      "AggregateReadiness": "NotReady",
+      "WrapperAttempts": 1,
+      "InitialDatabaseAbsenceChecked": true
+    }
+  ],
+  "SnippetsByCase": {
+    "CDC-DOC cdc-sqlserver-bootstrap-published": [
+      "cdc-sqlserver-infrastructure",
+      "cdc-sqlserver-settings",
+      "cdc-sqlserver-bootstrap-published",
+      "cdc-sqlserver-status",
+      "cdc-sqlserver-watch",
+      "cdc-stack-teardown"
+    ],
+    "CDC-DOC cdc-sqlserver-e2e-setup": [
+      "cdc-sqlserver-infrastructure",
+      "cdc-sqlserver-settings",
+      "cdc-sqlserver-e2e-setup",
+      "cdc-sqlserver-status",
+      "cdc-sqlserver-watch",
+      "cdc-pg-e2e-test",
+      "cdc-stack-teardown"
+    ],
+    "CDC-DOC cdc-sqlserver-bootstrap-local": [
+      "cdc-sqlserver-infrastructure",
+      "cdc-sqlserver-settings",
+      "cdc-sqlserver-bootstrap-local",
+      "cdc-sqlserver-status",
+      "cdc-sqlserver-watch",
+      "cdc-stack-teardown"
+    ]
+  },
+  "Observation": {
+    "StatusExitCode": 1,
+    "WatchExitCode": 1,
+    "ProviderSetup": "Satisfied",
+    "ConnectorRuntime": "Satisfied",
+    "Projection": "Unknown",
+    "AggregateReadiness": "NotReady"
+  },
+  "CaptureTables": [
+    "CdcHeartbeat",
+    "Document",
+    "DocumentCache"
+  ],
+  "DocumentProjectionWorkCaptured": false,
+  "E2eSmoke": {
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "TestIds": [
+      "Given_CdcE2ESetup.It_serves_the_started_DMS_health_endpoint",
+      "Given_CdcE2ESetup.It_reports_a_healthy_database_connection"
+    ]
+  },
+  "E2eSnapshot": {
+    "Database": "edfi_datamanagementservice_e2e_snapshot",
+    "EffectiveSchemaRowCount": 1,
+    "ConnectorUserCount": 0
+  },
+  "EvidenceCorrection": "The first published run passed setup assertions but used the local application container name for image inspection. The corrected fixture resolves the Compose project/service, requires successful image inspection, and all three setup cases passed again under the same required-case report guard. These final assertions replace the initial setup evidence here.",
+  "Cleanup": "Governed retirement and removal completed after each selected case; no owned dms-local/dms-published containers, volumes or active inventory remain.",
+  "NotExercised": [
+    "cdc-sqlserver-e2e-build",
+    "DMS-1325 API-driven message scenarios",
+    "authorization-enabled Kafka",
+    "registry-published release images",
+    "full retirement/fault matrix owned by later tasks"
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "Provider": "SqlServer",
+  "Layer": "Existing provider/packaged E18 fixtures, not marked runbook invocation",
+  "Passed": 15,
+  "Failed": 0,
+  "Skipped": 0,
+  "Cases": [
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_accepts_prepared_external_server_without_changing_it",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"nested triggers\",Rebuilding)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"rcsi\",Tracking)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"rcsi\",Resetting)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"nested triggers\",Resetting)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"nested triggers\",Tracking)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_leaves_ordinary_managed_provisioning_unchanged",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_requires_affirmative_external_prerequisites_and_rejects_before_E18_initialization",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_unavailable_server_setup_authority_after_receipting_create",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"rcsi\",Disabled)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"nested triggers\",Disabled)",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_does_not_apply_an_unrelated_pending_server_change",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_prepares_then_initializes_E18_then_activates_then_captures",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_does_not_configure_a_reused_database_or_server",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.SchemaTools.Tests.Integration.Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer",
+      "Case": "It_rejects_drift_on_retry_and_E18_initialization_without_repair(\"rcsi\",Rebuilding)",
+      "Outcome": "Passed"
+    }
+  ]
+}

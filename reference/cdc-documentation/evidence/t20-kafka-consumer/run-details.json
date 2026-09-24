@@ -1,0 +1,556 @@
+{
+  "Task": "T20",
+  "Date": "2026-09-23",
+  "BaseRevision": "0952e6a57c9044000aa2019b15fc4be2ad9f357e",
+  "SourceSha256": {
+    "eng/ci/Invoke-CdcQualification.ps1": "e2cab536558ac7bc6f552e8da22675b5439ea79adeae40efdeab21a0fbe226c0",
+    "eng/ci/cdc-qualification.psm1": "19c161e364e5834dde7698db1ff251b51b6aa65f31568e0e8558cc5f7d80ccf0",
+    "eng/ci/tests/CdcQualification.Tests.ps1": "7a0b4a65fdd79ab492a4690495684748abff0cb6f7163fb5d261a47a375170d5",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.cs": "5f2357be3e92c5d35553d4d618cbd0a24679ce7f95f0aec91d9e3d3e21c6ae8f",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyTests.Runbook.cs": "589e71b238d7034adefdfb073bcdaf57396650ec882c58d154e6c359bf27de46",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyFixture.cs": "dc8549d31e5638c1aa591389e72b37dc8c3474684bcebc8e74b7c5a8d73c5802",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcKafkaPolicyStatusTests.cs": "a8279c4cdd335ab7b07087e1bfd291b5cfaf219a485498080e39723cb27ddd45",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRunbookLiveCommands.cs": "5be68c38e9b3bdf851da72a3b80767b256ef7a6b647a90e49a6a2027b9eff48c",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs": "d054a5d9ccafc56c7fd427c86053f2cb6f63051d42f2048e61954090fb47e96b",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerOrderingTests.cs": "18fc0df910eaf250f3666a3c6e8d445ea7feea3e2e9a3f17bfcea79f3c97a557",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerContinuityTests.cs": "166f536d8fcf7866b2ee424c621aad2a063f3c2cb986f5efd3eb790205b83e0a",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrapTests.cs": "7f36821d9474bb4a3f5b969a2802e0954431fec0b8c0fe82a7bf2994b05ce101"
+  },
+  "SnippetSha256": {
+    "cdc-topic-policy-inspect": "a365f89b8e959d0112511bd88f4d37637ff85545a748c92d853fe8bc178b0c51",
+    "cdc-kafka-retention-inspect": "60ccbc537731e1b2936aa3f18f1aa63dbba0eb544c377b51b7e461252124838e",
+    "cdc-access-inspect": "1d2773ed3d97461ed70c8d57b6af557bd390e1e0d6947066bc2a043869c33795",
+    "cdc-consumer-evidence": "7513396c7bcf3ab68c97282ef86514dc91eaf0d72aabbc58673c06a04a1aff00",
+    "cdc-enable-retry": "599aa039ad6b4d29aade9c4da0e47a1de45ab0f8d81f07054c0b567828cfba91"
+  },
+  "ConsumerSourceRevisions": {
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractConsumerBrokerTests.cs": "8ab1c670f15f38615a5acca248382b0343933463",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerOrderingTests.cs": "8ab1c670f15f38615a5acca248382b0343933463",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerContinuityTests.cs": "8ab1c670f15f38615a5acca248382b0343933463",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrapTests.cs": "8ab1c670f15f38615a5acca248382b0343933463"
+  },
+  "RuntimeVersions": {
+    "DotnetSdk": "10.0.102",
+    "LivePowerShell": "7.4.10",
+    "ContractPowerShell": "7.6.6",
+    "Pester": "5.7.1"
+  },
+  "Images": {
+    "Kafka": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "Worker": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Postgresql": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "Redpanda": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"
+  },
+  "ResultsDirectories": {
+    "Kafka": "TestResults/cdc-docs-kafka-t20-20260923-03",
+    "Consumer": "TestResults/cdc-docs-postgresql-messagecontract-t20-20260923-01",
+    "Contract": "TestResults/cdc-docs-contract-final-t20-20260923-01"
+  },
+  "RunnerSnippetExecution": "Shared Get-CdcRunbookCode extracts exact cdc-access-inspect and cdc-consumer-evidence bodies. Only declared new results directories replaced; declared immutable prerequisite images supplied. Runner exit and required reports checked.",
+  "FixtureSubstitutions": [
+    "Existing owned three-broker identities and topic inventory; private client property file per inspection, removed in finally. Administrator positive and instance-consumer denied samples.",
+    "Pinned Kafka client tools inside each broker; loopback-only JMX endpoint with no published host port; actual broker log directory. Two bounded samples on each broker.",
+    "Existing managed PostgreSQL admission fixture plus packaged CMS/schema harness, retained original source/workflow/settings. Initial retry begins after durable registration and before writer-publication intent; repeated enable rejects.",
+    "Only fixture-owned shared offset cleanup policy is changed and restored. Exact status command reads positive and drifted state; it never repairs the topic.",
+    "Consumer reference retains DMS-1324 synthetic records and simulated durable store/clock, real transport."
+  ],
+  "PriorProviderApplicability": "No production changes. Existing provider snippets unchanged. Shared helper adds only the Kafka read-only inspection allowlist entry and artifact prefixes for Kafka status/enable; all prior helper paths retain their behavior. Earlier procedure evidence preserves original revisions and images; no rerun claim.",
+  "Validation": {
+    "MarkedPowerShellSnippetsParsed": 47,
+    "ScriptAnalyzerErrors": 0,
+    "DiffWhitespace": "Passed",
+    "Csharpier": "Passed"
+  },
+  "ScopeLimits": [
+    "Secured policy/ACL fixture is not a production installation or source admission proof.",
+    "Local aclIsolationProven remains false. Standalone status has unavailable projection health and exits 1.",
+    "Cleaner/retained bytes/headroom are observations, not capacity or compaction-progress thresholds; no purge proof.",
+    "No independent consumer correctness, persistence or capacity certification; no production benchmark or DMS-1325 API evidence.",
+    "T29 mapping and T17/T18/T23 runtime fixes remain their original approved work; T20 adds no runtime feature, normative contract or schema/hash changes."
+  ],
+  "CorrectedAttempts": [
+    {
+      "ResultsDirectory": "TestResults/cdc-docs-kafka-t20-20260923-01",
+      "Reports": [
+        {
+          "Status": "Failed",
+          "Total": 49,
+          "Passed": 48,
+          "Failed": 1,
+          "Skipped": 0,
+          "EnvironmentFailures": 0,
+          "SqlStartupFailures": 0,
+          "SqlStartupRecoveries": 0,
+          "SqlStartupInjectedFailures": 0,
+          "SqlStartupInjectedRecoveries": 0,
+          "SqlStartupFailureSignatures": {},
+          "Diagnostics": [
+            {
+              "TestId": "0dc916d9-4e65-e235-0e33-574ee6e1f06d",
+              "Codes": []
+            }
+          ],
+          "Name": "kafka-secured"
+        },
+        {
+          "Name": "runbook-kafka-secured",
+          "Status": "Failed",
+          "Total": 11,
+          "Passed": 9,
+          "Failed": 2,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 0,
+              "Outcome": "NotPassed"
+            },
+            {
+              "TestId": "It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_allows_only_the_configured_public_topic_and_consumer_group",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_denies_cross_binding_and_internal_reads",
+              "Required": 16,
+              "Total": 16,
+              "Passed": 16,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_denies_consumer_writes_and_connector_access_to_worker_offsets",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_preserves_unavailable_acl_authority_when_description_is_denied",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant",
+              "Required": 6,
+              "Total": 6,
+              "Passed": 6,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_live_topic_drift_without_repair",
+              "Required": 11,
+              "Total": 11,
+              "Passed": 11,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_requires_explicit_isr_even_when_the_broker_default_is_two",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments",
+              "Required": 1,
+              "Total": 3,
+              "Passed": 3,
+              "Outcome": "NotPassed"
+            }
+          ]
+        },
+        {
+          "Status": "Failed",
+          "Total": 2,
+          "Passed": 1,
+          "Failed": 1,
+          "Skipped": 0,
+          "EnvironmentFailures": 0,
+          "SqlStartupFailures": 0,
+          "SqlStartupRecoveries": 0,
+          "SqlStartupInjectedFailures": 0,
+          "SqlStartupInjectedRecoveries": 0,
+          "SqlStartupFailureSignatures": {},
+          "Diagnostics": [
+            {
+              "TestId": "b497eff0-b881-31d9-a361-1f7c34afb066",
+              "Codes": []
+            }
+          ],
+          "Name": "kafka-local"
+        },
+        {
+          "Name": "runbook-kafka-local",
+          "Status": "Failed",
+          "Total": 2,
+          "Passed": 1,
+          "Failed": 1,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "It_labels_local_policy_without_claiming_acl_or_production_durability_proof",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 0,
+              "Outcome": "NotPassed"
+            }
+          ]
+        }
+      ],
+      "Reason": "Secured 48/49: fixture JMX stub advertised container IP despite loopback listener; fixed explicit RMI hostname. Local 1/2: test read deploymentProfile at target instead of result root; corrected. Initial retry itself passed."
+    },
+    {
+      "Selection": "Focused broker/local rehearsals",
+      "Reason": "Corrected native output assumptions: JSON property order, embedded JMX logDirectory quotes, DeadThreadCount casing and effective default log directory. Inner timeout bounds remote processes. Removed unintended worker JMX settings; only brokers expose loopback JMX. Final complete lane rerun after fixture/preflight review."
+    }
+  ],
+  "ResolvedImageIds": {
+    "Kafka": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "Worker": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Postgresql": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "Redpanda": "sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"
+  },
+  "PreCleanupVerification": {
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 49,
+        "Passed": 49,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "kafka-secured"
+      },
+      {
+        "Name": "runbook-kafka-secured",
+        "Status": "Passed",
+        "Total": 11,
+        "Passed": 11,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_allows_only_the_configured_public_topic_and_consumer_group",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_denies_cross_binding_and_internal_reads",
+            "Required": 16,
+            "Total": 16,
+            "Passed": 16,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_denies_consumer_writes_and_connector_access_to_worker_offsets",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_preserves_unavailable_acl_authority_when_description_is_denied",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant",
+            "Required": 6,
+            "Total": 6,
+            "Passed": 6,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_live_topic_drift_without_repair",
+            "Required": 11,
+            "Total": 11,
+            "Passed": 11,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_requires_explicit_isr_even_when_the_broker_default_is_two",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "kafka-local"
+      },
+      {
+        "Name": "runbook-kafka-local",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_labels_local_policy_without_claiming_acl_or_production_durability_proof",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "Scope": "Complete lane passed before removing unintended worker JMX variables and finalizing native timeout preflight. Final lane uses the reviewed fixture; no result substitution."
+  },
+  "PostHookValidation": {
+    "PesterPassed": 121,
+    "ReportReplay": [
+      {
+        "Name": "runbook-kafka-secured",
+        "Status": "Passed",
+        "Total": 11,
+        "Passed": 11,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_allows_only_the_configured_public_topic_and_consumer_group",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_denies_cross_binding_and_internal_reads",
+            "Required": 16,
+            "Total": 16,
+            "Passed": 16,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_denies_consumer_writes_and_connector_access_to_worker_offsets",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_preserves_unavailable_acl_authority_when_description_is_denied",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant",
+            "Required": 6,
+            "Total": 6,
+            "Passed": 6,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_live_topic_drift_without_repair",
+            "Required": 11,
+            "Total": 11,
+            "Passed": 11,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_requires_explicit_isr_even_when_the_broker_default_is_two",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Name": "runbook-kafka-local",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_labels_local_policy_without_claiming_acl_or_production_durability_proof",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Name": "runbook-consumer-reference",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_requires_durable_application_and_every_checkpoint_including_the_empty_partition",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconstructs_independently_expected_state_from_higher_lower_duplicate_and_null_records",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_renews_an_idle_proof_from_real_unchanged_ends_only_after_all_checkpoints_complete",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_continues_from_durable_next_offsets_without_replaying_bootstrap",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconstructs_from_earliest_after_checkpoint_loss",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconstructs_from_earliest_after_checkpoint_corruption",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "ScriptAnalyzerFindings": 0
+  },
+  "PostHookAdjustment": "Renamed automatic PowerShell Profile parameter to KafkaProfile and added required help comments. Focused qualification Pester checks and replay against final secured/local/consumer TRX verify unchanged selection; full Contract reports retain their original execution. No .NET or live fixture behavior changed."
+}

@@ -1,0 +1,1858 @@
+[
+  {
+    "Task": "t16-postgresql-setup",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 30,
+        "Passed": 30,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-CdcControllerAdmission"
+      },
+      {
+        "Name": "Postgresql-runbook-setup",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+            "SnippetId": "cdc-pg-bootstrap-local",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-pg-e2e-setup",
+            "SnippetId": "cdc-pg-e2e-setup",
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "1ecc2b91c61030da964b0198002bad752a8adfb7",
+    "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t16-postgresql-setup/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t16-postgresql-setup/admission-results.json",
+        "Sha256": "95383fc463408490dee14b8dbd11be35b753254031fb24e98a224cb410b5b7c1"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t16-postgresql-setup/cdc-runbook-live-setup.json",
+        "Sha256": "b53189a2495cfa955969c099a1185a2f2cf7088ee2c11a607d7f94110a17dee2"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t16-postgresql-setup/qualification.json",
+        "Sha256": "dc6c53f48ce1d20dadbcc5557d4ef7ec4787e218ec9a050ad7b04b343984b259"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t16-postgresql-setup/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t16-postgresql-setup/run-details.json",
+        "Sha256": "1d12a85dddcdb42e514a80053940f006a1e3c55f4708ec1362ae6cde1289aa32"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t17-sqlserver-setup",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 42,
+        "Passed": 42,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-CdcControllerAdmission",
+        "EvidenceSource": "Full Mssql Admission runner, 2026-09-22"
+      },
+      {
+        "Name": "Mssql-runbook-setup",
+        "Status": "Passed",
+        "Total": 3,
+        "Passed": 3,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+            "SnippetId": "cdc-sqlserver-bootstrap-local",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+            "SnippetId": "cdc-sqlserver-bootstrap-published",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+            "SnippetId": "cdc-sqlserver-e2e-setup",
+            "Outcome": "Passed"
+          }
+        ],
+        "EvidenceSource": "Final shared Mssql setup fixture with the same required-case guard, 2026-09-23"
+      }
+    ],
+    "EvidenceCommit": "14e19c0972316feac48f555cf8fa2b482311cb6b",
+    "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t17-sqlserver-setup/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/admission-results.json",
+        "Sha256": "fcbff394d7c0d1ea97a3de8fb4837bdea0fefb5c9317c3dd091a65d28a2b9ed9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/cdc-runbook-live-setup.json",
+        "Sha256": "1a42ac877f01f9e49d4b11771f06a99867d5be91081aed738ec1ef37153c6c14"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/initial-qualification.json",
+        "Sha256": "493e7b999b2bb3ae4880267084881b303005d04fc06e92e4080b2b9098458ac6"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/projection-clock.json",
+        "Sha256": "9d5a51d8eceeee18fa222ef8300bf4c70cecd5bdf26b2d02ad5b0f0e7ee1a96b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/qualification.json",
+        "Sha256": "c8e878263a2d1adbc7c413d2fb836a0414a93d65cb858338c37677c6f315352b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t17-sqlserver-setup/run-details.json",
+        "Sha256": "8fb7fa60676ae774add5275aa01cb5cd0540ee9904e9b6e804c2bd2a8b994c83"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t18-postgresql-lifecycle",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 16,
+        "Passed": 16,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-CdcControllerManagedLifecycle"
+      },
+      {
+        "Name": "runbook-lifecycle-behavior",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_unavailable_live_evidence_while_stopped",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Name": "Postgresql-runbook-lifecycle",
+        "Status": "Passed",
+        "Total": 1,
+        "Passed": 1,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "CDC-DOC cdc-managed-start",
+            "SnippetId": "cdc-managed-start",
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "435c560013aef36bae522ff68d79da6f4bc3dc3c",
+    "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/cdc-runbook-live-lifecycle.json",
+        "Sha256": "95b6c78ac0c5e89d3375cd446519ef86a0452da9f9b04ca3e944f5ec0d30c4a4"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/controller-observations.json",
+        "Sha256": "82b5ab5f5f908853126b40d7e1039ed068da25f576aab6d4bc005694eae1f4ab"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/controller-results.json",
+        "Sha256": "f0370f765c5ca5ee00a497e5057d0132f1fd55710229dac68703aeac2641bfe0"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/initial-qualification.json",
+        "Sha256": "facf99ef01ffecafb3a84d3cffa97324356050f653fb646a6e363dbec50d9f6c"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/managed-lifecycle-runbook.json",
+        "Sha256": "1b06ffb59f51452bcefd78b05485a038f83d2acc9677975745087d28b159a414"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/qualification.json",
+        "Sha256": "09c32fb6604587db7a23d21456d4f596d0e3a40af741d42c3e3ff0fbf3132ad9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/run-details.json",
+        "Sha256": "826d27770356f8f768b8b26a68dcda6124724a4b6ed2769d6475eb1d495ab2b9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t18-postgresql-lifecycle/wrapper-checks.json",
+        "Sha256": "87cdffde9543efbacae74e69fbd480a4dbf730ca8b4a75ede624eaa8c04c5890"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t19-sqlserver-lifecycle",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 19,
+        "Passed": 19,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 4,
+        "SqlStartupInjectedRecoveries": 4,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-CdcControllerManagedLifecycle"
+      },
+      {
+        "Name": "runbook-lifecycle-behavior",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_unavailable_live_evidence_while_stopped",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Name": "Mssql-runbook-lifecycle",
+        "Status": "Passed",
+        "Total": 1,
+        "Passed": 1,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "CDC-DOC cdc-managed-start",
+            "SnippetId": "cdc-managed-start",
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "c00be6ff799f356a74599d45241a72360cf9e63e",
+    "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/cdc-runbook-live-lifecycle.json",
+        "Sha256": "95b6c78ac0c5e89d3375cd446519ef86a0452da9f9b04ca3e944f5ec0d30c4a4"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/controller-observations.json",
+        "Sha256": "addecc39e03f66ecc0e8bc3adea94b14e55c3aa47f01ffe13ce36d36003564c7"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/controller-results.json",
+        "Sha256": "5c56da90b3eeeb3e8a2dba09cb7449ed9e1f9e924911d02c4749968f125ebb8c"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/initial-qualification.json",
+        "Sha256": "db80ad16c4c1fd42226647127018f53416a84d9f6346b070e87594aeb5e83bad"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/managed-lifecycle-runbook.json",
+        "Sha256": "406a9c035a058a9832c4cdcf9bab72ebbc09a5055146a8e652ebffd0f9ac8710"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/qualification.json",
+        "Sha256": "cdda9a27e5e0beecc1401dafbe9e840df4f0b0cabf488de3aac08f56ad7bf316"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/run-details.json",
+        "Sha256": "4435f898bbafdf8a491b6d8b55d6e10ce9cd04d23171de604e976aab0c3922fe"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t19-sqlserver-lifecycle/wrapper-checks.json",
+        "Sha256": "02c7a792b0b89171e44e201fae77045e2e4c63aac60f1625a7a8a3016bbeca90"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t21-postgresql-recovery",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 9,
+        "Passed": 9,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-CdcControllerNativeRecovery"
+      },
+      {
+        "Name": "runbook-recovery-behavior",
+        "Status": "Passed",
+        "Total": 7,
+        "Passed": 7,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_contains_recovered_connectors_and_retains_terminal_history_loss",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "5322129c7d43577d6fe0eb82b4367e1506b62279",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t21-postgresql-recovery/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/checks.json",
+        "Sha256": "6fd337e9a96cd66dff50340f2ce4453e96a812d3f2e1c2de0e3a27102da06bef"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/controller-observations.json",
+        "Sha256": "0001b7316fb3e9313e3880b00ee4abba858e937e5111511c620a84067d56d13d"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/controller-results.json",
+        "Sha256": "9ff8648b174a162253d0beb8c28c05abf8a1dcfa589a3d63d0d4761194c6cd4b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/marked-commands.json",
+        "Sha256": "7f85812f9085d899511a3b3950a25febdcbb9c70f56e0f98922e37447032937b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/qualification.json",
+        "Sha256": "e51ae4b31be422f8f2feedb12dd27613c826924de93a360e2067a89a3cdeb9d1"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t21-postgresql-recovery/run-details.json",
+        "Sha256": "a6a41b8e358f2eabe8e9c4018533def1e19e4b6b9c7fd92a944ca6386941eea0"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t22-sqlserver-recovery",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 9,
+        "Passed": 9,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-CdcControllerNativeRecovery"
+      },
+      {
+        "Name": "runbook-recovery-behavior",
+        "Status": "Passed",
+        "Total": 7,
+        "Passed": 7,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_contains_recovered_connectors_and_retains_terminal_history_loss",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "d8521c29c283ae6aef9099a507d3f3c1f0e81006",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/checks.json",
+        "Sha256": "032684083964ea10becf2219179bebabef623fc5330a8f98579f6c7542ac6397"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/controller-observations.json",
+        "Sha256": "9cb11ffb963e22ec1965eb2e196045a1dba073348e94096fc601f2bebe2ea1e6"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/controller-results.json",
+        "Sha256": "266b650d8e2854215b6a430aebe15f186dd49b1f231a20d116372cbcc1c972b3"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/marked-commands.json",
+        "Sha256": "17fc542f5894ab7e114274d0918f035fea6286d8fc2684ad2394c7c551865bff"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/qualification.json",
+        "Sha256": "a4a6066c4c9523bb0addef7864021b67e1a543529412a87aa1b3cf553554b5cc"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t22-sqlserver-recovery/run-details.json",
+        "Sha256": "6b42e7042274180d5f41c3bbcedbc101c29a26956d944c1e17f4755f630e39ce"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t23-postgresql-record-size",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 20,
+        "Passed": 20,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-CdcControllerRecordSize"
+      },
+      {
+        "Name": "runbook-record-size-behavior",
+        "Status": "Passed",
+        "Total": 7,
+        "Passed": 7,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_executes_marked_record_size_increase_with_explicit_inventory",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_record_size_retry_after_partial_broker_change",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_orders_a_confirmed_increase_and_preserves_identity",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation",
+            "Required": 6,
+            "Total": 6,
+            "Passed": 6,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_requires_renewed_confirmation_at_every_interrupted_boundary",
+            "Required": 7,
+            "Total": 7,
+            "Passed": 7,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "1ef54eddc224abcee29bd15a2bbcb501cac1878e",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t23-postgresql-record-size/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/checks.json",
+        "Sha256": "7f18fe539a8701f746a4e6f13ca5e92dd0907906c121bd77d6bbfcbf9c7b2bde"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/controller-results.json",
+        "Sha256": "60956cbaea62555b0576e45b333b1e17da509c02e8f4fae13e5837772195f1bd"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/marked-commands.json",
+        "Sha256": "10de0c43a05b755d3fd8dab29833d25740ece24df70568e2a29e912403061493"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/qualification.json",
+        "Sha256": "bb7e6bce6d33b41413af5edbaef5037da6ec0de125188a4021f68e03660cfd16"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/rollout-observations.json",
+        "Sha256": "676d4ddfffc07761ea7630c96b3eb7f77e738f818c73ac12d1794ef0907b0c2b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t23-postgresql-record-size/run-details.json",
+        "Sha256": "0f46448c24e65bfae0eb54e5198296aea17d1c5ab6d08d22c58a7f9509dfbea8"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t24-sqlserver-record-size",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 20,
+        "Passed": 20,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-CdcControllerRecordSize"
+      },
+      {
+        "Name": "runbook-record-size-behavior",
+        "Status": "Passed",
+        "Total": 7,
+        "Passed": 7,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_executes_marked_record_size_increase_with_explicit_inventory",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_record_size_retry_after_partial_broker_change",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_orders_a_confirmed_increase_and_preserves_identity",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_incomplete_or_mismatched_confirmation_without_mutation",
+            "Required": 6,
+            "Total": 6,
+            "Passed": 6,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_requires_renewed_confirmation_at_every_interrupted_boundary",
+            "Required": 7,
+            "Total": 7,
+            "Passed": 7,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "0792758112c259efe93d479d725277b8f57ea148",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/checks.json",
+        "Sha256": "351bf40bc8edc5014084d776ebe836b63fc1986cbdc17ca4568878da731b474b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/controller-results.json",
+        "Sha256": "12e0a0c9f62282193fb128bdd8b392d174ca4c94a1f3a9bea27b19240932b5cb"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/marked-commands.json",
+        "Sha256": "5c1993236a123aa921f7dc35f35c07e48b650c53fb98184c92d772e781208fe0"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/qualification.json",
+        "Sha256": "02af81f9af4576869ca41fa826648ebdabd11b21ba21ee83b734366f962d592b"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/rollout-observations.json",
+        "Sha256": "52ee061a0686cad8d710e9b3bab75b9888ded9d7138671c4416ee56bf17b8781"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t24-sqlserver-record-size/run-details.json",
+        "Sha256": "e575476c18a6fc973957c12d30b864e1fd28ec4ac6af8a38eccde52e62a843c0"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t25-postgresql-history",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 25,
+        "Passed": 25,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-history"
+      },
+      {
+        "Name": "runbook-history-behavior",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_allows_all_three_commands_from_managed_non_CDC_creation",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_untrusted_or_exposed_history_without_any_mutation",
+            "Required": 15,
+            "Total": 15,
+            "Passed": 15,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-provider-cleanup"
+      },
+      {
+        "Name": "runbook-cleanup-behavior",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_removes_provider_artifacts_and_only_owned_unused_database_jobs",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_broad_or_orphaned_provider_artifacts",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_a_different_live_physical_source",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconciles_actual_committed_deletion_after_lost_response",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "11f63bbdc0fcfc67b936dbbb53d6327e6f6aba1c",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t25-postgresql-history/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/checks.json",
+        "Sha256": "47c312989a05e968596be73064e01feabe33befae0a6b73102b320b6fdfc2d46"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/history-observations.json",
+        "Sha256": "dbe9c9f1f277e55b82e79d8dc5952d6e934a63ca4a7ca5b7854473fea78d1bc1"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/marked-retirement-commands.json",
+        "Sha256": "bf716921b88deda24133a36c8fb7361ee1db199609c4c88b6da29fb2fe0b4ee9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/qualification.json",
+        "Sha256": "c6e35464fa03160e02af61197286653e8280c519bdd20c8410bc464b923efa97"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/retirement-observations.json",
+        "Sha256": "03e9fbe1650b83a35090efd6cba393cbc95caca7a7d17badf614c149759b93d0"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/run-details.json",
+        "Sha256": "80881b27c6a26a3146cec168b7c0b550a52cb95ceb1aef6d51145be86442c9f6"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t25-postgresql-history/test-results.json",
+        "Sha256": "7f830a0a6a28276c6ff526a2fd537475e7f2c63b072fabbf97ff5d2e5433ef05"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t26-sqlserver-history",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 25,
+        "Passed": 25,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-history"
+      },
+      {
+        "Name": "runbook-history-behavior",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_allows_all_three_commands_from_managed_non_CDC_creation",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_untrusted_or_exposed_history_without_any_mutation",
+            "Required": 15,
+            "Total": 15,
+            "Passed": 15,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-provider-cleanup"
+      },
+      {
+        "Name": "runbook-cleanup-behavior",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_removes_provider_artifacts_and_only_owned_unused_database_jobs",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_broad_or_orphaned_provider_artifacts",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_a_different_live_physical_source",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconciles_actual_committed_deletion_after_lost_response",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "1ec6d94c0c3f8851ef738853605b1fac3856c011",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t26-sqlserver-history/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/checks.json",
+        "Sha256": "5d9efd0a3ee4c25e6077cb4717ac3c167522fa2c3fe716161583953eb8831743"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/history-observations.json",
+        "Sha256": "47a1ad38ee11924ca136db31c885937c0958a56da681a7ddd90e0942875b0b3c"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/marked-retirement-commands.json",
+        "Sha256": "d2f3fb74243cc9a27a435a5c894eaeb37c880efcda5c0929bcd988a039cf6b89"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/qualification.json",
+        "Sha256": "e66d178c0fac52e3063d90e47a241edfe8c2c0ef8a3fe5db427a80e3a1c1eb60"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/retirement-observations.json",
+        "Sha256": "9e95e714914d40f799989d13e23aeee2700b6c42963676c7d472b33bead87320"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/run-details.json",
+        "Sha256": "3a938d194c20a0b234f6287318770c7dc8dca0c9f1d7f5c6f5bc4578f1672968"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t26-sqlserver-history/test-results.json",
+        "Sha256": "fb32c3b66ca7ccce92257616381d91eb316a909c836ed93a1874e54c5c626177"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t27-postgresql-telemetry",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-telemetry"
+      },
+      {
+        "Name": "runbook-telemetry-behavior",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "cecb9647e84f3e3e3921c56a935343ff5f922080",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/earlier-attempt.json",
+        "Sha256": "cc7f728adec136cfc622d9cbb3433b7ecf4460d7a33f7f53e967b92b6b963a40"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/inspection-observations.json",
+        "Sha256": "7452b6d333837a03d2fd393ca9c2ed1b73959876e3f0199f8becc2e8ffb1ea64"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/qualification.json",
+        "Sha256": "87357514440b9f6b2ac3432622d6e489ba71f88daef5bd1656889ac7299b0747"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/run-details.json",
+        "Sha256": "977a4317f922e3cca35cf705b976779adef27665d3bd3f5e889996aa30e989b2"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/supporting-tests.json",
+        "Sha256": "00d0c58a1ef64da59273de5d1f66e8df190585848aa1dd921cf7dd1bd67a78ef"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t27-postgresql-telemetry/test-results.json",
+        "Sha256": "9d6816c6b024ff6fa6f6c8d686b87101bb5f9fdae616aea7c7e963eb5fe7238d"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "t28-sqlserver-telemetry",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-telemetry"
+      },
+      {
+        "Name": "runbook-telemetry-behavior",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "EvidenceCommit": "0952e6a57c9044000aa2019b15fc4be2ad9f357e",
+    "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+    "ImageAndRevisionDetails": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/run-details.json",
+    "Artifacts": [
+      {
+        "Path": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/inspection-observations.json",
+        "Sha256": "077baa8bae28343f7ae3e94b7519f75483f9fa9a0fa62cb144c4505207d6e8f2"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/qualification.json",
+        "Sha256": "95dca3cdd859ac724f7f2e3716e2bdf186eca26cfdbb373c952c794d441bf655"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/qualified-image.json",
+        "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/run-details.json",
+        "Sha256": "f74693ac017be223dffd352e58fbc2d92922d46c15280c83ec52b8ad36b90c8c"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/supporting-tests.json",
+        "Sha256": "dcbdb2c8bb8da1a533869ef539bae91ac3c2e48dc9af226e4922c0e76ad2a62e"
+      },
+      {
+        "Path": "reference/cdc-documentation/evidence/t28-sqlserver-telemetry/test-results.json",
+        "Sha256": "4350012a686e63c09b2e12f5722fcf844c2da49f4b5c6ea06e65c6bd0bb1eaf7"
+      }
+    ],
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "T29",
+    "Artifact": "reference/cdc-documentation/evidence/t29-sqlserver-initial-user-mapping.json",
+    "Sha256": "7e1a414e1142d12ceb78eb405ae4d01e1b3f53587917a8cf99a647f4439f6f92",
+    "ImplementationRevision": "The commit containing this artifact; source SHA-256 values below identify the tested implementation and fixtures.",
+    "FinalCounts": {
+      "admission": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "provider": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    "ContractOwner": "reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server",
+    "Outcome": "Passed",
+    "RerunForAggregation": false
+  },
+  {
+    "Task": "T20-Kafka",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 49,
+        "Passed": 49,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "kafka-secured"
+      },
+      {
+        "Name": "runbook-kafka-secured",
+        "Status": "Passed",
+        "Total": 11,
+        "Passed": 11,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_executes_marked_broker_retention_inspections_and_rejects_denied_authority",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_prepares_live_worker_only_offsets_before_the_qualified_worker_starts",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_allows_only_the_configured_public_topic_and_consumer_group",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_denies_cross_binding_and_internal_reads",
+            "Required": 16,
+            "Total": 16,
+            "Passed": 16,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_denies_consumer_writes_and_connector_access_to_worker_offsets",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_preserves_unavailable_acl_authority_when_description_is_denied",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_fails_closed_on_unsafe_effective_grants_even_with_a_missing_required_grant",
+            "Required": 6,
+            "Total": 6,
+            "Passed": 6,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_live_topic_drift_without_repair",
+            "Required": 11,
+            "Total": 11,
+            "Passed": 11,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_requires_explicit_isr_even_when_the_broker_default_is_two",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_retains_tombstones_with_the_public_policy_and_accepts_stronger_retention",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_rejects_changed_partition_identity_and_actual_weak_replica_assignments",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "kafka-local"
+      },
+      {
+        "Name": "runbook-kafka-local",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_labels_local_policy_without_claiming_acl_or_production_durability_proof",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "Artifact": "reference/cdc-documentation/evidence/t20-kafka-consumer/kafka-qualification.json",
+    "Sha256": "a7e0c8cc83dd6fc17b1da040fcf54d18c8ebba52a1a565d0264f57001057deb7",
+    "Outcome": "Passed"
+  },
+  {
+    "Task": "T20-Consumer",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 502,
+        "Passed": 502,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Postgresql-MessageContract"
+      },
+      {
+        "Name": "runbook-consumer-reference",
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_requires_durable_application_and_every_checkpoint_including_the_empty_partition",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconstructs_independently_expected_state_from_higher_lower_duplicate_and_null_records",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_renews_an_idle_proof_from_real_unchanged_ends_only_after_all_checkpoints_complete",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_continues_from_durable_next_offsets_without_replaying_bootstrap",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconstructs_from_earliest_after_checkpoint_loss",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_reconstructs_from_earliest_after_checkpoint_corruption",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "Artifact": "reference/cdc-documentation/evidence/t20-kafka-consumer/consumer-qualification.json",
+    "Sha256": "1971836c3f3f73ef652586dcddb3bc9bb1b98eab49897cd7474515b08079f1ce",
+    "Outcome": "Passed"
+  },
+  {
+    "Task": "T20-Contract",
+    "Reports": [
+      {
+        "Status": "Passed",
+        "Total": 4649,
+        "Passed": 4649,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "controller-unit"
+      },
+      {
+        "Status": "Passed",
+        "Total": 819,
+        "Passed": 819,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "cli-unit"
+      },
+      {
+        "Name": "runbook-cli",
+        "Status": "Passed",
+        "Total": 10,
+        "Passed": 10,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_dispatches_the_marked_command_and_exposes_its_options_in_help",
+            "Required": 19,
+            "Total": 19,
+            "Passed": 19,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement",
+            "Required": 12,
+            "Total": 12,
+            "Passed": 12,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence",
+            "Required": 6,
+            "Total": 6,
+            "Passed": 6,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_matches_status_excerpts_and_optional_fields_from_the_controller",
+            "Required": 8,
+            "Total": 8,
+            "Passed": 8,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_matches_operation_scoped_results",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value",
+            "Required": 2,
+            "Total": 2,
+            "Passed": 2,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes",
+            "Required": 3,
+            "Total": 3,
+            "Passed": 3,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_resolves_relative_links_and_explicit_or_generated_anchors",
+            "Required": 12,
+            "Total": 13,
+            "Passed": 13,
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Status": "Passed",
+        "Total": 6,
+        "Passed": 6,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "runbook-admin"
+      },
+      {
+        "Status": "Passed",
+        "Total": 418,
+        "Passed": 418,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "controller-offline"
+      },
+      {
+        "Name": "runbook-wrappers",
+        "Status": "Passed",
+        "Total": 14,
+        "Passed": 14,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+            "SnippetId": "cdc-pg-bootstrap-local",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-pg-bootstrap-published",
+            "SnippetId": "cdc-pg-bootstrap-published",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+            "SnippetId": "cdc-sqlserver-bootstrap-local",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+            "SnippetId": "cdc-sqlserver-bootstrap-published",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-pg-e2e-setup",
+            "SnippetId": "cdc-pg-e2e-setup",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+            "SnippetId": "cdc-sqlserver-e2e-setup",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-pg-e2e-build",
+            "SnippetId": "cdc-pg-e2e-build",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-e2e-build",
+            "SnippetId": "cdc-sqlserver-e2e-build",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-pg-infrastructure",
+            "SnippetId": "cdc-pg-infrastructure",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-sqlserver-infrastructure",
+            "SnippetId": "cdc-sqlserver-infrastructure",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-managed-stop",
+            "SnippetId": "cdc-managed-stop",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-managed-start",
+            "SnippetId": "cdc-managed-start",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-managed-start-rejected",
+            "SnippetId": "cdc-managed-start",
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "CDC-DOC cdc-stack-teardown",
+            "SnippetId": "cdc-stack-teardown",
+            "Outcome": "Passed"
+          }
+        ]
+      },
+      {
+        "Name": "wrappers",
+        "Status": "Passed",
+        "Total": 579,
+        "Passed": 579,
+        "Failed": 0,
+        "Skipped": 0
+      }
+    ],
+    "Artifact": "reference/cdc-documentation/evidence/t20-kafka-consumer/contract-qualification.json",
+    "Sha256": "baf1e184adf21a6b66c2e22b3212bccf22bc8f0e44b9bd4c373fa5ee087471c7",
+    "Outcome": "Passed"
+  }
+]

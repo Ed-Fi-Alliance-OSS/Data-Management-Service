@@ -244,16 +244,13 @@ public sealed class CdcManagedLifecycle
                 boundary = CdcManagedLifecycleBoundary.NativeRecovery;
             }
 
-            if (operation == CdcManagedLifecycleOperation.Start)
-            {
-                // The managed HTTP host is offline. Start its invocation-owned projection executor
-                // only after fresh eligibility and verified STOPPED evidence under this session.
-                // Initialization for preflight observations does not start processing.
-                failure.Component = CdcDeploymentComponent.Projection;
-                await target.Runtime.StartProcessingAsync(token);
-                token.ThrowIfCancellationRequested();
-                failure.Component = CdcDeploymentComponent.WorkflowState;
-            }
+            // Every lifecycle command owns the runtime used for its fresh readiness observation.
+            // Start processing only after fresh eligibility (and verified STOPPED state for Start).
+            // An already running runtime keeps its executor; preflight initialization remains read-only.
+            failure.Component = CdcDeploymentComponent.Projection;
+            await target.Runtime.StartProcessingAsync(token);
+            token.ThrowIfCancellationRequested();
+            failure.Component = CdcDeploymentComponent.WorkflowState;
 
             var resumeId = Guid.NewGuid();
             await session.RecordIntentAsync(

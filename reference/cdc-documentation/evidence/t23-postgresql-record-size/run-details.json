@@ -1,0 +1,53 @@
+{
+  "Task": "T23",
+  "Provider": "Postgresql",
+  "Date": "2026-09-23",
+  "RuntimeVersions": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "Pester": "5.7.1"
+  },
+  "BaseRevision": "d8521c29c283ae6aef9099a507d3f3c1f0e81006",
+  "SourceSha256": {
+    "eng/ci/Invoke-CdcQualification.ps1": "b8f0ada92c6cacd7abaf63cdfb0335a16340825f0b0c2c24c3aacbb9cefc28f4",
+    "eng/ci/cdc-qualification.psm1": "b94338a2e5335d61db0aece0707526b6e3bf27f2e27afc0e7a5e4a28623a33a4",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcRecordSizeIncrease.cs": "b7bef222e503cb209f5f5c4e8e47f657d3a247f15e5a46823f2fb6e858aa35e1",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.cs": "9ac41c052a7fa48ac735b987971495b00a7690535d77d14050af2447b24254e7",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs": "5cd5ff4cadeb18869fe540ef60bfbd56d227785679698d197ce68e2e75f6b08a",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRunbookLiveCommands.cs": "e52eea7a663d885c60c6a53542f023358fbca8e95afdac1afcafafc88a88b5e1",
+    "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookArguments.cs": "5ebf58c70a27c47bd1f2a322f6b77a6f29a90a83796faea1d7efbc0d8d33be82"
+  },
+  "SnippetSha256": {
+    "cdc-size-no-consumers": "6714e69db357e72fabdca25e0bdb68f4a4b0ccc3360403036d3a58d3a284e1e9",
+    "cdc-size-consumers": "d7714905c023e9831a3803bdfc3d0a9a80a73c0f5470a0f04bddc6e3058c9bbf",
+    "cdc-size-increase": "bdd8b950939d40020b7ada412d89b648383c7cd146e49e1a4a3fbe7f708f8309",
+    "cdc-size-retry": "bdd8b950939d40020b7ada412d89b648383c7cd146e49e1a4a3fbe7f708f8309",
+    "cdc-validate": "7d6f19896b6593cb4d9a58ab6811323d485d1029aa7bcfb3a69eaae0843f7d21"
+  },
+  "Command": "pwsh eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite RecordSize -ResultsDirectory TestResults/cdc-docs-postgresql-recordsize-t23-20260923-01",
+  "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "provider": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "ImageReferences": {
+    "Provider": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "Broker": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "Worker": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "FixtureSubstitutions": [
+    "Original fixture-managed state root and complete private settings with packaged-test CMS/schema workspace",
+    "Acknowledgement identity from actual admitted binding; one original operation UUID retained across retry",
+    "Previous maxRecordBytes 1000000; requested 2000000; previous buffer 33554432; requested buffer 67108864",
+    "Explicit empty consumer inventory, or fixture consumer-a/revision-1/consumer-owner/capacity-evidence-1; retry revision-2/capacity-evidence-2",
+    "Compose call/wait budgets 180000/300000 ms, observation age 60000 ms; no identity or size changes on retry",
+    "Missing-confirmation negative cases omit only --confirm-consumer-capacity"
+  ],
+  "Scope": "Live packaged increase/retry, acknowledgement validation and retained settings/override; fixture-only controller interruption after broker update. Original controller suite supplies all seven boundaries and producer/Compose persistence evidence. No external consumer certification, exact producer threshold, ACL, multi-binding or API-message claim.",
+  "Rehearsals": [
+    "Initial fixture placeholder escaping error corrected; no successful operation claimed from that run. Compile/analyzer and regression-test setup errors corrected before final checks.",
+    "Focused three-case rehearsal preceded the complete fresh RecordSize lane; only the latter supplies acceptance."
+  ]
+}

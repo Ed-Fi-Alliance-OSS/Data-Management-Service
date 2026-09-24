@@ -477,6 +477,36 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         }
     }
 
+    Context "CDC documentation uses the existing Contract job" {
+        It "gates only on CDC relevance for pull requests and always runs for other events" {
+            Get-JobIfCondition -JobName 'run-cdc-qualification' |
+                Should -Be "github.event_name != 'pull_request' || needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true'"
+            # A docs-only PR skips the shared build and Bootstrap Pester jobs. Neither may be a
+            # dependency that would cause GitHub to skip Contract despite its relevance flag.
+            @(Get-JobNeed -JobName 'run-cdc-qualification') | Should -Be @('detect-fresh-build-changes')
+        }
+
+        It "selects Contract for a checked document alone but not unrelated documentation" {
+            Import-Module (Join-Path $PSScriptRoot '../dms-change-categories.psm1') -Force
+            try {
+                $checked = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @('reference/cdc-documentation/operations-runbook.md')
+                $unrelated = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @('reference/cdc-documentation/notes.md')
+                $checked.cdc_relevant | Should -BeTrue
+                $checked.dms_relevant | Should -BeFalse
+                $unrelated.cdc_relevant | Should -BeFalse
+                $unrelated.dms_relevant | Should -BeFalse
+            }
+            finally {
+                Remove-Module dms-change-categories -Force
+            }
+        }
+
+        It "invokes the shared Contract runner that owns CLI and wrapper documentation reports" {
+            Get-JobBlock -JobName 'run-cdc-qualification' |
+                Should -Match 'eng/ci/Invoke-CdcQualification\.ps1 -Lane Contract -ResultsDirectory '
+        }
+    }
+
     Context "The document-embed check runs where the drift it refuses can happen" {
         It "gates on document_embeds_relevant and not on dms_relevant" {
             # dms_relevant excludes docs/, so gating this job on it would skip the one pull request

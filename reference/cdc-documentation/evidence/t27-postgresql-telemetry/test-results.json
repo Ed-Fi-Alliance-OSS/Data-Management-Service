@@ -1,0 +1,10 @@
+[
+  {
+    "Test": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+    "Outcome": "Passed"
+  },
+  {
+    "Test": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+    "Outcome": "Passed"
+  }
+]

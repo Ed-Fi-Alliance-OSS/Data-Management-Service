@@ -399,6 +399,19 @@ public class Given_CdcProjectionRuntimeLifetime
     }
 
     [Test]
+    public async Task It_preserves_the_running_executor_on_repeated_start()
+    {
+        A.CallTo(() =>
+                _supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, A<CancellationToken>._)
+            )
+            .Invokes(() => _lifetime.Events.Add("refresh"));
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        await _runtime.DisposeAsync();
+        _lifetime.Events.Should().Equal("refresh", "start", "stop", "dispose");
+    }
+
+    [Test]
     public async Task It_preserves_the_initial_offline_guard_after_processing_starts()
     {
         await _runtime.StartProcessingAsync(CancellationToken.None);

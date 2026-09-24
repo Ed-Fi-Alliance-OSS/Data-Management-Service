@@ -100,7 +100,7 @@ function Assert-BootstrapCdcOfflineOwnership {
             $db = @($containers | Where-Object { $_.project -ceq $Project -and $_.service -eq 'db' })
             if ($cms.Count -ne 1 -or $db.Count -ne 1 -or
                 $cms[0].name -cne '/ed-fi-api-config-service' -or
-                @($cms[0].ports.Values | ForEach-Object { $_ } | Where-Object { $_.HostPort -eq [string]$CmsPort }).Count -eq 0 -or
+                @($cms[0].ports.Values | ForEach-Object { $_ } | Where-Object { $null -ne $_ -and $_.HostPort -eq [string]$CmsPort }).Count -eq 0 -or
                 $db[0].name -cne $(if ($DatabaseEngine -eq 'mssql') { '/dms-mssql' } else { '/dms-postgresql' })) { throw 'Ownership' }
         }
     }

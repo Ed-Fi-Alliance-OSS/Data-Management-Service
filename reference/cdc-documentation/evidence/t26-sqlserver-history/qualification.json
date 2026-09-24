@@ -1,0 +1,136 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 25,
+    "Passed": 25,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Mssql-history"
+  },
+  {
+    "Name": "runbook-history-behavior",
+    "Status": "Passed",
+    "Total": 6,
+    "Passed": 6,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_allows_all_three_commands_from_managed_non_CDC_creation",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime",
+        "Required": 2,
+        "Total": 2,
+        "Passed": 2,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_untrusted_or_exposed_history_without_any_mutation",
+        "Required": 15,
+        "Total": 15,
+        "Passed": 15,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early",
+        "Required": 3,
+        "Total": 3,
+        "Passed": 3,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins",
+        "Required": 3,
+        "Total": 3,
+        "Passed": 3,
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Status": "Passed",
+    "Total": 6,
+    "Passed": 6,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Mssql-provider-cleanup"
+  },
+  {
+    "Name": "runbook-cleanup-behavior",
+    "Status": "Passed",
+    "Total": 6,
+    "Passed": 6,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_removes_provider_artifacts_and_only_owned_unused_database_jobs",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_broad_or_orphaned_provider_artifacts",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_rejects_a_different_live_physical_source",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_reconciles_actual_committed_deletion_after_lost_response",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

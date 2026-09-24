@@ -6,7 +6,7 @@
 #Requires -Version 7
 
 # Behavioral specs for the On DMS Pull Request change classifier. These import the real module and
-# call it; nothing here reads workflow or script source text. The classifier decides which CI lanes
+# call it; document coverage also reads the checked-input inventory. The classifier decides which CI lanes
 # run, and until it was extracted from an inline bash step there was no way to exercise it outside a
 # CI run.
 
@@ -439,6 +439,72 @@ Describe "DMS pull request change classifier" {
 
             $result.dms_relevant | Should -BeTrue
             $result.fresh_build_required | Should -BeFalse
+        }
+    }
+
+    Context "Checked CDC documents select Contract without broadening other flags" {
+        BeforeDiscovery {
+            $linkTestsPath = Join-Path $PSScriptRoot '../../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookLinkTests.cs'
+            $source = Get-Content -LiteralPath $linkTestsPath -Raw
+            $inventory = [regex]::Match($source, '(?s)string\[\] Documents =\s*\[(.*?)\];')
+            if (-not $inventory.Success) {
+                throw 'Could not read CdcRunbookLinkTests.Documents; keep the checked-input guard aligned.'
+            }
+            $checkedDocument = @([regex]::Matches($inventory.Groups[1].Value, '"([^"]+)"') | ForEach-Object {
+                @{ Path = $_.Groups[1].Value }
+            })
+            if ($checkedDocument.Count -eq 0) {
+                throw 'CdcRunbookLinkTests.Documents must not be empty.'
+            }
+        }
+
+        It "selects Contract for the checked input <Path> alone and preserves other flags" -ForEach $checkedDocument {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeTrue
+
+            # An unchecked sibling follows the existing directory rules, including broader flags
+            # already set for src/ and eng/. The new document rule may change only cdc_relevant.
+            $sibling = $Path.Substring(0, $Path.LastIndexOf('/') + 1) + 'unchecked-document.md'
+            $baseline = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($sibling)
+            foreach ($flag in $baseline.PSObject.Properties.Name | Where-Object { $_ -ne 'cdc_relevant' }) {
+                $result.$flag | Should -Be $baseline.$flag -Because "$Path must preserve $flag"
+            }
+        }
+
+        It "selects only Contract for the linked design target <Path>" -ForEach @(
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md' }
+            @{ Path = 'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/data-model.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/ddl-generation.md' }
+        ) {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeTrue
+            foreach ($flag in $result.PSObject.Properties.Name | Where-Object { $_ -ne 'cdc_relevant' }) {
+                $result.$flag | Should -BeFalse -Because "$Path must not select $flag"
+            }
+        }
+
+        It "does not promote unrelated or near-match document <Path>" -ForEach @(
+            @{ Path = 'docs/README.md' }
+            @{ Path = 'reference/cdc-documentation/notes.md' }
+            @{ Path = 'reference/document-cache-documentation/notes.md' }
+            @{ Path = 'reference/cdc-documentation/operations-runbook.md.bak' }
+            @{ Path = 'reference/cdc-documentation/Operations-runbook.md' }
+            @{ Path = 'reference/cdc-documentation-extra/operations-runbook.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/overview.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc-extra/cdc-streaming.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/data-model.md.bak' }
+            @{ Path = 'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md.bak' }
+        ) {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeFalse
+            $result.dms_relevant | Should -BeFalse
+            $result.fresh_build_required | Should -BeFalse
+            $result.backend_mssql_relevant | Should -BeFalse
+            $result.dms_api_relevant | Should -BeFalse
+            $result.schematools_relevant | Should -BeFalse
         }
     }
 

@@ -282,7 +282,11 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
         CancellationToken token = default
     ) => _readiness.PreparePublicationAsync(_request, _runtime, 1000, token);
 
-    protected DocumentCacheStatusResponse Projection()
+    protected DocumentCacheStatusResponse Projection(
+        TimeSpan databaseClockSkew = default,
+        TimeSpan processClockSkew = default,
+        bool missingDurableObservation = false
+    )
     {
         var now = DateTimeOffset.UtcNow;
         DocumentCacheStatusInventoryComponent valid = new(
@@ -301,8 +305,8 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
                 new(
                     new(Target.TenantKey, long.Parse(Target.DataStoreId)),
                     1,
-                    now,
-                    now,
+                    now + processClockSkew,
+                    missingDurableObservation ? null : now + databaseClockSkew,
                     Provider == Ddl.CdcProvider.Postgresql ? "postgresql" : "sqlserver",
                     _wrongSource
                         ? "sha256:" + new string('f', 64)

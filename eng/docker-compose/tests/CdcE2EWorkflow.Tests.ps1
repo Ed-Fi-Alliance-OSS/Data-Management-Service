@@ -3,7 +3,11 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Fixture variables supply the dynamic scope of the extracted production E2E setup branch.')]
+param()
+
 BeforeAll {
+    . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
     $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
     Import-Module (Join-Path $script:composeRoot 'e2e-cdc.psm1') -Force
 }
@@ -36,6 +40,38 @@ Describe 'Shared CDC E2E setup handoff' {
         Mock Set-Content -ModuleName e2e-cdc {}
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             & $BeforeCdcAdmission '/effective/.env'
+        }
+    }
+
+    It 'CDC-DOC <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-e2e-setup'; Provider = 'postgresql'; Stem = 'postgresql'; State = 'state-pg-e2e' },
+        @{ Id = 'cdc-sqlserver-e2e-setup'; Provider = 'mssql'; Stem = 'sqlserver'; State = 'state-sqlserver-e2e' }
+    ) {
+        $invocation = Get-CdcRunbookInvocation $Id $TestDrive
+        $parameters = $invocation.Parameters
+        $parameters.DatabaseEngine | Should -Be $Provider
+        $parameters.EnvironmentFile | Should -Be (Join-Path $TestDrive '.env.e2e')
+        $source = [Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $script:composeRoot "../../$($invocation.Path)"), [ref]$null, [ref]$null)
+        $branch = $source.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and
+            $n.Extent.Text.StartsWith('if ($EnableKafkaCdc)') }, $true)
+        $branch | Should -Not -BeNullOrEmpty
+        $resolvedEnvironmentFile = '/effective/.env'
+        $baseEnvironmentFile = $parameters.EnvironmentFile
+        $e2eDatabaseName = 'primary_e2e'
+        $e2eSnapshotDatabaseName = 'snapshot_e2e'
+        function Get-DirectSetupTeardownCommand { 'fixture teardown' }
+        $dispatch = [scriptblock]::Create($source.ParamBlock.Extent.Text + "`n" + $branch.Extent.Text)
+        & $dispatch @parameters
+        Should -Invoke Invoke-BootstrapWrapper -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $DatabaseEngine -eq $Provider -and $DataStoreDatabaseName -eq 'primary_e2e' -and
+            $EnvironmentFile -eq '/effective/.env' -and
+            $CdcSettingsPath -eq (Join-Path $TestDrive ".local/cdc/$Stem-e2e.json") -and
+            $CdcBindingStatePath -eq (Join-Path $TestDrive ".local/cdc/$State") -and
+            $EnableKafkaCdc -and $SeparateConfigDatabase
+        }
+        Should -Invoke Invoke-E2ECdcSnapshotPreparation -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $DatabaseEngine -eq $Provider -and $DatabaseName -eq 'snapshot_e2e'
         }
     }
 
@@ -97,15 +133,17 @@ Describe 'Shared CDC E2E setup handoff' {
         }
     }
 
-    It 'retains controller classifications without raw failure data' {
+    It 'retains provider admission classifications without raw failure data for <Published>' -ForEach @(
+        @{ Published = $false }, @{ Published = $true }
+    ) {
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             $setupError = [InvalidOperationException]::new('private-secret')
-            $setupError.Data['CdcFailureCodes'] = @('WriterPublication/ValidationFailed', 'private-secret/Timeout')
+            $setupError.Data['CdcFailureCodes'] = @('ProviderSetup/ValidationFailed', 'private-secret/Timeout')
             throw $setupError
         }
-        { Invoke-E2ECdcSetup @script:arguments } | Should -Throw '*tests were not launched*'
+        { Invoke-E2ECdcSetup @script:arguments -DatabaseEngine mssql -UsePublishedImage:$Published } | Should -Throw '*tests were not launched*'
         Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
-            ($Value -join '') -match 'WriterPublication/ValidationFailed' -and ($Value -join '') -notmatch 'private-secret'
+            ($Value -join '') -match 'ProviderSetup/ValidationFailed' -and ($Value -join '') -notmatch 'private-secret'
         }
     }
 
@@ -170,6 +208,31 @@ Describe 'Root CDC E2ETest launch ordering' {
         Mock Invoke-E2ECdcSetup {}
         Mock RunE2E {}
     }
+    It 'CDC-DOC <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-e2e-build'; Provider = 'postgresql'; Stem = 'postgresql'; State = 'state-pg-e2e' },
+        @{ Id = 'cdc-sqlserver-e2e-build'; Provider = 'mssql'; Stem = 'sqlserver'; State = 'state-sqlserver-e2e' }
+    ) {
+        $invocation = Get-CdcRunbookInvocation $Id $TestDrive
+        $parameters = $invocation.Parameters
+        $parameters.DatabaseEngine | Should -Be $Provider
+        $parameters.EnvironmentFile | Should -Be (Join-Path $TestDrive '.env.e2e')
+        $script:context.DatabaseEngine = $Provider
+        & $script:buildDispatch @parameters
+        Should -Invoke Invoke-E2ECdcSetup -Times 1 -Exactly -ParameterFilter {
+            $DatabaseEngine -eq $Provider -and $DatabaseName -eq 'primary_e2e' -and
+            $SnapshotDatabaseName -eq 'snapshot_e2e' -and $EnvironmentFile -eq '/effective/.env' -and
+            $CdcSettingsPath -eq (Join-Path $TestDrive ".local/cdc/$Stem-e2e.json") -and
+            $CdcBindingStatePath -eq (Join-Path $TestDrive ".local/cdc/$State")
+        }
+        Should -Invoke RunE2E -Times 1 -Exactly -ParameterFilter {
+            $TestFilter -eq 'FullyQualifiedName~Given_CdcE2ESetup' -and $E2ETestSettings -eq $script:context
+        }
+        Mock Invoke-E2ECdcSetup { throw 'Admission failed' }
+        Mock RunE2E {}
+        { & $script:buildDispatch @parameters } | Should -Throw
+        Should -Invoke RunE2E -Times 1 -Exactly # Only the earlier successful invocation.
+    }
+
     It 'rejects <BuildCommand> with explicitly bound <CdcParameter>=<Value> before build or startup effects' -ForEach @(
         @{ BuildCommand = 'StartEnvironment'; CdcParameter = 'EnableKafkaCdc'; Value = $true },
         @{ BuildCommand = 'StartEnvironment'; CdcParameter = 'EnableKafkaCdc'; Value = $false },

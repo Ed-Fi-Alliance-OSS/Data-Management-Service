@@ -1,0 +1,154 @@
+{
+  "Task": "T28",
+  "Provider": "SqlServer",
+  "Date": "2026-09-23",
+  "BaseRevision": "cecb9647e84f3e3e3921c56a935343ff5f922080",
+  "SourceSha256": {
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs": "51a21dc51ddb9db249995afa884372b468527a6f75d411621fea6cb5771684d7",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.Runbook.cs": "316e8ef33a0f4821014a57c64e72a141c3fc8dede9dd01564d9aee9886216b02",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.SqlServerRunbook.cs": "ac626131ba3b4cab7050b8a4b8db04a5e51268c39d96ff23acc38a8acd735d9b",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRunbookLiveCommands.cs": "de23bdd68d10ee033f050b939cbe79d5bd67cb7b1813c4908294abc06861323f",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTelemetryTests.cs": "b9674d18e5c786be828958da17ca3627190ca891cbbea53c4cf03c5bfad95b87",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcNativeRecoveryTests.cs": "a4abe175ef20c14e2c000fccc6f56c251421c9f6c79299ae3656a883d6e97f60",
+    "eng/ci/Invoke-CdcQualification.ps1": "1eb7268196de70cfa169aaff13c71ff2deaeb7e5a12c2ce9b89336a70429eb05",
+    "eng/ci/cdc-qualification.psm1": "7388f345371f6308e40c4f029009352af3b941b834b44d2113c8f88654b4858d",
+    "eng/ci/tests/CdcQualification.Tests.ps1": "e6bf9e21c0d5e6c4b3c309169d26957b4ee9906b8af3f07e8f89f703eb94e05d",
+    ".github/workflows/nightly-cdc-qualification.yml": "7d0377c1c5d14df59a674cd540293ecaea1c135121bba4a0cd91e4aeb0b0e52d"
+  },
+  "SnippetSha256": {
+    "cdc-telemetry-inspect": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "cdc-sqlserver-retention-inspect": "69f2dd7425880309be869558019bf95ebbae0cffb39e2590a21cf233ef8d4dfa",
+    "cdc-provider-disk-inspect": "0aba00ed46858df7c97b8212caf0ff220b2f21429fc7461674e24239aefde7b1"
+  },
+  "RuntimeVersions": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.4.10",
+    "Pester": "5.7.1",
+    "Curl": "8.5.0",
+    "SqlcmdGo": "1.10.0"
+  },
+  "SqlcmdArchiveSha256": "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987",
+  "Command": "pwsh eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite Telemetry -ResultsDirectory TestResults/cdc-docs-mssql-telemetry-t28-20260923-03",
+  "Discovery": "VSTest --list-tests lists the assembly catalog despite --filter. Both required IDs were discovered; the executed TRX and required-method guard prove the selected provider cases.",
+  "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "ImageReferences": {
+    "Provider": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+    "Broker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "Worker": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "FixtureSubstitutions": [
+    "Actual fixture metrics URI and private raw metrics path; negative endpoint uses nonexistent route on same fixture Connect REST service",
+    "Actual provider host/database; fixture administrator and environment-injected monitor credential; nonexistent monitor for unavailable-access branch",
+    "Declared sqlcmdTlsOptions array supplies -C only for this isolated self-signed server; command requires encryption explicitly; no production trust or least-privilege claim",
+    "Owned provider container and actual database data/log paths from its file catalog, sharing a filesystem; nonexistent log path for partial disk-observation rejection",
+    "All SQL query text, timeouts, row bounds and curl response-size bound remain the exact marked examples"
+  ],
+  "Scope": "10 exact inspections. Two real heartbeat/committed-source advancement samples precede bounded SQL diagnostics; raw positions never exported. Minimal connector fixture has snapshot ON, RCSI OFF, ADR OFF: observed action routes to E18 correction while Disabled, never runtime repair or DMS readiness. Separate T17 controller admission results supply unavailable/lost schema-history behavior; T22 supplies native recovery. No capacity threshold, disk-full injection, consumer correctness, queue progress, ACL, API messages, history recovery or benchmark claim.",
+  "CorrectedAttempt": {
+    "ResultsDirectory": "TestResults/cdc-docs-mssql-telemetry-t28-20260923-02",
+    "Report": [
+      {
+        "Status": "Failed",
+        "Total": 2,
+        "Passed": 1,
+        "Failed": 1,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [
+          {
+            "TestId": "68bebb6b-822e-7382-37ec-9baa2bbc1b08",
+            "Codes": []
+          }
+        ],
+        "Name": "Mssql-telemetry"
+      },
+      {
+        "Name": "runbook-telemetry-behavior",
+        "Status": "Failed",
+        "Total": 2,
+        "Passed": 1,
+        "Failed": 1,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 0,
+            "Outcome": "NotPassed"
+          }
+        ]
+      }
+    ],
+    "Reason": "SQL scalar helper returns a trailing newline. Actual file path substitutions were passed without trimming, causing the positive df invocation to reject. Fixture now trims scalar output before binding paths; all final live cases rerun. SQL/exporter assertions passed in the corrected attempt; no production change."
+  },
+  "PriorProviderCompatibility": "Shared PostgreSQL disk body was extracted without behavioral changes; both provider-specific required-case selections pass Pester. T27 live evidence retains its original revision and source hashes.",
+  "InitialRun": {
+    "ResultsDirectory": "TestResults/cdc-docs-mssql-telemetry-t28-20260923-01",
+    "Report": [
+      {
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "EnvironmentFailures": 0,
+        "SqlStartupFailures": 0,
+        "SqlStartupRecoveries": 0,
+        "SqlStartupInjectedFailures": 0,
+        "SqlStartupInjectedRecoveries": 0,
+        "SqlStartupFailureSignatures": {},
+        "Diagnostics": [],
+        "Name": "Mssql-telemetry"
+      },
+      {
+        "Name": "runbook-telemetry-behavior",
+        "Status": "Passed",
+        "Total": 2,
+        "Passed": 2,
+        "Failed": 0,
+        "Skipped": 0,
+        "Cases": [
+          {
+            "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          },
+          {
+            "TestId": "It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions",
+            "Required": 1,
+            "Total": 1,
+            "Passed": 1,
+            "Outcome": "Passed"
+          }
+        ]
+      }
+    ],
+    "Reason": "Initial complete run passed. Final fresh run strengthens successful completed cleanup-job assertions, uses actual database data/log files and checks pinned sqlcmd version before execution."
+  },
+  "Validation": {
+    "PesterPassed": 105,
+    "TelemetryAndRecoveryUnitPassed": 264,
+    "SchemaToolsCdcUnitPassed": 819,
+    "MetricContractPassed": 5,
+    "FinalRelativeLinkCasesPassed": 17,
+    "MarkedPowerShellParses": 46,
+    "ScriptAnalyzerErrors": 0,
+    "DiffWhitespace": "Passed"
+  }
+}

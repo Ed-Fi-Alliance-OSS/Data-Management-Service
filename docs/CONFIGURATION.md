@@ -85,6 +85,9 @@ and
 [configuration and projection target selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection).
 For operational workflows, use the
 [DocumentCache operations runbook](../reference/document-cache-documentation/operations-runbook.md).
+For connector setup, publication history and CDC operations, use the
+[CDC operator reference](../reference/cdc-documentation/README.md) and its
+[projection/history handoff](../reference/cdc-documentation/operations-runbook.md#projection-handoff).
 
 | Parameter                               | Description                                                                                                                                                  |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -110,6 +113,24 @@ available.
 `Status:RequiredRole` must be one untrimmed token no longer than 256 characters. Values
 containing ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control
 characters are invalid and leave the DocumentCache status endpoint unmapped.
+
+## CDC deployment configuration
+
+The [SchemaTools CDC reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
+owns the `Cdc` settings catalog and command output. The
+[PostgreSQL](../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+and [SQL Server](../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+procedures prepare complete DMS settings plus deployment configuration. Direct
+`api-schema-tools cdc` calls accept `DMS_CDC__` overrides; bootstrap wrappers reject
+those overrides and snapshot protected input settings for subsequent commands.
+
+Configuring `DocumentCache:Targets` is not connector registration. The deployment
+controller owns registration and combined readiness under the
+[configuration/target-selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection)
+and [initial-enablement](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
+contracts. The [supported deployment scope](../reference/cdc-documentation/README.md#supported-deployment)
+describes the local CLI profile and prerequisites for other deployments; settings alone
+do not supply production authority or ACL isolation.
 
 ## Configuration Service AppSettings
 

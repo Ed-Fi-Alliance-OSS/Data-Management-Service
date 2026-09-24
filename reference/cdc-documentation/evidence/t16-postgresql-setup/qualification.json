@@ -1,0 +1,37 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 30,
+    "Passed": 30,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Postgresql-CdcControllerAdmission"
+  },
+  {
+    "Name": "Postgresql-runbook-setup",
+    "Status": "Passed",
+    "Total": 2,
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+        "SnippetId": "cdc-pg-bootstrap-local",
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "CDC-DOC cdc-pg-e2e-setup",
+        "SnippetId": "cdc-pg-e2e-setup",
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

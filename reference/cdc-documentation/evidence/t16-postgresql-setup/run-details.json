@@ -1,0 +1,92 @@
+{
+  "RunDateLocal": "2026-09-22",
+  "Provider": "Postgresql",
+  "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "Postgresql": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "WrapperBroker": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "ControllerFixtureBroker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "Connect": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "FixtureSubstitutions": {
+    "Paths": "owner-only temporary settings/state/environment paths",
+    "Credentials": "private generated fixture values; setup Username explicitly postgres",
+    "PostgresqlHostPort": 5435,
+    "CmsTargetId": 1,
+    "CallMilliseconds": 120000,
+    "WaitMilliseconds": 600000,
+    "WatchMaximumPasses": 2,
+    "LocalDatabase": "edfi_cdc",
+    "LocalProjects": [
+      "Ed-Fi",
+      "TPDM"
+    ],
+    "E2eDatabase": "edfi_datamanagementservice_e2e",
+    "E2eSnapshotDatabase": "edfi_datamanagementservice_e2e_snapshot",
+    "E2eProjects": [
+      "Ed-Fi",
+      "Homograph",
+      "Sample",
+      "TPDM"
+    ]
+  },
+  "SnippetsByCase": {
+    "CDC-DOC cdc-pg-bootstrap-local": [
+      "cdc-pg-infrastructure",
+      "cdc-pg-settings",
+      "cdc-pg-bootstrap-local",
+      "cdc-pg-status",
+      "cdc-pg-watch",
+      "cdc-stack-teardown"
+    ],
+    "CDC-DOC cdc-pg-e2e-setup": [
+      "cdc-pg-infrastructure",
+      "cdc-pg-settings",
+      "cdc-pg-e2e-setup",
+      "cdc-pg-status",
+      "cdc-pg-watch",
+      "cdc-pg-e2e-test",
+      "cdc-stack-teardown"
+    ]
+  },
+  "WrapperAttempts": {
+    "cdc-pg-bootstrap-local": 1,
+    "cdc-pg-e2e-setup": 1
+  },
+  "Observation": {
+    "StatusExitCode": 1,
+    "WatchExitCode": 1,
+    "ProviderSetup": "Satisfied",
+    "ConnectorRuntime": "Satisfied",
+    "Projection": "Unknown",
+    "AggregateReadiness": "NotReady"
+  },
+  "CaptureTables": [
+    "CdcHeartbeat",
+    "Document",
+    "DocumentCache"
+  ],
+  "DocumentProjectionWorkCaptured": false,
+  "E2eSmoke": {
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "TestIds": [
+      "Given_CdcE2ESetup.It_serves_the_started_DMS_health_endpoint",
+      "Given_CdcE2ESetup.It_reports_a_healthy_database_connection"
+    ]
+  },
+  "AdditionalReadOnlyInspection": {
+    "BothE2eDatabasesExist": true,
+    "SnapshotEffectiveSchemaRowCount": 1
+  },
+  "Cleanup": "Governed retirement and removal succeeded for both cases; no dms-local containers, volumes or active inventory remain.",
+  "NotExercised": [
+    "interactive cdc-pg-connector-role prompt (restricted role supplied by fixture)",
+    "cdc-pg-bootstrap-published",
+    "cdc-pg-e2e-build",
+    "DMS-1325 API-driven message scenarios",
+    "authorization-enabled Kafka"
+  ]
+}

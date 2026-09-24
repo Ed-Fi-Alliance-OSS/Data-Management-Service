@@ -60,7 +60,7 @@ DocumentCache or CDC/Kafka content, not to unrelated material in the same artifa
 | [`multitenancy-analysis.md`](../../../multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
-| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
+| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Managed relational registration is shipped through the local/published bootstrap and DMS E2E opt-in. These entry points link to the [operator procedures](../../../../cdc-documentation/README.md); manual RestClient and Instance Management route-context setup do not implement CDC admission. Procedure-level qualification is recorded separately in the [evidence index](../../../../cdc-documentation/cdc-inv-evidence.md), with unexercised rows pending. |
 
 ## Scope and Architecture
 
@@ -486,6 +486,17 @@ and [`SubmittedRecords`](https://github.com/apache/kafka/blob/4.3.0/connect/runt
 The heartbeat table is not projection work, completeness evidence, a public event source,
 or part of the immutable binding record.
 
+Projection observation freshness is measured on the controller host clock. The
+production standalone status call must perform a new durable read, return its host
+process-observation envelope within the current call interval, and complete within
+the configured observation-age bound. Correlate the completed read with a host-clock
+completion timestamp before capturing the provider barrier. The database's durable
+observation timestamp remains diagnostic data for projection status and queue age;
+it is not compared with the host request-start time. SQL Server clock granularity
+and cross-host clock skew cannot establish or invalidate that call ordering. Missing
+durable evidence, stale or mismatched host envelopes, and expired calls still reject
+readiness. Provider positions, not wall-clock comparison, prove barrier coverage.
+
 For initial combined readiness only, deployment automation performs this sequence:
 
 1. Verify that the setup controller created the selected new physical database and has not
@@ -702,6 +713,15 @@ image must prove that stopped target state survives worker restart and permits o
 inspection without task consumption. A worker startup that recovers a connector without
 a verified stopped state follows the native recovery boundary, even if startup was requested
 through a bootstrap wrapper.
+
+A standalone start, restart, or resume starts its invocation-owned projection executor
+only after fresh eligible preflight under the controller session (including verified
+`STOPPED` evidence for start). Reusing an already started executor is idempotent.
+Initialization and rejected preflight do not start processing. This supplies the process
+health observation needed for fresh post-operation readiness; it does not certify another
+DMS process's health, authorize initial writers, or renew a snapshot barrier. Read-only
+status/watch/validate retain their existing standalone observation limits. DMS-1326
+qualifies this command/runtime integration through marked lifecycle invocations.
 
 After an unclean worker exit, unverified shutdown, native task reassignment, or internal
 recovery, records may be consumed and published before the controller revalidates continuity.
@@ -1270,6 +1290,34 @@ database-per-instance isolation model.
   capture instance for `dms.DocumentProjectionWork`.
 - Use a least-privilege login with CDC read access plus only the access needed to read and
   update the internal heartbeat singleton; do not grant document-table writes.
+- The deployment supplies the SQL Server login and credentials. During
+  `InitialCreateOrExactMatch`, provider setup may create a missing database user mapped
+  to that existing login, then apply and validate the narrowly scoped connector grants.
+  The qualified local workflow uses the same login and user name, supplied through
+  `Cdc:DatabaseConnectorPrincipal`, with the matching connector `database.user` identity.
+  Automatic user creation supports this same-name SQL login mapping only; it does not
+  create logins, create or rotate credentials, or provide a general identity-mapping API.
+  Existing users must map to the expected login SID and pass the principal-type and
+  effective-permission checks. Missing logins, conflicting mappings, unsupported principal
+  types, and elevated connector permissions are rejected without automatic repair.
+  User creation runs within the existing managed initial provider setup/retry boundary,
+  after source/provenance checks and before connector registration or writer publication.
+  Once provider completion is durable, even an initial-enable retry uses `ValidateOnly`:
+  missing users and mapping mismatches fail validation and are never recreated or remapped.
+  [DMS-1326](../../epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping)
+  owns implementation and qualification of this contract amendment. The provider checks
+  an enabled SQL login and an instance-authenticated SQL user with the same SID; it rejects
+  server role membership, ownership and elevated server grants before mapping, then reuses
+  the existing database effective-permission checks. Setup requires visibility of server
+  principal definitions (`VIEW ANY DEFINITION`, also implied by the setup administrator's
+  authority); unavailable metadata or insufficient `CREATE USER` authority fails closed.
+  Login/user identity rejection uses `CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING`,
+  `CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED`, `CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED`,
+  `CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH`, or (in validation-only mode)
+  `CDC_SQLSERVER_CONNECTOR_USER_MISSING`. Setup-authority failures use
+  `CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE`. These diagnostics never expose SIDs or credentials.
+  T29's [implementation evidence](../../../../cdc-documentation/cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
+  is separate from T03's operator examples and T17's public-snippet qualification.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
@@ -1500,6 +1548,15 @@ invocation. Changed consumer deployments require updated evidence. A different b
 source, public topic, or requested ceiling cannot reuse the acknowledgement. Missing or
 mismatched confirmation prevents advancement, and a partially completed increase remains
 not ready. No automatic rollback or lowering of already increased limits is implied.
+
+After confirmed capacity alignment and fresh pre-start eligibility, the size-increase
+controller starts its invocation-owned projection executor before connector resume.
+An already running executor is preserved; this does not reactivate the projection,
+rebuild the source, authorize API writers, or change the caller's disposal ownership.
+An executor-start failure leaves the operation pending and does not resume the
+connector. Standalone completion requires this executor's fresh observations as well
+as the ordinary provider, broker, connector, offset and lag checks. Status/watch remain
+observation-only and cannot complete a pending size increase.
 
 ### Deferred new-topic cutover
 

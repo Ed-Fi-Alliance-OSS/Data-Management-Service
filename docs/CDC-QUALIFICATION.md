@@ -22,6 +22,33 @@ They describe the evidence below, not a claim that this story qualifies every be
 
 The required [DMS CI gate](../.github/workflows/on-dms-pullrequest.yml) runs only the fast `Contract` qualification lane on relevant ready PR updates, merge groups and manual dispatches. It does not start live CDC provider or Kafka fixtures. Existing non-qualification CI jobs are unchanged.
 
+Both provider Telemetry selections execute the marked `cdc-telemetry-inspect`
+and `cdc-provider-disk-inspect` commands plus `cdc-pg-retention-inspect` or
+`cdc-sqlserver-retention-inspect` in the existing fixture-owned topology. Each
+requires exporter replacement and its matching provider inspection method; missing,
+skipped or duplicate outcomes fail qualification. The runner checks native curl
+8.4+ and timeout, plus psql for PostgreSQL or sqlcmd (Go) for SQL Server. Nightly
+installs the clients, pinning sqlcmd 1.10.0 by archive digest. SQL Server monitoring
+uses the fixture administrator and the explicitly declared self-signed TLS exception;
+it does not prove least-privilege monitoring grants or deployment TLS. Private
+libpq files and raw metrics are removed by the fixture. Only selected observed
+fields, snippet hashes and actions enter allowlisted `cdc-controller-telemetry-*`
+attachments; raw LSNs and query output stay private. Retained LSNs do not prove
+schema-history continuity: use the separately linked admission/recovery evidence
+and topic-policy inspection.
+
+The Kafka lane requires the marked broker retention inspection, local packaged
+`cdc-topic-policy-inspect`, authenticated allow/deny probes and separate secured/local
+required-case reports. The local case uses the existing PostgreSQL admission fixture,
+so this lane also requires the PostgreSQL and Redpanda image inputs (no external admin
+server). It exercises the shared initial-enable retry before status. Secured inspections
+use the pinned Kafka image's client tools and privately scoped broker JMX; administrator
+and denied-consumer samples retain only selected fields. Missing or duplicate cases fail
+qualification even if the remaining suite passed. The PostgreSQL MessageContract lane
+also requires all six DMS-1324 consumer broker cases. No lane or production adapter was added.
+See [T20's final procedure reconciliation](../reference/cdc-documentation/cdc-inv-evidence.md#final-reconciliation-t20)
+for retained prior-provider results, images/revisions and the consumer unit/broker split.
+
 All 15 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History and MessageContract for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
 
 For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's seven jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 15 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.
@@ -30,13 +57,96 @@ The nightly workflow loads `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` from the check
 
 Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1); its default `All` selection runs Contract and all 15 live jobs sequentially locally. `-Lane` selects one complete lane; a provider `-Suite` selects one complete CI job. Use a new `-ResultsDirectory` for every invocation.
 
-Live lanes require Docker, .NET 10, `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` equal to the [shipped qualification record](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json), `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, and the selected `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` / `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. The repository-pinned native Kafka image is also required. Images must exist locally unless `-PullImages` is supplied. Packaged-history tests require `ConnectionStrings__DatabaseConnection` / `ConnectionStrings__MssqlAdmin` pointing to isolated PostgreSQL / SQL Server 2025 admin servers. The contract lane requires Pester 5.7.1. Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.
+Qualification requires PowerShell 7.5 or newer, including direct Pester runs of the CDC lifecycle and qualification tests. Retained Compose input checks distinguish empty environment variables from absent ones; PowerShell 7.4 removes variables assigned an empty string. Check `$PSVersionTable.PSVersion` before running locally.
+
+Live lanes require Docker, .NET 10, `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` equal to the [shipped qualification record](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json), `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, and the selected `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` / `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. The repository-pinned native Kafka image is also required. Images must exist locally unless `-PullImages` is supplied. Packaged-history tests require `ConnectionStrings__DatabaseConnection` / `ConnectionStrings__MssqlAdmin` pointing to isolated PostgreSQL / SQL Server 2025 admin servers. The contract lane, provider Admission and Lifecycle lanes require Pester 5.7.1.
+Admission and Lifecycle also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
+local/published Compose environment with no retained containers, volumes or bootstrap
+workspace. The shared live runbook fixture requires two PostgreSQL setup cases and
+three SQL Server setup cases (local, published and direct DMS E2E); missing or skipped
+cases fail qualification independently of the controller suite. SQL Server published
+qualification tags matching branch-built application/CMS images under the published
+Compose names and records their image IDs; it does not qualify a registry release.
+Both provider Lifecycle lanes reuse that fixture with `Procedure=Lifecycle` and require
+`CDC-DOC cdc-managed-start` in addition to the provider `CdcControllerManagedLifecycle`
+selection. That live case invokes marked inventory, managed stop/start, validation,
+restart/resume and rejection examples on the original custom root. A separate report
+guard requires the existing retained-offset, restart, provenance, unavailable-evidence,
+source-mismatch and terminal-incident provider cases. SQL Server uses the same
+marked command harness with provider-specific fixture database cloning for source
+mismatch rejection; those fixture mutations are not operator recovery procedures.
+The runner builds SchemaTools in the selected configuration and in Debug, which
+the shipped wrapper resolver prefers when present, before executing the snippets.
+
+The provider Recovery selection also requires all nine native-recovery outcomes across
+seven methods. The existing provider fixture invokes the exact marked
+`cdc-native-recovery-watch` and `cdc-incomplete-shutdown-status` commands through
+the packaged SchemaTools executable, using its original state and private fixture
+settings. The shared snippet extractor and literal-argument binder reject undeclared
+substitutions. No local bootstrap stack or additional Pester process is needed for
+Recovery. Each native-recovery attachment records snippet/scenario IDs, command
+results and immutable service image IDs. Test hooks supply failed/unverified shutdown
+and unavailable observations; real worker/task recovery, offset loss, state-file
+absence and CLI containment operate only on fixture-owned services. The fixture
+reuses the packaged-administration test CMS endpoint and runtime-compatible schema
+workspace; the CLI loads complete matching settings and inspects live
+provider, broker, worker, offsets and metrics. Its invocation-owned projector is
+not started by status/watch, so projection health remains unavailable. Separate
+in-process assertions qualify fresh readiness and invalidation of retained telemetry.
+Neither layer certifies the unobserved interval. Marked recovery commands passed
+[PostgreSQL T21](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21)
+and [SQL Server T22](../reference/cdc-documentation/cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22),
+with nine live cases and eleven marked invocations per provider. SQL Server task
+failure uses a temporary password change on the fixture-owned login, restored
+before controller inspection; this is a test fault, not an operator procedure.
+
+The provider RecordSize selection requires all twenty outcomes across seven methods,
+including the three marked-command cases in
+[CdcRecordSizeIncreaseTests.Runbook.cs](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs).
+The provider-parameterized fixture reuses the packaged command/settings harness and
+shipped Compose services. It loads exact `cdc-size-no-consumers` and
+`cdc-size-consumers` acknowledgements, invokes `cdc-size-increase` and `cdc-size-retry`,
+and rejects missing confirmation on every invocation. Record-size command settings use
+the public setup examples' 5,000 ms lag threshold for both providers. A fixture-only
+interruption after the actual broker update leaves original scope and settings pending; the new CLI
+process renews consumer evidence, reconciles the partial changes and completes.
+The acknowledgement is an operator attestation, not independent consumer certification.
+After aligned limits and fresh eligibility, the controller starts its invocation-owned
+projector before resume; a startup failure leaves pending intent without resume.
+The CLI leaves settings unchanged. The fixture then applies only the two documented
+size settings, preserves the broker override and invokes `cdc-validate`; its unstarted
+projector remains unavailable even though pre-start eligibility succeeds. Original
+fixtures retain seven interruption boundaries, changed-scope rejection, producer failure
+recovery and Compose replacement/persistence coverage. Missing/skipped/duplicate required
+cases fail the separate report guard. [PostgreSQL T23 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
+and [SQL Server T24 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
+qualify this procedure with 20 live cases and nine marked invocations per provider.
+
+The provider History selection requires all 25 packaged-history cases and six
+provider-cleanup/retirement cases. The history fixture binds the exact
+`cdc-history-internal-only` and `cdc-history-rejected` snippets to its normal settings,
+normalized target and provider-read physical-source fingerprint. It invokes published
+DocumentCacheAdmin through the existing process harness; no history result is mocked.
+The narrow `CdcRunbookRetirement` category adds the existing interrupted-retirement
+case to the provider-cleanup follow-on. That case executes `cdc-retire` through
+SchemaTools, rejects missing confirmation and wrong generation, and retries partial
+cleanup using original state. It also executes `cdc-restamp-handoff-status` and
+`cdc-disclosure-containment-result`. Retained historical exposure, peer topics and
+shared offset storage are checked independently of the successful CLI result.
+Missing, skipped or duplicate required cases fail separate History/Cleanup guards.
+[PostgreSQL T25 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
+and [SQL Server T26 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26)
+record this live qualification. Shared-volume
+teardown ordering remains separately qualified by the wrapper tests; controller
+cleanup supplies no platform purge or independent consumer-store evidence.
+
+Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.
 
 `qualification.json` records every suite's counts and outcome. Empty selection, missing/inconsistent reports, skipped cases and nonzero process exits fail qualification. Prerequisite failures are labeled `EnvironmentUnavailable`; they are not passing behavior evidence. No automatic retry replaces a failed test scenario or suite run. Structured JSON attachments retain controller boundaries, provider/lag observations, recovery, rollout, history and cleanup evidence, linked from TRX results. Fixture validation diagnostics retain bounded code locations without exception messages or values. Public TRX files omit raw assertion output; raw logs stay in a private temporary directory and are never uploaded.
 
 With `-PullImages`, each prerequisite image gets at most three pull attempts, with waits of five and fifteen seconds after failures. Exhausting those attempts reports `EnvironmentUnavailable` before any suite starts. The uploaded `image-pulls.jsonl` retains one JSON record per attempt, including failures followed by a successful retry: image reference, attempt/budget, UTC start time, duration, exit code, outcome, failure category, next retry delay, and private log filename. Categories distinguish rate limits, authorization, missing images, disk exhaustion, DNS, TLS, timeouts, connection failures, and registry availability; unrecognized errors are `Unknown`. These classifications are diagnostic hints from Docker output, not confirmed underlying causes. The corresponding `pull-<id>-<attempt>.log` files preserve complete output under the private temporary directory printed by the runner. Raw logs are never uploaded, and unsafe image references are redacted from public evidence and console messages.
 
-Full operator runbooks belong to E19-S07; plugin publication belongs to the companion repository. API-driven Kafka scenarios belong to E19-S06. Documentation, command help, examples and this index are authored artifacts, excluded from validation tests; executable E19-S05 scenario-to-invariant traceability remains covered by Contract tests.
+Operator runbooks and documentation checks belong to E19-S07; plugin publication belongs to the companion repository. API-driven Kafka scenarios belong to E19-S06. Explanatory prose remains human-reviewed; marked operator examples and relative links have focused documentation checks. Executable E19-S05 scenario-to-invariant traceability remains covered by Contract tests.
 
 Compose persistence qualification starts with newly provisioned Kafka volumes. The storage change does not migrate logs from older containers' writable layers.
 

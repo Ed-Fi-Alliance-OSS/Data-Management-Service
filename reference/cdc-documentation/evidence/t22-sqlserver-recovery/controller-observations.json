@@ -1,0 +1,1889 @@
+[
+  {
+    "Test": "It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:07:38.7503673-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:07:34.0641047-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1022
+      },
+      {
+        "At": "2026-09-23T04:07:48.8390753-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:07:43.8489087-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1015
+      },
+      {
+        "At": "2026-09-23T04:07:51.2416181-05:00",
+        "ExternalTaskRestartAccepted": true
+      },
+      {
+        "At": "2026-09-23T04:07:54.3473837-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:07:51.7584234-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:07:54.3647538-05:00",
+        "ExternalTaskRestartAccepted": true
+      },
+      {
+        "At": "2026-09-23T04:07:57.7738848-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:07:54.7647386-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:08:03.0891027-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:07:57.9141252-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:08:07.870337-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:08:03.2170006-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1019
+      },
+      {
+        "At": "2026-09-23T04:08:25.957223-05:00",
+        "SameWorkerTaskRecovered": true,
+        "ExactConfigurationRestored": true
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:14:50.8138837-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:14:45.9161709-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1022
+      },
+      {
+        "StartedAt": "2026-09-23T04:14:51.8119457-05:00",
+        "RecoveredAt": "2026-09-23T04:15:07.6397517-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:15:14.802561-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:15:12.1059829-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:15:14.8040533-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "unknown",
+          "Category": "statusObservationUnavailable",
+          "ObservedAt": null,
+          "Message": "sourceHistory observation unavailable",
+          "Continuity": "unknown",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 3,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:15:14.8049884-05:00",
+        "Scenario": "provider",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:14.8058038-05:00",
+        "Scenario": "provider",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:14.8065703-05:00",
+        "Scenario": "provider",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:19.928425-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "unknown",
+          "Category": "providerHistoryUnknown",
+          "ObservedAt": "2026-09-23T04:15:14.9147188-05:00",
+          "Message": "provider history unavailable",
+          "Continuity": "unknown",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 5,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          },
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 3,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": 1015
+      },
+      {
+        "At": "2026-09-23T04:15:22.9212938-05:00",
+        "Scenario": "offset",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 5,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 3,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:25.6213741-05:00",
+        "Scenario": "offset",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 5,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 3,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:28.4543439-05:00",
+        "Scenario": "offset",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 5,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 3,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:28.7267553-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:15:28.5771987-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 6,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:15:29.0093091-05:00",
+        "Scenario": "worker",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 6,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:29.2781684-05:00",
+        "Scenario": "worker",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 6,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:29.5535649-05:00",
+        "Scenario": "worker",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 6,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:30.8055587-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:15:29.6776941-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 5,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:15:32.0159567-05:00",
+        "Scenario": "status",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:33.2648384-05:00",
+        "Scenario": "status",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:34.4735374-05:00",
+        "Scenario": "status",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:15:36.311587-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:15:34.5993941-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:15:41.0923485-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:15:36.424491-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1018
+      }
+    ]
+  },
+  {
+    "Test": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery(False)",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:02:37.67009-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:02:32.932162-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1019
+      },
+      {
+        "At": "2026-09-23T04:02:38.7354772-05:00",
+        "Acknowledged": false,
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            }
+          ]
+        }
+      },
+      {
+        "StartedAt": "2026-09-23T04:02:39.7584815-05:00",
+        "RecoveredAt": "2026-09-23T04:02:55.8938341-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:03:04.2465753-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:03:01.5319449-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      }
+    ]
+  },
+  {
+    "Test": "It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:12:43.639805-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:12:39.0328806-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1011
+      },
+      {
+        "StartedAt": "2026-09-23T04:12:44.5926179-05:00",
+        "RecoveredAt": "2026-09-23T04:13:00.3695119-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:13:09.5585314-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:13:06.9349345-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:13:09.5604334-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "unknown",
+          "Category": "statusObservationUnavailable",
+          "ObservedAt": null,
+          "Message": "sourceHistory observation unavailable",
+          "Continuity": "unknown",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 1,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:13:09.5630235-05:00",
+        "Scenario": "bindings",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:09.5641966-05:00",
+        "Scenario": "bindings",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:09.5649127-05:00",
+        "Scenario": "bindings",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:09.7373124-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "unknown",
+          "Category": "statusObservationUnavailable",
+          "ObservedAt": null,
+          "Message": "sourceHistory observation unavailable",
+          "Continuity": "unknown",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 1,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:13:09.7390255-05:00",
+        "Scenario": "workflows",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:09.7406261-05:00",
+        "Scenario": "workflows",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:09.7421539-05:00",
+        "Scenario": "workflows",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:10.208975-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "unknown",
+          "Category": "statusObservationUnavailable",
+          "ObservedAt": null,
+          "Message": "sourceHistory observation unavailable",
+          "Continuity": "unknown",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 1,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:13:10.2109314-05:00",
+        "Scenario": "source-history",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:10.2117214-05:00",
+        "Scenario": "source-history",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:10.2124336-05:00",
+        "Scenario": "source-history",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 1,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:13:15.3620957-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:13:10.7913739-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1015
+      }
+    ]
+  },
+  {
+    "Test": "It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:10:06.8336881-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:10:02.271476-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1018
+      },
+      {
+        "At": "2026-09-23T04:10:15.654899-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:10:11.0102764-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1017
+      },
+      {
+        "StartedAt": "2026-09-23T04:10:16.7828066-05:00",
+        "RecoveredAt": "2026-09-23T04:10:32.5969056-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:10:34.0235893-05:00",
+        "OffsetAdvanced": true,
+        "ProgressBefore": 58,
+        "ProgressAfter": 67
+      },
+      {
+        "At": "2026-09-23T04:10:34.0353672-05:00",
+        "PreValidationPublicationObserved": true,
+        "UnobservedIntervalCertified": false
+      },
+      {
+        "At": "2026-09-23T04:10:53.6856852-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:10:51.0395939-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:10:58.5199578-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:10:53.810497-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:11:03.2662677-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:10:58.6763109-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1025
+      }
+    ]
+  },
+  {
+    "Test": "It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery(True)",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:05:11.9001275-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:05:07.1631003-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1007
+      },
+      {
+        "At": "2026-09-23T04:05:13.8599375-05:00",
+        "Acknowledged": true,
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 0,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            }
+          ]
+        }
+      },
+      {
+        "StartedAt": "2026-09-23T04:05:14.9734229-05:00",
+        "RecoveredAt": "2026-09-23T04:05:30.6881562-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:05:38.6067304-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:05:35.8397366-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      }
+    ]
+  },
+  {
+    "Test": "It_contains_recovered_connectors_and_retains_terminal_history_loss(False)",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T03:57:19.0783813-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T03:57:14.0123039-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1018
+      },
+      {
+        "StartedAt": "2026-09-23T03:57:20.1275316-05:00",
+        "RecoveredAt": "2026-09-23T03:57:36.0175415-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T03:57:43.5914756-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T03:57:40.8404876-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T03:57:48.6914809-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T03:57:43.7208273-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1023
+      },
+      {
+        "At": "2026-09-23T03:58:05.1049112-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "notSatisfied",
+          "Category": "sourceHistoryLost",
+          "ObservedAt": "2026-09-23T03:57:51.4449728-05:00",
+          "Message": "source-history incident latched",
+          "Continuity": "lost",
+          "IncidentLatched": true
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 1,
+        "Containment": 1,
+        "Diagnostics": [
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 3,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T03:58:07.8680949-05:00",
+        "Scenario": "new-history-loss",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 3,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T03:58:10.6351841-05:00",
+        "Scenario": "new-history-loss",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 3,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T03:58:13.3899065-05:00",
+        "Scenario": "new-history-loss",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 3,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T03:58:16.2253296-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "notSatisfied",
+          "Category": "sourceHistoryLost",
+          "ObservedAt": "2026-09-23T03:57:51.4449728-05:00",
+          "Message": "source-history incident latched",
+          "Continuity": "lost",
+          "IncidentLatched": true
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 1,
+        "Containment": 1,
+        "Diagnostics": [
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 3,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      }
+    ]
+  },
+  {
+    "Test": "It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "StartedAt": "2026-09-23T04:17:03.3819872-05:00",
+        "RecoveredAt": "2026-09-23T04:17:17.3021115-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:17:32.0298293-05:00",
+        "BarriersBefore": 1,
+        "BarriersAfter": 2,
+        "FreshInitialAuthorization": true
+      }
+    ]
+  },
+  {
+    "Test": "It_contains_recovered_connectors_and_retains_terminal_history_loss(True)",
+    "Evidence": [
+      {
+        "Provider": "SqlServer",
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "At": "2026-09-23T04:00:06.1841108-05:00",
+        "Readiness": "ready",
+        "SourceHistory": {
+          "State": "satisfied",
+          "Category": "none",
+          "ObservedAt": "2026-09-23T04:00:01.1077879-05:00",
+          "Message": null,
+          "Continuity": "healthy",
+          "IncidentLatched": false
+        },
+        "Recovery": {
+          "Boundary": 0,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+        },
+        "IncidentPersistence": 0,
+        "Containment": 0,
+        "Diagnostics": [],
+        "LagMilliseconds": 1016
+      },
+      {
+        "At": "2026-09-23T04:00:06.2108907-05:00",
+        "LatchedAt": "2026-09-23T04:00:06.2027485-05:00",
+        "TerminalIncidentRecorded": true
+      },
+      {
+        "StartedAt": "2026-09-23T04:00:07.2293406-05:00",
+        "RecoveredAt": "2026-09-23T04:00:23.0818242-05:00",
+        "Signal": "SIGKILL",
+        "ProcessChanged": true,
+        "ManagedShutdownVerified": false
+      },
+      {
+        "At": "2026-09-23T04:00:24.7590058-05:00",
+        "OffsetAdvanced": true,
+        "ProgressBefore": 50,
+        "ProgressAfter": 54
+      },
+      {
+        "At": "2026-09-23T04:00:45.2186958-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "notSatisfied",
+          "Category": "sourceHistoryLost",
+          "ObservedAt": "2026-09-23T04:00:06.2027485-05:00",
+          "Message": "source-history incident latched",
+          "Continuity": "lost",
+          "IncidentLatched": true
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": true,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 1,
+        "Containment": 1,
+        "Diagnostics": [
+          {
+            "Component": 3,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      },
+      {
+        "At": "2026-09-23T04:00:48.0736221-05:00",
+        "Scenario": "retained-terminal",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:00:50.8891189-05:00",
+        "Scenario": "retained-terminal",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:00:53.6847637-05:00",
+        "Scenario": "retained-terminal",
+        "Result": {
+          "Succeeded": false,
+          "TargetShutdownVerified": false,
+          "Ready": false,
+          "Boundary": 2,
+          "Diagnostics": [
+            {
+              "Component": 3,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            },
+            {
+              "Component": 1,
+              "Failure": 5,
+              "Message": "Observed state does not satisfy the required contract."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T04:00:56.5742663-05:00",
+        "Readiness": "notReady",
+        "SourceHistory": {
+          "State": "notSatisfied",
+          "Category": "sourceHistoryLost",
+          "ObservedAt": "2026-09-23T04:00:06.2027485-05:00",
+          "Message": "source-history incident latched",
+          "Continuity": "lost",
+          "IncidentLatched": true
+        },
+        "Recovery": {
+          "Boundary": 3,
+          "RequiresFreshPass": false,
+          "UnobservedIntervalCertified": false,
+          "Explanation": "Native recovery or unverified shutdown observed. Later healthy evidence does not certify continuity or absence of publication during the unobserved interval."
+        },
+        "IncidentPersistence": 1,
+        "Containment": 1,
+        "Diagnostics": [
+          {
+            "Component": 3,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 5,
+            "Failure": 5,
+            "Message": "Observed state does not satisfy the required contract."
+          },
+          {
+            "Component": 7,
+            "Failure": 1,
+            "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "LagMilliseconds": null
+      }
+    ]
+  }
+]

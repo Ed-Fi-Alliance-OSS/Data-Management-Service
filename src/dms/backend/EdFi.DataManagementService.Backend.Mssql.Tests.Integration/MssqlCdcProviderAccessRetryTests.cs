@@ -45,7 +45,7 @@ public class Given_MssqlCdcProviderAccessRetry
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _connectorPrincipalName = $"cdc_connector_{Guid.NewGuid():N}";
 
-        CreateConnectorLoginAndUser(_database.DatabaseName, _connectorPrincipalName);
+        CreateConnectorLogin(_connectorPrincipalName);
     }
 
     [TearDown]
@@ -211,6 +211,10 @@ public class Given_MssqlCdcProviderAccessRetry
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
+        // This permission-precedence case requires an existing connector user; production setup owns it.
+        (await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch))
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched);
         await ExecuteNonQueryAsync(
             connection,
             $"""
@@ -425,6 +429,7 @@ public class Given_MssqlCdcProviderAccessRetry
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
         DropConnectorUserInDatabase(_database.DatabaseName, _connectorPrincipalName);
+        DropConnectorLoginIfExists(_connectorPrincipalName);
 
         var failedSetupResult = await RunSetupAsync(
             connection,
@@ -435,7 +440,7 @@ public class Given_MssqlCdcProviderAccessRetry
         failedSetupResult
             .Diagnostics.Should()
             .Contain(diagnostic =>
-                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_USER_MISSING"
+                diagnostic.Code == "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING"
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure
             );
         var createdCaptures = await ReadCaptureColumnsAsync(connection);
@@ -450,7 +455,7 @@ public class Given_MssqlCdcProviderAccessRetry
             );
         (await HasConnectorObjectPermissionAsync(connection, "Document", "SELECT")).Should().BeFalse();
 
-        CreateConnectorLoginAndUser(_database.DatabaseName, _connectorPrincipalName);
+        CreateConnectorLogin(_connectorPrincipalName);
 
         var retryResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
 
@@ -656,6 +661,11 @@ public class Given_MssqlCdcProviderAccessRetry
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
+        // Inject a pre-existing elevated mapping; the normal fixture prepares only the login.
+        await ExecuteNonQueryAsync(
+            connection,
+            $"CREATE USER {QuoteIdentifier(_connectorPrincipalName)} FOR LOGIN {QuoteIdentifier(_connectorPrincipalName)};"
+        );
         await AddConnectorToDatabaseRoleAsync(connection, "db_owner");
 
         var result = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
@@ -1873,26 +1883,15 @@ public class Given_MssqlCdcProviderAccessRetry
         await command.ExecuteNonQueryAsync();
     }
 
-    private static void CreateConnectorLoginAndUser(string databaseName, string connectorPrincipalName)
+    private static void CreateConnectorLogin(string connectorPrincipalName)
     {
         using var connection = new SqlConnection(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
-
         using var command = connection.CreateCommand();
-        var quotedDatabase = QuoteIdentifier(databaseName);
-        var quotedPrincipal = QuoteIdentifier(connectorPrincipalName);
         command.CommandText = $"""
-            IF SUSER_ID(N'{EscapeSqlLiteral(connectorPrincipalName)}') IS NULL
-            BEGIN
-                CREATE LOGIN {quotedPrincipal} WITH PASSWORD = '{ConnectorPassword}', CHECK_POLICY = OFF;
-            END;
-
-            USE {quotedDatabase};
-
-            IF USER_ID(N'{EscapeSqlLiteral(connectorPrincipalName)}') IS NULL
-            BEGIN
-                CREATE USER {quotedPrincipal} FOR LOGIN {quotedPrincipal};
-            END;
+            CREATE LOGIN {QuoteIdentifier(
+                connectorPrincipalName
+            )} WITH PASSWORD = '{ConnectorPassword}', CHECK_POLICY = OFF;
             """;
         command.ExecuteNonQuery();
     }

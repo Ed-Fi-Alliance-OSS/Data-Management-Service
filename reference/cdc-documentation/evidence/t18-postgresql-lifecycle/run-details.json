@@ -1,0 +1,75 @@
+{
+  "RunDate": "2026-09-23",
+  "ControllerRun": "cdc-docs-postgresql-lifecycle-t18-20260923-04",
+  "FinalLiveRun": "cdc-docs-postgresql-lifecycle-live-final-t18-20260923-05",
+  "Runtime": {
+    "Platform": "Linux/amd64",
+    "PowerShell": "7.6.6",
+    "Pester": "5.7.1",
+    ".NET SDK": "10.0.102"
+  },
+  "Provider": "Postgresql",
+  "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "Connect": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Postgresql": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "ControllerFixtureBroker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "WrapperBroker": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f"
+  },
+  "FixtureSubstitutions": {
+    "Paths": "owner-only temporary settings/state/environment paths",
+    "PostgresqlHostPort": 5435,
+    "CmsTargetId": 1,
+    "Generation": 1,
+    "CallMilliseconds": 120000,
+    "WaitMilliseconds": 600000,
+    "WatchMaximumPasses": 2,
+    "WorkerHeapMiB": 1024,
+    "WorkerHeapBytes": 1073741824,
+    "SourceRejection": "private settings copies select independent empty/populated fixture databases; original settings and CMS selection retained"
+  },
+  "SetupAssertions": {
+    "Provider": "postgresql",
+    "TargetId": 1,
+    "Generation": 1,
+    "SchemaProjects": [
+      "Ed-Fi",
+      "TPDM"
+    ],
+    "WrapperAttempts": 1,
+    "ApplicationImage": "sha256:950c42630e7414d4e461904944f76771f3f238d88aa08b5558501524ab2584ab",
+    "ConfigurationImage": "sha256:f36b9cb5947701fcd303b867195ac7959f2e6c68442716456ac35035645a5ab5",
+    "StatusExitCode": 1,
+    "WatchExitCode": 1,
+    "Projection": "Unknown",
+    "AggregateReadiness": "NotReady",
+    "WorkTableCaptured": false,
+    "WriterPublicationAuthorized": true
+  },
+  "Validation": {
+    "ControllerLifecycle": 16,
+    "RequiredControllerCases": 9,
+    "RequiredControllerMethods": 6,
+    "MarkedLiveCases": 1,
+    "RuntimeUnit": 4641,
+    "SchemaToolsCdcUnit": 810,
+    "WrapperAndQualificationPester": 349,
+    "FinalQualificationPester": 68,
+    "RunbookCommandAndOutput": 79,
+    "RunbookLinks": 16,
+    "Failed": 0,
+    "Skipped": 0
+  },
+  "Rehearsals": [
+    "Standalone restart/resume projection unavailable exposed the owned-executor integration gap; corrected production build rerun.",
+    "Initial inventory object lacked the connector name populated by managed startup, creating a malformed offsets URL. Final fixture uses the verified stop binding and compares it with refreshed inventory; all live steps rerun from a fresh deployment.",
+    "Worker plugin scanning exhausted the default 512 MiB heap during startup; final fixture uses matching 1024 MiB settings from initial creation. Shipped default unchanged."
+  ],
+  "Limits": [
+    "Standalone validation/status/watch remain runtime-unobserved and non-ready.",
+    "Peer and interruption wrapper cases use mocked infrastructure; provider fixtures qualify persistence.",
+    "No initial writer admission, consumer ACL, API-message, adoption, replacement or unsampled-interval certification from lifecycle success."
+  ],
+  "OwnedStackRetired": true
+}

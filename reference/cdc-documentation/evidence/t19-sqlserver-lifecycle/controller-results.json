@@ -1,0 +1,82 @@
+{
+  "Provider": "Mssql",
+  "Filter": "Category=CdcControllerManagedLifecycle&Category=MssqlIntegration",
+  "Cases": [
+    {
+      "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_waits_for_retained_projection_work_in_the_single_start_invocation(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_rejects_actual_pinned_worker_offsets_until_their_exact_keys_are_tombstoned",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_accepts_a_real_idle_commit_boundary_without_bypassing_capture_job_health",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_cleans_offline_initial_failure_through_the_production_wrapper_command(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence(Restart)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_rejects_unavailable_live_evidence_while_stopped(\"provider\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_waits_for_retained_projection_work_in_the_single_start_invocation(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_retires_after_provider_creation_before_registration_without_changing_shared_storage",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_rejects_unavailable_live_evidence_while_stopped(\"offset\")",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_cleans_offline_initial_failure_through_the_production_wrapper_command(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence(Resume)",
+      "Outcome": "Passed"
+    }
+  ]
+}

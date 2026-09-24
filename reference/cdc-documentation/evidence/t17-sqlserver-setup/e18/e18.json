@@ -1,0 +1,79 @@
+{
+  "Provider": "SqlServer",
+  "Layer": "Existing provider/packaged E18 fixtures, not marked runbook invocation",
+  "Passed": 14,
+  "Failed": 0,
+  "Skipped": 0,
+  "Cases": [
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_classifies_unreadable_prerequisites_with_sanitized_messages",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_keeps_prerequisite_failures_scoped_to_the_validated_target",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCacheProjector",
+      "Case": "It_drains_long_outage_backlog_in_bounded_pages_and_restarts_from_durable_work",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_reports_the_sqlserver_provider_token",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_classifies_SqlServerDocumentCachePrerequisite_disabled_rcsi_with_disabled_lifecycle_as_provider_prerequisite_failed",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command",
+      "Case": "It_resumes_rebuilding_without_repeating_cache_clearing",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_retries_SqlServerDocumentCachePrerequisite_initialization_after_disabled_lifecycle_correction",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command",
+      "Case": "It_resumes_resetting_with_the_latch_set_without_reentering_resetting",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_reads_database_and_server_prerequisites",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCacheOfflineDeactivation_Command",
+      "Case": "It_resumes_resetting_with_clear_latch_by_clearing_cache_and_work",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command",
+      "Case": "It_resumes_rebuilding_with_clear_latch_without_repeating_destructive_clearing",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_classifies_SqlServerDocumentCachePrerequisite_disabled_rcsi_with_tracking_lifecycle_as_unsupported_incident",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCacheQueryPlan_Evidence",
+      "Case": "It_uses_the_oldest_work_index_for_ordinary_queue_paging_without_source_or_cache_scans",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_A_Mssql_DocumentCachePrerequisite_Validator",
+      "Case": "It_rereads_SqlServerDocumentCachePrerequisite_for_activation_preflight",
+      "Outcome": "Passed"
+    }
+  ]
+}

@@ -1882,7 +1882,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
-    public async Task It_should_not_create_connector_logins_or_users_when_connector_principal_is_missing()
+    public async Task It_should_not_create_connector_logins_or_users_when_validation_only_principal_is_missing()
     {
         var executor = ExistingArtifactsWithoutConnectorGrants(
             new RecordingSqlServerConnectorAccess { ConnectorExists = false }
@@ -1890,7 +1890,10 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
         var result = await service.SetupAsync(
-            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
@@ -1907,6 +1910,142 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 || sql.Contains("CREATE LOGIN")
                 || sql.Contains("CREATE USER")
             );
+    }
+
+    [Test]
+    public async Task It_should_map_a_missing_user_then_exact_match_on_initial_retry()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(
+            new RecordingSqlServerConnectorAccess { ConnectorExists = false, GatingRoleExists = true }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+        var request = CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor);
+
+        (await service.SetupAsync(request)).Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        executor
+            .ExecutedSql.Should()
+            .ContainSingle(sql =>
+                sql.Contains("CREATE USER [connector_principal] FOR LOGIN [connector_principal]")
+            );
+        executor
+            .ExecutedSql.Should()
+            .NotContain(sql =>
+                sql.Contains("CREATE LOGIN") || sql.Contains("ALTER USER") || sql.Contains("PASSWORD")
+            );
+        executor.ExecutedSql.Clear();
+        (await service.SetupAsync(request)).Outcome.Should().Be(CdcProviderSetupOutcome.ExactMatch);
+        executor.ExecutedSql.Should().BeEmpty();
+    }
+
+    [TestCase("cdc:sqlserver:create-connector-user", false)]
+    [TestCase("cdc:sqlserver:grant-connector-access", true)]
+    public async Task It_should_retain_identity_and_retry_after_setup_authority_or_grant_failure(
+        string marker,
+        bool userCreated
+    )
+    {
+        var access = new RecordingSqlServerConnectorAccess
+        {
+            ConnectorExists = false,
+            GatingRoleExists = true,
+        };
+        var executor = new RecordingSqlServerCdcExecutor(
+            databaseCdcEnabled: true,
+            heartbeatTableExists: true,
+            heartbeatSingletonExists: true,
+            allowSnapshotIsolation: true,
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected(),
+            connectorAccess: access,
+            failExecuteSqlMarker: marker,
+            executeFailure: new InvalidOperationException("private-provider-error")
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result.Diagnostics.Should().Contain(d => d.Code == "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE");
+        System
+            .Text.Json.JsonSerializer.Serialize(result.Diagnostics)
+            .Should()
+            .NotContain("private-provider-error");
+        access.ConnectorExists.Should().Be(userCreated);
+        var retry = ExistingArtifactsWithoutConnectorGrants(access);
+        (
+            await service.SetupAsync(
+                CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: retry)
+            )
+        )
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        retry.ExecutedSql.Count(sql => sql.Contains("CREATE USER")).Should().Be(userCreated ? 0 : 1);
+        retry
+            .ExecutedSql.Should()
+            .NotContain(sql => sql.Contains("CREATE LOGIN") || sql.Contains("ALTER USER"));
+    }
+
+    [Test]
+    public async Task It_should_quote_the_user_and_login_identifiers()
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(
+            new RecordingSqlServerConnectorAccess
+            {
+                ConnectorExists = false,
+                GatingRoleExists = true,
+                ConnectorPrincipalName = "connector]name",
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+        (
+            await service.SetupAsync(
+                CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                    connectorPrincipalName: new CdcSafeName("connector]name"),
+                    databaseExecutor: executor
+                )
+            )
+        )
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        executor
+            .ExecutedSql.Should()
+            .ContainSingle(sql => sql.Contains("CREATE USER [connector]]name] FOR LOGIN [connector]]name]"));
+    }
+
+    [TestCase("absent-login", "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING")]
+    [TestCase("unsupported-login", "CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED")]
+    [TestCase("elevated-login", "CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED")]
+    [TestCase("conflicting-sid", "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH")]
+    [TestCase("unsupported-user", "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH")]
+    [TestCase("metadata-authority", "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")]
+    [TestCase("metadata-authority-hidden-login", "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")]
+    public async Task It_should_reject_invalid_mapping_without_user_or_grant_mutation(
+        string scenario,
+        string code
+    )
+    {
+        var executor = ExistingArtifactsWithoutConnectorGrants(
+            new RecordingSqlServerConnectorAccess
+            {
+                GatingRoleExists = true,
+                ConnectorExists = scenario is "conflicting-sid" or "unsupported-user" or "metadata-authority",
+                LoginExists = scenario is not ("absent-login" or "metadata-authority-hidden-login"),
+                LoginSupported = scenario != "unsupported-login",
+                LoginElevated = scenario == "elevated-login",
+                MappingMatches = scenario != "conflicting-sid",
+                ConnectorIsDatabasePrincipal = scenario != "unsupported-user",
+                MappingMetadataVisible =
+                    scenario is not ("metadata-authority" or "metadata-authority-hidden-login"),
+            }
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result.Diagnostics.Should().Contain(d => d.Code == code);
+        executor.ExecutedSql.Should().BeEmpty();
     }
 
     [Test]
@@ -2683,7 +2822,13 @@ internal sealed class RecordingSqlServerConnectorAccess
 
     public string ConnectorPrincipalId { get; init; } = "101";
 
-    public bool ConnectorExists { get; init; } = true;
+    public bool ConnectorExists { get; set; } = true;
+
+    public bool LoginExists { get; init; } = true;
+    public bool LoginSupported { get; init; } = true;
+    public bool LoginElevated { get; init; }
+    public bool MappingMatches { get; init; } = true;
+    public bool MappingMetadataVisible { get; init; } = true;
 
     public bool ConnectorIsDatabasePrincipal { get; init; } = true;
 
@@ -2984,6 +3129,11 @@ internal sealed class RecordingSqlServerCdcExecutor
             _connectorAccess.GatingRoleIsNormalRole = true;
         }
 
+        if (sql.Contains("cdc:sqlserver:create-connector-user"))
+        {
+            _connectorAccess.ConnectorExists = true;
+        }
+
         if (sql.Contains("cdc:sqlserver:grant-connector-access"))
         {
             _connectorAccess.GatingRoleDirectMembers = [_connectorAccess.ConnectorPrincipalName];
@@ -3080,6 +3230,22 @@ internal sealed class RecordingSqlServerCdcExecutor
             var text when text.Contains("cdc:sqlserver:gating-role-pre-capture") =>
             [
                 ConnectorPrincipalAccessRow(),
+            ],
+            var text when text.Contains("cdc:sqlserver:connector-user-mapping") =>
+            [
+                Row(
+                    ("mapping_metadata_visible", _connectorAccess.MappingMetadataVisible.ToString()),
+                    ("login_exists", _connectorAccess.LoginExists.ToString()),
+                    ("login_supported", _connectorAccess.LoginSupported.ToString()),
+                    ("login_elevated", _connectorAccess.LoginElevated.ToString()),
+                    ("user_exists", _connectorAccess.ConnectorExists.ToString()),
+                    (
+                        "user_mapping_matches",
+                        (
+                            _connectorAccess.MappingMatches && _connectorAccess.ConnectorIsDatabasePrincipal
+                        ).ToString()
+                    )
+                ),
             ],
             var text when text.Contains("cdc:sqlserver:connector-principal-access") =>
             [

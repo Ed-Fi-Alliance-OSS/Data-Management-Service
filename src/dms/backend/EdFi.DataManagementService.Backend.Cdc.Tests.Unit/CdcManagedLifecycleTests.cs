@@ -101,6 +101,42 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         ResetManaged();
     }
 
+    [TestCase(CdcManagedLifecycleOperation.Start, false)]
+    [TestCase(CdcManagedLifecycleOperation.Restart, false)]
+    [TestCase(CdcManagedLifecycleOperation.Resume, false)]
+    [TestCase(CdcManagedLifecycleOperation.Start, true)]
+    [TestCase(CdcManagedLifecycleOperation.Restart, true)]
+    [TestCase(CdcManagedLifecycleOperation.Resume, true)]
+    public async Task It_starts_its_projection_executor_only_after_eligible_preflight(
+        CdcManagedLifecycleOperation operation,
+        bool missingProvenance
+    )
+    {
+        if (operation == CdcManagedLifecycleOperation.Start)
+        {
+            (await Execute(CdcManagedLifecycleOperation.Stop)).TargetShutdownVerified.Should().BeTrue();
+        }
+        if (missingProvenance)
+        {
+            Directory.Delete(Path.Combine(_root, "workflows"), true);
+        }
+        int starts = 0;
+        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                starts++;
+                (_resumes + _restarts).Should().Be(0);
+                A.CallTo(() => _runtime.ObserveEstablishedDatabaseAsync(A<CancellationToken>._))
+                    .MustHaveHappened();
+            });
+
+        var result = await Execute(operation);
+
+        starts.Should().Be(missingProvenance ? 0 : 1);
+        result.Succeeded.Should().Be(!missingProvenance);
+        (_resumes + _restarts).Should().Be(missingProvenance ? 0 : 1);
+    }
+
     private void ReplaceWorker(string identity) =>
         _workerEvidence = new(
             identity,
@@ -693,12 +729,9 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
         _resumes.Should().Be(1);
         _restarts.Should().Be(0);
         _trace.IndexOf("offset").Should().BeLessThan(_trace.IndexOf("resume"));
-        _trace.Count(t => t == "start").Should().Be(operation == CdcManagedLifecycleOperation.Start ? 1 : 0);
-        if (operation == CdcManagedLifecycleOperation.Start)
-        {
-            _trace.IndexOf("start").Should().BeGreaterThan(_trace.IndexOf("offset"));
-            _trace.IndexOf("start").Should().BeLessThan(_trace.IndexOf("resume"));
-        }
+        _trace.Count(t => t == "start").Should().Be(1);
+        _trace.IndexOf("start").Should().BeGreaterThan(_trace.IndexOf("offset"));
+        _trace.IndexOf("start").Should().BeLessThan(_trace.IndexOf("resume"));
         _trace.IndexOf("metrics").Should().BeGreaterThan(_trace.IndexOf("resume"));
         ReadJournal().Operations.Last().Effect.Should().Be(CdcWorkflowEffect.ResumeConnector);
         ReadJournal().Operations.Last().Completions.Should().HaveCount(1);

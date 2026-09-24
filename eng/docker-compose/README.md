@@ -45,9 +45,12 @@ needs no manual step. Edit `.env` to customize — `.env.example` itself is
 documentation only and is never consumed at runtime.
 
 Kafka and Kafka UI compose files remain available for local infrastructure
-testing. The relational DMS CDC/Kafka design uses an explicit CDC opt-in for
-connector registration; until that implementation lands, this compose setup does
-not register DMS source connectors.
+testing. Managed relational connector registration is available through
+`-EnableKafkaCdc` on the local/published bootstrap wrappers. Start with the
+[CDC operator reference](../../reference/cdc-documentation/README.md) for PostgreSQL
+or SQL Server setup. Ordinary infrastructure startup does not register connectors;
+the [local bootstrap contract](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci)
+owns the opt-in boundary.
 
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
@@ -232,8 +235,10 @@ A few things are specific to the MSSQL path:
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
   `api-schema-tools ddl provision --dialect mssql --create-database`.
-* **No Debezium CDC.** The relational backend serves both writes and queries directly from
-  SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
+* **CDC is opt-in.** Use the [SQL Server CDC setup](../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+  for managed Debezium registration; ordinary SQL Server bootstrap does not enable it.
+  Projection and CDC prerequisites are distinct under the
+  [SQL Server provider contract](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server).
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
 * **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
@@ -586,23 +591,39 @@ is handled), so staging it needs no `-ClaimsDirectoryPath`. This applies to Data
 Standard 5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM
 into core.
 
-Bootstrap mode provisions the relational DMS schema only. Relational DMS
-CDC/Kafka connector registration is pending a separate implementation and should
-be controlled by an explicit CDC opt-in such as `-EnableKafkaCdc`; bootstrap
-startup does not register DMS source connectors today. The planned opt-in keeps
-immutable deployment-owned binding records under a separate persistent `.cdc-state`
-root (or an explicit `-CdcBindingStatePath`) and never stores them in the bootstrap
-manifest. Runtime DMS receives only explicit `DocumentCache:Targets` and exposes
-per-database projection health; deployment automation owns connector registration and
-combined CDC readiness.
+For managed CDC bootstrap, follow the repository-root
+[PostgreSQL](../../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+or [SQL Server](../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+procedure. Both require separate CMS topology, a dedicated new database, protected
+complete settings and an original managed state root. The
+[SchemaTools reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#bootstrap-cdc-handoff)
+owns command/configuration details; the
+[enablement owner](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
+defines writer admission. The manual schema-only flow above does not perform that admission.
 
-The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
+The shipped CLI profile is local single-worker/single-broker and reports
+`aclIsolationProven: false`. Other deployments require their own live authority adapters
+and evidence under the [topology](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup)
+and [security](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations)
+owners. Changing profile tokens does not install those capabilities.
+
+For an existing managed deployment, use [state preservation](../../reference/cdc-documentation/operations-runbook.md#deployment-state),
+[shutdown/startup](../../reference/cdc-documentation/operations-runbook.md#managed-lifecycle)
+and [destructive teardown](../../reference/cdc-documentation/operations-runbook.md#stack-teardown).
+Original controller roots, `.cdc-deployments` inventory and retained `.bootstrap/cdc-runtime`
+settings are governed by the [state-continuity contract](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
+Deleting a workspace is not a CDC recovery procedure.
+
+The DMS E2E setup wrappers use the `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
-file-based ApiSchema package content, and the wrappers clear any stale
-`.bootstrap/` workspace before startup to prevent bootstrap mode from activating
-unintentionally.
+file-based ApiSchema package content. The non-CDC path clears stale disposable bootstrap
+inputs before startup; managed CDC settings/history are retained. Use the
+[DMS E2E CDC variant](../../reference/cdc-documentation/operations-runbook.md#dms-e2e-setup)
+for its environment/schema/target selection and teardown requirements under the
+[local bootstrap contract](../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
+This does not add CDC support to the Instance Management E2E setup.
 
-If `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
+For a non-CDC workspace, if `prepare-dms-schema.ps1` or `prepare-dms-claims.ps1` fail with a
 fingerprint-mismatch teardown-guidance error after a branch switch or input
 change, recover by running `./bootstrap-local-dms.ps1 -d -v` (which removes the
 local `.bootstrap/` workspace by delegating to
@@ -620,18 +641,20 @@ the `.bootstrap/` workspace are shared with the published-image flow
 (`bootstrap-published-dms.ps1`), so if the running stack is `dms-published`,
 recover with `./start-published-dms.ps1 -d -v -RemoveBootstrap` plus the same
 compose-shaping options you started with (e.g. `-IdentityProvider keycloak`,
-`-EnableKafka`, `-EnableSwaggerUI`); the published wrapper itself has no
-teardown flags. Running the `dms-local` recovery instead would leave the
+`-EnableKafka`, `-EnableSwaggerUI`). The published bootstrap wrapper also accepts
+`-d -v` for the options it supports. Running the `dms-local` recovery instead would leave the
 published stack up while deleting the workspace its containers bind-mount.
 
 > **Note on `-RemoveBootstrap`:** `./bootstrap-local-dms.ps1 -d -v` removes the
-> `.bootstrap/` workspace for you — it delegates to
+> disposable `.bootstrap/` inputs for you — it delegates to
 > `start-local-dms.ps1 -d -v -RemoveBootstrap`. Invoking the start scripts
 > directly is different: by default `./start-local-dms.ps1 -d -v` and
 > `./start-published-dms.ps1 -d -v` do **not** delete the `.bootstrap/`
-> workspace. Pass `-RemoveBootstrap` explicitly when you want the workspace
-> wiped (e.g. after a branch switch). The E2E teardown wrappers always remove
-> it unconditionally.
+> workspace. Pass `-RemoveBootstrap` explicitly for disposable non-CDC inputs
+> (e.g. after a branch switch). Managed CDC teardown preserves source history,
+> custom settings and protected nested roots; eligible inventoried generated settings
+> can be removed through the [governed teardown procedure](../../reference/cdc-documentation/operations-runbook.md#stack-teardown).
+> Neither this switch nor E2E teardown authorizes recursive removal of protected state.
 
 ## IDE Debugging Workflow
 

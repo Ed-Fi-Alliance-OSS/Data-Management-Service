@@ -1,0 +1,53 @@
+{
+  "Task": "T27",
+  "Provider": "Postgresql",
+  "Date": "2026-09-23",
+  "BaseRevision": "1ec6d94c0c3f8851ef738853605b1fac3856c011",
+  "SourceSha256": {
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.cs": "51a21dc51ddb9db249995afa884372b468527a6f75d411621fea6cb5771684d7",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.Runbook.cs": "c18a43b65abda67e208dc81a4ef40dfd143a95b67c49668c01408b8952fb01b4",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRunbookLiveCommands.cs": "17219c291cf0a6fe91decd8ad3028c7201aa74eca36c7c85a2b8c321f58e3f2a",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTelemetryTests.cs": "b9674d18e5c786be828958da17ca3627190ca891cbbea53c4cf03c5bfad95b87",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcNativeRecoveryTests.cs": "a4abe175ef20c14e2c000fccc6f56c251421c9f6c79299ae3656a883d6e97f60",
+    "eng/ci/Invoke-CdcQualification.ps1": "7ed213320309027cdeb1b34603de75798d38cf069464e4b3a8998696d1998e7e",
+    "eng/ci/cdc-qualification.psm1": "8a9656317ef87b7a2020446d29012c6802f7d6e59a4a9704efac2ea99ab3bc0b",
+    "eng/ci/tests/CdcQualification.Tests.ps1": "ecd0679c8120aedc63502d0c892944ae6bc79eba6c1356621daa45f3b45ab839"
+  },
+  "SnippetSha256": {
+    "cdc-telemetry-inspect": "9a1644ea367391d7ac82e7b5b9ffb0c8298d04d655ca192d903a59c95e25edb1",
+    "cdc-pg-retention-inspect": "67cdfbe464d0bbb80c608ab55f54163a636a7cdb58afab7fa3923fde7ddf5153",
+    "cdc-provider-disk-inspect": "0aba00ed46858df7c97b8212caf0ff220b2f21429fc7461674e24239aefde7b1"
+  },
+  "RuntimeVersions": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.4.10",
+    "Pester": "5.7.1",
+    "Curl": "8.5.0",
+    "Psql": "18.6"
+  },
+  "Command": "pwsh eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite Telemetry -ResultsDirectory TestResults/cdc-docs-postgresql-telemetry-t27-20260923-02",
+  "Discovery": "VSTest --list-tests lists the assembly catalog despite --filter. Both required IDs were discovered; the executed TRX and required-method guard prove the selected provider cases.",
+  "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "ImageReferences": {
+    "Provider": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "Broker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "Worker": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "FixtureSubstitutions": [
+    "Actual fixture metrics URI and private raw metrics path; negative endpoint uses nonexistent route on the same fixture Connect REST service",
+    "Private libpq service/passfile for the original fixture database and fixture administrator; no minimum monitoring-role permission claim",
+    "Original provider-setup managed slot, nonexistent slot and nonexistent service for two distinct unavailable branches",
+    "Owned PostgreSQL container data and pg_wal paths, then nonexistent WAL path for partial disk-observation failure",
+    "All query text, timeouts and curl response-size bound unchanged"
+  ],
+  "Scope": "11 exact marked inspection invocations. Existing real heartbeat and committed-source progress assertions run before each of two bounded slot samples; no raw positions exported. Existing exporter adapter assertions correlate worker/task identity and new process measurements. No production pressure injection, consumer correctness, ACL isolation, API messages, source-history recovery, queue benchmarking, or minimum monitoring privileges claim.",
+  "Validation": {
+    "PesterPassed": 100,
+    "TelemetryAndRecoveryUnitPassed": 264,
+    "SchemaToolsCdcUnitPassed": 819,
+    "MetricContractPassed": 5,
+    "ScriptAnalyzerErrors": 0,
+    "DiffWhitespace": "Passed"
+  }
+}

@@ -3,11 +3,14 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+#Requires -Version 7.5
+
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Variables supply the dynamic scope of executable primitive blocks extracted from the scripts under test.')]
 param()
 
 Describe 'Managed CDC deployment lifecycle ordering' {
     BeforeAll {
+        . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
         $script:root = Join-Path $TestDrive 'compose'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
@@ -663,8 +666,11 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         (Read-TestDeployment).Phase | Should -Be 'Active'
     }
 
-    It 'stops and verifies both connectors before worker shutdown while retaining custom roots' {
-        Invoke-TestLifecycle @{ d = $true }
+    It 'CDC-DOC cdc-managed-stop' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-managed-stop' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
+        Invoke-TestLifecycle $documented
         $script:trace | Should -Be @('stop:42', 'stop:43', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'stop-worker')
         $deployment = Read-TestDeployment
         $deployment.Phase | Should -Be 'Stopped'
@@ -687,10 +693,13 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         { Invoke-TestLifecycle @{ d = $true } } | Should -Throw '*inventory*'
         $script:trace | Should -Not -Contain 'stop-worker'
     }
-    It 'starts REST with all retained connectors stopped before individual guarded resume and DMS' {
+    It 'CDC-DOC cdc-managed-start' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-managed-start' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
         Invoke-TestLifecycle @{ d = $true }
         $script:trace.Clear()
-        Invoke-TestLifecycle @{}
+        Invoke-TestLifecycle $documented
         $script:trace | Should -Be @('infra', 'start-worker:42', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'start:42', 'start:43', 'dms')
         (Read-TestDeployment).Phase | Should -Be 'Active'
         $merged = Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.dms.json') -Raw | ConvertFrom-Json -AsHashtable
@@ -930,11 +939,14 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             $commands[1] | Should -Match "-p dms-$flavor up --detach --remove-orphans$"
         }
     }
-    It 'never resumes or starts DMS if worker restart lost STOPPED state' {
+    It 'CDC-DOC cdc-managed-start-rejected' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-managed-start' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
         Invoke-TestLifecycle @{ d = $true }
         $script:trace.Clear()
         $script:badStatus = $true
-        { Invoke-TestLifecycle @{} } | Should -Throw '*not currently verified*'
+        { Invoke-TestLifecycle $documented } | Should -Throw '*not currently verified*'
         $script:trace | Should -Not -Contain 'start:42'
         $script:trace | Should -Not -Contain 'dms'
         (Read-TestDeployment).Phase | Should -Be 'Transition'
@@ -983,14 +995,17 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         $script:trace | Should -Not -Contain 'down-volumes'
         (Read-TestDeployment).Phase | Should -Be 'Retiring'
     }
-    It 'retains partial cleanup and retries controller retirement before volume deletion' {
+    It 'CDC-DOC cdc-stack-teardown' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-stack-teardown' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
         $script:failure = 'retire:43'
-        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+        { Invoke-TestLifecycle $documented } | Should -Throw
         $script:trace | Should -Not -Contain 'down-volumes'
         (Read-TestDeployment).Phase | Should -Be 'Retiring'
         $script:failure = ''
         $script:trace.Clear()
-        Invoke-TestLifecycle @{ d = $true; v = $true }
+        Invoke-TestLifecycle $documented
         $script:trace | Should -Be @('retire:42', 'retire:43', 'rest:connectors', 'down-volumes')
     }
     It 'restores stopped infrastructure without resuming before destructive cleanup' {

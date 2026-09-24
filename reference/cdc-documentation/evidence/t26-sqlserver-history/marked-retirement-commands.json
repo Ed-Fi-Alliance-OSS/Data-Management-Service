@@ -1,0 +1,416 @@
+[
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "SnippetId": "cdc-retire",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "retire",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "succeeded": true,
+        "operationId": "37e1b2f5-b377-48f6-96d3-3236a8ba2fa9",
+        "diagnostics": []
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "SqlServer",
+        "physicalSourceFingerprint": "sha256:8c8812b41559358edaf0fab2fa51d599d517ce6b1284527dad51c47dd586a274",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "SnippetId": "cdc-retire",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "retire",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "succeeded": true,
+        "operationId": "37e1b2f5-b377-48f6-96d3-3236a8ba2fa9",
+        "diagnostics": []
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "SqlServer",
+        "physicalSourceFingerprint": "sha256:8c8812b41559358edaf0fab2fa51d599d517ce6b1284527dad51c47dd586a274",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "SnippetId": "cdc-retire",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 2,
+    "Result": {
+      "operation": "retire",
+      "succeeded": false,
+      "exitCode": 2,
+      "diagnostics": [
+        {
+          "component": "Request",
+          "failure": "InvalidInput",
+          "message": "Deployment input is invalid."
+        }
+      ]
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "SnippetId": "cdc-restamp-handoff-status",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "status",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "Projection",
+          "failure": "Unavailable",
+          "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+        }
+      ],
+      "data": {
+        "aggregate": {
+          "contractVersion": 1,
+          "observedAt": "2026-09-23T08:06:58.4255072-05:00",
+          "readiness": "NotReady",
+          "primaryBlockingCategory": "StatusObservationUnavailable",
+          "targets": [
+            {
+              "targetIdentity": {
+                "deploymentKey": "dms",
+                "tenantKey": "default",
+                "dataStoreId": "1",
+                "instanceKey": "admission",
+                "generation": 1,
+                "provider": "SqlServer"
+              },
+              "readiness": "NotReady",
+              "primaryBlockingCategory": "StatusObservationUnavailable",
+              "binding": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:45.05857-05:00"
+              },
+              "projection": {
+                "state": "Unknown",
+                "category": "StatusObservationUnavailable",
+                "observedAt": "2026-09-23T08:06:54.8540884-05:00",
+                "message": "projection status unavailable"
+              },
+              "providerSetup": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:51.7051696-05:00"
+              },
+              "providerBarrier": {
+                "state": "NotApplicable",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:58.4208709-05:00",
+                "message": "Initial barrier is not renewed by status."
+              },
+              "sourceHistory": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:51.8076153-05:00",
+                "continuity": "Healthy",
+                "incidentLatched": false
+              },
+              "kafkaPolicy": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:54.734606-05:00"
+              },
+              "connectOffsetStore": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:54.734606-05:00"
+              },
+              "connectorConfig": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:53.9754811-05:00"
+              },
+              "connectorRuntime": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:58.4003514-05:00"
+              },
+              "lag": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:56.0872546-05:00"
+              },
+              "diagnostics": [
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "KafkaPolicy",
+                  "observedAt": "2026-09-23T08:06:54.734606-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T08:06:54.734606-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                }
+              ]
+            }
+          ]
+        },
+        "targets": [
+          {
+            "observedAt": "2026-09-23T08:06:58.4208709-05:00",
+            "status": {
+              "targetIdentity": {
+                "deploymentKey": "dms",
+                "tenantKey": "default",
+                "dataStoreId": "1",
+                "instanceKey": "admission",
+                "generation": 1,
+                "provider": "SqlServer"
+              },
+              "readiness": "NotReady",
+              "primaryBlockingCategory": "StatusObservationUnavailable",
+              "binding": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:45.05857-05:00"
+              },
+              "projection": {
+                "state": "Unknown",
+                "category": "StatusObservationUnavailable",
+                "observedAt": "2026-09-23T08:06:54.8540884-05:00",
+                "message": "projection status unavailable"
+              },
+              "providerSetup": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:51.7051696-05:00"
+              },
+              "providerBarrier": {
+                "state": "NotApplicable",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:58.4208709-05:00",
+                "message": "Initial barrier is not renewed by status."
+              },
+              "sourceHistory": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:51.8076153-05:00",
+                "continuity": "Healthy",
+                "incidentLatched": false
+              },
+              "kafkaPolicy": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:54.734606-05:00"
+              },
+              "connectOffsetStore": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:54.734606-05:00"
+              },
+              "connectorConfig": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:53.9754811-05:00"
+              },
+              "connectorRuntime": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:58.4003514-05:00"
+              },
+              "lag": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T08:06:56.0872546-05:00"
+              },
+              "diagnostics": [
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "KafkaPolicy",
+                  "observedAt": "2026-09-23T08:06:54.734606-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T08:06:54.734606-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                }
+              ]
+            },
+            "details": {
+              "queuePresence": "Empty",
+              "lagMilliseconds": 994,
+              "lagThresholdMilliseconds": 5000,
+              "providerArtifactState": "ExactMatch",
+              "retainedRangeState": "CoversCommittedOffset",
+              "schemaHistoryState": "Valid"
+            },
+            "hasPendingRecordSizeIncrease": false,
+            "hasSharedOffsetStoreIssue": false,
+            "incidentPersistence": "NotRequired",
+            "containment": "NotRequired",
+            "diagnostics": [
+              {
+                "component": "Projection",
+                "failure": "Unavailable",
+                "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+              }
+            ],
+            "recovery": {
+              "boundary": "Unobserved",
+              "requiresFreshPass": false,
+              "unobservedIntervalCertified": false,
+              "explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+            }
+          }
+        ]
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "SqlServer",
+        "physicalSourceFingerprint": "sha256:8c8812b41559358edaf0fab2fa51d599d517ce6b1284527dad51c47dd586a274",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "SnippetId": "cdc-disclosure-containment-result",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "stop",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "operation": "Stop",
+        "succeeded": true,
+        "targetShutdownVerified": true,
+        "ready": false,
+        "boundary": "VerifiedManagedStop",
+        "diagnostics": [],
+        "recovery": {
+          "boundary": "VerifiedManagedStop",
+          "requiresFreshPass": false,
+          "unobservedIntervalCertified": false,
+          "explanation": "Managed shutdown receipt and retained STOPPED/no-task state were observed. This does not certify current state or an unobserved interval."
+        }
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "SqlServer",
+        "physicalSourceFingerprint": "sha256:8c8812b41559358edaf0fab2fa51d599d517ce6b1284527dad51c47dd586a274",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "SnippetId": "cdc-retire",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": false,
+    "ExitCode": 2,
+    "Result": {
+      "operation": "retire",
+      "succeeded": false,
+      "exitCode": 2,
+      "diagnostics": [
+        {
+          "component": "Request",
+          "failure": "InvalidInput",
+          "message": "Deployment input is invalid."
+        }
+      ]
+    },
+    "Passes": []
+  }
+]

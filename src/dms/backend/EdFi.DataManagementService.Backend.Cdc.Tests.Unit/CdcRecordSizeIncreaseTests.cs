@@ -169,6 +169,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         ResetIncrease();
         _trace.Clear();
         Fake.ClearRecordedCalls(_connect);
+        Fake.ClearRecordedCalls(_runtime);
     }
 
     private void ResetIncrease()
@@ -862,6 +863,54 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             {
                 deadline.Cancel();
             }
+        }
+    }
+
+    [TestCase("eligible")]
+    [TestCase("missing-confirmation")]
+    [TestCase("missing-provenance")]
+    [TestCase("start-failure")]
+    public async Task It_starts_projection_after_confirmed_alignment_before_resume(string scenario)
+    {
+        if (scenario == "missing-confirmation")
+        {
+            _confirmChange = c => c with { CompleteInventoryAndCapacityConfirmed = false };
+        }
+        if (scenario == "missing-provenance")
+        {
+            Directory.Delete(Path.Combine(_root, "workflows"), true);
+        }
+        int starts = 0;
+        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                starts++;
+                _brokerLimit.Should().Be(Ceiling);
+                _topicLimit.Should().Be(Ceiling);
+                _live["producer.override.max.request.size"]
+                    .Should()
+                    .Be(Ceiling.ToString(CultureInfo.InvariantCulture));
+                _stopped.Should().BeTrue();
+                _effects.Should().NotContain("resume-before");
+                var pending = ReadJournal().Operations.Single(o => o.OperationId == _scope.OperationId);
+                pending.RecordSizeIncrease.Single().Acknowledgements.Should().HaveCount(1);
+                pending.Completions.Should().BeEmpty();
+                if (scenario == "start-failure")
+                {
+                    throw new InvalidOperationException("fixture projection start failure");
+                }
+            });
+        var result = await Execute();
+        starts.Should().Be(scenario is "eligible" or "start-failure" ? 1 : 0);
+        result.Succeeded.Should().Be(scenario == "eligible");
+        if (scenario != "eligible")
+        {
+            _effects.Should().NotContain("resume-before");
+        }
+        if (scenario == "start-failure")
+        {
+            ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+            result.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Projection);
         }
     }
 
@@ -1825,7 +1874,10 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             .MustNotHaveHappened();
         A.CallTo(() => _connect.DeleteAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._)).MustNotHaveHappened();
+        Fake.GetCalls(_runtime)
+            .Should()
+            .NotContain(c => c.Method.Name == nameof(ICdcProjectionRuntime.ActivateAsync));
+        _disposals.Should().Be(0);
         _posts.Should().Be(1);
     }
 }

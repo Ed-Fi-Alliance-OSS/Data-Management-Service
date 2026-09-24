@@ -1,0 +1,130 @@
+{
+  "History": [
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"wrong-source\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"wrong-target\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"empty-root\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins(\"activate-offline\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"corrupt-journal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"missing-receipt\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"wrong-deployment\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_preserves_historical_rejection_after_retiring_possible_exposure_with_a_surviving_source",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins(\"recover-cache-ahead\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early(\"recover-cache-ahead\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"active\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_holds_the_controller_lock_through_E18_mutation_when_administration_wins(\"deactivate-offline\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"unreadable\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early(\"deactivate-offline\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early(\"activate-offline\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"missing-journal\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"absent-root\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"possible\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"historical\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime(False)",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"missing-history\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime(True)",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"corrupt-history\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_untrusted_or_exposed_history_without_any_mutation(\"unknown\")",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_allows_all_three_commands_from_managed_non_CDC_creation",
+      "Outcome": "Passed"
+    }
+  ],
+  "Cleanup": [
+    {
+      "Test": "It_removes_provider_artifacts_and_only_owned_unused_database_jobs",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_keeps_shared_provider_artifacts_and_rejects_unsafe_deletion",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_reconciles_actual_committed_deletion_after_lost_response",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_a_different_live_physical_source",
+      "Outcome": "Passed"
+    },
+    {
+      "Test": "It_rejects_broad_or_orphaned_provider_artifacts",
+      "Outcome": "Passed"
+    }
+  ]
+}

@@ -15,11 +15,11 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 /// <summary>
 /// Runs the shipped command host in a separate process with a controlled controller boundary, plus
 /// the production executable's parser, configuration and cancellation paths. Setting the directory
-/// selects dotnet publish output; absence uses build output. No help or documentation assertions.
+/// selects dotnet publish output; absence uses build output. Marked documentation examples reuse this harness in CdcRunbookPackagedTests.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
-public class Given_Cdc_packaged_command
+public partial class Given_Cdc_packaged_command
 {
     private string _directory = null!;
     private string _driver = null!;
@@ -231,6 +231,7 @@ public class Given_Cdc_packaged_command
         using System;
         using System.IO;
         using System.Linq;
+        using System.Text.Json;
         using System.Threading;
         using System.Threading.Tasks;
         using EdFi.DataManagementService.Backend.Cdc;
@@ -244,6 +245,18 @@ public class Given_Cdc_packaged_command
                 {
                     if (mode == "failure") throw new InvalidOperationException("packaged-secret-sentinel");
                     if (mode == "cancel") throw new OperationCanceledException("packaged-secret-sentinel");
+                    if (mode.StartsWith("example:"))
+                    {
+                        var result = JsonSerializer.Deserialize<CdcCommandResult>(File.ReadAllText(mode.Substring(8)), CdcCommandHost.JsonOptions);
+                        if (invocation.Operation == CdcCommandOperation.Watch)
+                        {
+                            for (int pass = 0; pass < invocation.MaximumPasses; pass++)
+                            {
+                                progress.WriteLine(JsonSerializer.Serialize(result.Data, CdcCommandHost.JsonOptions));
+                            }
+                        }
+                        return Task.FromResult(result);
+                    }
                     progress.WriteLine("controller completed");
                     return Task.FromResult(new CdcCommandResult("stop", true, 0, Array.Empty<CdcDeploymentDiagnostic>()));
                 }

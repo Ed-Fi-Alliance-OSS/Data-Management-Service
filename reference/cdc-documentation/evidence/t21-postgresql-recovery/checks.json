@@ -1,0 +1,2352 @@
+[
+  {
+    "Layer": "Command/runbook unit fixtures",
+    "Passed": 497,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-size-increase\",\"--confirm-consumer-capacity\",\"\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Start,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy(\"[owner](operations-runbook.md#missing-cdc-anchor)\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"unknown\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"ready\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Resume,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Resume,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-size-retry\",IncreaseRecordSize,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"backlog\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Resume,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_handles_repeated_headings_explicit_anchors_and_ignores_fenced_examples",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Watch,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-watch\",Watch,3)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value(\"retire\",\"cdc-retire\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_missing_or_duplicate_selected_markers(\"duplicate\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"provider\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"failed-shutdown\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_loads_complete_provider_settings_and_renders_the_connector",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Watch,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "[redacted]",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(StartWorker,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"configuration-unavailable\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-validate\",\"cdc validate\",\"cdc adopt\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"source-mismatch\",\"cdc-provenance-rejection\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes(\"failure\",1,\"cdc-output-failure\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-size-increase\",IncreaseRecordSize,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"unknown\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-watch\",\"--maximum-passes 3\",\"--maximum-passes 10001\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(StartWorker,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Restart,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-validate\",\"cdc validate\",\"cdc replace-source\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Validate,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Status,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-restamp-handoff-status\",Status,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_requires_unique_paired_ids_across_the_operator_reference_set",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Enable,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-status\",Status,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_mutated_copy_of_the_marked_result(\"field\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-validate\",Validate,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-incomplete-shutdown-status\",Status,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"configuration-unavailable\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"failed-shutdown\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"eng/docker-compose/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"confirmation\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Watch,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_anchor_in_a_copied_operator_document",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-status\",\"--settings '<retained-settings-path>'\",\"\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-native-recovery-watch\",Watch,3)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"field\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_mutated_copy_of_the_marked_result(\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"unavailable\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-pg-watch\",Watch,20)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Validate,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_operation_scoped_results(\"stop\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Validate,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value(\"stop\",\"cdc-disclosure-containment-result\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Status,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes(\"cancel\",130,\"cdc-output-cancelled\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(StartWorker,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/tests/RestClient/local-development-setup.http\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"uncertain-stop\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Start,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Start,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"missing-state\",\"cdc-provenance-rejection\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Start,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-retire\",\"'<binding-generation>'\",\"0\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "[redacted]",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Restart,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-enable-retry\",Enable,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"scope\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_missing_or_duplicate_selected_markers(\"missing-end\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Restart,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-intact-resume\",Resume,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"terminal\",\"cdc-intact-restart\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Resume,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/RELATIONAL-BACKEND.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_missing_or_duplicate_selected_markers(\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Status,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"source-mismatch\",\"cdc-provenance-rejection\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-status\",\"--state-path '<original-state-root>'\",\"--state-paht '<original-state-root>'\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-topic-policy-inspect\",Status,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-intact-restart\",Restart,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/operations-runbook.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-provenance-rejection\",Validate,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Status,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Validate,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_mutated_copy_of_the_marked_result(\"value\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"unavailable\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-pg-status\",Status,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "[redacted]",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"ready\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy(\"[owner](missing-cdc-document.md)\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-disclosure-containment-result\",Stop,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(StartWorker,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"provider\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Enable,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Enable,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Restart,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-load\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_operation_scoped_results(\"retire\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Enable,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"scope\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-load\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_returns_terminal_containment_after_the_command_deadline_but_honors_caller_cancellation(Watch,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/CONFIGURATION.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_broken_copied_settings_despite_ambient_overrides(\"field\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"terminal\",\"cdc-intact-restart\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"runtime-schema\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"cms\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"target\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"runtime-schema\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-retire\",\"--destructive-cleanup\",\"\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy_before_dispatch(\"cdc-size-retry\",\"--acknowledgement '<acknowledgement-path>'\",\"\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "[redacted]",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"schema-result\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_reads_the_marked_no_consumers_acknowledgement(\"confirmation\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/cdc-inv-evidence.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-retire\",Retire,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Start,\"runtime-schema\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-sqlserver-watch\",Watch,20)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-result\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-incomplete\",\"missing\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"ddl-inventory\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/document-cache-documentation/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"provider-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/document-cache-documentation/operations-runbook.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Stop,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-incomplete\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_matches_status_excerpts_and_optional_fields_from_the_controller(\"backlog\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_rejects_unsupported_recovery_using_original_controller_evidence(\"missing-state\",\"cdc-provenance-rejection\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"unreadable\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_the_marked_command_and_exposes_its_options_in_help(\"cdc-sqlserver-status\",Status,1)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"terminal\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Restart,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"source-missing\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"membership\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"schema-load\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Resume,\"target\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"source-missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Status,\"ddl-inventory\",True,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"uncertain-stop\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(Watch,\"cms\",False,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"cms\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"target\",False,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"missing\",\"partition-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"corrupt\",\"topic-mismatch\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Watch,\"unreadable\",\"no-incident\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes(\"invalid\",2,\"cdc-output-invalid\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_dispatches_containment_and_stop_before_fallible_preparation(IncreaseRecordSize,\"schema-result\",True,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_contains_retained_incidents_through_the_request_builder_despite_journal_failure(Status,\"corrupt\",\"target-mismatch\")",
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Layer": "Recovery/containment unit fixtures",
+    "Passed": 66,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "Test": "It_carries_recovery_across_watch_yields_with_fresh_metrics_and_no_mutations",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"config\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_retains_and_contains_terminal_history_after_worker_recovery",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"status\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_tracks_standalone_validation_without_reusing_its_previous_readiness",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_tracks_standalone_validation_without_reusing_its_previous_readiness",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_routes_incomplete_or_legacy_shutdown_to_native_recovery(StopConnector,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"brokers\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_reports_failed_latch_and_still_attempts_containment(True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"status\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"offset\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_a_recovered_pass_then_recollects_every_component(False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_detects_task_failure_and_native_recovery_on_the_same_worker",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_telemetry_on_recovery_inside_a_pass(\"metrics\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rereads_durable_provenance_after_recovery(\"workflows\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_reports_failed_latch_and_still_attempts_containment(False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_routes_incomplete_or_legacy_shutdown_to_native_recovery(StopConnector,True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_marks_stopped_state_without_a_shutdown_receipt_as_unverified",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_detects_task_failure_and_native_recovery_on_the_same_worker",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_marks_stopped_state_without_a_shutdown_receipt_as_unverified",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"metrics\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_telemetry_on_recovery_inside_a_pass(\"metrics\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"status\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"worker\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_telemetry_on_recovery_inside_a_pass(\"projection-1\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"offset\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"status\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_repeats_initial_admission_and_barrier_after_observed_offline_recovery",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"offset\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_requires_a_fresh_pass_before_controller_recovery_mutation(Restart)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"worker\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_a_recovered_pass_then_recollects_every_component(True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_foreign_task_assignment_and_requires_a_fresh_pass_after_return",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"worker\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_retains_and_contains_terminal_history_after_worker_recovery",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_telemetry_on_recovery_inside_a_pass(\"projection-1\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_routes_incomplete_or_legacy_shutdown_to_native_recovery(ResumeConnector,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_a_recovered_pass_then_recollects_every_component(False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"worker\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"provider\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"config\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"offset\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_distinguishes_verified_managed_worker_restart_from_native_recovery",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_foreign_task_assignment_and_requires_a_fresh_pass_after_return",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_reports_failed_latch_and_still_attempts_containment(True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rereads_durable_provenance_after_recovery(\"source-history\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_reports_failed_latch_and_still_attempts_containment(False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rereads_durable_provenance_after_recovery(\"workflows\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_routes_incomplete_or_legacy_shutdown_to_native_recovery(ResumeConnector,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_treats_native_running_state_after_a_verified_stop_as_managed_startup",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"provider\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_invalidates_a_recovered_pass_then_recollects_every_component(True)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_requires_a_fresh_pass_before_controller_recovery_mutation(Resume)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"provider\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_distinguishes_verified_managed_worker_restart_from_native_recovery",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_requires_a_fresh_pass_before_controller_recovery_mutation(Resume)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_keeps_unknown_recovery_evidence_not_ready(\"metrics\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"provider\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_resumes_native_recovery_with_unknown_prestart_evidence(\"brokers\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_requires_a_fresh_pass_before_controller_recovery_mutation(Restart)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_never_treats_native_running_state_after_a_verified_stop_as_managed_startup",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_routes_incomplete_or_legacy_shutdown_to_native_recovery(StopConnector,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_carries_recovery_across_watch_yields_with_fresh_metrics_and_no_mutations",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_repeats_initial_admission_and_barrier_after_observed_offline_recovery",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_routes_incomplete_or_legacy_shutdown_to_native_recovery(StopConnector,False)",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rereads_durable_provenance_after_recovery(\"source-history\")",
+        "Outcome": "Passed"
+      }
+    ]
+  },
+  {
+    "Layer": "Pester qualification guards",
+    "Passed": 78,
+    "Failed": 0,
+    "Skipped": 0
+  },
+  {
+    "Layer": "Final relative links/anchors, including qualification guide",
+    "Passed": 17,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/document-cache-documentation/operations-runbook.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/CONFIGURATION.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_handles_repeated_headings_explicit_anchors_and_ignores_fenced_examples",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/document-cache-documentation/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_anchor_in_a_copied_operator_document",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"eng/docker-compose/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy(\"[owner](operations-runbook.md#missing-cdc-anchor)\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/tests/RestClient/local-development-setup.http\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_rejects_a_broken_copy(\"[owner](missing-cdc-document.md)\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/CDC-QUALIFICATION.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/cdc-inv-evidence.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"reference/cdc-documentation/operations-runbook.md\")",
+        "Outcome": "Passed"
+      },
+      {
+        "Test": "It_resolves_relative_links_and_explicit_or_generated_anchors(\"docs/RELATIONAL-BACKEND.md\")",
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

@@ -1,0 +1,631 @@
+{
+  "task": "T29",
+  "date": "2026-09-22",
+  "baseRevision": "a8cd97c9668d807887a7d4f6ff8c5a6f36b3f8dc",
+  "implementationRevision": "The commit containing this artifact; source SHA-256 values below identify the tested implementation and fixtures.",
+  "scope": "Runtime provider/controller prerequisite; exact public runbook snippets remain pending T03/T17.",
+  "profile": {
+    "provider": "SQL Server 2025",
+    "controller": "local single-worker single-broker",
+    "aclIsolationProven": false,
+    "faultOwnership": "fixture-owned disposable resources"
+  },
+  "images": {
+    "connect": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "sqlserver": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+    "brokerResolved": "apache/kafka@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f"
+  },
+  "selection": {
+    "admission": "Category=CdcControllerAdmission&Category=MssqlIntegration with the eight recorded focused cases",
+    "provider": "FullyQualifiedName~Given_MssqlCdcProviderAccessRetry",
+    "runnerReuse": "Existing Mssql Admission category selection and eng/ci/cdc-qualification.psm1 report/export functions; direct focused dotnet test invocations, no new lane."
+  },
+  "sourceSha256": {
+    "eng/docker-compose/tests/CdcBootstrapWorkflow.Tests.ps1": "7bf117ac51c277c4d000cf07d3d27cbbd9206aaa2fc5ee62bd0411adf9cc35df",
+    "eng/docker-compose/tests/CdcE2EWorkflow.Tests.ps1": "784f0a4f1e76c91b03a1e11dd621e137afc795a8c19811a2bcc796cb524fab3f",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcMssqlAdmissionTests.cs": "647f9ccf50cc354411819e4a2eefd597a64bcea66e056c52a36efbffd6ef4118",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcProviderAdmissionFixture.cs": "2e5017dcfa5dd6b0753c0e885b2832a95463ce2f12b0148f4de6df6dc22dc724",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs": "890f80d562eb3db52bbc44703e0a71e8262947ea54356b3d0eb1624ed204d200",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CdcSqlServerHeartbeatDatabaseProvider.cs": "989f5d81f370d84477d52efae6c0ca62a8cb0fab27eede4f6db9db20ef2eba00",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCdcProviderAccessRetryTests.cs": "4b5978eb0162081d6fb52d2e9ddae695654e238614c9218df8d5be859c7b0c10"
+  },
+  "runs": [
+    {
+      "run": "mapping-final",
+      "Status": "Failed",
+      "Total": 7,
+      "Passed": 6,
+      "Failed": 1,
+      "Skipped": 0
+    },
+    {
+      "run": "retained-retry",
+      "Status": "Passed",
+      "Total": 1,
+      "Passed": 1,
+      "Failed": 0,
+      "Skipped": 0
+    },
+    {
+      "run": "elevated-final",
+      "Status": "Passed",
+      "Total": 1,
+      "Passed": 1,
+      "Failed": 0,
+      "Skipped": 0
+    },
+    {
+      "run": "provider",
+      "Status": "Failed",
+      "Total": 29,
+      "Passed": 28,
+      "Failed": 1,
+      "Skipped": 0
+    },
+    {
+      "run": "provider-corrected",
+      "Status": "Passed",
+      "Total": 1,
+      "Passed": 1,
+      "Failed": 0,
+      "Skipped": 0
+    }
+  ],
+  "corrections": [
+    "An earlier live attempt found an invalid HAS_PERMS_BY_NAME server-class argument. Corrected to NULL/NULL before every retained successful live case.",
+    "mapping-final has one failed elevated-login injection: server permission GRANT requires master. elevated-final reran that exact case after adding USE master; passed.",
+    "provider has one failed elevated-user injection after switching its fixture to login-only preparation. provider-corrected reran that exact case with an explicit pre-existing elevated user; passed. No production failure was suppressed."
+  ],
+  "finalCounts": {
+    "admission": {
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    "provider": {
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "checks": [
+    {
+      "selection": "Ddl: FullyQualifiedName~MssqlCdc|FullyQualifiedName~CdcProviderRetry",
+      "passed": 82,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "Ddl: FullyQualifiedName~CdcWorkTableExclusion",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "Cdc: FullyQualifiedName~CdcProviderSetupOrchestration",
+      "passed": 68,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "SchemaTools: FullyQualifiedName~Given_Cdc_command_enable_retry",
+      "passed": 86,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "CdcBootstrapWorkflow.Tests.ps1 + CdcE2EWorkflow.Tests.ps1; PowerShell 7.6.6",
+      "passed": 131,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "admissionCases": [
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_never_repairs_connector_mapping_after_durable_provider_completion(False)",
+      "outcome": "Passed",
+      "testId": "cf4dba74-b111-6b78-e7f5-719340722a54",
+      "run": "mapping-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"elevated-login\",\"CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED\")",
+      "outcome": "Passed",
+      "testId": "57217cf9-f826-20a8-74cd-e46db9febc4b",
+      "run": "elevated-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"absent-login\",\"CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING\")",
+      "outcome": "Passed",
+      "testId": "7d7d43ab-2fd1-8083-4d9d-93e628322c74",
+      "run": "mapping-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag",
+      "outcome": "Passed",
+      "testId": "2fb2932d-d94c-ae1c-b800-c5c7165f87bf",
+      "run": "mapping-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"conflicting-sid\",\"CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH\")",
+      "outcome": "Passed",
+      "testId": "b097863a-273b-b1c2-a32c-b2ece96b52ec",
+      "run": "mapping-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"unsupported-user\",\"CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH\")",
+      "outcome": "Passed",
+      "testId": "5ba49225-df83-0ff6-33da-ca3d82adc307",
+      "run": "mapping-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_never_repairs_connector_mapping_after_durable_provider_completion(True)",
+      "outcome": "Passed",
+      "testId": "d703496c-2f79-27b0-6969-f5dc6f6a1511",
+      "run": "mapping-final"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.Given_SqlServer_Controller_Admission",
+      "case": "It_reconciles_exact_capture_after_lost_provider_evidence_without_repair",
+      "outcome": "Passed",
+      "testId": "e7a150cd-18f7-e440-65e3-fbd01aa5a7a2",
+      "run": "retained-retry"
+    }
+  ],
+  "providerCases": [
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_create_connector_access_and_pass_live_boundary_probe_on_initial_setup",
+      "outcome": "Passed",
+      "testId": "f998a4b5-e8e9-9c4a-c4d5-78b943b47737",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_when_public_broad_select_reaches_forbidden_dms_tables(\"GRANT SELECT ON SCHEMA::[dms] TO public;\")",
+      "outcome": "Passed",
+      "testId": "201dadce-f479-773c-aaa8-7aad8b68a0cf",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_gating_role_mismatch_without_removing_it",
+      "outcome": "Passed",
+      "testId": "d5849862-746c-4f6e-6844-2487ef7aeed7",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_revoked_gating_role_select_for_expected_cdc_object_without_repairing_it",
+      "outcome": "Passed",
+      "testId": "564b0773-d89e-9d4a-4fc9-031a26127114",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_when_public_schema_update_reaches_cdc_sources",
+      "outcome": "Passed",
+      "testId": "45439d95-d935-5bd7-423f-b7f31bc848f7",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_gating_role_select_for_unexpected_cdc_metadata_without_removing_it",
+      "outcome": "Passed",
+      "testId": "4f624bff-93f6-8721-b25b-b056869057a2",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_report_a_missing_required_cdc_metadata_select_without_repairing_it(\"captured_columns\")",
+      "outcome": "Passed",
+      "testId": "cef1dd99-3cb5-5cd1-94b7-79da48756859",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_when_optional_live_probe_reports_connector_boundary_failure",
+      "outcome": "Passed",
+      "testId": "f3856871-b11c-5084-7646-fa99c9b76dee",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_when_public_broad_select_reaches_forbidden_dms_tables(\"GRANT SELECT TO public;\")",
+      "outcome": "Passed",
+      "testId": "431c40ff-95a0-198c-06be-00ca7efdc549",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_elevated_connector_membership_without_downgrading_it",
+      "outcome": "Passed",
+      "testId": "93c0275b-00fb-cd00-c15a-48ca4061dc7b",
+      "run": "provider-corrected"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_public_forbidden_permissions_without_removing_them",
+      "outcome": "Passed",
+      "testId": "fd2c722d-2320-2e95-b1c3-e45d2eb89311",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_report_missing_required_artifacts_in_validate_only_without_creating_them",
+      "outcome": "Passed",
+      "testId": "1405ac83-36cc-8802-d1ce-ca0afdaf6167",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_honor_connector_deny_before_public_schema_select_grant",
+      "outcome": "Passed",
+      "testId": "8bfff45c-07a4-c82a-fdb7-fd3fc2324eac",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_when_required_source_column_select_is_denied",
+      "outcome": "Passed",
+      "testId": "ec5b4a52-715d-d1d0-12e1-d69c8b0f42a8",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_mismatched_grants_without_removing_them",
+      "outcome": "Passed",
+      "testId": "10d99671-69d6-ddbb-1d26-0351bb33017f",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_wrong_capture_instance_name_without_creating_replacement",
+      "outcome": "Passed",
+      "testId": "42335535-0f5e-9d12-9afe-a9b7b4e8ebc5",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_custom_role_access_without_removing_it",
+      "outcome": "Passed",
+      "testId": "8fd0a676-7d2d-673c-fc40-f1440011d0ed",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_honor_public_deny_control_over_required_direct_provider_grants(\"DENY CONTROL TO public;\",\"dms.Document.DocumentUuid.DENY_CONTROL.via.public\")",
+      "outcome": "Passed",
+      "testId": "d794fa9f-663b-40a8-0184-3207ce2e491a",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_work_table_capture_without_disabling_it",
+      "outcome": "Passed",
+      "testId": "b303eacd-4f33-4543-b134-9738a3dc39e2",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_heartbeat_shape_mismatch_without_repairing_it",
+      "outcome": "Passed",
+      "testId": "ac2f618a-07a7-e3ae-fa2d-c3ac1ef937fb",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_exact_match_on_rerun_and_validate_only_after_initial_setup",
+      "outcome": "Passed",
+      "testId": "3e8a604d-5160-bc29-4784-e9412201d8a5",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_report_a_missing_required_cdc_metadata_select_without_repairing_it(\"change_tables\")",
+      "outcome": "Passed",
+      "testId": "2b3ed7ef-1f93-1669-3c2d-fc65d51a4f9b",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_source_fingerprint_mismatch_before_creating_provider_artifacts",
+      "outcome": "Passed",
+      "testId": "eaa8314d-33ab-b024-e774-1d2a5ecfe2e0",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_honor_public_deny_control_over_required_direct_provider_grants(\"DENY CONTROL ON OBJECT::[dms].[Document] TO public;\",\"dms.Document.DocumentUuid.DENY_CONTROL.via.public\")",
+      "outcome": "Passed",
+      "testId": "70be0aa0-de99-bbe0-8592-7d446573d8a3",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_fail_closed_on_gating_role_deny_for_expected_cdc_object_without_removing_it",
+      "outcome": "Passed",
+      "testId": "b79c0310-7859-2d5b-7a8a-bbc7078ccc1c",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_honor_public_deny_control_over_required_direct_provider_grants(\"DENY CONTROL ON SCHEMA::[dms] TO public;\",\"dms.Document.DocumentUuid.DENY_CONTROL.via.public\")",
+      "outcome": "Passed",
+      "testId": "a00691ca-c454-7dca-bd07-5bd5464a6c46",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_exact_match_created_capture_metadata_on_partial_retry",
+      "outcome": "Passed",
+      "testId": "a25e6ad2-2c8f-68f7-3f14-740a988568dd",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_honor_public_schema_deny_before_direct_required_grants",
+      "outcome": "Passed",
+      "testId": "39594140-f465-c2af-cbe2-33ff1e2888d3",
+      "run": "provider"
+    },
+    {
+      "fixture": "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Given_MssqlCdcProviderAccessRetry",
+      "case": "It_should_exact_match_when_public_work_table_grant_is_denied_to_connector",
+      "outcome": "Passed",
+      "testId": "ac158c1d-b6a9-aaad-f709-a80fceb6820e",
+      "run": "provider"
+    }
+  ],
+  "admissionObservations": [
+    {
+      "case": "It_admits_a_fresh_owned_source_only_after_live_barrier_and_lag",
+      "run": "mapping-final",
+      "writerPublicationAuthorized": true,
+      "providerModes": [
+        0,
+        1,
+        1,
+        1,
+        1
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 0,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        }
+      ]
+    },
+    {
+      "case": "It_never_repairs_connector_mapping_after_durable_provider_completion(False)",
+      "run": "mapping-final",
+      "writerPublicationAuthorized": false,
+      "providerModes": [
+        1
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 0,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 2,
+          "Diagnostics": [
+            {
+              "Code": "CDC_SQLSERVER_CONNECTOR_USER_MISSING",
+              "Severity": 2,
+              "ProviderErrorClass": null,
+              "ProviderErrorCode": null,
+              "ProviderErrorState": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "It_never_repairs_connector_mapping_after_durable_provider_completion(True)",
+      "run": "mapping-final",
+      "writerPublicationAuthorized": false,
+      "providerModes": [
+        1
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 0,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 2,
+          "Diagnostics": [
+            {
+              "Code": "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH",
+              "Severity": 2,
+              "ProviderErrorClass": null,
+              "ProviderErrorCode": null,
+              "ProviderErrorState": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "It_reconciles_exact_capture_after_lost_provider_evidence_without_repair",
+      "run": "retained-retry",
+      "writerPublicationAuthorized": true,
+      "providerModes": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        1
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 0,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 0,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        },
+        {
+          "Mode": 1,
+          "Outcome": 1,
+          "Diagnostics": []
+        }
+      ]
+    },
+    {
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"absent-login\",\"CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING\")",
+      "run": "mapping-final",
+      "writerPublicationAuthorized": false,
+      "providerModes": [
+        0
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 2,
+          "Diagnostics": [
+            {
+              "Code": "CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING",
+              "Severity": 2,
+              "ProviderErrorClass": null,
+              "ProviderErrorCode": null,
+              "ProviderErrorState": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"conflicting-sid\",\"CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH\")",
+      "run": "mapping-final",
+      "writerPublicationAuthorized": false,
+      "providerModes": [
+        0
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 2,
+          "Diagnostics": [
+            {
+              "Code": "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH",
+              "Severity": 2,
+              "ProviderErrorClass": null,
+              "ProviderErrorCode": null,
+              "ProviderErrorState": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"elevated-login\",\"CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED\")",
+      "run": "elevated-final",
+      "writerPublicationAuthorized": false,
+      "providerModes": [
+        0
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 2,
+          "Diagnostics": [
+            {
+              "Code": "CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED",
+              "Severity": 2,
+              "ProviderErrorClass": null,
+              "ProviderErrorCode": null,
+              "ProviderErrorState": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "It_rejects_initial_connector_mapping_before_registration_or_publication(\"unsupported-user\",\"CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH\")",
+      "run": "mapping-final",
+      "writerPublicationAuthorized": false,
+      "providerModes": [
+        0
+      ],
+      "providerResults": [
+        {
+          "Mode": 0,
+          "Outcome": 2,
+          "Diagnostics": [
+            {
+              "Code": "CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH",
+              "Severity": 2,
+              "ProviderErrorClass": null,
+              "ProviderErrorCode": null,
+              "ProviderErrorState": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "evidenceHandling": "Case metadata and provider observations projected from existing exporter output under TestResults/cdc-t29-sqlserver-20260922. Raw logs and original TRX remain outside the repository in private temporary directories. This committed projection contains no settings, credentials, SIDs, offsets or document data."
+}

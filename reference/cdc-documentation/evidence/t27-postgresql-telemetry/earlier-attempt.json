@@ -1,0 +1,50 @@
+{
+  "ResultsDirectory": "TestResults/cdc-docs-postgresql-telemetry-t27-20260923-01",
+  "Report": [
+    {
+      "Status": "Failed",
+      "Total": 2,
+      "Passed": 1,
+      "Failed": 1,
+      "Skipped": 0,
+      "EnvironmentFailures": 0,
+      "SqlStartupFailures": 0,
+      "SqlStartupRecoveries": 0,
+      "SqlStartupInjectedFailures": 0,
+      "SqlStartupInjectedRecoveries": 0,
+      "SqlStartupFailureSignatures": {},
+      "Diagnostics": [
+        {
+          "TestId": "fb24efc7-0aee-1817-74aa-cddf5c52ea3b",
+          "Codes": []
+        }
+      ],
+      "Name": "Postgresql-telemetry"
+    },
+    {
+      "Name": "runbook-telemetry-behavior",
+      "Status": "Failed",
+      "Total": 2,
+      "Passed": 1,
+      "Failed": 1,
+      "Skipped": 0,
+      "Cases": [
+        {
+          "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+          "Required": 1,
+          "Total": 1,
+          "Passed": 0,
+          "Outcome": "NotPassed"
+        },
+        {
+          "TestId": "It_executes_marked_slot_disk_and_progress_inspections_with_unavailable_actions",
+          "Required": 1,
+          "Total": 1,
+          "Passed": 1,
+          "Outcome": "Passed"
+        }
+      ]
+    }
+  ],
+  "Reason": "The exporter serves metrics at an invented HTTP path, so it did not supply the intended unavailable-endpoint fault. The fixture now targets a nonexistent route on its owned Connect REST endpoint. No production change. The fresh complete second run supplies qualification."
+}

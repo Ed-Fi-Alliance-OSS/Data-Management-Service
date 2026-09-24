@@ -32,4 +32,7 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.DocumentCacheAdmin\EdFi.DataManagementService.DocumentCacheAdmin.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <Compile Include="../EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs" Link="Shared/CdcRunbookExamples.cs" />
+    </ItemGroup>
 </Project>

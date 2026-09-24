@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.SchemaTools.Tests.Unit;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration;
@@ -23,6 +24,7 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
 {
     private CdcPublicationHistoryFixture _fixture = null!;
     private readonly ConcurrentQueue<object> _evidence = new();
+    private string _scenario = "internalOnly";
     private static readonly string[] _commands =
     [
         "activate-offline",
@@ -34,6 +36,11 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
     public async Task SetUp()
     {
         _evidence.Clear();
+        _scenario =
+            TestContext.CurrentContext.Test.MethodName
+            == nameof(It_allows_all_three_commands_from_managed_non_CDC_creation)
+                ? "internalOnly"
+                : TestContext.CurrentContext.Test.MethodName!;
         _fixture = new(mssql);
         await _fixture.InitializeAsync(
             TestContext.CurrentContext.Test.MethodName
@@ -368,7 +375,7 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
         string before = await _fixture.SnapshotAsync();
         AssertRejected(
             ReadResult(
-                await _fixture.Harness.RunAsync(_fixture.Arguments(command)),
+                await _fixture.Harness.RunAsync(_fixture.Arguments(command, "cdc-history-rejected")),
                 command,
                 DocumentCacheAdminExitCodes.RejectedNoMutation
             )
@@ -407,16 +414,32 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
             new
             {
                 command,
+                SnippetId = exitCode == 0
+                || TestContext.CurrentContext.Test.MethodName
+                    == nameof(It_rejects_after_reservation_wins_without_entering_the_provider_mutex_early)
+                    ? "cdc-history-internal-only"
+                    : "cdc-history-rejected",
+                Scenario = _scenario,
+                ExitCode = result.ExitCode,
                 at = DateTimeOffset.UtcNow,
                 result = json,
             }
         );
         result.ExitCode.Should().Be(exitCode, "packaged command {0}: {1}", command, json.ToJsonString());
+        CdcRunbookExamples.AssertExcerpt(
+            exitCode == 0 ? "cdc-output-history-admitted" : "cdc-output-history-rejected",
+            result.StandardOutput,
+            "status",
+            "classification",
+            "mutated",
+            "downstreamPublicationStatus"
+        );
         return json;
     }
 
     private async Task ChangeEvidenceAsync(string scenario)
     {
+        _scenario = scenario;
         if (scenario == "unknown")
         {
             _fixture.Harness.RemovePublicationHistoryConfiguration();

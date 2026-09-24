@@ -15,9 +15,10 @@ using Serilog;
 namespace EdFi.DataManagementService.Backend.Cdc;
 
 /// <summary>
-/// One offline controller invocation owns this runtime. Initialization does not activate tracking or
+/// One controller invocation owns this runtime. Initialization does not activate tracking or
 /// start processing. The controller reserves its binding before calling guarded activation and explicitly
-/// starts processing for readiness. Dispose before handing admission to writers, including on failure.
+/// starts processing for readiness. Initial admission disposes this runtime before handing authority
+/// to writers. Every invocation disposes its owned runtime, including on failure.
 /// </summary>
 public interface ICdcProjectionRuntime : IAsyncDisposable
 {
@@ -37,6 +38,8 @@ public interface ICdcProjectionRuntime : IAsyncDisposable
         ICdcProviderSourcePositionAdapter adapter,
         CancellationToken cancellationToken
     );
+
+    /// <summary>Start the owned executor once; subsequent serialized calls preserve its execution.</summary>
     Task StartProcessingAsync(CancellationToken cancellationToken);
     Task<DocumentCacheStatusResponse> ObserveAsync(CancellationToken cancellationToken);
 }
@@ -193,7 +196,7 @@ internal sealed class CdcProjectionRuntime(
         cancellationToken.ThrowIfCancellationRequested();
         if (_started)
         {
-            throw new InvalidOperationException("Projection processing has already started.");
+            return;
         }
         try
         {

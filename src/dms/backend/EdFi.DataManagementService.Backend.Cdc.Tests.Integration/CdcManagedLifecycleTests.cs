@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
-public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
+public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
 {
     private CdcProviderAdmissionFixture _fixture = null!;
     private CancellationTokenSource _timeout = null!;
@@ -35,8 +35,13 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
     public async Task Setup()
     {
         _evidence.Clear();
+        _retirementCommandRuntime = null!;
         _timeout = new(TimeSpan.FromMinutes(10));
-        _fixture = await CdcProviderAdmissionFixture.StartAsync(provider, Token);
+        _fixture = await CdcProviderAdmissionFixture.StartAsync(
+            provider,
+            Token,
+            schemaFiles: RetirementSchemaFiles()
+        );
         await _fixture.RegisterAsync(Token);
         Observed(
             await _fixture.Controllers.Admission.PreparePublicationAsync(
@@ -47,6 +52,10 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
             )
         );
         await _fixture.ReopenRuntimeAsync(Token);
+        if (IsRetirementCase)
+        {
+            await PrepareRetirementRunbookAsync();
+        }
     }
 
     [TearDown]
@@ -66,6 +75,10 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         if (_fixture is not null)
         {
             await _fixture.DisposeAsync();
+        }
+        if (_retirementCommandRuntime is not null)
+        {
+            await _retirementCommandRuntime.DisposeAsync();
         }
         _timeout.Dispose();
     }
@@ -255,11 +268,14 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         }
     }
 
-    [Test]
-    public async Task It_restarts_an_intact_running_connector_with_fresh_ready_evidence()
+    [TestCase(CdcManagedLifecycleOperation.Restart)]
+    [TestCase(CdcManagedLifecycleOperation.Resume)]
+    public async Task It_restarts_an_intact_running_connector_with_fresh_ready_evidence(
+        CdcManagedLifecycleOperation operation
+    )
     {
-        await _fixture.Runtime.StartProcessingAsync(Token);
-        var result = await ExecuteAsync(CdcManagedLifecycleOperation.Restart);
+        // Setup deliberately reopens an unstarted runtime, as each packaged CLI invocation does.
+        var result = await ExecuteAsync(operation);
         result.Succeeded.Should().BeTrue("{0}", string.Join(", ", result.Diagnostics));
         result.Ready.Should().BeTrue();
         (await _fixture.JournalAsync(Token))
@@ -492,9 +508,11 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
     }
 
     [Test]
+    [Category("CdcRunbookRetirement")]
     public async Task It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history()
     {
         var request = _fixture.Request;
+        await AssertRetirementGuardsAndHandoffsAsync();
         var incident = await LatchIncidentAsync();
         var peers = CoreCdc
             .CdcArtifactNameGenerator.Render(
@@ -559,9 +577,7 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         (await _fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, Token))
             .State!.Incident.Should()
             .BeEquivalentTo(incident);
-        var complete = await retirement.RetireAsync(request, request.Binding.Generation, true, Token);
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, Retirement = complete });
-        complete.Succeeded.Should().BeTrue("{0}", string.Join(", ", complete.Diagnostics));
+        await AssertMarkedRetirementCompleteAsync();
         (await _fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, Token))
             .Status.Should()
             .Be(CoreCdc.CdcControlPlaneOperationStatus.BindingMissing);
@@ -648,9 +664,18 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         (await _fixture.Controllers.Activation.ActivateAsync(request, _fixture.Runtime, Token))
             .State.Should()
             .Be(CdcTransportEvidenceState.Unavailable);
-        (await retirement.RetireAsync(request, request.Binding.Generation, true, Token))
-            .Succeeded.Should()
-            .BeTrue();
+        await AssertMarkedRetirementCompleteAsync();
+        _evidence.Add(
+            new
+            {
+                SourceHistory = "Historical",
+                InitialEligibilityRestored = false,
+                PeerTopicPreserved = true,
+                SharedOffsetStorePreserved = true,
+                GovernedArtifactsAbsent = true,
+                PlatformPurgeProven = false,
+            }
+        );
     }
 
     [Test]

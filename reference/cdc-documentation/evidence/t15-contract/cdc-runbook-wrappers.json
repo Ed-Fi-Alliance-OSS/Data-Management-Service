@@ -1,0 +1,72 @@
+[
+  {
+    "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+    "SnippetId": "cdc-pg-bootstrap-local",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-pg-bootstrap-published",
+    "SnippetId": "cdc-pg-bootstrap-published",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+    "SnippetId": "cdc-sqlserver-bootstrap-local",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+    "SnippetId": "cdc-sqlserver-bootstrap-published",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-pg-e2e-setup",
+    "SnippetId": "cdc-pg-e2e-setup",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+    "SnippetId": "cdc-sqlserver-e2e-setup",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-pg-e2e-build",
+    "SnippetId": "cdc-pg-e2e-build",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-e2e-build",
+    "SnippetId": "cdc-sqlserver-e2e-build",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-pg-infrastructure",
+    "SnippetId": "cdc-pg-infrastructure",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-sqlserver-infrastructure",
+    "SnippetId": "cdc-sqlserver-infrastructure",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-managed-stop",
+    "SnippetId": "cdc-managed-stop",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-managed-start",
+    "SnippetId": "cdc-managed-start",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-managed-start-rejected",
+    "SnippetId": "cdc-managed-start",
+    "Outcome": "Passed"
+  },
+  {
+    "TestId": "CDC-DOC cdc-stack-teardown",
+    "SnippetId": "cdc-stack-teardown",
+    "Outcome": "Passed"
+  }
+]

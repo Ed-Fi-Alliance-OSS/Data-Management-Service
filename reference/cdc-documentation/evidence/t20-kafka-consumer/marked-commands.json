@@ -1,0 +1,613 @@
+[
+  {
+    "Test": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+    "SnippetId": "cdc-enable-retry",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "enable",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "workflowId": "09ed7573-50fe-4f32-86d3-60ee6f66d581",
+        "authorizedAt": "2026-09-23T09:27:21.3881602-05:00"
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:91fcb54909c6db12d498eb54d7bffa056fb3ce68b85cf36f236ed678a2889c47",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+    "SnippetId": "cdc-enable-retry",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "enable",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "WorkflowState",
+          "failure": "ValidationFailed",
+          "message": "Observed state does not satisfy the required contract."
+        }
+      ]
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+    "SnippetId": "cdc-topic-policy-inspect",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "status",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "Projection",
+          "failure": "Unavailable",
+          "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+        }
+      ],
+      "data": {
+        "aggregate": {
+          "contractVersion": 1,
+          "observedAt": "2026-09-23T09:27:28.5928023-05:00",
+          "readiness": "NotReady",
+          "primaryBlockingCategory": "StatusObservationUnavailable",
+          "targets": [
+            {
+              "targetIdentity": {
+                "deploymentKey": "dms",
+                "tenantKey": "default",
+                "dataStoreId": "1",
+                "instanceKey": "admission",
+                "generation": 1,
+                "provider": "Postgresql"
+              },
+              "readiness": "NotReady",
+              "primaryBlockingCategory": "StatusObservationUnavailable",
+              "binding": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:22.3752042-05:00"
+              },
+              "projection": {
+                "state": "Unknown",
+                "category": "StatusObservationUnavailable",
+                "observedAt": "2026-09-23T09:27:25.3803364-05:00",
+                "message": "projection status unavailable"
+              },
+              "providerSetup": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:22.7885655-05:00"
+              },
+              "providerBarrier": {
+                "state": "NotApplicable",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:28.5895122-05:00",
+                "message": "Initial barrier is not renewed by status."
+              },
+              "sourceHistory": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:22.8433108-05:00",
+                "continuity": "Healthy",
+                "incidentLatched": false
+              },
+              "kafkaPolicy": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:25.3275042-05:00"
+              },
+              "connectOffsetStore": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:25.3275042-05:00"
+              },
+              "connectorConfig": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:24.6216415-05:00"
+              },
+              "connectorRuntime": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:28.573636-05:00"
+              },
+              "lag": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:26.4444133-05:00"
+              },
+              "diagnostics": [
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "KafkaPolicy",
+                  "observedAt": "2026-09-23T09:27:25.3275042-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T09:27:25.3275042-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                }
+              ]
+            }
+          ]
+        },
+        "targets": [
+          {
+            "observedAt": "2026-09-23T09:27:28.5895122-05:00",
+            "status": {
+              "targetIdentity": {
+                "deploymentKey": "dms",
+                "tenantKey": "default",
+                "dataStoreId": "1",
+                "instanceKey": "admission",
+                "generation": 1,
+                "provider": "Postgresql"
+              },
+              "readiness": "NotReady",
+              "primaryBlockingCategory": "StatusObservationUnavailable",
+              "binding": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:22.3752042-05:00"
+              },
+              "projection": {
+                "state": "Unknown",
+                "category": "StatusObservationUnavailable",
+                "observedAt": "2026-09-23T09:27:25.3803364-05:00",
+                "message": "projection status unavailable"
+              },
+              "providerSetup": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:22.7885655-05:00"
+              },
+              "providerBarrier": {
+                "state": "NotApplicable",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:28.5895122-05:00",
+                "message": "Initial barrier is not renewed by status."
+              },
+              "sourceHistory": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:22.8433108-05:00",
+                "continuity": "Healthy",
+                "incidentLatched": false
+              },
+              "kafkaPolicy": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:25.3275042-05:00"
+              },
+              "connectOffsetStore": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:25.3275042-05:00"
+              },
+              "connectorConfig": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:24.6216415-05:00"
+              },
+              "connectorRuntime": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:28.573636-05:00"
+              },
+              "lag": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:26.4444133-05:00"
+              },
+              "diagnostics": [
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "KafkaPolicy",
+                  "observedAt": "2026-09-23T09:27:25.3275042-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T09:27:25.3275042-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                }
+              ]
+            },
+            "details": {
+              "queuePresence": "Empty",
+              "lagMilliseconds": 1,
+              "lagThresholdMilliseconds": 1000,
+              "p50LagMilliseconds": 2,
+              "p95LagMilliseconds": 8,
+              "p99LagMilliseconds": 8,
+              "providerArtifactState": "ExactMatch",
+              "retainedRangeState": "CoversCommittedOffset",
+              "schemaHistoryState": "NotApplicable",
+              "positions": {
+                "lsnProc": "0/1DC6400",
+                "commitLsn": "",
+                "changeLsn": "",
+                "retainedRangeStart": "0/1DC5BF0",
+                "retainedRangeEnd": "0/1DCDF88",
+                "unavailableFacts": []
+              }
+            },
+            "hasPendingRecordSizeIncrease": false,
+            "hasSharedOffsetStoreIssue": false,
+            "incidentPersistence": "NotRequired",
+            "containment": "NotRequired",
+            "diagnostics": [
+              {
+                "component": "Projection",
+                "failure": "Unavailable",
+                "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+              }
+            ],
+            "recovery": {
+              "boundary": "Unobserved",
+              "requiresFreshPass": false,
+              "unobservedIntervalCertified": false,
+              "explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+            }
+          }
+        ]
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:91fcb54909c6db12d498eb54d7bffa056fb3ce68b85cf36f236ed678a2889c47",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_topic_policy_status_with_shared_offset_drift",
+    "SnippetId": "cdc-topic-policy-inspect",
+    "ConfirmConsumerCapacity": true,
+    "ConfirmDestructiveCleanup": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "status",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "Kafka",
+          "failure": "ValidationFailed",
+          "message": "Observed state does not satisfy the required contract."
+        },
+        {
+          "component": "Projection",
+          "failure": "Unavailable",
+          "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+        }
+      ],
+      "data": {
+        "aggregate": {
+          "contractVersion": 1,
+          "observedAt": "2026-09-23T09:27:35.2434447-05:00",
+          "readiness": "NotReady",
+          "primaryBlockingCategory": "ConnectOffsetStoreInvalid",
+          "targets": [
+            {
+              "targetIdentity": {
+                "deploymentKey": "dms",
+                "tenantKey": "default",
+                "dataStoreId": "1",
+                "instanceKey": "admission",
+                "generation": 1,
+                "provider": "Postgresql"
+              },
+              "readiness": "NotReady",
+              "primaryBlockingCategory": "ConnectOffsetStoreInvalid",
+              "binding": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:29.127997-05:00"
+              },
+              "projection": {
+                "state": "Unknown",
+                "category": "StatusObservationUnavailable",
+                "observedAt": "2026-09-23T09:27:31.9142249-05:00",
+                "message": "projection status unavailable"
+              },
+              "providerSetup": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:29.462741-05:00"
+              },
+              "providerBarrier": {
+                "state": "NotApplicable",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:35.2379437-05:00",
+                "message": "Initial barrier is not renewed by status."
+              },
+              "sourceHistory": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:29.5084836-05:00",
+                "continuity": "Healthy",
+                "incidentLatched": false
+              },
+              "kafkaPolicy": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:31.8649699-05:00"
+              },
+              "connectOffsetStore": {
+                "state": "NotSatisfied",
+                "category": "ConnectOffsetStoreInvalid",
+                "observedAt": "2026-09-23T09:27:35.2379437-05:00",
+                "message": "Shared worker offset-store evidence is not satisfied in this pass."
+              },
+              "connectorConfig": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:31.1681481-05:00"
+              },
+              "connectorRuntime": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:35.2211578-05:00"
+              },
+              "lag": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:32.9841426-05:00"
+              },
+              "diagnostics": [
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "KafkaPolicy",
+                  "observedAt": "2026-09-23T09:27:31.8649699-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T09:27:31.8649699-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "kafkaPolicyInvalid",
+                  "category": "ConnectOffsetStoreInvalid",
+                  "severity": "Error",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T09:27:31.8649699-05:00",
+                  "message": "Live Kafka evidence violates the deployment policy.",
+                  "retryable": true
+                }
+              ]
+            }
+          ]
+        },
+        "targets": [
+          {
+            "observedAt": "2026-09-23T09:27:35.2379437-05:00",
+            "status": {
+              "targetIdentity": {
+                "deploymentKey": "dms",
+                "tenantKey": "default",
+                "dataStoreId": "1",
+                "instanceKey": "admission",
+                "generation": 1,
+                "provider": "Postgresql"
+              },
+              "readiness": "NotReady",
+              "primaryBlockingCategory": "ConnectOffsetStoreInvalid",
+              "binding": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:29.127997-05:00"
+              },
+              "projection": {
+                "state": "Unknown",
+                "category": "StatusObservationUnavailable",
+                "observedAt": "2026-09-23T09:27:31.9142249-05:00",
+                "message": "projection status unavailable"
+              },
+              "providerSetup": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:29.462741-05:00"
+              },
+              "providerBarrier": {
+                "state": "NotApplicable",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:35.2379437-05:00",
+                "message": "Initial barrier is not renewed by status."
+              },
+              "sourceHistory": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:29.5084836-05:00",
+                "continuity": "Healthy",
+                "incidentLatched": false
+              },
+              "kafkaPolicy": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:31.8649699-05:00"
+              },
+              "connectOffsetStore": {
+                "state": "NotSatisfied",
+                "category": "ConnectOffsetStoreInvalid",
+                "observedAt": "2026-09-23T09:27:35.2379437-05:00",
+                "message": "Shared worker offset-store evidence is not satisfied in this pass."
+              },
+              "connectorConfig": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:31.1681481-05:00"
+              },
+              "connectorRuntime": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:35.2211578-05:00"
+              },
+              "lag": {
+                "state": "Satisfied",
+                "category": "None",
+                "observedAt": "2026-09-23T09:27:32.9841426-05:00"
+              },
+              "diagnostics": [
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "KafkaPolicy",
+                  "observedAt": "2026-09-23T09:27:31.8649699-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "authorizationDisabledLocal",
+                  "category": "None",
+                  "severity": "Info",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T09:27:31.8649699-05:00",
+                  "message": "Authorization-disabled local profile this observation supplies no ACL isolation proof.",
+                  "retryable": false
+                },
+                {
+                  "code": "kafkaPolicyInvalid",
+                  "category": "ConnectOffsetStoreInvalid",
+                  "severity": "Error",
+                  "component": "ConnectOffsetStore",
+                  "observedAt": "2026-09-23T09:27:31.8649699-05:00",
+                  "message": "Live Kafka evidence violates the deployment policy.",
+                  "retryable": true
+                }
+              ]
+            },
+            "details": {
+              "queuePresence": "Empty",
+              "lagMilliseconds": 2,
+              "lagThresholdMilliseconds": 1000,
+              "p50LagMilliseconds": 2,
+              "p95LagMilliseconds": 4,
+              "p99LagMilliseconds": 8,
+              "providerArtifactState": "ExactMatch",
+              "retainedRangeState": "CoversCommittedOffset",
+              "schemaHistoryState": "NotApplicable",
+              "positions": {
+                "lsnProc": "0/1DCE240",
+                "commitLsn": "",
+                "changeLsn": "",
+                "retainedRangeStart": "0/1DC5BF0",
+                "retainedRangeEnd": "0/1DCE360",
+                "unavailableFacts": []
+              }
+            },
+            "hasPendingRecordSizeIncrease": false,
+            "hasSharedOffsetStoreIssue": true,
+            "incidentPersistence": "NotRequired",
+            "containment": "NotRequired",
+            "diagnostics": [
+              {
+                "component": "Kafka",
+                "failure": "ValidationFailed",
+                "message": "Observed state does not satisfy the required contract."
+              },
+              {
+                "component": "Projection",
+                "failure": "Unavailable",
+                "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+              }
+            ],
+            "recovery": {
+              "boundary": "Unobserved",
+              "requiresFreshPass": false,
+              "unobservedIntervalCertified": false,
+              "explanation": "No recovery boundary established. Current health is observational; unobserved intervals are not certified."
+            }
+          }
+        ]
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:91fcb54909c6db12d498eb54d7bffa056fb3ce68b85cf36f236ed678a2889c47",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  }
+]

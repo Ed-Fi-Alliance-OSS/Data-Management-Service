@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.SchemaTools.Tests.Unit;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -276,26 +277,29 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
             CancellationToken.None
         );
 
-    public string[] Arguments(string command) =>
-        [
-            command,
-            "--data-store-id",
-            "1",
-            "--confirm",
-            command switch
+    public string[] Arguments(string command, string snippetId = "cdc-history-internal-only") =>
+        CdcRunbookArguments.Parse(
+            CdcRunbookExamples.Read(snippetId),
+            new Dictionary<string, string>
             {
-                "activate-offline" => "offlineActivation",
-                "deactivate-offline" => "offlineDeactivation",
-                _ => "internalCacheAheadRecovery",
+                ["$HistoryCommand"] = command,
+                ["$HistoryDataStoreId"] = "1",
+                ["$HistoryTenant"] = "",
+                ["$HistoryConfirmation"] = command switch
+                {
+                    "activate-offline" => "offlineActivation",
+                    "deactivate-offline" => "offlineDeactivation",
+                    "recover-cache-ahead" => "internalCacheAheadRecovery",
+                    _ => throw new ArgumentException("Unsupported history operation", nameof(command)),
+                },
+                ["$HistoryFingerprint"] = Fingerprint,
+                ["$HistoryTimeoutSeconds"] = "60",
+                ["$HistorySettings"] = _harness.SettingsPath,
+                ["$HistoryEnvironment"] = "",
+                ["$HistoryProvider"] = mssql ? "sqlserver" : "postgresql",
             },
-            "--offline-writer-admission",
-            "closedAndDrained",
-            "--expected-physical-source-fingerprint",
-            Fingerprint,
-            "--json",
-            "--command-timeout-seconds",
-            "60",
-        ];
+            "dms-document-cache"
+        );
 
     public async Task PrepareAsync(string command)
     {

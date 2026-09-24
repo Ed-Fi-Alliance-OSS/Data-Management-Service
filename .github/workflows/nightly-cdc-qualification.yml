@@ -57,6 +57,7 @@ jobs:
         shell: pwsh
     env:
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
+      CDC_RUNBOOK_OWNED_STACK: '1'
       CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
@@ -72,6 +73,25 @@ jobs:
         run: |
           $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
           "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE=$($qualified.image)" >> $env:GITHUB_ENV
+
+      - name: Install live runbook test dependency
+        if: (matrix.lane == 'Postgresql' || matrix.lane == 'Mssql') && (matrix.suite == 'Admission' || matrix.suite == 'Lifecycle')
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+
+      - name: Install bounded telemetry inspection clients
+        if: matrix.suite == 'Telemetry'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y curl postgresql-client
+
+      - name: Install SQL Server bounded inspection client
+        if: matrix.suite == 'Telemetry' && matrix.lane == 'Mssql'
+        shell: bash
+        run: |
+          curl --fail --location --output "$RUNNER_TEMP/sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $RUNNER_TEMP/sqlcmd.tar.bz2" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/sqlcmd"
+          tar -xjf "$RUNNER_TEMP/sqlcmd.tar.bz2" -C "$RUNNER_TEMP/sqlcmd"
+          echo "$RUNNER_TEMP/sqlcmd" >> "$GITHUB_PATH"
 
       # History suites use packaged CLIs and isolated admin servers. Other suites
       # provision and clean up their own per-test containers through the runner.

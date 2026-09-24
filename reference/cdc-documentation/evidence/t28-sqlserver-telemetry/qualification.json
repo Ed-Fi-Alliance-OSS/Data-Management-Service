@@ -1,0 +1,41 @@
+[
+  {
+    "Status": "Passed",
+    "Total": 2,
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "EnvironmentFailures": 0,
+    "SqlStartupFailures": 0,
+    "SqlStartupRecoveries": 0,
+    "SqlStartupInjectedFailures": 0,
+    "SqlStartupInjectedRecoveries": 0,
+    "SqlStartupFailureSignatures": {},
+    "Diagnostics": [],
+    "Name": "Mssql-telemetry"
+  },
+  {
+    "Name": "runbook-telemetry-behavior",
+    "Status": "Passed",
+    "Total": 2,
+    "Passed": 2,
+    "Failed": 0,
+    "Skipped": 0,
+    "Cases": [
+      {
+        "TestId": "It_qualifies_the_pinned_exporter_with_real_streaming_and_replaces_task_and_worker_metrics",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      },
+      {
+        "TestId": "It_executes_marked_capture_retention_version_store_and_disk_inspections_with_unavailable_actions",
+        "Required": 1,
+        "Total": 1,
+        "Passed": 1,
+        "Outcome": "Passed"
+      }
+    ]
+  }
+]

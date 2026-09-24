@@ -1,0 +1,70 @@
+{
+  "Task": "T25",
+  "Provider": "Postgresql",
+  "Date": "2026-09-23",
+  "BaseRevision": "0792758112c259efe93d479d725277b8f57ea148",
+  "SourceSha256": {
+    "eng/ci/Invoke-CdcQualification.ps1": "e06fea8d4bc314465497ae9cac4d28052dee5d5c75ae213cc32d58a842b79669",
+    "eng/ci/cdc-qualification.psm1": "d03313f584ad28cac8968d1a8610f957353a86487636e169226ce5f3849dad59",
+    "eng/ci/tests/CdcQualification.Tests.ps1": "b2f9bf32ca836937dfce0e08d8845cc428bad5eb8812ef50be3b1b2264d759e4",
+    "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookArguments.cs": "faf023f7d52642e61f0a87857501acc0cce9d907de574d4854c290b3609384aa",
+    "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookCommandTests.cs": "d33c7c0f484a522d63f248ebd9816d527dc9f08877be6e584458311581c4f7a6",
+    "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryFixture.cs": "12a1f7bc1c15a247002ee7d53d26e405122cd860f34823d25dda04e2ada47cae",
+    "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs": "96c366d1cd0245996593860719c01a6bc435d4382be06ec228d3c4dce630490b",
+    "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/DocumentCacheAdminCliIntegrationHarness.cs": "74d30714f50391936769244abafef57d4c6bf8975abb52ad3879a8a2eac5ee9c",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.cs": "607a7a9a43bce978fe2e7da74a3eb4ecc403d3cb0ca2bbfd2bbd4e3e3f9566ce",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcManagedLifecycleTests.Runbook.cs": "a768231f0734f14732de8f53d5acdbca2583897cf8ad97a7272792ffb4cbc2fa",
+    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRunbookLiveCommands.cs": "10d4c7d31d271b94615bc953fc9bd31b7c43213dc98fc0b46605642aa6e6a679"
+  },
+  "SnippetSha256": {
+    "cdc-history-internal-only": "9a660fabf948af4d6b1d85f30f2d8c64208c026f567bd4ad7ba6a66a5bafba73",
+    "cdc-history-rejected": "9a660fabf948af4d6b1d85f30f2d8c64208c026f567bd4ad7ba6a66a5bafba73",
+    "cdc-retire": "e1dd9172afe20e2641eede5d38db3c1d19b2f11604f531a33e1b461cf7d70efe",
+    "cdc-restamp-handoff-status": "a365f89b8e959d0112511bd88f4d37637ff85545a748c92d853fe8bc178b0c51",
+    "cdc-disclosure-containment-result": "b37a314f4fcd86d6ae8241fc2927ad6bff6c3639c1ef51a9a52833b604a0fdf4"
+  },
+  "RuntimeVersions": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "Pester": "5.7.1"
+  },
+  "Command": "pwsh eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite History -ResultsDirectory TestResults/cdc-docs-postgresql-history-t25-20260923-03",
+  "Discovery": "Installed VSTest --list-tests reports the assembly catalog despite --filter. All required executed IDs were discovered; exact provider selection and counts are proven by execution TRX and required-case guards.",
+  "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "provider": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+    "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "AdminImageId": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+  "ImageReferences": {
+    "Provider": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+    "Broker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "Worker": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+  },
+  "FixtureSubstitutions": [
+    "Three matching operation/confirmation pairs from the runbook; tenant empty, CMS data-store ID 1, timeout 60, provider postgresql; empty normal-settings environment",
+    "History settings use original fixture-managed source history/deployment; current provider-read fingerprint. All rejecting faults confined to selected fixture",
+    "Retirement settings use matching runtime/CMS/schema workspace and original managed root/generation; timing 180000/300000/60000 ms and 5000 ms lag threshold",
+    "Two explicit negative retirement requests omit destructive confirmation or supply mismatched generation; original settings/journal unchanged",
+    "Controller-only fault seams interrupt connector and topic deletion; packaged retirement retry has no seam"
+  ],
+  "Scope": "63 marked Admin invocations and six SchemaTools commands; 31 required live cases. CMS is the existing stand-in. History admission has no Kafka dependency; retirement uses real fixture-owned provider, worker and broker. Shared-volume teardown ordering is separately mocked; prior live stack cleanup linked. No ACL isolation, API-message, restamp execution, independent consumer-store response, byte purge or new-generation recovery claim.",
+  "PriorAttempts": [
+    {
+      "ResultsDirectory": "TestResults/cdc-docs-postgresql-history-t25-20260923-01",
+      "HistoryPassed": 25,
+      "CleanupPassed": 5,
+      "CleanupFailed": 1,
+      "Note": "Fixture expected exit 1 for generation mismatch; production CLI validates input and returns 2. Corrected assertion; no production change."
+    },
+    {
+      "ResultsDirectory": "TestResults/cdc-docs-postgresql-history-t25-20260923-02",
+      "HistoryPassed": 25,
+      "CleanupPassed": 5,
+      "CleanupFailed": 1,
+      "Note": "Fixture compared running offset with post-stop offset; source progress can advance until verified stop. Corrected sampling boundary and tested no consumption of later source work; no production change."
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "Test": "It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history",
+    "Evidence": [
+      {
+        "Profile": "LocalSingleBroker/AuthorizationDisabledLocal",
+        "Images": {
+          "provider": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+          "broker": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+          "connect": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+        }
+      },
+      {
+        "MarkedStopVerified": true,
+        "OffsetsPreserved": true,
+        "BindingPreserved": true,
+        "ConsumerAccessRevoked": false,
+        "PlatformPurgeProven": false
+      },
+      {
+        "At": "2026-09-23T07:55:11.6636121-05:00",
+        "Retirement": {
+          "Succeeded": false,
+          "OperationId": "99b1aa83-ad14-4343-b14d-c023b3cb4f8b",
+          "Diagnostics": [
+            {
+              "Component": 5,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            }
+          ]
+        }
+      },
+      {
+        "At": "2026-09-23T07:55:11.6795613-05:00",
+        "StoppedOffsetAbsenceVerified": true
+      },
+      {
+        "At": "2026-09-23T07:55:12.547737-05:00",
+        "Retirement": {
+          "Succeeded": false,
+          "OperationId": "99b1aa83-ad14-4343-b14d-c023b3cb4f8b",
+          "Diagnostics": [
+            {
+              "Component": 4,
+              "Failure": 1,
+              "Message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+            }
+          ]
+        }
+      },
+      {
+        "SourceHistory": "Historical",
+        "InitialEligibilityRestored": false,
+        "PeerTopicPreserved": true,
+        "SharedOffsetStorePreserved": true,
+        "GovernedArtifactsAbsent": true,
+        "PlatformPurgeProven": false
+      }
+    ]
+  }
+]

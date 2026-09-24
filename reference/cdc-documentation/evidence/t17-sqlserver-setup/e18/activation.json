@@ -1,0 +1,19 @@
+{
+  "Provider": "SqlServer",
+  "Layer": "Existing provider/packaged E18 fixtures, not marked runbook invocation",
+  "Passed": 2,
+  "Failed": 0,
+  "Skipped": 0,
+  "Cases": [
+    {
+      "Fixture": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminMssqlActivationPrerequisite",
+      "Case": "It_rejects_activation_when_nested_triggers_are_disabled_without_mutation_then_succeeds_after_correction",
+      "Outcome": "Passed"
+    },
+    {
+      "Fixture": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminMssqlActivationPrerequisite",
+      "Case": "It_rejects_activation_when_read_committed_snapshot_is_disabled_without_mutation_then_succeeds_after_correction",
+      "Outcome": "Passed"
+    }
+  ]
+}

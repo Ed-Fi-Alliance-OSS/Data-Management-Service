@@ -93,6 +93,16 @@
             CopyToOutputDirectory="PreserveNewest"
         />
     </ItemGroup>
+    <ItemGroup>
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs"
+            Link="Shared/CdcRunbookExamples.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookArguments.cs"
+            Link="Shared/CdcRunbookArguments.cs"
+        />
+    </ItemGroup>
     <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
     <ItemGroup>
         <None

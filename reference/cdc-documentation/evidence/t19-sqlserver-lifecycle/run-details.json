@@ -1,0 +1,73 @@
+{
+  "RunDate": "2026-09-23",
+  "ControllerRun": "cdc-docs-mssql-lifecycle-t19-20260923-01",
+  "FinalLiveRun": "cdc-docs-mssql-lifecycle-live-final-t19-20260923-02",
+  "Runtime": {
+    "Platform": "Linux/amd64",
+    "PowerShell": "7.6.6",
+    "Pester": "5.7.1",
+    ".NET SDK": "10.0.102"
+  },
+  "Provider": "Mssql",
+  "Profile": "LocalSingleBroker / AuthorizationDisabledLocal",
+  "AclIsolationProven": false,
+  "Images": {
+    "Connect": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "SqlServer": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+    "ControllerFixtureBroker": "docker.redpanda.com/redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96",
+    "WrapperBroker": "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f"
+  },
+  "FixtureSubstitutions": {
+    "Paths": "owner-only temporary settings/state/environment paths",
+    "SqlServerHostPort": 1435,
+    "CmsTargetId": 1,
+    "Generation": 1,
+    "CallMilliseconds": 120000,
+    "WaitMilliseconds": 600000,
+    "WatchMaximumPasses": 2,
+    "WorkerHeapMiB": 1024,
+    "WorkerHeapBytes": 1073741824,
+    "SourceRejection": "private settings copies select empty/populated fixture database clones with distinct source identities; original settings and CMS selection retained"
+  },
+  "SetupAssertions": {
+    "Provider": "sqlserver",
+    "TargetId": 1,
+    "Generation": 1,
+    "SchemaProjects": [
+      "Ed-Fi",
+      "TPDM"
+    ],
+    "WrapperAttempts": 1,
+    "ApplicationImage": "sha256:950c42630e7414d4e461904944f76771f3f238d88aa08b5558501524ab2584ab",
+    "ConfigurationImage": "sha256:f36b9cb5947701fcd303b867195ac7959f2e6c68442716456ac35035645a5ab5",
+    "StatusExitCode": 1,
+    "WatchExitCode": 1,
+    "Projection": "Unknown",
+    "AggregateReadiness": "NotReady",
+    "WorkTableCaptured": false,
+    "WriterPublicationAuthorized": true,
+    "LoginUserSidMatched": true,
+    "NarrowEffectiveAccessVerified": true
+  },
+  "Validation": {
+    "ControllerLifecycle": 19,
+    "RequiredControllerCases": 9,
+    "RequiredControllerMethods": 6,
+    "MarkedLiveCases": 1,
+    "WrapperAndQualificationPester": 364,
+    "Failed": 0,
+    "Skipped": 0,
+    "RunbookCommandConfigurationOutputAndLinks": 95,
+    "ScriptAnalyzerErrors": 0,
+    "MarkedCommandResults": 32
+  },
+  "Limits": [
+    "Standalone validation/status/watch remain runtime-unobserved and non-ready.",
+    "Peer and interruption wrapper cases use mocked infrastructure; provider fixtures qualify persistence.",
+    "No initial writer admission, consumer ACL, API-message, adoption, replacement or unsampled-interval certification from lifecycle success."
+  ],
+  "Rehearsals": [
+    "Initial live fixture reached source-mismatch setup after completing lifecycle and provenance checks, but sqlcmd default QUOTED_IDENTIFIER OFF rejected the count query. A private clone probe also rejected insertion into indexed objects with that setting. Fixture now enables QUOTED_IDENTIFIER and uses SQL Server bracket quoting; governed teardown preceded a complete fresh live rerun."
+  ],
+  "OwnedStackRetired": true
+}

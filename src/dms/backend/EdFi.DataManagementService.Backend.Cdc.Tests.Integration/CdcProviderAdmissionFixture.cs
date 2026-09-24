@@ -63,6 +63,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public Action<string> BeforeRuntimeCall { get; set; } = _ => { };
     public Action<string> AfterRuntimeCall { get; set; } = _ => { };
     public string ConnectionString { get; private set; } = null!;
+    public IReadOnlyList<string> SchemaFiles { get; private set; } =
+    [Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json")];
     public string Database { get; } = "admission_" + Guid.NewGuid().ToString("N");
     private ServiceProvider _services = null!;
     private bool _disposed;
@@ -176,10 +178,15 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         CdcProvider provider,
         CancellationToken cancellationToken,
         bool composeKafka = false,
-        bool offlineKafka = false
+        bool offlineKafka = false,
+        IReadOnlyList<string> schemaFiles = null!
     )
     {
         var suite = new CdcProviderAdmissionFixture(provider);
+        if (schemaFiles is not null)
+        {
+            suite.SchemaFiles = schemaFiles;
+        }
         try
         {
             suite.Infrastructure = await CdcControllerFixture.StartAsync(
@@ -246,10 +253,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             NullLogger<ApiSchemaFileLoader>.Instance
         );
         _schema = (ApiSchemaFileLoadResult.SuccessResult)
-            loader.Load(
-                Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json"),
-                []
-            );
+            loader.Load(SchemaFiles[0], SchemaFiles.Skip(1).ToArray());
         var schemaSet = new EffectiveSchemaSetBuilder(
             new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
             new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
@@ -274,7 +278,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         await ExecuteAsync(
             _provider == CdcProvider.Postgresql
                 ? "CREATE ROLE dms_connector LOGIN REPLICATION PASSWORD 'EdFi_Dms1!'"
-                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF; CREATE USER dms_connector FOR LOGIN dms_connector;",
+                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF;",
             cancellationToken
         );
         _configuration = new ConfigurationBuilder()
@@ -1184,6 +1188,16 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             modes.Add(request.Mode);
             var result = await inner.SetupAsync(request, cancellationToken);
             results.Add(result);
+            if (result.Outcome == CdcProviderSetupOutcome.Failed)
+            {
+                await TestContext.Out.WriteLineAsync(
+                    "Provider rejection: "
+                        + string.Join(
+                            ", ",
+                            result.Diagnostics.Select(d => d.Code + ":" + d.ProviderErrorCode)
+                        )
+                );
+            }
             return result;
         }
     }

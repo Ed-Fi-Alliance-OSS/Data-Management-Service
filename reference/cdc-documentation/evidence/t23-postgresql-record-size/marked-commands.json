@@ -1,0 +1,347 @@
+[
+  {
+    "Test": "It_executes_marked_record_size_retry_after_partial_broker_change",
+    "SnippetId": "cdc-validate",
+    "ConfirmConsumerCapacity": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "validate",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "Projection",
+          "failure": "Unavailable",
+          "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+        }
+      ],
+      "data": {
+        "observedAt": "2026-09-23T05:13:48.8549159-05:00",
+        "preStartEligible": true,
+        "publicationReady": false,
+        "continuity": "Healthy",
+        "hasPendingRecordSizeIncrease": false,
+        "diagnostics": [
+          {
+            "component": "Projection",
+            "failure": "Unavailable",
+            "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "recovery": {
+          "boundary": "VerifiedManagedRestart",
+          "requiresFreshPass": false,
+          "unobservedIntervalCertified": false,
+          "explanation": "Managed restart completion observed. Current health is observational and does not certify an unobserved interval."
+        }
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:7441f3fcec44e3c42a0a4d028ac8ef3b5764eff62bc5edc1ecbd56a1c4876063",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(False)",
+    "SnippetId": "cdc-validate",
+    "ConfirmConsumerCapacity": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "validate",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "Projection",
+          "failure": "Unavailable",
+          "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+        }
+      ],
+      "data": {
+        "observedAt": "2026-09-23T04:44:40.9878083-05:00",
+        "preStartEligible": true,
+        "publicationReady": false,
+        "continuity": "Healthy",
+        "hasPendingRecordSizeIncrease": false,
+        "diagnostics": [
+          {
+            "component": "Projection",
+            "failure": "Unavailable",
+            "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "recovery": {
+          "boundary": "VerifiedManagedRestart",
+          "requiresFreshPass": false,
+          "unobservedIntervalCertified": false,
+          "explanation": "Managed restart completion observed. Current health is observational and does not certify an unobserved interval."
+        }
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:54ebd97d540a6632b7940b9a554b0d1314d994bdd6750fe825769af40e1c8dbb",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(True)",
+    "SnippetId": "cdc-validate",
+    "ConfirmConsumerCapacity": true,
+    "ExitCode": 1,
+    "Result": {
+      "operation": "validate",
+      "succeeded": false,
+      "exitCode": 1,
+      "diagnostics": [
+        {
+          "component": "Projection",
+          "failure": "Unavailable",
+          "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+        }
+      ],
+      "data": {
+        "observedAt": "2026-09-23T04:47:24.615999-05:00",
+        "preStartEligible": true,
+        "publicationReady": false,
+        "continuity": "Healthy",
+        "hasPendingRecordSizeIncrease": false,
+        "diagnostics": [
+          {
+            "component": "Projection",
+            "failure": "Unavailable",
+            "message": "Authoritative evidence is unavailable; reconcile live state before retrying."
+          }
+        ],
+        "recovery": {
+          "boundary": "VerifiedManagedRestart",
+          "requiresFreshPass": false,
+          "unobservedIntervalCertified": false,
+          "explanation": "Managed restart completion observed. Current health is observational and does not certify an unobserved interval."
+        }
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:025ab2347b7fc1827012c243f83e0ef3aaa04c88cb7e6eb6a229d2cdc5dcedc4",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_retry_after_partial_broker_change",
+    "SnippetId": "cdc-size-retry",
+    "ConfirmConsumerCapacity": false,
+    "ExitCode": 2,
+    "Result": {
+      "operation": "increase-record-size",
+      "succeeded": false,
+      "exitCode": 2,
+      "diagnostics": [
+        {
+          "component": "Request",
+          "failure": "InvalidInput",
+          "message": "Deployment input is invalid."
+        }
+      ]
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(False)",
+    "SnippetId": "cdc-size-increase",
+    "ConfirmConsumerCapacity": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "increase-record-size",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "succeeded": true,
+        "ready": true,
+        "operationId": "cbf4ef69-ed9c-4d5c-93aa-22d994f69eeb",
+        "diagnostics": []
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:54ebd97d540a6632b7940b9a554b0d1314d994bdd6750fe825769af40e1c8dbb",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_retry_after_partial_broker_change",
+    "SnippetId": "cdc-size-retry",
+    "ConfirmConsumerCapacity": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "increase-record-size",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "succeeded": true,
+        "ready": true,
+        "operationId": "93ee7bad-1854-45dd-b8c1-7e63f5e0feed",
+        "diagnostics": []
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:7441f3fcec44e3c42a0a4d028ac8ef3b5764eff62bc5edc1ecbd56a1c4876063",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(True)",
+    "SnippetId": "cdc-size-increase",
+    "ConfirmConsumerCapacity": true,
+    "ExitCode": 0,
+    "Result": {
+      "operation": "increase-record-size",
+      "succeeded": true,
+      "exitCode": 0,
+      "diagnostics": [],
+      "data": {
+        "succeeded": true,
+        "ready": true,
+        "operationId": "86317602-da44-40fa-be13-f9102582ed40",
+        "diagnostics": []
+      },
+      "binding": {
+        "version": 1,
+        "deploymentKey": "dms",
+        "tenantKey": "default",
+        "dataStoreId": "1",
+        "instanceKey": "admission",
+        "generation": 1,
+        "provider": "Postgresql",
+        "physicalSourceFingerprint": "sha256:025ab2347b7fc1827012c243f83e0ef3aaa04c88cb7e6eb6a229d2cdc5dcedc4",
+        "connectorName": "dms-admission-g1",
+        "topicName": "edfi.documents.instance.admission-g1.documents.v1",
+        "partitionCount": 1,
+        "partitionerAlgorithm": "kafka-murmur2-v1",
+        "contractVersion": 1
+      },
+      "deploymentProfile": {
+        "authorizationProfile": "AuthorizationDisabledLocal",
+        "aclIsolationProven": false
+      }
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(True)",
+    "SnippetId": "cdc-size-increase",
+    "ConfirmConsumerCapacity": false,
+    "ExitCode": 2,
+    "Result": {
+      "operation": "increase-record-size",
+      "succeeded": false,
+      "exitCode": 2,
+      "diagnostics": [
+        {
+          "component": "Request",
+          "failure": "InvalidInput",
+          "message": "Deployment input is invalid."
+        }
+      ]
+    },
+    "Passes": []
+  },
+  {
+    "Test": "It_executes_marked_record_size_increase_with_explicit_inventory(False)",
+    "SnippetId": "cdc-size-increase",
+    "ConfirmConsumerCapacity": false,
+    "ExitCode": 2,
+    "Result": {
+      "operation": "increase-record-size",
+      "succeeded": false,
+      "exitCode": 2,
+      "diagnostics": [
+        {
+          "component": "Request",
+          "failure": "InvalidInput",
+          "message": "Deployment input is invalid."
+        }
+      ]
+    },
+    "Passes": []
+  }
+]
