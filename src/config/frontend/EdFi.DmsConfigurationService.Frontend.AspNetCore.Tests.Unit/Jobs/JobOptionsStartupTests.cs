@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -155,6 +156,7 @@ public class JobOptionsStartupTests
         private JobLeaseTimings _timings = null!;
         private JobRuntimeEnvironment _environment = null!;
         private readonly Dictionary<Type, Type> _registered = [];
+        private int _workers;
 
         [SetUp]
         public async Task Act()
@@ -170,6 +172,7 @@ public class JobOptionsStartupTests
             _options = scope.ServiceProvider.GetRequiredService<IOptions<JobOptions>>().Value;
             _timings = scope.ServiceProvider.GetRequiredService<JobLeaseTimings>();
             _environment = scope.ServiceProvider.GetRequiredService<JobRuntimeEnvironment>();
+            _workers = _factory.Services.GetServices<IHostedService>().OfType<JobWorkerService>().Count();
             foreach (
                 Type service in new[]
                 {
@@ -215,6 +218,9 @@ public class JobOptionsStartupTests
 
         [Test]
         public void It_publishes_the_tenancy_mode() => _environment.MultiTenancy.Should().BeFalse();
+
+        [Test]
+        public void It_registers_no_worker_while_the_switch_is_off() => _workers.Should().Be(0);
 
         [Test]
         public void It_registers_the_postgresql_job_services() =>
@@ -290,5 +296,39 @@ public class JobOptionsStartupTests
 
         [Test]
         public void It_publishes_the_tenancy_mode() => _environment.MultiTenancy.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_the_worker_switched_on_at_startup
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private int _workers;
+        private JobExecutor? _executor;
+
+        [SetUp]
+        public void Act()
+        {
+            // The worker starts with the host, so it gets a database it can never reach.
+            _factory = CreateFactory(
+                [],
+                new Dictionary<string, string>
+                {
+                    ["JobSettings:WorkerEnabled"] = "true",
+                    ["DatabaseSettings:DatabaseConnection"] =
+                        "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1",
+                }
+            );
+            _workers = _factory.Services.GetServices<IHostedService>().OfType<JobWorkerService>().Count();
+            _executor = _factory.Services.GetService<JobExecutor>();
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_registers_one_worker() => _workers.Should().Be(1);
+
+        [Test]
+        public void It_registers_the_executor() => _executor.Should().NotBeNull();
     }
 }

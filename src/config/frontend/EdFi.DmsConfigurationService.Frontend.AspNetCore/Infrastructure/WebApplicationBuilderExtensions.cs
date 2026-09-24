@@ -214,8 +214,9 @@ public static class WebApplicationBuilderExtensions
 
     /// <summary>
     /// Binds <c>JobSettings</c> and validates it at startup (spec D-15, §6.3), publishes the configured lease timings
-    /// that the lease repositories and fence factories take, and adds the provider-neutral job services (the registries,
-    /// the enqueuer, and the schedule service).
+    /// that the lease repositories and fence factories take, adds the provider-neutral job services (the registries, the
+    /// enqueuer, the schedule service, the executor, and the metrics), and registers each hosted service whose switch is
+    /// on.
     /// </summary>
     private static void ConfigureJobOptions(IServiceCollection services, IConfiguration configuration)
     {
@@ -228,6 +229,16 @@ public static class WebApplicationBuilderExtensions
             provider.GetRequiredService<IOptions<JobOptions>>().Value.LeaseTimings
         );
         services.AddJobServices();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<JobMetrics>();
+        services.AddSingleton<JobExecutor>();
+
+        // Each hosted service has its own switch under spec D-15, read while the services are registered.
+        JobOptions configured = configuration.GetSection(JobOptions.SectionName).Get<JobOptions>() ?? new();
+        if (configured.WorkerEnabled)
+        {
+            services.AddHostedService<JobWorkerService>();
+        }
     }
 
     /// <summary>The PostgreSQL job repositories and factories (spec D-1).</summary>

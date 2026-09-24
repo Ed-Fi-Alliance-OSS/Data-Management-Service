@@ -354,7 +354,7 @@ public sealed class ExecutorHarness : IDisposable
 
     private readonly ServiceProvider _provider;
 
-    public ExecutorHarness(bool multiTenancy = false)
+    public ExecutorHarness(bool multiTenancy = false, IJobLeaseRepository? leaseRepository = null)
     {
         ServiceCollection services = new();
         services.AddSingleton(Script);
@@ -366,13 +366,14 @@ public sealed class ExecutorHarness : IDisposable
         Scopes = new TrackingScopeFactory(_provider.GetRequiredService<IServiceScopeFactory>());
         Executor = new JobExecutor(
             Scopes,
-            Leases,
+            leaseRepository ?? Leases,
             Fences,
             _provider.GetRequiredService<IJobHandlerRegistry>(),
             _provider.GetRequiredService<IJobErrorCodeRegistry>(),
             Options.Create(Settings),
             new JobRuntimeEnvironment(multiTenancy),
             Time,
+            Metrics,
             Logger
         );
     }
@@ -383,6 +384,7 @@ public sealed class ExecutorHarness : IDisposable
     public ScriptedTenantRepository Tenants { get; } = new();
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero));
     public CapturingLogger<JobExecutor> Logger { get; } = new();
+    public JobMetrics Metrics { get; } = new();
     public JobOptions Settings { get; } = new() { MaxAttempts = MaxAttempts };
     public TrackingScopeFactory Scopes { get; }
     public JobExecutor Executor { get; }
@@ -425,5 +427,9 @@ public sealed class ExecutorHarness : IDisposable
         await Leases.RenewCalled.Task.WaitAsync(TimeSpan.FromSeconds(10));
     }
 
-    public void Dispose() => _provider.Dispose();
+    public void Dispose()
+    {
+        Metrics.Dispose();
+        _provider.Dispose();
+    }
 }

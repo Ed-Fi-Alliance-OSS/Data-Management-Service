@@ -57,6 +57,7 @@ public sealed class JobExecutor(
     IOptions<JobOptions> options,
     JobRuntimeEnvironment environment,
     TimeProvider timeProvider,
+    JobMetrics metrics,
     ILogger<JobExecutor> logger
 )
 {
@@ -84,6 +85,7 @@ public sealed class JobExecutor(
     {
         long started = timeProvider.GetTimestamp();
         LogClaim(job);
+        metrics.JobClaimed(job.JobType, job.Reclaimed, QueueDelayMilliseconds(job));
 
         JobExecutionOwnership ownership = new();
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
@@ -114,7 +116,14 @@ public sealed class JobExecutor(
             }
         }
 
-        return await FinalizeAsync(job, ownership, decision, started);
+        JobExecutionResult result = await FinalizeAsync(job, ownership, decision, started);
+        metrics.JobFinished(job.JobType, result.Outcome, DurationMilliseconds(started));
+        if (result.Outcome == JobExecutionOutcome.OwnershipUncertain)
+        {
+            metrics.OwnershipUncertain(job.JobType, result.Reason ?? "Unknown");
+        }
+
+        return result;
     }
 
     /// <summary>Steps 1 and 2 of §4.3: tenant, registry, and payload, before any handler is resolved.</summary>
