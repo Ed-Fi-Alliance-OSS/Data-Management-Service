@@ -69,9 +69,10 @@ public sealed class JobDatabaseSession(DbConnection connection, JobDatabaseSessi
     public bool HandedOver { get; private set; }
 
     /// <summary>
-    /// Runs <paramref name="operation"/> with a token cancelled at the deadline, waiting no longer than the time
-    /// left on it. When the deadline or <paramref name="cancellationToken"/> ends the wait first, the session is
-    /// handed over and the exception that ended the wait is rethrown.
+    /// Runs <paramref name="operation"/>, waiting no longer than the time left on <paramref name="deadline"/>. An
+    /// operation is not started at all when <paramref name="cancellationToken"/> is already cancelled or the
+    /// deadline has already passed. Once started, when the deadline or <paramref name="cancellationToken"/> ends the
+    /// wait first, the session is handed over and the exception that ended the wait is rethrown.
     /// </summary>
     public async Task<T> RunAsync<T>(
         string name,
@@ -83,6 +84,15 @@ public sealed class JobDatabaseSession(DbConnection connection, JobDatabaseSessi
         if (HandedOver)
         {
             throw new InvalidOperationException("The job database session was handed over to cleanup.");
+        }
+
+        // Admission: a cancelled caller or an expired deadline never starts an operation. Waiting cannot enforce
+        // this, because the operation would already have been dispatched, and WaitAsync returns a task that
+        // completed synchronously without checking either condition.
+        cancellationToken.ThrowIfCancellationRequested();
+        if (deadline.Expired)
+        {
+            throw new TimeoutException("The job database operation's deadline passed before it started.");
         }
 
         // The operation's own token: never linked or timed, so its callbacks run only in cleanup.

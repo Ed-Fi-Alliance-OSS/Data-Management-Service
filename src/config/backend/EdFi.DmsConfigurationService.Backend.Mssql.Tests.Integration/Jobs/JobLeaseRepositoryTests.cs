@@ -914,11 +914,14 @@ public class JobLeaseRepositoryTests
 
         private JobWriteResult _result = null!;
         private int _guardedWrites;
+        private int _commitsDispatched;
+        private LeaseRow _row = null!;
 
         [SetUp]
         public async Task Setup()
         {
             _guardedWrites = 0;
+            _commitsDispatched = 0;
             await SeedJobAsync();
             ClaimedJob claimed = await ClaimAsync();
             JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _shortDeadline)
@@ -928,6 +931,19 @@ public class JobLeaseRepositoryTests
                     Interlocked.Increment(ref _guardedWrites);
                     await Task.Delay(TimeSpan.FromSeconds(2.5), CancellationToken.None);
                 },
+                // Counts only the commits the session actually dispatches.
+                SessionHooks = new JobDatabaseSessionHooks
+                {
+                    BeforeOperation = (operation, _) =>
+                    {
+                        if (operation == "Commit")
+                        {
+                            Interlocked.Increment(ref _commitsDispatched);
+                        }
+
+                        return Task.CompletedTask;
+                    },
+                },
             };
 
             _result = await repository.Complete(
@@ -936,6 +952,7 @@ public class JobLeaseRepositoryTests
                 claimed.FencingToken,
                 CancellationToken.None
             );
+            _row = await RowAsync(claimed.Id);
         }
 
         [Test]
@@ -948,6 +965,21 @@ public class JobLeaseRepositoryTests
 
         [Test]
         public void It_issues_the_guarded_write_once_without_retrying() => _guardedWrites.Should().Be(1);
+
+        [Test]
+        public void It_issues_no_commit_once_the_deadline_has_passed() => _commitsDispatched.Should().Be(0);
+
+        [Test]
+        public void It_leaves_the_update_rolled_back() =>
+            _row.Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Status = JobStatuses.InProgress,
+                        LeaseOwner = OwnerA,
+                        FinishedAt = (DateTime?)null,
+                    }
+                );
     }
 
     [TestFixture]

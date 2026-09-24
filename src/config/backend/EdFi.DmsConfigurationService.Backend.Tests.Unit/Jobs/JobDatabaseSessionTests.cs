@@ -173,6 +173,125 @@ public class JobDatabaseSessionTests
     }
 
     [TestFixture]
+    public class Given_operations_that_are_not_admitted
+    {
+        private readonly Dictionary<
+            string,
+            (Exception? Thrown, bool Invoked, SessionUnderTest Subject)
+        > _cases = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cases.Clear();
+            using CancellationTokenSource cancelled = new();
+            await cancelled.CancelAsync();
+            JobDeadline live = JobDeadline.Start(TimeSpan.FromSeconds(5));
+            JobDeadline expired = JobDeadline.Start(TimeSpan.Zero);
+
+            await Run("cancelled caller, synchronous operation", live, cancelled.Token, synchronous: true);
+            await Run("cancelled caller, asynchronous operation", live, cancelled.Token, synchronous: false);
+            await Run(
+                "expired deadline, synchronous operation",
+                expired,
+                CancellationToken.None,
+                synchronous: true
+            );
+            await Run(
+                "expired deadline, asynchronous operation",
+                expired,
+                CancellationToken.None,
+                synchronous: false
+            );
+
+            async Task Run(string name, JobDeadline deadline, CancellationToken token, bool synchronous)
+            {
+                SessionUnderTest subject = new();
+                bool invoked = false;
+                Exception? thrown = await ThrownByAsync(() =>
+                    subject.Session.RunAsync(
+                        "Probe",
+                        async _ =>
+                        {
+                            invoked = true;
+                            if (!synchronous)
+                            {
+                                await Task.Yield();
+                            }
+
+                            return 1;
+                        },
+                        deadline,
+                        token
+                    )
+                );
+
+                // A synchronous operation, the case WaitAsync cannot catch, returns a completed task.
+                if (synchronous)
+                {
+                    thrown ??= await ThrownByAsync(() =>
+                        subject.Session.RunAsync(
+                            "Probe",
+                            _ =>
+                            {
+                                invoked = true;
+                                return Task.FromResult(1);
+                            },
+                            deadline,
+                            token
+                        )
+                    );
+                }
+
+                _cases[name] = (thrown, invoked, subject);
+            }
+        }
+
+        [Test]
+        public void It_rejects_a_cancelled_caller_before_invoking_the_operation()
+        {
+            foreach (
+                string name in new[]
+                {
+                    "cancelled caller, synchronous operation",
+                    "cancelled caller, asynchronous operation",
+                }
+            )
+            {
+                _cases[name].Thrown.Should().BeAssignableTo<OperationCanceledException>(name);
+                _cases[name].Invoked.Should().BeFalse(name);
+            }
+        }
+
+        [Test]
+        public void It_rejects_an_expired_deadline_before_invoking_the_operation()
+        {
+            foreach (
+                string name in new[]
+                {
+                    "expired deadline, synchronous operation",
+                    "expired deadline, asynchronous operation",
+                }
+            )
+            {
+                _cases[name].Thrown.Should().BeOfType<TimeoutException>(name);
+                _cases[name].Invoked.Should().BeFalse(name);
+            }
+        }
+
+        [Test]
+        public void It_neither_hands_over_nor_releases_the_session()
+        {
+            foreach ((string name, (_, _, SessionUnderTest subject)) in _cases)
+            {
+                subject.HandOverCount.Should().Be(0, name);
+                subject.Session.HandedOver.Should().BeFalse(name);
+                subject.Connection.DisposeCount.Should().Be(0, name);
+            }
+        }
+    }
+
+    [TestFixture]
     public class Given_an_operation_whose_cancellation_callback_blocks
     {
         private SessionUnderTest _subject = null!;
