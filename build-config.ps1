@@ -303,10 +303,10 @@ function E2ETests {
         try {
             Push-Location eng/docker-compose/
             if ($SkipDockerBuild) {
-                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider -AddE2EClaimSets
             }
             else {
-                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider -AddE2EClaimSets
             }
 
             Import-Module ./env-utility.psm1 -Force

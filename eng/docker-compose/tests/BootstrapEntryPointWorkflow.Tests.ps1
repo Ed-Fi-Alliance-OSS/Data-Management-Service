@@ -1397,6 +1397,74 @@ param(
             $log | Should -Not -Contain "prepare-claims" -Because "a complete manifest must be reused as-is"
             $log | Where-Object { $_ -like "start-infra*" } | Should -Not -BeNullOrEmpty -Because "the start phase still runs"
         }
+
+        Context "with -IncludeE2EClaimSets" {
+            BeforeEach {
+                # The complete manifest models a workspace a previous run staged; the recording claims
+                # script stands in for prepare-dms-claims.ps1, whose own fingerprint rejection of a
+                # workspace staged without the switch is covered by BootstrapSchemaAndSecuritySelection.
+                New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+                $script:callLog = Join-Path $script:repo.RepoRoot "call-log-e2e-claims.txt"
+                New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $script:callLog
+                New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:callLog | Out-Null
+                New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:callLog | Out-Null
+                New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:callLog | Out-Null
+                Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
+
+                function script:Set-RecordingE2EPrepareClaimsScript {
+                    param([string]$FailureMessage)
+
+                    $failure = if ($FailureMessage) { "if (`$IncludeE2EClaimSets) { throw '$FailureMessage' }" } else { "" }
+                    @"
+param([switch] `$IncludeE2EClaimSets, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$($script:callLog)' -Value "prepare-claims IncludeE2EClaimSets=`$IncludeE2EClaimSets"
+$failure
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "prepare-dms-claims.ps1") -Encoding utf8
+                }
+            }
+
+            It "reruns claims staging with the switch even though the manifest already carries claims" {
+                Set-RecordingE2EPrepareClaimsScript
+
+                Invoke-BootstrapWrapper -StartScriptName "start-local-dms.ps1" -EnvironmentFile $script:repo.EnvFile -InfraOnly -IncludeE2EClaimSets
+
+                $log = @(Get-Content -LiteralPath $script:callLog)
+                $log | Should -Contain "prepare-claims IncludeE2EClaimSets=True"
+                $claimsIndex = [array]::IndexOf($log, "prepare-claims IncludeE2EClaimSets=True")
+                $startIndex = [array]::IndexOf($log, ($log | Where-Object { $_ -like "start-infra*" } | Select-Object -First 1))
+                $startIndex | Should -BeGreaterThan $claimsIndex -Because "the matching E2E workspace is reused and startup proceeds"
+            }
+
+            It "throws the workspace-mismatch error before any start script runs when the staged workspace lacks the E2E claim sets" {
+                Set-RecordingE2EPrepareClaimsScript -FailureMessage "Existing staged bootstrap workspace differs from requested inputs. Diverging field: claims fingerprint mismatch."
+
+                { Invoke-BootstrapWrapper -StartScriptName "start-local-dms.ps1" -EnvironmentFile $script:repo.EnvFile -InfraOnly -IncludeE2EClaimSets } |
+                    Should -Throw -ExpectedMessage "*claims fingerprint mismatch*"
+
+                $log = @(Get-Content -LiteralPath $script:callLog)
+                $log | Should -Contain "prepare-claims IncludeE2EClaimSets=True"
+                @($log | Where-Object { $_ -like "start-*" }) | Should -BeNullOrEmpty -Because "the mismatch must surface before infrastructure starts"
+            }
+
+            It "keeps the skip-when-staged behavior without the switch" {
+                Set-RecordingE2EPrepareClaimsScript
+
+                Invoke-BootstrapWrapper -StartScriptName "start-local-dms.ps1" -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+                $log = @(Get-Content -LiteralPath $script:callLog)
+                @($log | Where-Object { $_ -like "prepare-claims*" }) | Should -BeNullOrEmpty
+                $log | Where-Object { $_ -like "start-infra*" } | Should -Not -BeNullOrEmpty
+            }
+
+            It "forwards no switch to prepare-dms-claims.ps1 when staging a fresh workspace without it" {
+                Remove-Item -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap") -Recurse -Force
+                Set-RecordingE2EPrepareClaimsScript
+
+                Invoke-BootstrapWrapper -StartScriptName "start-local-dms.ps1" -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+                @(Get-Content -LiteralPath $script:callLog) | Should -Contain "prepare-claims IncludeE2EClaimSets=False"
+            }
+        }
     }
 
     # =========================================================================

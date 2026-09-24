@@ -47,7 +47,7 @@ Describe 'Shared CDC E2E setup handoff' {
         $expectedScript = if ($Published) { 'start-published-dms.ps1' } else { 'start-local-dms.ps1' }
         Should -Invoke Invoke-BootstrapWrapper -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
             $StartScriptName -eq $expectedScript -and $DatabaseEngine -eq $Provider -and
-            $EnableKafkaCdc -and $SeparateConfigDatabase -and $UseEnvironmentFileSchemaSettings -and
+            $EnableKafkaCdc -and $SeparateConfigDatabase -and $UseEnvironmentFileSchemaSettings -and $IncludeE2EClaimSets -and
             -not $RebuildLocalImages -and $DataStoreDatabaseName -eq 'primary_e2e' -and
             $CdcSettingsPath -eq $script:arguments.CdcSettingsPath -and
             $CdcBindingStatePath -eq $script:arguments.CdcBindingStatePath -and

@@ -44,6 +44,13 @@ Describe "Story 00 bootstrap" {
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Claims") -Destination $claimsTargetRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Deploy") -Destination $claimsTargetRoot -Recurse
 
+        # Copy the test-owned E2E claimset fragments that Initialize-E2EClaimsWorkspace stages.
+        $e2eFragmentsRelativePath = "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
+        $e2eFragmentsTargetRoot = Join-Path $repoRoot $e2eFragmentsRelativePath
+        New-Item -ItemType Directory -Path $e2eFragmentsTargetRoot -Force | Out-Null
+        Get-ChildItem -LiteralPath (Join-Path $script:sourceRepoRoot $e2eFragmentsRelativePath) -File |
+            Copy-Item -Destination $e2eFragmentsTargetRoot
+
         # Copy JsonSchemaForApiSchema.json so prepare-dms-schema.ps1 can include it in the staged workspace.
         $jsonSchemaSourceDir = Join-Path $script:sourceRepoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema"
         $jsonSchemaTargetDir = Join-Path $repoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema"
@@ -57,6 +64,9 @@ Describe "Story 00 bootstrap" {
             PrepareSchemaScript = Join-Path $dockerComposeRoot "prepare-dms-schema.ps1"
             PrepareClaimsScript = Join-Path $dockerComposeRoot "prepare-dms-claims.ps1"
             ManifestModule = Join-Path $dockerComposeRoot "bootstrap-manifest.psm1"
+            DefaultFragmentsRoot = Join-Path $claimsTargetRoot "Deploy/AdditionalClaimsets"
+            E2EFragmentsRoot = $e2eFragmentsTargetRoot
+            E2EClaimsWorkspace = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeRoot ".e2e-claims"))
         }
     }
 
@@ -261,15 +271,21 @@ exit $ExitCode
     function script:Invoke-PrepareClaim {
         param(
             [string]
-            $ClaimsDirectoryPath
+            $ClaimsDirectoryPath,
+
+            [switch]
+            $IncludeE2EClaimSets
         )
 
-        if ([string]::IsNullOrWhiteSpace($ClaimsDirectoryPath)) {
-            & $script:repo.PrepareClaimsScript | Out-Null
-            return
+        $prepareArgs = @{}
+        if (-not [string]::IsNullOrWhiteSpace($ClaimsDirectoryPath)) {
+            $prepareArgs["ClaimsDirectoryPath"] = $ClaimsDirectoryPath
+        }
+        if ($IncludeE2EClaimSets) {
+            $prepareArgs["IncludeE2EClaimSets"] = $true
         }
 
-        & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $ClaimsDirectoryPath | Out-Null
+        & $script:repo.PrepareClaimsScript @prepareArgs | Out-Null
     }
 
     function script:Get-RootManifest {
@@ -1276,6 +1292,152 @@ exit $ExitCode
 
     }
 
+    Context "claims staging with -IncludeE2EClaimSets" {
+        BeforeEach {
+            $script:e2eFragmentFileNames = @(
+                "001-namespace-claimset.json",
+                "002-nofurtherauth-claimset.json",
+                "003-edorgsonly-claimset.json",
+                "003a-edorgsonly-inverted-claimset.json",
+                "003b-edorgsonly-or-inverted-claimset.json",
+                "003c-edorgsonly-mixed-claimset.json"
+            )
+            $script:e2eProbes = @(
+                "E2E-NameSpaceBasedClaimSet|http://ed-fi.org/identity/claims/ed-fi/survey|Read|False",
+                "E2E-NoFurtherAuthRequiredClaimSet|http://ed-fi.org/identity/claims/ed-fi/academicWeek|Read|False",
+                "E2E-RelationshipsWithEdOrgsOnlyClaimSet|http://ed-fi.org/identity/claims/ed-fi/academicWeek|Read|False",
+                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet|http://ed-fi.org/identity/claims/ed-fi/academicWeek|Read|False",
+                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet|http://ed-fi.org/identity/claims/ed-fi/academicWeek|Read|False",
+                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet|http://ed-fi.org/identity/claims/ed-fi/academicWeek|Read|False"
+            )
+
+            function script:Get-StagedClaimsResult {
+                $manifest = Get-RootManifest
+                return [pscustomobject]@{
+                    Mode = $manifest.claims.mode
+                    Fingerprint = $manifest.claims.fingerprint
+                    Files = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | Sort-Object Name | ForEach-Object Name)
+                    Checks = @($manifest.claims.expectedVerificationChecks | ForEach-Object {
+                            $isParent = $null -ne $_.PSObject.Properties["isParent"] -and [bool]$_.isParent
+                            "$($_.claimSetName)|$($_.resourceClaim)|$($_.action)|$isParent"
+                        })
+                }
+            }
+
+            function script:Invoke-SampleHomographStaging {
+                param([switch]$IncludeE2EClaimSets)
+
+                if (Test-Path -LiteralPath $script:repo.BootstrapRoot) {
+                    Remove-Item -LiteralPath $script:repo.BootstrapRoot -Recurse -Force
+                }
+                Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample", "Homograph"))
+                Invoke-PrepareClaim -IncludeE2EClaimSets:$IncludeE2EClaimSets
+                return Get-StagedClaimsResult
+            }
+        }
+
+        It "stages the default extension fragments together with the six E2E fragments" {
+            $staged = Invoke-SampleHomographStaging -IncludeE2EClaimSets
+
+            $staged.Mode | Should -Be "Hybrid"
+            $staged.Files | Should -Be (@("004-sample-extension-claimset.json", "005-homograph-extension-claimset.json") + $script:e2eFragmentFileNames | Sort-Object)
+        }
+
+        It "stages nothing extra and records unchanged checks without the switch" {
+            $baseline = Invoke-SampleHomographStaging
+
+            $baseline.Files | Should -Be @("004-sample-extension-claimset.json", "005-homograph-extension-claimset.json")
+            @($baseline.Checks | Where-Object { $_ -like "E2E-*" }) | Should -BeNullOrEmpty
+        }
+
+        It "changes the staged workspace fingerprint versus a run without the switch" {
+            $baseline = Invoke-SampleHomographStaging
+            $withE2E = Invoke-SampleHomographStaging -IncludeE2EClaimSets
+
+            $withE2E.Fingerprint | Should -Not -Be $baseline.Fingerprint
+        }
+
+        It "records the no-switch checks plus exactly the six canonical probes" {
+            $baseline = Invoke-SampleHomographStaging
+            $withE2E = Invoke-SampleHomographStaging -IncludeE2EClaimSets
+
+            # Everything produced without the switch is preserved: the EdFiSandbox baseline probe and
+            # the parent-derived 004/005 checks marked isParent.
+            $baseline.Checks | Should -Contain "EdFiSandbox|http://ed-fi.org/identity/claims/ed-fi/schoolYearType|Read|False"
+            @($baseline.Checks | Where-Object { $_ -like "*|True" }).Count | Should -BeGreaterThan 0
+            $withE2E.Checks | Should -Be (@($baseline.Checks) + $script:e2eProbes)
+        }
+
+        It "never records an E2E check extracted from the fragments' endpoint-style resource names" {
+            $withE2E = Invoke-SampleHomographStaging -IncludeE2EClaimSets
+            $e2eChecks = @($withE2E.Checks | Where-Object { $_ -like "E2E-*" })
+
+            $e2eChecks | Should -Be $script:e2eProbes
+            $e2eChecks | Should -Not -Match "\|ed-fi/[a-zA-Z]+s\|" -Because "extracted plural names such as ed-fi/schoolYearTypes never match the gate's leaf URIs"
+        }
+
+        It "reuses a workspace staged with the switch when rerun with the switch" {
+            $first = Invoke-SampleHomographStaging -IncludeE2EClaimSets
+
+            { Invoke-PrepareClaim -IncludeE2EClaimSets } | Should -Not -Throw
+            (Get-StagedClaimsResult).Fingerprint | Should -Be $first.Fingerprint
+        }
+
+        It "rejects a workspace staged without the switch before any Docker step" {
+            $null = Invoke-SampleHomographStaging
+
+            { Invoke-PrepareClaim -IncludeE2EClaimSets } |
+                Should -Throw -ExpectedMessage "*Diverging field: claims fingerprint mismatch*"
+        }
+
+        It "still rejects a user fragment that names an undeclared claim set when the switch is set" {
+            $userClaimsDirectory = Join-Path $script:repo.RepoRoot "user-claims"
+            New-ExplicitClaimsetFragment `
+                -Path (Join-Path $userClaimsDirectory "acme-claimset.json") `
+                -ClaimSetName "Acme-UndeclaredClaimSet"
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+
+            { & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $userClaimsDirectory -IncludeE2EClaimSets | Out-Null } |
+                Should -Throw -ExpectedMessage "*acme-claimset.json*uses unknown effective claim set 'Acme-UndeclaredClaimSet'*"
+        }
+
+        It "rejects a user fragment that names an E2E claim set without the switch" {
+            $userClaimsDirectory = Join-Path $script:repo.RepoRoot "user-claims"
+            New-ExplicitClaimsetFragment `
+                -Path (Join-Path $userClaimsDirectory "acme-claimset.json") `
+                -ClaimSetName "E2E-NoFurtherAuthRequiredClaimSet"
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $userClaimsDirectory } |
+                Should -Throw -ExpectedMessage "*uses unknown effective claim set 'E2E-NoFurtherAuthRequiredClaimSet'*"
+        }
+
+        It "throws when the E2E readiness checks file is missing" {
+            Remove-Item -LiteralPath (Join-Path $script:repo.E2EFragmentsRoot "e2e-readiness-checks.json")
+
+            { Invoke-SampleHomographStaging -IncludeE2EClaimSets } |
+                Should -Throw -ExpectedMessage "*E2E readiness checks file was not found*"
+        }
+
+        It "throws when an E2E readiness check is malformed" {
+            Set-Content `
+                -LiteralPath (Join-Path $script:repo.E2EFragmentsRoot "e2e-readiness-checks.json") `
+                -Value '[ { "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet", "resourceClaim": "", "action": "Read" } ]'
+
+            { Invoke-SampleHomographStaging -IncludeE2EClaimSets } |
+                Should -Throw -ExpectedMessage "*Malformed verification check for E2E readiness checks*"
+        }
+
+        It "throws when the E2E readiness checks file is not a JSON array" {
+            Set-Content `
+                -LiteralPath (Join-Path $script:repo.E2EFragmentsRoot "e2e-readiness-checks.json") `
+                -Value '{ "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet", "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/academicWeek", "action": "Read" }'
+
+            { Invoke-SampleHomographStaging -IncludeE2EClaimSets } |
+                Should -Throw -ExpectedMessage "*must be a JSON array*"
+        }
+    }
+
     Context "startup handoff" {
         It "activates staged DMS schema and CMS claims env vars when a valid bootstrap manifest is present" {
             # With a valid bootstrap manifest, Set-BootstrapStartupEnvironment returns $true and
@@ -1515,7 +1677,7 @@ exit $ExitCode
             $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
         }
 
-        It "clears DMS_CONFIG_CLAIMS_MOUNT_SOURCE when AddExtensionSecurityMetadata is passed without a bootstrap manifest" {
+        It "mounts the staged E2E claims workspace when AddExtensionSecurityMetadata is passed without a bootstrap manifest" {
             # Pre-set a stale ambient value that a prior bootstrap session might have left behind.
             $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
@@ -1524,7 +1686,9 @@ exit $ExitCode
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
+            [System.IO.Path]::GetFullPath($env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE) | Should -Be $script:repo.E2EClaimsWorkspace
+            Test-Path -LiteralPath (Join-Path $script:repo.E2EClaimsWorkspace "001-namespace-claimset.json") |
+                Should -BeTrue -Because "the mounted directory must already hold the E2E fragments when compose starts CMS"
         }
 
         It "leaves non-bootstrap schema env vars untouched when AddExtensionSecurityMetadata is passed" {
@@ -1827,6 +1991,176 @@ exit 0
             $content | Should -Not -Match 'SkipConnectorSetup'
             $content | Should -Not -Match $legacyPublicationNamePattern
             $content | Should -Not -Match $legacyDocumentTablePattern
+        }
+    }
+
+    Context "E2E claims workspace" {
+        BeforeEach {
+            Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
+            Import-Module $script:repo.ManifestModule -Force
+
+            $script:expectedE2EClaimsFiles = @(
+                "001-namespace-claimset.json",
+                "002-nofurtherauth-claimset.json",
+                "003-edorgsonly-claimset.json",
+                "003a-edorgsonly-inverted-claimset.json",
+                "003b-edorgsonly-or-inverted-claimset.json",
+                "003c-edorgsonly-mixed-claimset.json",
+                "004-sample-extension-claimset.json",
+                "005-homograph-extension-claimset.json"
+            )
+        }
+
+        It "stages the default extension fragments together with the E2E fragments" {
+            $workspace = Initialize-E2EClaimsWorkspace
+
+            [System.IO.Path]::GetFullPath($workspace) | Should -Be $script:repo.E2EClaimsWorkspace
+            @(Get-ChildItem -LiteralPath $workspace -File | Sort-Object Name | ForEach-Object Name) |
+                Should -Be ($script:expectedE2EClaimsFiles | Sort-Object)
+
+            foreach ($fileName in $script:expectedE2EClaimsFiles) {
+                $sourceRoot = if ($fileName -like "00[45]-*") { $script:repo.DefaultFragmentsRoot } else { $script:repo.E2EFragmentsRoot }
+                (Get-FileHash -LiteralPath (Join-Path $workspace $fileName)).Hash |
+                    Should -Be (Get-FileHash -LiteralPath (Join-Path $sourceRoot $fileName)).Hash
+            }
+        }
+
+        It "does not stage the readiness checks file or other non-fragment files" {
+            $workspace = Initialize-E2EClaimsWorkspace
+
+            Test-Path -LiteralPath (Join-Path $script:repo.E2EFragmentsRoot "e2e-readiness-checks.json") | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $workspace "e2e-readiness-checks.json") | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $workspace "README.md") | Should -BeFalse
+        }
+
+        It "removes a stale claimset fragment left by a previous run" {
+            $workspace = Initialize-E2EClaimsWorkspace
+            $stalePath = Join-Path $workspace "099-stale-claimset.json"
+            Set-Content -LiteralPath $stalePath -Value "{}"
+
+            $null = Initialize-E2EClaimsWorkspace
+
+            Test-Path -LiteralPath $stalePath | Should -BeFalse
+            @(Get-ChildItem -LiteralPath $workspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
+        }
+
+        It "throws on a fragment file-name collision between the source directories" {
+            Copy-Item `
+                -LiteralPath (Join-Path $script:repo.DefaultFragmentsRoot "004-sample-extension-claimset.json") `
+                -Destination $script:repo.E2EFragmentsRoot
+
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*filename collision for '004-sample-extension-claimset.json'*"
+        }
+
+        It "throws when the E2E fragment directory is missing instead of staging without the E2E claim sets" {
+            Remove-Item -LiteralPath $script:repo.E2EFragmentsRoot -Recurse -Force
+
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claimset fragment directory does not exist*"
+        }
+
+        It "reuses the same directory unchanged when called again, as the -InfraOnly then -DmsOnly phases do" {
+            # CMS is bind-mounted to this directory after the first phase, so the second call must not
+            # delete or recreate it, and must not rewrite files whose content already matches.
+            $firstWorkspace = Initialize-E2EClaimsWorkspace
+            $markerPath = Join-Path $firstWorkspace "directory-identity.marker"
+            Set-Content -LiteralPath $markerPath -Value "first-phase"
+            $creationTime = (Get-Item -LiteralPath $firstWorkspace).CreationTimeUtc
+            # Copy-Item carries the source timestamp, so a sentinel write time is what exposes a re-copy.
+            $sentinelWriteTime = [datetime]::new(2001, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)
+            $hashesBefore = @{}
+            foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claimset.json" -File) {
+                $hashesBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash
+                $file.LastWriteTimeUtc = $sentinelWriteTime
+            }
+
+            $secondWorkspace = Initialize-E2EClaimsWorkspace
+
+            $secondWorkspace | Should -Be $firstWorkspace
+            Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
+            (Get-Item -LiteralPath $secondWorkspace).CreationTimeUtc | Should -Be $creationTime
+            $stagedFiles = @(Get-ChildItem -LiteralPath $secondWorkspace -Filter "*-claimset.json" -File)
+            $stagedFiles.Count | Should -Be $script:expectedE2EClaimsFiles.Count
+            foreach ($file in $stagedFiles) {
+                (Get-FileHash -LiteralPath $file.FullName).Hash | Should -Be $hashesBefore[$file.Name]
+                $file.LastWriteTimeUtc | Should -Be $sentinelWriteTime -Because "$($file.Name) already matched its source and must not be rewritten"
+            }
+        }
+
+        It "syncs changed intended content in place without replacing the directory" {
+            $workspace = Initialize-E2EClaimsWorkspace
+            $markerPath = Join-Path $workspace "directory-identity.marker"
+            Set-Content -LiteralPath $markerPath -Value "first-phase"
+            $creationTime = (Get-Item -LiteralPath $workspace).CreationTimeUtc
+            $changedSource = Join-Path $script:repo.E2EFragmentsRoot "001-namespace-claimset.json"
+            Set-Content -LiteralPath $changedSource -Value '{ "name": "E2E-NameSpaceBasedClaimSet", "resourceClaims": [] }'
+            $addedSource = Join-Path $script:repo.E2EFragmentsRoot "006-added-claimset.json"
+            Set-Content -LiteralPath $addedSource -Value '{ "name": "E2E-AddedClaimSet", "resourceClaims": [] }'
+
+            $null = Initialize-E2EClaimsWorkspace
+
+            (Get-FileHash -LiteralPath (Join-Path $workspace "001-namespace-claimset.json")).Hash |
+                Should -Be (Get-FileHash -LiteralPath $changedSource).Hash
+            (Get-FileHash -LiteralPath (Join-Path $workspace "006-added-claimset.json")).Hash |
+                Should -Be (Get-FileHash -LiteralPath $addedSource).Hash
+            Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
+            (Get-Item -LiteralPath $workspace).CreationTimeUtc | Should -Be $creationTime
+        }
+
+        Context "start-local-config.ps1 -AddE2EClaimSets" {
+            BeforeEach {
+                foreach ($fileName in @("start-local-config.ps1", "env-utility.psm1", "database-safety.psm1", ".env.config.e2e")) {
+                    Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot $fileName) -Destination $script:repo.DockerComposeRoot
+                }
+
+                $script:startLocalConfig = Join-Path $script:repo.DockerComposeRoot "start-local-config.ps1"
+                $script:configEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.config.e2e"
+
+                # BeforeEach shares each It's scope, and the script resolves these names through its
+                # parent scopes. The fake records the mount source compose would read, then stops the
+                # script at the first "up" so no identity setup runs; the script's finally block must
+                # still restore the caller's value.
+                $composeUpMountSources = [System.Collections.Generic.List[string]]::new()
+                function docker {
+                    if ($args -contains "up") {
+                        $composeUpMountSources.Add([string]$env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE)
+                        throw "fake docker stopped startup"
+                    }
+                    $global:LASTEXITCODE = 0
+                    if ($args[0] -eq "network") { return "dms-network-id" }
+                }
+            }
+
+            It "mounts the staged workspace for compose and restores the caller's prior value" {
+                $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/caller/prior/value"
+
+                { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile -AddE2EClaimSets *> $null } |
+                    Should -Throw "*fake docker stopped startup*"
+
+                $composeUpMountSources.Count | Should -Be 1
+                [System.IO.Path]::GetFullPath($composeUpMountSources[0]) | Should -Be $script:repo.E2EClaimsWorkspace
+                @(Get-ChildItem -LiteralPath $script:repo.E2EClaimsWorkspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
+                $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Be "/caller/prior/value"
+            }
+
+            It "removes the mount source again when the caller had none" {
+                Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+
+                { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile -AddE2EClaimSets *> $null } |
+                    Should -Throw "*fake docker stopped startup*"
+
+                [System.IO.Path]::GetFullPath($composeUpMountSources[0]) | Should -Be $script:repo.E2EClaimsWorkspace
+                Test-Path -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeFalse
+            }
+
+            It "leaves the default compose mount in place without the switch" {
+                Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+
+                { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile *> $null } |
+                    Should -Throw "*fake docker stopped startup*"
+
+                $composeUpMountSources[0] | Should -BeNullOrEmpty
+                Test-Path -LiteralPath $script:repo.E2EClaimsWorkspace | Should -BeFalse
+            }
         }
     }
 
