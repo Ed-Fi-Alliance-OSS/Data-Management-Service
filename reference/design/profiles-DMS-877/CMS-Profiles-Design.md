@@ -31,7 +31,8 @@ Special Education). The Configuration Service needs to:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
 | `Id` | INT | PK, Auto-generated | Unique identifier |
-| `ProfileName` | VARCHAR(500) | NOT NULL, UNIQUE | Profile name |
+| `ProfileName` | VARCHAR(500) | NOT NULL, unique per tenant | Profile name |
+| `TenantId` | BIGINT | NULL, FK to `Tenant` | Owning tenant (null when multi-tenancy is disabled) |
 | `Definition` | TEXT | NOT NULL | XML profile definition |
 | `CreatedAt` | TIMESTAMP | NOT NULL, DEFAULT NOW() | Creation timestamp |
 | `CreatedBy` | VARCHAR(256) | | Creator identifier |
@@ -91,6 +92,9 @@ is still assigned to Applications.
 | PUT | `/v3/profiles/{id}` | Update a profile | Admin |
 | DELETE | `/v3/profiles/{id}` | Delete a profile | Admin |
 
+Every `/v3/profiles` operation is scoped to the caller's tenant: the list returns
+only that tenant's profiles, and another tenant's profile id answers 404.
+
 ### 3.2 Request/Response Models
 
 #### ProfileInsertCommand (POST body)
@@ -132,7 +136,7 @@ is still assigned to Applications.
 
 | Field | Rules |
 |-------|-------|
-| `profileName` | Required, max 500 chars, unique |
+| `profileName` | Required, max 500 chars, unique within the tenant |
 | `definition` | Required, valid XML, `<Profile>` root, name must match |
 
 #### Definition Validation Levels
@@ -195,7 +199,7 @@ Profile 'Test-Profile' definition for the write content type for resource
 |----------|-------------|------------|
 | Validation failure | 400 | `urn:ed-fi:api:bad-request` |
 | Profile not found | 404 | `urn:ed-fi:api:not-found` |
-| Duplicate name | 409 | `urn:ed-fi:api:conflict:duplicate` |
+| Duplicate name | 409 | `urn:ed-fi:api:conflict:non-unique-identity` |
 | Profile in use | 409 | `urn:ed-fi:api:conflict:dependent-item-exists` |
 
 ---
@@ -256,6 +260,7 @@ The existing Application endpoints are extended to support profile assignment:
 | Rule | Description |
 |------|-------------|
 | Valid ProfileIds | All provided ProfileIds must exist |
+| Same tenant | Every ProfileId must belong to the caller's tenant; an id from another tenant is rejected exactly like a missing one |
 | No duplicates | ProfileIds array must not contain duplicates |
 
 ---
@@ -264,7 +269,7 @@ The existing Application endpoints are extended to support profile assignment:
 
 ### 5.1 Profile Retrieval and Caching
 
-DMS caches the full profile catalog (all profiles) from `/v3/profiles`,
+DMS caches the calling tenant's profile catalog from `/v3/profiles`,
 including profile id, profile name, and profile definition. The catalog is
 keyed for lookups by either id or name, so a single cache can serve:
 
@@ -318,7 +323,8 @@ CREATE TABLE dmscs.Profile (
     CreatedBy VARCHAR(256),
     LastModifiedAt TIMESTAMP,
     ModifiedBy VARCHAR(256),
-    CONSTRAINT uq_profile_name UNIQUE (ProfileName)
+    TenantId BIGINT NULL REFERENCES dmscs.Tenant(Id),
+    CONSTRAINT UX_Profile_TenantId_ProfileName UNIQUE NULLS NOT DISTINCT (TenantId, ProfileName)
 );
 
 CREATE INDEX ix_profile_name ON dmscs.Profile (ProfileName);

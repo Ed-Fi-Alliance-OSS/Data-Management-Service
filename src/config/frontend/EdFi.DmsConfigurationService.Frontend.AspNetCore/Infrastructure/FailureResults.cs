@@ -79,6 +79,24 @@ internal static class FailureResults
         );
     }
 
+    /// <summary>
+    /// Structured 409 <c>urn:ed-fi:api:conflict:non-unique-identity</c> response for a create or
+    /// rename whose name is already taken. Vendors, profiles and claim sets share this one shape;
+    /// only the resource-specific <paramref name="error"/> differs.
+    /// </summary>
+    public static IResult NonUniqueIdentity(string error, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForNonUniqueIdentity(
+                "The identifying value(s) of the item are the same as another item that already exists.",
+                correlationId,
+                [error]
+            ),
+            contentType: _errorContentType,
+            statusCode: 409
+        );
+    }
+
     public static IResult BadGateway(string detail, string correlationId)
     {
         var errors = GetIdentityErrorDetails(detail);

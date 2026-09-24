@@ -213,9 +213,9 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
     }
 
     It "registers exactly one vendor per tenant with a distinct, deterministic company name" {
-        # CMS enforces a global UX_Vendor_Company uniqueness constraint, so the two fixture tenants must
-        # register different company names. Capture the invoked companies to prove distinctness at runtime
-        # rather than by matching the source text.
+        # CMS vendor company names are unique only within a tenant, but the two fixture tenants still
+        # register different company names so the fixtures read clearly. Capture the invoked companies
+        # to prove distinctness at runtime rather than by matching the source text.
         $script:capturedVendorCompanies = @{}
         Mock Add-Vendor {
             $script:capturedVendorCompanies[$Tenant] = $Company

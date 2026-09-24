@@ -58,6 +58,37 @@ public class ApplicationRepository(
         return count == dataStoreIds.Distinct().Count();
     }
 
+    /// <summary>
+    /// True when every requested profile belongs to the current tenant. A profile created in another
+    /// tenant counts as missing, exactly like an id that does not exist.
+    /// </summary>
+    private async Task<bool> AllProfilesInTenant(
+        SqlConnection connection,
+        DbTransaction? transaction,
+        int[] profileIds
+    )
+    {
+        string sql = $"""
+            SELECT COUNT(1) FROM dmscs.Profile
+            WHERE Id IN @ProfileIds AND {TenantContext.TenantWhereClause()};
+            """;
+        // Dapper expands IN @ProfileIds into one parameter per id and SQL Server accepts at most
+        // 2,100 per request, so the distinct ids are checked in bounded chunks.
+        foreach (int[] chunk in profileIds.Distinct().Chunk(1000))
+        {
+            int count = await connection.ExecuteScalarAsync<int>(
+                sql,
+                new { ProfileIds = chunk, TenantId },
+                transaction
+            );
+            if (count != chunk.Length)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private async Task<bool> ApplicationExistsForTenant(
         SqlConnection connection,
         DbTransaction? transaction,
@@ -174,6 +205,13 @@ public class ApplicationRepository(
 
             if (command.ProfileIds.Length > 0)
             {
+                if (!await AllProfilesInTenant(connection, transaction, command.ProfileIds))
+                {
+                    logger.LogWarning("Profile not found");
+                    await transaction.RollbackAsync();
+                    return new ApplicationInsertResult.FailureProfileNotFound();
+                }
+
                 sql = """
                     INSERT INTO dmscs.ApplicationProfile (ApplicationId, ProfileId, CreatedBy)
                     VALUES (@ApplicationId, @ProfileId, @CreatedBy);
@@ -493,6 +531,16 @@ public class ApplicationRepository(
                 logger.LogWarning("Update application failure: Data store not found");
                 await transaction.RollbackAsync();
                 return new ApplicationUpdateResult.FailureDataStoreNotFound();
+            }
+
+            if (
+                command.ProfileIds.Length > 0
+                && !await AllProfilesInTenant(connection, transaction, command.ProfileIds)
+            )
+            {
+                logger.LogWarning("Update application failure: Profile not found");
+                await transaction.RollbackAsync();
+                return new ApplicationUpdateResult.FailureProfileNotFound();
             }
 
             sql = "DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @ApplicationId";

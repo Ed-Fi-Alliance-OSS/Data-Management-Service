@@ -13,13 +13,14 @@ using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation.Results;
 using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class VendorModule : IEndpointModule
 {
+    private const string DuplicateCompanyNameError = "A vendor with this company name already exists.";
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
@@ -91,17 +92,9 @@ public class VendorModule : IEndpointModule
 
         return insertResult switch
         {
-            VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [
-                        new ValidationFailure(
-                            "Name",
-                            "A vendor name already exists in the database. Please enter a unique name."
-                        ),
-                    ],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            VendorInsertResult.FailureDuplicateCompanyName => FailureResults.NonUniqueIdentity(
+                DuplicateCompanyNameError,
+                httpContext.TraceIdentifier
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -228,6 +221,16 @@ public class VendorModule : IEndpointModule
                     // row that no longer exists are both the expected end state.
                     return await RollbackMutatedClientsAsync(acceptMissing: true)
                         ? VendorNotFound(id, httpContext)
+                        : FailureResults.Unknown(httpContext.TraceIdentifier);
+                case VendorUpdateResult.FailureDuplicateCompanyName:
+                    // The unique violation rolled the update back, so the vendor row provably still
+                    // holds its original values and no outcome resolution is needed: only the
+                    // provider claims this request changed are restored.
+                    return await RollbackMutatedClientsAsync(acceptMissing: false)
+                        ? FailureResults.NonUniqueIdentity(
+                            DuplicateCompanyNameError,
+                            httpContext.TraceIdentifier
+                        )
                         : FailureResults.Unknown(httpContext.TraceIdentifier);
                 case VendorUpdateResult.FailureUnknown updateFailure:
                     logger.LogError(

@@ -93,6 +93,12 @@ public record VendorUpdateResult
     public record FailureNotExists() : VendorUpdateResult();
 
     /// <summary>
+    /// Another vendor in the same tenant already has the requested company name. The unique
+    /// violation rolled the update back, so nothing was committed.
+    /// </summary>
+    public record FailureDuplicateCompanyName() : VendorUpdateResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : VendorUpdateResult();

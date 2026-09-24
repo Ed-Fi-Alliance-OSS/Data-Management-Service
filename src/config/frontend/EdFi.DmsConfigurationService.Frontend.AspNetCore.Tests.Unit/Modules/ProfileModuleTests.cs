@@ -128,7 +128,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task CreateProfile_DuplicateName_ShouldReturnBadRequest()
+    public async Task CreateProfile_DuplicateName_ShouldReturnConflict()
     {
         var duplicateProfile = new
         {
@@ -136,7 +136,7 @@ public class ProfileModuleTests
             definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource></Profile>",
         };
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
-            .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
+            .Returns(new ProfileInsertResult.FailureDuplicateName());
         using var client = SetUpClient();
         using var content = new StringContent(
             JsonSerializer.Serialize(duplicateProfile),
@@ -147,11 +147,25 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("Profile 'TestProfile' already exists");
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+              "type": "urn:ed-fi:api:conflict:non-unique-identity",
+              "title": "Identifying Values Are Not Unique",
+              "status": 409,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "A profile with this name already exists."
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
     }
 
     [Test]
@@ -455,7 +469,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task UpdateProfile_DuplicateName_ShouldReturnBadRequest()
+    public async Task UpdateProfile_DuplicateName_ShouldReturnConflict()
     {
         var updateProfile = new
         {
@@ -464,7 +478,7 @@ public class ProfileModuleTests
             definition = "<Profile name=\"ExistingProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
         };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
-            .Returns(new ProfileUpdateResult.FailureDuplicateName("ExistingProfile"));
+            .Returns(new ProfileUpdateResult.FailureDuplicateName());
         using var client = SetUpClient();
         using var content = new StringContent(
             JsonSerializer.Serialize(updateProfile),
@@ -475,11 +489,25 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("A profile with this name already exists");
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+              "type": "urn:ed-fi:api:conflict:non-unique-identity",
+              "title": "Identifying Values Are Not Unique",
+              "status": 409,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "A profile with this name already exists."
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
     }
 
     [Test]

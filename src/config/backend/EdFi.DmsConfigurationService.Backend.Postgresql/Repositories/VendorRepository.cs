@@ -118,7 +118,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (PostgresException ex)
                 when (ex.SqlState == PostgresErrorCodes.UniqueViolation
-                    && ex.ConstraintName == "UX_Vendor_Company"
+                    && ex.ConstraintName == "UX_Vendor_TenantId_Company"
                 )
             {
                 logger.LogWarning(ex, "Company Name must be unique");
@@ -337,6 +337,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await transaction.CommitAsync();
 
                 return new VendorUpdateResult.Success();
+            }
+            catch (PostgresException ex)
+                when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                    && ex.ConstraintName == "UX_Vendor_TenantId_Company"
+                )
+            {
+                logger.LogWarning(ex, "Company Name must be unique");
+                await RollbackSafelyAsync(transaction);
+                return new VendorUpdateResult.FailureDuplicateCompanyName();
             }
             catch (Exception ex)
             {

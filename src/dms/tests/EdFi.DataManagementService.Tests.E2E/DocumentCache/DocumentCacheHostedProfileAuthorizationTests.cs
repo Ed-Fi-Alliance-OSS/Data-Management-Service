@@ -225,7 +225,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         }
 
         if (
-            response.StatusCode == HttpStatusCode.BadRequest
+            response.StatusCode == HttpStatusCode.Conflict
             && body.Contains("exists", StringComparison.OrdinalIgnoreCase)
         )
         {

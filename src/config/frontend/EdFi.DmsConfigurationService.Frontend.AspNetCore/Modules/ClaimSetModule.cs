@@ -19,13 +19,9 @@ public class ClaimSetModule : IEndpointModule
 {
     private static IResult DuplicateClaimSetName(HttpContext httpContext)
     {
-        return Results.Json(
-            FailureResponse.ForNonUniqueIdentity(
-                "The identifying value(s) of the item are the same as another item that already exists.",
-                httpContext.TraceIdentifier,
-                ["A claim set with this name already exists."]
-            ),
-            statusCode: (int)HttpStatusCode.Conflict
+        return FailureResults.NonUniqueIdentity(
+            "A claim set with this name already exists.",
+            httpContext.TraceIdentifier
         );
     }
 

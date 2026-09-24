@@ -384,8 +384,8 @@ public class ApplicationModule : IEndpointModule
     /// <summary>
     /// Validates that every requested profile id exists. Throws a ValidationException
     /// when one is missing, returns a failure result for infrastructure errors, and
-    /// returns null when the request is valid. Profiles are not tenant-scoped, so this
-    /// existence check mirrors the repository's foreign-key validation exactly.
+    /// returns null when the request is valid. The profile lookup is tenant-scoped, so a profile
+    /// created in another tenant is reported exactly like a missing one.
     /// </summary>
     private static async Task<IResult?> ValidateProfileIdsExist(
         int[] profileIds,

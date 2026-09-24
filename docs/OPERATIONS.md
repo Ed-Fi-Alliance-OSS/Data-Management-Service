@@ -22,6 +22,14 @@ Although the application testing process will focus on the container-based
 integration, these applications should be able to run on "bare metal" (or
 virtual machine) without a container.
 
+### Database versions
+
+On PostgreSQL, the Configuration Service requires PostgreSQL 15 or later. Its
+database upgrade creates unique constraints with `NULLS NOT DISTINCT`, which
+earlier versions reject, so on PostgreSQL 13 or 14 the upgrade stops and the
+Configuration Service does not start. Upgrade PostgreSQL before upgrading the
+Configuration Service.
+
 ## Plugins
 
 A plugin is a directory of already-published assemblies that the Ed-Fi API loads at

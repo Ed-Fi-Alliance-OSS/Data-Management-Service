@@ -400,3 +400,258 @@ Feature: Tenants endpoints
              When a token is requested with the credentials captured as "tenantAEmpty" and scope "TenantAClaimSet"
              Then it should respond with 200
               And the response body has a non-empty access_token
+
+        # Vendor company names and profile names are unique only within a tenant, and a profile is
+        # visible to its own tenant alone. The rejected cross-tenant profile operations are followed
+        # by a read in the owning tenant proving the profile survived them.
+        @MssqlMultitenantRepresentative @MultitenantOnly
+        Scenario: 05 Ensure vendors and profiles are partitioned by tenant
+             When a POST request is made to "/v3/tenants" with
+                  """
+                    {
+                        "name": "TenantA_{scenarioRunId}"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/tenants" with
+                  """
+                    {
+                        "name": "TenantB_{scenarioRunId}"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/vendors" with header "Tenant" value "TenantA_{scenarioRunId}" and
+                  """
+                    {
+                        "company": "Shared Company {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://ed-fi-e2e.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "vendorIdA"
+             When a POST request is made to "/v3/vendors" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "company": "Shared Company {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://ed-fi-e2e.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "vendorIdB"
+             When a GET request is made to "/v3/vendors/{vendorIdA}" with header "Tenant" value "TenantB_{scenarioRunId}"
+             Then it should respond with 404
+             When a POST request is made to "/v3/profiles" with header "Tenant" value "TenantA_{scenarioRunId}" and
+                  """
+                    {
+                        "name": "Shared Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Shared Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "profileIdA"
+              # The same id filter finds the profile in its own tenant, which is what makes tenant B's
+              # empty result below a scoping result.
+             When a GET request is made to "/v3/profiles?id={profileIdA}" with header "Tenant" value "TenantA_{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    [
+                        {
+                            "id": {profileIdA},
+                            "name": "Shared Profile {scenarioRunId}"
+                        }
+                    ]
+                  """
+             When a GET request is made to "/v3/profiles?id={profileIdA}" with header "Tenant" value "TenantB_{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    []
+                  """
+             When a GET request is made to "/v3/profiles/{profileIdA}" with header "Tenant" value "TenantB_{scenarioRunId}"
+             Then it should respond with 404
+             When a PUT request is made to "/v3/profiles/{profileIdA}" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "id": {profileIdA},
+                        "name": "Hijacked Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Hijacked Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             Then it should respond with 404
+             When an "DELETE" request is made to "/v3/profiles/{profileIdA}" with headers
+                  | Key    | Value                   |
+                  | Tenant | TenantB_{scenarioRunId} |
+             Then it should respond with 404
+             When a GET request is made to "/v3/profiles/{profileIdA}" with header "Tenant" value "TenantA_{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    {
+                        "id": {profileIdA},
+                        "name": "Shared Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Shared Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             When a POST request is made to "/v3/profiles" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "name": "Shared Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Shared Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/profiles" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "name": "Shared Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Shared Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                    {
+                        "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+                        "type": "urn:ed-fi:api:conflict:non-unique-identity",
+                        "title": "Identifying Values Are Not Unique",
+                        "status": 409,
+                        "validationErrors": {},
+                        "errors": [
+                            "A profile with this name already exists."
+                        ]
+                    }
+                  """
+
+        # An application may only be assigned profiles from its own tenant. Another tenant's profile
+        # id is answered exactly like a missing one, and a rejected write leaves nothing behind.
+        @MssqlMultitenantRepresentative @MultitenantOnly
+        Scenario: 06 Ensure profileIds from another tenant are rejected for applications
+             When a POST request is made to "/v3/tenants" with
+                  """
+                    {
+                        "name": "TenantA_{scenarioRunId}"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/tenants" with
+                  """
+                    {
+                        "name": "TenantB_{scenarioRunId}"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/profiles" with header "Tenant" value "TenantA_{scenarioRunId}" and
+                  """
+                    {
+                        "name": "Tenant A Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Tenant A Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "profileIdA"
+             When a POST request is made to "/v3/profiles" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "name": "Tenant B Profile {scenarioRunId}",
+                        "definition": "<Profile name=\"Tenant B Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "profileIdB"
+             When a POST request is made to "/v3/vendors" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "company": "Tenant B Vendor {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://ed-fi-e2e.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "vendorIdB"
+             When a POST request is made to "/v3/applications" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "vendorId": {vendorIdB},
+                        "applicationName": "Foreign Profile Application",
+                        "claimSetName": "TenantBClaimSet",
+                        "educationOrganizationIds": [],
+                        "dataStoreIds": [],
+                        "profileIds": [{profileIdA}]
+                    }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                    {
+                        "detail": "Profile does not exist.",
+                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "title": "Unresolved Reference",
+                        "status": 409,
+                        "validationErrors": {},
+                        "errors": []
+                    }
+                  """
+             When a GET request is made to "/v3/applications" with header "Tenant" value "TenantB_{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    []
+                  """
+             When a POST request is made to "/v3/applications" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "vendorId": {vendorIdB},
+                        "applicationName": "Tenant B Application",
+                        "claimSetName": "TenantBClaimSet",
+                        "educationOrganizationIds": [],
+                        "dataStoreIds": [],
+                        "profileIds": [{profileIdB}]
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "applicationIdB"
+             When a PUT request is made to "/v3/applications/{applicationIdB}" with header "Tenant" value "TenantB_{scenarioRunId}" and
+                  """
+                    {
+                        "id": {applicationIdB},
+                        "vendorId": {vendorIdB},
+                        "applicationName": "Tenant B Application",
+                        "claimSetName": "TenantBClaimSet",
+                        "educationOrganizationIds": [],
+                        "dataStoreIds": [],
+                        "profileIds": [{profileIdA}]
+                    }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                    {
+                        "detail": "Profile does not exist.",
+                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "title": "Unresolved Reference",
+                        "status": 409,
+                        "validationErrors": {},
+                        "errors": []
+                    }
+                  """
+             When a GET request is made to "/v3/applications/{applicationIdB}" with header "Tenant" value "TenantB_{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    {
+                        "id": {applicationIdB},
+                        "applicationName": "Tenant B Application",
+                        "claimSetName": "TenantBClaimSet",
+                        "vendorId": {vendorIdB},
+                        "educationOrganizationIds": [],
+                        "enabled": true,
+                        "dataStoreIds": [],
+                        "profileIds": [{profileIdB}]
+                    }
+                  """

@@ -256,6 +256,32 @@ public class VendorModuleTests
         }
     }
 
+    /// <summary>
+    /// The complete 409 body a duplicate company name answers, on both create and rename.
+    /// </summary>
+    protected static async Task AssertDuplicateCompanyNameBodyAsync(HttpResponseMessage response)
+    {
+        var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
+              "type": "urn:ed-fi:api:conflict:non-unique-identity",
+              "title": "Identifying Values Are Not Unique",
+              "status": 409,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+                "A vendor with this company name already exists."
+              ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
+    }
+
     [TestFixture]
     public class FailureDuplicateCompanyNameTests : VendorModuleTests
     {
@@ -267,7 +293,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_with_Name_field_key()
+        public async Task Should_return_conflict_with_the_non_unique_identity_body()
         {
             using var client = SetUpClient();
 
@@ -287,12 +313,8 @@ public class VendorModuleTests
                 )
             );
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            var doc = JsonNode.Parse(await response.Content.ReadAsStringAsync());
-            doc!["validationErrors"]!
-                ["Name"]
-                .Should()
-                .NotBeNull("field key must be 'Name' per existing contract");
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            await AssertDuplicateCompanyNameBodyAsync(response);
         }
     }
 
@@ -1588,6 +1610,93 @@ public class VendorModuleTests
 
         [Test]
         public void It_restores_every_client_it_changed() => RollbackCalls.Should().HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_a_rename_onto_an_existing_company : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the read count below
+            // must cover only this test's request.
+            Fake.ClearRecordedCalls(_vendorRepository);
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureDuplicateCompanyName());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_returns_conflict() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public async Task It_returns_the_non_unique_identity_body() =>
+            await AssertDuplicateCompanyNameBodyAsync(_response);
+
+        [Test]
+        public void It_applied_every_provider_claim() => UpdateCalls.Should().HaveCount(3);
+
+        [Test]
+        public void It_restores_every_client_it_changed()
+        {
+            RollbackCalls.Should().HaveCount(3);
+            AssertClientsRestored(_clients);
+        }
+
+        // The pre-lock read and the under-lock reread only: the rejection proves the row did not
+        // commit, so no outcome-resolution read follows it.
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .MustHaveHappenedTwiceExactly();
+    }
+
+    [TestFixture]
+    public class Given_a_rename_onto_an_existing_company_whose_rollback_fails : VendorNamespaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // Rollback runs in reverse order, so the third client is restored first. Rejecting
+            // it is what makes the restorations after it prove the loop kept going.
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureDuplicateCompanyName());
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[2].ClientUuid.ToString(),
+                        StoredPrefixes
+                    )
+                )
+                .Returns(new ClientUpdateResult.FailureUnknown("the rollback was rejected"));
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+        }
+
+        [Test]
+        public void It_replaces_the_conflict_with_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        // The rejected rollback is stubbed ahead of the recorder, so it never reaches the
+        // recorded list; the two restored after it prove the loop kept going.
+        [Test]
+        public void It_continues_restoring_after_the_rejection() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .BeEquivalentTo(_clients[1].ClientUuid.ToString(), _clients[0].ClientUuid.ToString());
+
+        [Test]
+        public void It_attempted_the_client_whose_rollback_was_rejected() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        _clients[2].ClientUuid.ToString(),
+                        StoredPrefixes
+                    )
+                )
+                .MustHaveHappened();
     }
 
     /// <summary>

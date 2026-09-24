@@ -11,13 +11,14 @@ using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class ProfileModule : IEndpointModule
 {
+    private const string DuplicateProfileNameError = "A profile with this name already exists.";
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredGet("/v3/profiles/", GetAll);
@@ -90,12 +91,9 @@ public class ProfileModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
-            ProfileInsertResult.FailureDuplicateName duplicate => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.")],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileInsertResult.FailureDuplicateName => FailureResults.NonUniqueIdentity(
+                DuplicateProfileNameError,
+                httpContext.TraceIdentifier
             ),
             ProfileInsertResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
@@ -145,12 +143,9 @@ public class ProfileModule : IEndpointModule
         return result switch
         {
             ProfileUpdateResult.Success => Results.NoContent(),
-            ProfileUpdateResult.FailureDuplicateName => Results.Json(
-                FailureResponse.ForDataValidation(
-                    [new ValidationFailure("Name", "A profile with this name already exists.")],
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.BadRequest
+            ProfileUpdateResult.FailureDuplicateName => FailureResults.NonUniqueIdentity(
+                DuplicateProfileNameError,
+                httpContext.TraceIdentifier
             ),
             ProfileUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
