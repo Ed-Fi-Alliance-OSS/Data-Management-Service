@@ -414,7 +414,13 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             parameters.Add("Subject", subject);
             parameters.Add("Type", "access_token");
             parameters.Add("CreationDate", DateTimeOffset.UtcNow);
-            parameters.Add("ExpirationDate", expiration);
+            // ExpirationDate is a timestamptz instant. This binding, the ActiveAsOf count bound
+            // below and the sweep bound in DeleteExpiredTokensAsync must move together: binding any
+            // of them as a wall-clock timestamp puts a session-time-zone conversion back on that
+            // side alone, which is the DMS-1430 defect. ToUniversalTime keeps the offset at zero,
+            // which is what Npgsql requires for timestamptz, even if a caller ever passes a non-UTC
+            // offset.
+            parameters.Add("ExpirationDate", expiration.ToUniversalTime(), DbType.DateTimeOffset);
             parameters.Add("Status", "valid");
             parameters.Add("ReferenceId", tokenId.ToString("N"));
 
@@ -427,9 +433,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 return TokenStoreOutcome.Stored;
             }
 
-            // Passed exactly as ExpirationDate is, so the count and the stored value take the
-            // identical session-time-zone conversion path.
-            parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow);
+            // Bound exactly as ExpirationDate is, so the count compares two instants.
+            parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow, DbType.DateTimeOffset);
             parameters.Add("MaxActiveTokens", maxActiveTokens);
 
             // Grants for one client serialize on that client's OpenIddictApplication row, which
@@ -508,7 +513,11 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             await connection.OpenAsync();
             const string sql =
                 "DELETE FROM \"dmscs\".\"OpenIddictToken\" WHERE \"ExpirationDate\" <= @ExpiredBefore";
-            return await connection.ExecuteAsync(sql, new { ExpiredBefore = expiredBefore });
+            // Bound as a timestamptz instant, matching how StoreTokenAsync binds ExpirationDate.
+            // See the note there: the two bindings are a pair.
+            DynamicParameters parameters = new();
+            parameters.Add("ExpiredBefore", expiredBefore.ToUniversalTime(), DbType.DateTimeOffset);
+            return await connection.ExecuteAsync(sql, parameters);
         }
 
         public async Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(
