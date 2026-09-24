@@ -1,8 +1,25 @@
 {
     "$comment": [
-        "The published artifacts the stock-image plugin proof runs against. Every release-specific",
-        "value is null and status is 'pending' because the qualifying release does not exist yet.",
-        "The two repository names are not release-specific and are recorded from the outset.",
+        "The published artifacts the stock-image plugin proof runs against, recorded from the",
+        "qualifying release dms-pre-8.0.1-alpha.0.155. It was cut from aeb211a3f, and publication",
+        "run 35919516675 pushed the Ed-Fi API image and the EdFi.Api.SchemaTools package pinned",
+        "below. The contract packages are the EdFi.Api.Plugins 1.0.0 and EdFi.Api.CustomValidation",
+        "1.0.0 that DMS-1501 published in run 35688731069. That ticket records the publication",
+        "and the external-consumer restore and compile against the feed. Run",
+        "35919516675 found both already published and unchanged, and published no contract bytes.",
+        "",
+        "The pulled image carries both required runtime features. DMS-1499's loader runs the",
+        "load-plugins startup phase that reads /app/plugins, applies the allowlist and registers the",
+        "fixture's ICustomResourceValidator. DMS-1433's CustomResourceValidationMiddleware invokes",
+        "the registered validators for the request's resource and turns their failures into the",
+        "custom-validation 400. Without the loader the validator never reaches DI. Without the",
+        "fan-in step it loads and resolves but never runs, so the POST gets a 201 or a generic 400,",
+        "and the proof accepts neither.",
+        "",
+        "The Configuration Service image is the independently published CMS image pinned by digest.",
+        "A dms-pre release publishes no CMS image, so it comes from its own release,",
+        "cs-pre-8.0.1-alpha.0.154, published by run 35909464192 from 8b43a5fee. That commit is the",
+        "parent of aeb211a3f and differs from it in nothing under src/config.",
         "",
         "A release qualifies when all of the following hold. It carries DMS-1499's plugin loader and",
         "DMS-1433's custom-validator fan-in step, because loading and resolving a validator without",
@@ -42,31 +59,42 @@
         "SCHEMA_PACKAGES value in the environment file, which is what both the schema preparation",
         "phase and the container read, so the two cannot disagree."
     ],
-    "status": "pending",
+    "status": "published",
     "edFiApi": {
         "repository": "edfialliance/ed-fi-api",
-        "tag": null,
-        "digest": null
+        "tag": "8.0.1-alpha.0.155",
+        "digest": "sha256:ace0564a0e0d3578319ea8c84d2d0bce163106eacedc064439a650388d8b38f0"
     },
     "configurationService": {
         "repository": "edfialliance/ed-fi-api-configuration-service",
-        "digest": null
+        "digest": "sha256:d9566b364ec43b1fff9298407230cf52ad99d836f5095bf6557b011e811352f5"
     },
     "release": {
-        "githubRelease": null,
-        "sourceCommit": null,
-        "publicationRunUrl": null
+        "githubRelease": "dms-pre-8.0.1-alpha.0.155",
+        "sourceCommit": "aeb211a3fab6e1719e71a24a9a5df3e4e690c8d4",
+        "publicationRunUrl": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/35919516675"
     },
     "provisioning": {
-        "schemaToolsPackageVersion": null,
-        "schemaToolsFeedUrl": null,
-        "dataStandardVersion": null,
-        "schemaPackages": null
+        "schemaToolsPackageVersion": "8.0.1-alpha.0.155",
+        "schemaToolsFeedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+        "dataStandardVersion": "5.2",
+        "schemaPackages": [
+            {
+                "name": "EdFi.DataStandard52.ApiSchema",
+                "version": "1.0.335",
+                "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+            },
+            {
+                "name": "EdFi.DataStandard52.TPDM.ApiSchema",
+                "version": "1.0.335",
+                "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+            }
+        ]
     },
     "contracts": {
-        "pluginsPackageVersion": null,
-        "customValidationPackageVersion": null,
-        "feedUrl": null
+        "pluginsPackageVersion": "1.0.0",
+        "customValidationPackageVersion": "1.0.0",
+        "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
     },
     "requires": [
         "DMS-1499 LoadPlugins startup phase",
