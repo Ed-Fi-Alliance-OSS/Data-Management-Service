@@ -840,7 +840,7 @@ function Invoke-SchemaWorkspaceStaging {
 
         Set-BootstrapManifestSection -Name "schema" -Value $schemaSection
 
-        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafeText $finalWorkspace)"
+        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafePath $finalWorkspace)"
         Write-Output "Effective schema hash: $effectiveSchemaHash"
     } finally {
         if (-not $temporaryMoved -and (Test-Path -LiteralPath $temporaryRoot)) {
