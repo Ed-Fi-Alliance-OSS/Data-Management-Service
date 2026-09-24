@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs;
@@ -1278,6 +1279,81 @@ public class JobLeaseRepositoryTests
         {
             _exhaustedRows.Should().Be(1_000);
             _pendingRows.Should().Be(1_500);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_exhaust_sweep_cancelled_while_waiting_for_a_connection : JobLeaseTestBase
+    {
+        private readonly List<int> _batches = [];
+        private bool _sweepWaitedForTheConnection;
+        private bool _sweepEndedWhileTheConnectionWasHeld;
+        private JobExhaustResult _result = null!;
+        private long _pendingRows;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedOverLimitJobsAsync(10);
+
+            // A private pool of one connection, held here, so the sweep waits in connection acquisition.
+            NpgsqlConnectionStringBuilder singleConnectionPool = new(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            )
+            {
+                MinPoolSize = 0,
+                MaxPoolSize = 1,
+                ApplicationName = $"exhaust-cancel-{Guid.NewGuid():N}",
+            };
+            JobLeaseRepository repository = new(
+                Options.Create(
+                    new DatabaseOptions
+                    {
+                        DatabaseConnection = singleConnectionPool.ConnectionString,
+                        EncryptionKey = Configuration.DatabaseOptions.Value.EncryptionKey,
+                    }
+                ),
+                _timings
+            )
+            {
+                AfterExhaustBatch = _batches.Add,
+            };
+
+            using CancellationTokenSource stopping = new();
+            Task<JobExhaustResult> sweep;
+            await using (NpgsqlConnection held = new(singleConnectionPool.ConnectionString))
+            {
+                await held.OpenAsync();
+                sweep = repository.Exhaust(MaxAttempts, JobErrorCode.AttemptsExhausted, stopping.Token);
+
+                await Task.Delay(TimeSpan.FromMilliseconds(500));
+                _sweepWaitedForTheConnection = !sweep.IsCompleted;
+                await stopping.CancelAsync();
+                await Task.Delay(TimeSpan.FromMilliseconds(300));
+                _sweepEndedWhileTheConnectionWasHeld = sweep.IsCompleted;
+            }
+
+            _result = await sweep;
+            _pendingRows = await CountAsync("\"Status\" = 'Pending'");
+        }
+
+        [Test]
+        public void It_was_waiting_for_the_connection_when_cancelled() =>
+            _sweepWaitedForTheConnection.Should().BeTrue();
+
+        [Test]
+        public void It_stops_waiting_for_the_connection_as_soon_as_it_is_cancelled() =>
+            _sweepEndedWhileTheConnectionWasHeld.Should().BeTrue();
+
+        [Test]
+        public void It_reports_success_with_nothing_exhausted() =>
+            _result.Should().BeOfType<JobExhaustResult.Success>().Which.ExhaustedCount.Should().Be(0);
+
+        [Test]
+        public void It_runs_no_batch_after_the_connection_is_released()
+        {
+            _batches.Should().BeEmpty();
+            _pendingRows.Should().Be(10);
         }
     }
 

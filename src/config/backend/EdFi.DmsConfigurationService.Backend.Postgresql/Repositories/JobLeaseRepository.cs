@@ -219,21 +219,16 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         int exhausted = 0;
         try
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return new JobExhaustResult.Success(exhausted);
-            }
-
             await using NpgsqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync(CancellationToken.None);
+            await connection.OpenAsync(cancellationToken);
 
             // Each batch is one autocommitted statement bounded by its command timeout. The stopping token is
-            // checked before each batch rather than passed to it, so a batch either commits or fails on its
-            // own, and every committed batch stays committed when the sweep stops.
-            int rows;
-            do
+            // checked immediately before every batch, the first included, and is not passed to the batch, so a
+            // batch that has started commits or fails on its own, and every committed batch stays committed
+            // when the sweep stops.
+            while (!cancellationToken.IsCancellationRequested)
             {
-                rows = await connection.ExecuteAsync(
+                int rows = await connection.ExecuteAsync(
                     new CommandDefinition(
                         ExhaustBatchSql,
                         new
@@ -248,8 +243,19 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 );
                 exhausted += rows;
                 AfterExhaustBatch?.Invoke(rows);
-            } while (rows == JobLeaseTimings.ExhaustBatchSize && !cancellationToken.IsCancellationRequested);
 
+                if (rows < JobLeaseTimings.ExhaustBatchSize)
+                {
+                    break;
+                }
+            }
+
+            return new JobExhaustResult.Success(exhausted);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Only connection acquisition observes the token, so no batch was running: the sweep stopped
+            // before its next batch.
             return new JobExhaustResult.Success(exhausted);
         }
         catch (Exception exception)
