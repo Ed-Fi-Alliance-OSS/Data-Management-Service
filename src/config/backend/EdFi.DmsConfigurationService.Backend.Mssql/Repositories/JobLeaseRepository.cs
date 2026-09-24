@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
@@ -25,15 +24,15 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 /// wait. One deadline, <see cref="JobLeaseTimings.RenewalTimeout"/>, bounds the whole write; each statement's
 /// command timeout is derived from the time left on it, and it is never extended. A write that fails before the
 /// guarded <c>UPDATE</c> is sent is <c>FailureUnknown</c> (nothing written); one that fails after it is sent is
-/// <c>ResultUnknown</c>, which the caller treats as uncertainty and never retries. <c>LOCK_TIMEOUT</c> is
-/// session-scoped on SQL Server, so every write resets it to <c>-1</c> before its connection is released.
+/// <c>ResultUnknown</c>, which the caller treats as uncertainty and never retries. The operation's deadline also
+/// bounds the transaction's begin, commit, and cleanup, because SqlClient's own begin and commit are synchronous
+/// and ignore it (<see cref="MssqlJobSession"/>); <c>LOCK_TIMEOUT</c> is session-scoped, so each write resets it to
+/// <c>-1</c> within the same deadline before its connection is released.
 /// </remarks>
 public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions, JobLeaseTimings timings)
     : IJobLeaseRepository
 {
     private const string SystemUser = "system";
-
-    internal const string ResetLockTimeout = "SET LOCK_TIMEOUT -1;";
 
     private static readonly string _setWriteLockWait =
         $"SET LOCK_TIMEOUT {(long)JobLeaseTimings.WriteLockWait.TotalMilliseconds};";
@@ -175,6 +174,12 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     /// </summary>
     internal Func<SqlConnection, DbTransaction, Task>? BeforeExhaustBatchCommit { get; init; }
 
+    /// <summary>Test seam: the statement that commits a transaction, so a test can make a commit stall.</summary>
+    internal string CommitStatement { get; init; } = MssqlJobSession.CommitTransaction;
+
+    /// <summary>Test seam: the statement that ends a session, so a test can make cleanup stall.</summary>
+    internal string EndSessionStatement { get; init; } = MssqlJobSession.EndSession;
+
     public async Task<JobClaimResult> ClaimNext(
         string owner,
         int leaseSeconds,
@@ -182,16 +187,20 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         CancellationToken cancellationToken
     )
     {
+        // One deadline bounds the whole claim, its begin, commit, and cleanup included.
+        OperationDeadline budget = OperationDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+        using CancellationTokenSource deadline = budget.CreateTokenSource(cancellationToken);
+        BoundedSession session = new(new SqlConnection(databaseOptions.Value.DatabaseConnection));
+        bool committed = false;
         try
         {
-            await using SqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync(cancellationToken);
+            await session.Connection.OpenAsync(deadline.Token);
 
             // One statement in its own transaction, as in autocommit; the explicit transaction only gives the
             // lock-footprint seam a point at which the claim's locks are still held.
-            await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
-            ClaimRow? row = await connection.QuerySingleOrDefaultAsync<ClaimRow>(
-                new CommandDefinition(
+            await session.BeginAsync(budget, deadline.Token);
+            ClaimRow? row = await session.Connection.QuerySingleOrDefaultAsync<ClaimRow>(
+                session.Command(
                     ClaimSql,
                     new
                     {
@@ -199,18 +208,18 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                         LeaseSeconds = leaseSeconds,
                         MaxAttempts = maxAttempts,
                     },
-                    transaction,
-                    Seconds(JobLeaseTimings.ClaimCommandTimeout),
-                    cancellationToken: cancellationToken
+                    budget,
+                    deadline.Token
                 )
             );
 
             if (BeforeClaimCommit is { } beforeCommit)
             {
-                await beforeCommit(connection, transaction);
+                await beforeCommit(session.Connection, session.Transaction!);
             }
 
-            await transaction.CommitAsync(cancellationToken);
+            await session.ExecuteAsync(CommitStatement, budget, deadline.Token);
+            committed = true;
             return row is null
                 ? new JobClaimResult.NoneAvailable()
                 : new JobClaimResult.Claimed(row.ToClaimedJob());
@@ -218,6 +227,10 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         catch (Exception exception)
         {
             return new JobClaimResult.FailureUnknown(MssqlJobDiagnostics.From(exception, "ClaimNext"));
+        }
+        finally
+        {
+            await session.EndAsync(budget, EndSessionStatement, sessionClean: committed);
         }
     }
 
@@ -228,44 +241,49 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     )
     {
         int exhausted = 0;
+        OperationDeadline budget = OperationDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+        BoundedSession session = new(new SqlConnection(databaseOptions.Value.DatabaseConnection));
+        bool sessionClean = true;
         try
         {
-            await using SqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync(cancellationToken);
+            using (CancellationTokenSource opening = budget.CreateTokenSource(cancellationToken))
+            {
+                await session.Connection.OpenAsync(opening.Token);
+            }
 
-            // Each batch is one statement in its own short transaction, bounded by its command timeout. The
-            // stopping token is checked immediately before every batch, the first included, and is not passed
-            // to the batch, so a batch that has started commits or fails on its own, and every committed batch
-            // stays committed when the sweep stops.
+            // Each batch is one statement in its own short transaction, and one deadline bounds the batch, its
+            // begin and commit included. The stopping token is checked immediately before every batch, the first
+            // included, and is not passed to the batch, so a batch that has started commits or fails on its own,
+            // and every committed batch stays committed when the sweep stops.
             while (!cancellationToken.IsCancellationRequested)
             {
-                int rows;
-                await using (
-                    DbTransaction transaction = await connection.BeginTransactionAsync(CancellationToken.None)
-                )
+                budget = OperationDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+                using CancellationTokenSource batch = budget.CreateTokenSource(CancellationToken.None);
+                sessionClean = false;
+
+                await session.BeginAsync(budget, batch.Token);
+                int rows = await session.Connection.ExecuteAsync(
+                    session.Command(
+                        ExhaustBatchSql,
+                        new
+                        {
+                            MaxAttempts = maxAttempts,
+                            ErrorMessage = errorCode.Message,
+                            ModifiedBy = SystemUser,
+                            BatchSize = JobLeaseTimings.ExhaustBatchSize,
+                        },
+                        budget,
+                        batch.Token
+                    )
+                );
+
+                if (BeforeExhaustBatchCommit is { } beforeCommit)
                 {
-                    rows = await connection.ExecuteAsync(
-                        new CommandDefinition(
-                            ExhaustBatchSql,
-                            new
-                            {
-                                MaxAttempts = maxAttempts,
-                                ErrorMessage = errorCode.Message,
-                                ModifiedBy = SystemUser,
-                                BatchSize = JobLeaseTimings.ExhaustBatchSize,
-                            },
-                            transaction,
-                            Seconds(JobLeaseTimings.ClaimCommandTimeout)
-                        )
-                    );
-
-                    if (BeforeExhaustBatchCommit is { } beforeCommit)
-                    {
-                        await beforeCommit(connection, transaction);
-                    }
-
-                    await transaction.CommitAsync(CancellationToken.None);
+                    await beforeCommit(session.Connection, session.Transaction!);
                 }
+
+                await session.ExecuteAsync(CommitStatement, budget, batch.Token);
+                sessionClean = true;
 
                 exhausted += rows;
                 AfterExhaustBatch?.Invoke(rows);
@@ -278,15 +296,19 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
 
             return new JobExhaustResult.Success(exhausted);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && sessionClean)
         {
-            // Only connection acquisition observes the token, so no batch was running: the sweep stopped
-            // before its next batch.
+            // Only connection acquisition observes the stopping token, so no batch was running: the sweep
+            // stopped before its next batch.
             return new JobExhaustResult.Success(exhausted);
         }
         catch (Exception exception)
         {
             return new JobExhaustResult.FailureUnknown(MssqlJobDiagnostics.From(exception, "Exhaust"));
+        }
+        finally
+        {
+            await session.EndAsync(budget, EndSessionStatement, sessionClean);
         }
     }
 
@@ -391,7 +413,10 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             cancellationToken
         );
 
-    /// <summary>D-4 lock-then-validate under one <see cref="JobLeaseTimings.RenewalTimeout"/> deadline.</summary>
+    /// <summary>
+    /// D-4 lock-then-validate under one <see cref="JobLeaseTimings.RenewalTimeout"/> deadline, which also bounds the
+    /// commit and the session cleanup.
+    /// </summary>
     private async Task<JobWriteResult> OwnershipWriteAsync(
         string operation,
         string guardedUpdateSql,
@@ -400,29 +425,23 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         CancellationToken cancellationToken
     )
     {
-        long started = Stopwatch.GetTimestamp();
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        deadline.CancelAfter(timings.RenewalTimeout);
+        OperationDeadline budget = OperationDeadline.Start(timings.RenewalTimeout);
+        using CancellationTokenSource deadline = budget.CreateTokenSource(cancellationToken);
+        BoundedSession session = new(new SqlConnection(databaseOptions.Value.DatabaseConnection));
 
         bool guardedWriteSent = false;
-        await using SqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
         try
         {
-            await connection.OpenAsync(deadline.Token);
-            await using DbTransaction transaction = await connection.BeginTransactionAsync(deadline.Token);
-
-            await connection.ExecuteAsync(
-                DeadlineCommand(_setWriteLockWait, null, transaction, started, deadline.Token)
-            );
-            await connection.ExecuteScalarAsync<long?>(
-                DeadlineCommand(LockJobRow, new { Id = id }, transaction, started, deadline.Token)
+            await session.Connection.OpenAsync(deadline.Token);
+            await session.BeginAsync(budget, deadline.Token);
+            await session.ExecuteAsync(_setWriteLockWait, budget, deadline.Token);
+            await session.Connection.ExecuteScalarAsync<long?>(
+                session.Command(LockJobRow, new { Id = id }, budget, deadline.Token)
             );
 
             guardedWriteSent = true;
-            WrittenRow? written = await connection.QuerySingleOrDefaultAsync<WrittenRow>(
-                DeadlineCommand(guardedUpdateSql, parameters, transaction, started, deadline.Token)
+            WrittenRow? written = await session.Connection.QuerySingleOrDefaultAsync<WrittenRow>(
+                session.Command(guardedUpdateSql, parameters, budget, deadline.Token)
             );
             if (written is null)
             {
@@ -434,7 +453,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 await beforeCommit(deadline.Token);
             }
 
-            await transaction.CommitAsync(deadline.Token);
+            // Bounded by the deadline even once it has started: a commit it ends has an unknown outcome.
+            await session.ExecuteAsync(CommitStatement, budget, deadline.Token);
             return new JobWriteResult.Success(
                 written.LeaseExpiresAt is { } leaseExpiresAt ? AsUtc(leaseExpiresAt) : null,
                 AsUtc(written.DatabaseUtcNow)
@@ -449,61 +469,12 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         }
         finally
         {
-            await RestoreLockTimeoutAsync(connection);
-        }
-    }
-
-    /// <summary>A statement of an ownership write, bounded by the time left on the write's deadline.</summary>
-    private CommandDefinition DeadlineCommand(
-        string sql,
-        object? parameters,
-        DbTransaction transaction,
-        long started,
-        CancellationToken deadline
-    ) =>
-        new(
-            sql,
-            parameters,
-            transaction,
-            commandTimeout: SecondsLeft(started, timings.RenewalTimeout),
-            cancellationToken: deadline
-        );
-
-    /// <summary>
-    /// Resets the session's <c>LOCK_TIMEOUT</c> to the server default after the transaction has ended. The outcome
-    /// is already decided, so a failure here changes nothing: a broken connection is discarded by the pool, and
-    /// pooled reuse resets session settings as well.
-    /// </summary>
-    internal static async Task RestoreLockTimeoutAsync(SqlConnection connection)
-    {
-        if (connection.State != System.Data.ConnectionState.Open)
-        {
-            return;
-        }
-
-        try
-        {
-            await connection.ExecuteAsync(
-                new CommandDefinition(
-                    ResetLockTimeout,
-                    commandTimeout: Seconds(JobLeaseTimings.ClaimCommandTimeout)
-                )
-            );
-        }
-        catch (Exception exception) when (exception is SqlException or InvalidOperationException)
-        {
-            // The connection is unusable; the pool will not reuse it.
+            // The outcome is already decided: ending the session only uses what is left of the deadline.
+            await session.EndAsync(budget, EndSessionStatement);
         }
     }
 
     internal static int Seconds(TimeSpan timeout) => (int)Math.Ceiling(timeout.TotalSeconds);
-
-    /// <summary>
-    /// A command timeout derived from the time left on a deadline, at least 1 s because 0 would mean no
-    /// timeout. The deadline's own token still cancels the command at the exact deadline.
-    /// </summary>
-    internal static int SecondsLeft(long started, TimeSpan budget) =>
-        Math.Max(1, Seconds(budget - Stopwatch.GetElapsedTime(started)));
 
     // The columns hold UTC in DATETIME2, which SqlClient reads as DateTimeKind.Unspecified.
     private static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);

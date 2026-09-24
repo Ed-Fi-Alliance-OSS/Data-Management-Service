@@ -310,6 +310,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _claims.Clear();
             _firstTied = await SeedJobAsync(nextAttemptOffset: -5);
             _secondTied = await SeedJobAsync();
             await CopyNextAttemptAtAsync(_firstTied, _secondTied);
@@ -849,6 +850,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _guardedWrites = 0;
             await SeedJobAsync();
             ClaimedJob claimed = await ClaimAsync();
             JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _shortDeadline)
@@ -1262,6 +1264,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _batches.Clear();
             await SeedOverLimitJobsAsync(2_500);
             JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _timings)
             {
@@ -1293,6 +1296,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _batches.Clear();
             await SeedOverLimitJobsAsync(2_500);
             using CancellationTokenSource stopping = new();
             JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _timings)
@@ -1336,6 +1340,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _batches.Clear();
             await SeedOverLimitJobsAsync(10);
 
             // A private pool of one connection, held here, so the sweep waits in connection acquisition.
@@ -1472,6 +1477,8 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _footprints.Clear();
+            _batches.Clear();
             await SeedOverLimitJobsAsync(10_000);
             JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _timings)
             {
@@ -1510,6 +1517,303 @@ public class JobLeaseRepositoryTests
                     .BeGreaterThanOrEqualTo(1_000, "each changed row is locked by key");
             }
         }
+    }
+
+    /// <summary>A commit statement that the server holds for 4 s after the commit has started.</summary>
+    private const string StalledCommit = "WAITFOR DELAY '00:00:04'; COMMIT TRANSACTION;";
+
+    /// <summary>A session cleanup statement that the server holds for 5 s before it runs.</summary>
+    private const string StalledEndSession =
+        "WAITFOR DELAY '00:00:05'; IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION; SET LOCK_TIMEOUT -1;";
+
+    private static readonly JobLeaseTimings _twoSecondDeadlines = new(
+        RenewalTimeout: TimeSpan.FromSeconds(2),
+        FenceTimeout: TimeSpan.FromSeconds(2)
+    );
+
+    [TestFixture]
+    public class Given_an_ownership_write_whose_commit_stalls_past_the_deadline : JobLeaseTestBase
+    {
+        private JobWriteResult _result = null!;
+        private TimeSpan _elapsed;
+        private int _guardedWrites;
+        private LeaseRow _row = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _guardedWrites = 0;
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _twoSecondDeadlines)
+            {
+                CommitStatement = StalledCommit,
+                BeforeOwnershipCommit = _ =>
+                {
+                    Interlocked.Increment(ref _guardedWrites);
+                    return Task.CompletedTask;
+                },
+            };
+
+            long started = Stopwatch.GetTimestamp();
+            _result = await repository.Complete(
+                claimed.Id,
+                OwnerA,
+                claimed.FencingToken,
+                CancellationToken.None
+            );
+            _elapsed = Stopwatch.GetElapsedTime(started);
+            _row = await RowAsync(claimed.Id);
+        }
+
+        [Test]
+        public void It_ends_the_commit_at_the_deadline() =>
+            _elapsed
+                .Should()
+                .BeLessThan(TimeSpan.FromSeconds(3), "the commit started before the 2 s deadline");
+
+        [Test]
+        public void It_reports_the_result_as_unknown_without_retrying()
+        {
+            _result
+                .Should()
+                .BeOfType<JobWriteResult.ResultUnknown>()
+                .Which.Diagnostic.Operation.Should()
+                .Be("Complete");
+            _guardedWrites.Should().Be(1);
+        }
+
+        [Test]
+        public void It_leaves_the_interrupted_commit_rolled_back() =>
+            _row.Status.Should().Be(JobStatuses.InProgress);
+    }
+
+    [TestFixture]
+    public class Given_a_fence_whose_commit_stalls_past_the_deadline : JobLeaseTestBase
+    {
+        private JobExecutionOwnership _ownership = null!;
+        private Exception? _thrown;
+        private TimeSpan _elapsed;
+        private long _fencedWrites;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            _ownership = new JobExecutionOwnership();
+            ClaimedJob claimed = await ClaimAsync();
+            IJobFence fence = new MssqlJobFenceFactory(
+                MssqlTestConfiguration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                CommitStatement = StalledCommit,
+            }.Create(claimed, _ownership);
+
+            long started = Stopwatch.GetTimestamp();
+            _thrown = await ThrownByAsync(() => fence.ExecuteAsync(FencedWriteAsync, CancellationToken.None));
+            _elapsed = Stopwatch.GetElapsedTime(started);
+            _fencedWrites = await FencedWriteCountAsync();
+        }
+
+        [Test]
+        public void It_ends_the_commit_at_the_fence_deadline() =>
+            _elapsed
+                .Should()
+                .BeLessThan(TimeSpan.FromSeconds(3), "the commit started before the 2 s fence deadline");
+
+        [Test]
+        public void It_marks_the_execution_uncertain_and_reports_the_lease_lost()
+        {
+            _thrown.Should().BeOfType<JobLeaseLostException>();
+            _ownership.State.Should().Be(JobOwnershipState.Uncertain);
+            _ownership.Reason.Should().Be("FenceCommitUnknown");
+        }
+
+        [Test]
+        public void It_leaves_the_interrupted_commit_rolled_back() => _fencedWrites.Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_a_claim_and_an_exhaust_batch_whose_commits_stall : JobLeaseTestBase
+    {
+        private JobClaimResult _claim = null!;
+        private TimeSpan _claimElapsed;
+        private JobExhaustResult _exhaust = null!;
+        private TimeSpan _exhaustElapsed;
+        private long _claimable;
+        private long _overLimit;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            long claimable = await SeedJobAsync();
+            long overLimit = await SeedJobAsync(attemptCount: MaxAttempts);
+            JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _timings)
+            {
+                CommitStatement = "WAITFOR DELAY '00:00:07'; COMMIT TRANSACTION;",
+            };
+
+            long started = Stopwatch.GetTimestamp();
+            _claim = await repository.ClaimNext(OwnerA, 300, MaxAttempts, CancellationToken.None);
+            _claimElapsed = Stopwatch.GetElapsedTime(started);
+
+            started = Stopwatch.GetTimestamp();
+            _exhaust = await repository.Exhaust(
+                MaxAttempts,
+                JobErrorCode.AttemptsExhausted,
+                CancellationToken.None
+            );
+            _exhaustElapsed = Stopwatch.GetElapsedTime(started);
+
+            _claimable = await CountAsync($"Id = {claimable} AND Status = N'Pending' AND AttemptCount = 0");
+            _overLimit = await CountAsync($"Id = {overLimit} AND Status = N'Pending'");
+        }
+
+        [Test]
+        public void It_ends_each_commit_within_the_5_second_claim_bound()
+        {
+            _claimElapsed.Should().BeLessThan(TimeSpan.FromSeconds(6));
+            _exhaustElapsed.Should().BeLessThan(TimeSpan.FromSeconds(6));
+        }
+
+        [Test]
+        public void It_reports_both_as_failures()
+        {
+            _claim.Should().BeOfType<JobClaimResult.FailureUnknown>();
+            _exhaust.Should().BeOfType<JobExhaustResult.FailureUnknown>();
+        }
+
+        [Test]
+        public void It_leaves_both_interrupted_commits_rolled_back()
+        {
+            _claimable.Should().Be(1);
+            _overLimit.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_ownership_write_whose_session_cleanup_stalls : JobLeaseTestBase
+    {
+        /// <summary>Options for a private pool of one connection, so a test sees the session the operation used.</summary>
+        private static IOptions<DatabaseOptions> SingleConnectionPool(string name) =>
+            Options.Create(
+                new DatabaseOptions
+                {
+                    DatabaseConnection = new SqlConnectionStringBuilder(
+                        MssqlTestConfiguration.DatabaseConnectionString
+                    )
+                    {
+                        MinPoolSize = 0,
+                        MaxPoolSize = 1,
+                        ApplicationName = $"{name}-{Guid.NewGuid():N}",
+                    }.ConnectionString,
+                    EncryptionKey = MssqlTestConfiguration.DatabaseOptions.Value.EncryptionKey,
+                }
+            );
+
+        private JobWriteResult _result = null!;
+        private TimeSpan _elapsed;
+        private LeaseRow _row = null!;
+        private (int TranCount, int LockTimeout) _nextSession;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            IOptions<DatabaseOptions> pool = SingleConnectionPool("stalled-cleanup");
+            JobLeaseRepository repository = new(pool, _twoSecondDeadlines)
+            {
+                EndSessionStatement = StalledEndSession,
+            };
+
+            long started = Stopwatch.GetTimestamp();
+            _result = await repository.Complete(
+                claimed.Id,
+                OwnerA,
+                claimed.FencingToken,
+                CancellationToken.None
+            );
+            _elapsed = Stopwatch.GetElapsedTime(started);
+            _row = await RowAsync(claimed.Id);
+
+            // The pool's only connection is the one the write used, once its background release completes.
+            await using SqlConnection next = new(pool.Value.DatabaseConnection);
+            await next.OpenAsync();
+            _nextSession = await next.QuerySingleAsync<(int, int)>("SELECT @@TRANCOUNT, @@LOCK_TIMEOUT;");
+        }
+
+        [Test]
+        public void It_returns_within_the_write_deadline() =>
+            _elapsed
+                .Should()
+                .BeLessThan(TimeSpan.FromSeconds(3), "cleanup gets only what is left of the 2 s deadline");
+
+        [Test]
+        public void It_keeps_the_outcome_already_decided()
+        {
+            _result.Should().BeOfType<JobWriteResult.Success>();
+            _row.Status.Should().Be(JobStatuses.Completed);
+        }
+
+        [Test]
+        public void It_leaves_no_transaction_or_lock_timeout_on_the_released_session() =>
+            _nextSession.Should().Be((0, -1));
+    }
+
+    [TestFixture]
+    public class Given_a_fence_whose_session_cleanup_stalls : JobLeaseTestBase
+    {
+        private Exception? _thrown;
+        private TimeSpan _renewalAdmittedAfter;
+        private long _fencedWrites;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            JobExecutionOwnership ownership = new();
+            IJobFence fence = new MssqlJobFenceFactory(
+                MssqlTestConfiguration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                EndSessionStatement = StalledEndSession,
+            }.Create(claimed, ownership);
+
+            long started = Stopwatch.GetTimestamp();
+            Task<Exception?> fenced = ThrownByAsync(() =>
+                fence.ExecuteAsync(FencedWriteAsync, CancellationToken.None)
+            );
+
+            // A renewal that arrives while the fence holds the gate.
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
+            using (IDisposable renewal = await ownership.EnterForRenewalAsync(CancellationToken.None))
+            {
+                _renewalAdmittedAfter = Stopwatch.GetElapsedTime(started);
+            }
+
+            _thrown = await fenced;
+            _fencedWrites = await FencedWriteCountAsync();
+        }
+
+        [Test]
+        public void It_commits_the_fenced_write()
+        {
+            _thrown.Should().BeNull();
+            _fencedWrites.Should().Be(1);
+        }
+
+        [Test]
+        public void It_releases_the_gate_to_a_waiting_renewal_within_the_fence_deadline() =>
+            _renewalAdmittedAfter
+                .Should()
+                .BeLessThan(
+                    TimeSpan.FromSeconds(3),
+                    "cleanup gets only what is left of the 2 s fence deadline"
+                );
     }
 
     /// <summary>Every ownership-dependent write, by the claim's owner and token, in declaration order.</summary>

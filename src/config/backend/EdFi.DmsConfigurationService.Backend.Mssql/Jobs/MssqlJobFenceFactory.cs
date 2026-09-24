@@ -4,10 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
-using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -17,8 +15,21 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptions, JobLeaseTimings timings)
     : IJobFenceFactory
 {
+    /// <summary>Test seam: the statement that commits a fence, so a test can make the commit stall.</summary>
+    internal string CommitStatement { get; init; } = MssqlJobSession.CommitTransaction;
+
+    /// <summary>Test seam: the statement that ends a fence's session, so a test can make cleanup stall.</summary>
+    internal string EndSessionStatement { get; init; } = MssqlJobSession.EndSession;
+
     public IJobFence Create(ClaimedJob job, JobExecutionOwnership ownership) =>
-        new MssqlJobFence(databaseOptions.Value.DatabaseConnection, timings, job, ownership);
+        new MssqlJobFence(
+            databaseOptions.Value.DatabaseConnection,
+            timings,
+            job,
+            ownership,
+            CommitStatement,
+            EndSessionStatement
+        );
 
     /// <summary>
     /// One execution's fence (D-5). Under the execution gate it locks the job row, validates ownership with
@@ -26,17 +37,26 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
     /// deadline taken from that time, revalidates ownership, and commits only while ownership is certain.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Validation is a separate batch because SQL Server reads <c>SYSUTCDATETIME()</c> when a statement starts,
     /// so in a statement that waited for the row lock a lease that expired during the wait would still look live.
     /// <c>LOCK_TIMEOUT</c> is session-scoped: <see cref="JobLeaseTimings.FenceLockWait"/> applies to the whole
-    /// fence transaction, the consumer's work included, and is reset to <c>-1</c> before the connection is
-    /// released.
+    /// fence transaction, the consumer's work included, and is reset to <c>-1</c> when the session ends.
+    /// </para>
+    /// <para>
+    /// Every step is bounded while the fence holds the execution gate: the acquisition by its own timeout, and
+    /// the work, the revalidation, the commit, and the session cleanup by the fence deadline. The commit is a
+    /// T-SQL statement because SqlClient's own commit is synchronous and ignores the deadline
+    /// (<see cref="MssqlJobSession"/>); a commit the deadline ends has an unknown outcome.
+    /// </para>
     /// </remarks>
     private sealed class MssqlJobFence(
         string connectionString,
         JobLeaseTimings timings,
         ClaimedJob job,
-        JobExecutionOwnership ownership
+        JobExecutionOwnership ownership,
+        string commitStatement,
+        string endSessionStatement
     ) : IJobFence
     {
         private const int LockTimeoutErrorNumber = 1222;
@@ -68,39 +88,69 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
                 throw new JobLeaseLostException();
             }
 
-            await using SqlConnection connection = new(connectionString);
+            FenceSession session = new(
+                new SqlConnection(connectionString),
+                OperationDeadline.Start(JobLeaseTimings.FenceAcquisitionTimeout)
+            );
             try
             {
-                await ExecuteLockedAsync(connection, work, cancellationToken);
+                await ExecuteLockedAsync(session, work, cancellationToken);
             }
             finally
             {
-                await JobLeaseRepository.RestoreLockTimeoutAsync(connection);
+                if (!session.HandedOff)
+                {
+                    await MssqlJobSession.EndAsync(
+                        session.Connection,
+                        session.Transaction,
+                        session.Deadline,
+                        endSessionStatement
+                    );
+                }
             }
         }
 
         private async Task ExecuteLockedAsync(
-            SqlConnection connection,
+            FenceSession session,
             Func<DbTransaction, CancellationToken, Task> work,
             CancellationToken cancellationToken
         )
         {
-            // (2) and (3): acquisition, bounded by its own command timeout rather than the fence deadline.
-            await connection.OpenAsync(cancellationToken);
-            await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken);
-            TimeSpan remainingLease = await AcquireAsync(connection, transaction, cancellationToken);
+            // (2) Open and begin, bounded like the acquisition. The consumer's work needs an API transaction.
+            using (CancellationTokenSource opening = session.Deadline.CreateTokenSource(cancellationToken))
+            {
+                await session.Connection.OpenAsync(opening.Token);
+            }
+
+            DbTransaction transaction;
+            try
+            {
+                transaction = await MssqlJobSession.BeginApiTransactionAsync(
+                    session.Connection,
+                    session.Deadline,
+                    cancellationToken,
+                    () => session.HandedOff = true
+                );
+            }
+            catch (TimeoutException)
+            {
+                throw new JobFenceUnavailableException();
+            }
+
+            session.Transaction = transaction;
+
+            // (3) Acquisition, bounded by its own timeout rather than the fence deadline.
+            session.Deadline = OperationDeadline.Start(JobLeaseTimings.FenceAcquisitionTimeout);
+            TimeSpan remainingLease = await AcquireAsync(session, transaction, cancellationToken);
 
             // (4) One deadline, taken from fresh database time after the lock is held, covers the work, the
-            // checks, the revalidation, and the commit. It is never raised.
+            // checks, the revalidation, the commit, and the session cleanup. It is never raised.
             TimeSpan fenceTimeout = Min(
                 timings.FenceTimeout,
                 remainingLease - JobLeaseTimings.FenceLeaseReserve
             );
-            long started = Stopwatch.GetTimestamp();
-            using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken
-            );
-            deadline.CancelAfter(fenceTimeout);
+            session.Deadline = OperationDeadline.Start(fenceTimeout);
+            using CancellationTokenSource deadline = session.Deadline.CreateTokenSource(cancellationToken);
 
             await work(transaction, deadline.Token);
 
@@ -112,19 +162,19 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             }
 
             // (6) Revalidation with fresh time, within the deadline.
-            await RevalidateAsync(
-                connection,
-                transaction,
-                started,
-                fenceTimeout,
-                deadline,
-                cancellationToken
-            );
+            await RevalidateAsync(session, transaction, deadline, cancellationToken);
 
-            // (7) A commit whose outcome is unknown makes this execution uncertain.
+            // (7) A commit whose outcome is unknown, the deadline ending it included, makes this execution
+            // uncertain. It is never retried.
             try
             {
-                await transaction.CommitAsync(deadline.Token);
+                await MssqlJobSession.ExecuteAsync(
+                    session.Connection,
+                    commitStatement,
+                    transaction,
+                    session.Deadline,
+                    deadline.Token
+                );
             }
             catch (Exception)
             {
@@ -134,29 +184,28 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
         }
 
         private async Task<TimeSpan> AcquireAsync(
-            SqlConnection connection,
+            FenceSession session,
             DbTransaction transaction,
             CancellationToken cancellationToken
         )
         {
-            int acquisitionTimeout = JobLeaseRepository.Seconds(JobLeaseTimings.FenceAcquisitionTimeout);
+            using CancellationTokenSource acquisition = session.Deadline.CreateTokenSource(cancellationToken);
             try
             {
-                await connection.ExecuteAsync(
-                    new CommandDefinition(
-                        _setFenceLockWait,
-                        transaction: transaction,
-                        commandTimeout: acquisitionTimeout,
-                        cancellationToken: cancellationToken
-                    )
+                await MssqlJobSession.ExecuteAsync(
+                    session.Connection,
+                    _setFenceLockWait,
+                    transaction,
+                    session.Deadline,
+                    acquisition.Token
                 );
-                await connection.ExecuteScalarAsync<long?>(
+                await session.Connection.ExecuteScalarAsync<long?>(
                     new CommandDefinition(
                         LockJobRow,
                         new { Id = job.Id },
                         transaction,
-                        acquisitionTimeout,
-                        cancellationToken: cancellationToken
+                        session.Deadline.CommandTimeoutSeconds,
+                        cancellationToken: acquisition.Token
                     )
                 );
             }
@@ -165,13 +214,13 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
                 throw new JobFenceUnavailableException();
             }
 
-            LeaseRow? lease = await connection.QuerySingleOrDefaultAsync<LeaseRow>(
+            LeaseRow? lease = await session.Connection.QuerySingleOrDefaultAsync<LeaseRow>(
                 new CommandDefinition(
                     OwnedLease,
                     OwnershipParameters,
                     transaction,
-                    acquisitionTimeout,
-                    cancellationToken: cancellationToken
+                    session.Deadline.CommandTimeoutSeconds,
+                    cancellationToken: acquisition.Token
                 )
             );
 
@@ -181,10 +230,8 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
         }
 
         private async Task RevalidateAsync(
-            SqlConnection connection,
+            FenceSession session,
             DbTransaction transaction,
-            long started,
-            TimeSpan fenceTimeout,
             CancellationTokenSource deadline,
             CancellationToken cancellationToken
         )
@@ -192,12 +239,12 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             LeaseRow? lease;
             try
             {
-                lease = await connection.QuerySingleOrDefaultAsync<LeaseRow>(
+                lease = await session.Connection.QuerySingleOrDefaultAsync<LeaseRow>(
                     new CommandDefinition(
                         OwnedLease,
                         OwnershipParameters,
                         transaction,
-                        JobLeaseRepository.SecondsLeft(started, fenceTimeout),
+                        session.Deadline.CommandTimeoutSeconds,
                         cancellationToken: deadline.Token
                     )
                 );
@@ -224,6 +271,22 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             };
 
         private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
+
+        /// <summary>
+        /// The fence's connection, its API transaction once begun, and the deadline that bounds the current
+        /// step, which also bounds the session cleanup.
+        /// </summary>
+        private sealed class FenceSession(SqlConnection connection, OperationDeadline deadline)
+        {
+            public SqlConnection Connection { get; } = connection;
+
+            public DbTransaction? Transaction { get; set; }
+
+            public OperationDeadline Deadline { get; set; } = deadline;
+
+            /// <summary>An unfinished begin now owns the connection and releases it when it ends.</summary>
+            public bool HandedOff { get; set; }
+        }
 
         private sealed record LeaseRow(DateTime LeaseExpiresAt, DateTime DatabaseUtcNow)
         {

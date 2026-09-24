@@ -268,6 +268,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _claims.Clear();
             _firstTied = await SeedJobAsync(nextAttemptOffset: -5);
             _secondTied = await SeedJobAsync();
             await CopyNextAttemptAtAsync(_firstTied, _secondTied);
@@ -807,6 +808,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _guardedWrites = 0;
             await SeedJobAsync();
             ClaimedJob claimed = await ClaimAsync();
             JobLeaseRepository repository = new(Configuration.DatabaseOptions, _shortDeadline)
@@ -1220,6 +1222,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _batches.Clear();
             await SeedOverLimitJobsAsync(2_500);
             JobLeaseRepository repository = new(Configuration.DatabaseOptions, _timings)
             {
@@ -1251,6 +1254,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _batches.Clear();
             await SeedOverLimitJobsAsync(2_500);
             using CancellationTokenSource stopping = new();
             JobLeaseRepository repository = new(Configuration.DatabaseOptions, _timings)
@@ -1294,6 +1298,7 @@ public class JobLeaseRepositoryTests
         [SetUp]
         public async Task Setup()
         {
+            _batches.Clear();
             await SeedOverLimitJobsAsync(10);
 
             // A private pool of one connection, held here, so the sweep waits in connection acquisition.
