@@ -18,11 +18,17 @@ public sealed class JobDatabaseSessionHooks
     public Func<string, CancellationToken, Task>? BeforeOperation { get; init; }
 
     /// <summary>
-    /// Receives the cleanup task when a session is handed over. The task completes, after the connection is
-    /// released, with the exception the pending operation ended with, or null.
+    /// Receives the cleanup task when a session is handed over. The task completes after the connection is
+    /// released, with how the pending operation and its cancellation ended.
     /// </summary>
-    public Action<Task<Exception?>>? HandedOver { get; init; }
+    public Action<Task<JobDatabaseSessionCleanup>>? HandedOver { get; init; }
 }
+
+/// <summary>
+/// How a handed-over session's cleanup ended: the exception the pending operation ended with, and the exception
+/// the operation's cancellation callbacks threw, each null when there was none.
+/// </summary>
+public sealed record JobDatabaseSessionCleanup(Exception? Operation, Exception? Cancellation);
 
 /// <summary>
 /// One job database connection and its transaction, with the waiting rule of spec A3: the caller waits for a
@@ -37,6 +43,14 @@ public sealed class JobDatabaseSessionHooks
 /// transaction, and the connection. It waits for the pending operation, observes how it ended, and only then
 /// disposes the transaction and the connection, which rolls back an open transaction. No other command runs on
 /// the connection after the hand-over, and the connection returns to the pool only once nothing uses it.
+/// </para>
+/// <para>
+/// Each operation gets a token of its own, which only that cleanup cancels, after the hand-over. The provider's
+/// cancellation callbacks therefore never run on the caller's path, where a slow callback would extend the wait
+/// and a throwing one could prevent the hand-over; nor on a timer thread, where a timer-driven cancellation would
+/// rethrow a callback's exception unhandled. Cleanup waits for both the cancellation and the operation, and
+/// observes both, before it releases anything. The provider's command timeout still bounds each statement on the
+/// server.
 /// </para>
 /// <para>
 /// An operation abandoned this way has an unknown outcome, which the caller classifies as it would any failure at
@@ -71,25 +85,26 @@ public sealed class JobDatabaseSession(DbConnection connection, JobDatabaseSessi
             throw new InvalidOperationException("The job database session was handed over to cleanup.");
         }
 
-        CancellationTokenSource token = deadline.CreateTokenSource(cancellationToken);
-        Task<T> pending = Start(name, operation, token.Token);
+        // The operation's own token: never linked or timed, so its callbacks run only in cleanup.
+        CancellationTokenSource operationCancellation = new();
+        Task<T> pending = InvokeAsync(name, operation, operationCancellation.Token);
         try
         {
             T result = await pending.WaitAsync(deadline.Remaining, cancellationToken);
-            token.Dispose();
+            operationCancellation.Dispose();
             return result;
         }
         catch (Exception exception)
             when (exception is TimeoutException or OperationCanceledException && !pending.IsCompleted)
         {
-            // The provider has not finished: make sure it is asked to cancel, and give it to cleanup.
-            await token.CancelAsync();
-            HandOver(pending, token);
+            // The provider has not finished. Ownership moves to cleanup first; cleanup then asks the provider
+            // to cancel, off this path.
+            HandOver(pending, operationCancellation);
             throw;
         }
         catch (Exception)
         {
-            token.Dispose();
+            operationCancellation.Dispose();
             throw;
         }
     }
@@ -168,49 +183,59 @@ public sealed class JobDatabaseSession(DbConnection connection, JobDatabaseSessi
         }
     }
 
-    private Task<T> Start<T>(
-        string name,
-        Func<CancellationToken, Task<T>> operation,
-        CancellationToken token
-    ) =>
-        hooks?.BeforeOperation is { } before
-            ? RunAfterAsync(before, name, operation, token)
-            : operation(token);
-
-    private static async Task<T> RunAfterAsync<T>(
-        Func<string, CancellationToken, Task> before,
+    /// <summary>Runs the operation as a task, so even a synchronous failure is a completed task.</summary>
+    private async Task<T> InvokeAsync<T>(
         string name,
         Func<CancellationToken, Task<T>> operation,
         CancellationToken token
     )
     {
-        await before(name, token);
+        if (hooks?.BeforeOperation is { } before)
+        {
+            await before(name, token);
+        }
+
         return await operation(token);
     }
 
-    private void HandOver(Task pending, CancellationTokenSource? token)
+    private void HandOver(Task pending, CancellationTokenSource? operationCancellation)
     {
         HandedOver = true;
-        Task<Exception?> cleanup = Task.Run(() => ReleaseAfterAsync(pending, token));
+        Task<JobDatabaseSessionCleanup> cleanup = Task.Run(() =>
+            ReleaseAfterAsync(pending, operationCancellation)
+        );
         hooks?.HandedOver?.Invoke(cleanup);
     }
 
-    /// <summary>Waits for the pending operation, observes how it ended, then releases the session.</summary>
-    private async Task<Exception?> ReleaseAfterAsync(Task pending, CancellationTokenSource? token)
+    /// <summary>
+    /// Asks the pending operation to cancel, waits for both the cancellation callbacks and the operation, observes
+    /// how each ended, and only then releases the session.
+    /// </summary>
+    private async Task<JobDatabaseSessionCleanup> ReleaseAfterAsync(
+        Task pending,
+        CancellationTokenSource? operationCancellation
+    )
     {
-        Exception? outcome = null;
+        Task cancellation = operationCancellation?.CancelAsync() ?? Task.CompletedTask;
+        Exception? cancellationFailure = await ObserveAsync(cancellation);
+        Exception? operationFailure = await ObserveAsync(pending);
+
+        operationCancellation?.Dispose();
+        await DisposeQuietlyAsync();
+        return new JobDatabaseSessionCleanup(operationFailure, cancellationFailure);
+    }
+
+    private static async Task<Exception?> ObserveAsync(Task task)
+    {
         try
         {
-            await pending;
+            await task;
+            return null;
         }
         catch (Exception exception)
         {
-            outcome = exception;
+            return exception;
         }
-
-        token?.Dispose();
-        await DisposeQuietlyAsync();
-        return outcome;
     }
 
     /// <summary>Disposes the transaction and the connection; a provider error here changes no outcome.</summary>

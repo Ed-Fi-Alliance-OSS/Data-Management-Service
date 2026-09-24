@@ -129,7 +129,7 @@ public sealed class PostgresqlJobFenceFactory(
                 remainingLease - JobLeaseTimings.FenceLeaseReserve
             );
             state.Deadline = JobDeadline.Start(fenceTimeout);
-            using CancellationTokenSource deadline = state.Deadline.CreateTokenSource(cancellationToken);
+            using JobDeadlineCancellation deadline = state.Deadline.CreateCancellation(cancellationToken);
 
             await work(session.Transaction!, deadline.Token);
 

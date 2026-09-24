@@ -248,27 +248,20 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             {
                 JobDeadline batch = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
                 budget = batch;
-                int rows = await session.RunAsync(
-                    "ExhaustBatch",
-                    token =>
-                        session.Connection.ExecuteAsync(
-                            PostgresqlJobSession.Command(
-                                session,
-                                ExhaustBatchSql,
-                                new
-                                {
-                                    MaxAttempts = maxAttempts,
-                                    ErrorMessage = errorCode.Message,
-                                    ModifiedBy = SystemUser,
-                                    BatchSize = JobLeaseTimings.ExhaustBatchSize,
-                                },
-                                batch,
-                                token
-                            )
-                        ),
-                    batch,
-                    CancellationToken.None
-                );
+                int rows;
+                try
+                {
+                    rows = await RunExhaustBatchAsync(session, maxAttempts, errorCode, batch);
+                }
+                catch (Exception exception)
+                {
+                    // A batch's failure, a cancellation it reports included, is never a clean stop, even during
+                    // shutdown: the batch's outcome is unknown.
+                    return new JobExhaustResult.FailureUnknown(
+                        PostgresqlJobDiagnostics.From(exception, "Exhaust")
+                    );
+                }
+
                 exhausted += rows;
                 AfterExhaustBatch?.Invoke(rows);
 
@@ -282,8 +275,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Only connection acquisition observes the token, so no batch was running: the sweep stopped
-            // before its next batch.
+            // Only connection acquisition reaches here with the stopping token cancelled: the sweep stopped
+            // before its first batch.
             return new JobExhaustResult.Success(exhausted);
         }
         catch (Exception exception)
@@ -296,6 +289,34 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             await session.EndAsync(budget, null);
         }
     }
+
+    private static Task<int> RunExhaustBatchAsync(
+        JobDatabaseSession session,
+        int maxAttempts,
+        JobErrorCode errorCode,
+        JobDeadline batch
+    ) =>
+        session.RunAsync(
+            "ExhaustBatch",
+            token =>
+                session.Connection.ExecuteAsync(
+                    PostgresqlJobSession.Command(
+                        session,
+                        ExhaustBatchSql,
+                        new
+                        {
+                            MaxAttempts = maxAttempts,
+                            ErrorMessage = errorCode.Message,
+                            ModifiedBy = SystemUser,
+                            BatchSize = JobLeaseTimings.ExhaustBatchSize,
+                        },
+                        batch,
+                        token
+                    )
+                ),
+            batch,
+            CancellationToken.None
+        );
 
     public Task<JobWriteResult> Renew(
         long id,

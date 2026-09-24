@@ -38,7 +38,7 @@ public class JobLeaseRepositoryTests
     /// </summary>
     public sealed class PendingOperation
     {
-        private readonly List<Task<Exception?>> _cleanups = [];
+        private readonly List<Task<JobDatabaseSessionCleanup>> _cleanups = [];
         private int _held;
 
         public PendingOperation(string name, TimeSpan hold)
@@ -67,14 +67,14 @@ public class JobLeaseRepositoryTests
         /// <summary>Waits for the single hand-over's cleanup and returns how the pending operation ended.</summary>
         public async Task<Exception?> CleanupAsync()
         {
-            Task<Exception?> cleanup;
+            Task<JobDatabaseSessionCleanup> cleanup;
             lock (_cleanups)
             {
                 _cleanups.Should().ContainSingle("the operation was handed over exactly once");
                 cleanup = _cleanups[0];
             }
 
-            return await cleanup.WaitAsync(TimeSpan.FromSeconds(15));
+            return (await cleanup.WaitAsync(TimeSpan.FromSeconds(15))).Operation;
         }
     }
 
@@ -1458,6 +1458,46 @@ public class JobLeaseRepositoryTests
             _batches.Should().BeEmpty();
             _pendingRows.Should().Be(10);
         }
+    }
+
+    [TestFixture]
+    public class Given_an_exhaust_batch_that_reports_cancellation_during_shutdown : JobLeaseTestBase
+    {
+        private JobExhaustResult _result = null!;
+        private long _pendingRows;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedOverLimitJobsAsync(3);
+            using CancellationTokenSource stopping = new();
+            JobLeaseRepository repository = new(Configuration.DatabaseOptions, _timings)
+            {
+                // Shutdown is requested while the first batch is in flight, and the batch then reports a
+                // cancellation of its own.
+                SessionHooks = new JobDatabaseSessionHooks
+                {
+                    BeforeOperation = async (operation, _) =>
+                    {
+                        if (operation == "ExhaustBatch")
+                        {
+                            await stopping.CancelAsync();
+                            throw new OperationCanceledException("the batch was cancelled");
+                        }
+                    },
+                },
+            };
+
+            _result = await repository.Exhaust(MaxAttempts, JobErrorCode.AttemptsExhausted, stopping.Token);
+            _pendingRows = await CountAsync("\"Status\" = 'Pending'");
+        }
+
+        [Test]
+        public void It_reports_the_in_flight_batch_as_a_failure_rather_than_a_clean_stop() =>
+            _result.Should().BeOfType<JobExhaustResult.FailureUnknown>();
+
+        [Test]
+        public void It_changes_no_row() => _pendingRows.Should().Be(3);
     }
 
     [TestFixture]
