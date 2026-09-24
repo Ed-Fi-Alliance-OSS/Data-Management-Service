@@ -19,7 +19,7 @@ for current command details and the linked design owners for support boundaries.
 | SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 local/published setup passed |
 | DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL / SQL Server direct setup passed T16/T17; build alternatives unexercised |
 | Preserve deployment state | [deployment-state](#deployment-state) | PostgreSQL passed T18; SQL Server passed T19 |
-| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | T04 — documented; exact retry snippet unexercised |
+| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | PostgreSQL exact CLI passed [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20); SQL Server wrapper retry passed [T17](cdc-inv-evidence.md#sql-server-setup-qualification-t17), with shared CLI/Contract coverage; no separate SQL Server exact-CLI run |
 | Established validation and restart preflight | [established-validation](#established-validation) | PostgreSQL passed T18; SQL Server passed T19 |
 | Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | PostgreSQL passed T18; SQL Server passed T19 |
 | Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | PostgreSQL passed T18; SQL Server passed T19 |
@@ -2224,7 +2224,9 @@ unsafe effective grants, denied ACL inspection, topic drift and stronger retenti
 The fixture's SASL/PLAIN credentials are ephemeral on its isolated Docker network and
 loopback listeners; this is no production transport-security recipe.
 
-PowerShell, repository root; .NET 10, PowerShell 7 and working Docker Engine with permission
+PowerShell, repository root; .NET 10, PowerShell 7.5 or newer (see the
+[qualification prerequisites and environment-preservation explanation](../../docs/CDC-QUALIFICATION.md))
+and working Docker Engine with permission
 to create/remove isolated containers/networks/volumes. Verify `systemctl status docker
 --no-pager` and `docker ps` on Linux. Have the repository-pinned Kafka image and qualified
 Connect image locally, or deliberately add the runner's `-PullImages` option. The local status case also requires the declared PostgreSQL and Redpanda images;
@@ -2352,8 +2354,10 @@ task with no partial public record. The existing
 [message-size fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractRecordSizeTests.cs)
 and [rollout/replay fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Producer.cs)
 qualify this boundary for their pinned runtime and workload, not every valid document
-or production throughput. Their procedure-level live evidence remains
-[pending](cdc-inv-evidence.md#procedure-evidence).
+or production throughput. Procedure-level live qualification passed for
+[PostgreSQL (T23)](cdc-inv-evidence.md#postgresql-record-size-qualification-t23) and
+[SQL Server (T24)](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24),
+including exact increase and interrupted-retry snippets within those fixture limits.
 
 Choose a strictly larger record ceiling and a producer buffer at least that large
 and no smaller than the previous effective buffer (default: greater of `33554432`
