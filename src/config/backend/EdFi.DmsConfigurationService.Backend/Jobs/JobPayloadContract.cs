@@ -39,6 +39,12 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 /// unmapped-member override, extension data, or polymorphism, and every serialized property must be one it
 /// can read back.
 /// </para>
+/// <para>
+/// A payload type must also round-trip. Every public property needs a public getter, so validation and the
+/// serializer can both read it. The serializer must resolve a public constructor: either a parameterless one,
+/// with every property settable, or a single parameterized one whose every parameter binds, by name and type,
+/// to a property; a property that is not settable must be bound to a constructor parameter.
+/// </para>
 /// </remarks>
 public static class JobPayloadContract
 {
@@ -200,6 +206,23 @@ public static class JobPayloadContract
             }
         }
 
+        // Constructors are only inspected for System.Text.Json attributes, never invoked.
+#pragma warning disable S3011
+        foreach (
+            ConstructorInfo constructor in type.GetConstructors(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            )
+        )
+#pragma warning restore S3011
+        {
+            if (JsonAttributesOf(constructor).FirstOrDefault() is { } attribute)
+            {
+                violations.Add(
+                    $"{path}: a constructor of '{type.Name}' carries [{AttributeName(attribute)}]; {JsonAttributeReason}"
+                );
+            }
+        }
+
         foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
         {
             violations.Add($"{path}.{field.Name}: public fields are not allowed; use a property");
@@ -212,6 +235,14 @@ public static class JobPayloadContract
             if (property.GetIndexParameters().Length > 0)
             {
                 violations.Add($"{propertyPath}: indexers are not allowed");
+                continue;
+            }
+
+            if (property.GetGetMethod() is null)
+            {
+                violations.Add(
+                    $"{propertyPath}: has no public getter, so it can be neither validated nor serialized"
+                );
                 continue;
             }
 
@@ -414,15 +445,11 @@ public static class JobPayloadContract
             violations.Add($"{path}: the serializer resolves an unmapped-member override for '{type.Name}'");
         }
 
+        VerifyConstruction(typeInfo, type, path, violations);
+
         HashSet<string> allowed = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
-        HashSet<string> constructorParameters =
-            (typeInfo.ConstructorAttributeProvider as ConstructorInfo)
-                ?.GetParameters()
-                .Select(parameter => parameter.Name ?? string.Empty)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase)
-            ?? [];
         HashSet<string> serialized = new(StringComparer.Ordinal);
 
         foreach (JsonPropertyInfo property in typeInfo.Properties)
@@ -453,7 +480,16 @@ public static class JobPayloadContract
                 violations.Add($"{propertyPath}: the serializer treats it as extension data");
             }
 
-            if (property.Set is null && !constructorParameters.Contains(member.Name))
+            if (property.Get is null)
+            {
+                violations.Add(
+                    $"{propertyPath}: the serializer cannot read it, so it would never be written"
+                );
+            }
+
+            // The serializer's own binding: a parameter binds only to a property of the same name (ignoring
+            // case) and exactly the same type.
+            if (property.Set is null && property.AssociatedParameter is null)
             {
                 violations.Add(
                     $"{propertyPath}: is read-only, so the serializer would write it but never read it back"
@@ -470,6 +506,43 @@ public static class JobPayloadContract
         foreach (string name in allowed.Except(serialized).Order(StringComparer.Ordinal))
         {
             violations.Add($"{path}.{name}: the serializer does not include this property");
+        }
+    }
+
+    /// <summary>
+    /// The serializer must be able to create the type: it resolves a public constructor, and every parameter
+    /// of that constructor binds to a serialized property. Otherwise every read would fail, with
+    /// <see cref="NotSupportedException"/> or <see cref="InvalidOperationException"/>.
+    /// </summary>
+    private static void VerifyConstruction(
+        JsonTypeInfo typeInfo,
+        Type type,
+        string path,
+        List<string> violations
+    )
+    {
+        if (typeInfo.ConstructorAttributeProvider is not ConstructorInfo { IsPublic: true } constructor)
+        {
+            violations.Add(
+                $"{path}: the serializer has no public constructor it can use to create '{type.Name}'; declare a public parameterless constructor or a single public constructor"
+            );
+            return;
+        }
+
+        HashSet<int> boundPositions = typeInfo
+            .Properties.Select(property => property.AssociatedParameter?.Position)
+            .OfType<int>()
+            .ToHashSet();
+
+        foreach (
+            ParameterInfo parameter in constructor
+                .GetParameters()
+                .Where(parameter => !boundPositions.Contains(parameter.Position))
+        )
+        {
+            violations.Add(
+                $"{path}: constructor parameter '{parameter.Name}' does not bind to a property with the same name and type"
+            );
         }
     }
 

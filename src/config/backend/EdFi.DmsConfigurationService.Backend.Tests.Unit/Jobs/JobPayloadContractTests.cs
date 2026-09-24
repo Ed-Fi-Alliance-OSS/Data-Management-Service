@@ -201,6 +201,118 @@ public sealed record ComputedPropertyPayload(int Count)
     public int Doubled => Count * 2;
 }
 
+#pragma warning disable S1144, S2376, S3453, S4487, IDE0051, IDE0052 // The inaccessible members are the violations under test.
+public sealed class PrivateConstructorPayload
+{
+    private PrivateConstructorPayload() { }
+
+    public int Count { get; set; }
+}
+
+public sealed class SetterOnlyPropertyPayload
+{
+    private int _count;
+
+    public int Count
+    {
+        set => _count = value;
+    }
+}
+
+public sealed class PrivateGetterPayload
+{
+    public int Count { private get; set; }
+}
+
+public sealed class JsonConstructorPayload
+{
+    [JsonConstructor]
+    private JsonConstructorPayload(int count) => Count = count;
+
+    public int Count { get; }
+}
+#pragma warning restore S1144, S2376, S3453, S4487, IDE0051, IDE0052
+
+public sealed class AmbiguousConstructorsPayload
+{
+    public AmbiguousConstructorsPayload(int count) => Count = count;
+
+    public AmbiguousConstructorsPayload(int count, int offset) => Count = count + offset;
+
+    public int Count { get; }
+}
+
+public sealed class ConstructorNameMismatchPayload(int value)
+{
+    public int Count { get; } = value;
+}
+
+public sealed class ConstructorTypeMismatchPayload(long count)
+{
+    public int Count { get; } = (int)count;
+}
+
+public sealed class UnboundConstructorParameterPayload(int count, int offset = 0)
+{
+    public int Count { get; } = count + offset;
+}
+
+public sealed record NestedPrivateConstructorPayload(PrivateConstructorPayload Inner);
+
+public sealed record NestedSetterOnlyPropertyPayload(IReadOnlyList<SetterOnlyPropertyPayload> Inner);
+
+public sealed record NestedConstructorTypeMismatchPayload(ConstructorTypeMismatchPayload Inner);
+
+public sealed class MutableItem
+{
+    [JobIdentifier(32)]
+    public string Code { get; set; } = "";
+
+    public long Size { get; set; }
+}
+
+public sealed class MutablePayload
+{
+    [JobIdentifier(64)]
+    public string DataStoreId { get; set; } = "";
+
+    public int Count { get; set; }
+
+    public ProbeMode Mode { get; set; }
+
+    public MutableItem Item { get; set; } = new();
+
+    public IReadOnlyList<MutableItem> Items { get; set; } = [];
+}
+
+public sealed class ImmutableItem(string code, long size)
+{
+    [JobIdentifier(32)]
+    public string Code { get; } = code;
+
+    public long Size { get; } = size;
+}
+
+public sealed class ImmutablePayload(
+    string dataStoreId,
+    int count,
+    ProbeMode mode,
+    ImmutableItem item,
+    IReadOnlyList<ImmutableItem> items
+)
+{
+    [JobIdentifier(64)]
+    public string DataStoreId { get; } = dataStoreId;
+
+    public int Count { get; } = count;
+
+    public ProbeMode Mode { get; } = mode;
+
+    public ImmutableItem Item { get; } = item;
+
+    public IReadOnlyList<ImmutableItem> Items { get; } = items;
+}
+
 public class JobPayloadContractTests
 {
     private static ProbePayload ValidPayload() =>
@@ -291,6 +403,58 @@ public class JobPayloadContractTests
             (
                 typeof(ComputedPropertyPayload),
                 "ComputedPropertyPayload.Doubled: is read-only, so the serializer would write it but never read it back"
+            ),
+            (
+                typeof(PrivateConstructorPayload),
+                "PrivateConstructorPayload: the serializer has no public constructor it can use to create 'PrivateConstructorPayload'"
+            ),
+            (
+                typeof(AmbiguousConstructorsPayload),
+                "AmbiguousConstructorsPayload: the serializer has no public constructor it can use"
+            ),
+            (
+                typeof(JsonConstructorPayload),
+                "JsonConstructorPayload: a constructor of 'JsonConstructorPayload' carries [JsonConstructor]"
+            ),
+            (
+                typeof(SetterOnlyPropertyPayload),
+                "SetterOnlyPropertyPayload.Count: has no public getter, so it can be neither validated nor serialized"
+            ),
+            (
+                typeof(PrivateGetterPayload),
+                "PrivateGetterPayload.Count: has no public getter, so it can be neither validated nor serialized"
+            ),
+            (
+                typeof(ConstructorNameMismatchPayload),
+                "ConstructorNameMismatchPayload: constructor parameter 'value' does not bind to a property with the same name and type"
+            ),
+            (
+                typeof(ConstructorNameMismatchPayload),
+                "ConstructorNameMismatchPayload.Count: is read-only, so the serializer would write it but never read it back"
+            ),
+            (
+                typeof(ConstructorTypeMismatchPayload),
+                "ConstructorTypeMismatchPayload: constructor parameter 'count' does not bind to a property with the same name and type"
+            ),
+            (
+                typeof(ConstructorTypeMismatchPayload),
+                "ConstructorTypeMismatchPayload.Count: is read-only, so the serializer would write it but never read it back"
+            ),
+            (
+                typeof(UnboundConstructorParameterPayload),
+                "UnboundConstructorParameterPayload: constructor parameter 'offset' does not bind"
+            ),
+            (
+                typeof(NestedPrivateConstructorPayload),
+                "NestedPrivateConstructorPayload.Inner: the serializer has no public constructor it can use to create 'PrivateConstructorPayload'"
+            ),
+            (
+                typeof(NestedSetterOnlyPropertyPayload),
+                "NestedSetterOnlyPropertyPayload.Inner[].Count: has no public getter"
+            ),
+            (
+                typeof(NestedConstructorTypeMismatchPayload),
+                "NestedConstructorTypeMismatchPayload.Inner: constructor parameter 'count' does not bind"
             ),
         ];
 
@@ -389,6 +553,141 @@ public class JobPayloadContractTests
 
         [Test]
         public void It_accepts_nesting_at_the_depth_limit() => _eightLevelViolations.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_class_payloads_built_by_setters_or_by_a_constructor
+    {
+        private static MutablePayload Mutable() =>
+            new()
+            {
+                DataStoreId = "ds-7",
+                Count = 2,
+                Mode = ProbeMode.First,
+                Item = new MutableItem { Code = "item-1", Size = 10 },
+                Items = [new MutableItem { Code = "item-2", Size = 20 }],
+            };
+
+        private static ImmutablePayload Immutable() =>
+            new(
+                "ds-8",
+                4,
+                ProbeMode.Second,
+                new ImmutableItem("item-3", 30),
+                [new ImmutableItem("item-4", 40)]
+            );
+
+        private IReadOnlyList<string> _mutableViolations = [];
+        private IReadOnlyList<string> _immutableViolations = [];
+        private JobPayloadWriteResult _mutableWritten = null!;
+        private JobPayloadWriteResult _immutableWritten = null!;
+        private JobPayloadReadResult<MutablePayload> _mutableRead = null!;
+        private JobPayloadReadResult<ImmutablePayload> _immutableRead = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _mutableViolations = JobPayloadContract.Violations(typeof(MutablePayload));
+            _immutableViolations = JobPayloadContract.Violations(typeof(ImmutablePayload));
+
+            _mutableWritten = JobPayloadSerializer.Serialize(Mutable());
+            _mutableRead = JobPayloadSerializer.Deserialize<MutablePayload>(
+                ((JobPayloadWriteResult.Success)_mutableWritten).Json
+            );
+            _immutableWritten = JobPayloadSerializer.Serialize(Immutable());
+            _immutableRead = JobPayloadSerializer.Deserialize<ImmutablePayload>(
+                ((JobPayloadWriteResult.Success)_immutableWritten).Json
+            );
+        }
+
+        [Test]
+        public void It_accepts_a_class_with_a_parameterless_constructor_and_settable_properties() =>
+            _mutableViolations.Should().BeEmpty();
+
+        [Test]
+        public void It_accepts_a_class_whose_getter_only_properties_bind_to_its_constructor() =>
+            _immutableViolations.Should().BeEmpty();
+
+        [Test]
+        public void It_writes_every_property_of_the_mutable_class() =>
+            _mutableWritten
+                .Should()
+                .BeOfType<JobPayloadWriteResult.Success>()
+                .Which.Json.Should()
+                .Be(
+                    "{\"dataStoreId\":\"ds-7\",\"count\":2,\"mode\":1,\"item\":{\"code\":\"item-1\",\"size\":10},\"items\":[{\"code\":\"item-2\",\"size\":20}]}"
+                );
+
+        [Test]
+        public void It_writes_every_property_of_the_immutable_class() =>
+            _immutableWritten
+                .Should()
+                .BeOfType<JobPayloadWriteResult.Success>()
+                .Which.Json.Should()
+                .Be(
+                    "{\"dataStoreId\":\"ds-8\",\"count\":4,\"mode\":2,\"item\":{\"code\":\"item-3\",\"size\":30},\"items\":[{\"code\":\"item-4\",\"size\":40}]}"
+                );
+
+        [Test]
+        public void It_round_trips_the_mutable_class() =>
+            _mutableRead
+                .Should()
+                .BeOfType<JobPayloadReadResult<MutablePayload>.Success>()
+                .Which.Payload.Should()
+                .BeEquivalentTo(Mutable());
+
+        [Test]
+        public void It_round_trips_the_immutable_class() =>
+            _immutableRead
+                .Should()
+                .BeOfType<JobPayloadReadResult<ImmutablePayload>.Success>()
+                .Which.Payload.Should()
+                .BeEquivalentTo(Immutable());
+    }
+
+    [TestFixture]
+    public class Given_payload_types_the_serializer_cannot_round_trip
+    {
+        private Exception? _readFailure;
+        private Exception? _writeFailure;
+
+        [SetUp]
+        public void Setup()
+        {
+            try
+            {
+                JobPayloadSerializer.Deserialize<PrivateConstructorPayload>("{\"count\":1}");
+            }
+            catch (Exception exception)
+            {
+                _readFailure = exception;
+            }
+
+            try
+            {
+                JobPayloadSerializer.Serialize(new SetterOnlyPropertyPayload { Count = 1 });
+            }
+            catch (Exception exception)
+            {
+                _writeFailure = exception;
+            }
+        }
+
+        [Test]
+        public void It_refuses_to_read_a_type_it_cannot_construct() =>
+            _readFailure
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Contain("the serializer has no public constructor it can use");
+
+        [Test]
+        public void It_refuses_to_write_a_type_with_a_property_it_cannot_read() =>
+            _writeFailure
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Contain("SetterOnlyPropertyPayload.Count: has no public getter");
     }
 
     [TestFixture]
