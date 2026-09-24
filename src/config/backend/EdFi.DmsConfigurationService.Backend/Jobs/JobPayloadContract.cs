@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace EdFi.DmsConfigurationService.Backend.Jobs;
 
@@ -27,6 +28,17 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 /// data the contract does not describe. Nesting is limited to <see cref="MaxDepth"/> JSON levels, counting
 /// the root object, each nested object, and each list, so a valid type always serializes within the
 /// serializer's depth limit.
+/// <para>
+/// The serializer's behavior must be exactly what the fixed options in <see cref="JobPayloadSerializer"/>
+/// define, so a payload type may not change it: payload types derive directly from <c>object</c>, and no
+/// payload type, member (public or not), or enum a payload uses may carry a <c>System.Text.Json</c>
+/// attribute, such as <c>[JsonInclude]</c> on a non-public member, <c>[JsonConverter]</c> on an enum, or
+/// <c>[JsonUnmappedMemberHandling]</c> or <c>[JsonNumberHandling]</c> overrides. A type that passes these
+/// rules is then checked against the contract the serializer itself resolves (<see cref="JsonTypeInfo"/>): it
+/// must serialize exactly the allowlisted properties, with no custom converter, number-handling or
+/// unmapped-member override, extension data, or polymorphism, and every serialized property must be one it
+/// can read back.
+/// </para>
 /// </remarks>
 public static class JobPayloadContract
 {
@@ -70,6 +82,10 @@ public static class JobPayloadContract
             {
                 List<string> violations = [];
                 VerifyType(type, type.Name, [], violations, depth: 1);
+                if (violations.Count == 0)
+                {
+                    VerifySerializerContract(type, type.Name, violations, []);
+                }
                 return violations;
             }
         );
@@ -100,16 +116,23 @@ public static class JobPayloadContract
             return;
         }
 
-        if (
-            !type.IsClass
-            || !type.IsSealed
-            || type.IsAbstract
-            || type.IsGenericType
-            || type == typeof(string)
-        )
+        if (IsFrameworkType(type))
+        {
+            violations.Add($"{path}: '{type.Name}' is not an allowed payload type (a framework type)");
+            return;
+        }
+
+        if (!type.IsClass || !type.IsSealed || type.IsAbstract || type.IsGenericType)
         {
             violations.Add($"{path}: '{type.Name}' must be a sealed, non-generic record or class");
             return;
+        }
+
+        if (type.BaseType != typeof(object))
+        {
+            violations.Add(
+                $"{path}: '{type.Name}' derives from '{type.BaseType?.Name}'; a payload type must derive directly from object"
+            );
         }
 
         if (!ancestors.Add(type))
@@ -131,6 +154,50 @@ public static class JobPayloadContract
             violations.Add(
                 $"{path}: '{type.Name}' declares a custom JSON converter, which payloads may not use"
             );
+        }
+
+        foreach (
+            Attribute attribute in JsonAttributesOf(type)
+                .Where(attribute =>
+                    attribute
+                        is not (
+                            JsonPolymorphicAttribute
+                            or JsonDerivedTypeAttribute
+                            or JsonConverterAttribute
+                        )
+                )
+        )
+        {
+            violations.Add(
+                $"{path}: '{type.Name}' carries [{AttributeName(attribute)}]; {JsonAttributeReason}"
+            );
+        }
+
+        for (
+            Type? declaring = type;
+            declaring is not null && declaring != typeof(object);
+            declaring = declaring.BaseType
+        )
+        {
+            // Non-public members are only inspected for System.Text.Json attributes, never read or invoked.
+#pragma warning disable S3011
+            foreach (
+                MemberInfo member in declaring.GetMembers(
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )
+            )
+#pragma warning restore S3011
+            {
+                if (
+                    member is (PropertyInfo or FieldInfo)
+                    && JsonAttributesOf(member).FirstOrDefault() is { } attribute
+                )
+                {
+                    violations.Add(
+                        $"{path}.{member.Name}: a non-public member carries [{AttributeName(attribute)}], which would make the serializer include it outside the contract"
+                    );
+                }
+            }
         }
 
         foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
@@ -157,6 +224,14 @@ public static class JobPayloadContract
             if (property.IsDefined(typeof(JsonConverterAttribute), inherit: false))
             {
                 violations.Add($"{propertyPath}: a custom JSON converter is not allowed");
+                continue;
+            }
+
+            if (JsonAttributesOf(property).FirstOrDefault() is { } attribute)
+            {
+                violations.Add(
+                    $"{propertyPath}: carries [{AttributeName(attribute)}]; {JsonAttributeReason}"
+                );
                 continue;
             }
 
@@ -234,7 +309,13 @@ public static class JobPayloadContract
             return;
         }
 
-        if (_scalars.Contains(type) || type.IsEnum)
+        if (type.IsEnum)
+        {
+            VerifyEnum(type, path, violations);
+            return;
+        }
+
+        if (_scalars.Contains(type))
         {
             return;
         }
@@ -246,13 +327,150 @@ public static class JobPayloadContract
             return;
         }
 
-        if (IsFrameworkType(type))
+        VerifyType(type, path, ancestors, violations, depth + 1);
+    }
+
+    private const string JsonAttributeReason =
+        "a payload may not change how the serializer handles it, so System.Text.Json attributes are not allowed";
+
+    /// <summary>
+    /// Every System.Text.Json attribute on <paramref name="member"/>, matched by namespace rather than by the
+    /// <see cref="JsonAttribute"/> base class, which not every serializer attribute derives from (for example
+    /// <c>JsonStringEnumMemberNameAttribute</c>).
+    /// </summary>
+    private static IEnumerable<Attribute> JsonAttributesOf(MemberInfo member) =>
+        member
+            .GetCustomAttributes(inherit: true)
+            .OfType<Attribute>()
+            .Where(attribute =>
+                attribute.GetType().Namespace is { } ns
+                && (ns == "System.Text.Json" || ns.StartsWith("System.Text.Json.", StringComparison.Ordinal))
+            );
+
+    private static string AttributeName(Attribute attribute) =>
+        attribute.GetType().Name is var name && name.EndsWith("Attribute", StringComparison.Ordinal)
+            ? name[..^"Attribute".Length]
+            : attribute.GetType().Name;
+
+    /// <summary>
+    /// An enum is read and written by the built-in numeric converter only: neither the enum nor its members
+    /// may carry a <c>System.Text.Json</c> attribute, such as a converter or a member name.
+    /// </summary>
+    private static void VerifyEnum(Type enumType, string path, List<string> violations)
+    {
+        foreach (Attribute attribute in JsonAttributesOf(enumType))
         {
-            violations.Add($"{path}: '{type.Name}' is not an allowed payload type");
+            violations.Add(
+                $"{path}: enum '{enumType.Name}' carries [{AttributeName(attribute)}]; {JsonAttributeReason}"
+            );
+        }
+
+        foreach (FieldInfo member in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
+        {
+            if (JsonAttributesOf(member).FirstOrDefault() is { } attribute)
+            {
+                violations.Add(
+                    $"{path}: enum member '{enumType.Name}.{member.Name}' carries [{AttributeName(attribute)}]; {JsonAttributeReason}"
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks a type that passed the reflection rules against the contract the serializer resolves for it, so
+    /// that what is validated is exactly what is written and read.
+    /// </summary>
+    private static void VerifySerializerContract(
+        Type type,
+        string path,
+        List<string> violations,
+        HashSet<Type> verified
+    )
+    {
+        if (!verified.Add(type))
+        {
             return;
         }
 
-        VerifyType(type, path, ancestors, violations, depth + 1);
+        JsonTypeInfo typeInfo = JobPayloadSerializer.Options.GetTypeInfo(type);
+        if (typeInfo.Kind != JsonTypeInfoKind.Object)
+        {
+            violations.Add($"{path}: the serializer does not treat '{type.Name}' as a JSON object");
+            return;
+        }
+
+        if (typeInfo.PolymorphismOptions is not null)
+        {
+            violations.Add($"{path}: the serializer resolves polymorphism for '{type.Name}'");
+        }
+
+        if (typeInfo.NumberHandling is not null)
+        {
+            violations.Add($"{path}: the serializer resolves a number-handling override for '{type.Name}'");
+        }
+
+        if (typeInfo.UnmappedMemberHandling is not null)
+        {
+            violations.Add($"{path}: the serializer resolves an unmapped-member override for '{type.Name}'");
+        }
+
+        HashSet<string> allowed = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        HashSet<string> constructorParameters =
+            (typeInfo.ConstructorAttributeProvider as ConstructorInfo)
+                ?.GetParameters()
+                .Select(parameter => parameter.Name ?? string.Empty)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? [];
+        HashSet<string> serialized = new(StringComparer.Ordinal);
+
+        foreach (JsonPropertyInfo property in typeInfo.Properties)
+        {
+            if (property.AttributeProvider is not PropertyInfo member || !allowed.Contains(member.Name))
+            {
+                violations.Add(
+                    $"{path}.{property.Name}: the serializer includes a member the contract does not allow"
+                );
+                continue;
+            }
+
+            string propertyPath = $"{path}.{member.Name}";
+            serialized.Add(member.Name);
+
+            if (property.CustomConverter is not null)
+            {
+                violations.Add($"{propertyPath}: the serializer resolves a custom converter");
+            }
+
+            if (property.NumberHandling is not null)
+            {
+                violations.Add($"{propertyPath}: the serializer resolves a number-handling override");
+            }
+
+            if (property.IsExtensionData)
+            {
+                violations.Add($"{propertyPath}: the serializer treats it as extension data");
+            }
+
+            if (property.Set is null && !constructorParameters.Contains(member.Name))
+            {
+                violations.Add(
+                    $"{propertyPath}: is read-only, so the serializer would write it but never read it back"
+                );
+            }
+
+            Type valueType = ReadOnlyListElementType(member.PropertyType) ?? member.PropertyType;
+            if (valueType.IsClass && valueType != typeof(string))
+            {
+                VerifySerializerContract(valueType, propertyPath, violations, verified);
+            }
+        }
+
+        foreach (string name in allowed.Except(serialized).Order(StringComparer.Ordinal))
+        {
+            violations.Add($"{path}.{name}: the serializer does not include this property");
+        }
     }
 
     private static string? DisallowedReason(Type type)

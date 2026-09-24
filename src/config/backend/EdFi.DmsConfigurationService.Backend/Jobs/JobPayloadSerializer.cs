@@ -7,6 +7,7 @@ using System.Collections;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace EdFi.DmsConfigurationService.Backend.Jobs;
 
@@ -67,7 +68,11 @@ public record JobPayloadReadResult<TPayload>
 /// </remarks>
 public static class JobPayloadSerializer
 {
-    private static readonly JsonSerializerOptions _options = new(JsonSerializerDefaults.Web)
+    /// <summary>
+    /// The fixed options. <see cref="JobPayloadContract"/> checks payload types against the contract these
+    /// options resolve.
+    /// </summary>
+    internal static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         MaxDepth = JobPayloadContract.MaxDepth,
@@ -78,6 +83,7 @@ public static class JobPayloadSerializer
         AllowDuplicateProperties = false,
         RespectRequiredConstructorParameters = true,
         RespectNullableAnnotations = true,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
     };
 
     public static JobPayloadWriteResult Serialize<TPayload>(TPayload payload)
@@ -90,9 +96,12 @@ public static class JobPayloadSerializer
             return new JobPayloadWriteResult.Failure(violation);
         }
 
-        string json = JsonSerializer.Serialize(payload, _options);
-        return json.Length > JobPayloadContract.MaxPayloadLength
-            ? new JobPayloadWriteResult.Failure(JobPayloadFailureReasons.PayloadTooLarge)
+        string json = JsonSerializer.Serialize(payload, Options);
+
+        // The written text must pass the same checks as text that is read: size, surrogate pairing, and an
+        // object root.
+        return TextViolation(json) is { } textViolation
+            ? new JobPayloadWriteResult.Failure(textViolation)
             : new JobPayloadWriteResult.Success(json);
     }
 
@@ -109,7 +118,7 @@ public static class JobPayloadSerializer
         TPayload? payload;
         try
         {
-            payload = JsonSerializer.Deserialize<TPayload>(json, _options);
+            payload = JsonSerializer.Deserialize<TPayload>(json, Options);
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {

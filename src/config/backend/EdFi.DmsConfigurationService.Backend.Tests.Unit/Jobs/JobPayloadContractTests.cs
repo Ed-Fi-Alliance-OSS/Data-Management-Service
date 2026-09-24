@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -135,6 +136,71 @@ public sealed record NineLevelPayload(EightLevelPayload Next);
 
 public sealed record ListOverTheDepthLimitPayload(Level3 Next, IReadOnlyList<Level2> Deep);
 
+#pragma warning disable S1144, S4487, CS0414, IDE0051, IDE0052 // The unused private members are the violations under test.
+public sealed record NonPublicIncludedPropertyPayload(int Count)
+{
+    [JsonInclude]
+    private string Secret { get; set; } = "hidden";
+}
+
+public sealed class NonPublicIncludedFieldPayload
+{
+    public int Count { get; set; }
+
+    [JsonInclude]
+    private int _hidden = 1;
+}
+#pragma warning restore S1144, S4487, CS0414, IDE0051, IDE0052
+
+public abstract record IncludedBase
+{
+    [JsonInclude]
+    internal int Hidden { get; set; }
+}
+
+public sealed record DerivedFromIncludedBasePayload(int Count) : IncludedBase;
+
+[JsonConverter(typeof(JsonStringEnumConverter<ConvertedMode>))]
+public enum ConvertedMode
+{
+    First = 1,
+}
+
+public sealed record EnumConverterPayload(ConvertedMode Mode);
+
+public enum RenamedMode
+{
+    [JsonStringEnumMemberName("one")]
+    First = 1,
+}
+
+public sealed record EnumMemberNamePayload(RenamedMode Mode);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Skip)]
+public sealed record SkipsUnexpectedMembersPayload(int Count);
+
+public sealed record NestedSkipsUnexpectedMembersPayload(SkipsUnexpectedMembersPayload Inner);
+
+[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+public sealed record TypeNumberHandlingPayload(int Count);
+
+public sealed record PropertyNumberHandlingPayload(
+    [property: JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)] int Count
+);
+
+public sealed record RenamedPropertyPayload([property: JsonPropertyName("$type")] int Count);
+
+public sealed record IgnoredPropertyPayload(int Count)
+{
+    [JsonIgnore]
+    public int Extra { get; init; }
+}
+
+public sealed record ComputedPropertyPayload(int Count)
+{
+    public int Doubled => Count * 2;
+}
+
 public class JobPayloadContractTests
 {
     private static ProbePayload ValidPayload() =>
@@ -192,6 +258,40 @@ public class JobPayloadContractTests
             (typeof(ConverterPayload), "a custom JSON converter is not allowed"),
             (typeof(NineLevelPayload), "nests deeper than 8 JSON levels"),
             (typeof(ListOverTheDepthLimitPayload), "nests deeper than 8 JSON levels"),
+            (
+                typeof(NonPublicIncludedPropertyPayload),
+                "NonPublicIncludedPropertyPayload.Secret: a non-public member carries [JsonInclude]"
+            ),
+            (
+                typeof(NonPublicIncludedFieldPayload),
+                "NonPublicIncludedFieldPayload._hidden: a non-public member carries [JsonInclude]"
+            ),
+            (typeof(DerivedFromIncludedBasePayload), "must derive directly from object"),
+            (
+                typeof(DerivedFromIncludedBasePayload),
+                "DerivedFromIncludedBasePayload.Hidden: a non-public member carries [JsonInclude]"
+            ),
+            (typeof(EnumConverterPayload), "enum 'ConvertedMode' carries [JsonConverter]"),
+            (
+                typeof(EnumMemberNamePayload),
+                "enum member 'RenamedMode.First' carries [JsonStringEnumMemberName]"
+            ),
+            (typeof(SkipsUnexpectedMembersPayload), "carries [JsonUnmappedMemberHandling]"),
+            (
+                typeof(NestedSkipsUnexpectedMembersPayload),
+                "NestedSkipsUnexpectedMembersPayload.Inner: 'SkipsUnexpectedMembersPayload' carries [JsonUnmappedMemberHandling]"
+            ),
+            (typeof(TypeNumberHandlingPayload), "'TypeNumberHandlingPayload' carries [JsonNumberHandling]"),
+            (
+                typeof(PropertyNumberHandlingPayload),
+                "PropertyNumberHandlingPayload.Count: carries [JsonNumberHandling]"
+            ),
+            (typeof(RenamedPropertyPayload), "RenamedPropertyPayload.Count: carries [JsonPropertyName]"),
+            (typeof(IgnoredPropertyPayload), "IgnoredPropertyPayload.Extra: carries [JsonIgnore]"),
+            (
+                typeof(ComputedPropertyPayload),
+                "ComputedPropertyPayload.Doubled: is read-only, so the serializer would write it but never read it back"
+            ),
         ];
 
         private readonly Dictionary<Type, IReadOnlyList<string>> _violations = [];
@@ -232,6 +332,42 @@ public class JobPayloadContractTests
                 .Message.Should()
                 .Contain(typeof(UnannotatedStringPayload).FullName!)
                 .And.Contain("UnannotatedStringPayload.Name");
+        }
+    }
+
+    [TestFixture]
+    public class Given_framework_types_as_payload_roots
+    {
+        private readonly Dictionary<Type, IReadOnlyList<string>> _violations = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            foreach (
+                Type type in new[]
+                {
+                    typeof(Version),
+                    typeof(JsonDocument),
+                    typeof(StringBuilder),
+                    typeof(string),
+                }
+            )
+            {
+                _violations[type] = JobPayloadContract.Violations(type);
+            }
+        }
+
+        [Test]
+        public void It_rejects_a_framework_type_even_when_its_members_would_be_allowed()
+        {
+            foreach ((Type type, IReadOnlyList<string> violations) in _violations)
+            {
+                violations
+                    .Should()
+                    .ContainSingle(type.Name)
+                    .Which.Should()
+                    .Be($"{type.Name}: '{type.Name}' is not an allowed payload type (a framework type)");
+            }
         }
     }
 
