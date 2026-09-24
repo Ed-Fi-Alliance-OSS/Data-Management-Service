@@ -332,6 +332,16 @@ Completed/Error ─retention──────────► deleted after Fini
 4. Resolve handler; invoke with `JobExecutionContext` (fence bound to the same ownership object) and the CTS token.
 5. Finalize (D-7a): stop and await the renewal loop; under the gate decide: `Uncertain` → no write; `Owned` → exactly one outcome write chosen by D-7; record result; log; metrics; dispose scope.
 
+Step 3.3 notes (`JobExecutor`): the executor returns `JobExecutionResult(Outcome, Reason, ErrorCode)`, with `Outcome` one of `Completed`, `RetryScheduled`, `Failed`, `ReleasedOnShutdown`, `OwnershipUncertain`, or `LateWriteRejected`. Classification choices:
+- A tenant lookup that fails (neither found nor not-found) is transient. A missing tenant and either mismatch are `TenantUnavailable`.
+- A `JobPermanentException` fails the job with the code as the registry holds it, and a code that is not registered fails it as `HandlerFailed`, so only registered text becomes the public message.
+- A `JobLeaseLostException` that reaches the executor makes the execution `Uncertain(FenceLeaseLost)`.
+- An outcome write is classified as follows: `OwnershipLost` is `LateWriteRejected`; `FailureUnknown` is `Uncertain(WriteFailed)`, since nothing was written and the row waits for expiry; `ResultUnknown`, or an exception from the write, is `Uncertain(WriteOutcomeUnknown)`. None is retried, and none is followed by a re-read.
+- Renewal reasons are `RenewalOwnershipLost`, `RenewalFailureUnknown`, `RenewalResultUnknown`, `RenewalException`, and `RenewalTimeout`. The last applies when the executor stops waiting after `RenewalTimeout`, the repository's own deadline. The first reason is kept.
+- The renewal loop marks the state and cancels the execution under the gate. The executor's own outcome writes use no cancellation token, because the repositories bound them by `RenewalTimeout`.
+- Logs use the §6.4 event names as `EventId` names, fields as listed, and identifiers through `JobDiagnostics.SafeIdentifier`. No exception object is passed to the logger.
+- `ClaimedJob.Reclaimed`, added to both claim statements, is whether the claimed row was `InProgress`, so `JobReclaimed` and the `reclaimed` metric tag are exact.
+
 ### 4.4 Cancellation and coordination
 
 - Host stopping: worker stops claiming; cancels execution CTSs; awaits executions up to the host shutdown timeout; each execution finalizes as above (release when `Owned`, nothing when `Uncertain`).
