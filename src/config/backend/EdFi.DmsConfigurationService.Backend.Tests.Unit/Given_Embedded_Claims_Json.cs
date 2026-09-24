@@ -8,12 +8,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -317,6 +319,45 @@ public class Given_Embedded_Claims_Json
             .Contain("EdFiSandbox", "the hierarchy walk must reach claim set grants");
         grantedClaimSetNames.Should().BeSubsetOf(DeclaredClaimSetNames(claims));
         grantedClaimSetNames.Should().NotContain(name => name.StartsWith("E2E-", StringComparison.Ordinal));
+    }
+
+    // Every default compose deployment runs Hybrid with the shipped AdditionalClaimsets directory
+    // mounted, so a non-parent fragment there would register its claim set in every deployment
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_registers_no_claim_set_from_the_default_fragment_directory(string standardFolder)
+    {
+        string defaultFragmentsPath = Path.Combine(
+            Given_E2E_Test_Fragments.FindRepositoryRoot(),
+            "src",
+            "config",
+            "backend",
+            "EdFi.DmsConfigurationService.Backend",
+            "Deploy",
+            "AdditionalClaimsets"
+        );
+        JsonObject baseClaims = LoadEmbeddedClaims(standardFolder);
+
+        ClaimsLoadResult result = new ClaimsFragmentComposer(
+            A.Fake<ILogger<ClaimsFragmentComposer>>()
+        ).ComposeClaimsFromFragments(
+            new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
+            defaultFragmentsPath
+        );
+
+        result.Failures.Should().BeEmpty();
+        JsonObject composed = new()
+        {
+            ["claimSets"] = result.Nodes!.ClaimSetsNode.DeepClone(),
+            ["claimsHierarchy"] = result.Nodes.ClaimsHierarchyNode.DeepClone(),
+        };
+
+        DeclaredClaimSetNames(composed).Should().BeEquivalentTo(ShippedClaimSetNames);
+        ClaimNodes(composed["claimsHierarchy"]!)
+            .SelectMany(GrantedClaimSetNames)
+            .Distinct(StringComparer.Ordinal)
+            .Should()
+            .BeSubsetOf(ShippedClaimSetNames);
     }
 
     [TestCase("ds52")]

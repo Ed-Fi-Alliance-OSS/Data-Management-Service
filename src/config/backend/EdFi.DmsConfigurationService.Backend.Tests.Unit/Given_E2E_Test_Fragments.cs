@@ -357,7 +357,7 @@ public class Given_E2E_Test_Fragments(string standardFolder)
         return claims.AsObject();
     }
 
-    private static string FindRepositoryRoot()
+    internal static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
