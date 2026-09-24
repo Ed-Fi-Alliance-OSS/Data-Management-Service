@@ -15,21 +15,19 @@ No tests were run while developing this specification.
 Correct the EDFI-2881 observations that remain applicable on this branch:
 
 1. Make local-image rebuilding explicit on the normal local bootstrap entry
-   point and document the reset-only upgrade path.
+   point and clarify the normal local bootstrap path.
 2. Advertise the public DMS OAuth proxy, rather than the container-internal
    upstream URL, in every served OpenAPI document.
 3. Correct Windows-safe prepared-workspace logging.
 4. Prevent wrapper-managed normal startup from printing terminal InfraOnly
    guidance before it starts DMS.
-5. Clarify normal bootstrap, reset-only upgrades, and DMS token-proxy Basic
-   authentication in the user-facing getting-started material.
+5. Clarify normal bootstrap and DMS token-proxy Basic authentication in the
+   user-facing getting-started material.
 
 ## Exclusions and approved decisions
 
-- A pre-release CMS database is **reset-only**. DMS-1427 will not add an
-  in-place migration, compatibility layer, startup detector, or general
-  historical-upgrade framework. The release-owner decision is recorded in
-  `.plans/comments.md` for later Jira documentation.
+- Do not add database migration, compatibility, startup-detector, or general
+  historical-upgrade work.
 - Do not weaken effective-schema-hash checks or the staged-workspace mismatch
   stop. Guarded automatic replacement remains DMS-1271 scope.
 - Do not change `AppSettings.AuthenticationService`: it remains the internal
@@ -51,11 +49,9 @@ non-rebuild. `bootstrap-published-dms.ps1` is out of scope because the reported
 failure is local-image reuse.
 
 Update `GETTING_STARTED.md` to make `bootstrap-local-dms.ps1` the normal local
-startup command. Preserve phase commands as advanced/manual guidance. Add a
-focused upgrade note: stop the local stack and discard volumes/workspace only
-when local state may be reset, refresh `.env` from the current example as
-needed while preserving intentional local configuration, then bootstrap with
-`-Rebuild`. Do not promise retained pre-release CMS-data compatibility.
+startup command. Preserve phase commands as advanced/manual guidance. Document
+the explicit `-Rebuild` option as the way to rebuild local images when needed,
+without adding separate historical-upgrade guidance.
 
 The guide will state that API clients obtain the DMS proxy URL from Discovery
 and submit `grant_type=client_credentials` with HTTP Basic credentials. It
@@ -104,7 +100,7 @@ retains legal Windows path characters, including backslashes.
 | Public OAuth metadata | `DiscoveryEndpointModule`, `MetadataEndpointModule`, `ContentProvider`, `IApiService` response values | Request URL and route context produce a public DMS proxy URL; every served OpenAPI response advertises it while forwarding stays internal. |
 | Normal bootstrap output | `bootstrap-wrapper.psm1`, `start-local-dms.ps1` | Wrapper suppresses terminal InfraOnly writer output only on its normal continuation path, then performs DMS-only startup. |
 | Safe logging | `prepare-dms-schema.ps1`, `bootstrap-manifest.psm1` | Prepared workspace path is control-character sanitized without losing backslashes. |
-| Operator guidance | `GETTING_STARTED.md` | Normal, reset-only upgrade, and Basic proxy instructions align with script/runtime behavior. |
+| Operator guidance | `GETTING_STARTED.md` | Normal bootstrap, explicit local rebuild, and Basic proxy instructions align with script/runtime behavior. |
 
 ## Failure handling and regression safeguards
 
@@ -113,9 +109,7 @@ retains legal Windows path characters, including backslashes.
 - A stale workspace, package identity mismatch, effective-schema mismatch, or
   fingerprint mismatch continues to fail before Docker/CMS side effects; this
   design does not automatically replace workspace content.
-- A reset-only upgrade remains an operator-controlled destructive action. The
-  documentation must make the local-data loss explicit and must not present a
-  retained CMS database as supported.
+- No database migration or runtime compatibility behavior is introduced.
 - Metadata URL generation must retain PathBase and tenant/qualifier behavior;
   it must not emit `AuthenticationService` or a container hostname to clients.
 - Manual InfraOnly output is a compatibility contract. Suppression is limited
@@ -130,8 +124,8 @@ cover each distinct EDFI-2881 observation.
 
 | Requirement | Design | Meaningful verification |
 | --- | --- | --- |
-| REQ-1: image upgrade path | Public local-wrapper rebuild pass-through; focused reset/rebuild guidance | Extend `BootstrapEntryPointWorkflow.Tests.ps1` to prove `-Rebuild` reaches only initial local startup, default does not; review exact documented reset/rebuild commands. |
-| REQ-2: retained pre-release CMS DB | Approved reset-only documentation boundary | Verify the guide makes reset/data-loss and unsupported retained pre-release state explicit; no migration or runtime test is added. |
+| REQ-1: image upgrade path | Public local-wrapper rebuild pass-through; focused normal-bootstrap/rebuild guidance | Extend `BootstrapEntryPointWorkflow.Tests.ps1` to prove `-Rebuild` reaches only initial local startup, default does not; review the documented normal and rebuild commands. |
+| REQ-2: database migration feedback | No change | No migration, compatibility detector, runtime test, or user-facing documentation is added. |
 | REQ-3: client-reachable OAuth metadata | Request-derived public proxy URL applied to Discovery plus all generated OpenAPI responses | Frontend metadata tests cover unqualified, PathBase, and tenant/route-qualified requests; assert exact public `tokenUrl` and absence of the configured internal hostname for Resources, Descriptors, Change Queries, profiles, and Discovery. |
 | REQ-4: CMS health observation | No change | Preserve existing health response and tests; no consumer requirement justifies a contract change. |
 | REQ-5: DMS proxy credentials | Getting-started Basic/proxy clarification only | Retain existing `TokenEndpointModuleTests` Basic and malformed-header behavior; inspect the guide's Discovery-to-Basic flow. |
@@ -146,7 +140,5 @@ ownership of guarded workspace replacement. DMS-1428 is the only identified
 stored epic sibling but concerns Document Cache administration and has no
 dependency on this story.
 
-The approved deviation from the supporting pre-spec recommendation is that
-there will be no pre-release CMS migration or pre-token compatibility detector.
 There are no remaining design blockers. Implementation planning may begin only
 after the user approves this written specification.
