@@ -7,7 +7,8 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 
 /// <summary>
 /// A job this process has just claimed (spec D-3). <see cref="FencingToken"/> and <see cref="LeaseOwner"/>
-/// authorize every later ownership-dependent write; all times are database UTC.
+/// authorize every later ownership-dependent write; all times are database UTC. <see cref="Reclaimed"/> is true
+/// when the claim took over an <c>InProgress</c> row whose lease had expired, rather than a <c>Pending</c> one.
 /// </summary>
 public sealed record ClaimedJob(
     long Id,
@@ -22,5 +23,6 @@ public sealed record ClaimedJob(
     DateTime LeaseExpiresAt,
     DateTime CreatedAt,
     DateTime NextAttemptAt,
-    DateTime DatabaseUtcNow
+    DateTime DatabaseUtcNow,
+    bool Reclaimed
 );

@@ -136,7 +136,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             ModifiedBy = @Owner
         OUTPUT inserted.Id, inserted.JobId, inserted.TenantId, inserted.JobType, inserted.PayloadVersion,
             inserted.Payload AS PayloadJson, inserted.AttemptCount, inserted.FencingToken, inserted.LeaseOwner,
-            inserted.LeaseExpiresAt, inserted.CreatedAt, inserted.NextAttemptAt, SYSUTCDATETIME() AS DatabaseUtcNow;
+            inserted.LeaseExpiresAt, inserted.CreatedAt, inserted.NextAttemptAt, SYSUTCDATETIME() AS DatabaseUtcNow,
+            CAST(IIF(deleted.Status = N'InProgress', 1, 0) AS BIT) AS Reclaimed;
         """;
 
     // D-6 (A4): one batch of at most @BatchSize rows, skipping locked rows, so a live lease or a row another
@@ -543,7 +544,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         DateTime LeaseExpiresAt,
         DateTime CreatedAt,
         DateTime NextAttemptAt,
-        DateTime DatabaseUtcNow
+        DateTime DatabaseUtcNow,
+        bool Reclaimed
     )
     {
         public ClaimedJob ToClaimedJob() =>
@@ -560,7 +562,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 AsUtc(LeaseExpiresAt),
                 AsUtc(CreatedAt),
                 AsUtc(NextAttemptAt),
-                AsUtc(DatabaseUtcNow)
+                AsUtc(DatabaseUtcNow),
+                Reclaimed
             );
     }
 }

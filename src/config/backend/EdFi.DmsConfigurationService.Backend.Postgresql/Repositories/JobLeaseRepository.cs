@@ -118,7 +118,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     // redundant Status IN conjunct keeps the predicate aligned with the SQL Server filtered index.
     private const string ClaimSql = """
         WITH candidate AS (
-            SELECT "Id"
+            SELECT "Id", "Status" AS "PreviousStatus"
             FROM "dmscs"."Job"
             WHERE (("Status" = 'Pending' AND "NextAttemptAt" <= (now() AT TIME ZONE 'UTC'))
                 OR ("Status" = 'InProgress' AND "LeaseExpiresAt" <= (now() AT TIME ZONE 'UTC')))
@@ -140,7 +140,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         WHERE j."Id" = candidate."Id"
         RETURNING j."Id", j."JobId", j."TenantId", j."JobType", j."PayloadVersion", j."Payload" AS "PayloadJson",
             j."AttemptCount", j."FencingToken", j."LeaseOwner", j."LeaseExpiresAt", j."CreatedAt", j."NextAttemptAt",
-            (now() AT TIME ZONE 'UTC') AS "DatabaseUtcNow";
+            (now() AT TIME ZONE 'UTC') AS "DatabaseUtcNow", candidate."PreviousStatus" = 'InProgress' AS "Reclaimed";
         """;
 
     // D-6 (A4): one batch of at most @BatchSize rows, skipping locked rows, so a live lease or a row another
@@ -521,7 +521,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         DateTime LeaseExpiresAt,
         DateTime CreatedAt,
         DateTime NextAttemptAt,
-        DateTime DatabaseUtcNow
+        DateTime DatabaseUtcNow,
+        bool Reclaimed
     )
     {
         public ClaimedJob ToClaimedJob() =>
@@ -538,7 +539,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 AsUtc(LeaseExpiresAt),
                 AsUtc(CreatedAt),
                 AsUtc(NextAttemptAt),
-                AsUtc(DatabaseUtcNow)
+                AsUtc(DatabaseUtcNow),
+                Reclaimed
             );
     }
 }

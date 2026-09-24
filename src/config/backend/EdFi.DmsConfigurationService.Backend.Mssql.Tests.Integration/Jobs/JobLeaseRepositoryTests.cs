@@ -498,6 +498,13 @@ public class JobLeaseRepositoryTests
         }
 
         [Test]
+        public void It_reports_the_second_claim_as_a_reclaim()
+        {
+            _first.Reclaimed.Should().BeFalse();
+            _second.Reclaimed.Should().BeTrue();
+        }
+
+        [Test]
         public void It_increments_fencing_token_on_claim_and_reclaim()
         {
             _first.Should().BeEquivalentTo(new { FencingToken = 1L, AttemptCount = 1 });
