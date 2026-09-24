@@ -200,6 +200,31 @@ function Export-CdcQualificationEvidence {
     foreach ($file in Get-ChildItem -LiteralPath $RawDirectory -Filter '*.json' -Recurse) {
         # Only test attachments, never runtime settings, workflow journals or source documents.
         if ($file.Name -notmatch $attachmentPattern) { continue }
+        if ($file.Name -like 'cdc-runbook-images-*') {
+            # Image provenance is separate from Pester outcomes. Publish only bounded identities.
+            try {
+                $manifest = Get-Content -LiteralPath $file.FullName -Raw |
+                    ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100 -ErrorAction Stop
+            }
+            catch { continue }
+            if ($manifest -isnot [System.Collections.IDictionary] -or
+                $manifest['SnippetId'] -isnot [string] -or
+                $manifest['SnippetId'] -cnotmatch '^cdc-[a-z0-9-]{1,124}\z' -or
+                $manifest['Provider'] -isnot [string] -or
+                $manifest['Provider'] -cnotin @('postgresql', 'sqlserver')) { continue }
+            $imageFields = @('ProviderImageId', 'ApplicationImage', 'ConfigurationImage')
+            if (@($imageFields | Where-Object {
+                $manifest[$_] -isnot [string] -or $manifest[$_] -cnotmatch '^sha256:[a-f0-9]{64}\z'
+            }).Count) { continue }
+            [ordered]@{
+                SnippetId = $manifest.SnippetId
+                Provider = $manifest.Provider
+                ProviderImageId = $manifest.ProviderImageId
+                ApplicationImage = $manifest.ApplicationImage
+                ConfigurationImage = $manifest.ConfigurationImage
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination $file.Name)
+            continue
+        }
         $value = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100
         if ($file.Name -like 'cdc-runbook-*') {
             # Narrow procedure attachment schema. Never retain settings, command output or prose,

@@ -264,21 +264,7 @@ REVERT;
             ($snapshot.StandardOutput.Trim() -split '\r?\n') | Should -Be @('1', '0')
         }
         if ($E2e) {
-            $smokeCode = @"
-`$env:AppSettings__DatabaseEngine = 'postgresql'
-`$env:AppSettings__DmsContainerName = 'ed-fi-api'
-`$env:AppSettings__DataStoreAdminConnectionString = (Get-Content -LiteralPath '$inputPath' -Raw).Trim()
-`$b = [System.Data.Common.DbConnectionStringBuilder]::new()
-`$b.ConnectionString = `$env:AppSettings__DataStoreAdminConnectionString
-`$b['Host'] = 'dms-postgresql'; `$b['Port'] = '5432'
-`$env:AppSettings__DataStoreConnectionString = `$b.ConnectionString
-`$b['Database'] = '$($values.E2E_SNAPSHOT_DATABASE_NAME)'
-`$env:AppSettings__DataStoreSnapshotConnectionString = `$b.ConnectionString
-"@
-            if ($SqlServer) {
-                $smokeCode = $smokeCode.Replace("= 'postgresql'", "= 'mssql'").Replace("`$b['Host'] = 'dms-postgresql'; `$b['Port'] = '5432'", "`$b['Server'] = 'dms-mssql,1433'")
-            }
-            $smokeCode += "`n" + (Get-CdcRunbookCode 'cdc-pg-e2e-test').Replace('edfi_datamanagementservice_e2e', $database)
+            $smokeCode = (Get-CdcRunbookCode 'cdc-pg-e2e-test').Replace('edfi_datamanagementservice_e2e', $database)
             $smoke = Invoke-PrivateScript 'cdc-pg-e2e-test' $smokeCode
             $smoke.ExitCode | Should -Be 0
             $smoke.StandardOutput | Should -Match 'Passed:\s+2'
@@ -307,6 +293,12 @@ REVERT;
             ApplicationImage = $applicationImage
             ConfigurationImage = $configurationImage
         } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:fixture 'asserted-results.json')
+        if ($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
+            @{
+                SnippetId = $Id; Provider = $providerName; ProviderImageId = $providerImageId
+                ApplicationImage = $applicationImage; ConfigurationImage = $configurationImage
+            } | ConvertTo-Json | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY "cdc-runbook-images-$Id.json")
+        }
         # Complete governed retirement while services remain reachable; never erase provenance to retry.
         $teardown = Get-CdcRunbookCode 'cdc-stack-teardown'
         if ($Published) { $teardown = $teardown.Replace('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1') }

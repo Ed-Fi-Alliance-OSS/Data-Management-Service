@@ -311,6 +311,85 @@ Describe 'CDC qualification result boundary' {
     }
 }
 
+Describe 'CDC runbook image evidence export' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+    }
+    BeforeEach {
+        $caseRoot = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid().ToString('N')))
+        $script:imageRaw = New-Item -ItemType Directory (Join-Path $caseRoot 'raw')
+        $script:imageSafe = Join-Path $caseRoot 'safe'
+        $script:manifest = [ordered]@{
+            SnippetId = 'cdc-pg-bootstrap-local'
+            Provider = 'postgresql'
+            ProviderImageId = 'sha256:' + ('a' * 64)
+            ApplicationImage = 'sha256:' + ('b' * 64)
+            ConfigurationImage = 'sha256:' + ('c' * 64)
+        }
+    }
+    It 'preserves both cases and exact image IDs while omitting every unexpected field' {
+        $second = [ordered]@{
+            SnippetId = 'cdc-sqlserver-e2e-setup'
+            Provider = 'sqlserver'
+            ProviderImageId = 'sha256:' + ('d' * 64)
+            ApplicationImage = 'sha256:' + ('e' * 64)
+            ConfigurationImage = 'sha256:' + ('f' * 64)
+        }
+        foreach ($expected in @($script:manifest, $second)) {
+            $inputValue = @{} + $expected
+            $inputValue.PrivateSettings = @{ Value = 'opaque private value' }
+            $inputValue.RawOutput = 'private output'
+            $inputValue | ConvertTo-Json | Set-Content (Join-Path $script:imageRaw "cdc-runbook-images-$($expected.SnippetId).json")
+        }
+
+        Export-CdcQualificationEvidence $script:imageRaw $script:imageSafe
+
+        @(Get-ChildItem $script:imageSafe -File).Count | Should -Be 2
+        foreach ($expected in @($script:manifest, $second)) {
+            $actual = Get-Content (Join-Path $script:imageSafe "cdc-runbook-images-$($expected.SnippetId).json") -Raw |
+                ConvertFrom-Json -AsHashtable
+            @($actual.Keys | Sort-Object) | Should -Be @($expected.Keys | Sort-Object)
+            foreach ($field in $expected.Keys) { $actual[$field] | Should -BeExactly $expected[$field] }
+        }
+    }
+    It 'skips a manifest with invalid <Field> identity <Value>' -ForEach @(
+        @{ Field = 'SnippetId'; Value = '../private' }
+        @{ Field = 'SnippetId'; Value = 'cdc-' + ('a' * 125) }
+        @{ Field = 'SnippetId'; Value = @('cdc-pg-bootstrap-local') }
+        @{ Field = 'SnippetId'; Value = "cdc-pg-bootstrap-local`n" }
+        @{ Field = 'Provider'; Value = 'mssql' }
+        @{ Field = 'Provider'; Value = 'Postgresql' }
+        @{ Field = 'Provider'; Value = @('postgresql') }
+        @{ Field = 'ProviderImageId'; Value = 'sha256:' + ('A' * 64) }
+        @{ Field = 'ProviderImageId'; Value = 'sha256:' + ('a' * 63) }
+        @{ Field = 'ApplicationImage'; Value = 'image:latest' }
+        @{ Field = 'ApplicationImage'; Value = @('sha256:' + ('a' * 64)) }
+        @{ Field = 'ConfigurationImage'; Value = $null }
+        @{ Field = 'ConfigurationImage'; Value = 'sha256:' + ('a' * 64) + "`n" }
+    ) {
+        $script:manifest[$Field] = $Value
+        $script:manifest | ConvertTo-Json | Set-Content (Join-Path $script:imageRaw 'cdc-runbook-images-invalid.json')
+        Export-CdcQualificationEvidence $script:imageRaw $script:imageSafe
+        @(Get-ChildItem $script:imageSafe -File).Count | Should -Be 0
+    }
+    It 'skips a manifest missing <Field>' -ForEach @(
+        @{ Field = 'SnippetId' }, @{ Field = 'Provider' }, @{ Field = 'ProviderImageId' }
+        @{ Field = 'ApplicationImage' }, @{ Field = 'ConfigurationImage' }
+    ) {
+        $script:manifest.Remove($Field)
+        $script:manifest | ConvertTo-Json | Set-Content (Join-Path $script:imageRaw 'cdc-runbook-images-invalid.json')
+        Export-CdcQualificationEvidence $script:imageRaw $script:imageSafe
+        @(Get-ChildItem $script:imageSafe -File).Count | Should -Be 0
+    }
+    It 'skips malformed JSON and non-object manifests' -ForEach @(
+        @{ Json = '{broken' }, @{ Json = 'null' }, @{ Json = '[]' }, @{ Json = '"text"' }
+    ) {
+        $Json | Set-Content (Join-Path $script:imageRaw 'cdc-runbook-images-invalid.json')
+        Export-CdcQualificationEvidence $script:imageRaw $script:imageSafe
+        @(Get-ChildItem $script:imageSafe -File).Count | Should -Be 0
+    }
+}
+
 Describe 'CDC qualification CI scheduling' {
     BeforeAll {
         $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-dms-pullrequest.yml') -Raw
