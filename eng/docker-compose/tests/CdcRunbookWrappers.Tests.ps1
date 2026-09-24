@@ -51,3 +51,55 @@ Describe 'CDC live snippet process boundary' {
         Should -Invoke Invoke-NativeCommandWithInput -Times 0
     }
 }
+
+Describe 'CDC provider image environment retention' -ForEach @(
+    @{ Engine = 'postgresql'; ImageVariable = 'POSTGRES_IMAGE'; DefaultImage = 'postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0' },
+    @{ Engine = 'mssql'; ImageVariable = 'MSSQL_IMAGE'; DefaultImage = 'mcr.microsoft.com/mssql/server:2025-latest' }
+) {
+    BeforeAll {
+        $script:composeSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        Import-Module (Join-Path $script:composeSource 'env-utility.psm1') -DisableNameChecking
+        Import-Module (Join-Path $script:composeSource 'database-safety.psm1') -DisableNameChecking
+        $imageLine = [regex]::Match((Get-Content (Join-Path $script:composeSource "$Engine.yml") -Raw), '(?m)^\s*image:\s*(\S+)\s*$')
+        $script:imageExpression = $imageLine.Groups[1].Value
+        # Synthetic immutable reference deliberately differs from both shipped defaults.
+        $script:overrideImage = 'example.invalid/provider@sha256:' + ('a' * 64)
+        $script:savedImage = [Environment]::GetEnvironmentVariable($ImageVariable)
+        Remove-Item "Env:$ImageVariable" -ErrorAction SilentlyContinue
+    }
+    AfterAll {
+        if ($null -eq $script:savedImage) { Remove-Item "Env:$ImageVariable" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($ImageVariable, $script:savedImage) }
+    }
+    It 'preserves the <Engine> default without an override' {
+        Get-ComposeResolvedEnvValue -EnvironmentValues @{ CheckedImage = $script:imageExpression } -Name CheckedImage |
+            Should -Be $DefaultImage
+    }
+    It 'resolves an explicit immutable <Engine> override' {
+        $values = @{ CheckedImage = $script:imageExpression }
+        $values[$ImageVariable] = $script:overrideImage
+        Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name CheckedImage | Should -Be $script:overrideImage
+    }
+    It 'retains the <Engine> image through <Surface> schema and engine overlays and re-entry' -ForEach @(
+        @{ Surface = 'local'; Base = '.env.example'; Prefix = '.env.bootstrap' },
+        @{ Surface = 'published'; Base = '.env.example'; Prefix = '.env.bootstrap' },
+        @{ Surface = 'E2E'; Base = '.env.e2e'; Prefix = '.env' }
+    ) {
+        $root = Join-Path $TestDrive "$Engine-$Surface"
+        $null = New-Item -ItemType Directory $root -Force
+        foreach ($name in @($Base, "$Prefix.ds52", '.env.mssql')) {
+            Copy-Item (Join-Path $script:composeSource $name) $root
+        }
+        $basePath = Join-Path $root $Base
+        Add-Content $basePath "`n$ImageVariable=$script:overrideImage"
+        $schema = Resolve-DataStandardEnvironmentFile -DataStandardVersion '5.2' -BaseEnvironmentFile $basePath -DockerComposeRoot $root -OverlayPrefix $Prefix
+        $effective = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $Engine -BaseEnvironmentFile $schema -DockerComposeRoot $root
+        $retained = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine $Engine -BaseEnvironmentFile $effective -DockerComposeRoot $root
+        foreach ($path in @($schema, $effective, $retained)) {
+            $values = ReadValuesFromEnvFile $path
+            $values[$ImageVariable] | Should -Be $script:overrideImage
+            $values.CheckedImage = $script:imageExpression
+            Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name CheckedImage | Should -Be $script:overrideImage
+        }
+    }
+}

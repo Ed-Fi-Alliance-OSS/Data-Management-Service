@@ -79,6 +79,14 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $connectorPassword = [guid]::NewGuid().ToString('N') + 'Ab1!'
         $environmentText = Get-Content $environmentFile -Raw
         $fixtureValues = @{ POSTGRES_USER = 'postgres'; POSTGRES_PASSWORD = $password; POSTGRES_PORT = '5435'; CDC_DATABASE_PASSWORD = $connectorPassword }
+        $providerImage = if ($SqlServer) { $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE } else { $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }
+        $providerImage | Should -Not -BeNullOrEmpty
+        $imageVariable = if ($SqlServer) { 'MSSQL_IMAGE' } else { 'POSTGRES_IMAGE' }
+        $fixtureValues[$imageVariable] = $providerImage
+        $databaseContainer = if ($SqlServer) { 'dms-mssql' } else { 'dms-postgresql' }
+        $providerImageId = & docker image inspect $providerImage --format '{{.Id}}'
+        $LASTEXITCODE | Should -Be 0
+        $providerImageId | Should -Match '^sha256:[a-f0-9]{64}$'
         # Cold plugin scans need headroom on high-core qualification hosts. Keep the
         # declared worker policy and Compose heap identical from initial creation.
         if ($Procedure -eq 'Lifecycle') { $fixtureValues.CDC_WORKER_HEAP_MIB = '1024' }
@@ -111,6 +119,10 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $infra = (Get-CdcRunbookCode "$prefix-infrastructure").Replace('./eng/docker-compose/.env', $environmentFile)
         if ($Published) { $infra = $infra.Replace('start-local-dms.ps1', 'start-published-dms.ps1') }
         (Invoke-PrivateScript "$prefix-infrastructure" $infra).ExitCode | Should -Be 0
+        (& docker inspect $databaseContainer --format '{{.Config.Image}}') | Should -Be $providerImage
+        $LASTEXITCODE | Should -Be 0
+        (& docker inspect $databaseContainer --format '{{.Image}}') | Should -Be $providerImageId
+        $LASTEXITCODE | Should -Be 0
         # Deployment-owned role preparation only. No target database, capture artifact or grant repair.
         function Invoke-FixtureSql {
             param([string] $Sql, [string] $Database = 'master')
@@ -119,7 +131,6 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
                 'SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -d "$1"', 'sqlcmd', $Database) -InputText ("SET NOCOUNT ON;`n" + $Sql)
         }
         if ($SqlServer) {
-            (& docker inspect dms-mssql --format '{{.Image}}') | Should -Be (& docker image inspect $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE --format '{{.Id}}')
             $server = (& docker inspect dms-mssql | ConvertFrom-Json)[0]
             ($server.Config.Env -ccontains "MSSQL_SA_PASSWORD=$password") | Should -BeTrue -Because 'the effective engine overlay must preserve the declared fixture credential'
             $server = $null
@@ -181,6 +192,11 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $inventory = Get-Content $inventoryPath -Raw | ConvertFrom-Json
         $inventory.Entries.Count | Should -Be 1
         $entry = $inventory.Entries[0]
+        (ReadValuesFromEnvFile $inventory.EnvironmentFile)[$imageVariable] | Should -Be $providerImage
+        (& docker inspect $databaseContainer --format '{{.Config.Image}}') | Should -Be $providerImage
+        $LASTEXITCODE | Should -Be 0
+        (& docker inspect $databaseContainer --format '{{.Image}}') | Should -Be $providerImageId
+        $LASTEXITCODE | Should -Be 0
         $entry.StatePath | Should -Be $statePath
         $journal = Get-Content (Join-Path $statePath 'workflows/local/datastore-1/1.json') -Raw | ConvertFrom-Json
         # Publication authority is the atomic intent itself, not a later completion reply.
@@ -236,6 +252,11 @@ REVERT;
             # extracted from its marked operator example; faults affect only this fixture.
             . (Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1')
             Invoke-CdcRunbookLifecycle -Entry $entry -InventoryPath $inventoryPath -StatePath $statePath -Project $project -FixtureRoot $script:fixture -Provider $Provider
+            (ReadValuesFromEnvFile $inventory.EnvironmentFile)[$imageVariable] | Should -Be $providerImage
+            (& docker inspect $databaseContainer --format '{{.Config.Image}}') | Should -Be $providerImage
+            $LASTEXITCODE | Should -Be 0
+            (& docker inspect $databaseContainer --format '{{.Image}}') | Should -Be $providerImageId
+            $LASTEXITCODE | Should -Be 0
         }
         if ($E2e -and $SqlServer) {
             $snapshot = Invoke-FixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
@@ -281,6 +302,8 @@ REVERT;
             LoginUserSidMatched = $SqlServer; NarrowEffectiveAccessVerified = $SqlServer
             WorkTableCaptured = $false; StatusExitCode = 1; WatchExitCode = 1
             Projection = 'Unknown'; AggregateReadiness = 'NotReady'
+            ProviderImage = $providerImage; ProviderImageId = $providerImageId
+            RetainedProviderImageVerified = $true; ManagedStartupImageVerified = ($Procedure -eq 'Lifecycle')
             ApplicationImage = $applicationImage
             ConfigurationImage = $configurationImage
         } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:fixture 'asserted-results.json')

@@ -1536,7 +1536,7 @@ param(
                 Join-Path $script:sourceDockerComposeRoot "mssql.yml"
             ) -Raw
 
-            $mssqlCompose | Should -Match '(?m)^\s*image:\s*mcr\.microsoft\.com/mssql/server:2025-latest\s*$'
+            $mssqlCompose | Should -Match '(?m)^\s*image:\s*\$\{MSSQL_IMAGE:-mcr\.microsoft\.com/mssql/server:2025-latest\}\s*$'
             $mssqlCompose | Should -Match '(?m)^\s*-\s*dms-mssql-2025:/var/opt/mssql\s*$'
             $mssqlCompose | Should -Not -Match '(?m)^\s*-\s*dms-mssql:/var/opt/mssql\s*$'
             $mssqlCompose | Should -Match '(?m)^  dms-mssql-2025:\s*$'

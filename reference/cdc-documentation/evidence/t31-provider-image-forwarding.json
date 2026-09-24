@@ -1,0 +1,489 @@
+{
+  "Task": "T31",
+  "Qualification": [
+    {
+      "Lane": "Postgresql",
+      "Suite": "Admission",
+      "ResultsDirectory": "TestResults/t31-Postgresql-Admission-01",
+      "Reports": [
+        {
+          "Status": "Passed",
+          "Total": 30,
+          "Passed": 30,
+          "Failed": 0,
+          "Skipped": 0,
+          "EnvironmentFailures": 0,
+          "SqlStartupFailures": 0,
+          "SqlStartupRecoveries": 0,
+          "SqlStartupInjectedFailures": 0,
+          "SqlStartupInjectedRecoveries": 0,
+          "SqlStartupFailureSignatures": {},
+          "Diagnostics": [],
+          "Name": "Postgresql-CdcControllerAdmission"
+        },
+        {
+          "Name": "Postgresql-runbook-setup",
+          "Status": "Passed",
+          "Total": 2,
+          "Passed": 2,
+          "Failed": 0,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "CDC-DOC cdc-pg-bootstrap-local",
+              "SnippetId": "cdc-pg-bootstrap-local",
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "CDC-DOC cdc-pg-e2e-setup",
+              "SnippetId": "cdc-pg-e2e-setup",
+              "Outcome": "Passed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Lane": "Postgresql",
+      "Suite": "Lifecycle",
+      "ResultsDirectory": "TestResults/t31-Postgresql-Lifecycle-01",
+      "Reports": [
+        {
+          "Status": "Passed",
+          "Total": 16,
+          "Passed": 16,
+          "Failed": 0,
+          "Skipped": 0,
+          "EnvironmentFailures": 0,
+          "SqlStartupFailures": 0,
+          "SqlStartupRecoveries": 0,
+          "SqlStartupInjectedFailures": 0,
+          "SqlStartupInjectedRecoveries": 0,
+          "SqlStartupFailureSignatures": {},
+          "Diagnostics": [],
+          "Name": "Postgresql-CdcControllerManagedLifecycle"
+        },
+        {
+          "Name": "runbook-lifecycle-behavior",
+          "Status": "Passed",
+          "Total": 6,
+          "Passed": 6,
+          "Failed": 0,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_unavailable_live_evidence_while_stopped",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            }
+          ]
+        },
+        {
+          "Name": "Postgresql-runbook-lifecycle",
+          "Status": "Passed",
+          "Total": 1,
+          "Passed": 1,
+          "Failed": 0,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "CDC-DOC cdc-managed-start",
+              "SnippetId": "cdc-managed-start",
+              "Outcome": "Passed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Lane": "Mssql",
+      "Suite": "Admission",
+      "ResultsDirectory": "TestResults/t31-Mssql-Admission-01",
+      "Reports": [
+        {
+          "Status": "Passed",
+          "Total": 42,
+          "Passed": 42,
+          "Failed": 0,
+          "Skipped": 0,
+          "EnvironmentFailures": 0,
+          "SqlStartupFailures": 0,
+          "SqlStartupRecoveries": 0,
+          "SqlStartupInjectedFailures": 0,
+          "SqlStartupInjectedRecoveries": 0,
+          "SqlStartupFailureSignatures": {},
+          "Diagnostics": [],
+          "Name": "Mssql-CdcControllerAdmission"
+        },
+        {
+          "Name": "Mssql-runbook-setup",
+          "Status": "Passed",
+          "Total": 3,
+          "Passed": 3,
+          "Failed": 0,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "CDC-DOC cdc-sqlserver-bootstrap-local",
+              "SnippetId": "cdc-sqlserver-bootstrap-local",
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "CDC-DOC cdc-sqlserver-bootstrap-published",
+              "SnippetId": "cdc-sqlserver-bootstrap-published",
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "CDC-DOC cdc-sqlserver-e2e-setup",
+              "SnippetId": "cdc-sqlserver-e2e-setup",
+              "Outcome": "Passed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Lane": "Mssql",
+      "Suite": "Lifecycle",
+      "ResultsDirectory": "TestResults/t31-Mssql-Lifecycle-01",
+      "Reports": [
+        {
+          "Status": "Passed",
+          "Total": 19,
+          "Passed": 19,
+          "Failed": 0,
+          "Skipped": 0,
+          "EnvironmentFailures": 0,
+          "SqlStartupFailures": 0,
+          "SqlStartupRecoveries": 0,
+          "SqlStartupInjectedFailures": 4,
+          "SqlStartupInjectedRecoveries": 4,
+          "SqlStartupFailureSignatures": {},
+          "Diagnostics": [],
+          "Name": "Mssql-CdcControllerManagedLifecycle"
+        },
+        {
+          "Name": "runbook-lifecycle-behavior",
+          "Status": "Passed",
+          "Total": 6,
+          "Passed": 6,
+          "Failed": 0,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "It_keeps_committed_offsets_and_no_tasks_across_worker_restart_until_guarded_start",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_restarts_an_intact_running_connector_with_fresh_ready_evidence",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_missing_corrupt_and_incomplete_provenance_without_authorizing_resume",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_unavailable_live_evidence_while_stopped",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_rejects_an_independent_empty_or_populated_source_without_mutating_either",
+              "Required": 2,
+              "Total": 2,
+              "Passed": 2,
+              "Outcome": "Passed"
+            },
+            {
+              "TestId": "It_retains_a_terminal_incident_despite_healthy_current_provider_and_offset_evidence",
+              "Required": 1,
+              "Total": 1,
+              "Passed": 1,
+              "Outcome": "Passed"
+            }
+          ]
+        },
+        {
+          "Name": "Mssql-runbook-lifecycle",
+          "Status": "Passed",
+          "Total": 1,
+          "Passed": 1,
+          "Failed": 0,
+          "Skipped": 0,
+          "Cases": [
+            {
+              "TestId": "CDC-DOC cdc-managed-start",
+              "SnippetId": "cdc-managed-start",
+              "Outcome": "Passed"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "WrapperImageAssertions": [
+    {
+      "ProviderImage": "postgres@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+      "InitialDatabaseAbsenceChecked": false,
+      "ApplicationImage": "sha256:9a3075cb0ac8ab8dabe1cf07bd7aa5dbdcbce4d84cc375f03b1519801e8bb034",
+      "NarrowEffectiveAccessVerified": false,
+      "Provider": "postgresql",
+      "Database": "edfi_cdc",
+      "ManagedStartupImageVerified": true,
+      "RetainedProviderImageVerified": true,
+      "Projection": "Unknown",
+      "ProviderImageId": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+      "TargetId": 1,
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "LoginUserSidMatched": false,
+      "StatusExitCode": 1,
+      "WriterPublicationAuthorized": true,
+      "ConfigurationImage": "sha256:6847774f726c7edde719a25126b204e61c61dad639d80feb60af885a0973d69f",
+      "WrapperAttempts": 1,
+      "AggregateReadiness": "NotReady",
+      "SnippetId": "cdc-managed-start",
+      "WatchExitCode": 1,
+      "Generation": 1,
+      "WorkTableCaptured": false
+    },
+    {
+      "ProviderImageId": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+      "TargetId": 1,
+      "AggregateReadiness": "NotReady",
+      "Provider": "postgresql",
+      "ApplicationImage": "sha256:1f5dce600866d3ed1961509d9bb9fa313e0d24346b30f0324c648dcad090298f",
+      "WorkTableCaptured": false,
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "WatchExitCode": 1,
+      "Generation": 1,
+      "ProviderImage": "postgres@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+      "SnippetId": "cdc-pg-bootstrap-local",
+      "WriterPublicationAuthorized": true,
+      "NarrowEffectiveAccessVerified": false,
+      "WrapperAttempts": 2,
+      "InitialDatabaseAbsenceChecked": false,
+      "StatusExitCode": 1,
+      "Projection": "Unknown",
+      "ManagedStartupImageVerified": false,
+      "ConfigurationImage": "sha256:69480a927170dfab2baf91712ffde17b8bb3ea7ff7b30dc4a8b0b0f93ce70750",
+      "RetainedProviderImageVerified": true,
+      "LoginUserSidMatched": false,
+      "Database": "edfi_cdc"
+    },
+    {
+      "ProviderImageId": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+      "TargetId": 1,
+      "AggregateReadiness": "NotReady",
+      "Provider": "postgresql",
+      "ApplicationImage": "sha256:d6c9baa78142518d909f678845fa65a95cc5894ef7d8fe2767eb2ac77fb71c4c",
+      "WorkTableCaptured": false,
+      "SchemaProjects": [
+        "Ed-Fi",
+        "Homograph",
+        "Sample",
+        "TPDM"
+      ],
+      "WatchExitCode": 1,
+      "Generation": 1,
+      "ProviderImage": "postgres@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+      "SnippetId": "cdc-pg-e2e-setup",
+      "WriterPublicationAuthorized": true,
+      "NarrowEffectiveAccessVerified": false,
+      "WrapperAttempts": 1,
+      "InitialDatabaseAbsenceChecked": false,
+      "StatusExitCode": 1,
+      "Projection": "Unknown",
+      "ManagedStartupImageVerified": false,
+      "ConfigurationImage": "sha256:bf33feaedb4726d679d9030648f42a30829e481db99a0aef4fe25cd063753720",
+      "RetainedProviderImageVerified": true,
+      "LoginUserSidMatched": false,
+      "Database": "edfi_datamanagementservice_e2e"
+    },
+    {
+      "NarrowEffectiveAccessVerified": true,
+      "ManagedStartupImageVerified": true,
+      "ProviderImage": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "Provider": "sqlserver",
+      "SnippetId": "cdc-managed-start",
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "StatusExitCode": 1,
+      "Database": "edfi_cdc",
+      "RetainedProviderImageVerified": true,
+      "WorkTableCaptured": false,
+      "Generation": 1,
+      "WrapperAttempts": 1,
+      "TargetId": 1,
+      "LoginUserSidMatched": true,
+      "WatchExitCode": 1,
+      "WriterPublicationAuthorized": true,
+      "InitialDatabaseAbsenceChecked": true,
+      "Projection": "Unknown",
+      "ConfigurationImage": "sha256:6847774f726c7edde719a25126b204e61c61dad639d80feb60af885a0973d69f",
+      "ApplicationImage": "sha256:9a3075cb0ac8ab8dabe1cf07bd7aa5dbdcbce4d84cc375f03b1519801e8bb034",
+      "ProviderImageId": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "AggregateReadiness": "NotReady"
+    },
+    {
+      "ManagedStartupImageVerified": false,
+      "InitialDatabaseAbsenceChecked": true,
+      "ApplicationImage": "sha256:d6c9baa78142518d909f678845fa65a95cc5894ef7d8fe2767eb2ac77fb71c4c",
+      "WriterPublicationAuthorized": true,
+      "AggregateReadiness": "NotReady",
+      "Provider": "sqlserver",
+      "TargetId": 1,
+      "ConfigurationImage": "sha256:bf33feaedb4726d679d9030648f42a30829e481db99a0aef4fe25cd063753720",
+      "StatusExitCode": 1,
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "ProviderImage": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "RetainedProviderImageVerified": true,
+      "WrapperAttempts": 2,
+      "SnippetId": "cdc-sqlserver-bootstrap-local",
+      "Database": "edfi_cdc",
+      "Projection": "Unknown",
+      "NarrowEffectiveAccessVerified": true,
+      "WatchExitCode": 1,
+      "WorkTableCaptured": false,
+      "ProviderImageId": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "LoginUserSidMatched": true,
+      "Generation": 1
+    },
+    {
+      "ManagedStartupImageVerified": false,
+      "InitialDatabaseAbsenceChecked": true,
+      "ApplicationImage": "sha256:d6c9baa78142518d909f678845fa65a95cc5894ef7d8fe2767eb2ac77fb71c4c",
+      "WriterPublicationAuthorized": true,
+      "AggregateReadiness": "NotReady",
+      "Provider": "sqlserver",
+      "TargetId": 1,
+      "ConfigurationImage": "sha256:bf33feaedb4726d679d9030648f42a30829e481db99a0aef4fe25cd063753720",
+      "StatusExitCode": 1,
+      "SchemaProjects": [
+        "Ed-Fi",
+        "TPDM"
+      ],
+      "ProviderImage": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "RetainedProviderImageVerified": true,
+      "WrapperAttempts": 1,
+      "SnippetId": "cdc-sqlserver-bootstrap-published",
+      "Database": "edfi_cdc",
+      "Projection": "Unknown",
+      "NarrowEffectiveAccessVerified": true,
+      "WatchExitCode": 1,
+      "WorkTableCaptured": false,
+      "ProviderImageId": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "LoginUserSidMatched": true,
+      "Generation": 1
+    },
+    {
+      "ManagedStartupImageVerified": false,
+      "InitialDatabaseAbsenceChecked": true,
+      "ApplicationImage": "sha256:9a3075cb0ac8ab8dabe1cf07bd7aa5dbdcbce4d84cc375f03b1519801e8bb034",
+      "WriterPublicationAuthorized": true,
+      "AggregateReadiness": "NotReady",
+      "Provider": "sqlserver",
+      "TargetId": 1,
+      "ConfigurationImage": "sha256:6847774f726c7edde719a25126b204e61c61dad639d80feb60af885a0973d69f",
+      "StatusExitCode": 1,
+      "SchemaProjects": [
+        "Ed-Fi",
+        "Homograph",
+        "Sample",
+        "TPDM"
+      ],
+      "ProviderImage": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "RetainedProviderImageVerified": true,
+      "WrapperAttempts": 1,
+      "SnippetId": "cdc-sqlserver-e2e-setup",
+      "Database": "edfi_datamanagementservice_e2e",
+      "Projection": "Unknown",
+      "NarrowEffectiveAccessVerified": true,
+      "WatchExitCode": 1,
+      "WorkTableCaptured": false,
+      "ProviderImageId": "sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+      "LoginUserSidMatched": true,
+      "Generation": 1
+    }
+  ],
+  "Scope": "Provider image forwarding only; existing Admission and Lifecycle selections, with -PullImages. Unaffected qualification evidence retained.",
+  "FocusedValidation": {
+    "NewPesterCasesPassed": 10,
+    "SelectedPesterCases": 264,
+    "InitialPassed": 263,
+    "InitialFailed": 1,
+    "InitialFailure": "Native-process test launched dotnet because the PowerShell tool shim reports dotnet as its process executable.",
+    "CorrectedNativeProcessGroupPassed": 3,
+    "Correction": "Run the affected three-test group with the PowerShell 7.6.6 executable directly; no source change.",
+    "ComposeConfigurationChecksPassed": 4,
+    "PowerShellVersion": "7.6.6",
+    "PesterVersion": "5.7.1",
+    "DocumentLinkTestsPassed": 17,
+    "ScriptAnalyzerFindings": 0
+  },
+  "SourceSha256": {
+    "eng/docker-compose/postgresql.yml": "9578ec2c24dba735954cd58344d1d9d7993ad561174ed1de76e3ab88ad829eb3",
+    "eng/docker-compose/mssql.yml": "2ccc9bc72a08b52145c8f833a48db248b75efed0da6c8d3ce1210e73a5a553db",
+    "eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1": "917e8b0f8321449ca8d0f42a964b37f49d3d04a73b60dc9ad403a7e472121702",
+    "eng/docker-compose/tests/CdcRunbookWrappers.Tests.ps1": "a0865313880e7f288dff668a812af5e8a6997cf299dca37067d5df2b2affbbf1",
+    "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1": "c19549ce1f6e40ff0230f7be359eac53ca86a75a17018804522d9ea451e17758"
+  }
+}

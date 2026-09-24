@@ -102,6 +102,16 @@ the shipped wrappers against real services. It requires an exclusively owned,
 disposable `dms-local` stack (`CDC_RUNBOOK_OWNED_STACK=1`), fresh fixture settings and
 the original managed state through retirement. Private stdout/stderr and credentials
 remain beneath its owner-only fixture root; qualification exports named outcomes.
+Before infrastructure startup, the fixture writes the qualification-selected
+`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` as `POSTGRES_IMAGE`, or
+`CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` as `MSSQL_IMAGE`, in its protected
+environment file. These declared fixture substitutions survive local, published,
+E2E schema/engine overlays and retained managed startup. Both providers' running
+image IDs must match the selected immutable input during setup and after managed
+startup; shared image tags are never retagged to satisfy that check. Without an
+override, the Compose files retain their documented default image references.
+[T31 image-forwarding evidence](evidence/t31-provider-image-forwarding.json) records
+the four Admission/Lifecycle runs and all seven wrapper image assertions.
 It prepares a restricted role before target provisioning, never capture artifacts or
 manual schema repairs. PostgreSQL fixtures select host port `5435`, target `1`, the
 documented primary names, and matching staged core/extensions. The masked setup input
