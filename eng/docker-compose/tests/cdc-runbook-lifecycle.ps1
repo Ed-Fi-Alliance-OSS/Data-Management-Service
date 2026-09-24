@@ -202,12 +202,14 @@ function Invoke-CdcRunbookLifecycle {
         $image | Should -Match '^sha256:[a-f0-9]{64}$'
         $images[$name] = $image
     }
-    @{
-        Provider = $Provider; TestId = 'CDC-DOC cdc-managed-start'
-        Images = $images
-        SnippetIds = @('cdc-state-inventory', 'cdc-managed-stop', 'cdc-managed-start', 'cdc-intact-restart', 'cdc-intact-resume', 'cdc-validate', 'cdc-provenance-rejection', 'cdc-disclosure-containment-result')
-        SharedWorkerStopped = $true; RetainedSettingsUnchanged = $true; CustomStateRootPreserved = $true
-        BindingUnchanged = $true; RejectedResumeOffsetsUnchanged = $true; InitialWriterIntentCount = 1
-        Results = @($results)
-    } | ConvertTo-Json -Depth 30 | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'managed-lifecycle-runbook.json')
+    if ($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
+        @{
+            Provider = $Provider; TestId = 'CDC-DOC cdc-managed-start'
+            Images = $images
+            SnippetIds = @('cdc-state-inventory', 'cdc-managed-stop', 'cdc-managed-start', 'cdc-intact-restart', 'cdc-intact-resume', 'cdc-validate', 'cdc-provenance-rejection', 'cdc-disclosure-containment-result')
+            SharedWorkerStopped = $true; RetainedSettingsUnchanged = $true; CustomStateRootPreserved = $true
+            BindingUnchanged = $true; RejectedResumeOffsetsUnchanged = $true; InitialWriterIntentCount = 1
+            Results = @($results)
+        } | ConvertTo-Json -Depth 30 | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'managed-lifecycle-runbook.json')
+    }
 }
