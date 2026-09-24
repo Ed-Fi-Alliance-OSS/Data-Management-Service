@@ -344,7 +344,8 @@ public class JobRepositoryTests
     [TestFixture]
     public class Given_job_ids_that_differ_from_a_stored_one : JobRepositoryTestBase
     {
-        private string _jobId = "";
+        // A fixed identifier containing letters, so its upper-case variant always differs from it.
+        private readonly string _jobId = "0f3a9c1e7b5d4e6f8a0b1c2d3e4f5a6b";
         private StoredJob? _stored;
         private JobStatusQueryResult _exact = null!;
         private readonly Dictionary<string, JobStatusQueryResult> _variants = [];
@@ -352,7 +353,7 @@ public class JobRepositoryTests
         [SetUp]
         public async Task Setup()
         {
-            _jobId = JobIdOf(await Repository().EnqueueJob(_command, null, CancellationToken.None));
+            (await TryInsertJobAsync(jobId: _jobId)).Should().BeNull();
             _stored = await StoredJobAsync(_jobId);
             _exact = await Repository().GetJobStatus(_jobId, CancellationToken.None);
 
@@ -372,10 +373,6 @@ public class JobRepositoryTests
                 _variants[name] = await Repository().GetJobStatus(variant, CancellationToken.None);
             }
         }
-
-        [Test]
-        public void It_has_a_job_id_with_letters_so_the_case_variant_differs() =>
-            _jobId.ToUpperInvariant().Should().NotBe(_jobId);
 
         [Test]
         public void It_returns_the_five_public_fields_for_an_exact_match() =>
