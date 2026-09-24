@@ -742,6 +742,51 @@ Describe 'CDC documentation qualification boundary' {
         "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
         (Get-CdcRunbookCliReport $path).Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
     }
+    Context 'Contract link-check inventory' {
+        BeforeAll {
+            $linkTestsPath = Join-Path $PSScriptRoot '../../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookLinkTests.cs'
+            $source = Get-Content -LiteralPath $linkTestsPath -Raw
+            $inventory = [regex]::Match($source, '(?s)string\[\] Documents =\s*\[(.*?)\];')
+            if (-not $inventory.Success) {
+                throw 'Could not read CdcRunbookLinkTests.Documents; keep the checked-input guard aligned.'
+            }
+            $script:linkDocuments = @([regex]::Matches($inventory.Groups[1].Value, '"([^"]+)"') | ForEach-Object {
+                $_.Groups[1].Value
+            })
+            if ($script:linkDocuments.Count -eq 0) {
+                throw 'CdcRunbookLinkTests.Documents must not be empty.'
+            }
+            $script:linkTestId = 'It_resolves_relative_links_and_explicit_or_generated_anchors'
+            $script:cliRequired = (Get-CdcRunbookCliReport (Join-Path $TestDrive 'absent.trx')).Cases
+        }
+        It 'requires the actual document inventory count' {
+            ($script:cliRequired | Where-Object TestId -eq $script:linkTestId).Required | Should -Be $script:linkDocuments.Count
+        }
+        It 'evaluates document link coverage with every other method passing (<Fault>)' -ForEach @(
+            @{ Fault = 'none' }, @{ Fault = 'missing-one-link' }
+        ) {
+            $path = Join-Path $TestDrive 'document-inventory.trx'
+            $otherNodes = @($script:cliRequired | Where-Object TestId -ne $script:linkTestId | ForEach-Object {
+                $case = $_
+                for ($i = 0; $i -lt $case.Required; $i++) {
+                    "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+                }
+            })
+            $linkNodes = @($script:linkDocuments | ForEach-Object {
+                $testName = [System.Security.SecurityElement]::Escape("$script:linkTestId(`"$_`")")
+                "<UnitTestResult testName='$testName' outcome='Passed'/>"
+            })
+            if ($Fault -eq 'missing-one-link') { $linkNodes = @($linkNodes | Select-Object -Skip 1) }
+            "<TestRun><Results>$(($otherNodes + $linkNodes) -join '')</Results></TestRun>" | Set-Content $path
+            $report = Get-CdcRunbookCliReport $path
+            $linkCase = $report.Cases | Where-Object TestId -eq $script:linkTestId
+            $linkCase.Total | Should -Be $linkNodes.Count
+            $linkCase.Passed | Should -Be $linkNodes.Count
+            @($report.Cases | Where-Object { $_.TestId -ne $script:linkTestId -and $_.Outcome -ne 'Passed' }).Count | Should -Be 0
+            $linkCase.Outcome | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'NotPassed' })
+            $report.Status | Should -Be $(if ($Fault -eq 'none') { 'Passed' } else { 'Failed' })
+        }
+    }
     It 'exports only stable snippet test IDs and outcomes, including attachment links' {
         $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'docs-raw')
         $safe = Join-Path $TestDrive 'docs-safe'

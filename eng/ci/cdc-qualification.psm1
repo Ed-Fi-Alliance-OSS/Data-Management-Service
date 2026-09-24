@@ -277,7 +277,7 @@ function Get-CdcRunbookCliReport {
         It_Cdc_runbook_emits_the_operation_scoped_example_in_one_stdout_value = 2
         It_Cdc_runbook_matches_packaged_failure_diagnostics_and_exit_codes = 3
         It_Cdc_runbook_keeps_watch_pass_json_on_stderr_and_one_final_result_on_stdout = 1
-        It_resolves_relative_links_and_explicit_or_generated_anchors = 12
+        It_resolves_relative_links_and_explicit_or_generated_anchors = 13
     }
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-cli'
 }
