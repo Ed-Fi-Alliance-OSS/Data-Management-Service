@@ -886,12 +886,14 @@ Describe 'CDC documentation qualification boundary' {
         (Get-ChildItem $safe -File | Get-Content -Raw) -join '' | Should -Not -Match 'private|opaque|body|Settings|RawOutput|Credential|Payload'
         Test-Path (Join-Path $safe 'settings.json') | Should -BeFalse
     }
-    It 'keeps wrapper checks in Contract and the existing PR Pester selection' {
+    It 'keeps wrapper checks in Contract without duplicating them in Bootstrap Pester' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
         $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-dms-pullrequest.yml') -Raw
-        foreach ($text in @($runner, $workflow)) {
-            $text | Should -Match 'eng/docker-compose/tests/Cdc\*\.Tests.ps1'
-            $text | Should -Match 'Get-CdcRunbookPesterReport'
+        $bootstrap = [regex]::Match($workflow, '(?ms)^  run-bootstrap-pester-tests:.*?(?=^  [a-z][a-z0-9-]+:|\z)').Value
+        $bootstrap | Should -Not -BeNullOrEmpty
+        foreach ($pattern in @('eng/docker-compose/tests/Cdc\*\.Tests.ps1', 'eng/ci/tests/CdcQualification\.Tests.ps1', 'Get-CdcRunbookPesterReport')) {
+            $runner | Should -Match $pattern
+            $bootstrap | Should -Not -Match $pattern
         }
         $runner | Should -Match 'Get-CdcRunbookCliReport'
     }

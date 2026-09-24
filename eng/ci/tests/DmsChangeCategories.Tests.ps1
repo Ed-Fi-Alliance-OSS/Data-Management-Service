@@ -471,6 +471,21 @@ Describe "DMS pull request change classifier" {
             }
         }
 
+        It "selects only Contract for the linked design target <Path>" -ForEach @(
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md' }
+            @{ Path = 'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/data-model.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/ddl-generation.md' }
+        ) {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeTrue
+            foreach ($flag in $result.PSObject.Properties.Name | Where-Object { $_ -ne 'cdc_relevant' }) {
+                $result.$flag | Should -BeFalse -Because "$Path must not select $flag"
+            }
+        }
+
         It "does not promote unrelated or near-match document <Path>" -ForEach @(
             @{ Path = 'docs/README.md' }
             @{ Path = 'reference/cdc-documentation/notes.md' }
@@ -478,6 +493,10 @@ Describe "DMS pull request change classifier" {
             @{ Path = 'reference/cdc-documentation/operations-runbook.md.bak' }
             @{ Path = 'reference/cdc-documentation/Operations-runbook.md' }
             @{ Path = 'reference/cdc-documentation-extra/operations-runbook.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/overview.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc-extra/cdc-streaming.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/data-model.md.bak' }
+            @{ Path = 'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md.bak' }
         ) {
             $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
             $result.cdc_relevant | Should -BeFalse

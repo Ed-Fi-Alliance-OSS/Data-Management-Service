@@ -217,8 +217,6 @@ jobs:
           # run here on every PR; the live PostgreSQL drift scenarios self-skip because
           # DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER is unset in this lane.
           $paths = @(
-            "eng/docker-compose/tests/Cdc*.Tests.ps1",
-            "eng/ci/tests/CdcQualification.Tests.ps1",
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
@@ -276,9 +274,6 @@ jobs:
             "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
-          Import-Module ./eng/ci/cdc-qualification.psm1 -Force
-          $documentation = Get-CdcRunbookPesterReport -Tests @($result.Tests)
-          if ($documentation.Status -ne 'Passed') { throw 'Required CDC runbook wrapper checks did not all execute and pass.' }
           # A syntax error or a discovery-time failure is recorded in FailedContainersCount or
           # FailedBlocksCount with FailedCount still 0, so all three have to fail the lane.
           if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {

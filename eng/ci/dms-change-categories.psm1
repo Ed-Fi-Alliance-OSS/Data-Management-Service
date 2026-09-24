@@ -79,8 +79,8 @@ $script:DocumentEmbedPathPrefix = @(
     'src/dms/core/EdFi.DataManagementService.CustomValidation/'
 )
 
-# Exact operator documents checked by CdcRunbookLinkTests.Documents. These select the existing
-# Contract lane even outside the DMS tree; the regression suite checks this list against that input.
+# Operator documents checked by CdcRunbookLinkTests.Documents and their linked design targets.
+# These select the existing Contract lane even outside the DMS tree.
 # Keep other relevance flags governed by their existing rules.
 $script:CdcDocumentExactPath = @(
     'reference/cdc-documentation/README.md'
@@ -96,6 +96,13 @@ $script:CdcDocumentExactPath = @(
     'docs/CDC-QUALIFICATION.md'
     'docs/RELATIONAL-BACKEND.md'
     'src/dms/tests/RestClient/local-development-setup.http'
+    'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md'
+    'reference/design/backend-redesign/design-docs/data-model.md'
+    'reference/design/backend-redesign/design-docs/ddl-generation.md'
+)
+
+$script:CdcDocumentPathPrefix = @(
+    'reference/design/backend-redesign/design-docs/cdc/'
 )
 
 # Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
@@ -387,7 +394,7 @@ function Get-DmsChangeCategory {
 
         # Checked runbook inputs outside eng/ and src/ must select Contract before the general
         # relevance filter skips them. This does not opt documentation into broader DMS jobs.
-        if (Test-DmsChangedFileMatch -Path $path -ExactPath $script:CdcDocumentExactPath) {
+        if (Test-DmsChangedFileMatch -Path $path -ExactPath $script:CdcDocumentExactPath -PathPrefix $script:CdcDocumentPathPrefix) {
             $category['cdc_relevant'] = $true
         }
 

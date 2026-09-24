@@ -94,12 +94,15 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
             $fixtureValues.MSSQL_SA_PASSWORD = $password; $fixtureValues.MSSQL_PORT = '1435'
             $fixtureValues.DMS_DATASTORE = 'mssql'; $fixtureValues.DMS_CONFIG_DATASTORE = 'mssql'
         }
+        $publishedImageTags = @()
         if ($Published) {
             # Fixture-packaged branch images exercise the published wrapper with matching code/schema.
             $fixtureValues.DMS_IMAGE_TAG = 'cdc-runbook-' + [guid]::NewGuid().ToString('N')
             foreach ($pair in @{ 'ed-fi-api-local' = 'edfialliance/ed-fi-api'; 'ed-fi-api-config-local' = 'edfialliance/ed-fi-api-configuration-service' }.GetEnumerator()) {
-                & docker tag ($pair.Key + ':latest') ($pair.Value + ':' + $fixtureValues.DMS_IMAGE_TAG)
+                $publishedImageTag = $pair.Value + ':' + $fixtureValues.DMS_IMAGE_TAG
+                & docker tag ($pair.Key + ':latest') $publishedImageTag
                 $LASTEXITCODE | Should -Be 0
+                $publishedImageTags += $publishedImageTag
             }
         }
         foreach ($pair in $fixtureValues.GetEnumerator()) {
@@ -306,6 +309,11 @@ REVERT;
         Test-Path $inventoryPath | Should -BeFalse
         $workspace = Join-Path $script:repo 'eng/docker-compose/.bootstrap'
         if (Test-Path $workspace) { Move-Item $workspace (Join-Path $script:fixture 'retired-bootstrap') }
+        # Remove only this case's temporary tags after successful teardown; failed cases retain them.
+        foreach ($publishedImageTag in $publishedImageTags) {
+            & docker image rm $publishedImageTag
+            $LASTEXITCODE | Should -Be 0
+        }
     }
 
     AfterAll {
