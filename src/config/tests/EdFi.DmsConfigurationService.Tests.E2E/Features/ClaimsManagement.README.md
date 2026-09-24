@@ -44,7 +44,7 @@ The following fragment files must be present in the mounted volume (`/app/additi
 - `004-sample-extension-claimset.json` (SampleExtensionResourceClaims)
 - `005-homograph-extension-claimset.json` (HomographExtensionResourceClaims)
 
-These files are sourced from `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` and mounted into the container.
+The six E2E fragments (`001` through `003c`) come from the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/` directory, and `004`/`005` come from `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. The E2E setup stages both into `eng/docker-compose/.e2e-claims/` and mounts that directory into the container: `setup-local-cms.ps1` and `build-config.ps1 E2ETest` pass `-AddE2EClaimSets` to `start-local-config.ps1`, and the DMS E2E setup does the same through `-AddExtensionSecurityMetadata`. The E2E claim sets are not declared in the embedded `Claims.json`; the Configuration Service registers each one from its fragment's top-level `name`.
 
 ## Test Scenarios
 
@@ -105,9 +105,10 @@ The negative authorization behavior of the `/management/*` claims endpoints is c
    - Verify the Configuration Service is running with correct environment variables
 
 3. **"Claim set 'E2E-NameSpaceBasedClaimSet' was not found"**
-   - Verify fragment files are in `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`
+   - Verify the E2E fragment files are in `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/`
+   - Verify the stack was started through the E2E setup, so `eng/docker-compose/.e2e-claims/` holds all eight fragments and is the mounted claims directory; a default stack mounts only `Deploy/AdditionalClaimsets` and has no E2E claim sets
    - Check Docker volume mounting in `local-config.yml` and `local-dms.yml`
-   - Ensure fragment files follow naming pattern: `*-claims.json`
+   - Ensure fragment files follow naming pattern: `*-claimset.json`
 
 4. **404 responses from management endpoints**
    - Dynamic claims loading is not enabled

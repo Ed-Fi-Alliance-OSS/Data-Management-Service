@@ -17,46 +17,14 @@ The claims composition system works as follows:
 
 Fragment files must follow this naming pattern:
 - **Format**: `{number}-{description}-claimset.json`
-- **Examples**: `001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`
+- **Examples**: `004-sample-extension-claimset.json`, `005-homograph-extension-claimset.json`
 - **Ordering**: Files are processed in alphabetical order, so numeric prefixes control the application sequence
 
 ## Current Fragment Files
 
-### 001-namespace-claimset.json
-**Claim Set Name**: `E2E-NameSpaceBasedClaimSet`
-- Demonstrates namespace-based authorization strategies
-- Includes resources: schoolYearTypes, surveys, absenceEventCategoryDescriptors
-- Authorization: Mix of NoFurtherAuthorizationRequired and NamespaceBased strategies
-
-### 002-nofurtherauth-claimset.json
-**Claim Set Name**: `E2E-NoFurtherAuthRequiredClaimSet`
-- Demonstrates unrestricted access patterns
-- Includes resource: academicWeeks
-- Authorization: NoFurtherAuthorizationRequired for all CRUD operations
-
-### 003-edorgsonly-claimset.json
-**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyClaimSet`
-- Demonstrates education organization relationship-based authorization
-- Includes resources: assessments, bellSchedules
-- Authorization: RelationshipsWithEdOrgsOnly strategy
-
-### 003a-edorgsonly-inverted-claimset.json
-**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet`
-- Demonstrates inverted education organization relationship-based authorization for GET-many coverage
-- Includes resources: academicWeeks, localEducationAgencies
-- Authorization: RelationshipsWithEdOrgsOnlyInverted strategy
-
-### 003b-edorgsonly-or-inverted-claimset.json
-**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet`
-- Demonstrates OR-composition between normal and inverted EdOrg-only strategies
-- Includes resources: academicWeeks, localEducationAgencies
-- Authorization: RelationshipsWithEdOrgsOnly plus RelationshipsWithEdOrgsOnlyInverted
-
-### 003c-edorgsonly-mixed-claimset.json
-**Claim Set Name**: `E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet`
-- Demonstrates the staged DMS-1055 fail-fast behavior for known unsupported mixed GET-many strategies
-- Includes resource: academicWeeks
-- Authorization: RelationshipsWithEdOrgsOnly plus OwnershipBased
+The E2E-only fragments (`001` through `003c`, which define the `E2E-*` claim sets) are not shipped here. They
+live in the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/`
+directory and are staged together with the files below only by the E2E setup scripts.
 
 ### 004-sample-extension-claimset.json
 **Claim Set Name**: `SampleExtensionResourceClaims`
@@ -170,7 +138,7 @@ To add a new fragment:
 ## Important Notes
 
 - **Validation**: All composed claims are validated against the claims JSON schema
-- **Order Matters**: Fragments are applied sequentially, so later fragments can override earlier ones
+- **Order Matters**: Fragments are applied sequentially, and the first grant wins: when an earlier fragment has already attached a claim set to a resource claim, a later fragment's grant for that claim set on the same resource claim is ignored
 
 ## Troubleshooting
 

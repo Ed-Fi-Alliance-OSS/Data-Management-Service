@@ -1,3 +1,12 @@
+<#
+.SYNOPSIS
+    Runs OWASP ZAP scans against a local DMS and Configuration Service stack.
+.NOTES
+    Requires a stack started through the E2E setup (for example
+    src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1). The scan provisions its DMS
+    client with the E2E-RelationshipsWithEdOrgsOnlyClaimSet claim set, which a default stack does not load:
+    the E2E claim sets are defined only by the test-owned E2E claimset fragments.
+#>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Security scan entry script intentionally writes operator progress and report locations to the console.')]
 param(
     [string]$DmsBaseUrl = "http://localhost:8080",

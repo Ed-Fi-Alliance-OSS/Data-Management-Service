@@ -209,7 +209,11 @@ DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesyst
 
 ### Fragment File Structure
 
-Fragment files extend the claims hierarchy by adding new claim sets. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added:
+Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added.
+
+A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
+
+A fragment that defines a claim set looks like this:
 
 ```json
 {
@@ -261,9 +265,8 @@ Fragment files extend the claims hierarchy by adding new claim sets. Each fragme
 Files must follow the pattern: `{number}-{description}-claimset.json`
 
 Examples:
-- `001-namespace-claimset.json`
-- `002-nofurtherauth-claimset.json`
-- `003-edorgsonly-claimset.json`
+- `004-sample-extension-claimset.json`
+- `005-homograph-extension-claimset.json`
 
 ### Fragment Composition Process
 
