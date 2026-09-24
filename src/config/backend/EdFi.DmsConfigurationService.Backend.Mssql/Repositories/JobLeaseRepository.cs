@@ -24,10 +24,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 /// wait. One deadline, <see cref="JobLeaseTimings.RenewalTimeout"/>, bounds the whole write; each statement's
 /// command timeout is derived from the time left on it, and it is never extended. A write that fails before the
 /// guarded <c>UPDATE</c> is sent is <c>FailureUnknown</c> (nothing written); one that fails after it is sent is
-/// <c>ResultUnknown</c>, which the caller treats as uncertainty and never retries. The operation's deadline also
-/// bounds the transaction's begin, commit, and cleanup, because SqlClient's own begin and commit are synchronous
-/// and ignore it (<see cref="MssqlJobSession"/>); <c>LOCK_TIMEOUT</c> is session-scoped, so each write resets it to
-/// <c>-1</c> within the same deadline before its connection is released.
+/// <c>ResultUnknown</c>, which the caller treats as uncertainty and never retries. Every wait, the transaction's
+/// begin, commit, and cleanup included, runs through a <see cref="JobDatabaseSession"/>, so the caller never waits
+/// past the deadline even when SqlClient has not finished (<see cref="MssqlJobSession"/>); <c>LOCK_TIMEOUT</c> is
+/// session-scoped, so each write resets it to <c>-1</c> within the same deadline before its connection is released.
 /// </remarks>
 public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions, JobLeaseTimings timings)
     : IJobLeaseRepository
@@ -161,7 +161,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
 
     /// <summary>
     /// Test seam: runs after an ownership write's guarded <c>UPDATE</c> matched its row and before the commit,
-    /// with the write's deadline token.
+    /// with the caller's token.
     /// </summary>
     internal Func<CancellationToken, Task>? BeforeOwnershipCommit { get; init; }
 
@@ -180,6 +180,9 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     /// <summary>Test seam: the statement that ends a session, so a test can make cleanup stall.</summary>
     internal string EndSessionStatement { get; init; } = MssqlJobSession.EndSession;
 
+    /// <summary>Test seam: hooks into every session this repository opens.</summary>
+    internal JobDatabaseSessionHooks? SessionHooks { get; init; }
+
     public async Task<JobClaimResult> ClaimNext(
         string owner,
         int leaseSeconds,
@@ -188,37 +191,43 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     )
     {
         // One deadline bounds the whole claim, its begin, commit, and cleanup included.
-        OperationDeadline budget = OperationDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
-        using CancellationTokenSource deadline = budget.CreateTokenSource(cancellationToken);
-        BoundedSession session = new(new SqlConnection(databaseOptions.Value.DatabaseConnection));
+        JobDeadline budget = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+        JobDatabaseSession session = NewSession();
         bool committed = false;
         try
         {
-            await session.Connection.OpenAsync(deadline.Token);
+            await MssqlJobSession.OpenAsync(session, budget, cancellationToken);
 
             // One statement in its own transaction, as in autocommit; the explicit transaction only gives the
             // lock-footprint seam a point at which the claim's locks are still held.
-            await session.BeginAsync(budget, deadline.Token);
-            ClaimRow? row = await session.Connection.QuerySingleOrDefaultAsync<ClaimRow>(
-                session.Command(
-                    ClaimSql,
-                    new
-                    {
-                        Owner = owner,
-                        LeaseSeconds = leaseSeconds,
-                        MaxAttempts = maxAttempts,
-                    },
-                    budget,
-                    deadline.Token
-                )
+            await MssqlJobSession.BeginAsync(session, budget, cancellationToken);
+            ClaimRow? row = await session.RunAsync(
+                "Claim",
+                token =>
+                    session.Connection.QuerySingleOrDefaultAsync<ClaimRow>(
+                        MssqlJobSession.Command(
+                            session,
+                            ClaimSql,
+                            new
+                            {
+                                Owner = owner,
+                                LeaseSeconds = leaseSeconds,
+                                MaxAttempts = maxAttempts,
+                            },
+                            budget,
+                            token
+                        )
+                    ),
+                budget,
+                cancellationToken
             );
 
             if (BeforeClaimCommit is { } beforeCommit)
             {
-                await beforeCommit(session.Connection, session.Transaction!);
+                await beforeCommit((SqlConnection)session.Connection, session.Transaction!);
             }
 
-            await session.ExecuteAsync(CommitStatement, budget, deadline.Token);
+            await MssqlJobSession.ExecuteAsync(session, "Commit", CommitStatement, budget, cancellationToken);
             committed = true;
             return row is null
                 ? new JobClaimResult.NoneAvailable()
@@ -230,7 +239,10 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         }
         finally
         {
-            await session.EndAsync(budget, EndSessionStatement, sessionClean: committed);
+            await session.EndAsync(
+                budget,
+                committed ? null : MssqlJobSession.EndSessionWith(session, budget, EndSessionStatement)
+            );
         }
     }
 
@@ -241,15 +253,12 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     )
     {
         int exhausted = 0;
-        OperationDeadline budget = OperationDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
-        BoundedSession session = new(new SqlConnection(databaseOptions.Value.DatabaseConnection));
+        JobDeadline budget = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+        JobDatabaseSession session = NewSession();
         bool sessionClean = true;
         try
         {
-            using (CancellationTokenSource opening = budget.CreateTokenSource(cancellationToken))
-            {
-                await session.Connection.OpenAsync(opening.Token);
-            }
+            await MssqlJobSession.OpenAsync(session, budget, cancellationToken);
 
             // Each batch is one statement in its own short transaction, and one deadline bounds the batch, its
             // begin and commit included. The stopping token is checked immediately before every batch, the first
@@ -257,32 +266,45 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             // and every committed batch stays committed when the sweep stops.
             while (!cancellationToken.IsCancellationRequested)
             {
-                budget = OperationDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
-                using CancellationTokenSource batch = budget.CreateTokenSource(CancellationToken.None);
+                budget = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
                 sessionClean = false;
 
-                await session.BeginAsync(budget, batch.Token);
-                int rows = await session.Connection.ExecuteAsync(
-                    session.Command(
-                        ExhaustBatchSql,
-                        new
-                        {
-                            MaxAttempts = maxAttempts,
-                            ErrorMessage = errorCode.Message,
-                            ModifiedBy = SystemUser,
-                            BatchSize = JobLeaseTimings.ExhaustBatchSize,
-                        },
-                        budget,
-                        batch.Token
-                    )
+                await MssqlJobSession.BeginAsync(session, budget, CancellationToken.None);
+                JobDeadline batch = budget;
+                int rows = await session.RunAsync(
+                    "ExhaustBatch",
+                    token =>
+                        session.Connection.ExecuteAsync(
+                            MssqlJobSession.Command(
+                                session,
+                                ExhaustBatchSql,
+                                new
+                                {
+                                    MaxAttempts = maxAttempts,
+                                    ErrorMessage = errorCode.Message,
+                                    ModifiedBy = SystemUser,
+                                    BatchSize = JobLeaseTimings.ExhaustBatchSize,
+                                },
+                                batch,
+                                token
+                            )
+                        ),
+                    batch,
+                    CancellationToken.None
                 );
 
                 if (BeforeExhaustBatchCommit is { } beforeCommit)
                 {
-                    await beforeCommit(session.Connection, session.Transaction!);
+                    await beforeCommit((SqlConnection)session.Connection, session.Transaction!);
                 }
 
-                await session.ExecuteAsync(CommitStatement, budget, batch.Token);
+                await MssqlJobSession.ExecuteAsync(
+                    session,
+                    "Commit",
+                    CommitStatement,
+                    batch,
+                    CancellationToken.None
+                );
                 sessionClean = true;
 
                 exhausted += rows;
@@ -308,7 +330,10 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         }
         finally
         {
-            await session.EndAsync(budget, EndSessionStatement, sessionClean);
+            await session.EndAsync(
+                budget,
+                sessionClean ? null : MssqlJobSession.EndSessionWith(session, budget, EndSessionStatement)
+            );
         }
     }
 
@@ -425,23 +450,40 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         CancellationToken cancellationToken
     )
     {
-        OperationDeadline budget = OperationDeadline.Start(timings.RenewalTimeout);
-        using CancellationTokenSource deadline = budget.CreateTokenSource(cancellationToken);
-        BoundedSession session = new(new SqlConnection(databaseOptions.Value.DatabaseConnection));
+        JobDeadline budget = JobDeadline.Start(timings.RenewalTimeout);
+        JobDatabaseSession session = NewSession();
 
         bool guardedWriteSent = false;
         try
         {
-            await session.Connection.OpenAsync(deadline.Token);
-            await session.BeginAsync(budget, deadline.Token);
-            await session.ExecuteAsync(_setWriteLockWait, budget, deadline.Token);
-            await session.Connection.ExecuteScalarAsync<long?>(
-                session.Command(LockJobRow, new { Id = id }, budget, deadline.Token)
+            await MssqlJobSession.OpenAsync(session, budget, cancellationToken);
+            await MssqlJobSession.BeginAsync(session, budget, cancellationToken);
+            await MssqlJobSession.ExecuteAsync(
+                session,
+                "SetLockWait",
+                _setWriteLockWait,
+                budget,
+                cancellationToken
+            );
+            await session.RunAsync(
+                "LockRow",
+                token =>
+                    session.Connection.ExecuteScalarAsync<long?>(
+                        MssqlJobSession.Command(session, LockJobRow, new { Id = id }, budget, token)
+                    ),
+                budget,
+                cancellationToken
             );
 
             guardedWriteSent = true;
-            WrittenRow? written = await session.Connection.QuerySingleOrDefaultAsync<WrittenRow>(
-                session.Command(guardedUpdateSql, parameters, budget, deadline.Token)
+            WrittenRow? written = await session.RunAsync(
+                "GuardedWrite",
+                token =>
+                    session.Connection.QuerySingleOrDefaultAsync<WrittenRow>(
+                        MssqlJobSession.Command(session, guardedUpdateSql, parameters, budget, token)
+                    ),
+                budget,
+                cancellationToken
             );
             if (written is null)
             {
@@ -450,11 +492,11 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
 
             if (BeforeOwnershipCommit is { } beforeCommit)
             {
-                await beforeCommit(deadline.Token);
+                await beforeCommit(cancellationToken);
             }
 
             // Bounded by the deadline even once it has started: a commit it ends has an unknown outcome.
-            await session.ExecuteAsync(CommitStatement, budget, deadline.Token);
+            await MssqlJobSession.ExecuteAsync(session, "Commit", CommitStatement, budget, cancellationToken);
             return new JobWriteResult.Success(
                 written.LeaseExpiresAt is { } leaseExpiresAt ? AsUtc(leaseExpiresAt) : null,
                 AsUtc(written.DatabaseUtcNow)
@@ -470,9 +512,15 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         finally
         {
             // The outcome is already decided: ending the session only uses what is left of the deadline.
-            await session.EndAsync(budget, EndSessionStatement);
+            await session.EndAsync(
+                budget,
+                MssqlJobSession.EndSessionWith(session, budget, EndSessionStatement)
+            );
         }
     }
+
+    private JobDatabaseSession NewSession() =>
+        new(new SqlConnection(databaseOptions.Value.DatabaseConnection), SessionHooks);
 
     internal static int Seconds(TimeSpan timeout) => (int)Math.Ceiling(timeout.TotalSeconds);
 

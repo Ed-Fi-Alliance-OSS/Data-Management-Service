@@ -47,6 +47,57 @@ public class JobLeaseRepositoryTests
         public int KeyLocks { get; set; }
     }
 
+    /// <summary>
+    /// Session hooks that hold the first operation named <c>name</c> pending for <c>hold</c>, ignoring its
+    /// cancellation as a provider waiting for an acknowledgement would, optionally fail it afterwards, and collect the
+    /// cleanup task of every hand-over.
+    /// </summary>
+    public sealed class PendingOperation
+    {
+        private readonly List<Task<Exception?>> _cleanups = [];
+        private int _held;
+
+        public PendingOperation(string name, TimeSpan hold, Exception? failure = null)
+        {
+            Hooks = new JobDatabaseSessionHooks
+            {
+                BeforeOperation = async (operation, _) =>
+                {
+                    if (operation == name && Interlocked.Exchange(ref _held, 1) == 0)
+                    {
+                        await Task.Delay(hold, CancellationToken.None);
+                        if (failure is not null)
+                        {
+                            throw failure;
+                        }
+                    }
+                },
+                HandedOver = cleanup =>
+                {
+                    lock (_cleanups)
+                    {
+                        _cleanups.Add(cleanup);
+                    }
+                },
+            };
+        }
+
+        public JobDatabaseSessionHooks Hooks { get; }
+
+        /// <summary>Waits for the single hand-over's cleanup and returns how the pending operation ended.</summary>
+        public async Task<Exception?> CleanupAsync()
+        {
+            Task<Exception?> cleanup;
+            lock (_cleanups)
+            {
+                _cleanups.Should().ContainSingle("the operation was handed over exactly once");
+                cleanup = _cleanups[0];
+            }
+
+            return await cleanup.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+    }
+
     public abstract class JobLeaseTestBase : JobSchemaTestBase
     {
         protected static JobLeaseRepository Repository(JobLeaseTimings? timings = null) =>
@@ -179,6 +230,23 @@ public class JobLeaseRepositoryTests
                 WHERE request_session_id = @@SPID AND resource_database_id = DB_ID();
                 """,
                 transaction: transaction
+            );
+
+        /// <summary>Options for a private pool of one connection, so a test sees the session the operation used.</summary>
+        protected static IOptions<DatabaseOptions> SingleConnectionPool(string name) =>
+            Options.Create(
+                new DatabaseOptions
+                {
+                    DatabaseConnection = new SqlConnectionStringBuilder(
+                        MssqlTestConfiguration.DatabaseConnectionString
+                    )
+                    {
+                        MinPoolSize = 0,
+                        MaxPoolSize = 1,
+                        ApplicationName = $"{name}-{Guid.NewGuid():N}",
+                    }.ConnectionString,
+                    EncryptionKey = MssqlTestConfiguration.DatabaseOptions.Value.EncryptionKey,
+                }
             );
 
         protected static ClaimedJob Claimed(JobClaimResult result) =>
@@ -1695,23 +1763,6 @@ public class JobLeaseRepositoryTests
     [TestFixture]
     public class Given_an_ownership_write_whose_session_cleanup_stalls : JobLeaseTestBase
     {
-        /// <summary>Options for a private pool of one connection, so a test sees the session the operation used.</summary>
-        private static IOptions<DatabaseOptions> SingleConnectionPool(string name) =>
-            Options.Create(
-                new DatabaseOptions
-                {
-                    DatabaseConnection = new SqlConnectionStringBuilder(
-                        MssqlTestConfiguration.DatabaseConnectionString
-                    )
-                    {
-                        MinPoolSize = 0,
-                        MaxPoolSize = 1,
-                        ApplicationName = $"{name}-{Guid.NewGuid():N}",
-                    }.ConnectionString,
-                    EncryptionKey = MssqlTestConfiguration.DatabaseOptions.Value.EncryptionKey,
-                }
-            );
-
         private JobWriteResult _result = null!;
         private TimeSpan _elapsed;
         private LeaseRow _row = null!;
@@ -1814,6 +1865,289 @@ public class JobLeaseRepositoryTests
                     TimeSpan.FromSeconds(3),
                     "cleanup gets only what is left of the 2 s fence deadline"
                 );
+    }
+
+    [TestFixture]
+    public class Given_an_ownership_write_whose_commit_stays_pending_after_cancellation : JobLeaseTestBase
+    {
+        private JobWriteResult _result = null!;
+        private TimeSpan _elapsed;
+        private Exception? _pendingOutcome;
+        private LeaseRow _row = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            PendingOperation pending = new("Commit", TimeSpan.FromSeconds(3));
+            JobLeaseRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _twoSecondDeadlines)
+            {
+                SessionHooks = pending.Hooks,
+            };
+
+            long started = Stopwatch.GetTimestamp();
+            _result = await repository.Complete(
+                claimed.Id,
+                OwnerA,
+                claimed.FencingToken,
+                CancellationToken.None
+            );
+            _elapsed = Stopwatch.GetElapsedTime(started);
+
+            _pendingOutcome = await pending.CleanupAsync();
+            _row = await RowAsync(claimed.Id);
+        }
+
+        [Test]
+        public void It_returns_at_the_deadline_while_the_commit_is_still_pending() =>
+            _elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7), "the commit stays pending for 3 s");
+
+        [Test]
+        public void It_reports_the_result_as_unknown() =>
+            _result.Should().BeOfType<JobWriteResult.ResultUnknown>();
+
+        [Test]
+        public void It_releases_the_session_only_after_the_pending_commit_ends()
+        {
+            _pendingOutcome.Should().NotBeNull("the commit ran with its token already cancelled");
+            _row.Status.Should()
+                .Be(JobStatuses.InProgress, "closing the connection rolled the transaction back");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_fence_whose_commit_stays_pending_after_cancellation : JobLeaseTestBase
+    {
+        private JobExecutionOwnership _ownership = null!;
+        private Exception? _thrown;
+        private TimeSpan _elapsed;
+        private long _fencedWrites;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            _ownership = new JobExecutionOwnership();
+            PendingOperation pending = new("Commit", TimeSpan.FromSeconds(3));
+            IJobFence fence = new MssqlJobFenceFactory(
+                MssqlTestConfiguration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                SessionHooks = pending.Hooks,
+            }.Create(claimed, _ownership);
+
+            long started = Stopwatch.GetTimestamp();
+            _thrown = await ThrownByAsync(() => fence.ExecuteAsync(FencedWriteAsync, CancellationToken.None));
+            _elapsed = Stopwatch.GetElapsedTime(started);
+
+            await pending.CleanupAsync();
+            _fencedWrites = await FencedWriteCountAsync();
+        }
+
+        [Test]
+        public void It_returns_at_the_fence_deadline_while_the_commit_is_still_pending() =>
+            _elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7), "the commit stays pending for 3 s");
+
+        [Test]
+        public void It_marks_the_execution_uncertain_and_reports_the_lease_lost()
+        {
+            _thrown.Should().BeOfType<JobLeaseLostException>();
+            _ownership.State.Should().Be(JobOwnershipState.Uncertain);
+            _ownership.Reason.Should().Be("FenceCommitUnknown");
+        }
+
+        [Test]
+        public void It_leaves_the_fenced_write_rolled_back_once_cleanup_releases_the_session() =>
+            _fencedWrites.Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_ownership_writes_whose_begin_is_handed_over : JobLeaseTestBase
+    {
+        private readonly InvalidOperationException _beginFailure = new("injected begin failure");
+        private JobWriteResult _succeeds = null!;
+        private TimeSpan _succeedsElapsed;
+        private Exception? _succeedsOutcome;
+        private (int TranCount, int LockTimeout) _succeedsNextSession;
+        private JobWriteResult _fails = null!;
+        private TimeSpan _failsElapsed;
+        private Exception? _failsOutcome;
+        private (int TranCount, int LockTimeout) _failsNextSession;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+
+            (_succeeds, _succeedsElapsed, _succeedsOutcome, _succeedsNextSession) =
+                await HandedOverBeginAsync(claimed, failure: null);
+            (_fails, _failsElapsed, _failsOutcome, _failsNextSession) = await HandedOverBeginAsync(
+                claimed,
+                _beginFailure
+            );
+        }
+
+        [Test]
+        public void It_returns_at_the_deadline_while_the_begin_is_still_pending()
+        {
+            _succeedsElapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7));
+            _failsElapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7));
+        }
+
+        [Test]
+        public void It_reports_that_nothing_was_written()
+        {
+            _succeeds.Should().BeOfType<JobWriteResult.FailureUnknown>();
+            _fails.Should().BeOfType<JobWriteResult.FailureUnknown>();
+        }
+
+        [Test]
+        public void It_observes_a_begin_that_eventually_succeeds_and_releases_a_clean_session()
+        {
+            _succeedsOutcome.Should().BeNull();
+            _succeedsNextSession.Should().Be((0, -1));
+        }
+
+        [Test]
+        public void It_observes_the_exception_of_a_begin_that_eventually_fails_and_releases_the_session()
+        {
+            _failsOutcome.Should().BeSameAs(_beginFailure);
+            _failsNextSession.Should().Be((0, -1));
+        }
+
+        private static async Task<(JobWriteResult, TimeSpan, Exception?, (int, int))> HandedOverBeginAsync(
+            ClaimedJob claimed,
+            Exception? failure
+        )
+        {
+            IOptions<DatabaseOptions> pool = SingleConnectionPool("begin-hand-over");
+            PendingOperation pending = new("Begin", TimeSpan.FromSeconds(3), failure);
+            JobLeaseRepository repository = new(pool, _twoSecondDeadlines) { SessionHooks = pending.Hooks };
+
+            long started = Stopwatch.GetTimestamp();
+            JobWriteResult result = await repository.Renew(
+                claimed.Id,
+                OwnerA,
+                claimed.FencingToken,
+                300,
+                CancellationToken.None
+            );
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
+
+            Exception? outcome = await pending.CleanupAsync();
+
+            // The pool's only connection is free again once cleanup has released it.
+            await using SqlConnection next = new(pool.Value.DatabaseConnection);
+            await next.OpenAsync();
+            (int, int) nextSession = await next.QuerySingleAsync<(int, int)>(
+                "SELECT @@TRANCOUNT, @@LOCK_TIMEOUT;"
+            );
+            return (result, elapsed, outcome, nextSession);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_ownership_write_whose_session_cleanup_stays_pending : JobLeaseTestBase
+    {
+        private JobWriteResult _result = null!;
+        private TimeSpan _elapsed;
+        private LeaseRow _row = null!;
+        private (int TranCount, int LockTimeout) _nextSession;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            IOptions<DatabaseOptions> pool = SingleConnectionPool("pending-cleanup");
+            PendingOperation pending = new("EndSession", TimeSpan.FromSeconds(4));
+            JobLeaseRepository repository = new(pool, _twoSecondDeadlines) { SessionHooks = pending.Hooks };
+
+            long started = Stopwatch.GetTimestamp();
+            _result = await repository.Complete(
+                claimed.Id,
+                OwnerA,
+                claimed.FencingToken,
+                CancellationToken.None
+            );
+            _elapsed = Stopwatch.GetElapsedTime(started);
+
+            await pending.CleanupAsync();
+            _row = await RowAsync(claimed.Id);
+            await using SqlConnection next = new(pool.Value.DatabaseConnection);
+            await next.OpenAsync();
+            _nextSession = await next.QuerySingleAsync<(int, int)>("SELECT @@TRANCOUNT, @@LOCK_TIMEOUT;");
+        }
+
+        [Test]
+        public void It_returns_within_the_write_deadline() =>
+            _elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7), "cleanup stays pending for 4 s");
+
+        [Test]
+        public void It_keeps_the_outcome_already_decided()
+        {
+            _result.Should().BeOfType<JobWriteResult.Success>();
+            _row.Status.Should().Be(JobStatuses.Completed);
+        }
+
+        [Test]
+        public void It_releases_a_clean_session_once_the_pending_cleanup_ends() =>
+            _nextSession.Should().Be((0, -1));
+    }
+
+    [TestFixture]
+    public class Given_a_fence_whose_session_cleanup_stays_pending : JobLeaseTestBase
+    {
+        private Exception? _thrown;
+        private TimeSpan _renewalAdmittedAfter;
+        private long _fencedWrites;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            JobExecutionOwnership ownership = new();
+            PendingOperation pending = new("EndSession", TimeSpan.FromSeconds(4));
+            IJobFence fence = new MssqlJobFenceFactory(
+                MssqlTestConfiguration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                SessionHooks = pending.Hooks,
+            }.Create(claimed, ownership);
+
+            long started = Stopwatch.GetTimestamp();
+            Task<Exception?> fenced = ThrownByAsync(() =>
+                fence.ExecuteAsync(FencedWriteAsync, CancellationToken.None)
+            );
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
+            using (IDisposable renewal = await ownership.EnterForRenewalAsync(CancellationToken.None))
+            {
+                _renewalAdmittedAfter = Stopwatch.GetElapsedTime(started);
+            }
+
+            _thrown = await fenced;
+            await pending.CleanupAsync();
+            _fencedWrites = await FencedWriteCountAsync();
+        }
+
+        [Test]
+        public void It_commits_the_fenced_write()
+        {
+            _thrown.Should().BeNull();
+            _fencedWrites.Should().Be(1);
+        }
+
+        [Test]
+        public void It_releases_the_gate_to_a_waiting_renewal_within_the_fence_deadline() =>
+            _renewalAdmittedAfter
+                .Should()
+                .BeLessThan(TimeSpan.FromSeconds(2.7), "cleanup stays pending for 4 s");
     }
 
     /// <summary>Every ownership-dependent write, by the claim's owner and token, in declaration order.</summary>

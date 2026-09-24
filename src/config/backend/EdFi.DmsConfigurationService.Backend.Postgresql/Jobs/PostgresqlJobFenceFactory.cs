@@ -4,10 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
-using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -19,8 +17,17 @@ public sealed class PostgresqlJobFenceFactory(
     JobLeaseTimings timings
 ) : IJobFenceFactory
 {
+    /// <summary>Test seam: hooks into every session a fence opens.</summary>
+    internal JobDatabaseSessionHooks? SessionHooks { get; init; }
+
     public IJobFence Create(ClaimedJob job, JobExecutionOwnership ownership) =>
-        new PostgresqlJobFence(databaseOptions.Value.DatabaseConnection, timings, job, ownership);
+        new PostgresqlJobFence(
+            databaseOptions.Value.DatabaseConnection,
+            timings,
+            job,
+            ownership,
+            SessionHooks
+        );
 
     /// <summary>
     /// One execution's fence (D-5). Under the execution gate it locks the job row, validates ownership with
@@ -28,15 +35,24 @@ public sealed class PostgresqlJobFenceFactory(
     /// deadline taken from that time, revalidates ownership, and commits only while ownership is certain.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Validation is a separate statement because PostgreSQL evaluates the <c>WHERE</c> clause and select list
     /// of a <c>SELECT … FOR UPDATE</c> before it waits for the lock when the holder releases the row
     /// unchanged, so a lease that expired during the wait would still look live in that statement.
+    /// </para>
+    /// <para>
+    /// While the fence holds the execution gate, every database wait runs through a
+    /// <see cref="JobDatabaseSession"/>: the acquisition under its own timeout, and the revalidation, the commit,
+    /// and the rollback of a transaction left open under the fence deadline, which the fence therefore never
+    /// outlasts. A commit whose wait the deadline ends has an unknown outcome and makes the execution uncertain.
+    /// </para>
     /// </remarks>
     private sealed class PostgresqlJobFence(
         string connectionString,
         JobLeaseTimings timings,
         ClaimedJob job,
-        JobExecutionOwnership ownership
+        JobExecutionOwnership ownership,
+        JobDatabaseSessionHooks? hooks
     ) : IJobFence
     {
         private static readonly string _setFenceLockWait =
@@ -65,27 +81,57 @@ public sealed class PostgresqlJobFenceFactory(
                 throw new JobLeaseLostException();
             }
 
-            // (2) and (3): acquisition, bounded by its own command timeout rather than the fence deadline.
-            await using NpgsqlConnection connection = new(connectionString);
-            await connection.OpenAsync(cancellationToken);
-            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(
-                cancellationToken
+            FenceState state = new(
+                new JobDatabaseSession(new NpgsqlConnection(connectionString), hooks),
+                JobDeadline.Start(JobLeaseTimings.FenceAcquisitionTimeout)
             );
-            TimeSpan remainingLease = await AcquireAsync(connection, transaction, cancellationToken);
+            try
+            {
+                await ExecuteLockedAsync(state, work, cancellationToken);
+            }
+            finally
+            {
+                // A transaction left open is rolled back within the current deadline, never by disposal.
+                await state.Session.EndAsync(
+                    state.Deadline,
+                    state.Committed ? null : PostgresqlJobSession.Rollback(state.Session)
+                );
+            }
+        }
+
+        private async Task ExecuteLockedAsync(
+            FenceState state,
+            Func<DbTransaction, CancellationToken, Task> work,
+            CancellationToken cancellationToken
+        )
+        {
+            JobDatabaseSession session = state.Session;
+
+            // (2) Open and begin, bounded like the acquisition.
+            try
+            {
+                await PostgresqlJobSession.OpenAsync(session, state.Deadline, cancellationToken);
+                await PostgresqlJobSession.BeginAsync(session, state.Deadline, cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                throw new JobFenceUnavailableException();
+            }
+
+            // (3) Acquisition, bounded by its own timeout rather than the fence deadline.
+            state.Deadline = JobDeadline.Start(JobLeaseTimings.FenceAcquisitionTimeout);
+            TimeSpan remainingLease = await AcquireAsync(state, cancellationToken);
 
             // (4) One deadline, taken from fresh database time after the lock is held, covers the work, the
-            // checks, the revalidation, and the commit. It is never raised.
+            // checks, the revalidation, the commit, and the rollback. It is never raised.
             TimeSpan fenceTimeout = Min(
                 timings.FenceTimeout,
                 remainingLease - JobLeaseTimings.FenceLeaseReserve
             );
-            long started = Stopwatch.GetTimestamp();
-            using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken
-            );
-            deadline.CancelAfter(fenceTimeout);
+            state.Deadline = JobDeadline.Start(fenceTimeout);
+            using CancellationTokenSource deadline = state.Deadline.CreateTokenSource(cancellationToken);
 
-            await work(transaction, deadline.Token);
+            await work(session.Transaction!, deadline.Token);
 
             // (5) The work returned: ownership must still be certain and the deadline not reached.
             cancellationToken.ThrowIfCancellationRequested();
@@ -95,19 +141,14 @@ public sealed class PostgresqlJobFenceFactory(
             }
 
             // (6) Revalidation with fresh time, within the deadline.
-            await RevalidateAsync(
-                connection,
-                transaction,
-                started,
-                fenceTimeout,
-                deadline.Token,
-                cancellationToken
-            );
+            await RevalidateAsync(state, cancellationToken);
 
-            // (7) A commit whose outcome is unknown makes this execution uncertain.
+            // (7) A commit whose outcome is unknown, its wait ended by the deadline included, makes this execution
+            // uncertain. It is never retried.
             try
             {
-                await transaction.CommitAsync(deadline.Token);
+                await PostgresqlJobSession.CommitAsync(session, state.Deadline, cancellationToken);
+                state.Committed = true;
             }
             catch (Exception)
             {
@@ -116,31 +157,33 @@ public sealed class PostgresqlJobFenceFactory(
             }
         }
 
-        private async Task<TimeSpan> AcquireAsync(
-            NpgsqlConnection connection,
-            NpgsqlTransaction transaction,
-            CancellationToken cancellationToken
-        )
+        private async Task<TimeSpan> AcquireAsync(FenceState state, CancellationToken cancellationToken)
         {
-            int acquisitionTimeout = JobLeaseRepository.Seconds(JobLeaseTimings.FenceAcquisitionTimeout);
+            JobDatabaseSession session = state.Session;
+            JobDeadline acquisition = state.Deadline;
             try
             {
-                await connection.ExecuteAsync(
-                    new CommandDefinition(
-                        _setFenceLockWait,
-                        transaction: transaction,
-                        commandTimeout: acquisitionTimeout,
-                        cancellationToken: cancellationToken
-                    )
+                await PostgresqlJobSession.ExecuteAsync(
+                    session,
+                    "SetLockWait",
+                    _setFenceLockWait,
+                    acquisition,
+                    cancellationToken
                 );
-                await connection.ExecuteScalarAsync<long?>(
-                    new CommandDefinition(
-                        LockJobRow,
-                        new { Id = job.Id },
-                        transaction,
-                        acquisitionTimeout,
-                        cancellationToken: cancellationToken
-                    )
+                await session.RunAsync(
+                    "LockRow",
+                    token =>
+                        session.Connection.ExecuteScalarAsync<long?>(
+                            PostgresqlJobSession.Command(
+                                session,
+                                LockJobRow,
+                                new { Id = job.Id },
+                                acquisition,
+                                token
+                            )
+                        ),
+                    acquisition,
+                    cancellationToken
                 );
             }
             catch (PostgresException exception)
@@ -148,15 +191,25 @@ public sealed class PostgresqlJobFenceFactory(
             {
                 throw new JobFenceUnavailableException();
             }
+            catch (TimeoutException)
+            {
+                throw new JobFenceUnavailableException();
+            }
 
-            TimeSpan? remaining = await connection.QuerySingleOrDefaultAsync<TimeSpan?>(
-                new CommandDefinition(
-                    OwnedLease,
-                    OwnershipParameters,
-                    transaction,
-                    acquisitionTimeout,
-                    cancellationToken: cancellationToken
-                )
+            TimeSpan? remaining = await session.RunAsync(
+                "ValidateLease",
+                token =>
+                    session.Connection.QuerySingleOrDefaultAsync<TimeSpan?>(
+                        PostgresqlJobSession.Command(
+                            session,
+                            OwnedLease,
+                            OwnershipParameters,
+                            acquisition,
+                            token
+                        )
+                    ),
+                acquisition,
+                cancellationToken
             );
 
             return remaining is { } lease && lease >= JobLeaseTimings.FenceMinimumRemainingLease
@@ -164,30 +217,32 @@ public sealed class PostgresqlJobFenceFactory(
                 : throw new JobLeaseLostException();
         }
 
-        private async Task RevalidateAsync(
-            NpgsqlConnection connection,
-            NpgsqlTransaction transaction,
-            long started,
-            TimeSpan fenceTimeout,
-            CancellationToken deadline,
-            CancellationToken cancellationToken
-        )
+        private async Task RevalidateAsync(FenceState state, CancellationToken cancellationToken)
         {
+            JobDatabaseSession session = state.Session;
+            JobDeadline fenceDeadline = state.Deadline;
             TimeSpan? remaining;
             try
             {
-                remaining = await connection.QuerySingleOrDefaultAsync<TimeSpan?>(
-                    new CommandDefinition(
-                        OwnedLease,
-                        OwnershipParameters,
-                        transaction,
-                        JobLeaseRepository.SecondsLeft(started, fenceTimeout),
-                        cancellationToken: deadline
-                    )
+                remaining = await session.RunAsync(
+                    "RevalidateLease",
+                    token =>
+                        session.Connection.QuerySingleOrDefaultAsync<TimeSpan?>(
+                            PostgresqlJobSession.Command(
+                                session,
+                                OwnedLease,
+                                OwnershipParameters,
+                                fenceDeadline,
+                                token
+                            )
+                        ),
+                    fenceDeadline,
+                    cancellationToken
                 );
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception) when (fenceDeadline.Expired && !cancellationToken.IsCancellationRequested)
             {
+                // The deadline ended the revalidation.
                 throw new JobLeaseLostException();
             }
 
@@ -206,5 +261,18 @@ public sealed class PostgresqlJobFenceFactory(
             };
 
         private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
+
+        /// <summary>
+        /// The fence's session, the deadline that bounds its current step and its rollback, and whether it
+        /// committed.
+        /// </summary>
+        private sealed class FenceState(JobDatabaseSession session, JobDeadline deadline)
+        {
+            public JobDatabaseSession Session { get; } = session;
+
+            public JobDeadline Deadline { get; set; } = deadline;
+
+            public bool Committed { get; set; }
+        }
     }
 }

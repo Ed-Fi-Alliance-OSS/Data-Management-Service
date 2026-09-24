@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
@@ -20,10 +19,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 /// Every ownership-dependent write runs as one transaction that first takes the row lock, waiting at most
 /// <see cref="JobLeaseTimings.WriteLockWait"/>, and then runs the guarded <c>UPDATE</c> as a separate statement,
 /// so its <c>clock_timestamp()</c> is read after the lock is held: a lease that expired while the write waited
-/// is never authorized. One deadline, <see cref="JobLeaseTimings.RenewalTimeout"/>, bounds the whole write;
-/// each statement's command timeout is derived from the time left on it, and it is never extended. A write
-/// that fails before the guarded <c>UPDATE</c> is sent is <c>FailureUnknown</c> (nothing written); one that
-/// fails after it is sent is <c>ResultUnknown</c>, which the caller treats as uncertainty and never retries.
+/// is never authorized. One deadline, <see cref="JobLeaseTimings.RenewalTimeout"/>, bounds the whole write, its
+/// commit and rollback included; each statement's command timeout is derived from the time left on it, it is
+/// never extended, and every wait runs through a <see cref="JobDatabaseSession"/>, so the caller never waits past
+/// it even when Npgsql has not finished (<see cref="PostgresqlJobSession"/>). A write that fails before the
+/// guarded <c>UPDATE</c> is sent is <c>FailureUnknown</c> (nothing written); one that fails after it is sent is
+/// <c>ResultUnknown</c>, which the caller treats as uncertainty and never retries.
 /// </remarks>
 public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions, JobLeaseTimings timings)
     : IJobLeaseRepository
@@ -171,9 +172,12 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
 
     /// <summary>
     /// Test seam: runs after an ownership write's guarded <c>UPDATE</c> matched its row and before the commit,
-    /// with the write's deadline token.
+    /// with the caller's token.
     /// </summary>
     internal Func<CancellationToken, Task>? BeforeOwnershipCommit { get; init; }
+
+    /// <summary>Test seam: hooks into every session this repository opens.</summary>
+    internal JobDatabaseSessionHooks? SessionHooks { get; init; }
 
     public async Task<JobClaimResult> ClaimNext(
         string owner,
@@ -182,22 +186,30 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         CancellationToken cancellationToken
     )
     {
+        JobDeadline budget = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+        JobDatabaseSession session = NewSession();
         try
         {
-            await using NpgsqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync(cancellationToken);
-            ClaimRow? row = await connection.QuerySingleOrDefaultAsync<ClaimRow>(
-                new CommandDefinition(
-                    ClaimSql,
-                    new
-                    {
-                        Owner = owner,
-                        LeaseSeconds = leaseSeconds,
-                        MaxAttempts = maxAttempts,
-                    },
-                    commandTimeout: Seconds(JobLeaseTimings.ClaimCommandTimeout),
-                    cancellationToken: cancellationToken
-                )
+            await PostgresqlJobSession.OpenAsync(session, budget, cancellationToken);
+            ClaimRow? row = await session.RunAsync(
+                "Claim",
+                token =>
+                    session.Connection.QuerySingleOrDefaultAsync<ClaimRow>(
+                        PostgresqlJobSession.Command(
+                            session,
+                            ClaimSql,
+                            new
+                            {
+                                Owner = owner,
+                                LeaseSeconds = leaseSeconds,
+                                MaxAttempts = maxAttempts,
+                            },
+                            budget,
+                            token
+                        )
+                    ),
+                budget,
+                cancellationToken
             );
 
             return row is null
@@ -208,6 +220,11 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         {
             return new JobClaimResult.FailureUnknown(PostgresqlJobDiagnostics.From(exception, "ClaimNext"));
         }
+        finally
+        {
+            // An autocommitted statement leaves no transaction open.
+            await session.EndAsync(budget, null);
+        }
     }
 
     public async Task<JobExhaustResult> Exhaust(
@@ -217,29 +234,40 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     )
     {
         int exhausted = 0;
+        JobDeadline budget = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+        JobDatabaseSession session = NewSession();
         try
         {
-            await using NpgsqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync(cancellationToken);
+            await PostgresqlJobSession.OpenAsync(session, budget, cancellationToken);
 
-            // Each batch is one autocommitted statement bounded by its command timeout. The stopping token is
-            // checked immediately before every batch, the first included, and is not passed to the batch, so a
-            // batch that has started commits or fails on its own, and every committed batch stays committed
-            // when the sweep stops.
+            // Each batch is one autocommitted statement, and one deadline bounds it. The stopping token is checked
+            // immediately before every batch, the first included, and is not passed to the batch, so a batch that
+            // has started commits or fails on its own, and every committed batch stays committed when the sweep
+            // stops.
             while (!cancellationToken.IsCancellationRequested)
             {
-                int rows = await connection.ExecuteAsync(
-                    new CommandDefinition(
-                        ExhaustBatchSql,
-                        new
-                        {
-                            MaxAttempts = maxAttempts,
-                            ErrorMessage = errorCode.Message,
-                            ModifiedBy = SystemUser,
-                            BatchSize = JobLeaseTimings.ExhaustBatchSize,
-                        },
-                        commandTimeout: Seconds(JobLeaseTimings.ClaimCommandTimeout)
-                    )
+                JobDeadline batch = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
+                budget = batch;
+                int rows = await session.RunAsync(
+                    "ExhaustBatch",
+                    token =>
+                        session.Connection.ExecuteAsync(
+                            PostgresqlJobSession.Command(
+                                session,
+                                ExhaustBatchSql,
+                                new
+                                {
+                                    MaxAttempts = maxAttempts,
+                                    ErrorMessage = errorCode.Message,
+                                    ModifiedBy = SystemUser,
+                                    BatchSize = JobLeaseTimings.ExhaustBatchSize,
+                                },
+                                batch,
+                                token
+                            )
+                        ),
+                    batch,
+                    CancellationToken.None
                 );
                 exhausted += rows;
                 AfterExhaustBatch?.Invoke(rows);
@@ -261,6 +289,11 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         catch (Exception exception)
         {
             return new JobExhaustResult.FailureUnknown(PostgresqlJobDiagnostics.From(exception, "Exhaust"));
+        }
+        finally
+        {
+            // Autocommitted batches leave no transaction open.
+            await session.EndAsync(budget, null);
         }
     }
 
@@ -365,7 +398,10 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             cancellationToken
         );
 
-    /// <summary>D-4 lock-then-validate under one <see cref="JobLeaseTimings.RenewalTimeout"/> deadline.</summary>
+    /// <summary>
+    /// D-4 lock-then-validate under one <see cref="JobLeaseTimings.RenewalTimeout"/> deadline, which also bounds the
+    /// commit and the rollback of a transaction left open.
+    /// </summary>
     private async Task<JobWriteResult> OwnershipWriteAsync(
         string operation,
         string guardedUpdateSql,
@@ -374,31 +410,41 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         CancellationToken cancellationToken
     )
     {
-        long started = Stopwatch.GetTimestamp();
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        deadline.CancelAfter(timings.RenewalTimeout);
+        JobDeadline budget = JobDeadline.Start(timings.RenewalTimeout);
+        JobDatabaseSession session = NewSession();
 
         bool guardedWriteSent = false;
+        bool committed = false;
         try
         {
-            await using NpgsqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync(deadline.Token);
-            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(
-                deadline.Token
+            await PostgresqlJobSession.OpenAsync(session, budget, cancellationToken);
+            await PostgresqlJobSession.BeginAsync(session, budget, cancellationToken);
+            await PostgresqlJobSession.ExecuteAsync(
+                session,
+                "SetLockWait",
+                _setWriteLockWait,
+                budget,
+                cancellationToken
             );
-
-            await connection.ExecuteAsync(
-                DeadlineCommand(_setWriteLockWait, null, transaction, started, deadline.Token)
-            );
-            await connection.ExecuteScalarAsync<long?>(
-                DeadlineCommand(LockJobRow, new { Id = id }, transaction, started, deadline.Token)
+            await session.RunAsync(
+                "LockRow",
+                token =>
+                    session.Connection.ExecuteScalarAsync<long?>(
+                        PostgresqlJobSession.Command(session, LockJobRow, new { Id = id }, budget, token)
+                    ),
+                budget,
+                cancellationToken
             );
 
             guardedWriteSent = true;
-            WrittenRow? written = await connection.QuerySingleOrDefaultAsync<WrittenRow>(
-                DeadlineCommand(guardedUpdateSql, parameters, transaction, started, deadline.Token)
+            WrittenRow? written = await session.RunAsync(
+                "GuardedWrite",
+                token =>
+                    session.Connection.QuerySingleOrDefaultAsync<WrittenRow>(
+                        PostgresqlJobSession.Command(session, guardedUpdateSql, parameters, budget, token)
+                    ),
+                budget,
+                cancellationToken
             );
             if (written is null)
             {
@@ -407,10 +453,11 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
 
             if (BeforeOwnershipCommit is { } beforeCommit)
             {
-                await beforeCommit(deadline.Token);
+                await beforeCommit(cancellationToken);
             }
 
-            await transaction.CommitAsync(deadline.Token);
+            await PostgresqlJobSession.CommitAsync(session, budget, cancellationToken);
+            committed = true;
             return new JobWriteResult.Success(
                 written.LeaseExpiresAt is { } leaseExpiresAt ? AsUtc(leaseExpiresAt) : null,
                 AsUtc(written.DatabaseUtcNow)
@@ -423,32 +470,16 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 ? new JobWriteResult.ResultUnknown(diagnostic)
                 : new JobWriteResult.FailureUnknown(diagnostic);
         }
+        finally
+        {
+            // The outcome is already decided: rolling back an open transaction only uses what is left of the
+            // deadline.
+            await session.EndAsync(budget, committed ? null : PostgresqlJobSession.Rollback(session));
+        }
     }
 
-    /// <summary>A statement of an ownership write, bounded by the time left on the write's deadline.</summary>
-    private CommandDefinition DeadlineCommand(
-        string sql,
-        object? parameters,
-        NpgsqlTransaction transaction,
-        long started,
-        CancellationToken deadline
-    ) =>
-        new(
-            sql,
-            parameters,
-            transaction,
-            commandTimeout: SecondsLeft(started, timings.RenewalTimeout),
-            cancellationToken: deadline
-        );
-
-    internal static int Seconds(TimeSpan timeout) => (int)Math.Ceiling(timeout.TotalSeconds);
-
-    /// <summary>
-    /// A command timeout derived from the time left on a deadline, at least 1 s because 0 would mean no
-    /// timeout. The deadline's own token still cancels the command at the exact deadline.
-    /// </summary>
-    internal static int SecondsLeft(long started, TimeSpan budget) =>
-        Math.Max(1, Seconds(budget - Stopwatch.GetElapsedTime(started)));
+    private JobDatabaseSession NewSession() =>
+        new(new NpgsqlConnection(databaseOptions.Value.DatabaseConnection), SessionHooks);
 
     // The columns hold UTC in TIMESTAMP (without time zone), which Npgsql reads as DateTimeKind.Unspecified.
     private static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
