@@ -422,6 +422,20 @@ Namespaces: `EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs`, `EdFi.DmsCon
 
 Conventions: CSharpier on touched files; NUnit `Given_…`/`It_…`; each commit builds `src/config/EdFi.DmsConfigurationService.sln`; one local commit per step; an explicit approval stop after each step; each step's report lists SHA, files, behavior, AC coverage, exact commands and results, remaining risks.
 
+**Review cadence from Phase 3 on** (decided at the step 2.11 review, 2026-09-24; it replaces the one-step stop for these phases). Steps stay small local commits, one or more per step, but review happens per group, with an explicit stop after each group:
+
+| Review group | Scope |
+| --- | --- |
+| 3.1–3.2 | Options, registration, registry, enqueuer, validated schedule service |
+| 3.3–3.4 | Executor, worker, metrics |
+| 3.5–3.6 | Schedule dispatcher and retention service |
+| 3.7 | Runtime integration and fault-injection gate |
+| 4.1–4.2 | Polling endpoint and API integration tests |
+| 4.3 | E2E tests |
+| 5.1–5.2 | Documentation and final validation |
+
+Checks within a group: run the affected tests during development. After the group's final change, run the relevant checks once. Repeat a check only to investigate a failure or a timing result. Broad database suites are reserved for 3.7 and the final validation. Routine clean rebuilds and blanket mutation rounds are not part of the cadence. Nothing is pushed without approval.
+
 ### Phase 0
 
 **0.1 Commit the approved spec and contract evidence.** Purpose: durable design record and the pinned upstream contract. Files: `reference/design/jobs-DMS-1437/spec.md` (this document), `reference/design/jobs-DMS-1437/admin-api-v3-ed115fd8.yaml` (the generated document, SHA-256 `f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b`), `reference/design/jobs-DMS-1437/admin-api-v3-provenance.md` (source commit, toolchain versions, exact commands, the two workarounds from §1.4.1, and the CMS nullability differences that are intentionally kept). Deps: approval. Tests: none. Risks: none. Done: three files present, no code. Commit `[DMS-1437] Add durable jobs implementation spec and pinned contract`.
@@ -472,7 +486,7 @@ Conventions: CSharpier on touched files; NUnit `Given_…`/`It_…`; each commit
 
 **3.6 Retention service.** Files: `Backend/Jobs/JobRetentionService.cs`, registration under `RetentionEnabled`, `JobRetentionServiceTests`. Behavior: sweep at start then per `RetentionInterval` (`PeriodicTimer`, `TimeProvider`), batch loop. Deps: 3.1, 2.7/2.8. Commit `[DMS-1437] Add job retention hosted service`.
 
-**3.7 Runtime integration tests.** Files: `…/Jobs/JobRuntimeIntegrationTests.cs` ×2 (real repositories, real executor and services constructed explicitly with short leases, fake handlers; an internal lease-repository seam injects a fault after commit or before commit of the outcome write). Tests: §2 rows 9, 10 (including both recovery-by-state cases against the real database), 11, 19; and, carried from the step 2.5 review (the step 2.5/2.6 pre-commit delay tests cover only `ResultUnknown` after a guarded outcome write), the fence's commit path on both providers through an injected fault: (a) the fence commit throws → the execution becomes `Uncertain(FenceCommitUnknown)`, the fence throws `JobLeaseLostException`, and no outcome write follows; (b) the fence commit succeeds but its acknowledgement is lost → the consumer's fenced write is persisted, the execution is still `Uncertain` with no outcome write, and the next execution after lease expiry reconciles the persisted write idempotently. Deps: 3.4–3.6. Risks: timing; leases of 2–3 s with DB-time assertions, no wall-clock sleeps beyond lease waits. Done: fixtures listed, green on both providers. Commit `[DMS-1437] Add runtime recovery integration tests`.
+**3.7 Runtime integration tests.** Files: `…/Jobs/JobRuntimeIntegrationTests.cs` ×2 (real repositories, real executor and services constructed explicitly with short leases, fake handlers; an internal lease-repository seam injects a fault after commit or before commit of the outcome write). Tests: §2 rows 9, 10 (including both recovery-by-state cases against the real database), 11, 19; and, carried from the step 2.5 review (the step 2.5/2.6 pre-commit delay tests cover only `ResultUnknown` after a guarded outcome write), the fence's commit path on both providers through an injected fault: (a) the fence commit throws → the execution becomes `Uncertain(FenceCommitUnknown)`, the fence throws `JobLeaseLostException`, and no outcome write follows; (b) the fence commit succeeds but its acknowledgement is lost → the consumer's fenced write is persisted, the execution is still `Uncertain` with no outcome write, and the next execution after lease expiry reconciles the persisted write idempotently. Also carried from the step 2.11 review: the full fence-then-renewal ordering at the execution gate. The step 2.11 gate probe compares the renewal's admission with the fence's commit-request timestamp, taken before the commit is sent, so on its own it shows only that admission followed the commit request. Step 3.7 verifies that a renewal waiting at the gate is admitted only after the fence's commit has completed and the gate has been released. Deps: 3.4–3.6. Risks: timing; leases of 2–3 s with DB-time assertions, no wall-clock sleeps beyond lease waits. Done: fixtures listed, green on both providers. Commit `[DMS-1437] Add runtime recovery integration tests`.
 
 ### Phase 4 — API
 

@@ -297,7 +297,7 @@ Differences from the step 0.2 probe set, each for the reviewer to confirm:
 1. **Probe 2, expiring lease.** The lock holder sets the lease to expire 2 s later inside its own transaction, immediately after it takes the row lock. This makes the expiry deterministic relative to the wait, so the step 0.2 F6 care about connection order is not needed. The renewal still waits about 3 s and is then refused by the fresh-time predicate.
 2. **Probe 2, fence-held (added).** Two variants:
    - **At the database.** The row lock is held by a fence's transaction, with fence work of 4 s (released 100 ms apart) or 6 s, while a `Renew` waits on that lock. Latency after release is measured from the fence session's `Commit` operation (the `BeforeOperation` hook), the fence counterpart of the holder's `COMMIT` request.
-   - **At the execution gate**, which is how the runtime serializes them. A renewal of the same execution calls `EnterForRenewalAsync` during a 1 s fence. The probe asserts that it enters only after the fence's commit and measures its completion from the fence's return.
+   - **At the execution gate**, which is how the runtime serializes them. A renewal of the same execution calls `EnterForRenewalAsync` during a 1 s fence. The probe asserts that it enters after the fence's commit request, the timestamp taken just before the commit is sent, and measures its completion from the fence's return. Comparing with the commit request does not by itself show that admission followed the commit's completion; step 3.7 verifies the full ordering (corrected at the step 2.11 review).
 3. **Probe 6, live only.** The injected-time vectors test the SQL expression, not the repository. The repository-level equivalents are already in the integration suites:
    - `It_advances_to_first_future_boundary_with_fractional_seconds` on both providers;
    - `It_advances_from_fresh_time_when_paused_after_insert`;
@@ -315,7 +315,7 @@ Values are the worst of three runs. §11.5 has each run. Latencies are client-si
 | 1 Idle poll against 10 000 leased rows (p99 ≤ 250 ms) | p99 5.1 ms; 0 claims | p99 12.6 ms; 0 claims | met |
 | 2 Renewal after a raw-SQL holder releases, 4 s hold (p99 ≤ 100 ms) | p99 27.4 ms; 300/300 success | p99 27.1 ms; 300/300 success | met |
 | 2 Renewal after a fence commits, 4 s fence work (p99 ≤ 100 ms) | p99 9.7 ms; 90/90 success | p99 10.7 ms; 90/90 success | met |
-| 2 Renewal behind a fence at the execution gate (p99 ≤ 100 ms) | p99 5.7 ms; 30/30 success, none entered before the fence's commit | p99 10.6 ms; the same | met |
+| 2 Renewal behind a fence at the execution gate (p99 ≤ 100 ms) | p99 5.7 ms; 30/30 success, none admitted before the fence's commit request | p99 10.6 ms; the same | met |
 | 2 Lease expired during a 3 s hold (rejected) | 60/60 `OwnershipLost`; no lease extended | the same | met |
 | 2 6 s hold / 6 s fence work (lock timeout at `WriteLockWait`) | 30/30 and 30/30 `FailureUnknown(55P03)` at ≤ 5 017.4 ms; every fence committed (120/120) | 30/30 and 30/30 `FailureUnknown(1222)` at ≤ 5 013.0 ms; the same | met |
 | 3 `Exhaust`, first sweep over 100 000 rows (≤ 500 ms) | exactly 100 rows, ≤ 26.1 ms | exactly 100 rows, ≤ 82.0 ms | met |
@@ -339,7 +339,7 @@ Both measure the same statements, now running in the migrated schema. This step 
 
 - **PostgreSQL renewal after release, 100 ms threshold (the step 0.2 exception): no miss.** The worst p99 across three runs was 27.4 ms against a raw-SQL holder, 9.7 ms behind a fence, and 5.7 ms at the gate. The threshold stays at 100 ms, and no investigation is needed.
 - **A5 (SQL Server `IX_Job_Exhaust`): not adopted.** Through the repository, the steady-state sweep over 100 000 rows runs at p99 11.4 ms, and a full lowered-limit batch at p99 61.2 ms with row locks only. Both are far inside the 500 ms threshold, so the measurements show no need for another index and its write cost.
-- **Fence timings.** `FenceLockWait` (5 s) ends a renewal waiting on a fence's row lock in the provider's lock timeout at 5.0 s on both providers, and every fence still commits. The 10 s `FenceTimeout` cap left the 4 s and 6 s fence work well inside the deadline in all 120 counted fences per provider. The probes do not exercise `FenceMinimumRemainingLease` (2 s), because every lease was 300 s. Its rejection path is covered by the fence tests of steps 2.5 and 2.6.
+- **Fence timings.** A renewal waiting on a fence's row lock is bounded by its own `WriteLockWait` (5 s), not by `FenceLockWait`: it ends in the provider's lock timeout at 5.0 s on both providers, and every fence still commits (corrected at the step 2.11 review). No probe makes a fence's own acquisition wait, so `FenceLockWait` rests on the step 2.5/2.6 fence tests, including the fence lock wait that outlasts the lease. The 10 s `FenceTimeout` cap left the 4 s and 6 s fence work well inside the deadline in all 120 counted fences per provider. The probes do not exercise `FenceMinimumRemainingLease` (2 s), because every lease was 300 s. Its rejection path is covered by the fence tests of steps 2.5 and 2.6.
 
 ### 11.4 Confirm or adjust, per candidate (Q3 re-verified)
 
@@ -360,7 +360,7 @@ Both measure the same statements, now running in the migrated schema. This step 
 | Fixed constant | Step 2.11 | Evidence |
 | --- | --- | --- |
 | `WriteLockWait` 5 s | **confirm** | lock timeouts at ≤ 5 017.4 ms (PostgreSQL) and ≤ 5 013.0 ms (SQL Server) |
-| `FenceLockWait` 5 s | **confirm** | the same mechanics, behind a fence: ≤ 5 008.6 ms and ≤ 5 007.1 ms |
+| `FenceLockWait` 5 s | **confirm** | not exercised by the probes: a renewal behind a fence waits under `WriteLockWait` (≤ 5 008.6 ms and ≤ 5 007.1 ms). Covered by the step 2.5/2.6 fence tests of a fence's acquisition wait |
 | `FenceMinimumRemainingLease` 2 s | **confirm** | not exercised by the probes (300 s leases); covered functionally by the step 2.5/2.6 fence tests |
 | `RenewalTimeout = RenewalInterval/2` | **confirm** | 30 s, above `WriteLockWait + 1 s`; no renewal reached it |
 | Claim/`Exhaust` command timeout 5 s | **confirm** | worst claim 142.3 ms; worst `Exhaust` sweep 82.0 ms |
