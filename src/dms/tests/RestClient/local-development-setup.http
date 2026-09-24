@@ -150,7 +150,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "E2E-NameSpaceBasedClaimSet",
+    "claimSetName": "EdFiSandbox",
     "dataStoreIds": [{{dataStoreId}}]
 }
 

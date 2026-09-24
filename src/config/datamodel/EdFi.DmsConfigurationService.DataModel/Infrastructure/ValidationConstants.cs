@@ -7,6 +7,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class ValidationConstants
 {
+    public const int ClaimSetNameMaxLength = 256;
     public const string ClaimSetNameNoWhiteSpaceMessage = "Claim set name must not contain white spaces.";
     public const string ClaimSetNameNoWhiteSpaceRegex = @"^[^\s]*$";
 }

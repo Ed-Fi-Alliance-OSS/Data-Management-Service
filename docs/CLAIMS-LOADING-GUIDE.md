@@ -211,7 +211,7 @@ DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesyst
 
 Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added.
 
-A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
+A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Because it is system-reserved, the Management API cannot change or delete it, and removing the fragment later does not remove the claim set. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
 
 A fragment that defines a claim set looks like this:
 
@@ -431,6 +431,45 @@ No additional configuration needed.
 | Hybrid | `Hybrid` | Required | Development with fragment extensions |
 | Filesystem | `Filesystem` | Required | Complete external control |
 | Upload | Any | Optional | Dynamic management via API |
+
+### Upgrading an Existing Deployment: E2E Claim Sets
+
+Earlier releases shipped six test-only claim sets in the embedded base claims:
+
+- `E2E-NameSpaceBasedClaimSet`
+- `E2E-NoFurtherAuthRequiredClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet`
+
+New deployments no longer get them. The Configuration Service loads claims at startup only into an
+empty database, so a database provisioned by an earlier release keeps these claim sets and their
+grants after an upgrade. They are system-reserved, so neither a claims reload nor
+`DELETE /v3/claimSets/{id}` removes them. To remove them:
+
+1. Confirm that no application uses one of them. Check the `claimSetName` of each application
+   returned by `GET /v3/applications`. Applications are not tied to claim set rows, so an
+   application left on a removed claim set has every DMS request fail with a
+   security-configuration error.
+2. Delete the six rows from the `dmscs.ClaimSet` table:
+
+   ```sql
+   DELETE FROM dmscs.ClaimSet
+   WHERE ClaimSetName IN (
+       'E2E-NameSpaceBasedClaimSet',
+       'E2E-NoFurtherAuthRequiredClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
+   );
+   ```
+
+   On PostgreSQL, quote the identifiers: `"dmscs"."ClaimSet"` and `"ClaimSetName"`.
+3. If the management endpoints are enabled, call `POST /management/reload-claims` to drop the six
+   claim sets' grants from the stored claims hierarchy. Otherwise the grants stay in the hierarchy,
+   but no claim set or application refers to them.
 
 ## Security and Production Considerations
 

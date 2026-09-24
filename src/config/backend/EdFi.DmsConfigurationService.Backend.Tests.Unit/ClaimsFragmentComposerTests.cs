@@ -716,6 +716,102 @@ public class ClaimsFragmentComposerTests
     }
 
     [TestFixture]
+    public class Given_a_non_parent_fragment_whose_file_name_contains_white_space
+        : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("my vendor-claimset.json", NonParentFragment(null))
+            );
+        }
+
+        [Test]
+        public void It_returns_no_claims()
+        {
+            _result.Nodes.Should().BeNull();
+        }
+
+        [Test]
+        public void It_reports_the_invalid_name_for_that_fragment()
+        {
+            ClaimsFailure failure = _result.Failures.Should().ContainSingle().Which;
+
+            failure.FailureType.Should().Be("InvalidClaimSetName");
+            failure.Message.Should().Contain("'my vendor-claimset'");
+            failure.Path.Should().Be(Path.Combine(_testFragmentsPath, "my vendor-claimset.json"));
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_whose_name_is_too_long : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("long-claimset.json", NonParentFragment(new string('a', 257)))
+            );
+        }
+
+        [Test]
+        public void It_reports_the_invalid_name_and_returns_no_claims()
+        {
+            _result.Nodes.Should().BeNull();
+            _result.Failures.Should().ContainSingle().Which.FailureType.Should().Be("InvalidClaimSetName");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_whose_name_is_at_the_length_limit : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+        private readonly string _name = new('a', 256);
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(BaseDocument(), ("limit-claimset.json", NonParentFragment(_name)));
+        }
+
+        [Test]
+        public void It_registers_the_claim_set()
+        {
+            _result.Failures.Should().BeEmpty();
+            ClaimSetsNamed(_result, _name).Should().ContainSingle();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_with_an_empty_name : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("empty-name-claimset.json", NonParentFragment(""))
+            );
+        }
+
+        [Test]
+        public void It_reports_the_invalid_name_and_returns_no_claims()
+        {
+            _result.Nodes.Should().BeNull();
+            _result.Failures.Should().ContainSingle().Which.FailureType.Should().Be("InvalidClaimSetName");
+        }
+    }
+
+    [TestFixture]
     public class Given_a_fragment_defines_a_claim_set : ClaimsFragmentComposerTests
     {
         private ClaimsDocument _baseDocument = null!;

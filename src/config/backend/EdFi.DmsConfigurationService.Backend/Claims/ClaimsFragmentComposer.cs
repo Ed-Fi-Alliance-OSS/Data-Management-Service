@@ -6,7 +6,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Claims;
@@ -70,6 +72,20 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 string? definedClaimSetName = ApplyFragmentTransformation(fragmentFile, baseClaims);
                 if (definedClaimSetName is not null)
                 {
+                    if (!IsValidClaimSetName(definedClaimSetName))
+                    {
+                        ClaimsFailure failure = new(
+                            "InvalidClaimSetName",
+                            $"Fragment defines claim set name '{definedClaimSetName}', which must be non-empty, at most {ValidationConstants.ClaimSetNameMaxLength} characters, and contain no white space",
+                            fragmentFile
+                        );
+                        logger.LogError(
+                            "Fragment {FragmentFile} defines an invalid claim set name",
+                            fragmentFile
+                        );
+                        return new ClaimsLoadResult(null, [failure]);
+                    }
+
                     definedClaimSetNames.Add(definedClaimSetName);
                 }
                 logger.LogDebug(
@@ -235,6 +251,13 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         string json = JsonSerializer.Serialize(claims, _outputJsonOptions);
         return JsonNode.Parse(json) ?? JsonNode.Parse("[]")!;
     }
+
+    /// <summary>
+    /// Applies the Management API claim set name rules, because a defined name becomes a claim set row
+    /// </summary>
+    private static bool IsValidClaimSetName(string claimSetName) =>
+        claimSetName.Length is > 0 and <= ValidationConstants.ClaimSetNameMaxLength
+        && Regex.IsMatch(claimSetName, ValidationConstants.ClaimSetNameNoWhiteSpaceRegex);
 
     /// <summary>
     /// Copies the base claim sets and appends, as system-reserved, each fragment-defined claim set
