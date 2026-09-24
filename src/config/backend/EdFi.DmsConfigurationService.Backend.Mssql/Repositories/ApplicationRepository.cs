@@ -68,17 +68,25 @@ public class ApplicationRepository(
         int[] profileIds
     )
     {
-        int[] distinctProfileIds = [.. profileIds.Distinct()];
         string sql = $"""
             SELECT COUNT(1) FROM dmscs.Profile
             WHERE Id IN @ProfileIds AND {TenantContext.TenantWhereClause()};
             """;
-        int count = await connection.ExecuteScalarAsync<int>(
-            sql,
-            new { ProfileIds = distinctProfileIds, TenantId },
-            transaction
-        );
-        return count == distinctProfileIds.Length;
+        // Dapper expands IN @ProfileIds into one parameter per id and SQL Server accepts at most
+        // 2,100 per request, so the distinct ids are checked in bounded chunks.
+        foreach (int[] chunk in profileIds.Distinct().Chunk(1000))
+        {
+            int count = await connection.ExecuteScalarAsync<int>(
+                sql,
+                new { ProfileIds = chunk, TenantId },
+                transaction
+            );
+            if (count != chunk.Length)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private async Task<bool> ApplicationExistsForTenant(

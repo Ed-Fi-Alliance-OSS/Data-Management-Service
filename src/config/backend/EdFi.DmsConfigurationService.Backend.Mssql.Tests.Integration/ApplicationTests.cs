@@ -1351,6 +1351,19 @@ public class ApplicationTests : DatabaseTest
             return ((ProfileInsertResult.Success)result).Id;
         }
 
+        private static async Task<int[]> InsertProfiles(
+            TenantContextProvider tenantContextProvider,
+            int count
+        )
+        {
+            var profileIds = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                profileIds[i] = await InsertProfile(tenantContextProvider, $"Bulk Profile {i}");
+            }
+            return profileIds;
+        }
+
         private Task<int> CountApplicationsNamed(string applicationName) =>
             Connection!.ExecuteScalarAsync<int>(
                 """SELECT COUNT(1) FROM dmscs.Application WHERE ApplicationName = @ApplicationName;""",
@@ -1624,7 +1637,8 @@ public class ApplicationTests : DatabaseTest
         }
 
         // SQL Server caps a request at 2,100 parameters, and the tenant check expands its id list into
-        // one parameter per element, so repeated ids must be collapsed before that query.
+        // one parameter per element, so it checks distinct ids in bounded chunks. Repeated ids are
+        // collapsed first so each chunk's count can be compared with its length.
         [Test]
         public async Task It_should_insert_an_application_with_its_own_profile_repeated_many_times()
         {
@@ -1659,6 +1673,68 @@ public class ApplicationTests : DatabaseTest
                 .Should()
                 .Equal(_tenantBProfileId);
             (await CountApplicationProfileRows(_tenantBProfileId)).Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_should_insert_an_application_with_more_distinct_own_profiles_than_sql_server_parameters()
+        {
+            int[] profileIds = await InsertProfiles(_tenantBProvider, 2101);
+
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Many Profiles Application",
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = profileIds,
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.Success>();
+
+            (await GetProfileIds(_tenantBRepository, ((ApplicationInsertResult.Success)result).Id))
+                .Should()
+                .BeEquivalentTo(profileIds);
+        }
+
+        [Test]
+        public async Task It_should_update_an_application_with_more_distinct_own_profiles_than_sql_server_parameters()
+        {
+            int[] profileIds = await InsertProfiles(_tenantBProvider, 2101);
+
+            var result = await UpdateTenantBApplicationProfiles(profileIds);
+            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+
+            (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
+                .Should()
+                .BeEquivalentTo(profileIds);
+        }
+
+        // The foreign profile exists, so only the tenant check can reject it; it sits in the middle
+        // chunk so a check that stops after the first chunk, or reads only the last, lets it through.
+        [Test]
+        public async Task It_should_not_insert_an_application_with_another_tenants_profile_after_the_first_chunk()
+        {
+            const string ApplicationName = "Many Profiles Cross Tenant Application";
+            List<int> profileIds = [.. await InsertProfiles(_tenantBProvider, 2100)];
+            profileIds.Insert(1500, _tenantAProfileId);
+
+            var result = await _tenantBRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = ApplicationName,
+                    VendorId = _tenantBVendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [],
+                    ProfileIds = [.. profileIds],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.FailureProfileNotFound>();
+
+            (await CountApplicationsNamed(ApplicationName)).Should().Be(0);
+            (await CountApplicationProfileRows(_tenantAProfileId)).Should().Be(0);
         }
 
         [Test]
