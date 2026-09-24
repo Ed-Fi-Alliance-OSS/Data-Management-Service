@@ -114,8 +114,9 @@ param (
 
     # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets DMS_CONFIG_CLAIMS_SOURCE=Hybrid and DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
-    # so that extension claimset fragments (e.g. Sample, Homograph) are loaded from the AdditionalClaimsets
-    # directory that is already mounted at /app/additional-claims by published-config.yml.
+    # and stages the AdditionalClaimsets fragments plus the test-owned E2E fragments into
+    # eng/docker-compose/.e2e-claims, which published-config.yml mounts at /app/additional-claims. Extension
+    # claimset fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
     $AddExtensionSecurityMetadata,
