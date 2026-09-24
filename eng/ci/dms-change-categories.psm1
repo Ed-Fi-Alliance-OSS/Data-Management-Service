@@ -79,6 +79,25 @@ $script:DocumentEmbedPathPrefix = @(
     'src/dms/core/EdFi.DataManagementService.CustomValidation/'
 )
 
+# Exact operator documents checked by CdcRunbookLinkTests.Documents. These select the existing
+# Contract lane even outside the DMS tree; the regression suite checks this list against that input.
+# Keep other relevance flags governed by their existing rules.
+$script:CdcDocumentExactPath = @(
+    'reference/cdc-documentation/README.md'
+    'reference/cdc-documentation/operations-runbook.md'
+    'reference/cdc-documentation/cdc-inv-evidence.md'
+    'reference/document-cache-documentation/README.md'
+    'reference/document-cache-documentation/operations-runbook.md'
+    'src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md'
+    'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md'
+    'eng/docker-compose/README.md'
+    'src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md'
+    'docs/CONFIGURATION.md'
+    'docs/CDC-QUALIFICATION.md'
+    'docs/RELATIONAL-BACKEND.md'
+    'src/dms/tests/RestClient/local-development-setup.http'
+)
+
 # Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
 # when its changed files reach them; the merge queue always runs all of them. The two DMS-API lanes
 # share one category because they share one test project and one in-process pipeline, and the two
@@ -366,6 +385,12 @@ function Get-DmsChangeCategory {
             $documentEmbedsRelevant = $true
         }
 
+        # Checked runbook inputs outside eng/ and src/ must select Contract before the general
+        # relevance filter skips them. This does not opt documentation into broader DMS jobs.
+        if (Test-DmsChangedFileMatch -Path $path -ExactPath $script:CdcDocumentExactPath) {
+            $category['cdc_relevant'] = $true
+        }
+
         if (
             -not (
                 Test-DmsChangedFileMatch `
@@ -374,8 +399,8 @@ function Get-DmsChangeCategory {
                     -PathPrefix $script:DmsRelevantPathPrefix
             )
         ) {
-            # Not DMS-relevant at all - documentation, editor configuration and the like. It cannot
-            # make a promoted suite relevant either, so it must not reach the fail-open rule.
+            # Outside the general DMS tree. Dedicated document rules above may select checks,
+            # but this path must not reach the promoted-suite fail-open rule.
             continue
         }
 
