@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using FakeItEasy;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
@@ -345,6 +346,405 @@ public class ClaimsFragmentComposerTests
             Assert.That(resultHierarchy, Is.Not.Null);
             Assert.That(resultHierarchy.Count, Is.EqualTo(1));
             Assert.That(resultHierarchy[0]?["name"]?.ToString(), Is.EqualTo("base"));
+        }
+    }
+
+    private const string AcademicWeekClaim = "http://ed-fi.org/identity/claims/ed-fi/academicWeek";
+
+    private static ClaimsDocument BaseDocument(
+        string claimSetsJson =
+            """
+                [{ "claimSetName": "Base", "isSystemReserved": true }]
+                """
+    ) =>
+        new(
+            JsonNode.Parse(claimSetsJson)!,
+            JsonNode.Parse(
+                $$"""
+                [
+                  {
+                    "name": "http://ed-fi.org/identity/claims/domains/relationshipBasedData",
+                    "claims": [{ "name": "{{AcademicWeekClaim}}" }]
+                  }
+                ]
+                """
+            )!
+        );
+
+    // A fragment whose non-parent entry grants Read on academicWeeks under the fragment's name
+    private static string NonParentFragment(string? name, string resourceClaimName = "ed-fi/academicWeeks")
+    {
+        string nameProperty = name is null ? "" : $"\"name\": \"{name}\",";
+        return $$"""
+            {
+              {{nameProperty}}
+              "resourceClaims": [
+                {
+                  "name": "{{resourceClaimName}}",
+                  "authorizationStrategyOverridesForCRUD": [
+                    {
+                      "actionName": "Read",
+                      "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+    }
+
+    private const string ParentOnlyFragment = """
+        {
+          "name": "ParentOnlyExtensionClaims",
+          "resourceClaims": [
+            {
+              "isParent": true,
+              "name": "domains/relationshipBasedData",
+              "children": [{ "name": "http://ed-fi.org/identity/claims/sample/bus" }]
+            }
+          ]
+        }
+        """;
+
+    private ClaimsLoadResult ComposeWithFragments(
+        ClaimsDocument baseDocument,
+        params (string FileName, string Content)[] fragments
+    )
+    {
+        foreach ((string fileName, string content) in fragments)
+        {
+            File.WriteAllText(Path.Combine(_testFragmentsPath, fileName), content);
+        }
+
+        return _composer.ComposeClaimsFromFragments(baseDocument, _testFragmentsPath);
+    }
+
+    private static List<JsonObject> ClaimSetsNamed(ClaimsLoadResult result, string claimSetName) =>
+        result
+            .Nodes!.ClaimSetsNode.AsArray()
+            .OfType<JsonObject>()
+            .Where(claimSet =>
+                string.Equals(
+                    claimSet["claimSetName"]?.GetValue<string>(),
+                    claimSetName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .ToList();
+
+    private static List<string> ClaimSetNames(ClaimsLoadResult result) =>
+        [
+            .. result
+                .Nodes!.ClaimSetsNode.AsArray()
+                .OfType<JsonObject>()
+                .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>()),
+        ];
+
+    private static JsonObject? GrantOnAcademicWeek(ClaimsLoadResult result, string claimSetName)
+    {
+        JsonObject academicWeek = result
+            .Nodes!.ClaimsHierarchyNode.AsArray()
+            .OfType<JsonObject>()
+            .SelectMany(domain => domain["claims"]?.AsArray().OfType<JsonObject>() ?? [])
+            .Single(claim => claim["name"]?.GetValue<string>() == AcademicWeekClaim);
+
+        return academicWeek["claimSets"]
+            ?.AsArray()
+            .OfType<JsonObject>()
+            .SingleOrDefault(claimSet => claimSet["name"]?.GetValue<string>() == claimSetName);
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_with_an_undeclared_name : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("defined-claimset.json", NonParentFragment("Fragment-Defined"))
+            );
+        }
+
+        [Test]
+        public void It_returns_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_registers_the_fragment_name_as_a_system_reserved_claim_set()
+        {
+            JsonObject claimSet = ClaimSetsNamed(_result, "Fragment-Defined").Should().ContainSingle().Which;
+
+            claimSet["claimSetName"]!.GetValue<string>().Should().Be("Fragment-Defined");
+            claimSet["isSystemReserved"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [Test]
+        public void It_keeps_the_base_claim_sets()
+        {
+            ClaimSetNames(_result).Should().Equal("Base", "Fragment-Defined");
+        }
+
+        [Test]
+        public void It_attaches_the_grant_under_the_registered_name()
+        {
+            JsonObject? grant = GrantOnAcademicWeek(_result, "Fragment-Defined");
+
+            grant.Should().NotBeNull();
+            grant!["actions"]!
+                .AsArray()
+                .Select(action => action!["name"]!.GetValue<string>())
+                .Should()
+                .Equal("Read");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_whose_name_is_already_declared : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(
+                    """
+                    [
+                      { "claimSetName": "Base", "isSystemReserved": true },
+                      { "claimSetName": "already-declared", "isSystemReserved": false }
+                    ]
+                    """
+                ),
+                ("declared-claimset.json", NonParentFragment("Already-Declared"))
+            );
+        }
+
+        [Test]
+        public void It_does_not_add_a_second_entry_for_a_case_variant_name()
+        {
+            ClaimSetsNamed(_result, "Already-Declared").Should().ContainSingle();
+            ClaimSetNames(_result).Should().Equal("Base", "already-declared");
+        }
+
+        [Test]
+        public void It_preserves_the_base_declaration()
+        {
+            JsonObject claimSet = ClaimSetsNamed(_result, "Already-Declared").Single();
+
+            claimSet["claimSetName"]!.GetValue<string>().Should().Be("already-declared");
+            claimSet["isSystemReserved"]!.GetValue<bool>().Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_parent_only_fragment : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(BaseDocument(), ("extension-claimset.json", ParentOnlyFragment));
+        }
+
+        [Test]
+        public void It_does_not_register_the_fragment_label_as_a_claim_set()
+        {
+            _result.Failures.Should().BeEmpty();
+            ClaimSetNames(_result).Should().Equal("Base");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_fragment_mixing_parent_and_non_parent_entries : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            const string MixedFragment = """
+                {
+                  "name": "Mixed-Defined",
+                  "resourceClaims": [
+                    {
+                      "isParent": true,
+                      "name": "domains/relationshipBasedData",
+                      "children": [{ "name": "http://ed-fi.org/identity/claims/sample/bus" }]
+                    },
+                    {
+                      "name": "ed-fi/academicWeeks",
+                      "authorizationStrategyOverridesForCRUD": [{ "actionName": "Read" }]
+                    },
+                    {
+                      "name": "ed-fi/academicWeeks",
+                      "authorizationStrategyOverridesForCRUD": [{ "actionName": "Update" }]
+                    }
+                  ]
+                }
+                """;
+            _result = ComposeWithFragments(BaseDocument(), ("mixed-claimset.json", MixedFragment));
+        }
+
+        [Test]
+        public void It_registers_the_fragment_name_once()
+        {
+            ClaimSetsNamed(_result, "Mixed-Defined").Should().ContainSingle();
+            ClaimSetNames(_result).Should().Equal("Base", "Mixed-Defined");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_without_a_name : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("unnamed-claimset.json", NonParentFragment(null))
+            );
+        }
+
+        [Test]
+        public void It_registers_the_file_name_the_grant_is_attached_under()
+        {
+            ClaimSetsNamed(_result, "unnamed-claimset").Should().ContainSingle();
+            GrantOnAcademicWeek(_result, "unnamed-claimset").Should().NotBeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_two_fragments_defining_the_same_name : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("a-claimset.json", NonParentFragment("Shared-Defined")),
+                ("b-claimset.json", NonParentFragment("shared-defined"))
+            );
+        }
+
+        [Test]
+        public void It_registers_the_name_once_with_the_first_spelling()
+        {
+            JsonObject claimSet = ClaimSetsNamed(_result, "Shared-Defined").Should().ContainSingle().Which;
+
+            claimSet["claimSetName"]!.GetValue<string>().Should().Be("Shared-Defined");
+        }
+    }
+
+    [TestFixture]
+    public class Given_fragments_defining_distinct_names : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("b-claimset.json", NonParentFragment("Second-Defined")),
+                ("a-claimset.json", NonParentFragment("First-Defined"))
+            );
+        }
+
+        [Test]
+        public void It_appends_them_after_the_base_in_fragment_application_order()
+        {
+            ClaimSetNames(_result).Should().Equal("Base", "First-Defined", "Second-Defined");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_parent_fragment_that_matches_no_resource_claim : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("unmatched-claimset.json", NonParentFragment("Unmatched-Defined", "ed-fi/notARealResources"))
+            );
+        }
+
+        [Test]
+        public void It_still_registers_the_claim_set()
+        {
+            ClaimSetsNamed(_result, "Unmatched-Defined").Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_attaches_no_grant()
+        {
+            GrantOnAcademicWeek(_result, "Unmatched-Defined").Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_fragment_without_resource_claims : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("empty-claimset.json", """{ "name": "Empty-Defined" }""")
+            );
+        }
+
+        [Test]
+        public void It_does_not_register_the_fragment_name()
+        {
+            ClaimSetNames(_result).Should().Equal("Base");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_fragment_defines_a_claim_set : ClaimsFragmentComposerTests
+    {
+        private ClaimsDocument _baseDocument = null!;
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _baseDocument = BaseDocument();
+            _result = ComposeWithFragments(
+                _baseDocument,
+                ("defined-claimset.json", NonParentFragment("Fragment-Defined"))
+            );
+        }
+
+        [Test]
+        public void It_does_not_modify_the_base_claim_sets()
+        {
+            _baseDocument
+                .ClaimSetsNode.AsArray()
+                .Select(claimSet => claimSet!["claimSetName"]!.GetValue<string>())
+                .Should()
+                .Equal("Base");
+        }
+
+        [Test]
+        public void It_returns_a_claim_sets_node_distinct_from_the_base()
+        {
+            _result.Nodes!.ClaimSetsNode.Should().NotBeSameAs(_baseDocument.ClaimSetsNode);
         }
     }
 }

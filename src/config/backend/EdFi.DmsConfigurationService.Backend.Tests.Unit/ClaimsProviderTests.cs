@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using FakeItEasy;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -99,6 +100,118 @@ public class ClaimsProviderTests
             Assert.That(result.Failures, Is.Not.Empty);
             Assert.That(result.Failures[0].Message, Does.Contain("9.9"));
             Assert.That(result.Failures[0].Message, Does.Contain("ds99"));
+        }
+    }
+
+    /// <summary>
+    /// Exercises real Hybrid composition end to end (embedded ds52 base, real composer, real
+    /// validator): a claim set defined only by a fragment must reach the validated document.
+    /// </summary>
+    [TestFixture]
+    public class Given_hybrid_mode_with_a_fragment_defining_a_claim_set : ClaimsProviderTests
+    {
+        private const string DefinedClaimSetName = "Hybrid-Fragment-Defined";
+        private string _fragmentsPath = null!;
+        private ClaimsProvider _provider = null!;
+        private ClaimsDocument _document = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _fragmentsPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(_fragmentsPath);
+            File.WriteAllText(
+                Path.Combine(_fragmentsPath, "001-defined-claimset.json"),
+                $$"""
+                {
+                  "name": "{{DefinedClaimSetName}}",
+                  "resourceClaims": [
+                    {
+                      "name": "ed-fi/academicWeeks",
+                      "authorizationStrategyOverridesForCRUD": [
+                        {
+                          "actionName": "Read",
+                          "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            );
+
+            A.CallTo(() => _claimsOptions.Value)
+                .Returns(
+                    new ClaimsOptions { ClaimsSource = ClaimsSource.Hybrid, ClaimsDirectory = _fragmentsPath }
+                );
+
+            _provider = new ClaimsProvider(
+                _logger,
+                _claimsOptions,
+                new ClaimsValidator(A.Fake<ILogger<ClaimsValidator>>()),
+                new ClaimsFragmentComposer(A.Fake<ILogger<ClaimsFragmentComposer>>())
+            );
+
+            _document = _provider.GetClaimsDocumentNodes();
+        }
+
+        [TearDown]
+        public void Cleanup()
+        {
+            Directory.Delete(_fragmentsPath, true);
+        }
+
+        [Test]
+        public void It_passes_claims_validation()
+        {
+            _provider.IsClaimsValid.Should().BeTrue();
+            _provider.ClaimsFailures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_declares_the_fragment_defined_claim_set_as_system_reserved()
+        {
+            JsonObject claimSet = _document
+                .ClaimSetsNode.AsArray()
+                .OfType<JsonObject>()
+                .Should()
+                .ContainSingle(claimSet =>
+                    claimSet["claimSetName"]!.GetValue<string>() == DefinedClaimSetName
+                )
+                .Which;
+
+            claimSet["isSystemReserved"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [Test]
+        public void It_attaches_the_fragment_grant_to_the_embedded_leaf_claim()
+        {
+            JsonObject academicWeek = Descendants(_document.ClaimsHierarchyNode.AsArray())
+                .Single(claim =>
+                    claim["name"]?.GetValue<string>() == "http://ed-fi.org/identity/claims/ed-fi/academicWeek"
+                );
+
+            academicWeek["claimSets"]!
+                .AsArray()
+                .OfType<JsonObject>()
+                .Should()
+                .ContainSingle(claimSet => claimSet["name"]!.GetValue<string>() == DefinedClaimSetName);
+        }
+
+        private static IEnumerable<JsonObject> Descendants(JsonArray claims)
+        {
+            foreach (JsonObject claim in claims.OfType<JsonObject>())
+            {
+                yield return claim;
+
+                if (claim["claims"] is JsonArray children)
+                {
+                    foreach (JsonObject descendant in Descendants(children))
+                    {
+                        yield return descendant;
+                    }
+                }
+            }
         }
     }
 
