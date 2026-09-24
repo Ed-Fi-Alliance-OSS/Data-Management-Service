@@ -13,11 +13,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 
 /// <summary>
 /// SQL Server retention of finished jobs (spec D-17): one bounded <c>DELETE TOP</c> batch per call, of
-/// <c>Completed</c> or <c>Error</c> jobs whose <c>FinishedAt</c> is at or before database now minus the retention
-/// window. The cutoff is database time, active jobs are excluded by status whatever their <c>FinishedAt</c>, and
-/// rows another transaction holds are skipped (<c>READPAST</c>), so the statement never waits for a lock and the
-/// time it reads when it starts is current. <see cref="JobRetentionTimings.BatchTimeout"/> bounds the batch, and
-/// every wait runs through a <see cref="JobDatabaseSession"/>.
+/// <c>Completed</c> or <c>Error</c> jobs whose <c>FinishedAt</c> is at or before statement-time database UTC minus
+/// the retention window. Active jobs are excluded by status whatever their <c>FinishedAt</c>. The statement
+/// runs in an autocommit transaction, with no explicit transaction. <c>READPAST</c> skips rows that other
+/// transactions hold row locks on, but page locks and secondary-index maintenance can still make the statement
+/// wait; because the cutoff is read when the statement starts, a wait only makes retention conservative.
+/// <see cref="JobRetentionTimings.BatchTimeout"/> bounds the batch, and every wait runs through a
+/// <see cref="JobDatabaseSession"/>.
 /// </summary>
 public sealed class JobRetentionRepository(IOptions<DatabaseOptions> databaseOptions)
     : IJobRetentionRepository
@@ -74,7 +76,7 @@ public sealed class JobRetentionRepository(IOptions<DatabaseOptions> databaseOpt
         }
         finally
         {
-            // An autocommitted statement leaves no transaction open and changes no session setting.
+            // The statement's autocommit transaction leaves no transaction open and changes no session setting.
             await session.EndAsync(budget, null);
         }
     }

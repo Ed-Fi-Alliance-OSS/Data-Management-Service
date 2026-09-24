@@ -70,12 +70,29 @@ public record JobScheduleListResult
 
 public record JobScheduleMaterializeResult
 {
-    /// <summary>The occurrence was enqueued as <paramref name="JobId"/> and the schedule advanced.</summary>
-    public record Materialized(long ScheduleId, string JobId, DateTime Occurrence, DateTime NewNextRunAt)
-        : JobScheduleMaterializeResult;
+    /// <summary>
+    /// The occurrence was enqueued as <paramref name="JobId"/> and the schedule advanced to
+    /// <paramref name="NewNextRunAt"/>, computed from <paramref name="DatabaseUtcNow"/>, the one database-time
+    /// sample of the advancing statement (D-9).
+    /// </summary>
+    public record Materialized(
+        long ScheduleId,
+        string JobId,
+        DateTime Occurrence,
+        DateTime NewNextRunAt,
+        DateTime DatabaseUtcNow
+    ) : JobScheduleMaterializeResult;
 
-    /// <summary>A job for this occurrence already existed; the schedule still advanced.</summary>
-    public record AlreadyEnqueued(long ScheduleId, DateTime Occurrence) : JobScheduleMaterializeResult;
+    /// <summary>
+    /// A job for this occurrence already existed; the schedule still advanced, as for
+    /// <see cref="Materialized"/>.
+    /// </summary>
+    public record AlreadyEnqueued(
+        long ScheduleId,
+        DateTime Occurrence,
+        DateTime NewNextRunAt,
+        DateTime DatabaseUtcNow
+    ) : JobScheduleMaterializeResult;
 
     public record NoneDue() : JobScheduleMaterializeResult;
 
