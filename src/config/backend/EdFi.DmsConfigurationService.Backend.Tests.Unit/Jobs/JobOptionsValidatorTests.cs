@@ -300,6 +300,63 @@ public class JobOptionsValidatorTests
             JobOptionsValidator.SafetyMargin(TimeSpan.FromMinutes(5)).Should().Be(TimeSpan.FromSeconds(50));
     }
 
+    [TestFixture("RenewalInterval", true)]
+    [TestFixture("FenceTimeout", true)]
+    [TestFixture("RenewalInterval", false)]
+    [TestFixture("FenceTimeout", false)]
+    public class Given_a_duration_at_the_limit_of_its_type(string property, bool maximum)
+    {
+        private Exception? _thrown;
+        private ValidateOptionsResult? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            JobOptions options = new();
+            typeof(JobOptions)
+                .GetProperty(property)!
+                .SetValue(options, maximum ? TimeSpan.MaxValue : TimeSpan.MinValue);
+            try
+            {
+                _result = Validate(options);
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+        }
+
+        [Test]
+        public void It_validates_without_overflowing() => _thrown.Should().BeNull();
+
+        [Test]
+        public void It_still_reports_the_setting_outside_its_range() =>
+            _result!
+                .Failures.Should()
+                .Contain(message => message.StartsWith($"JobSettings:{property} must be between"));
+
+        [Test]
+        public void It_reports_a_lateness_total_beyond_the_duration_range_without_formatting_it()
+        {
+            if (maximum)
+            {
+                _result!
+                    .Failures.Should()
+                    .ContainSingle(message =>
+                        message.StartsWith("JobSettings:LeaseDuration (00:05:00) must be at least")
+                    )
+                    .Which.Should()
+                    .Contain("= more than 10675199.02:48:05.4775807");
+            }
+            else
+            {
+                _result!
+                    .Failures.Should()
+                    .NotContain(message => message.StartsWith("JobSettings:LeaseDuration"));
+            }
+        }
+    }
+
     [TestFixture]
     public class Given_several_invalid_settings
     {
