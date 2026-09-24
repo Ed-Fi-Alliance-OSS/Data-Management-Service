@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Mssql;
@@ -87,6 +88,7 @@ public static class WebApplicationBuilderExtensions
             .Services.AddOptions<ApplicationLockOptions>()
             .Bind(webApplicationBuilder.Configuration.GetSection("ApplicationLockSettings"))
             .ValidateOnStart();
+        ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
@@ -97,6 +99,8 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading appSettings");
             throw new InvalidOperationException("Unable to read appSettings");
         }
+
+        webApplicationBuilder.Services.AddSingleton(new JobRuntimeEnvironment(appSettings.MultiTenancy));
 
         webApplicationBuilder.Services.AddHttpClient(
             "KeycloakClient",
@@ -190,12 +194,14 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.ClaimsDataLoader.ResourceClaimMetadataRepository
             >();
             webAppBuilder.Services.AddTransient<IResourceClaimRepository, ResourceClaimRepository>();
+            AddPostgresqlJobs(webAppBuilder.Services);
         }
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddMssqlDatastore();
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            AddMssqlJobs(webAppBuilder.Services);
         }
 
         AddDataStoreConnectionStringValidator(webAppBuilder.Services, usePostgresql);
@@ -204,6 +210,47 @@ public static class WebApplicationBuilderExtensions
         // by both engines
         webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
         webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+    }
+
+    /// <summary>
+    /// Binds <c>JobSettings</c> and validates it at startup (spec D-15, §6.3), and publishes the configured lease
+    /// timings that the lease repositories and fence factories take.
+    /// </summary>
+    private static void ConfigureJobOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton<IValidateOptions<JobOptions>, JobOptionsValidator>();
+        services
+            .AddOptions<JobOptions>()
+            .Bind(configuration.GetSection(JobOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton(provider =>
+            provider.GetRequiredService<IOptions<JobOptions>>().Value.LeaseTimings
+        );
+    }
+
+    /// <summary>The PostgreSQL job repositories and factories (spec D-1).</summary>
+    private static void AddPostgresqlJobs(IServiceCollection services)
+    {
+        services.AddTransient<IJobRepository, JobRepository>();
+        services.AddTransient<
+            ICmsTransactionFactory,
+            Backend.Postgresql.Jobs.PostgresqlCmsTransactionFactory
+        >();
+        services.AddTransient<IJobLeaseRepository, JobLeaseRepository>();
+        services.AddTransient<IJobFenceFactory, Backend.Postgresql.Jobs.PostgresqlJobFenceFactory>();
+        services.AddTransient<IJobRetentionRepository, JobRetentionRepository>();
+        services.AddTransient<IJobScheduleRepository, JobScheduleRepository>();
+    }
+
+    /// <summary>The SQL Server job repositories and factories (spec D-1).</summary>
+    private static void AddMssqlJobs(IServiceCollection services)
+    {
+        services.AddTransient<IJobRepository, Backend.Mssql.Repositories.JobRepository>();
+        services.AddTransient<ICmsTransactionFactory, Backend.Mssql.Jobs.MssqlCmsTransactionFactory>();
+        services.AddTransient<IJobLeaseRepository, Backend.Mssql.Repositories.JobLeaseRepository>();
+        services.AddTransient<IJobFenceFactory, Backend.Mssql.Jobs.MssqlJobFenceFactory>();
+        services.AddTransient<IJobRetentionRepository, Backend.Mssql.Repositories.JobRetentionRepository>();
+        services.AddTransient<IJobScheduleRepository, Backend.Mssql.Repositories.JobScheduleRepository>();
     }
 
     /// <summary>

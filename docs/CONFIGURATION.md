@@ -148,6 +148,29 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
 
+## JobSettings
+
+The Configuration Service runs durable background jobs: a worker that claims and runs jobs, a dispatcher that turns recurring schedules into jobs, and a retention sweep that deletes old finished jobs. These settings control them (`appsettings.json` section `JobSettings`; in the provided Docker Compose files, `JobSettings__<Parameter>` is set from `DMS_CONFIG_JOBS_<PARAMETER>`, for example `DMS_CONFIG_JOBS_POLL_INTERVAL`). Durations use the `[d.]hh:mm:ss` format. The service validates every value at startup and refuses to start, naming `JobSettings:<Parameter>` and the accepted range, when one is out of bounds.
+
+| Parameter            | Description                                                                                                                                              | Default      | Accepted range                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------- |
+| WorkerEnabled        | Runs the worker on this instance.                                                                                                                        | `true`       | `true`, `false`                  |
+| SchedulerEnabled     | Runs the schedule dispatcher on this instance.                                                                                                           | `true`       | `true`, `false`                  |
+| RetentionEnabled     | Runs the retention sweep on this instance.                                                                                                               | `true`       | `true`, `false`                  |
+| PollInterval         | How often an idle worker or dispatcher checks for work.                                                                                                  | `00:00:05`   | 1 s – 5 min                      |
+| LeaseDuration        | How long a running job is owned before another instance may take it over. A crashed instance's job is picked up again at most this long after its last renewal. | `00:05:00`   | 30 s – 1 h                       |
+| RenewalInterval      | How often a running job renews its lease. Half of it is the time limit for one renewal or outcome write.                                                  | `00:01:00`   | 12 s – `LeaseDuration` / 3       |
+| FenceTimeout         | The longest a job's fenced database write may take.                                                                                                      | `00:00:10`   | 1 s – 1 min                      |
+| MaxAttempts          | Executions a job may start before it fails for good.                                                                                                     | `5`          | 1 – 20                           |
+| RetryBackoffBase     | The wait before the first retry; each later retry doubles it.                                                                                            | `00:00:30`   | 1 s – 1 h                        |
+| RetryBackoffMaximum  | The longest wait between retries.                                                                                                                        | `00:15:00`   | `RetryBackoffBase` – 24 h        |
+| MaxConcurrentJobs    | Jobs one instance runs at the same time.                                                                                                                 | `2`          | 1 – 32                           |
+| FinishedJobRetention | How long a completed or failed job is kept.                                                                                                              | `7.00:00:00` | 1 h – 365 d                      |
+| RetentionInterval    | How often the retention sweep runs.                                                                                                                      | `01:00:00`   | 1 min – 24 h                     |
+| RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
+
+The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 5 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`, where the two 5 s terms are the fixed lock waits and `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 5 + 10 + 5 + 30 + 50 = 160 s, within 300 s. When it fails, the startup message lists each term's value.
+
 ## Reverse Proxy and Forwarded Headers
 
 When the DMS API or Configuration Service runs behind a reverse proxy or load balancer
