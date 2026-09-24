@@ -726,24 +726,28 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("my vendor-claimset.json", NonParentFragment(null))
+                ("my vendor-claimset.json", NonParentFragment(null)),
+                ("valid-claimset.json", NonParentFragment("Valid-Defined"))
             );
         }
 
         [Test]
-        public void It_returns_no_claims()
+        public void It_returns_no_failures()
         {
-            _result.Nodes.Should().BeNull();
+            _result.Failures.Should().BeEmpty();
         }
 
         [Test]
-        public void It_reports_the_invalid_name_for_that_fragment()
+        public void It_does_not_register_the_invalid_name()
         {
-            ClaimsFailure failure = _result.Failures.Should().ContainSingle().Which;
+            ClaimSetsNamed(_result, "my vendor-claimset").Should().BeEmpty();
+        }
 
-            failure.FailureType.Should().Be("InvalidClaimSetName");
-            failure.Message.Should().Contain("'my vendor-claimset'");
-            failure.Path.Should().Be(Path.Combine(_testFragmentsPath, "my vendor-claimset.json"));
+        [Test]
+        public void It_still_composes_the_other_fragments()
+        {
+            ClaimSetsNamed(_result, "Valid-Defined").Should().ContainSingle();
+            GrantOnAcademicWeek(_result, "Valid-Defined").Should().NotBeNull();
         }
     }
 
@@ -751,21 +755,19 @@ public class ClaimsFragmentComposerTests
     public class Given_a_non_parent_fragment_whose_name_is_too_long : ClaimsFragmentComposerTests
     {
         private ClaimsLoadResult _result = null!;
+        private readonly string _name = new('a', 257);
 
         [SetUp]
         public void Arrange_and_act()
         {
-            _result = ComposeWithFragments(
-                BaseDocument(),
-                ("long-claimset.json", NonParentFragment(new string('a', 257)))
-            );
+            _result = ComposeWithFragments(BaseDocument(), ("long-claimset.json", NonParentFragment(_name)));
         }
 
         [Test]
-        public void It_reports_the_invalid_name_and_returns_no_claims()
+        public void It_composes_without_registering_the_name()
         {
-            _result.Nodes.Should().BeNull();
-            _result.Failures.Should().ContainSingle().Which.FailureType.Should().Be("InvalidClaimSetName");
+            _result.Failures.Should().BeEmpty();
+            ClaimSetNames(_result).Should().Equal("Base");
         }
     }
 
@@ -804,10 +806,16 @@ public class ClaimsFragmentComposerTests
         }
 
         [Test]
-        public void It_reports_the_invalid_name_and_returns_no_claims()
+        public void It_composes_without_registering_the_name()
         {
-            _result.Nodes.Should().BeNull();
-            _result.Failures.Should().ContainSingle().Which.FailureType.Should().Be("InvalidClaimSetName");
+            _result.Failures.Should().BeEmpty();
+            ClaimSetNames(_result).Should().Equal("Base");
+        }
+
+        [Test]
+        public void It_leaves_the_empty_named_grant_for_claims_validation_to_reject()
+        {
+            GrantOnAcademicWeek(_result, "").Should().NotBeNull();
         }
     }
 

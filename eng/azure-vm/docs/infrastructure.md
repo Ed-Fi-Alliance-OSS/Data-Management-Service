@@ -101,9 +101,9 @@ Scope: **single-tenant + two isolated tenants** = three apps.
 
 | Environment | Claim set | Data DB | Key | Secret |
 |-------------|-----------|---------|-----|--------|
-| single-tenant | `E2E-NoFurtherAuthRequiredClaimSet` | `edfi_st` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
-| multi-tenant / tenant1 | `E2E-NoFurtherAuthRequiredClaimSet` | `edfi_mt` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
-| multi-tenant / tenant2 | `E2E-NoFurtherAuthRequiredClaimSet` | `edfi_mt_t2` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
+| single-tenant | `EdFiSandbox` | `edfi_st` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
+| multi-tenant / tenant1 | `EdFiSandbox` | `edfi_mt` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
+| multi-tenant / tenant2 | `EdFiSandbox` | `edfi_mt_t2` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
 
 Token endpoint (HTTP Basic `key:secret`, `grant_type=client_credentials`): the shared Keycloak
 realm at `…/auth/realms/edfi/protocol/openid-connect/token`. `/st-dms` Discovery advertises this
@@ -225,8 +225,8 @@ Order used to stand the environment up (and that a re-deploy should follow):
    `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`, and that the metadata `issuer` matches
    the public URL. (This environment is Keycloak-only — the DMS/CMS auth wiring in the
    compose file is Keycloak-specific.)
-8. **Claim sets.** Defaults use the embedded `E2E-NoFurtherAuthRequiredClaimSet` (full
-   access) and `E2E-RelationshipsWithEdOrgsOnlyClaimSet` (EdOrg-scoped). Confirm the live
+8. **Claim sets.** Defaults use the embedded `EdFiSandbox`, bound to the Grand Bend EdOrgs
+   (relationship-based data is scoped to them). Confirm the live
    list with `GET /st-config/v3/claimSets`; add custom claim sets via the API or Hybrid mode
    (see [`compose/claims`](../compose/claims/)).
 9. **MFA is intentionally disabled** in Keycloak so credentials can be shared with the review

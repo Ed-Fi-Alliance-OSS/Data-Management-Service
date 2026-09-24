@@ -112,8 +112,10 @@ Authorization: bearer {{configToken}}
     "dataStoreIds": [{{dataStoreId}}]
 }
 
-# This Vendor is allowed to work with two education organizations and the
-# schools that belong to them. Note the `claimSetName` as well. "Claim sets"
+# This Application is bound to two education organizations; claim sets that
+# authorize by relationship limit it to data tied to those education
+# organizations and the schools that belong to them. Note the `claimSetName`
+# as well. "Claim sets"
 # define which Descriptors and Resources can be accessed by a client, and which
 # HTTP verbs can be used (POST, GET, PUT, DELETE) with each type. `EdFiSandbox`
 # is a broad, out-of-the-box claim set intended for sandbox exploration.
@@ -327,12 +329,11 @@ Content-Type: application/json
 }
 
 # Local Education Agency (LEA) has a _reference_ to a State Education Agency
-# (LEA). What happens when you try to create an LEA with an SEA that does not
-# yet exist? You get a 403 Forbidden response code! For most references this
-# would be a 409 Conflict response, but remember that the Application created in
-# the Configuration Service has a restricted list of education organizations it
-# can work with. The authorization kicks you out before the system can look to
-# see if the ID is real.
+# (SEA). What happens when you try to create an LEA with an SEA that does not
+# yet exist? You get a 409 Conflict response code: the reference cannot be
+# resolved. `EdFiSandbox` does not restrict writes to education organizations
+# themselves; its education organization restrictions apply to
+# relationship-based data such as Bell Schedules, shown below.
 
 ###
 POST {{dataApi}}/ed-fi/localEducationAgencies

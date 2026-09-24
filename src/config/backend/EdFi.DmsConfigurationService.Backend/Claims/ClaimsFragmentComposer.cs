@@ -72,21 +72,20 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 string? definedClaimSetName = ApplyFragmentTransformation(fragmentFile, baseClaims);
                 if (definedClaimSetName is not null)
                 {
-                    if (!IsValidClaimSetName(definedClaimSetName))
+                    // An invalid name is not registered, but the composition continues: failing it
+                    // would make Hybrid mode fall back to the base claims and drop every fragment
+                    if (IsValidClaimSetName(definedClaimSetName))
                     {
-                        ClaimsFailure failure = new(
-                            "InvalidClaimSetName",
-                            $"Fragment defines claim set name '{definedClaimSetName}', which must be non-empty, at most {ValidationConstants.ClaimSetNameMaxLength} characters, and contain no white space",
-                            fragmentFile
-                        );
-                        logger.LogError(
-                            "Fragment {FragmentFile} defines an invalid claim set name",
-                            fragmentFile
-                        );
-                        return new ClaimsLoadResult(null, [failure]);
+                        definedClaimSetNames.Add(definedClaimSetName);
                     }
-
-                    definedClaimSetNames.Add(definedClaimSetName);
+                    else
+                    {
+                        logger.LogError(
+                            "Fragment {FragmentFile} defines a claim set name that is empty, longer than {MaxLength} characters, or contains white space; the claim set is not registered",
+                            fragmentFile,
+                            ValidationConstants.ClaimSetNameMaxLength
+                        );
+                    }
                 }
                 logger.LogDebug(
                     "After applying {FragmentFile}: {ClaimsCount} claims",
@@ -253,7 +252,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies the Management API claim set name rules, because a defined name becomes a claim set row
+    /// Applies the Management API claim set name rules, because a registered name becomes a claim set row
     /// </summary>
     private static bool IsValidClaimSetName(string claimSetName) =>
         claimSetName.Length is > 0 and <= ValidationConstants.ClaimSetNameMaxLength

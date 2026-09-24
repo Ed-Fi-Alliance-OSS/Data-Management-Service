@@ -204,7 +204,7 @@ Content-Type: application/json
 {
   "vendorId": {{vendorId}},
   "applicationName": "Manual Test Application",
-  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "claimSetName": "EdFiSandbox",
   "educationOrganizationIds": [255901, 255902]
 }
 

@@ -32,7 +32,7 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 | Symptom | Likely cause / fix |
 |---------|--------------------|
 | **401 / invalid token** from DMS | Keycloak issuer mismatch behind the proxy. Decode the token; its `iss` must equal `JwtAuthentication__Authority` (`https://<FQDN>/auth/realms/edfi`). Check `KC_HOSTNAME` and `KC_HOSTNAME_BACKCHANNEL_DYNAMIC` in `keycloak.yml`. |
-| **403** on a resource with an EdOrg-scoped client | Expected — the client's claim set (`E2E-RelationshipsWithEdOrgsOnlyClaimSet`) only authorizes its `educationOrganizationIds`. Use the full-access client or add the EdOrg. |
+| **403** on relationship-based data (students, sections, ...) | Expected when the record is outside the client's `educationOrganizationIds` — `EdFiSandbox` scopes relationship-based data to them. Add the EdOrg to the Application. |
 | Bootstrap fails **"claim set not found"** | The `claimSetName` doesn't exist. `GET /<config>/v3/claimSets` for valid names; pass `-ClaimSetName` to `bootstrap.ps1`. |
 | Grand Bend restore **skipped** | `grandbend.sh` only loads into a fresh DB. If the `dms` schema already exists (the DB was already provisioned with `api-schema-tools` or previously seeded), reset the data volumes (`./reset.sh`) and re-run `seed/grandbend.sh` against the fresh, empty DB. |
 | **404** on a data store | The data store / route context isn't configured for that tenant+qualifier. Check `GET /<config>/v3/dataStores` (with `Tenant` header for multi-tenant). |

@@ -215,6 +215,97 @@ public class ClaimsProviderTests
         }
     }
 
+    /// <summary>
+    /// A fragment with an invalid defined name must not make Hybrid mode fall back to the base
+    /// claims: the other fragments still compose, and the invalid name is not registered.
+    /// </summary>
+    [TestFixture]
+    public class Given_hybrid_mode_with_a_fragment_defining_an_invalid_claim_set_name : ClaimsProviderTests
+    {
+        private const string ValidClaimSetName = "Hybrid-Fragment-Defined";
+        private const string InvalidClaimSetName = "District Vendor";
+        private string _fragmentsPath = null!;
+        private ClaimsProvider _provider = null!;
+        private ClaimsDocument _document = null!;
+
+        private static string Fragment(string name) =>
+            $$"""
+                {
+                  "name": "{{name}}",
+                  "resourceClaims": [
+                    {
+                      "name": "ed-fi/academicWeeks",
+                      "authorizationStrategyOverridesForCRUD": [
+                        {
+                          "actionName": "Read",
+                          "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _fragmentsPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(_fragmentsPath);
+            File.WriteAllText(
+                Path.Combine(_fragmentsPath, "001-invalid-claimset.json"),
+                Fragment(InvalidClaimSetName)
+            );
+            File.WriteAllText(
+                Path.Combine(_fragmentsPath, "002-valid-claimset.json"),
+                Fragment(ValidClaimSetName)
+            );
+
+            A.CallTo(() => _claimsOptions.Value)
+                .Returns(
+                    new ClaimsOptions { ClaimsSource = ClaimsSource.Hybrid, ClaimsDirectory = _fragmentsPath }
+                );
+
+            _provider = new ClaimsProvider(
+                _logger,
+                _claimsOptions,
+                new ClaimsValidator(A.Fake<ILogger<ClaimsValidator>>()),
+                new ClaimsFragmentComposer(A.Fake<ILogger<ClaimsFragmentComposer>>())
+            );
+
+            _document = _provider.GetClaimsDocumentNodes();
+        }
+
+        [TearDown]
+        public void Cleanup()
+        {
+            Directory.Delete(_fragmentsPath, true);
+        }
+
+        [Test]
+        public void It_passes_claims_validation()
+        {
+            _provider.IsClaimsValid.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_keeps_the_claim_set_defined_by_the_valid_fragment()
+        {
+            ClaimSetNames().Should().Contain(ValidClaimSetName);
+        }
+
+        [Test]
+        public void It_does_not_register_the_invalid_name()
+        {
+            ClaimSetNames().Should().NotContain(InvalidClaimSetName);
+        }
+
+        private IEnumerable<string> ClaimSetNames() =>
+            _document
+                .ClaimSetsNode.AsArray()
+                .OfType<JsonObject>()
+                .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>());
+    }
+
     [TestFixture]
     public class Given_LoadClaimsFromSource_is_called : ClaimsProviderTests
     {
