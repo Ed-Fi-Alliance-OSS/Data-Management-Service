@@ -43,7 +43,7 @@ Drafts 01 through 06 are the foundation stories this spike files; 07 is post-rel
 | [04](./04-integrate-plugin-loading-into-dms-startup.md) | Integrate Plugin Loading into DMS Startup | 03, and the merged DMS-1432 contract package | [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) |
 | [05](./05-document-plugins-and-publish-host-manifest.md) | Document Plugins for Operators and Implementers and Publish the Host Assembly Manifest | 04 | [DMS-1500](https://edfi.atlassian.net/browse/DMS-1500) |
 | [06](./06-publish-plugin-contract-packages.md) | Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | 01-05, DMS-1433, DMS-1435, DMS-1436 | [DMS-1501](https://edfi.atlassian.net/browse/DMS-1501), release-gated |
-| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | 05, DMS-1436, and the first release carrying **both** 04 and DMS-1433 | [DMS-1502](https://edfi.atlassian.net/browse/DMS-1502), harness and lane built; pin still `pending` |
+| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | 05, DMS-1436, and the first release carrying **both** 04 and DMS-1433 | [DMS-1502](https://edfi.atlassian.net/browse/DMS-1502), harness and lane built; pin published to `dms-pre-8.0.1-alpha.0.155`, first green proof run outstanding |
 
 **Where the two `src/dms/` build-lane changes sit, and why they are split.**
 The frontend does not reference `EdFi.Api.Plugins.Hosting` today, and `src/dms/Dockerfile`'s build stage cannot reach `src/plugins/`.
@@ -79,8 +79,8 @@ Not drafted, by decision recorded in design.md: Phase A (`ContributeConfiguratio
 Acquisition is a deploy-time step documented as two recipes, a read-only bind mount and a one-shot fetch-verify-extract step ahead of DMS, so the plugin root is read-only to the runtime in every deployment and no foundation ticket touches the shipped `ApiSchemaDownloader`.
 A DMS-owned fetcher is fully designed and deferred; design.md, "Rejected Alternatives", records its shape and what would bring it back.
 The pulled-stock-image end-to-end proof is its own post-release ticket, because it cannot run until the first published image carries the loader.
-Its harness, its evidence contract and its scheduled lane are built; the committed pin is still `pending`, so the lane reports not-ready on a schedule and the proof has not run against a published image.
-Draft 07 records what completing the pin requires and what remains external.
+Its harness, its evidence contract and its scheduled lane are built; the committed pin is published to `dms-pre-8.0.1-alpha.0.155`, and the first green proof run against it is still outstanding.
+Draft 07 records what the published pin carries and its external checkpoints.
 See design.md, "Acquisition" and "Level of Effort".
 
 **Publishing is the last ticket, not the first.**
