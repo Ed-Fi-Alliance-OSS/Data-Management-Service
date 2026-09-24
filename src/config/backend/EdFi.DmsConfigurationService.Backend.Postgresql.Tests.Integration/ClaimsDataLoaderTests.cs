@@ -419,16 +419,12 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         // Arrange
         var expectedClaimSets = new[]
         {
-            "E2E-NameSpaceBasedClaimSet",
             "SISVendor",
             "EdFiSandbox",
             "AssessmentVendor",
             "EdFiAPIPublisherReader",
-            "E2E-NoFurtherAuthRequiredClaimSet",
-            "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-            "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
-            "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
-            "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+            "SeedLoader",
+            "EdFiODSAdminApp",
         };
 
         // Act
@@ -446,6 +442,12 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         {
             Assert.That(loadedClaimSets, Contains.Item(expectedClaimSet));
         }
+
+        // The E2E claim sets are defined only by test-owned fragments, never by the embedded claims.
+        Assert.That(
+            loadedClaimSets.Where(name => name.StartsWith("E2E-", StringComparison.Ordinal)),
+            Is.Empty
+        );
     }
 
     [Test]
@@ -885,6 +887,146 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                     Directory.Delete(tempPath, true);
                 }
             }
+        }
+
+        [Test]
+        public async Task It_should_register_a_fragment_defined_claim_set_that_survives_upload_and_reload_in_hybrid_mode()
+        {
+            // A fragment whose top-level name is not declared by the embedded claims defines that claim
+            // set. It must be loaded as a system-reserved row so that an upload, which deletes only
+            // non-reserved claim sets, and a reload both keep it.
+            const string fragmentClaimSetName = "E2E-NoFurtherAuthRequiredClaimSet";
+            var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempPath);
+
+            try
+            {
+                await File.WriteAllTextAsync(
+                    Path.Combine(tempPath, "002-nofurtherauth-claimset.json"),
+                    $$"""
+                    {
+                      "name": "{{fragmentClaimSetName}}",
+                      "resourceClaims": [
+                        {
+                          "id": 1,
+                          "name": "ed-fi/academicWeeks",
+                          "actions": [ { "name": "Read", "enabled": true } ],
+                          "children": [],
+                          "authorizationStrategyOverridesForCRUD": [
+                            {
+                              "actionId": 2,
+                              "actionName": "Read",
+                              "authorizationStrategies": [
+                                {
+                                  "authStrategyId": 1,
+                                  "name": "NoFurtherAuthorizationRequired",
+                                  "isInheritedFromParent": false
+                                }
+                              ]
+                            }
+                          ],
+                          "_defaultAuthorizationStrategiesForCRUD": []
+                        }
+                      ]
+                    }
+                    """
+                );
+
+                var hybridClaimsValidator = new ClaimsValidator(NullLogger<ClaimsValidator>.Instance);
+                var hybridClaimsProvider = new ClaimsProvider(
+                    NullLogger<ClaimsProvider>.Instance,
+                    Options.Create(
+                        new ClaimsOptions { ClaimsSource = ClaimsSource.Hybrid, ClaimsDirectory = tempPath }
+                    ),
+                    hybridClaimsValidator,
+                    new ClaimsFragmentComposer(NullLogger<ClaimsFragmentComposer>.Instance)
+                );
+                var hybridLoader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+                    hybridClaimsProvider,
+                    _claimSetRepository,
+                    _claimsHierarchyRepository,
+                    _claimsTableValidator,
+                    new ClaimsDocumentRepository(
+                        Options.Create(Configuration.DatabaseOptions.Value),
+                        NullLogger<ClaimsDocumentRepository>.Instance
+                    ),
+                    NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance
+                );
+                var hybridUploadService = new ClaimsUploadService(
+                    NullLogger<ClaimsUploadService>.Instance,
+                    hybridClaimsProvider,
+                    hybridLoader,
+                    hybridClaimsValidator
+                );
+
+                // Act - initial load composes the embedded base with the fragment
+                var initialResult = await hybridLoader.LoadInitialClaimsAsync();
+
+                // Assert - the fragment's claim set is a system-reserved row next to the embedded ones
+                Assert.That(initialResult, Is.TypeOf<ClaimsDataLoadResult.Success>());
+                Assert.That(
+                    ((ClaimsDataLoadResult.Success)initialResult).ClaimSetsLoaded,
+                    Is.EqualTo(EmbeddedClaimSetCount + 1)
+                );
+                Assert.That(await GetIsSystemReservedAsync(fragmentClaimSetName), Is.True);
+
+                // Act - upload a document that does not declare the fragment's claim set
+                var uploadResult = await hybridUploadService.UploadClaimsAsync(
+                    JsonNode.Parse(
+                        """
+                        {
+                          "claimSets": [ { "claimSetName": "UploadedClaimSet", "isSystemReserved": false } ],
+                          "claimsHierarchy": [
+                            {
+                              "name": "http://ed-fi.org/identity/claims/domains/uploadedDomain",
+                              "defaultAuthorization": {
+                                "actions": [
+                                  {
+                                    "name": "Read",
+                                    "authorizationStrategies": [ { "name": "NoFurtherAuthorizationRequired" } ]
+                                  }
+                                ]
+                              },
+                              "claimSets": [ { "name": "UploadedClaimSet", "actions": [ { "name": "Read" } ] } ]
+                            }
+                          ]
+                        }
+                        """
+                    )!
+                );
+
+                // Assert - the reserved row survives the upload
+                Assert.That(
+                    uploadResult.Success,
+                    Is.True,
+                    string.Join(", ", uploadResult.Failures.Select(f => $"{f.FailureType}: {f.Message}"))
+                );
+                Assert.That(await GetIsSystemReservedAsync(fragmentClaimSetName), Is.True);
+
+                // Act - reload to the composed baseline
+                var reloadResult = await hybridUploadService.ReloadClaimsAsync();
+
+                // Assert - the reserved row survives the reload and the uploaded claim set is gone
+                Assert.That(reloadResult.Success, Is.True);
+                Assert.That(await GetIsSystemReservedAsync(fragmentClaimSetName), Is.True);
+                Assert.That(await GetIsSystemReservedAsync("UploadedClaimSet"), Is.Null);
+            }
+            finally
+            {
+                if (Directory.Exists(tempPath))
+                {
+                    Directory.Delete(tempPath, true);
+                }
+            }
+        }
+
+        private async Task<bool?> GetIsSystemReservedAsync(string claimSetName)
+        {
+            await using var connection = await DataSource!.OpenConnectionAsync();
+            return await connection.ExecuteScalarAsync<bool?>(
+                "SELECT \"IsSystemReserved\" FROM \"dmscs\".\"ClaimSet\" WHERE \"ClaimSetName\" = @ClaimSetName",
+                new { ClaimSetName = claimSetName }
+            );
         }
 
         [Test]
