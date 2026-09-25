@@ -234,6 +234,20 @@ The behaviors above are exercised by automated tests:
   valid token, expired token, invalid signature, missing claims, **valid token
   validated repeatedly (replay is accepted)**, and **`jti` is informational
   (malformed/opaque `jti` does not affect the decision)**.
+
+  The DMS **issuer pin** is covered in the same file:
+  - a metadata document whose issuer differs from the configured authority is rejected; the
+    error log names both values, and a metadata refresh is requested;
+  - a **legitimate token is rejected while the metadata issuer mismatches**, and accepted again
+    once the metadata matches;
+  - the comparison is exact: an issuer that differs only by a trailing slash, or only by letter
+    case, is rejected;
+  - a token whose `iss` differs from the configured authority is rejected.
+
+  `EdFi.DataManagementService.Core.Tests.Unit/Startup/WarmUpOidcMetadataTaskTests.cs` covers
+  **DMS startup failing** on a metadata issuer mismatch, with both values named and sanitized
+  in the error. These fixtures cover DMS only; the CMS's own issuer validation is not
+  exercised by them.
 - CMS — `EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictTokenManagerTests.cs`:
   `ValidateTokenAsync` accepts a token whose status is `valid` on repeated
   presentation (reusable while valid) and **rejects** expired (lifetime check, before

@@ -778,7 +778,7 @@ Configuration Service outage.
 | Parameter         | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
 |-------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
-| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until the metadata matches again | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 

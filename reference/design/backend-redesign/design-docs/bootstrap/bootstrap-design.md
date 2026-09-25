@@ -2507,7 +2507,7 @@ creates admin-scoped clients.
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |
 | `ConfigurationServiceSettings__EncryptionKey` | `<dms-config-database-encryption-key>` | Key used to decrypt data-store connection strings returned by the Config Service. Must match the Docker-hosted Config Service's `DatabaseSettings__EncryptionKey`; both are sourced from `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` in the docker-compose env file (`.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`). **DEV-ONLY**: This localhost key must not be reused in shared, remote, or production environments. |
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
-| `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | JWT authority for token validation, translated to host-local endpoints for IDE debugging. |
+| `JwtAuthentication__Authority` | `http://ed-fi-api-config:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | Expected token issuer. It must equal the identity provider's `issuer` exactly, so it is not translated to a host-local URL (only `MetadataAddress` is). |
 | `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | OIDC discovery document URL for the selected identity provider. |
 | `JwtAuthentication__ClientRole` | `dms-client` | Required DMS client role issued by the Docker-managed local identity provider. Overrides the committed DMS default so IDE-hosted DMS uses the same role contract as Docker-hosted local DMS. |
 | `JwtAuthentication__RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role claim type emitted by the Docker-managed local identity provider. Keeps local IDE token validation aligned with the committed DMS default and maps `dms-client` into role claims. |
@@ -2542,7 +2542,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
     "AuthenticationService": "http://localhost:8081/connect/token"
   },
   "JwtAuthentication": {
-    "Authority": "http://localhost:8081",
+    "Authority": "http://ed-fi-api-config:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
@@ -2593,9 +2593,10 @@ For example, debugging the 2025 instance uses:
 }
 ```
 
-The authority and metadata-address values remain host-root URLs in this design:
+The authority and metadata-address values are not route-qualified in this design:
 
-- `JwtAuthentication:Authority` -> `http://localhost:8081`
+- `JwtAuthentication:Authority` -> `http://ed-fi-api-config:8081` (the Configuration Service's issuer,
+  not a URL DMS calls)
 - `JwtAuthentication:MetadataAddress` -> `http://localhost:8081/.well-known/openid-configuration`
 
 ### 12.4 Bootstrap with Local DMS
