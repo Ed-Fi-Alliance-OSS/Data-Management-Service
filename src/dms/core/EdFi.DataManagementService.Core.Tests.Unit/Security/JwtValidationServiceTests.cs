@@ -24,6 +24,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 [Parallelizable]
 public class JwtValidationServiceTests
 {
+    private const string TestAuthority = "https://keycloak.example.com/realms/edfi";
+
     internal static (
         JwtValidationService service,
         IConfigurationManager<OpenIdConnectConfiguration> configurationManager,
@@ -33,12 +35,13 @@ public class JwtValidationServiceTests
         RsaSecurityKey signingKey
     ) CreateService(
         Action<JwtAuthenticationOptions>? configureOptions = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        ILogger<JwtValidationService>? logger = null
     )
     {
         var configurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
         var options = A.Fake<IOptions<JwtAuthenticationOptions>>();
-        var logger = A.Fake<ILogger<JwtValidationService>>();
+        logger ??= A.Fake<ILogger<JwtValidationService>>();
         var tokenHandler = new JwtSecurityTokenHandler();
 
         // Create RSA key for testing
@@ -47,6 +50,7 @@ public class JwtValidationServiceTests
 
         var jwtOptions = new JwtAuthenticationOptions
         {
+            Authority = TestAuthority,
             Audience = "ed-fi-ods-api",
             ClockSkewSeconds = 30,
             RoleClaimType = "role",
@@ -95,11 +99,13 @@ public class JwtValidationServiceTests
     {
         private ClaimsPrincipal? _principal = null;
         private ClientAuthorizations? _clientAuthorizations = null;
+        private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager = null!;
 
         [SetUp]
         public async Task Setup()
         {
             var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+            _configurationManager = configurationManager;
 
             var oidcConfig = new OpenIdConnectConfiguration
             {
@@ -180,6 +186,12 @@ public class JwtValidationServiceTests
             _clientAuthorizations!.DataStoreIds.Should().HaveCount(2);
             _clientAuthorizations.DataStoreIds[0].Value.Should().Be(1);
             _clientAuthorizations.DataStoreIds[1].Value.Should().Be(2);
+        }
+
+        [Test]
+        public void It_does_not_request_a_metadata_refresh()
+        {
+            A.CallTo(() => _configurationManager.RequestRefresh()).MustNotHaveHappened();
         }
     }
 
@@ -1208,6 +1220,354 @@ public class JwtValidationServiceTests
         public void It_falls_back_to_a_derived_non_empty_token_id()
         {
             _clientAuthorizations!.TokenId.Should().NotBeNullOrEmpty();
+        }
+    }
+
+    private const string AttackerIssuer = "https://attacker.example/realms/edfi";
+
+    private static OpenIdConnectConfiguration CreateMetadata(string issuer, SecurityKey signingKey)
+    {
+        var oidcConfig = new OpenIdConnectConfiguration { Issuer = issuer };
+        oidcConfig.SigningKeys.Add(signingKey);
+        return oidcConfig;
+    }
+
+    /// <summary>
+    /// Validates a legitimate token (iss = Authority, signed with the metadata key) against a
+    /// document asserting <paramref name="metadataIssuer"/>, so only the metadata-issuer pin can
+    /// reject it.
+    /// </summary>
+    private static async Task<ClaimsPrincipal?> ValidateWithMetadataIssuer(string metadataIssuer)
+    {
+        var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+        A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+            .Returns(Task.FromResult(CreateMetadata(metadataIssuer, signingKey)));
+
+        string token = CreateTestToken(
+            [new Claim("jti", "near-miss-token-id")],
+            TestAuthority,
+            options.Value.Audience,
+            signingKey,
+            tokenHandler
+        );
+
+        (ClaimsPrincipal? principal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+            token,
+            CancellationToken.None
+        );
+
+        return principal;
+    }
+
+    private sealed class CapturingLogger : ILogger<JwtValidationService>
+    {
+        public List<(LogLevel Level, IReadOnlyDictionary<string, object?> Properties)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Dictionary<string, object?> properties = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                ? pairs.ToDictionary(pair => pair.Key, pair => pair.Value)
+                : [];
+            Entries.Add((logLevel, properties));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Metadata_Issuer_Differs_From_Configured_Authority : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+        private ClientAuthorizations? _clientAuthorizations = null;
+        private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager = null!;
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+            var (service, configurationManager, options, _, tokenHandler, _) = CreateService(logger: _logger);
+            _configurationManager = configurationManager;
+
+            // The attacker controls both the issuer and the key, so the token validates against
+            // the document itself.
+            var attackerKey = new RsaSecurityKey(RSA.Create(2048));
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(CreateMetadata(AttackerIssuer, attackerKey)));
+
+            string token = CreateTestToken(
+                [new Claim("jti", "attacker-token-id")],
+                AttackerIssuer,
+                options.Value.Audience,
+                attackerKey,
+                tokenHandler
+            );
+
+            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_returns_null_principal()
+        {
+            _principal.Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_null_client_authorizations()
+        {
+            _clientAuthorizations.Should().BeNull();
+        }
+
+        [Test]
+        public void It_logs_an_error_naming_the_discovered_issuer()
+        {
+            _logger
+                .Entries.Should()
+                .ContainSingle(entry => entry.Level == LogLevel.Error)
+                .Which.Properties["DiscoveredIssuer"]
+                .Should()
+                .Be(AttackerIssuer);
+        }
+
+        [Test]
+        public void It_logs_an_error_naming_the_configured_authority()
+        {
+            _logger
+                .Entries.Should()
+                .ContainSingle(entry => entry.Level == LogLevel.Error)
+                .Which.Properties["ConfiguredAuthority"]
+                .Should()
+                .Be(TestAuthority);
+        }
+
+        [Test]
+        public void It_requests_a_metadata_refresh()
+        {
+            A.CallTo(() => _configurationManager.RequestRefresh()).MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>
+    /// The token and signing key are legitimate throughout; only the metadata issuer changes on the
+    /// second call, so only the metadata-issuer pin can reject it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Legitimate_Token_While_Metadata_Goes_Matching_Then_Mismatching_Then_Matching
+        : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _firstPrincipal = null;
+        private ClaimsPrincipal? _mismatchPrincipal = null;
+        private ClientAuthorizations? _mismatchClientAuthorizations = null;
+        private ClaimsPrincipal? _thirdPrincipal = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .ReturnsNextFromSequence(
+                    Task.FromResult(CreateMetadata(TestAuthority, signingKey)),
+                    Task.FromResult(CreateMetadata(AttackerIssuer, signingKey)),
+                    Task.FromResult(CreateMetadata(TestAuthority, signingKey))
+                );
+
+            string token = CreateTestToken(
+                [new Claim("jti", "legitimate-token-id")],
+                TestAuthority,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            (_firstPrincipal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+            (_mismatchPrincipal, _mismatchClientAuthorizations) =
+                await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None);
+            (_thirdPrincipal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_accepts_the_token_while_metadata_matches()
+        {
+            _firstPrincipal.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_returns_null_principal_while_metadata_mismatches()
+        {
+            _mismatchPrincipal.Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_null_client_authorizations_while_metadata_mismatches()
+        {
+            _mismatchClientAuthorizations.Should().BeNull();
+        }
+
+        [Test]
+        public void It_accepts_the_token_again_once_metadata_matches()
+        {
+            _thirdPrincipal.Should().NotBeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Metadata_Issuer_Differs_Only_By_A_Trailing_Slash : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _principal = await ValidateWithMetadataIssuer(TestAuthority + "/");
+        }
+
+        [Test]
+        public void It_rejects_the_token()
+        {
+            _principal.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Metadata_Issuer_Differs_Only_By_Letter_Case : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _principal = await ValidateWithMetadataIssuer("https://keycloak.example.com/realms/EdFi");
+        }
+
+        [Test]
+        public void It_rejects_the_token()
+        {
+            _principal.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// Covers the token half of the pin (ValidIssuer = Authority). This also passed before the pin
+    /// existed; it is kept because OWASP-AUTH-COVERAGE.md states this control.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Token_Whose_Issuer_Differs_From_The_Configured_Authority : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(CreateMetadata(TestAuthority, signingKey)));
+
+            string token = CreateTestToken(
+                [new Claim("jti", "other-issuer-token-id")],
+                "https://other.example/realms/edfi",
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            (_principal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_rejects_the_token()
+        {
+            _principal.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Issuer_With_Line_Breaks_And_Control_Characters : JwtValidationServiceTests
+    {
+        private string _sanitized = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _sanitized = JwtValidationService.SanitizeIssuerForLogging(
+                "https://evil.example/\r\nrealms\u0007/edfi"
+            );
+        }
+
+        [Test]
+        public void It_strips_them()
+        {
+            _sanitized.Should().Be("https://evil.example/realms/edfi");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Issuer_Longer_Than_The_Log_Cap : JwtValidationServiceTests
+    {
+        private string _sanitized = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _sanitized = JwtValidationService.SanitizeIssuerForLogging(new string('a', 300));
+        }
+
+        [Test]
+        public void It_caps_the_value_at_256_code_units()
+        {
+            _sanitized.Should().Be(new string('a', 256));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Issuer_Whose_Cap_Would_Split_A_Surrogate_Pair : JwtValidationServiceTests
+    {
+        private string _sanitized = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // 255 ASCII characters put the emoji's high surrogate at index 255, the last kept unit.
+            _sanitized = JwtValidationService.SanitizeIssuerForLogging(
+                new string('a', 255) + "\U0001F600" + "bbb"
+            );
+        }
+
+        [Test]
+        public void It_drops_the_whole_pair()
+        {
+            _sanitized.Should().Be(new string('a', 255));
         }
     }
 }

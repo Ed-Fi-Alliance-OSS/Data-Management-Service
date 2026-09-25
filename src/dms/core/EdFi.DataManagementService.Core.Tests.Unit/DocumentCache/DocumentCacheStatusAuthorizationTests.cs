@@ -102,6 +102,7 @@ public class DocumentCacheStatusAuthorizationTests
 
         JwtAuthenticationOptions jwtAuthenticationOptions = new()
         {
+            Authority = TestIssuer,
             Audience = TestAudience,
             RoleClaimType = roleClaimType,
             ClientRole = clientRole,
