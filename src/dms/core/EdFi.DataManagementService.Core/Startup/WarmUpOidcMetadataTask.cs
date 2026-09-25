@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,16 +17,19 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Startup task that warms up the OIDC discovery/JWKS metadata cache so the first
 /// authenticated request does not pay the discovery round-trip. Resolves the OIDC
 /// configuration manager lazily so a bypass-authorization deployment never touches
-/// authentication services.
+/// authentication services. Fails startup when the metadata issuer does not match the
+/// configured authority.
 /// </summary>
 internal class WarmUpOidcMetadataTask(
     IServiceProvider serviceProvider,
     IOptions<AppSettings> appSettings,
+    IOptions<JwtAuthenticationOptions> jwtAuthenticationOptions,
     ILogger<WarmUpOidcMetadataTask> logger
 ) : IDmsStartupTask
 {
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly AppSettings _appSettings = appSettings.Value;
+    private readonly IOptions<JwtAuthenticationOptions> _jwtAuthenticationOptions = jwtAuthenticationOptions;
     private readonly ILogger _logger = logger;
 
     /// <inheritdoc />
@@ -52,6 +56,16 @@ internal class WarmUpOidcMetadataTask(
         OpenIdConnectConfiguration config = await configurationManager.GetConfigurationAsync(
             cancellationToken
         );
+
+        // Same exact comparison as JwtValidationService; the orchestrator logs this at Critical and
+        // aborts startup.
+        string authority = _jwtAuthenticationOptions.Value.Authority;
+        if (!string.Equals(config.Issuer, authority, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"OIDC metadata issuer '{JwtValidationService.SanitizeIssuerForLogging(config.Issuer)}' does not match the configured JwtAuthentication:Authority '{JwtValidationService.SanitizeIssuerForLogging(authority)}'"
+            );
+        }
 
         _logger.LogInformation(
             "OIDC metadata cache warmed up successfully. Issuer: {Issuer}, SigningKeys: {SigningKeyCount}",
