@@ -69,14 +69,6 @@ internal class ApiService : IApiService
     private readonly IdentityProviderBoundary _identityProviderBoundary;
 
     /// <summary>
-    /// The fallback maximum HTTP request-line size for <see cref="IdentityHandler"/>, used only when a
-    /// request's <see cref="FrontendRequest.MaxRequestLineSize"/> is null. This is the documented .NET
-    /// default for Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>, re-verified at runtime
-    /// against a live host rather than assumed (Finding 24).
-    /// </summary>
-    private const int DefaultMaxRequestLineSize = 8192;
-
-    /// <summary>
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
     private readonly Lazy<PipelineProvider> _upsertSteps;
@@ -740,7 +732,11 @@ internal class ApiService : IApiService
             new ValidateContentTypeMiddleware(_logger, ContentTypePolicy.BaselineJsonOnly),
             new ParseBodyMiddleware(_logger),
             new DuplicatePropertiesMiddleware(_logger),
-            new IdentityHandler(_identityProviderBoundary, DefaultMaxRequestLineSize, _identityHandlerLogger),
+            new IdentityHandler(
+                _identityProviderBoundary,
+                IdentityHandler.DefaultMaxRequestLineSize,
+                _identityHandlerLogger
+            ),
         ]);
 
         return new PipelineProvider(steps);
@@ -755,7 +751,11 @@ internal class ApiService : IApiService
     {
         var steps = GetIdentityCommonSteps();
         steps.Add(
-            new IdentityHandler(_identityProviderBoundary, DefaultMaxRequestLineSize, _identityHandlerLogger)
+            new IdentityHandler(
+                _identityProviderBoundary,
+                IdentityHandler.DefaultMaxRequestLineSize,
+                _identityHandlerLogger
+            )
         );
 
         return new PipelineProvider(steps);
@@ -766,12 +766,15 @@ internal class ApiService : IApiService
     /// the current request, derived from the incoming request's own path so tenant and route-qualifier
     /// segments carry through unchanged regardless of which of the five identity routes was called.
     /// Falls back to the unqualified segment when the fixed identity route text is not found, which
-    /// only happens in a test double that does not model real routing.
+    /// only happens in a test double that does not model real routing. The segment match is
+    /// case-insensitive because ASP.NET Core routing matches these routes case-insensitively, so a
+    /// differently-cased request path (for example .../Identity/V2/Identities/find) still locates the
+    /// tenant/qualifier prefix boundary correctly.
     /// </summary>
     private static string ComputeIdentityPollPathPrefix(string requestPath)
     {
         const string identitiesSegment = "/identity/v2/identities";
-        int segmentIndex = requestPath.IndexOf(identitiesSegment, StringComparison.Ordinal);
+        int segmentIndex = requestPath.IndexOf(identitiesSegment, StringComparison.OrdinalIgnoreCase);
         string routeQualifiedBase =
             segmentIndex >= 0 ? requestPath[..(segmentIndex + identitiesSegment.Length)] : identitiesSegment;
         return $"{routeQualifiedBase}/results";

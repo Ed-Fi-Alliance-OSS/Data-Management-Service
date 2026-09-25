@@ -167,6 +167,128 @@ public class IdentityEndpointModuleTests
         }
     }
 
+    /// <summary>
+    /// A configured route-qualifier segment named "id" or "token" (AppSettings:RouteQualifierSegments)
+    /// must not collide with IdentityEndpointModule's own get-by-id and results-token route
+    /// parameters. Before the fix, mapping these routes under such a configuration threw at host
+    /// start because the route template repeated a parameter name (for example
+    /// "{id}/{token}/identity/v2/identities/{id}").
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_Route_Qualifier_Segments_Named_Id_And_Token
+    {
+        private IApiService _apiService = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private FrontendRequest? _capturedGetById;
+        private FrontendRequest? _capturedResults;
+        private HttpResponseMessage _getByIdResponse = null!;
+        private HttpResponseMessage _resultsResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    _apiService.IdentityGetById(A<FrontendRequest>._, A<string>._, A<CancellationToken>._)
+                )
+                .Invokes(
+                    (FrontendRequest request, string _, CancellationToken _) => _capturedGetById = request
+                )
+                .Returns(Task.FromResult(FakeResponse()));
+            A.CallTo(() =>
+                    _apiService.IdentityResults(A<FrontendRequest>._, A<string>._, A<CancellationToken>._)
+                )
+                .Invokes(
+                    (FrontendRequest request, string _, CancellationToken _) => _capturedResults = request
+                )
+                .Returns(Task.FromResult(FakeResponse()));
+
+            _factory = CreateFactory(
+                _apiService,
+                ToggleOnConfig(multiTenancy: false, routeQualifierSegments: "id,token")
+            );
+            _client = _factory.CreateClient();
+
+            _getByIdResponse = await _client.GetAsync("/q1/q2/identity/v2/identities/123");
+            _resultsResponse = await _client.GetAsync("/q1/q2/identity/v2/identities/results/tok");
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_starts_the_host_and_returns_ok_for_get_by_id()
+        {
+            _getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_starts_the_host_and_returns_ok_for_the_results_poll()
+        {
+            _resultsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_passes_the_decoded_id_to_identity_get_by_id()
+        {
+            A.CallTo(() => _apiService.IdentityGetById(A<FrontendRequest>._, "123", A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_passes_the_decoded_token_to_identity_results()
+        {
+            A.CallTo(() => _apiService.IdentityResults(A<FrontendRequest>._, "tok", A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_reaches_the_id_qualifier_for_get_by_id()
+        {
+            _capturedGetById.Should().NotBeNull();
+            _capturedGetById!
+                .RouteQualifiers[new RouteQualifierName("id")]
+                .Should()
+                .Be(new RouteQualifierValue("q1"));
+        }
+
+        [Test]
+        public void It_reaches_the_token_qualifier_for_get_by_id()
+        {
+            _capturedGetById.Should().NotBeNull();
+            _capturedGetById!
+                .RouteQualifiers[new RouteQualifierName("token")]
+                .Should()
+                .Be(new RouteQualifierValue("q2"));
+        }
+
+        [Test]
+        public void It_reaches_the_id_qualifier_for_results()
+        {
+            _capturedResults.Should().NotBeNull();
+            _capturedResults!
+                .RouteQualifiers[new RouteQualifierName("id")]
+                .Should()
+                .Be(new RouteQualifierValue("q1"));
+        }
+
+        [Test]
+        public void It_reaches_the_token_qualifier_for_results()
+        {
+            _capturedResults.Should().NotBeNull();
+            _capturedResults!
+                .RouteQualifiers[new RouteQualifierName("token")]
+                .Should()
+                .Be(new RouteQualifierValue("q2"));
+        }
+    }
+
     [TestFixture]
     public class Given_Post_Handlers_Parse_The_Body
     {
@@ -252,7 +374,7 @@ public class IdentityEndpointModuleTests
     public class Given_Get_Handlers_Ignore_Content_Type
     {
         [Test]
-        public async Task A_get_by_id_with_a_non_json_content_type_is_not_415_and_the_fake_is_called()
+        public async Task It_is_not_415_for_a_get_by_id_with_a_non_json_content_type_and_the_fake_is_called()
         {
             var apiService = A.Fake<IApiService>();
             A.CallTo(() =>
@@ -276,7 +398,7 @@ public class IdentityEndpointModuleTests
         }
 
         [Test]
-        public async Task A_results_poll_with_a_non_json_content_type_is_not_415_and_the_fake_is_called()
+        public async Task It_is_not_415_for_a_results_poll_with_a_non_json_content_type_and_the_fake_is_called()
         {
             var apiService = A.Fake<IApiService>();
             A.CallTo(() =>

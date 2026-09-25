@@ -15,7 +15,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 /// request/response shapes, required/nullable sets, enums, additionalProperties, response
 /// declarations, headers, and examples the story's D2 and D3 acceptance criteria name.
 /// </summary>
-[TestFixture]
 public class IdentityOpenApiDocumentTests
 {
     private static JsonNode Document => IdentityOpenApiDocument.Document;
@@ -23,441 +22,6 @@ public class IdentityOpenApiDocumentTests
     private static JsonObject Schemas => Document["components"]!["schemas"]!.AsObject();
 
     private static JsonObject Paths => Document["paths"]!.AsObject();
-
-    [Test]
-    public void It_has_no_servers_or_security_because_those_are_injected_at_serve_time()
-    {
-        Document["servers"].Should().BeNull();
-        Document["security"].Should().BeNull();
-    }
-
-    [Test]
-    public void It_declares_the_exact_five_paths_relative_to_the_identity_v2_base()
-    {
-        Paths
-            .Select(pair => pair.Key)
-            .Should()
-            .BeEquivalentTo(
-                "/identities",
-                "/identities/{id}",
-                "/identities/find",
-                "/identities/search",
-                "/identities/results/{id}"
-            );
-    }
-
-    [Test]
-    public void It_stamps_the_identity_contract_version()
-    {
-        Document["x-edfi-identity-contract-version"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-        Document["x-edfi-identity-contract-version"]!.GetValue<string>().Should().NotContain("+");
-    }
-
-    private static readonly string[] PostOperationPaths =
-    [
-        "/identities",
-        "/identities/find",
-        "/identities/search",
-    ];
-
-    [TestCaseSource(nameof(PostOperationPaths))]
-    public void Each_post_operation_accepts_application_json_and_text_json(string path)
-    {
-        JsonObject requestBodyContent = Paths[path]!["post"]!["requestBody"]!["content"]!.AsObject();
-        requestBodyContent.Select(pair => pair.Key).Should().BeEquivalentTo("application/json", "text/json");
-    }
-
-    [Test]
-    public void Create_request_body_schema_is_an_object()
-    {
-        JsonNode schemaRef = Paths["/identities"]!["post"]!["requestBody"]!["content"]!["application/json"]![
-            "schema"
-        ]!;
-        string schemaName = ExtractRefName(schemaRef);
-        Schemas[schemaName]!["type"]!.GetValue<string>().Should().Be("object");
-    }
-
-    [Test]
-    public void Find_request_body_schema_is_an_array_of_strings()
-    {
-        JsonNode schema = Paths["/identities/find"]!["post"]!["requestBody"]!["content"]![
-            "application/json"
-        ]!["schema"]!;
-        schema["type"]!.GetValue<string>().Should().Be("array");
-        schema["items"]!["type"]!.GetValue<string>().Should().Be("string");
-    }
-
-    [Test]
-    public void Search_request_body_schema_is_an_array_of_objects()
-    {
-        JsonNode schema = Paths["/identities/search"]!["post"]!["requestBody"]!["content"]![
-            "application/json"
-        ]!["schema"]!;
-        schema["type"]!.GetValue<string>().Should().Be("array");
-        string itemSchemaName = ExtractRefName(schema["items"]!);
-        Schemas[itemSchemaName]!["type"]!.GetValue<string>().Should().Be("object");
-    }
-
-    [Test]
-    public void The_six_ODS_component_names_are_present()
-    {
-        Schemas
-            .Select(pair => pair.Key)
-            .Should()
-            .Contain([
-                "IdentityCreateRequest",
-                "IdentityResponse",
-                "IdentitySearchRequest",
-                "IdentitySearchResponse",
-                "IdentitySearchResponses",
-                "Location",
-            ]);
-    }
-
-    [Test]
-    public void IdentityResponse_requires_UniqueId_as_a_non_empty_string()
-    {
-        JsonObject identityResponse = Schemas["IdentityResponse"]!.AsObject();
-        identityResponse["properties"]!["UniqueId"]!["type"]!.GetValue<string>().Should().Be("string");
-        identityResponse["properties"]!["UniqueId"]!["minLength"]!.GetValue<int>().Should().Be(1);
-        identityResponse["required"]!
-            .AsArray()
-            .Select(n => n!.GetValue<string>())
-            .Should()
-            .Contain("UniqueId");
-    }
-
-    private static readonly string[] StandardAttributeNames =
-    [
-        "LastSurname",
-        "FirstName",
-        "MiddleName",
-        "GenerationCodeSuffix",
-        "SexType",
-        "BirthDate",
-        "BirthOrder",
-    ];
-
-    [Test]
-    public void IdentityResponse_marks_every_standard_attribute_required_and_nullable()
-    {
-        JsonObject identityResponse = Schemas["IdentityResponse"]!.AsObject();
-        JsonObject properties = identityResponse["properties"]!.AsObject();
-        string[] required = identityResponse["required"]!
-            .AsArray()
-            .Select(n => n!.GetValue<string>())
-            .ToArray();
-
-        foreach (string attribute in StandardAttributeNames)
-        {
-            properties[attribute]!["nullable"]!.GetValue<bool>().Should().BeTrue();
-            required.Should().Contain(attribute);
-        }
-
-        required.Should().Contain("BirthLocation");
-        required.Should().Contain("Score");
-    }
-
-    [Test]
-    public void IdentityResponse_declares_BirthDate_as_a_date_time_string()
-    {
-        JsonObject properties = Schemas["IdentityResponse"]!["properties"]!.AsObject();
-        properties["BirthDate"]!["type"]!.GetValue<string>().Should().Be("string");
-        properties["BirthDate"]!["format"]!.GetValue<string>().Should().Be("date-time");
-    }
-
-    [Test]
-    public void IdentityResponse_declares_BirthOrder_as_an_integer()
-    {
-        JsonObject properties = Schemas["IdentityResponse"]!["properties"]!.AsObject();
-        properties["BirthOrder"]!["type"]!.GetValue<string>().Should().Be("integer");
-        properties["BirthOrder"]!["format"]!.GetValue<string>().Should().Be("int32");
-        properties["BirthOrder"]!["nullable"]!.GetValue<bool>().Should().BeTrue();
-    }
-
-    [Test]
-    public void IdentityResponse_declares_Score_as_a_nullable_double()
-    {
-        JsonObject properties = Schemas["IdentityResponse"]!["properties"]!.AsObject();
-        properties["Score"]!["type"]!.GetValue<string>().Should().Be("number");
-        properties["Score"]!["format"]!.GetValue<string>().Should().Be("double");
-        properties["Score"]!["nullable"]!.GetValue<bool>().Should().BeTrue();
-    }
-
-    [Test]
-    public void IdentityResponse_BirthLocation_references_Location_as_a_required_object()
-    {
-        JsonObject identityResponse = Schemas["IdentityResponse"]!.AsObject();
-        string refName = ExtractRefName(identityResponse["properties"]!["BirthLocation"]!);
-        refName.Should().Be("Location");
-        identityResponse["required"]!
-            .AsArray()
-            .Select(n => n!.GetValue<string>())
-            .Should()
-            .Contain("BirthLocation");
-    }
-
-    private static readonly string[] LocationChildNames =
-    [
-        "City",
-        "StateAbbreviation",
-        "InternationalProvince",
-        "Country",
-    ];
-
-    [Test]
-    public void Location_declares_four_nullable_string_children()
-    {
-        JsonObject properties = Schemas["Location"]!["properties"]!.AsObject();
-        foreach (string child in LocationChildNames)
-        {
-            properties[child]!["type"]!.GetValue<string>().Should().Be("string");
-            properties[child]!["nullable"]!.GetValue<bool>().Should().BeTrue();
-        }
-    }
-
-    [TestCase("IdentityCreateRequest")]
-    [TestCase("IdentitySearchRequest")]
-    [TestCase("Location")]
-    [TestCase("IdentityResponse")]
-    [TestCase("IdentitySearchResponses")]
-    [TestCase("IdentitySearchResponse")]
-    [TestCase("IdentitySearchResponseComplete")]
-    [TestCase("IdentitySearchResponseIncomplete")]
-    public void Request_and_response_objects_declare_additionalProperties_true(string schemaName)
-    {
-        Schemas[schemaName]!["additionalProperties"]!.GetValue<bool>().Should().BeTrue();
-    }
-
-    [Test]
-    public void DMS_adds_a_complete_and_an_incomplete_search_response_schema_with_single_value_status_enums()
-    {
-        JsonObject complete = Schemas["IdentitySearchResponseComplete"]!.AsObject();
-        complete["properties"]!["Status"]!["enum"]!
-            .AsArray()
-            .Select(n => n!.GetValue<string>())
-            .Should()
-            .Equal("Complete");
-        complete["required"]!
-            .AsArray()
-            .Select(n => n!.GetValue<string>())
-            .Should()
-            .Contain("SearchResponses");
-
-        JsonObject incomplete = Schemas["IdentitySearchResponseIncomplete"]!.AsObject();
-        incomplete["properties"]!["Status"]!["enum"]!
-            .AsArray()
-            .Select(n => n!.GetValue<string>())
-            .Should()
-            .Equal("Incomplete");
-        (incomplete["required"]?.AsArray().Select(n => n!.GetValue<string>()) ?? [])
-            .Should()
-            .NotContain("SearchResponses");
-    }
-
-    [Test]
-    public void Find_and_search_200_reference_only_the_complete_search_response_schema()
-    {
-        foreach (string path in new[] { "/identities/find", "/identities/search" })
-        {
-            JsonNode schemaNode = Paths[path]!["post"]!["responses"]!["200"]!["content"]![
-                "application/json"
-            ]!["schema"]!;
-            ExtractRefName(schemaNode).Should().Be("IdentitySearchResponseComplete");
-        }
-    }
-
-    [Test]
-    public void Results_200_permits_both_the_complete_and_incomplete_search_response_schemas()
-    {
-        JsonNode schema = Paths["/identities/results/{id}"]!["get"]!["responses"]!["200"]!["content"]![
-            "application/json"
-        ]!["schema"]!;
-        JsonArray oneOf = schema["oneOf"]!.AsArray();
-        oneOf
-            .Select(ExtractRefName)
-            .Should()
-            .BeEquivalentTo("IdentitySearchResponseComplete", "IdentitySearchResponseIncomplete");
-    }
-
-    [Test]
-    public void Every_response_across_the_document_declares_a_no_store_cache_control_header()
-    {
-        foreach ((string path, JsonNode? pathItemNode) in Paths)
-        {
-            JsonObject pathItem = pathItemNode!.AsObject();
-            foreach ((string method, JsonNode? operationNode) in pathItem)
-            {
-                JsonObject responses = operationNode!["responses"]!.AsObject();
-                foreach ((string statusCode, JsonNode? responseNode) in responses)
-                {
-                    JsonNode resolvedResponse = Resolve(responseNode!);
-                    JsonNode? cacheControlHeader = resolvedResponse["headers"]?["Cache-Control"];
-                    cacheControlHeader
-                        .Should()
-                        .NotBeNull($"{path} {method} {statusCode} must declare a Cache-Control header");
-
-                    JsonNode resolvedHeader = Resolve(cacheControlHeader!);
-                    resolvedHeader["schema"]!["enum"]!
-                        .AsArray()
-                        .Select(n => n!.GetValue<string>())
-                        .Should()
-                        .Equal("no-store");
-                }
-            }
-        }
-    }
-
-    [Test]
-    public void Create_response_matrix_has_no_415_and_no_location_and_a_string_body()
-    {
-        JsonObject responses = Paths["/identities"]!["post"]!["responses"]!.AsObject();
-        responses["200"]!["headers"]!["Location"].Should().BeNull();
-        responses["200"]!["content"]!["application/json"]!["schema"]!["type"]!
-            .GetValue<string>()
-            .Should()
-            .Be("string");
-
-        AssertCommonErrorResponses(responses, expects415: true, expectsJobFailed: false);
-    }
-
-    [Test]
-    public void GetById_response_matrix_has_no_415()
-    {
-        JsonObject responses = Paths["/identities/{id}"]!["get"]!["responses"]!.AsObject();
-        responses.Should().NotContainKey("415");
-        AssertCommonErrorResponses(responses, expects415: false, expectsJobFailed: false);
-    }
-
-    [Test]
-    public void Find_and_search_response_matrix_has_202_with_a_required_location_header()
-    {
-        foreach (string path in new[] { "/identities/find", "/identities/search" })
-        {
-            JsonObject responses = Paths[path]!["post"]!["responses"]!.AsObject();
-            JsonObject accepted = responses["202"]!.AsObject();
-            accepted["headers"]!["Location"]!["required"]!.GetValue<bool>().Should().BeTrue();
-            AssertCommonErrorResponses(responses, expects415: true, expectsJobFailed: false);
-        }
-    }
-
-    [Test]
-    public void Results_response_matrix_has_no_415_and_permits_job_failed_on_502()
-    {
-        JsonObject responses = Paths["/identities/results/{id}"]!["get"]!["responses"]!.AsObject();
-        responses.Should().NotContainKey("415");
-        AssertCommonErrorResponses(responses, expects415: false, expectsJobFailed: true);
-
-        JsonObject accepted200 = responses["200"]!.AsObject();
-        accepted200["headers"]!["Location"].Should().NotBeNull();
-    }
-
-    [Test]
-    public void The_404_response_documents_two_distinct_problem_types()
-    {
-        JsonNode fourOhFour = Resolve(Paths["/identities"]!["post"]!["responses"]!["404"]!);
-        JsonArray oneOf = fourOhFour["content"]!["application/problem+json"]!["schema"]!["oneOf"]!.AsArray();
-        List<string> types = oneOf
-            .Select(ExtractRefName)
-            .Select(name =>
-                Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
-            )
-            .ToList();
-
-        types
-            .Should()
-            .BeEquivalentTo(
-                "urn:ed-fi:api:identities:operation-not-supported",
-                "urn:ed-fi:api:identities:not-found"
-            );
-    }
-
-    [Test]
-    public void The_502_response_documents_contract_violation_and_upstream_failure_as_distinct_types()
-    {
-        JsonNode fiveOhTwo = Resolve(Paths["/identities"]!["post"]!["responses"]!["502"]!);
-        JsonArray oneOf = fiveOhTwo["content"]!["application/problem+json"]!["schema"]!["oneOf"]!.AsArray();
-        List<string> types = oneOf
-            .Select(ExtractRefName)
-            .Select(name =>
-                Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
-            )
-            .ToList();
-
-        types
-            .Should()
-            .BeEquivalentTo(
-                "urn:ed-fi:api:identities:provider-contract-violation",
-                "urn:ed-fi:api:identities:upstream-failure"
-            );
-    }
-
-    [Test]
-    public void The_results_502_response_adds_the_job_failed_type()
-    {
-        JsonNode fiveOhTwo = Resolve(Paths["/identities/results/{id}"]!["get"]!["responses"]!["502"]!);
-        JsonArray oneOf = fiveOhTwo["content"]!["application/problem+json"]!["schema"]!["oneOf"]!.AsArray();
-        List<string> types = oneOf
-            .Select(ExtractRefName)
-            .Select(name =>
-                Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
-            )
-            .ToList();
-
-        types.Should().Contain("urn:ed-fi:api:identities:job-failed");
-    }
-
-    [Test]
-    public void The_429_response_declares_an_optional_retry_after_header()
-    {
-        JsonNode fourTwoNine = Resolve(Paths["/identities"]!["post"]!["responses"]!["429"]!);
-        JsonNode retryAfterHeader = fourTwoNine["headers"]!["Retry-After"]!;
-        Resolve(retryAfterHeader)["schema"]!["type"]!.GetValue<string>().Should().Be("integer");
-    }
-
-    [Test]
-    public void Examples_include_a_no_match_group_with_empty_responses()
-    {
-        JsonNode findSuccess = Paths["/identities/find"]!["post"]!["responses"]!["200"]!["content"]![
-            "application/json"
-        ]!;
-        JsonObject noMatchExample = findSuccess["examples"]!["noMatch"]!["value"]!.AsObject();
-
-        foreach (JsonNode? searchResponse in noMatchExample["SearchResponses"]!.AsArray())
-        {
-            searchResponse!["Responses"]!.AsArray().Should().BeEmpty();
-        }
-    }
-
-    [Test]
-    public void Examples_include_both_the_complete_and_incomplete_results_states()
-    {
-        JsonNode resultsSuccess = Paths["/identities/results/{id}"]!["get"]!["responses"]!["200"]![
-            "content"
-        ]!["application/json"]!;
-        JsonObject examples = resultsSuccess["examples"]!.AsObject();
-
-        examples["complete"]!["value"]!["Status"]!.GetValue<string>().Should().Be("Complete");
-        examples["incomplete"]!["value"]!["Status"]!.GetValue<string>().Should().Be("Incomplete");
-    }
-
-    [Test]
-    public void The_400_response_pins_the_four_projection_row_examples()
-    {
-        JsonNode badRequest = Resolve(Paths["/identities"]!["post"]!["responses"]!["400"]!);
-        JsonObject examples = badRequest["content"]!["application/problem+json"]!["examples"]!.AsObject();
-
-        examples["createFieldError"]!["value"]!["validationErrors"]!["$.firstName"].Should().NotBeNull();
-        examples["searchItemError"]!["value"]!["validationErrors"]!["$[2].firstName"].Should().NotBeNull();
-
-        JsonArray pathlessErrors = examples["pathlessError"]!["value"]!["errors"]!.AsArray();
-        pathlessErrors.Should().NotBeEmpty();
-
-        JsonArray twoMessages = examples["twoMessagesOneKey"]!["value"]!["validationErrors"]![
-            "$.firstName"
-        ]!.AsArray();
-        twoMessages.Should().HaveCount(2);
-    }
 
     private static void AssertCommonErrorResponses(
         JsonObject responses,
@@ -517,5 +81,879 @@ public class IdentityOpenApiDocumentTests
         const string prefix = "#/components/schemas/";
         reference.Should().StartWith(prefix);
         return reference[prefix.Length..];
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Served_Identity_Document
+    {
+        [Test]
+        public void It_has_no_servers()
+        {
+            Document["servers"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_has_no_security()
+        {
+            Document["security"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_declares_the_exact_five_paths_relative_to_the_identity_v2_base()
+        {
+            Paths
+                .Select(pair => pair.Key)
+                .Should()
+                .BeEquivalentTo(
+                    "/identities",
+                    "/identities/{id}",
+                    "/identities/find",
+                    "/identities/search",
+                    "/identities/results/{id}"
+                );
+        }
+
+        [Test]
+        public void It_stamps_a_non_blank_identity_contract_version()
+        {
+            Document["x-edfi-identity-contract-version"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Test]
+        public void It_strips_the_plus_build_metadata_from_the_contract_version_stamp()
+        {
+            Document["x-edfi-identity-contract-version"]!.GetValue<string>().Should().NotContain("+");
+        }
+
+        [Test]
+        public void It_declares_the_six_ods_component_names()
+        {
+            Schemas
+                .Select(pair => pair.Key)
+                .Should()
+                .Contain([
+                    "IdentityCreateRequest",
+                    "IdentityResponse",
+                    "IdentitySearchRequest",
+                    "IdentitySearchResponse",
+                    "IdentitySearchResponses",
+                    "Location",
+                ]);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Post_Operation_Request_Bodies
+    {
+        private static readonly string[] PostOperationPaths =
+        [
+            "/identities",
+            "/identities/find",
+            "/identities/search",
+        ];
+
+        [TestCaseSource(nameof(PostOperationPaths))]
+        public void It_accepts_application_json_and_text_json(string path)
+        {
+            JsonObject requestBodyContent = Paths[path]!["post"]!["requestBody"]!["content"]!.AsObject();
+            requestBodyContent
+                .Select(pair => pair.Key)
+                .Should()
+                .BeEquivalentTo("application/json", "text/json");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Create_Request_Body_Schema
+    {
+        private string _schemaName = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode schemaRef = Paths["/identities"]!["post"]!["requestBody"]!["content"]![
+                "application/json"
+            ]!["schema"]!;
+            _schemaName = ExtractRefName(schemaRef);
+        }
+
+        [Test]
+        public void It_is_an_object()
+        {
+            Schemas[_schemaName]!["type"]!.GetValue<string>().Should().Be("object");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Find_Request_Body_Schema
+    {
+        private JsonNode _schema = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _schema = Paths["/identities/find"]!["post"]!["requestBody"]!["content"]!["application/json"]![
+                "schema"
+            ]!;
+        }
+
+        [Test]
+        public void It_is_an_array()
+        {
+            _schema["type"]!.GetValue<string>().Should().Be("array");
+        }
+
+        [Test]
+        public void It_has_string_items()
+        {
+            _schema["items"]!["type"]!.GetValue<string>().Should().Be("string");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Search_Request_Body_Schema
+    {
+        private JsonNode _schema = null!;
+        private string _itemSchemaName = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _schema = Paths["/identities/search"]!["post"]!["requestBody"]!["content"]!["application/json"]![
+                "schema"
+            ]!;
+            _itemSchemaName = ExtractRefName(_schema["items"]!);
+        }
+
+        [Test]
+        public void It_is_an_array()
+        {
+            _schema["type"]!.GetValue<string>().Should().Be("array");
+        }
+
+        [Test]
+        public void It_has_object_items()
+        {
+            Schemas[_itemSchemaName]!["type"]!.GetValue<string>().Should().Be("object");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_UniqueId_Property
+    {
+        private JsonObject _identityResponse = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _identityResponse = Schemas["IdentityResponse"]!.AsObject();
+        }
+
+        [Test]
+        public void It_is_a_string()
+        {
+            _identityResponse["properties"]!["UniqueId"]!["type"]!.GetValue<string>().Should().Be("string");
+        }
+
+        [Test]
+        public void It_has_minLength_1()
+        {
+            _identityResponse["properties"]!["UniqueId"]!["minLength"]!.GetValue<int>().Should().Be(1);
+        }
+
+        [Test]
+        public void It_is_required()
+        {
+            _identityResponse["required"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Contain("UniqueId");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_Standard_Attributes
+    {
+        private static readonly string[] StandardAttributeNames =
+        [
+            "LastSurname",
+            "FirstName",
+            "MiddleName",
+            "GenerationCodeSuffix",
+            "SexType",
+            "BirthDate",
+            "BirthOrder",
+        ];
+
+        private JsonObject _properties = null!;
+        private string[] _required = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonObject identityResponse = Schemas["IdentityResponse"]!.AsObject();
+            _properties = identityResponse["properties"]!.AsObject();
+            _required = identityResponse["required"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+        }
+
+        [TestCaseSource(nameof(StandardAttributeNames))]
+        public void It_is_nullable(string attribute)
+        {
+            _properties[attribute]!["nullable"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [TestCaseSource(nameof(StandardAttributeNames))]
+        public void It_is_required(string attribute)
+        {
+            _required.Should().Contain(attribute);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_Additional_Required_Properties
+    {
+        private string[] _required = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonObject identityResponse = Schemas["IdentityResponse"]!.AsObject();
+            _required = identityResponse["required"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+        }
+
+        [TestCase("BirthLocation")]
+        [TestCase("Score")]
+        public void It_is_required(string property)
+        {
+            _required.Should().Contain(property);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_BirthDate_Property
+    {
+        private JsonObject _properties = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _properties = Schemas["IdentityResponse"]!["properties"]!.AsObject();
+        }
+
+        [Test]
+        public void It_is_a_string()
+        {
+            _properties["BirthDate"]!["type"]!.GetValue<string>().Should().Be("string");
+        }
+
+        [Test]
+        public void It_has_the_date_time_format()
+        {
+            _properties["BirthDate"]!["format"]!.GetValue<string>().Should().Be("date-time");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_BirthOrder_Property
+    {
+        private JsonObject _properties = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _properties = Schemas["IdentityResponse"]!["properties"]!.AsObject();
+        }
+
+        [Test]
+        public void It_is_an_integer()
+        {
+            _properties["BirthOrder"]!["type"]!.GetValue<string>().Should().Be("integer");
+        }
+
+        [Test]
+        public void It_has_the_int32_format()
+        {
+            _properties["BirthOrder"]!["format"]!.GetValue<string>().Should().Be("int32");
+        }
+
+        [Test]
+        public void It_is_nullable()
+        {
+            _properties["BirthOrder"]!["nullable"]!.GetValue<bool>().Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_Score_Property
+    {
+        private JsonObject _properties = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _properties = Schemas["IdentityResponse"]!["properties"]!.AsObject();
+        }
+
+        [Test]
+        public void It_is_a_number()
+        {
+            _properties["Score"]!["type"]!.GetValue<string>().Should().Be("number");
+        }
+
+        [Test]
+        public void It_has_the_double_format()
+        {
+            _properties["Score"]!["format"]!.GetValue<string>().Should().Be("double");
+        }
+
+        [Test]
+        public void It_is_nullable()
+        {
+            _properties["Score"]!["nullable"]!.GetValue<bool>().Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_IdentityResponse_BirthLocation_Property
+    {
+        private JsonObject _identityResponse = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _identityResponse = Schemas["IdentityResponse"]!.AsObject();
+        }
+
+        [Test]
+        public void It_references_Location()
+        {
+            string refName = ExtractRefName(_identityResponse["properties"]!["BirthLocation"]!);
+            refName.Should().Be("Location");
+        }
+
+        [Test]
+        public void It_is_required()
+        {
+            _identityResponse["required"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Contain("BirthLocation");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Location_Schema_Children
+    {
+        private static readonly string[] LocationChildNames =
+        [
+            "City",
+            "StateAbbreviation",
+            "InternationalProvince",
+            "Country",
+        ];
+
+        private JsonObject _properties = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _properties = Schemas["Location"]!["properties"]!.AsObject();
+        }
+
+        [TestCaseSource(nameof(LocationChildNames))]
+        public void It_is_a_string(string child)
+        {
+            _properties[child]!["type"]!.GetValue<string>().Should().Be("string");
+        }
+
+        [TestCaseSource(nameof(LocationChildNames))]
+        public void It_is_nullable(string child)
+        {
+            _properties[child]!["nullable"]!.GetValue<bool>().Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Request_And_Response_Schemas
+    {
+        [TestCase("IdentityCreateRequest")]
+        [TestCase("IdentitySearchRequest")]
+        [TestCase("Location")]
+        [TestCase("IdentityResponse")]
+        [TestCase("IdentitySearchResponses")]
+        [TestCase("IdentitySearchResponse")]
+        [TestCase("IdentitySearchResponseComplete")]
+        [TestCase("IdentitySearchResponseIncomplete")]
+        public void It_declares_additionalProperties_true(string schemaName)
+        {
+            Schemas[schemaName]!["additionalProperties"]!.GetValue<bool>().Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Search_Response_Result_State_Schemas
+    {
+        private JsonObject _complete = null!;
+        private JsonObject _incomplete = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _complete = Schemas["IdentitySearchResponseComplete"]!.AsObject();
+            _incomplete = Schemas["IdentitySearchResponseIncomplete"]!.AsObject();
+        }
+
+        [Test]
+        public void It_the_complete_schema_has_a_single_value_status_enum()
+        {
+            _complete["properties"]!["Status"]!["enum"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Equal("Complete");
+        }
+
+        [Test]
+        public void It_the_complete_schema_requires_SearchResponses()
+        {
+            _complete["required"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Contain("SearchResponses");
+        }
+
+        [Test]
+        public void It_the_incomplete_schema_has_a_single_value_status_enum()
+        {
+            _incomplete["properties"]!["Status"]!["enum"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Equal("Incomplete");
+        }
+
+        [Test]
+        public void It_the_incomplete_schema_does_not_require_SearchResponses()
+        {
+            (_incomplete["required"]?.AsArray().Select(n => n!.GetValue<string>()) ?? [])
+                .Should()
+                .NotContain("SearchResponses");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Find_And_Search_200_Response_Schema
+    {
+        [TestCase("/identities/find")]
+        [TestCase("/identities/search")]
+        public void It_references_only_the_complete_search_response_schema(string path)
+        {
+            JsonNode schemaNode = Paths[path]!["post"]!["responses"]!["200"]!["content"]![
+                "application/json"
+            ]!["schema"]!;
+            ExtractRefName(schemaNode).Should().Be("IdentitySearchResponseComplete");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Results_200_Response_Schema
+    {
+        private JsonArray _oneOf = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode schema = Paths["/identities/results/{id}"]!["get"]!["responses"]!["200"]!["content"]![
+                "application/json"
+            ]!["schema"]!;
+            _oneOf = schema["oneOf"]!.AsArray();
+        }
+
+        [Test]
+        public void It_permits_both_the_complete_and_incomplete_search_response_schemas()
+        {
+            _oneOf
+                .Select(ExtractRefName)
+                .Should()
+                .BeEquivalentTo("IdentitySearchResponseComplete", "IdentitySearchResponseIncomplete");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Every_Response_In_The_Document
+    {
+        [Test]
+        public void It_declares_a_no_store_cache_control_header()
+        {
+            foreach ((string path, JsonNode? pathItemNode) in Paths)
+            {
+                JsonObject pathItem = pathItemNode!.AsObject();
+                foreach ((string method, JsonNode? operationNode) in pathItem)
+                {
+                    JsonObject responses = operationNode!["responses"]!.AsObject();
+                    foreach ((string statusCode, JsonNode? responseNode) in responses)
+                    {
+                        JsonNode resolvedResponse = Resolve(responseNode!);
+                        JsonNode? cacheControlHeader = resolvedResponse["headers"]?["Cache-Control"];
+                        cacheControlHeader
+                            .Should()
+                            .NotBeNull($"{path} {method} {statusCode} must declare a Cache-Control header");
+
+                        JsonNode resolvedHeader = Resolve(cacheControlHeader!);
+                        resolvedHeader["schema"]!["enum"]!
+                            .AsArray()
+                            .Select(n => n!.GetValue<string>())
+                            .Should()
+                            .Equal("no-store");
+                    }
+                }
+            }
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Create_Response_Matrix
+    {
+        private JsonObject _responses = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _responses = Paths["/identities"]!["post"]!["responses"]!.AsObject();
+        }
+
+        [Test]
+        public void It_has_no_Location_header_on_200()
+        {
+            _responses["200"]!["headers"]!["Location"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_a_string_body_on_200()
+        {
+            _responses["200"]!["content"]!["application/json"]!["schema"]!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("string");
+        }
+
+        [Test]
+        public void It_declares_the_common_error_responses_including_415()
+        {
+            AssertCommonErrorResponses(_responses, expects415: true, expectsJobFailed: false);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_GetById_Response_Matrix
+    {
+        private JsonObject _responses = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _responses = Paths["/identities/{id}"]!["get"]!["responses"]!.AsObject();
+        }
+
+        [Test]
+        public void It_does_not_declare_415()
+        {
+            _responses.Should().NotContainKey("415");
+        }
+
+        [Test]
+        public void It_declares_the_common_error_responses_without_415()
+        {
+            AssertCommonErrorResponses(_responses, expects415: false, expectsJobFailed: false);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Find_And_Search_Response_Matrix
+    {
+        [TestCase("/identities/find")]
+        [TestCase("/identities/search")]
+        public void It_has_a_202_with_a_required_Location_header(string path)
+        {
+            JsonObject responses = Paths[path]!["post"]!["responses"]!.AsObject();
+            JsonObject accepted = responses["202"]!.AsObject();
+            accepted["headers"]!["Location"]!["required"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [TestCase("/identities/find")]
+        [TestCase("/identities/search")]
+        public void It_declares_the_common_error_responses_including_415(string path)
+        {
+            JsonObject responses = Paths[path]!["post"]!["responses"]!.AsObject();
+            AssertCommonErrorResponses(responses, expects415: true, expectsJobFailed: false);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Results_Response_Matrix
+    {
+        private JsonObject _responses = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _responses = Paths["/identities/results/{id}"]!["get"]!["responses"]!.AsObject();
+        }
+
+        [Test]
+        public void It_does_not_declare_415()
+        {
+            _responses.Should().NotContainKey("415");
+        }
+
+        [Test]
+        public void It_declares_the_common_error_responses_permitting_job_failed_on_502()
+        {
+            AssertCommonErrorResponses(_responses, expects415: false, expectsJobFailed: true);
+        }
+
+        [Test]
+        public void It_declares_a_Location_header_on_200()
+        {
+            JsonObject accepted200 = _responses["200"]!.AsObject();
+            accepted200["headers"]!["Location"].Should().NotBeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_404_Response_Problem_Types
+    {
+        private List<string> _types = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode fourOhFour = Resolve(Paths["/identities"]!["post"]!["responses"]!["404"]!);
+            JsonArray oneOf = fourOhFour["content"]!["application/problem+json"]!["schema"]![
+                "oneOf"
+            ]!.AsArray();
+            _types = oneOf
+                .Select(ExtractRefName)
+                .Select(name =>
+                    Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
+                )
+                .ToList();
+        }
+
+        [Test]
+        public void It_documents_two_distinct_problem_types()
+        {
+            _types
+                .Should()
+                .BeEquivalentTo(
+                    "urn:ed-fi:api:identities:operation-not-supported",
+                    "urn:ed-fi:api:identities:not-found"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_502_Response_Problem_Types
+    {
+        private List<string> _types = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode fiveOhTwo = Resolve(Paths["/identities"]!["post"]!["responses"]!["502"]!);
+            JsonArray oneOf = fiveOhTwo["content"]!["application/problem+json"]!["schema"]![
+                "oneOf"
+            ]!.AsArray();
+            _types = oneOf
+                .Select(ExtractRefName)
+                .Select(name =>
+                    Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
+                )
+                .ToList();
+        }
+
+        [Test]
+        public void It_documents_contract_violation_and_upstream_failure_as_distinct_types()
+        {
+            _types
+                .Should()
+                .BeEquivalentTo(
+                    "urn:ed-fi:api:identities:provider-contract-violation",
+                    "urn:ed-fi:api:identities:upstream-failure"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Results_502_Response_Problem_Types
+    {
+        private List<string> _types = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode fiveOhTwo = Resolve(Paths["/identities/results/{id}"]!["get"]!["responses"]!["502"]!);
+            JsonArray oneOf = fiveOhTwo["content"]!["application/problem+json"]!["schema"]![
+                "oneOf"
+            ]!.AsArray();
+            _types = oneOf
+                .Select(ExtractRefName)
+                .Select(name =>
+                    Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
+                )
+                .ToList();
+        }
+
+        [Test]
+        public void It_adds_the_job_failed_type()
+        {
+            _types.Should().Contain("urn:ed-fi:api:identities:job-failed");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_429_Response_Retry_After_Header
+    {
+        private JsonNode _retryAfterHeader = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode fourTwoNine = Resolve(Paths["/identities"]!["post"]!["responses"]!["429"]!);
+            _retryAfterHeader = Resolve(fourTwoNine["headers"]!["Retry-After"]!);
+        }
+
+        [Test]
+        public void It_declares_an_optional_retry_after_header()
+        {
+            _retryAfterHeader["schema"]!["type"]!.GetValue<string>().Should().Be("integer");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Find_No_Match_Example
+    {
+        private JsonObject _noMatchExample = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode findSuccess = Paths["/identities/find"]!["post"]!["responses"]!["200"]!["content"]![
+                "application/json"
+            ]!;
+            _noMatchExample = findSuccess["examples"]!["noMatch"]!["value"]!.AsObject();
+        }
+
+        [Test]
+        public void It_has_empty_responses_for_every_search_response()
+        {
+            foreach (JsonNode? searchResponse in _noMatchExample["SearchResponses"]!.AsArray())
+            {
+                searchResponse!["Responses"]!.AsArray().Should().BeEmpty();
+            }
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Results_Examples
+    {
+        private JsonObject _examples = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode resultsSuccess = Paths["/identities/results/{id}"]!["get"]!["responses"]!["200"]![
+                "content"
+            ]!["application/json"]!;
+            _examples = resultsSuccess["examples"]!.AsObject();
+        }
+
+        [Test]
+        public void It_the_complete_example_has_status_Complete()
+        {
+            _examples["complete"]!["value"]!["Status"]!.GetValue<string>().Should().Be("Complete");
+        }
+
+        [Test]
+        public void It_the_incomplete_example_has_status_Incomplete()
+        {
+            _examples["incomplete"]!["value"]!["Status"]!.GetValue<string>().Should().Be("Incomplete");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_400_Response_Pinned_Examples
+    {
+        private JsonObject _examples = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode badRequest = Resolve(Paths["/identities"]!["post"]!["responses"]!["400"]!);
+            _examples = badRequest["content"]!["application/problem+json"]!["examples"]!.AsObject();
+        }
+
+        [Test]
+        public void It_the_createFieldError_example_has_a_firstName_validation_error()
+        {
+            _examples["createFieldError"]!["value"]!["validationErrors"]!["$.firstName"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_the_searchItemError_example_has_an_indexed_firstName_validation_error()
+        {
+            _examples["searchItemError"]!["value"]!["validationErrors"]!
+                ["$[2].firstName"]
+                .Should()
+                .NotBeNull();
+        }
+
+        [Test]
+        public void It_the_pathlessError_example_has_a_non_empty_errors_array()
+        {
+            JsonArray pathlessErrors = _examples["pathlessError"]!["value"]!["errors"]!.AsArray();
+            pathlessErrors.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_the_twoMessagesOneKey_example_has_two_messages_for_firstName()
+        {
+            JsonArray twoMessages = _examples["twoMessagesOneKey"]!["value"]!["validationErrors"]![
+                "$.firstName"
+            ]!.AsArray();
+            twoMessages.Should().HaveCount(2);
+        }
     }
 }

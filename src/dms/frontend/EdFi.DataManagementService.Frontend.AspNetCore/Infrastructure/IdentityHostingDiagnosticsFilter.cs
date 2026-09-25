@@ -12,8 +12,10 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// Suppresses the framework's own <c>Microsoft.AspNetCore.Hosting.Diagnostics</c> request-start and
 /// request-finish log events for an identity get-by-id or results-poll route, because those events
 /// carry the identifier verbatim in both their <c>Path</c> and <c>RequestPath</c> properties and in
-/// the rendered message (D11). Every other route, including the other four identity routes (none of
-/// which carries an identifier), keeps its framework events unchanged.
+/// the rendered message (D11). The match is case-insensitive and tolerates a single trailing slash
+/// on the route, mirroring how ASP.NET Core routing matches these paths before this filter ever sees
+/// them. Every other route, including the other four identity routes (none of which carries an
+/// identifier) and their trailing-slash forms, keeps its framework events unchanged.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -38,13 +40,15 @@ internal static class IdentityHostingDiagnosticsFilter
     // Matches an identity get-by-id path (.../identity/v2/identities/{value}, excluding the literal
     // find and search operation names) or a results-poll path
     // (.../identity/v2/identities/results/{value}), with any number of leading path segments
-    // (tenant and route-qualifier prefixes) ahead of /identity/v2. Unlike
-    // IdentityRoutePathRedactor, this predicate has no configuration seam - it is wired directly as
-    // a Serilog Func&lt;LogEvent, bool&gt; - so the leading-segment count is unconstrained rather
-    // than pinned to the configured tenant/qualifier count.
+    // (tenant and route-qualifier prefixes) ahead of /identity/v2. IgnoreCase/CultureInvariant
+    // because ASP.NET Core routing matches these routes case-insensitively, and the trailing /?
+    // before $ tolerates the trailing slash routing also accepts. Unlike IdentityRoutePathRedactor,
+    // this predicate has no configuration seam - it is wired directly as a Serilog
+    // Func&lt;LogEvent, bool&gt; - so the leading-segment count is unconstrained rather than pinned
+    // to the configured tenant/qualifier count.
     private static readonly Regex _identityIdOrTokenRouteRegex = new(
-        @"^(?:/[^/]+)*/identity/v2/identities/(?:(?!find$|search$)[^/]+|results/[^/]+)$",
-        RegexOptions.Compiled
+        @"^(?:/[^/]+)*/identity/v2/identities/(?:(?!find/?$|search/?$)[^/]+|results/[^/]+)/?$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
     );
 
     public static bool Matches(LogEvent logEvent)

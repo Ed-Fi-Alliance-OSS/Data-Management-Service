@@ -37,8 +37,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 /// client-to-tenant binding is checked before claims, and the capability gate runs before content-type
 /// and body validation.
 /// </summary>
-[TestFixture]
-[Parallelizable]
 public class IdentityPipelineOrderingTests
 {
     private const string BearerToken = "valid-identity-pipeline-ordering-token";
@@ -148,151 +146,210 @@ public class IdentityPipelineOrderingTests
             BodyParseErrorMessage: bodyParseErrorMessage
         );
 
-    private static ClaimSet BuildAuthorizingClaimSet(string action) =>
-        new(
-            ClaimSetName,
-            [
-                new ResourceClaim(
-                    $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity",
-                    action,
-                    [
-                        new AuthorizationStrategy(
-                            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
-                        ),
-                    ]
-                ),
-            ]
-        );
-
-    private static IDataStoreProvider EmptyTenantDataStoreProvider()
-    {
-        var dataStoreProvider = A.Fake<IDataStoreProvider>();
-        A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
-            .Returns(Task.FromResult<IList<string>>([]));
-        return dataStoreProvider;
-    }
-
     /// <summary>
     /// A2/A13: tenant existence is checked before claims are consulted, so a failing claim-set provider
     /// is never reached when the tenant itself does not exist.
     /// </summary>
-    [Test]
-    public async Task Tenant_absence_is_checked_before_claims_are_consulted()
+    [TestFixture]
+    public class Given_Tenant_Absence_When_Claims_Would_Fail : IdentityPipelineOrderingTests
     {
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
-            .Throws<InvalidOperationException>();
+        private IFrontendResponse _response = null!;
+        private IClaimSetProvider _claimSetProvider = null!;
+        private IApplicationContextProvider _applicationContextProvider = null!;
 
-        var applicationContextProvider = A.Fake<IApplicationContextProvider>();
+        private static IDataStoreProvider EmptyTenantDataStoreProvider()
+        {
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>([]));
+            return dataStoreProvider;
+        }
 
-        var apiService = BuildApiService(
-            multiTenancy: true,
-            applicationContextProvider,
-            claimSetProvider,
-            new NoIdentityService(),
-            EmptyTenantDataStoreProvider()
-        );
+        [SetUp]
+        public async Task Setup()
+        {
+            _claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .Throws<InvalidOperationException>();
 
-        var response = await apiService.IdentityCreate(
-            BuildFrontendRequest(tenant: "north"),
-            CancellationToken.None
-        );
+            _applicationContextProvider = A.Fake<IApplicationContextProvider>();
 
-        response.StatusCode.Should().Be(404);
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        A.CallTo(() =>
-                applicationContextProvider.GetApplicationByClientIdAsync(
-                    ClientId,
-                    A<string?>._,
-                    A<CancellationToken>._
+            var apiService = BuildApiService(
+                multiTenancy: true,
+                _applicationContextProvider,
+                _claimSetProvider,
+                new NoIdentityService(),
+                EmptyTenantDataStoreProvider()
+            );
+
+            _response = await apiService.IdentityCreate(
+                BuildFrontendRequest(tenant: "north"),
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_returns_404()
+        {
+            _response.StatusCode.Should().Be(404);
+        }
+
+        [Test]
+        public void It_never_consults_the_claim_set_provider()
+        {
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_never_looks_up_the_application_context()
+        {
+            A.CallTo(() =>
+                    _applicationContextProvider.GetApplicationByClientIdAsync(
+                        ClientId,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .MustNotHaveHappened();
+                .MustNotHaveHappened();
+        }
     }
 
     /// <summary>
     /// A13: client-to-tenant binding is checked before claims are consulted, so a NotFound binding
     /// never reaches a failing claim-set provider.
     /// </summary>
-    [Test]
-    public async Task NotFound_binding_short_circuits_before_claims_are_consulted()
+    [TestFixture]
+    public class Given_A_NotFound_Client_Tenant_Binding_When_Claims_Would_Fail : IdentityPipelineOrderingTests
     {
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
-            .Throws<InvalidOperationException>();
+        private IFrontendResponse _response = null!;
+        private IClaimSetProvider _claimSetProvider = null!;
 
-        var applicationContextProvider = A.Fake<IApplicationContextProvider>();
-        A.CallTo(() =>
-                applicationContextProvider.GetApplicationByClientIdAsync(
-                    ClientId,
-                    A<string?>._,
-                    A<CancellationToken>._
+        [SetUp]
+        public async Task Setup()
+        {
+            _claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .Throws<InvalidOperationException>();
+
+            var applicationContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() =>
+                    applicationContextProvider.GetApplicationByClientIdAsync(
+                        ClientId,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
-        var apiService = BuildApiService(
-            multiTenancy: false,
-            applicationContextProvider,
-            claimSetProvider,
-            new NoIdentityService(),
-            A.Fake<IDataStoreProvider>()
-        );
+            var apiService = BuildApiService(
+                multiTenancy: false,
+                applicationContextProvider,
+                _claimSetProvider,
+                new NoIdentityService(),
+                A.Fake<IDataStoreProvider>()
+            );
 
-        var response = await apiService.IdentityCreate(BuildFrontendRequest(), CancellationToken.None);
+            _response = await apiService.IdentityCreate(BuildFrontendRequest(), CancellationToken.None);
+        }
 
-        response.StatusCode.Should().Be(401);
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+        [Test]
+        public void It_returns_401()
+        {
+            _response.StatusCode.Should().Be(401);
+        }
+
+        [Test]
+        public void It_never_consults_the_claim_set_provider()
+        {
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
     }
 
     /// <summary>
     /// A13: the capability gate runs before content-type and body validation, so a provider that
     /// supports no operation answers operation-unsupported 404 even for a malformed POST body.
     /// </summary>
-    [Test]
-    public async Task Capability_gate_runs_before_content_type_and_body_validation()
+    [TestFixture]
+    public class Given_A_Capability_Gate_That_Rejects_Every_Operation_With_A_Malformed_Body
+        : IdentityPipelineOrderingTests
     {
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
-            .Returns(Task.FromResult<IList<ClaimSet>>([BuildAuthorizingClaimSet("Create")]));
+        private IFrontendResponse _response = null!;
 
-        var applicationContextProvider = A.Fake<IApplicationContextProvider>();
-        A.CallTo(() =>
-                applicationContextProvider.GetApplicationByClientIdAsync(
-                    ClientId,
-                    A<string?>._,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(
-                Task.FromResult<ApplicationContextResult>(
-                    new ApplicationContextResult.Success(
-                        new ApplicationContext(1, 1, "client-id", Guid.NewGuid(), [], null, [])
-                    )
-                )
+        private static ClaimSet BuildAuthorizingClaimSet(string action) =>
+            new(
+                ClaimSetName,
+                [
+                    new ResourceClaim(
+                        $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity",
+                        action,
+                        [
+                            new AuthorizationStrategy(
+                                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                            ),
+                        ]
+                    ),
+                ]
             );
 
-        var apiService = BuildApiService(
-            multiTenancy: false,
-            applicationContextProvider,
-            claimSetProvider,
-            // NoIdentityService.Capabilities == None, so every operation is unsupported.
-            new NoIdentityService(),
-            A.Fake<IDataStoreProvider>()
-        );
+        [SetUp]
+        public async Task Setup()
+        {
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<ClaimSet>>([BuildAuthorizingClaimSet("Create")]));
 
-        var response = await apiService.IdentityCreate(
-            BuildFrontendRequest(bodyParseErrorMessage: "malformed identity body"),
-            CancellationToken.None
-        );
+            var applicationContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() =>
+                    applicationContextProvider.GetApplicationByClientIdAsync(
+                        ClientId,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(
+                    Task.FromResult<ApplicationContextResult>(
+                        new ApplicationContextResult.Success(
+                            new ApplicationContext(1, 1, "client-id", Guid.NewGuid(), [], null, [])
+                        )
+                    )
+                );
 
-        response.StatusCode.Should().Be(404);
-        response.Body.Should().NotBeNull();
-        response.Body!["type"]!
-            .GetValue<string>()
-            .Should()
-            .Be(IdentityFailureResponse.OperationNotSupportedType);
+            var apiService = BuildApiService(
+                multiTenancy: false,
+                applicationContextProvider,
+                claimSetProvider,
+                // NoIdentityService.Capabilities == None, so every operation is unsupported.
+                new NoIdentityService(),
+                A.Fake<IDataStoreProvider>()
+            );
+
+            _response = await apiService.IdentityCreate(
+                BuildFrontendRequest(bodyParseErrorMessage: "malformed identity body"),
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_returns_404()
+        {
+            _response.StatusCode.Should().Be(404);
+        }
+
+        [Test]
+        public void It_returns_a_body()
+        {
+            _response.Body.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_uses_the_operation_not_supported_type()
+        {
+            _response.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be(IdentityFailureResponse.OperationNotSupportedType);
+        }
     }
 }

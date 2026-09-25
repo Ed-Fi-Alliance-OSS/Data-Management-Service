@@ -64,65 +64,149 @@ public class IdentityCorsExposeHeadersTests
         return response;
     }
 
-    [Test]
-    public async Task It_exposes_location_on_the_async_202()
+    [TestFixture]
+    public class Given_A_Request_With_Origin_On_The_Async_202
     {
-        var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.IdentityFind(A<FrontendRequest>._, A<CancellationToken>._))
-            .Returns(Task.FromResult(CannedResponse(202, ResultsLocationPath)));
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
 
-        await using var factory = CreateFactory(apiService);
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/identity/v2/identities/find")
+        [SetUp]
+        public async Task Setup()
         {
-            Content = new StringContent("[]", Encoding.UTF8, "application/json"),
-        };
-        request.Headers.Add("Origin", SwaggerUiOrigin);
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.IdentityFind(A<FrontendRequest>._, A<CancellationToken>._))
+                .Returns(Task.FromResult(CannedResponse(202, ResultsLocationPath)));
 
-        var response = await client.SendAsync(request);
+            _factory = CreateFactory(apiService);
+            _client = _factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/identity/v2/identities/find")
+            {
+                Content = new StringContent("[]", Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Add("Origin", SwaggerUiOrigin);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        response
-            .Headers.GetValues("Access-Control-Expose-Headers")
-            .Should()
-            .Contain(value => value.Contains("Location"));
+            _response = await _client.SendAsync(request);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_202_accepted()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        }
+
+        [Test]
+        public void It_exposes_location_in_access_control_expose_headers()
+        {
+            _response
+                .Headers.GetValues("Access-Control-Expose-Headers")
+                .Should()
+                .Contain(value => value.Contains("Location"));
+        }
     }
 
-    [Test]
-    public async Task It_exposes_location_on_the_incomplete_results_200()
+    [TestFixture]
+    public class Given_A_Request_With_Origin_On_The_Incomplete_Results_200
     {
-        var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.IdentityResults(A<FrontendRequest>._, A<string>._, A<CancellationToken>._))
-            .Returns(Task.FromResult(CannedResponse(200, ResultsLocationPath)));
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
 
-        await using var factory = CreateFactory(apiService);
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/v2/identities/results/tok");
-        request.Headers.Add("Origin", SwaggerUiOrigin);
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.IdentityResults(A<FrontendRequest>._, A<string>._, A<CancellationToken>._)
+                )
+                .Returns(Task.FromResult(CannedResponse(200, ResultsLocationPath)));
 
-        var response = await client.SendAsync(request);
+            _factory = CreateFactory(apiService);
+            _client = _factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/v2/identities/results/tok");
+            request.Headers.Add("Origin", SwaggerUiOrigin);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response
-            .Headers.GetValues("Access-Control-Expose-Headers")
-            .Should()
-            .Contain(value => value.Contains("Location"));
+            _response = await _client.SendAsync(request);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_exposes_location_in_access_control_expose_headers()
+        {
+            _response
+                .Headers.GetValues("Access-Control-Expose-Headers")
+                .Should()
+                .Contain(value => value.Contains("Location"));
+        }
     }
 
-    [Test]
-    public async Task A_request_without_origin_carries_no_cors_headers()
+    [TestFixture]
+    public class Given_A_Request_Without_Origin
     {
-        var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.IdentityResults(A<FrontendRequest>._, A<string>._, A<CancellationToken>._))
-            .Returns(Task.FromResult(CannedResponse(200, ResultsLocationPath)));
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
 
-        await using var factory = CreateFactory(apiService);
-        using var client = factory.CreateClient();
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.IdentityResults(A<FrontendRequest>._, A<string>._, A<CancellationToken>._)
+                )
+                .Returns(Task.FromResult(CannedResponse(200, ResultsLocationPath)));
 
-        var response = await client.GetAsync("/identity/v2/identities/results/tok");
+            _factory = CreateFactory(apiService);
+            _client = _factory.CreateClient();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.Contains("Access-Control-Expose-Headers").Should().BeFalse();
-        response.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+            _response = await _client.GetAsync("/identity/v2/identities/results/tok");
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_carries_no_access_control_expose_headers()
+        {
+            _response.Headers.Contains("Access-Control-Expose-Headers").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_carries_no_access_control_allow_origin()
+        {
+            _response.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+        }
     }
 }

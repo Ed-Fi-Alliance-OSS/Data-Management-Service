@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -1257,18 +1258,33 @@ public static class AspNetCoreFrontend
     private const string IdentitiesRouteSegment = "/identity/v2/identities";
 
     /// <summary>
-    /// The deployment's default Kestrel request-line budget, applied only when
-    /// <see cref="IOptions{TOptions}"/> of <see cref="KestrelServerOptions"/> supplies no usable
-    /// value (for example under a host that never configured Kestrel limits). Matches the
-    /// documented and runtime-verified default for this deployment (Probe (c), design.md).
+    /// The route parameter name for the identity get-by-id segment (IdentityEndpointModule) and the
+    /// <see cref="Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> <see cref="IdentityGetById"/>
+    /// binds from. Deliberately not "id": a configured route-qualifier segment (AppSettings:
+    /// RouteQualifierSegments) can itself be named "id", and the qualifier prefix segments are built
+    /// from that configured name (FixedRoutePattern), so a literal "id" here would make the identity
+    /// route template repeat a parameter name and fail host start. Follows the
+    /// "__metadataRouteQualifier{n}" precedent (MetadataRouteValidator) of a double-underscore name no
+    /// user-configured qualifier can collide with.
     /// </summary>
-    private const int DefaultIdentityMaxRequestLineSize = 8192;
+    internal const string IdentityIdRouteParameterName = "__identityId";
 
     /// <summary>
-    /// The real, unredacted request path (no leading slash), used only as the dmsPath argument to
-    /// <see cref="ToResult"/>. <see cref="ToResult"/> strips exactly this many characters off the
-    /// tail of the real request URL to compute the Location header's base, so for identity routes
-    /// the value must span the whole path - tenant, route qualifiers, and all - because
+    /// The route parameter name for the identity results-poll token segment (IdentityEndpointModule)
+    /// and the <see cref="Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> <see cref="IdentityResults"/>
+    /// binds from. See <see cref="IdentityIdRouteParameterName"/> for why this is not the literal
+    /// "token".
+    /// </summary>
+    internal const string IdentityTokenRouteParameterName = "__identityToken";
+
+    /// <summary>
+    /// The real, unredacted request path in its escaped (percent-encoded) form, no leading slash, used
+    /// only as the dmsPath argument to <see cref="ToResult"/>. <see cref="ToResult"/> strips exactly
+    /// this many characters off the tail of <see cref="HttpRequestResponseExtensions.UrlWithPathSegment"/>,
+    /// which is itself built from the escaped path, so this must be the escaped path too - a decoded
+    /// value would be the wrong length whenever a segment (for example a results token or a route
+    /// qualifier) contains a character that needed escaping. For identity routes the value must also
+    /// span the whole path - tenant, route qualifiers, and all - because
     /// <see cref="RequestInfo.IdentityPollPathPrefix"/> is itself already tenant/qualifier-qualified
     /// (it is derived from <see cref="BuildIdentityTemplatePath"/>, which carries that prefix on
     /// <see cref="FrontendRequest.Path"/> for D11). Stripping only the identities tail here, as a
@@ -1276,28 +1292,44 @@ public static class AspNetCoreFrontend
     /// double it when Core's already-qualified Location path is appended.
     /// </summary>
     private static string ExtractIdentityDmsPath(HttpRequest request) =>
-        (request.Path.Value ?? string.Empty).TrimStart('/');
+        request.Path.ToUriComponent().TrimStart('/');
 
     /// <summary>
     /// The redacted route-template path carried on <see cref="FrontendRequest.Path"/> for D11:
-    /// tenant and route-qualifier segments are literal (read from the real request path), while
-    /// any identifier segment is replaced by a placeholder so the identifier itself never reaches
-    /// a log. Also the source Core's ComputeIdentityPollPathPrefix reads to build the poll URL.
+    /// tenant and route-qualifier segments are literal and escaped (read from the real request path's
+    /// escaped form, so a qualifier value carrying a space or other reserved character stays a valid
+    /// URL path segment when it reaches <see cref="ToResult"/>'s Location header), while any identifier
+    /// segment is replaced by a placeholder so the identifier itself never reaches a log. Also the
+    /// source Core's ComputeIdentityPollPathPrefix reads to build the poll URL. The route segment match
+    /// is case-insensitive because ASP.NET Core routing matches these routes case-insensitively, so a
+    /// differently-cased request (for example .../Identity/V2/Identities/find) must still find the
+    /// prefix boundary; the emitted "/identity/v2/identities" suffix always stays canonical lowercase
+    /// since it comes from the <see cref="IdentitiesRouteSegment"/> constant, not the request text.
     /// </summary>
     private static string BuildIdentityTemplatePath(HttpRequest request, string operationSuffix)
     {
-        string requestPath = request.Path.Value ?? string.Empty;
-        int segmentIndex = requestPath.IndexOf(IdentitiesRouteSegment, StringComparison.Ordinal);
+        string requestPath = request.Path.ToUriComponent();
+        int segmentIndex = requestPath.IndexOf(IdentitiesRouteSegment, StringComparison.OrdinalIgnoreCase);
         string prefix = segmentIndex >= 0 ? requestPath[..segmentIndex] : string.Empty;
         return $"{prefix}{IdentitiesRouteSegment}{operationSuffix}";
     }
 
     /// <summary>
     /// The configured Kestrel request-line budget, read from the running server so Core can bound
-    /// a composed poll path against the real deployment limit rather than a hard-coded guess.
+    /// a composed poll path against the real deployment limit rather than a hard-coded guess, reduced
+    /// by <see cref="HttpRequest.PathBase"/>'s escaped length. Core's composed-path arithmetic
+    /// (<see cref="Identity.IdentityRequestTokenRule.Evaluate"/>) measures the prefix from
+    /// <see cref="HttpRequest.Path"/>, which excludes PathBase, but the real request line the client
+    /// sends - and the one Kestrel measures against <c>MaxRequestLineSize</c> - is the fully qualified
+    /// path, PathBase included (<see cref="HttpRequestResponseExtensions.RootUrl"/>;
+    /// <c>UsePathBase</c> in Program.cs from <c>AppSettings:PathBase</c>). Shrinking the budget passed
+    /// to Core here keeps its arithmetic describing the real request line without Core needing to know
+    /// PathBase exists.
     /// </summary>
-    private static int ResolveMaxRequestLineSize(IOptions<KestrelServerOptions> kestrelOptions) =>
-        kestrelOptions.Value?.Limits.MaxRequestLineSize ?? DefaultIdentityMaxRequestLineSize;
+    private static int ResolveMaxRequestLineSize(
+        HttpRequest httpRequest,
+        IOptions<KestrelServerOptions> kestrelOptions
+    ) => kestrelOptions.Value.Limits.MaxRequestLineSize - httpRequest.PathBase.ToUriComponent().Length;
 
     /// <summary>
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest for one of the five identity
@@ -1336,7 +1368,7 @@ public static class AspNetCoreFrontend
             ResponseContentCoding: HttpMethods.IsGet(httpRequest.Method)
                 ? ResolveResponseContentCoding(httpRequest.HttpContext)
                 : ResponseContentCoding.Identity,
-            MaxRequestLineSize: ResolveMaxRequestLineSize(kestrelOptions)
+            MaxRequestLineSize: ResolveMaxRequestLineSize(httpRequest, kestrelOptions)
         );
     }
 
@@ -1374,7 +1406,7 @@ public static class AspNetCoreFrontend
     public static async Task<IResult> IdentityGetById(
         HttpContext httpContext,
         IApiService apiService,
-        string id,
+        [FromRoute(Name = IdentityIdRouteParameterName)] string id,
         IOptions<AppSettings> appSettings,
         IOptions<KestrelServerOptions> kestrelOptions
     )
@@ -1454,7 +1486,7 @@ public static class AspNetCoreFrontend
     public static async Task<IResult> IdentityResults(
         HttpContext httpContext,
         IApiService apiService,
-        string token,
+        [FromRoute(Name = IdentityTokenRouteParameterName)] string token,
         IOptions<AppSettings> appSettings,
         IOptions<KestrelServerOptions> kestrelOptions
     )

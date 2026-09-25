@@ -23,7 +23,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 /// <see cref="Identity.IdentityOperation" /> and <see cref="IdentityResultStatus" /> - including every
 /// provider-contract-violation row a synchronous find/search or a misused results status can produce.
 /// </summary>
-[TestFixture]
 public class IdentityHandlerResponseMappingTests
 {
     private const string PollPathPrefix = "/identity/v2/identities/results";
@@ -78,7 +77,7 @@ public class IdentityHandlerResponseMappingTests
     private static IdentityHandler CreateHandler() =>
         new(
             new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance),
-            8192,
+            IdentityHandler.DefaultMaxRequestLineSize,
             NullLogger<IdentityHandler>.Instance
         );
 
@@ -106,493 +105,6 @@ public class IdentityHandlerResponseMappingTests
         return requestInfo.FrontendResponse;
     }
 
-    // ---------------------------------------------------------------- Create
-
-    [Test]
-    public async Task Create_Success_with_a_string_payload_is_200_with_the_string_body()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = "unique-id-1",
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(200);
-        response.Body!.GetValue<string>().Should().Be("unique-id-1");
-        response.LocationHeaderPath.Should().BeNull();
-    }
-
-    [Test]
-    public async Task Create_Success_with_no_payload_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = null },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task Create_Success_with_a_non_string_payload_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = new JsonObject(),
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task Create_InvalidProperties_projects_errors_into_a_400()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult
-            {
-                Status = IdentityResultStatus.InvalidProperties,
-                Errors = [new IdentityError { Path = "$.firstName", Message = "First name is required." }],
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(400);
-        response.Body!["validationErrors"]!["$.firstName"]!
-            .AsArray()
-            .Select(n => n!.ToString())
-            .Should()
-            .Equal("First name is required.");
-    }
-
-    [Test]
-    public async Task Create_NotFound_is_404_identity_not_found()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.NotFound },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertNotFound(response);
-    }
-
-    [TestCase("Incomplete")]
-    [TestCase("JobFailed")]
-    public async Task Create_Incomplete_or_JobFailed_is_502_provider_contract_violation(string statusName)
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = Enum.Parse<IdentityResultStatus>(statusName) },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    // ---------------------------------------------------------------- GetById
-
-    [Test]
-    public async Task GetById_Success_with_a_payload_is_200()
-    {
-        JsonObject payload = new() { ["uniqueId"] = "abc" };
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = payload },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "abc");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(200);
-        response.Body!["uniqueId"]!.ToString().Should().Be("abc");
-    }
-
-    [Test]
-    public async Task GetById_Success_with_no_payload_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = null },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "abc");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task GetById_NotFound_is_404_identity_not_found()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.NotFound },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "abc");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertNotFound(response);
-    }
-
-    // ---------------------------------------------------------------- Find / Search synchronous and async
-
-    [TestCase("Find")]
-    [TestCase("Search")]
-    public async Task Synchronous_Success_with_a_payload_and_no_token_is_200(string operationName)
-    {
-        JsonObject payload = new() { ["status"] = "Complete" };
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = payload,
-                RequestToken = null,
-            },
-        };
-        var requestInfo = CreateRequestInfo(
-            Enum.Parse<IdentityOperation>(operationName),
-            provider,
-            parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
-        );
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(200);
-        response.Body!["status"]!.ToString().Should().Be("Complete");
-        response.LocationHeaderPath.Should().BeNull();
-    }
-
-    [TestCase("Find")]
-    [TestCase("Search")]
-    public async Task Asynchronous_Success_with_a_usable_token_and_no_payload_is_202_with_Location(
-        string operationName
-    )
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = null,
-                RequestToken = "job-token-1",
-            },
-        };
-        var requestInfo = CreateRequestInfo(
-            Enum.Parse<IdentityOperation>(operationName),
-            provider,
-            parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
-        );
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(202);
-        response.Body.Should().BeNull();
-        response.LocationHeaderPath.Should().Be($"{PollPathPrefix}/job-token-1");
-    }
-
-    [Test]
-    public async Task Asynchronous_Success_with_an_unusable_token_is_502_with_no_Location()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = null,
-                RequestToken = "bad/token",
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, parsedBody: new JsonArray("a"));
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-        response.LocationHeaderPath.Should().BeNull();
-    }
-
-    [Test]
-    public async Task Success_with_both_payload_and_token_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = new JsonObject(),
-                RequestToken = "job-token-1",
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, parsedBody: new JsonArray("a"));
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task Success_with_neither_payload_nor_token_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = null,
-                RequestToken = null,
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, parsedBody: new JsonArray("a"));
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task A_token_while_the_Results_capability_is_absent_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            Capabilities = IdentityCapabilities.Find,
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.Success,
-                Payload = null,
-                RequestToken = "job-token-1",
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, parsedBody: new JsonArray("a"));
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-        response.LocationHeaderPath.Should().BeNull();
-    }
-
-    [TestCase("Find")]
-    [TestCase("Search")]
-    public async Task Find_or_Search_InvalidProperties_projects_errors_into_a_400(string operationName)
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = IdentityResultStatus.InvalidProperties,
-                Errors = [new IdentityError { Path = "$[0].firstName", Message = "First name is required." }],
-            },
-        };
-        var requestInfo = CreateRequestInfo(
-            Enum.Parse<IdentityOperation>(operationName),
-            provider,
-            parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
-        );
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(400);
-        response.Body!["validationErrors"]!.AsObject().Should().ContainKey("$[0].firstName");
-    }
-
-    [TestCase("Find")]
-    [TestCase("Search")]
-    public async Task Find_or_Search_NotFound_is_404_identity_not_found(string operationName)
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult { Status = IdentityResultStatus.NotFound },
-        };
-        var requestInfo = CreateRequestInfo(
-            Enum.Parse<IdentityOperation>(operationName),
-            provider,
-            parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
-        );
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertNotFound(response);
-    }
-
-    [TestCase("Find", "Incomplete")]
-    [TestCase("Find", "JobFailed")]
-    [TestCase("Search", "Incomplete")]
-    [TestCase("Search", "JobFailed")]
-    public async Task Find_or_Search_Incomplete_or_JobFailed_is_502_provider_contract_violation(
-        string operationName,
-        string statusName
-    )
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextAsyncResult = new IdentityAsyncResult
-            {
-                Status = Enum.Parse<IdentityResultStatus>(statusName),
-            },
-        };
-        var requestInfo = CreateRequestInfo(
-            Enum.Parse<IdentityOperation>(operationName),
-            provider,
-            parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
-        );
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    // ---------------------------------------------------------------- Results
-
-    [Test]
-    public async Task Results_Success_with_a_payload_is_200()
-    {
-        JsonObject payload = new() { ["status"] = "Complete" };
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = payload },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(200);
-        response.Body!["status"]!.ToString().Should().Be("Complete");
-        response.LocationHeaderPath.Should().BeNull();
-    }
-
-    [Test]
-    public async Task Results_Success_with_no_payload_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = null },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task Results_Incomplete_with_a_payload_is_200_with_Location_to_the_current_poll_path()
-    {
-        JsonObject payload = new() { ["status"] = "Incomplete" };
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Incomplete, Payload = payload },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(200);
-        response.Body!["status"]!.ToString().Should().Be("Incomplete");
-        response.LocationHeaderPath.Should().Be($"{PollPathPrefix}/job-token-1");
-    }
-
-    [Test]
-    public async Task Results_Incomplete_with_no_payload_is_502_provider_contract_violation()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.Incomplete, Payload = null },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertContractViolation(response);
-    }
-
-    [Test]
-    public async Task Results_JobFailed_is_502_job_failed_with_the_fixed_title_and_detail_and_no_Location()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult
-            {
-                Status = IdentityResultStatus.JobFailed,
-                Payload = new JsonObject { ["ignored"] = true },
-                Errors = [new IdentityError { Message = "ignored" }],
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(502);
-        response.Body!["type"]!.ToString().Should().Be(IdentityFailureResponse.JobFailedType);
-        response.Body!["title"]!.ToString().Should().Be("Identity job failed");
-        response.Body!["detail"]!
-            .ToString()
-            .Should()
-            .Be("The accepted identity request failed permanently. Stop polling this job.");
-        response.LocationHeaderPath.Should().BeNull();
-    }
-
-    [Test]
-    public async Task Results_InvalidProperties_projects_errors_into_a_400()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult
-            {
-                Status = IdentityResultStatus.InvalidProperties,
-                Errors = [new IdentityError { Message = "job input was invalid" }],
-            },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        response.StatusCode.Should().Be(400);
-        response.Body!["errors"]!
-            .AsArray()
-            .Select(n => n!.ToString())
-            .Should()
-            .Equal("job input was invalid");
-    }
-
-    [Test]
-    public async Task Results_NotFound_is_404_identity_not_found()
-    {
-        var provider = new ScriptedIdentityService
-        {
-            NextResult = new IdentityResult { Status = IdentityResultStatus.NotFound },
-        };
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: "job-token-1");
-
-        IFrontendResponse response = await Execute(requestInfo);
-
-        AssertNotFound(response);
-    }
-
-    // ---------------------------------------------------------------- shared assertions
-
     private static void AssertContractViolation(IFrontendResponse response)
     {
         response.StatusCode.Should().Be(502);
@@ -605,5 +117,905 @@ public class IdentityHandlerResponseMappingTests
         response.StatusCode.Should().Be(404);
         response.ContentType.Should().Be("application/problem+json");
         response.Body!["type"]!.ToString().Should().Be(IdentityFailureResponse.NotFoundType);
+    }
+
+    // ---------------------------------------------------------------- Create
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_Success_With_A_String_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = "unique-id-1",
+                },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(200);
+        }
+
+        [Test]
+        public void It_returns_the_string_body()
+        {
+            _response.Body!.GetValue<string>().Should().Be("unique-id-1");
+        }
+
+        [Test]
+        public void It_has_no_Location()
+        {
+            _response.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_Success_With_No_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = null },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_Success_With_A_Non_String_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = new JsonObject(),
+                },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_InvalidProperties_Result
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.InvalidProperties,
+                    Errors =
+                    [
+                        new IdentityError { Path = "$.firstName", Message = "First name is required." },
+                    ],
+                },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_400()
+        {
+            _response.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_projects_the_errors_into_validationErrors()
+        {
+            _response.Body!["validationErrors"]!["$.firstName"]!
+                .AsArray()
+                .Select(n => n!.ToString())
+                .Should()
+                .Equal("First name is required.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_NotFound_Result
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.NotFound },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_404_identity_not_found()
+        {
+            AssertNotFound(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_Incomplete_Or_JobFailed_Result
+    {
+        [TestCase("Incomplete")]
+        [TestCase("JobFailed")]
+        public async Task It_is_a_502_provider_contract_violation(string statusName)
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = Enum.Parse<IdentityResultStatus>(statusName) },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            AssertContractViolation(response);
+        }
+    }
+
+    // ---------------------------------------------------------------- GetById
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_GetById_Success_With_A_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            JsonObject payload = new() { ["uniqueId"] = "abc" };
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = payload },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "abc");
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(200);
+        }
+
+        [Test]
+        public void It_returns_the_payload_body()
+        {
+            _response.Body!["uniqueId"]!.ToString().Should().Be("abc");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_GetById_Success_With_No_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = null },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "abc");
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_GetById_NotFound_Result
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.NotFound },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "abc");
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_404_identity_not_found()
+        {
+            AssertNotFound(_response);
+        }
+    }
+
+    // ---------------------------------------------------------------- Find / Search synchronous and async
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Synchronous_Find_Or_Search_Success
+    {
+        [TestCase("Find")]
+        [TestCase("Search")]
+        public async Task It_returns_200_with_the_payload_body_and_no_Location(string operationName)
+        {
+            JsonObject payload = new() { ["status"] = "Complete" };
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = payload,
+                    RequestToken = null,
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                Enum.Parse<IdentityOperation>(operationName),
+                provider,
+                parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
+            );
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            response.StatusCode.Should().Be(200);
+            response.Body!["status"]!.ToString().Should().Be("Complete");
+            response.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Asynchronous_Find_Or_Search_Success_With_A_Usable_Token
+    {
+        [TestCase("Find")]
+        [TestCase("Search")]
+        public async Task It_returns_202_with_no_body_and_a_Location(string operationName)
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = null,
+                    RequestToken = "job-token-1",
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                Enum.Parse<IdentityOperation>(operationName),
+                provider,
+                parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
+            );
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            response.StatusCode.Should().Be(202);
+            response.Body.Should().BeNull();
+            response.LocationHeaderPath.Should().Be($"{PollPathPrefix}/job-token-1");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Asynchronous_Find_Success_With_An_Unusable_Token
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = null,
+                    RequestToken = "bad/token",
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Find,
+                provider,
+                parsedBody: new JsonArray("a")
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+
+        [Test]
+        public void It_has_no_Location()
+        {
+            _response.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Success_With_Both_Payload_And_Token
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = new JsonObject(),
+                    RequestToken = "job-token-1",
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Find,
+                provider,
+                parsedBody: new JsonArray("a")
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Success_With_Neither_Payload_Nor_Token
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = null,
+                    RequestToken = null,
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Find,
+                provider,
+                parsedBody: new JsonArray("a")
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Token_While_The_Results_Capability_Is_Absent
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                Capabilities = IdentityCapabilities.Find,
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    Payload = null,
+                    RequestToken = "job-token-1",
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Find,
+                provider,
+                parsedBody: new JsonArray("a")
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+
+        [Test]
+        public void It_has_no_Location()
+        {
+            _response.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Or_Search_InvalidProperties_Result
+    {
+        [TestCase("Find")]
+        [TestCase("Search")]
+        public async Task It_returns_400_with_the_errors_projected(string operationName)
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.InvalidProperties,
+                    Errors =
+                    [
+                        new IdentityError { Path = "$[0].firstName", Message = "First name is required." },
+                    ],
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                Enum.Parse<IdentityOperation>(operationName),
+                provider,
+                parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
+            );
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            response.StatusCode.Should().Be(400);
+            response.Body!["validationErrors"]!.AsObject().Should().ContainKey("$[0].firstName");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Or_Search_NotFound_Result
+    {
+        [TestCase("Find")]
+        [TestCase("Search")]
+        public async Task It_is_404_identity_not_found(string operationName)
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult { Status = IdentityResultStatus.NotFound },
+            };
+            var requestInfo = CreateRequestInfo(
+                Enum.Parse<IdentityOperation>(operationName),
+                provider,
+                parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
+            );
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            AssertNotFound(response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Or_Search_Incomplete_Or_JobFailed_Result
+    {
+        [TestCase("Find", "Incomplete")]
+        [TestCase("Find", "JobFailed")]
+        [TestCase("Search", "Incomplete")]
+        [TestCase("Search", "JobFailed")]
+        public async Task It_is_a_502_provider_contract_violation(string operationName, string statusName)
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextAsyncResult = new IdentityAsyncResult
+                {
+                    Status = Enum.Parse<IdentityResultStatus>(statusName),
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                Enum.Parse<IdentityOperation>(operationName),
+                provider,
+                parsedBody: operationName == "Find" ? new JsonArray("a") : new JsonArray(new JsonObject())
+            );
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            AssertContractViolation(response);
+        }
+    }
+
+    // ---------------------------------------------------------------- Results
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_Success_With_A_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            JsonObject payload = new() { ["status"] = "Complete" };
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = payload },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(200);
+        }
+
+        [Test]
+        public void It_returns_the_payload_body()
+        {
+            _response.Body!["status"]!.ToString().Should().Be("Complete");
+        }
+
+        [Test]
+        public void It_has_no_Location()
+        {
+            _response.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_Success_With_No_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.Success, Payload = null },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_Incomplete_With_A_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            JsonObject payload = new() { ["status"] = "Incomplete" };
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.Incomplete,
+                    Payload = payload,
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(200);
+        }
+
+        [Test]
+        public void It_returns_the_payload_body()
+        {
+            _response.Body!["status"]!.ToString().Should().Be("Incomplete");
+        }
+
+        [Test]
+        public void It_has_a_Location_to_the_current_poll_path()
+        {
+            _response.LocationHeaderPath.Should().Be($"{PollPathPrefix}/job-token-1");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_Incomplete_With_No_Payload
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.Incomplete, Payload = null },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_JobFailed_Result
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.JobFailed,
+                    Payload = new JsonObject { ["ignored"] = true },
+                    Errors = [new IdentityError { Message = "ignored" }],
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_502()
+        {
+            _response.StatusCode.Should().Be(502);
+        }
+
+        [Test]
+        public void It_returns_the_job_failed_type()
+        {
+            _response.Body!["type"]!.ToString().Should().Be(IdentityFailureResponse.JobFailedType);
+        }
+
+        [Test]
+        public void It_returns_the_fixed_title()
+        {
+            _response.Body!["title"]!.ToString().Should().Be("Identity job failed");
+        }
+
+        [Test]
+        public void It_returns_the_fixed_detail()
+        {
+            _response.Body!["detail"]!
+                .ToString()
+                .Should()
+                .Be("The accepted identity request failed permanently. Stop polling this job.");
+        }
+
+        [Test]
+        public void It_has_no_Location()
+        {
+            _response.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_InvalidProperties_Result
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.InvalidProperties,
+                    Errors = [new IdentityError { Message = "job input was invalid" }],
+                },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_returns_400()
+        {
+            _response.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_projects_the_errors()
+        {
+            _response.Body!["errors"]!
+                .AsArray()
+                .Select(n => n!.ToString())
+                .Should()
+                .Equal("job input was invalid");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_NotFound_Result
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult { Status = IdentityResultStatus.NotFound },
+            };
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: "job-token-1"
+            );
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_404_identity_not_found()
+        {
+            AssertNotFound(_response);
+        }
+    }
+
+    /// <summary>
+    /// Pins the null-provider-result path for every one of the five identity operations: a provider
+    /// that breaks the non-nullable <see cref="IIdentityService" /> contract and returns null from an
+    /// operation is distinguished from a boundary failure (design.md D9) and mapped to the existing
+    /// provider-contract-violation 502 - never the default bodyless 503 that a missed null check would
+    /// leave in place.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_a_provider_operation_that_returns_null_from_a_non_throwing_call
+    {
+        [TestCase("Create")]
+        [TestCase("GetById")]
+        [TestCase("Find")]
+        [TestCase("Search")]
+        [TestCase("Results")]
+        public async Task It_is_502_provider_contract_violation_with_no_result_detail_and_no_Location(
+            string operationName
+        )
+        {
+            IdentityOperation operation = Enum.Parse<IdentityOperation>(operationName);
+            var provider = new ScriptedIdentityService { NextResult = null, NextAsyncResult = null };
+            RequestInfo requestInfo = operation switch
+            {
+                IdentityOperation.Create => CreateRequestInfo(operation, provider),
+                IdentityOperation.GetById => CreateRequestInfo(operation, provider, routeValue: "abc"),
+                IdentityOperation.Find => CreateRequestInfo(
+                    operation,
+                    provider,
+                    parsedBody: new JsonArray("a")
+                ),
+                IdentityOperation.Search => CreateRequestInfo(
+                    operation,
+                    provider,
+                    parsedBody: new JsonArray(new JsonObject())
+                ),
+                IdentityOperation.Results => CreateRequestInfo(
+                    operation,
+                    provider,
+                    routeValue: "job-token-1"
+                ),
+                _ => throw new InvalidOperationException($"Unsupported operation '{operation}'."),
+            };
+
+            IFrontendResponse response = await Execute(requestInfo);
+
+            AssertContractViolation(response);
+            response.Body!["detail"]!.ToString().Should().Be("The identity provider returned no result.");
+            response.LocationHeaderPath.Should().BeNull();
+        }
     }
 }

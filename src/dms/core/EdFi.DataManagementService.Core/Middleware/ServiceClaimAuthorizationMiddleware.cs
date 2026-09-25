@@ -50,8 +50,8 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
         {
             logger.LogInformation(
                 "ServiceClaimAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
-                claimSetName,
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             CreateForbiddenResponse(requestInfo);
             return;
@@ -67,9 +67,9 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
         {
             logger.LogDebug(
                 "ServiceClaimAuthorizationMiddleware: Claim set '{ClaimSetName}' does not grant '{Action}' on the identity service claim - {TraceId}",
-                claimSet.Name,
+                LoggingSanitizer.SanitizeInternalValueForLogging(claimSet.Name),
                 requiredAction,
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             CreateForbiddenResponse(requestInfo);
             return;
@@ -93,9 +93,11 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
             string message =
                 $"The identity service claim's authorization strategies for claim set '{claimSet.Name}' and action '{requiredAction}' must be exactly ['{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}'].";
             logger.LogError(
-                "ServiceClaimAuthorizationMiddleware: {Message} - {TraceId}",
-                message,
-                requestInfo.FrontendRequest.TraceId.Value
+                "ServiceClaimAuthorizationMiddleware: The identity service claim's authorization strategies for claim set '{ClaimSetName}' and action '{Action}' must be exactly ['{Strategy}']. - {TraceId}",
+                LoggingSanitizer.SanitizeInternalValueForLogging(claimSet.Name),
+                requiredAction,
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,

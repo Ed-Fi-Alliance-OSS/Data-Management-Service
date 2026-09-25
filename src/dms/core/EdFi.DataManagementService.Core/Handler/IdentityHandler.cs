@@ -43,6 +43,14 @@ internal sealed class IdentityHandler(
     ILogger<IdentityHandler> _logger
 ) : IPipelineStep
 {
+    /// <summary>
+    /// The fallback maximum HTTP request-line size passed to every <see cref="IdentityHandler"/>
+    /// instance, used only when a request's <see cref="FrontendRequest.MaxRequestLineSize"/> is null.
+    /// This is the documented default for Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>,
+    /// re-verified at runtime against a live host rather than assumed.
+    /// </summary>
+    internal const int DefaultMaxRequestLineSize = 8192;
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering IdentityHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
@@ -93,7 +101,9 @@ internal sealed class IdentityHandler(
             requestInfo.FrontendResponse = mapped;
         }
         // A null mapped response means the provider boundary already set a sanitized
-        // upstream-failure 502 on requestInfo.FrontendResponse.
+        // upstream-failure 502 on requestInfo.FrontendResponse; a provider returning null without the
+        // boundary failing is mapped to a provider-contract-violation 502 in each Execute* method
+        // above, so it never reaches this branch as a null mapped response.
     }
 
     private async Task<FrontendResponse?> ExecuteCreate(
@@ -103,13 +113,15 @@ internal sealed class IdentityHandler(
     )
     {
         JsonObject body = (JsonObject)requestInfo.ParsedBody;
-        IdentityResult? result = await _boundary.InvokeAsync(
+        IdentityInvocation<IdentityResult> invocation = await _boundary.InvokeAsync(
             () => provider.CreateAsync(body, context, requestInfo.RequestCancellationToken),
             requestInfo
         );
-        return result is null
-            ? null
-            : MapResult(requestInfo, result.Status, result.Payload, requestToken: null, result.Errors);
+        return MapInvocation(
+            requestInfo,
+            invocation,
+            result => MapResult(requestInfo, result.Status, result.Payload, requestToken: null, result.Errors)
+        );
     }
 
     private async Task<FrontendResponse?> ExecuteGetById(
@@ -118,7 +130,7 @@ internal sealed class IdentityHandler(
         RequestInfo requestInfo
     )
     {
-        IdentityResult? result = await _boundary.InvokeAsync(
+        IdentityInvocation<IdentityResult> invocation = await _boundary.InvokeAsync(
             () =>
                 provider.GetByIdAsync(
                     requestInfo.IdentityRouteValue!,
@@ -127,9 +139,11 @@ internal sealed class IdentityHandler(
                 ),
             requestInfo
         );
-        return result is null
-            ? null
-            : MapResult(requestInfo, result.Status, result.Payload, requestToken: null, result.Errors);
+        return MapInvocation(
+            requestInfo,
+            invocation,
+            result => MapResult(requestInfo, result.Status, result.Payload, requestToken: null, result.Errors)
+        );
     }
 
     private async Task<FrontendResponse?> ExecuteFind(
@@ -141,13 +155,16 @@ internal sealed class IdentityHandler(
         JsonArray body = (JsonArray)requestInfo.ParsedBody;
         IReadOnlyList<string> uniqueIds = [.. body.Select(item => ((JsonValue)item!).GetValue<string>())];
 
-        IdentityAsyncResult? result = await _boundary.InvokeAsync(
+        IdentityInvocation<IdentityAsyncResult> invocation = await _boundary.InvokeAsync(
             () => provider.FindAsync(uniqueIds, context, requestInfo.RequestCancellationToken),
             requestInfo
         );
-        return result is null
-            ? null
-            : MapResult(requestInfo, result.Status, result.Payload, result.RequestToken, result.Errors);
+        return MapInvocation(
+            requestInfo,
+            invocation,
+            result =>
+                MapResult(requestInfo, result.Status, result.Payload, result.RequestToken, result.Errors)
+        );
     }
 
     private async Task<FrontendResponse?> ExecuteSearch(
@@ -159,13 +176,16 @@ internal sealed class IdentityHandler(
         JsonArray body = (JsonArray)requestInfo.ParsedBody;
         IReadOnlyList<JsonObject> requests = [.. body.Select(item => (JsonObject)item!)];
 
-        IdentityAsyncResult? result = await _boundary.InvokeAsync(
+        IdentityInvocation<IdentityAsyncResult> invocation = await _boundary.InvokeAsync(
             () => provider.SearchAsync(requests, context, requestInfo.RequestCancellationToken),
             requestInfo
         );
-        return result is null
-            ? null
-            : MapResult(requestInfo, result.Status, result.Payload, result.RequestToken, result.Errors);
+        return MapInvocation(
+            requestInfo,
+            invocation,
+            result =>
+                MapResult(requestInfo, result.Status, result.Payload, result.RequestToken, result.Errors)
+        );
     }
 
     private async Task<FrontendResponse?> ExecuteResults(
@@ -174,7 +194,7 @@ internal sealed class IdentityHandler(
         RequestInfo requestInfo
     )
     {
-        IdentityResult? result = await _boundary.InvokeAsync(
+        IdentityInvocation<IdentityResult> invocation = await _boundary.InvokeAsync(
             () =>
                 provider.ResultsAsync(
                     requestInfo.IdentityRouteValue!,
@@ -183,9 +203,43 @@ internal sealed class IdentityHandler(
                 ),
             requestInfo
         );
-        return result is null
-            ? null
-            : MapResult(requestInfo, result.Status, result.Payload, requestToken: null, result.Errors);
+        return MapInvocation(
+            requestInfo,
+            invocation,
+            result => MapResult(requestInfo, result.Status, result.Payload, requestToken: null, result.Errors)
+        );
+    }
+
+    /// <summary>
+    /// Distinguishes the boundary's two null-adjacent outcomes for every one of the five identity
+    /// operations: when <see cref="IdentityInvocation{T}.BoundaryFailed" /> is true, the boundary has
+    /// already set a sanitized upstream-failure 502 and this returns null so the caller sets no
+    /// response of its own; otherwise a null <see cref="IdentityInvocation{T}.Result" /> means the
+    /// provider itself returned null - breaking the non-nullable <see cref="IIdentityService" />
+    /// contract - and is mapped to the existing provider-contract-violation 502, never to the default
+    /// bodyless 503.
+    /// </summary>
+    private static FrontendResponse? MapInvocation<T>(
+        RequestInfo requestInfo,
+        IdentityInvocation<T> invocation,
+        Func<T, FrontendResponse> mapResult
+    )
+        where T : class
+    {
+        if (invocation.BoundaryFailed)
+        {
+            return null;
+        }
+
+        if (invocation.Result is null)
+        {
+            return ContractViolation(
+                requestInfo.FrontendRequest.TraceId,
+                "The identity provider returned no result."
+            );
+        }
+
+        return mapResult(invocation.Result);
     }
 
     /// <summary>

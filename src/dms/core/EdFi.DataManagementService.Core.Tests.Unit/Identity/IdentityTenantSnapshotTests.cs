@@ -25,7 +25,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 /// interleaving waits between two concurrent callers use a short real-time delay, matching sibling
 /// concurrency fixtures such as <c>CachedApplicationContextProviderTests</c>.
 /// </summary>
-[TestFixture]
 public class IdentityTenantSnapshotTests
 {
     private static IHostApplicationLifetime CreateLifetime(CancellationToken stoppingToken = default)
@@ -50,65 +49,109 @@ public class IdentityTenantSnapshotTests
     private static IDataStoreProvider CreateDataStoreProvider() => A.Fake<IDataStoreProvider>();
 
     [TestFixture]
-    public class Given_A_Fresh_Snapshot : IdentityTenantSnapshotTests
+    public class Given_A_Fresh_Snapshot_Answering_Multiple_Names : IdentityTenantSnapshotTests
     {
-        [Test]
-        public async Task Different_unknown_names_make_zero_further_calls()
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _northOutcome;
+        private TenantExistenceOutcome _southOutcome;
+        private TenantExistenceOutcome _eastOutcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .Returns(Task.FromResult<IList<string>>(["North"]));
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
-            (await snapshot.CheckAsync("North", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Exists);
-
-            (await snapshot.CheckAsync("South", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Absent);
-            (await snapshot.CheckAsync("East", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Absent);
-
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappenedOnceExactly();
+            _northOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
+            _southOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
+            _eastOutcome = await snapshot.CheckAsync("East", CancellationToken.None);
         }
 
         [Test]
-        public async Task An_empty_list_is_a_fresh_snapshot_where_every_name_is_absent()
+        public void It_answers_Exists_for_the_known_tenant()
         {
-            var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .Returns(Task.FromResult<IList<string>>([]));
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            _northOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
 
-            (await snapshot.CheckAsync("North", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Absent);
-            (await snapshot.CheckAsync("South", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Absent);
+        [Test]
+        public void It_answers_Absent_for_the_first_unknown_tenant()
+        {
+            _southOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
 
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+        [Test]
+        public void It_answers_Absent_for_the_second_unknown_tenant()
+        {
+            _eastOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_calls_LoadTenants_exactly_once()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .MustHaveHappenedOnceExactly();
         }
     }
 
     [TestFixture]
-    public class Given_A_Cold_Or_Expired_Snapshot : IdentityTenantSnapshotTests
+    public class Given_A_Fresh_Snapshot_With_An_Empty_Tenant_List : IdentityTenantSnapshotTests
     {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _northOutcome;
+        private TenantExistenceOutcome _southOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>([]));
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+
+            _northOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
+            _southOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
+        }
+
         [Test]
-        public async Task Two_concurrent_cold_callers_make_exactly_one_LoadTenants_call()
+        public void It_answers_Absent_for_the_first_name()
+        {
+            _northOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_answers_Absent_for_the_second_name()
+        {
+            _southOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_calls_LoadTenants_exactly_once()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Two_Concurrent_Cold_Callers : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _firstOutcome;
+        private TenantExistenceOutcome _secondOutcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
             var gate = new TaskCompletionSource<IList<string>>();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .ReturnsLazily(_ => gate.Task);
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             Task<TenantExistenceOutcome> first = snapshot.CheckAsync("North", CancellationToken.None);
             Task<TenantExistenceOutcome> second = snapshot.CheckAsync("South", CancellationToken.None);
@@ -116,35 +159,64 @@ public class IdentityTenantSnapshotTests
 
             gate.SetResult(["North"]);
 
-            (await first).Should().Be(TenantExistenceOutcome.Exists);
-            (await second).Should().Be(TenantExistenceOutcome.Absent);
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappenedOnceExactly();
+            _firstOutcome = await first;
+            _secondOutcome = await second;
         }
 
         [Test]
-        public async Task Expiry_at_60_seconds_triggers_one_refresh()
+        public void It_answers_Exists_for_the_first_caller()
+        {
+            _firstOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_answers_Absent_for_the_second_caller()
+        {
+            _secondOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_calls_LoadTenants_exactly_once()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Snapshot_That_Has_Expired : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .Returns(Task.FromResult<IList<string>>(["North"]));
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             await snapshot.CheckAsync("North", CancellationToken.None);
             timeProvider.Advance(TimeSpan.FromSeconds(60));
             await snapshot.CheckAsync("North", CancellationToken.None);
+        }
 
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+        [Test]
+        public void It_triggers_a_second_LoadTenants_call_after_expiry()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .MustHaveHappenedTwiceExactly();
         }
     }
 
     [TestFixture]
-    public class Given_A_Failed_Refresh : IdentityTenantSnapshotTests
+    public class Given_A_Refresh_That_Fails : IdentityTenantSnapshotTests
     {
-        [Test]
-        public async Task An_InvalidOperationException_from_LoadTenants_is_Unavailable()
+        private TenantExistenceOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
             IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
@@ -152,80 +224,160 @@ public class IdentityTenantSnapshotTests
                 .ThrowsAsync(new InvalidOperationException("Configuration Service unavailable"));
             var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
 
-            TenantExistenceOutcome outcome = await snapshot.CheckAsync("North", CancellationToken.None);
-
-            outcome.Should().Be(TenantExistenceOutcome.Unavailable);
+            _outcome = await snapshot.CheckAsync("North", CancellationToken.None);
         }
 
         [Test]
-        public async Task A_failure_yields_Unavailable_to_every_waiter_and_no_second_call_inside_the_cooldown()
+        public void It_returns_Unavailable()
+        {
+            _outcome.Should().Be(TenantExistenceOutcome.Unavailable);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Failure_Within_The_Cooldown_Window : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _firstOutcome;
+        private TenantExistenceOutcome _secondOutcome;
+        private TenantExistenceOutcome _thirdOutcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .ThrowsAsync(new InvalidOperationException("boom"));
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             Task<TenantExistenceOutcome> first = snapshot.CheckAsync("North", CancellationToken.None);
             Task<TenantExistenceOutcome> second = snapshot.CheckAsync("South", CancellationToken.None);
 
-            (await first).Should().Be(TenantExistenceOutcome.Unavailable);
-            (await second).Should().Be(TenantExistenceOutcome.Unavailable);
-
-            (await snapshot.CheckAsync("East", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Unavailable);
-
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappenedOnceExactly();
+            _firstOutcome = await first;
+            _secondOutcome = await second;
+            _thirdOutcome = await snapshot.CheckAsync("East", CancellationToken.None);
         }
 
         [Test]
-        public async Task A_call_after_the_cooldown_elapses_starts_a_new_refresh()
+        public void It_answers_Unavailable_to_the_first_waiter()
+        {
+            _firstOutcome.Should().Be(TenantExistenceOutcome.Unavailable);
+        }
+
+        [Test]
+        public void It_answers_Unavailable_to_the_second_waiter()
+        {
+            _secondOutcome.Should().Be(TenantExistenceOutcome.Unavailable);
+        }
+
+        [Test]
+        public void It_answers_Unavailable_within_the_cooldown_window()
+        {
+            _thirdOutcome.Should().Be(TenantExistenceOutcome.Unavailable);
+        }
+
+        [Test]
+        public void It_calls_LoadTenants_exactly_once()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Call_After_The_Cooldown_Elapses : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _firstOutcome;
+        private TenantExistenceOutcome _secondOutcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .ThrowsAsync(new InvalidOperationException("boom"))
                 .Once()
                 .Then.Returns(Task.FromResult<IList<string>>(["North"]));
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
-            (await snapshot.CheckAsync("North", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Unavailable);
-
+            _firstOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
             timeProvider.Advance(TimeSpan.FromSeconds(5));
+            _secondOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
+        }
 
-            (await snapshot.CheckAsync("North", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Exists);
+        [Test]
+        public void It_answers_Unavailable_before_the_cooldown_elapses()
+        {
+            _firstOutcome.Should().Be(TenantExistenceOutcome.Unavailable);
+        }
 
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+        [Test]
+        public void It_answers_Exists_after_the_cooldown_elapses()
+        {
+            _secondOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_calls_LoadTenants_twice()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .MustHaveHappenedTwiceExactly();
         }
     }
 
     [TestFixture]
-    public class Given_Cancellation : IdentityTenantSnapshotTests
+    public class Given_A_Pre_Cancelled_Request_Token : IdentityTenantSnapshotTests
     {
-        [Test]
-        public async Task A_pre_cancelled_request_token_throws_OperationCanceledException()
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private CancellationTokenSource _cancellationTokenSource = null!;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
         {
             var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
-            using var cancellationTokenSource = new CancellationTokenSource();
-            await cancellationTokenSource.CancelAsync();
+            _dataStoreProvider = CreateDataStoreProvider();
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+            _cancellationTokenSource = new CancellationTokenSource();
+            _cancellationTokenSource.Cancel();
 
-            Func<Task> act = () => snapshot.CheckAsync("North", cancellationTokenSource.Token);
+            _act = () => snapshot.CheckAsync("North", _cancellationTokenSource.Token);
+        }
 
-            await act.Should().ThrowAsync<OperationCanceledException>();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._)).MustNotHaveHappened();
+        [TearDown]
+        public void TearDown()
+        {
+            _cancellationTokenSource.Dispose();
         }
 
         [Test]
-        public async Task Cancelling_one_waiter_completes_promptly_while_the_other_still_receives_Exists()
+        public async Task It_throws_OperationCanceledException()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Test]
+        public async Task It_never_calls_LoadTenants()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_One_Waiter_Cancelled_While_Another_Still_Waits : IdentityTenantSnapshotTests
+    {
+        /// <summary>
+        /// Mid-flight orchestration: the cancelled waiter must be observed completing before the gate
+        /// releases, and the live waiter must be observed still pending at that same moment, so the
+        /// gated TaskCompletionSource cannot be moved into SetUp.
+        /// </summary>
+        [Test]
+        public async Task It_completes_the_cancelled_waiter_promptly_while_the_live_waiter_still_receives_Exists()
         {
             var timeProvider = new FakeTimeProvider();
             var gate = new TaskCompletionSource<IList<string>>();
@@ -261,9 +413,15 @@ public class IdentityTenantSnapshotTests
                 .Should()
                 .Be(TenantExistenceOutcome.Exists);
         }
+    }
 
-        [Test]
-        public async Task ApplicationStopping_ends_an_in_flight_refresh()
+    [TestFixture]
+    public class Given_ApplicationStopping_During_An_In_Flight_Refresh : IdentityTenantSnapshotTests
+    {
+        private TenantExistenceOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
             var gate = new TaskCompletionSource<IList<string>>();
@@ -279,17 +437,23 @@ public class IdentityTenantSnapshotTests
 
             await stoppingCts.CancelAsync();
 
-            (await checkTask.WaitAsync(TimeSpan.FromSeconds(2)))
-                .Should()
-                .Be(TenantExistenceOutcome.Unavailable);
+            _outcome = await checkTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        [Test]
+        public void It_returns_Unavailable()
+        {
+            _outcome.Should().Be(TenantExistenceOutcome.Unavailable);
         }
     }
 
     [TestFixture]
     public class Given_A_Refresh_That_Exceeds_Its_Budget : IdentityTenantSnapshotTests
     {
-        [Test]
-        public async Task A_refresh_exceeding_its_30_second_budget_yields_Unavailable()
+        private TenantExistenceOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
             var gate = new TaskCompletionSource<IList<string>>();
@@ -306,35 +470,56 @@ public class IdentityTenantSnapshotTests
 
             timeProvider.Advance(TimeSpan.FromSeconds(30));
 
-            (await checkTask.WaitAsync(TimeSpan.FromSeconds(2)))
-                .Should()
-                .Be(TenantExistenceOutcome.Unavailable);
+            _outcome = await checkTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        [Test]
+        public void It_returns_Unavailable()
+        {
+            _outcome.Should().Be(TenantExistenceOutcome.Unavailable);
         }
     }
 
     [TestFixture]
     public class Given_The_Datastore_Independence_Requirement : IdentityTenantSnapshotTests
     {
-        [Test]
-        public async Task LoadDataStores_and_connection_string_decryption_are_never_touched()
+        private TenantExistenceOutcome _outcome;
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private IConnectionStringDecryptionService _decryptionService = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var timeProvider = new FakeTimeProvider();
-            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
-            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .Returns(Task.FromResult<IList<string>>(["North"]));
-            A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            A.CallTo(() => _dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
                 .Throws(new InvalidOperationException("LoadDataStores must not be called"));
-            var decryptionService = A.Fake<IConnectionStringDecryptionService>();
-            A.CallTo(decryptionService).Throws(new InvalidOperationException("must not be called"));
-            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+            _decryptionService = A.Fake<IConnectionStringDecryptionService>();
+            A.CallTo(_decryptionService).Throws(new InvalidOperationException("must not be called"));
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
-            (await snapshot.CheckAsync("North", CancellationToken.None))
-                .Should()
-                .Be(TenantExistenceOutcome.Exists);
+            _outcome = await snapshot.CheckAsync("North", CancellationToken.None);
+        }
 
-            A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
+        [Test]
+        public void It_returns_Exists_for_the_known_tenant()
+        {
+            _outcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_never_calls_LoadDataStores()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
                 .MustNotHaveHappened();
-            A.CallTo(decryptionService).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_never_touches_the_connection_string_decryption_service()
+        {
+            A.CallTo(_decryptionService).MustNotHaveHappened();
         }
     }
 }

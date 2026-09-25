@@ -53,12 +53,23 @@ public class IdentityEndpointModule(
         // get-by-id pattern below (id = "results") rather than the results pattern, which requires
         // an additional token segment. No separate mapping is needed for that case; verified by
         // IdentityEndpointModuleTests.
+        //
+        // The get-by-id and results-token segments are named "__identityId"/"__identityToken"
+        // rather than the literal "id"/"token": a configured route-qualifier segment
+        // (AppSettings:RouteQualifierSegments) can itself be named "id" or "token", and that
+        // qualifier's own segment is a literal "{id}"/"{token}" earlier in this same route
+        // template (FixedRoutePattern.Build), so a literal "id"/"token" here would make the route
+        // template repeat a parameter name and fail host start. Follows the
+        // "__metadataRouteQualifier{n}" precedent in MetadataRouteValidator.
         endpoints
             .MapPost(identitiesBase, AspNetCoreFrontend.IdentityCreate)
             .WithMetadata(new IdentityOperationEndpointMetadata());
 
         endpoints
-            .MapGet($"{identitiesBase}/{{id}}", AspNetCoreFrontend.IdentityGetById)
+            .MapGet(
+                $"{identitiesBase}/{{{AspNetCoreFrontend.IdentityIdRouteParameterName}}}",
+                AspNetCoreFrontend.IdentityGetById
+            )
             .WithMetadata(new IdentityOperationEndpointMetadata());
 
         endpoints
@@ -70,7 +81,10 @@ public class IdentityEndpointModule(
             .WithMetadata(new IdentityOperationEndpointMetadata());
 
         endpoints
-            .MapGet($"{identitiesBase}/results/{{token}}", AspNetCoreFrontend.IdentityResults)
+            .MapGet(
+                $"{identitiesBase}/results/{{{AspNetCoreFrontend.IdentityTokenRouteParameterName}}}",
+                AspNetCoreFrontend.IdentityResults
+            )
             .WithMetadata(new IdentityOperationEndpointMetadata());
     }
 

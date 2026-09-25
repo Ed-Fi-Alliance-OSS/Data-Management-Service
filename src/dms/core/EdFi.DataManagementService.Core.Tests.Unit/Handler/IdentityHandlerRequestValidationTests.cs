@@ -27,7 +27,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 /// <see cref="DuplicatePropertiesMiddleware" />, then <see cref="IdentityHandler" /> - so this fixture
 /// proves the composed contract, not only the handler's own slice of it.
 /// </summary>
-[TestFixture]
 public class IdentityHandlerRequestValidationTests
 {
     /// <summary>
@@ -109,7 +108,7 @@ public class IdentityHandlerRequestValidationTests
     private static IdentityHandler CreateHandler() =>
         new(
             new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance),
-            8192,
+            IdentityHandler.DefaultMaxRequestLineSize,
             NullLogger<IdentityHandler>.Instance
         );
 
@@ -175,196 +174,401 @@ public class IdentityHandlerRequestValidationTests
 
     // ---------------------------------------------------------------- media type (415)
 
-    [TestCase("application/xml")]
-    [TestCase("application/vnd.ed-fi.student.v1+json")]
-    public async Task An_unsupported_media_type_is_rejected_with_415_and_the_provider_is_not_called(
-        string contentType
-    )
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unsupported_Media_Type
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(
-            IdentityOperation.Create,
-            provider,
-            body: "{}",
-            contentType: contentType
-        );
+        [TestCase("application/xml")]
+        [TestCase("application/vnd.ed-fi.student.v1+json")]
+        public async Task It_is_rejected_with_415_and_the_provider_is_not_called(string contentType)
+        {
+            var provider = new CountingIdentityService();
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Create,
+                provider,
+                body: "{}",
+                contentType: contentType
+            );
 
-        await RunJsonBodyChain(requestInfo);
+            await RunJsonBodyChain(requestInfo);
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(415);
-        provider.InvocationCount.Should().Be(0);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(415);
+            provider.InvocationCount.Should().Be(0);
+        }
     }
 
     // ---------------------------------------------------------------- malformed / empty body (400)
 
-    [Test]
-    public async Task Malformed_JSON_is_rejected_with_400_and_the_provider_is_not_called()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Malformed_JSON
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider, body: "{ not valid json");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Create, _provider, body: "{ not valid json");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task An_empty_body_is_rejected_with_400_and_the_provider_is_not_called()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Empty_Body
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider, body: "");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Create, _provider, body: "");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
     // ---------------------------------------------------------------- duplicate property (400, data-validation)
 
-    [Test]
-    public async Task A_duplicate_top_level_property_is_rejected_with_400_and_the_provider_is_not_called()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Duplicate_Top_Level_Property
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(
-            IdentityOperation.Create,
-            provider,
-            body: """{"firstName":"Jane","firstName":"Jane"}"""
-        );
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(
+                IdentityOperation.Create,
+                _provider,
+                body: """{"firstName":"Jane","firstName":"Jane"}"""
+            );
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        requestInfo.FrontendResponse.Body!["validationErrors"].Should().NotBeNull();
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_includes_validation_errors_in_the_body()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
     // ---------------------------------------------------------------- top-level shape (400)
 
-    [Test]
-    public async Task Create_rejects_a_non_object_top_level_body()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Create_Request_With_A_Non_Object_Top_Level_Body
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider, body: "[]");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Create, _provider, body: "[]");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task Find_rejects_a_non_array_top_level_body()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Request_With_A_Non_Array_Top_Level_Body
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, body: "{}");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Find, _provider, body: "{}");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task Find_rejects_an_array_containing_a_non_string_entry()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Request_With_An_Array_Containing_A_Non_String_Entry
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, body: """["a", 123]""");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Find, _provider, body: """["a", 123]""");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task Find_rejects_an_array_containing_a_null_entry()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Find_Request_With_An_Array_Containing_A_Null_Entry
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Find, provider, body: """["a", null]""");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Find, _provider, body: """["a", null]""");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task Search_rejects_a_non_array_top_level_body()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Search_Request_With_A_Non_Array_Top_Level_Body
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Search, provider, body: "{}");
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(IdentityOperation.Search, _provider, body: "{}");
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task Search_rejects_an_array_containing_a_non_object_entry()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Search_Request_With_An_Array_Containing_A_Non_Object_Entry
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(
-            IdentityOperation.Search,
-            provider,
-            body: """[{"firstName":"a"}, "not-an-object"]"""
-        );
+        private RequestInfo _requestInfo = null!;
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(
+                IdentityOperation.Search,
+                _provider,
+                body: """[{"firstName":"a"}, "not-an-object"]"""
+            );
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_is_rejected_with_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_call_the_provider()
+        {
+            _provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task A_well_formed_matching_body_is_accepted_and_reaches_the_provider()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Well_Formed_Matching_Body
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider, body: "{}");
+        private CountingIdentityService _provider = null!;
 
-        await RunJsonBodyChain(requestInfo);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, _provider, body: "{}");
 
-        provider.InvocationCount.Should().Be(1);
+            await RunJsonBodyChain(requestInfo);
+        }
+
+        [Test]
+        public void It_calls_the_provider_exactly_once()
+        {
+            _provider.InvocationCount.Should().Be(1);
+        }
     }
 
     // ---------------------------------------------------------------- blank-but-present route value (400)
 
-    [TestCase("")]
-    [TestCase("   ")]
-    public async Task GetById_rejects_a_present_but_blank_route_value(string blankRouteValue)
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_GetById_Request_With_A_Blank_Route_Value
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: blankRouteValue);
+        [TestCase("")]
+        [TestCase("   ")]
+        public async Task It_is_rejected_with_400_and_the_provider_is_not_called(string blankRouteValue)
+        {
+            var provider = new CountingIdentityService();
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.GetById,
+                provider,
+                routeValue: blankRouteValue
+            );
 
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [TestCase("")]
-    [TestCase("   ")]
-    public async Task Results_rejects_a_present_but_blank_route_value(string blankRouteValue)
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Results_Request_With_A_Blank_Route_Value
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.Results, provider, routeValue: blankRouteValue);
+        [TestCase("")]
+        [TestCase("   ")]
+        public async Task It_is_rejected_with_400_and_the_provider_is_not_called(string blankRouteValue)
+        {
+            var provider = new CountingIdentityService();
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.Results,
+                provider,
+                routeValue: blankRouteValue
+            );
 
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        provider.InvocationCount.Should().Be(0);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            provider.InvocationCount.Should().Be(0);
+        }
     }
 
-    [Test]
-    public async Task GetById_accepts_a_non_blank_route_value_and_reaches_the_provider()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_GetById_Request_With_A_Non_Blank_Route_Value
     {
-        var provider = new CountingIdentityService();
-        var requestInfo = CreateRequestInfo(IdentityOperation.GetById, provider, routeValue: "unique-id-1");
+        private CountingIdentityService _provider = null!;
 
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            var requestInfo = CreateRequestInfo(
+                IdentityOperation.GetById,
+                _provider,
+                routeValue: "unique-id-1"
+            );
 
-        provider.InvocationCount.Should().Be(1);
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_calls_the_provider_exactly_once()
+        {
+            _provider.InvocationCount.Should().Be(1);
+        }
     }
 }

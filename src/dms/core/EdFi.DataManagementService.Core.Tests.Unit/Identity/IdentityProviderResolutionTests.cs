@@ -25,7 +25,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 /// <c>Capabilities</c> value that differs from the one its call was gated on. A singleton test fixture
 /// cannot detect a captured-scope defect, so this fixture specifically exercises scoped registrations.
 /// </summary>
-[TestFixture]
 public class IdentityProviderResolutionTests
 {
     /// <summary>
@@ -80,85 +79,147 @@ public class IdentityProviderResolutionTests
             .AddScoped<IIdentityService, ScopedIdentityServiceWithScopedDependency>()
             .BuildServiceProvider();
 
-    [Test]
-    public async Task The_gate_and_a_later_invocation_read_the_same_instance_within_one_request_scope()
+    [TestFixture]
+    public class Given_A_Provider_Resolved_Within_One_Request_Scope : IdentityProviderResolutionTests
     {
-        IServiceProvider root = CreateScopedRegistrationRootProvider();
-        using IServiceScope scope = root.CreateScope();
+        private ScopedIdentityServiceWithScopedDependency? _gateInstance;
+        private ScopedIdentityServiceWithScopedDependency? _invocationInstance;
 
-        var requestInfo = No.RequestInfo("resolution-trace", scope.ServiceProvider);
-        requestInfo.IdentityOperation = IdentityOperation.Create;
+        [SetUp]
+        public async Task Setup()
+        {
+            IServiceProvider root = CreateScopedRegistrationRootProvider();
+            using IServiceScope scope = root.CreateScope();
 
-        var boundary = new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance);
-        var middleware = new IdentityOperationCapabilityMiddleware(
-            boundary,
-            NullLogger<IdentityOperationCapabilityMiddleware>.Instance
-        );
+            var requestInfo = No.RequestInfo("resolution-trace", scope.ServiceProvider);
+            requestInfo.IdentityOperation = IdentityOperation.Create;
 
-        await middleware.Execute(requestInfo, TestHelper.NullNext);
+            var boundary = new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance);
+            var middleware = new IdentityOperationCapabilityMiddleware(
+                boundary,
+                NullLogger<IdentityOperationCapabilityMiddleware>.Instance
+            );
 
-        requestInfo.IdentityProvider.Should().NotBeNull();
-        var gateInstance = (ScopedIdentityServiceWithScopedDependency)requestInfo.IdentityProvider!;
+            await middleware.Execute(requestInfo, TestHelper.NullNext);
 
-        // A later reader (IdentityHandler in the real pipeline) resolves nothing new: it uses the
-        // instance the gate already captured on RequestInfo.
-        var invocationInstance = (ScopedIdentityServiceWithScopedDependency)requestInfo.IdentityProvider!;
+            _gateInstance = (ScopedIdentityServiceWithScopedDependency?)requestInfo.IdentityProvider;
 
-        ReferenceEquals(gateInstance, invocationInstance).Should().BeTrue();
+            // A later reader (IdentityHandler in the real pipeline) resolves nothing new: it uses the
+            // instance the gate already captured on RequestInfo.
+            _invocationInstance = (ScopedIdentityServiceWithScopedDependency?)requestInfo.IdentityProvider;
+        }
+
+        [Test]
+        public void It_resolves_a_non_null_provider()
+        {
+            _gateInstance.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_uses_the_same_instance_for_a_later_read()
+        {
+            ReferenceEquals(_gateInstance, _invocationInstance).Should().BeTrue();
+        }
     }
 
-    [Test]
-    public void Two_different_request_scopes_resolve_two_different_instances()
+    [TestFixture]
+    public class Given_Two_Different_Request_Scopes : IdentityProviderResolutionTests
     {
-        IServiceProvider root = CreateScopedRegistrationRootProvider();
+        private IIdentityService _firstProvider = null!;
+        private IIdentityService _secondProvider = null!;
 
-        using IServiceScope firstScope = root.CreateScope();
-        using IServiceScope secondScope = root.CreateScope();
+        [SetUp]
+        public void Setup()
+        {
+            IServiceProvider root = CreateScopedRegistrationRootProvider();
 
-        var firstProvider = firstScope.ServiceProvider.GetRequiredService<IIdentityService>();
-        var secondProvider = secondScope.ServiceProvider.GetRequiredService<IIdentityService>();
+            using IServiceScope firstScope = root.CreateScope();
+            using IServiceScope secondScope = root.CreateScope();
 
-        ReferenceEquals(firstProvider, secondProvider).Should().BeFalse();
+            _firstProvider = firstScope.ServiceProvider.GetRequiredService<IIdentityService>();
+            _secondProvider = secondScope.ServiceProvider.GetRequiredService<IIdentityService>();
+        }
+
+        [Test]
+        public void It_resolves_two_different_instances()
+        {
+            ReferenceEquals(_firstProvider, _secondProvider).Should().BeFalse();
+        }
     }
 
-    [Test]
-    public void Resolving_the_provider_twice_within_the_same_scope_yields_the_same_scoped_dependency_instance()
+    [TestFixture]
+    public class Given_The_Same_Scope_Resolved_Twice : IdentityProviderResolutionTests
     {
-        IServiceProvider root = CreateScopedRegistrationRootProvider();
-        using IServiceScope scope = root.CreateScope();
+        private ScopedIdentityServiceWithScopedDependency _first = null!;
+        private ScopedIdentityServiceWithScopedDependency _second = null!;
 
-        var first = (ScopedIdentityServiceWithScopedDependency)
-            scope.ServiceProvider.GetRequiredService<IIdentityService>();
-        var second = (ScopedIdentityServiceWithScopedDependency)
-            scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        [SetUp]
+        public void Setup()
+        {
+            IServiceProvider root = CreateScopedRegistrationRootProvider();
+            using IServiceScope scope = root.CreateScope();
 
-        // Scoped resolution within one scope returns the same instance, and each carries the same
-        // captured scoped dependency - the defect a singleton test fixture could never expose.
-        ReferenceEquals(first, second).Should().BeTrue();
-        first.Marker.Id.Should().Be(second.Marker.Id);
+            _first = (ScopedIdentityServiceWithScopedDependency)
+                scope.ServiceProvider.GetRequiredService<IIdentityService>();
+            _second = (ScopedIdentityServiceWithScopedDependency)
+                scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        }
+
+        [Test]
+        public void It_returns_the_same_instance()
+        {
+            // Scoped resolution within one scope returns the same instance - the defect a singleton
+            // test fixture could never expose.
+            ReferenceEquals(_first, _second).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_carries_the_same_scoped_dependency()
+        {
+            _first.Marker.Id.Should().Be(_second.Marker.Id);
+        }
     }
 
-    [Test]
-    public async Task Activation_through_the_boundary_resolves_from_the_requests_own_scope_not_a_shared_root()
+    [TestFixture]
+    public class Given_Activation_Through_The_Boundary_Across_Two_Scopes : IdentityProviderResolutionTests
     {
-        IServiceProvider root = CreateScopedRegistrationRootProvider();
-        using IServiceScope firstScope = root.CreateScope();
-        using IServiceScope secondScope = root.CreateScope();
+        private IIdentityService? _first;
+        private IIdentityService? _second;
 
-        var boundary = new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance);
+        [SetUp]
+        public void Setup()
+        {
+            IServiceProvider root = CreateScopedRegistrationRootProvider();
+            using IServiceScope firstScope = root.CreateScope();
+            using IServiceScope secondScope = root.CreateScope();
 
-        var firstRequestInfo = No.RequestInfo("first", firstScope.ServiceProvider);
-        firstRequestInfo.IdentityOperation = IdentityOperation.Create;
-        var secondRequestInfo = No.RequestInfo("second", secondScope.ServiceProvider);
-        secondRequestInfo.IdentityOperation = IdentityOperation.Create;
+            var boundary = new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance);
 
-        IIdentityService? first = boundary.Activate(firstRequestInfo);
-        IIdentityService? second = boundary.Activate(secondRequestInfo);
+            var firstRequestInfo = No.RequestInfo("first", firstScope.ServiceProvider);
+            firstRequestInfo.IdentityOperation = IdentityOperation.Create;
+            var secondRequestInfo = No.RequestInfo("second", secondScope.ServiceProvider);
+            secondRequestInfo.IdentityOperation = IdentityOperation.Create;
 
-        first.Should().NotBeNull();
-        second.Should().NotBeNull();
-        ReferenceEquals(first, second).Should().BeFalse();
+            _first = boundary.Activate(firstRequestInfo);
+            _second = boundary.Activate(secondRequestInfo);
+        }
 
-        await Task.CompletedTask;
+        [Test]
+        public void It_resolves_a_non_null_provider_for_the_first_scope()
+        {
+            _first.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_resolves_a_non_null_provider_for_the_second_scope()
+        {
+            _second.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_resolves_different_instances_across_scopes()
+        {
+            ReferenceEquals(_first, _second).Should().BeFalse();
+        }
     }
 }

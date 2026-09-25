@@ -124,17 +124,23 @@ public class IdentityNoStoreTests
     [TestFixture]
     public class Given_The_Real_Rate_Limiter_Rejects_A_Second_Identity_Request
     {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private IIdentityService _identityService = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
         // The TestRateLimit environment permits one request per sixty-second window (see
         // RateLimitTests.cs). The first request here consumes the window against a plain route so
         // that the identity route is never reached at all in this test: the second request, to the
         // identity route, is rejected by the real global limiter before routing dispatches to any
         // endpoint, so IIdentityService is provably never invoked.
-        [Test]
-        public async Task It_rejects_the_second_request_with_no_store_and_never_invokes_the_provider()
+        [SetUp]
+        public async Task Setup()
         {
-            var identityService = A.Fake<IIdentityService>();
+            _identityService = A.Fake<IIdentityService>();
 
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("TestRateLimit");
                 builder.ConfigureAppConfiguration(
@@ -151,66 +157,151 @@ public class IdentityNoStoreTests
                 builder.ConfigureServices(services =>
                 {
                     TestMockHelper.AddEssentialMocks(services);
-                    services.AddSingleton(identityService);
+                    services.AddSingleton(_identityService);
                 });
             });
-            using var client = factory.CreateClient();
+            _client = _factory.CreateClient();
 
             using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/health");
-            await client.SendAsync(firstRequest);
+            await _client.SendAsync(firstRequest);
 
             using var secondRequest = new HttpRequestMessage(HttpMethod.Post, "/identity/v2/identities")
             {
                 Content = new StringContent("{}", Encoding.UTF8, "application/json"),
             };
-            var response = await client.SendAsync(secondRequest);
-            var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            _response = await _client.SendAsync(secondRequest);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
 
-            response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-            response
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_rejects_the_second_request_with_too_many_requests()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        [Test]
+        public void It_carries_cache_control_no_store_exactly_once()
+        {
+            _response
                 .Headers.GetValues("Cache-Control")
                 .Should()
                 .ContainSingle()
                 .Which.Should()
                 .Be("no-store");
-            body["status"]!.GetValue<int>().Should().Be(429);
-            body["type"]!.ToString().Should().Be("urn:ed-fi:api:too-many-requests");
+        }
 
-            A.CallTo(identityService).MustNotHaveHappened();
+        [Test]
+        public void It_reports_status_429_in_the_problem_body()
+        {
+            _body["status"]!.GetValue<int>().Should().Be(429);
+        }
+
+        [Test]
+        public void It_reports_the_too_many_requests_problem_type()
+        {
+            _body["type"]!.ToString().Should().Be("urn:ed-fi:api:too-many-requests");
+        }
+
+        [Test]
+        public void It_never_invokes_the_identity_provider()
+        {
+            A.CallTo(_identityService).MustNotHaveHappened();
         }
     }
 
     [TestFixture]
-    public class Given_Surfaces_Outside_The_Identity_Operation_Routes
+    public class Given_The_Identity_Swagger_Document
     {
-        [Test]
-        public async Task The_identity_swagger_document_carries_no_added_no_store()
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
-            await using var factory = CreateFactory(apiService);
-            using var client = factory.CreateClient();
+            _factory = CreateFactory(apiService);
+            _client = _factory.CreateClient();
 
-            var response = await client.GetAsync("/metadata/identity/v2/swagger.json");
+            _response = await _client.GetAsync("/metadata/identity/v2/swagger.json");
+        }
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Headers.Contains("Cache-Control").Should().BeFalse();
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
         }
 
         [Test]
-        public async Task Discovery_carries_no_added_no_store()
+        public void It_returns_200()
         {
-            var apiService = A.Fake<IApiService>();
-            await using var factory = CreateFactory(apiService);
-            using var client = factory.CreateClient();
-
-            var response = await client.GetAsync("/");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Headers.Contains("Cache-Control").Should().BeFalse();
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Test]
-        public async Task A_resource_route_200_carries_no_added_no_store()
+        public void It_carries_no_added_no_store()
+        {
+            _response.Headers.Contains("Cache-Control").Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Discovery_Endpoint
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            _factory = CreateFactory(apiService);
+            _client = _factory.CreateClient();
+
+            _response = await _client.GetAsync("/");
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_carries_no_added_no_store()
+        {
+            _response.Headers.Contains("Cache-Control").Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Resource_Route
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
             var okResponse = A.Fake<IFrontendResponse>();
@@ -221,30 +312,72 @@ public class IdentityNoStoreTests
             A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
                 .Returns(Task.FromResult(okResponse));
 
-            await using var factory = CreateFactory(apiService);
-            using var client = factory.CreateClient();
+            _factory = CreateFactory(apiService);
+            _client = _factory.CreateClient();
 
-            var response = await client.GetAsync("/data/ed-fi/schools/abc");
+            _response = await _client.GetAsync("/data/ed-fi/schools/abc");
+        }
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Headers.Contains("Cache-Control").Should().BeFalse();
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
         }
 
         [Test]
-        public async Task The_toggle_off_fallback_carries_the_same_single_no_store_as_today()
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_carries_no_added_no_store()
+        {
+            _response.Headers.Contains("Cache-Control").Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Toggle_Off_Fallback
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
-            await using var factory = CreateFactory(apiService, enableIdentityManagement: false);
-            using var client = factory.CreateClient();
+            _factory = CreateFactory(apiService, enableIdentityManagement: false);
+            _client = _factory.CreateClient();
             using var request = new HttpRequestMessage(HttpMethod.Post, "/identity/v2/identities")
             {
                 Content = new StringContent("{}", Encoding.UTF8, "application/json"),
             };
 
-            var response = await client.SendAsync(request);
+            _response = await _client.SendAsync(request);
+        }
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            response
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_404()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public void It_carries_the_same_single_no_store_as_today()
+        {
+            _response
                 .Headers.GetValues("Cache-Control")
                 .Should()
                 .ContainSingle()

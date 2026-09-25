@@ -14,9 +14,11 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// .../identity/v2/identities/{id}, and a results-poll path (for example
 /// .../identity/v2/identities/results/SECRET-TOKEN-XYZ) becomes
 /// .../identity/v2/identities/results/{token}, while every tenant and route-qualifier segment ahead
-/// of /identity/v2 keeps its real value. Every other path - including identities/find and
-/// identities/search, neither of which carries an identifier, and every non-identity route - is
-/// returned unchanged.
+/// of /identity/v2 keeps its real value. Matching is case-insensitive and tolerates a single
+/// trailing slash on the identifier segment, mirroring how ASP.NET Core routing matches these paths;
+/// the redacted output drops that trailing slash along with the identifier it followed. Every other
+/// path - including identities/find and identities/search (and their trailing-slash forms), neither
+/// of which carries an identifier, and every non-identity route - is returned unchanged.
 /// </summary>
 /// <remarks>
 /// Called ahead of <c>LoggingSanitizer</c> in <see cref="LoggingMiddleware"/> so the scope
@@ -61,16 +63,19 @@ internal static class IdentityRoutePathRedactor
         return value;
     }
 
+    // IgnoreCase/CultureInvariant because ASP.NET Core routing matches these routes
+    // case-insensitively; the trailing /? before $ tolerates the trailing slash routing also
+    // accepts, without pulling it into the captured identifier group.
     private static Regex BuildByIdPattern(int prefixSegmentCount) =>
         new(
-            $"^{BuildPrefixPattern(prefixSegmentCount)}/identity/v2/identities/(?!find$|search$)([^/]+)$",
-            RegexOptions.Compiled
+            $"^{BuildPrefixPattern(prefixSegmentCount)}/identity/v2/identities/(?!find/?$|search/?$)([^/]+)/?$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
         );
 
     private static Regex BuildResultsPattern(int prefixSegmentCount) =>
         new(
-            $"^{BuildPrefixPattern(prefixSegmentCount)}/identity/v2/identities/results/([^/]+)$",
-            RegexOptions.Compiled
+            $"^{BuildPrefixPattern(prefixSegmentCount)}/identity/v2/identities/results/([^/]+)/?$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
         );
 
     private static string BuildPrefixPattern(int prefixSegmentCount) =>

@@ -76,7 +76,7 @@ public class Given_The_IApiService_Identity_Facade
     }
 
     [Test]
-    public void IdentityGetById_takes_a_uniqueId_string_between_the_request_and_the_token()
+    public void It_IdentityGetById_takes_a_uniqueId_string_between_the_request_and_the_token()
     {
         ParameterInfo[] parameters = MethodNamed(nameof(IApiService.IdentityGetById)).GetParameters();
 
@@ -86,7 +86,7 @@ public class Given_The_IApiService_Identity_Facade
     }
 
     [Test]
-    public void IdentityResults_takes_a_requestToken_string_between_the_request_and_the_token()
+    public void It_IdentityResults_takes_a_requestToken_string_between_the_request_and_the_token()
     {
         ParameterInfo[] parameters = MethodNamed(nameof(IApiService.IdentityResults)).GetParameters();
 
@@ -98,7 +98,7 @@ public class Given_The_IApiService_Identity_Facade
     [TestCase(nameof(IApiService.IdentityCreate))]
     [TestCase(nameof(IApiService.IdentityFind))]
     [TestCase(nameof(IApiService.IdentitySearch))]
-    public void Create_find_and_search_take_no_route_value_between_the_request_and_the_token(
+    public void It_create_find_and_search_take_no_route_value_between_the_request_and_the_token(
         string methodName
     )
     {

@@ -32,170 +32,266 @@ public class IdentityOpenApiMetadataTests
 {
     private const string AuthenticationService = "https://auth.example.org/oauth/token";
 
-    [Test]
-    public async Task It_serves_the_identity_document_with_root_server_and_security_metadata()
+    [TestFixture]
+    public class Given_The_Identity_Document_Served_At_Root
     {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonNode _document = null!;
 
-        var response = await client.GetAsync("/metadata/identity/v2/swagger.json");
-        string content = await response.Content.ReadAsStringAsync();
-        JsonNode json = JsonNode.Parse(content)!;
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        json["servers"]![0]!["url"]!.GetValue<string>().Should().Be("http://localhost/identity/v2");
-        json["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["type"]!
-            .GetValue<string>()
-            .Should()
-            .Be("oauth2");
-        json["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]!["clientCredentials"]![
-            "tokenUrl"
-        ]!
-            .GetValue<string>()
-            .Should()
-            .Be(AuthenticationService);
-        json["security"]!.AsArray().Should().ContainSingle();
-        json["security"]![0]!.AsObject().Should().ContainKey("oauth2_client_credentials");
-    }
+            _response = await _client.GetAsync("/metadata/identity/v2/swagger.json");
+            string content = await _response.Content.ReadAsStringAsync();
+            _document = JsonNode.Parse(content)!;
+        }
 
-    [Test]
-    public async Task It_serves_the_identity_document_with_the_route_qualified_server_url()
-    {
-        await using var factory = CreateFactory(
-            new Dictionary<string, string?>
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_serves_the_root_server_url()
+        {
+            _document["servers"]![0]!["url"]!.GetValue<string>().Should().Be("http://localhost/identity/v2");
+        }
+
+        [Test]
+        public void It_declares_the_oauth2_client_credentials_scheme_type()
+        {
+            _document["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("oauth2");
+        }
+
+        [Test]
+        public void It_declares_the_configured_token_url()
+        {
+            _document["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                "clientCredentials"
+            ]!["tokenUrl"]!
+                .GetValue<string>()
+                .Should()
+                .Be(AuthenticationService);
+        }
+
+        [Test]
+        public void It_requires_exactly_one_security_scheme()
+        {
+            _document["security"]!.AsArray().Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_requires_the_oauth2_client_credentials_scheme()
+        {
+            _document["security"]![0]!.AsObject().Should().ContainKey("oauth2_client_credentials");
+        }
+
+        [Test]
+        public void It_resolves_every_ref()
+        {
+            List<string> unresolved = FindUnresolvedRefs(_document, _document);
+            unresolved.Should().BeEmpty();
+        }
+
+        private static List<string> FindUnresolvedRefs(JsonNode root, JsonNode node)
+        {
+            List<string> unresolved = [];
+
+            switch (node)
             {
-                ["AppSettings:MultiTenancy"] = "true",
-                ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
-            },
-            configureDataStoreProvider: dataStoreProvider =>
-            {
-                A.CallTo(() => dataStoreProvider.GetAll(A<string?>._))
-                    .Returns([
-                        DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2026")),
-                    ]);
+                case JsonObject obj:
+                    if (obj.TryGetPropertyValue("$ref", out JsonNode? refNode) && refNode is not null)
+                    {
+                        string reference = refNode.GetValue<string>();
+                        if (!TryResolve(root, reference))
+                        {
+                            unresolved.Add(reference);
+                        }
+                    }
+                    foreach ((string _, JsonNode? value) in obj)
+                    {
+                        if (value is not null)
+                        {
+                            unresolved.AddRange(FindUnresolvedRefs(root, value));
+                        }
+                    }
+                    break;
+                case JsonArray array:
+                    foreach (JsonNode? item in array)
+                    {
+                        if (item is not null)
+                        {
+                            unresolved.AddRange(FindUnresolvedRefs(root, item));
+                        }
+                    }
+                    break;
             }
-        );
-        using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/tenant-a/255901/2026/metadata/identity/v2/swagger.json");
-        string content = await response.Content.ReadAsStringAsync();
-        JsonNode json = JsonNode.Parse(content)!;
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        json["servers"]![0]!["url"]!
-            .GetValue<string>()
-            .Should()
-            .Be("http://localhost/{tenant}/{districtId}/{schoolYear}/identity/v2");
-    }
-
-    private static DataStore DataStoreWithRouteContext(
-        long id,
-        params (string Key, string Value)[] routeContext
-    )
-    {
-        return new DataStore(
-            id,
-            "Test",
-            $"TestInstance{id}",
-            "test-connection-string",
-            routeContext.ToDictionary(
-                item => new RouteQualifierName(item.Key),
-                item => new RouteQualifierValue(item.Value)
-            )
-        );
-    }
-
-    [Test]
-    public async Task Every_ref_in_the_served_identity_document_resolves()
-    {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/metadata/identity/v2/swagger.json");
-        string content = await response.Content.ReadAsStringAsync();
-        JsonNode document = JsonNode.Parse(content)!;
-
-        List<string> unresolved = FindUnresolvedRefs(document, document);
-        unresolved.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task The_metadata_listing_includes_the_identity_entry()
-    {
-        await using var factory = CreateFactory();
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/metadata/specifications");
-        string content = await response.Content.ReadAsStringAsync();
-        JsonArray sections = JsonNode.Parse(content)!.AsArray();
-
-        JsonNode? identitySection = sections.SingleOrDefault(node =>
-            node!["name"]!.GetValue<string>() == "Identity"
-        );
-
-        identitySection.Should().NotBeNull();
-        identitySection!["prefix"]!.GetValue<string>().Should().Be("Other");
-        identitySection["endpointUri"]!
-            .GetValue<string>()
-            .Should()
-            .EndWith("/metadata/identity/v2/swagger.json");
-    }
-
-    private static List<string> FindUnresolvedRefs(JsonNode root, JsonNode node)
-    {
-        List<string> unresolved = [];
-
-        switch (node)
-        {
-            case JsonObject obj:
-                if (obj.TryGetPropertyValue("$ref", out JsonNode? refNode) && refNode is not null)
-                {
-                    string reference = refNode.GetValue<string>();
-                    if (!TryResolve(root, reference))
-                    {
-                        unresolved.Add(reference);
-                    }
-                }
-                foreach ((string _, JsonNode? value) in obj)
-                {
-                    if (value is not null)
-                    {
-                        unresolved.AddRange(FindUnresolvedRefs(root, value));
-                    }
-                }
-                break;
-            case JsonArray array:
-                foreach (JsonNode? item in array)
-                {
-                    if (item is not null)
-                    {
-                        unresolved.AddRange(FindUnresolvedRefs(root, item));
-                    }
-                }
-                break;
+            return unresolved;
         }
 
-        return unresolved;
-    }
-
-    private static bool TryResolve(JsonNode root, string reference)
-    {
-        if (!reference.StartsWith("#/", StringComparison.Ordinal))
+        private static bool TryResolve(JsonNode root, string reference)
         {
-            return false;
-        }
-
-        JsonNode? current = root;
-        foreach (string segment in reference[2..].Split('/'))
-        {
-            current = current?[segment];
-            if (current is null)
+            if (!reference.StartsWith("#/", StringComparison.Ordinal))
             {
                 return false;
             }
+
+            JsonNode? current = root;
+            foreach (string segment in reference[2..].Split('/'))
+            {
+                current = current?[segment];
+                if (current is null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Identity_Document_Served_Under_A_Route_Qualified_Prefix
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonNode _document = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory(
+                new Dictionary<string, string?>
+                {
+                    ["AppSettings:MultiTenancy"] = "true",
+                    ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                },
+                configureDataStoreProvider: dataStoreProvider =>
+                {
+                    A.CallTo(() => dataStoreProvider.GetAll(A<string?>._))
+                        .Returns([
+                            DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2026")),
+                        ]);
+                }
+            );
+            _client = _factory.CreateClient();
+
+            _response = await _client.GetAsync("/tenant-a/255901/2026/metadata/identity/v2/swagger.json");
+            string content = await _response.Content.ReadAsStringAsync();
+            _document = JsonNode.Parse(content)!;
         }
 
-        return true;
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_serves_the_route_qualified_server_url()
+        {
+            _document["servers"]![0]!["url"]!
+                .GetValue<string>()
+                .Should()
+                .Be("http://localhost/{tenant}/{districtId}/{schoolYear}/identity/v2");
+        }
+
+        private static DataStore DataStoreWithRouteContext(
+            long id,
+            params (string Key, string Value)[] routeContext
+        )
+        {
+            return new DataStore(
+                id,
+                "Test",
+                $"TestInstance{id}",
+                "test-connection-string",
+                routeContext.ToDictionary(
+                    item => new RouteQualifierName(item.Key),
+                    item => new RouteQualifierValue(item.Value)
+                )
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Metadata_Specifications_Listing
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonNode? _identitySection;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = CreateFactory();
+            _client = _factory.CreateClient();
+
+            _response = await _client.GetAsync("/metadata/specifications");
+            string content = await _response.Content.ReadAsStringAsync();
+            JsonArray sections = JsonNode.Parse(content)!.AsArray();
+
+            _identitySection = sections.SingleOrDefault(node =>
+                node!["name"]!.GetValue<string>() == "Identity"
+            );
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_includes_an_identity_section()
+        {
+            _identitySection.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_uses_the_other_prefix()
+        {
+            _identitySection!["prefix"]!.GetValue<string>().Should().Be("Other");
+        }
+
+        [Test]
+        public void It_points_to_the_identity_swagger_endpoint()
+        {
+            _identitySection!["endpointUri"]!
+                .GetValue<string>()
+                .Should()
+                .EndWith("/metadata/identity/v2/swagger.json");
+        }
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

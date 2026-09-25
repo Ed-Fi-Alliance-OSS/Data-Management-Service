@@ -86,8 +86,8 @@ public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlA
         );
 
     [Test]
-    public Task It_serves_an_identity_request_after_the_datastore_surface_is_poisoned() =>
-        IdentityDatastoreIndependenceScenario.It_serves_an_identity_request_after_the_datastore_surface_is_poisoned(
+    public async Task It_serves_an_identity_request_after_the_datastore_surface_is_poisoned() =>
+        await IdentityDatastoreIndependenceScenario.It_serves_an_identity_request_after_the_datastore_surface_is_poisoned(
             Harness,
             Tenant,
             _dataStoreProvider,

@@ -29,7 +29,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 /// <see cref="IDataStoreProvider" />, since the snapshot itself is <c>internal sealed</c> and cannot
 /// be faked directly.
 /// </summary>
-[TestFixture]
 public class ValidateTenantExistsMiddlewareTests
 {
     private const string Tenant = "North";
@@ -92,88 +91,170 @@ public class ValidateTenantExistsMiddlewareTests
         return new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
     }
 
-    [Test]
-    public async Task A_nonexistent_tenant_returns_404_and_never_reaches_claim_sets_or_the_identity_service()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Nonexistent_Tenant
     {
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        var identityService = A.Fake<IIdentityService>();
-        IdentityTenantSnapshot snapshot = CreateSnapshotThatAnswers(TenantExistenceOutcome.Absent);
-        RequestInfo requestInfo = CreateRequestInfo(Tenant);
+        private RequestInfo _requestInfo = null!;
+        private IClaimSetProvider _claimSetProvider = null!;
+        private IIdentityService _identityService = null!;
 
-        await CreateMiddleware(true, snapshot).Execute(requestInfo, TestHelper.NullNext);
+        [SetUp]
+        public async Task Setup()
+        {
+            _claimSetProvider = A.Fake<IClaimSetProvider>();
+            _identityService = A.Fake<IIdentityService>();
+            IdentityTenantSnapshot snapshot = CreateSnapshotThatAnswers(TenantExistenceOutcome.Absent);
+            _requestInfo = CreateRequestInfo(Tenant);
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(404);
-        requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        A.CallTo(identityService).MustNotHaveHappened();
+            await CreateMiddleware(true, snapshot).Execute(_requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_returns_404()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+        }
+
+        [Test]
+        public void It_returns_the_problem_json_content_type()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_never_reaches_claim_sets()
+        {
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_never_reaches_the_identity_service()
+        {
+            A.CallTo(_identityService).MustNotHaveHappened();
+        }
     }
 
-    [Test]
-    public async Task An_unavailable_tenant_check_returns_503_with_the_service_unavailable_problem_type()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unavailable_Tenant_Check
     {
-        IdentityTenantSnapshot snapshot = CreateSnapshotThatAnswers(TenantExistenceOutcome.Unavailable);
-        RequestInfo requestInfo = CreateRequestInfo(Tenant);
+        private RequestInfo _requestInfo = null!;
 
-        await CreateMiddleware(true, snapshot).Execute(requestInfo, TestHelper.NullNext);
+        [SetUp]
+        public async Task Setup()
+        {
+            IdentityTenantSnapshot snapshot = CreateSnapshotThatAnswers(TenantExistenceOutcome.Unavailable);
+            _requestInfo = CreateRequestInfo(Tenant);
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(503);
-        requestInfo.FrontendResponse.Body!["type"]!
-            .GetValue<string>()
-            .Should()
-            .Be("urn:ed-fi:api:service-unavailable");
+            await CreateMiddleware(true, snapshot).Execute(_requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_returns_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_the_service_unavailable_problem_type()
+        {
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:service-unavailable");
+        }
     }
 
-    [Test]
-    public async Task An_existing_tenant_calls_next()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Existing_Tenant
     {
-        IdentityTenantSnapshot snapshot = CreateSnapshotThatAnswers(TenantExistenceOutcome.Exists);
-        RequestInfo requestInfo = CreateRequestInfo(Tenant);
-        var nextCalled = false;
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
 
-        await CreateMiddleware(true, snapshot)
-            .Execute(
-                requestInfo,
-                () =>
-                {
-                    nextCalled = true;
-                    return Task.CompletedTask;
-                }
+        [SetUp]
+        public async Task Setup()
+        {
+            IdentityTenantSnapshot snapshot = CreateSnapshotThatAnswers(TenantExistenceOutcome.Exists);
+            _requestInfo = CreateRequestInfo(Tenant);
+
+            await CreateMiddleware(true, snapshot)
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_leaves_the_response_untouched()
+        {
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Multitenancy_Off
+    {
+        private RequestInfo _requestInfo = null!;
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataStoreProvider = A.Fake<IDataStoreProvider>();
+            // If the snapshot were consulted despite multitenancy being off, this would surface as an
+            // unhandled failure rather than silently passing.
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Throws(new InvalidOperationException("must not be called when multitenancy is off"));
+            IdentityTenantSnapshot snapshot = new(
+                _dataStoreProvider,
+                new FakeTimeProvider(),
+                CreateLifetime(),
+                NullLogger<IdentityTenantSnapshot>.Instance
             );
+            _requestInfo = CreateRequestInfo(tenant: null);
 
-        nextCalled.Should().BeTrue();
-        requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
-    }
+            await CreateMiddleware(false, snapshot)
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
 
-    [Test]
-    public async Task Multitenancy_off_is_a_pass_through_that_never_consults_the_snapshot()
-    {
-        var dataStoreProvider = A.Fake<IDataStoreProvider>();
-        // If the snapshot were consulted despite multitenancy being off, this would surface as an
-        // unhandled failure rather than silently passing.
-        A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
-            .Throws(new InvalidOperationException("must not be called when multitenancy is off"));
-        IdentityTenantSnapshot snapshot = new(
-            dataStoreProvider,
-            new FakeTimeProvider(),
-            CreateLifetime(),
-            NullLogger<IdentityTenantSnapshot>.Instance
-        );
-        RequestInfo requestInfo = CreateRequestInfo(tenant: null);
-        var nextCalled = false;
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
 
-        await CreateMiddleware(false, snapshot)
-            .Execute(
-                requestInfo,
-                () =>
-                {
-                    nextCalled = true;
-                    return Task.CompletedTask;
-                }
-            );
+        [Test]
+        public void It_leaves_the_response_untouched()
+        {
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
 
-        nextCalled.Should().BeTrue();
-        requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
-        A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._)).MustNotHaveHappened();
+        [Test]
+        public void It_never_consults_the_snapshot()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._)).MustNotHaveHappened();
+        }
     }
 }
