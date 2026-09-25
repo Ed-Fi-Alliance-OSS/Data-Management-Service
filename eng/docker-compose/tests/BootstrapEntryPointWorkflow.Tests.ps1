@@ -2839,6 +2839,33 @@ Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separ
                 Should -Contain "engine=$_ separate=False" -Because "shared mode must remain the default all the way through the public wrapper"
         }
     }
+
+    Context "getting-started local bootstrap guidance (DMS-1427)" {
+        BeforeAll {
+            $script:gettingStarted = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "GETTING_STARTED.md"
+            ) -Raw
+        }
+
+        It "documents the normal wrapper and explicit local-image rebuild commands" {
+            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1'
+            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1\s+-Rebuild'
+        }
+
+        It "documents the Discovery-to-DMS HTTP Basic token flow" {
+            $script:gettingStarted | Should -Match '(?i)Discovery'
+            $script:gettingStarted | Should -Match '(?i)urls\.oauth'
+            $script:gettingStarted | Should -Match '(?i)Authorization:\s*Basic'
+            $script:gettingStarted | Should -Match 'grant_type=client_credentials'
+            $script:gettingStarted | Should -Not -Match '(?is)(?:DMS|proxy).{0,500}client_id\s*=.*client_secret\s*='
+        }
+
+        It "retains phase-level commands without adding historical upgrade guidance" {
+            $script:gettingStarted | Should -Match 'start-local-dms\.ps1'
+            $script:gettingStarted | Should -Match 'configure-local-data-store\.ps1'
+            $script:gettingStarted | Should -Not -Match '(?i)\b(?:migration|pre-release|prerelease|reset)\b'
+        }
+    }
 }
 
 # Unload exactly the module instances staged under the workspaces THIS run created and
