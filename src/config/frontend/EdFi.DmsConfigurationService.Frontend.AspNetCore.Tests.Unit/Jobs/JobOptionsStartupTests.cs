@@ -303,6 +303,7 @@ public class JobOptionsStartupTests
 
     [TestFixture("JobSettings:WorkerEnabled", typeof(JobWorkerService))]
     [TestFixture("JobSettings:SchedulerEnabled", typeof(JobScheduleDispatcherService))]
+    [TestFixture("JobSettings:RetentionEnabled", typeof(JobRetentionService))]
     public class Given_a_hosted_service_switched_on_at_startup(string key, Type service)
     {
         private WebApplicationFactory<Program> _factory = null!;
