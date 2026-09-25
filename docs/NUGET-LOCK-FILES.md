@@ -182,6 +182,47 @@ Recovery, most reliable first:
 > - **"Re-run jobs"** on the failed run re-runs against the original commit SHA,
 >   not the pushed lock-file commit.
 
+### 6. Dependency graph submission
+
+Dependabot security alerts come from the repository's dependency graph, and NuGet
+packages reach that graph only through a dependency submission.
+[`.github/workflows/nuget-dependency-submission.yml`](../.github/workflows/nuget-dependency-submission.yml)
+owns that submission. On every push to `main`, and on manual dispatch, it restores
+both solutions with `--locked-mode`, then runs
+`advanced-security/component-detection-dependency-submission-action` over the
+resulting `obj/project.assets.json` files. The submitted graph is exactly the
+committed lock graph, transitives included.
+
+It replaces GitHub's managed **Automatic dependency submission** (`submit-nuget`),
+which cannot be configured from the repository. That job restores the first 20
+`.csproj`/`.sln` files that `find` returns, in the runner filesystem's order, with a
+bare `dotnet restore`. When a runner image changes that order, the sample reaches
+the `eng/` verification consumers, which restore only against locally packed
+contracts, and the job fails with `NU1101`. It also never covered the DMS or
+Configuration Service transitive graph.
+
+Do not "fix" a submission failure by widening the `eng/` consumers'
+`nuget.config` mappings. They map `EdFi.Api.Plugins` and
+`EdFi.Api.CustomValidation` to a local folder on purpose, so the verification tests
+the package just packed rather than a published one. The workflow excludes
+`**/eng/**` for the same reason.
+
+**Setup and handoff:**
+
+1. An organization admin approves the action's pinned SHA in the Ed-Fi-Actions
+   allowlist. Until then the `action-allowedlist` scan denies it.
+2. After the workflow's first successful run on `main`, read the graph back with
+   `gh api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/dependency-graph/sbom`
+   and confirm it contains DMS and Configuration Service packages, direct and
+   transitive (for example, the dependencies of Npgsql and OpenIddict). A green job
+   or a larger package count proves nothing on its own.
+3. A repository admin then sets **Settings → Advanced Security → Dependency graph →
+   Automatic dependency submission** to **Disabled**. Leave the dependency graph and
+   Dependabot alerts enabled.
+
+**Rollback:** re-enable Automatic dependency submission and delete the workflow
+file. Neither step affects the lock files or the `--locked-mode` gates.
+
 ## Regenerating lock files locally
 
 After adding/removing a package or changing a `<ProjectReference>`, regenerate

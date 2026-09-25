@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Submits the resolved NuGet dependency graph, transitives included, of both application
+# solutions to the GitHub dependency graph that Dependabot security alerts read. It replaces
+# GitHub's managed automatic dependency submission, which restores an arbitrary filesystem-ordered
+# sample of projects and fails on the local-feed verification consumers under eng/.
+# See docs/NUGET-LOCK-FILES.md for ownership, the repository-setting handoff, and rollback.
+
+name: NuGet Dependency Submission
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write # the dependency submission API requires it
+
+# A newer snapshot must not be overwritten by an older run that finishes later.
+concurrency:
+  group: nuget-dependency-submission
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    name: Submit NuGet dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # EdFi.DataManagementService-Docker.sln is a subset of the DMS solution, so these two
+      # restores produce a project.assets.json for every shipped project and its tests.
+      - name: Restore the solutions
+        run: |
+          dotnet restore ./src/dms/EdFi.DataManagementService.sln --locked-mode
+          dotnet restore ./src/config/EdFi.DmsConfigurationService.sln --locked-mode
+
+      # The eng/ consumers restore only against locally packed contracts, so they are never
+      # restored here and their nuget.config files must not be read as package sources.
+      # Exclusion globs match absolute paths, hence the leading **/.
+      - name: Submit the resolved NuGet graph
+        uses: advanced-security/component-detection-dependency-submission-action@b282c67b1008fde9b60da4bdfcd8849613e293b2 # v0.1.6
+        with:
+          detectorsCategories: NuGet
+          directoryExclusionList: "**/eng/**"
