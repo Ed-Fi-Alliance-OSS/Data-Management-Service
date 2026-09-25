@@ -891,7 +891,10 @@ function Invoke-WithE2EIdentityEnvironment {
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
     $environmentValues = ReadValuesFromEnvFile $EnvironmentFile
     $prefix = if ($IdentityProvider -eq "keycloak") { "KEYCLOAK" } else { "SELF_CONTAINED" }
-    foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS') {
+    # Keycloak's issuer (DMS_JWT_AUTHORITY) differs from the in-network URL the Configuration
+    # Service calls; self-contained uses one value for both.
+    $configAuthorityKey = if ($IdentityProvider -eq "keycloak") { "DMS_CONFIG_IDENTITY_AUTHORITY" } else { "DMS_JWT_AUTHORITY" }
+    foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS', $configAuthorityKey | Select-Object -Unique) {
         $sourceKey = "${prefix}_$key"
         if ([string]::IsNullOrWhiteSpace($environmentValues[$sourceKey])) {
             throw "Required identity setting '$sourceKey' is missing or blank in '$EnvironmentFile' for provider '$IdentityProvider'."
@@ -904,7 +907,7 @@ function Invoke-WithE2EIdentityEnvironment {
         OAUTH_TOKEN_ENDPOINT = $environmentValues["${prefix}_OAUTH_TOKEN_ENDPOINT"]
         DMS_JWT_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
         DMS_JWT_METADATA_ADDRESS = $environmentValues["${prefix}_DMS_JWT_METADATA_ADDRESS"]
-        DMS_CONFIG_IDENTITY_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
+        DMS_CONFIG_IDENTITY_AUTHORITY = $environmentValues["${prefix}_$configAuthorityKey"]
     }
     $previousEnvironment = @{}
     foreach ($name in $identityEnvironment.Keys) {

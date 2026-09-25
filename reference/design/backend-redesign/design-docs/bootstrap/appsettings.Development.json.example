@@ -15,7 +15,7 @@
     "AuthenticationService": "http://localhost:8081/connect/token"
   },
   "JwtAuthentication": {
-    "Authority": "http://localhost:8081",
+    "Authority": "http://ed-fi-api-config:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"

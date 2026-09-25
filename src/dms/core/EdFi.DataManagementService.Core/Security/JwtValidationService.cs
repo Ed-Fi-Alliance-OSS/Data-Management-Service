@@ -13,6 +13,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
@@ -32,6 +33,7 @@ internal class JwtValidationService(
 ) : IJwtValidationService
 {
     private const int ValidationParametersCacheMaxEntries = 16;
+    private const int MaxLoggedIssuerLength = 256;
     private static readonly TimeSpan CachePruneInterval = TimeSpan.FromSeconds(15);
 
     private readonly JwtSecurityTokenHandler _tokenHandler = new() { MapInboundClaims = false };
@@ -88,6 +90,22 @@ internal class JwtValidationService(
             OpenIdConnectConfiguration oidcConfig = await configurationManager.GetConfigurationAsync(
                 cancellationToken
             );
+
+            // SECURITY CRITICAL: The metadata document must assert the configured issuer exactly
+            // (RFC 8414 3.3, OIDC Discovery 4.3), so no normalization. Checked before the caches so
+            // no token is accepted while the mismatch stands. RequestRefresh schedules a throttled
+            // background re-fetch so a transient mismatch does not persist until the next
+            // automatic refresh.
+            if (!string.Equals(oidcConfig.Issuer, _options.Authority, StringComparison.Ordinal))
+            {
+                logger.LogError(
+                    "Token validation failed: OIDC metadata issuer {DiscoveredIssuer} does not match the configured JwtAuthentication:Authority {ConfiguredAuthority}; requesting a metadata refresh",
+                    SanitizeIssuerForLogging(oidcConfig.Issuer),
+                    SanitizeIssuerForLogging(_options.Authority)
+                );
+                configurationManager.RequestRefresh();
+                return (null, null);
+            }
 
             string validationFingerprint = CreateValidationFingerprint(oidcConfig);
             TokenCacheKey cacheKey = CreateTokenCacheKey(
@@ -158,6 +176,33 @@ internal class JwtValidationService(
         }
     }
 
+    /// <summary>
+    /// Sanitizes an issuer value for logging and bounds its length. The discovered issuer comes
+    /// from a metadata document an attacker may influence, and the free-text sanitizer leaves
+    /// bounding the length to the caller.
+    /// </summary>
+    internal static string SanitizeIssuerForLogging(string? issuer)
+    {
+        // Sanitize first and truncate second, so control characters the sanitizer removes do not
+        // spend the length budget.
+        string sanitized = LoggingSanitizer.SanitizeFreeTextForLogging(issuer);
+
+        if (sanitized.Length <= MaxLoggedIssuerLength)
+        {
+            return sanitized;
+        }
+
+        // Sanitization drops unpaired surrogates, so a high surrogate at the cut is paired; drop it
+        // whole rather than leave a lone half.
+        int retained = MaxLoggedIssuerLength;
+        if (char.IsHighSurrogate(sanitized[retained - 1]))
+        {
+            retained--;
+        }
+
+        return sanitized[..retained];
+    }
+
     private TokenValidationParameters GetValidationParameters(
         string validationFingerprint,
         OpenIdConnectConfiguration oidcConfig,
@@ -171,7 +216,7 @@ internal class JwtValidationService(
                 {
                     // SECURITY CRITICAL: All must be true
                     ValidateIssuer = true,
-                    ValidIssuer = oidcConfig.Issuer,
+                    ValidIssuer = _options.Authority,
 
                     ValidateAudience = true,
                     ValidAudience = _options.Audience,

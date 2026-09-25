@@ -11,10 +11,12 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
 internal static class FakeOidcConfigurationManager
 {
+    public const string Issuer = "test-idp";
+
     public static IConfigurationManager<OpenIdConnectConfiguration> Stable()
     {
         var fake = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
-        OpenIdConnectConfiguration configuration = new() { Issuer = "test-idp" };
+        OpenIdConnectConfiguration configuration = new() { Issuer = Issuer };
 
         A.CallTo(() => fake.GetConfigurationAsync(A<CancellationToken>._))
             .Returns(Task.FromResult(configuration));

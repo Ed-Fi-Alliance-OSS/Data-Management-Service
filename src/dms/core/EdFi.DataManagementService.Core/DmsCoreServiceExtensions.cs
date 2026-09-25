@@ -505,6 +505,13 @@ public static class DmsCoreServiceExtensions
                 );
             }
 
+            if (string.IsNullOrEmpty(options.Authority))
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:Authority must be configured for JWT authentication"
+                );
+            }
+
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
             HttpClient httpClient = httpClientFactory.CreateClient();
 

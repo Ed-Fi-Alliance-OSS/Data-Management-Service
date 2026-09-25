@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
@@ -18,8 +19,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Startup;
 [TestFixture]
 public class WarmUpOidcMetadataTaskTests
 {
+    private const string Issuer = "https://issuer.example";
+
     private static AppSettings AppSettingsWith(bool bypassAuthorization) =>
         new() { AllowIdentityUpdateOverrides = string.Empty, BypassAuthorization = bypassAuthorization };
+
+    private static IOptions<JwtAuthenticationOptions> JwtOptionsWith(string authority) =>
+        Options.Create(new JwtAuthenticationOptions { Authority = authority });
 
     [TestFixture]
     public class Given_Default_Construction : WarmUpOidcMetadataTaskTests
@@ -32,6 +38,7 @@ public class WarmUpOidcMetadataTaskTests
             _task = new WarmUpOidcMetadataTask(
                 A.Fake<IServiceProvider>(),
                 Options.Create(AppSettingsWith(bypassAuthorization: false)),
+                JwtOptionsWith(Issuer),
                 NullLogger<WarmUpOidcMetadataTask>.Instance
             );
         }
@@ -62,6 +69,7 @@ public class WarmUpOidcMetadataTaskTests
             _task = new WarmUpOidcMetadataTask(
                 _serviceProvider,
                 Options.Create(AppSettingsWith(bypassAuthorization: true)),
+                JwtOptionsWith(Issuer),
                 NullLogger<WarmUpOidcMetadataTask>.Instance
             );
 
@@ -90,7 +98,7 @@ public class WarmUpOidcMetadataTaskTests
         {
             _configurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
             A.CallTo(() => _configurationManager.GetConfigurationAsync(A<CancellationToken>._))
-                .Returns(new OpenIdConnectConfiguration { Issuer = "https://issuer.example" });
+                .Returns(new OpenIdConnectConfiguration { Issuer = Issuer });
 
             _serviceProvider = A.Fake<IServiceProvider>();
             A.CallTo(() =>
@@ -101,6 +109,7 @@ public class WarmUpOidcMetadataTaskTests
             _task = new WarmUpOidcMetadataTask(
                 _serviceProvider,
                 Options.Create(AppSettingsWith(bypassAuthorization: false)),
+                JwtOptionsWith(Issuer),
                 NullLogger<WarmUpOidcMetadataTask>.Instance
             );
 
@@ -145,6 +154,7 @@ public class WarmUpOidcMetadataTaskTests
             _task = new WarmUpOidcMetadataTask(
                 serviceProvider,
                 Options.Create(AppSettingsWith(bypassAuthorization: false)),
+                JwtOptionsWith(Issuer),
                 NullLogger<WarmUpOidcMetadataTask>.Instance
             );
         }
@@ -157,6 +167,87 @@ public class WarmUpOidcMetadataTaskTests
             await act.Should()
                 .ThrowAsync<InvalidOperationException>()
                 .WithMessage("OIDC metadata unavailable");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Metadata_Issuer_Differs_From_Configured_Authority : WarmUpOidcMetadataTaskTests
+    {
+        private const string DiscoveredIssuer = "https://attacker.example";
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exception = await ExecuteWithMetadataIssuer(DiscoveredIssuer);
+        }
+
+        [Test]
+        public void It_throws_an_InvalidOperationException()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+        }
+
+        [Test]
+        public void It_names_the_discovered_issuer()
+        {
+            _exception!.Message.Should().Contain($"'{DiscoveredIssuer}'");
+        }
+
+        [Test]
+        public void It_names_the_configured_authority()
+        {
+            _exception!.Message.Should().Contain($"'{Issuer}'");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Metadata_Issuer_Containing_Line_Breaks : WarmUpOidcMetadataTaskTests
+    {
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exception = await ExecuteWithMetadataIssuer("https://attacker.example\r\nforged-log-line");
+        }
+
+        [Test]
+        public void It_sanitizes_the_discovered_issuer()
+        {
+            _exception!
+                .Message.Should()
+                .Be(
+                    "OIDC metadata issuer 'https://attacker.exampleforged-log-line' does not match the configured JwtAuthentication:Authority 'https://issuer.example'"
+                );
+        }
+    }
+
+    private static async Task<Exception?> ExecuteWithMetadataIssuer(string metadataIssuer)
+    {
+        var configurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
+        A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+            .Returns(new OpenIdConnectConfiguration { Issuer = metadataIssuer });
+
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IConfigurationManager<OpenIdConnectConfiguration>)))
+            .Returns(configurationManager);
+
+        var task = new WarmUpOidcMetadataTask(
+            serviceProvider,
+            Options.Create(AppSettingsWith(bypassAuthorization: false)),
+            JwtOptionsWith(Issuer),
+            NullLogger<WarmUpOidcMetadataTask>.Instance
+        );
+
+        try
+        {
+            await task.ExecuteAsync(CancellationToken.None);
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
         }
     }
 }
