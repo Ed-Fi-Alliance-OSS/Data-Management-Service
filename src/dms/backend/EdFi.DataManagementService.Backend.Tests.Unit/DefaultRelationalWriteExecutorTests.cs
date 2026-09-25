@@ -7420,7 +7420,7 @@ public class Given_Default_Relational_Write_Executor
             }
         );
 
-        result.Should().Be(createNewFailure with { SelectedPostAction = UpsertTargetAction.Create });
+        result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
@@ -7472,6 +7472,25 @@ public class Given_Default_Relational_Write_Executor
             .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
     }
 
+    /// <summary>
+    /// <paramref name="result"/>'s security-configuration failure with <paramref name="action"/> as the action
+    /// it is attributed to.
+    /// </summary>
+    private static RelationalWriteExecutorResult AttributedTo(
+        RelationalWriteExecutorResult result,
+        UpsertTargetAction action
+    )
+    {
+        var upsert = (RelationalWriteExecutorResult.Upsert)result;
+        return upsert with
+        {
+            Result = ((UpsertResult.UpsertFailureSecurityConfiguration)upsert.Result) with
+            {
+                TargetAction = action,
+            },
+        };
+    }
+
     private static PostBranchAuthorizationInputs EmptyPostBranchInputs() =>
         new(null, null, null, null, null, null, null, null);
 
@@ -7502,7 +7521,7 @@ public class Given_Default_Relational_Write_Executor
         );
 
         // A security-configuration failure owed by the create branch is attributed to the Create action.
-        result.Should().Be(createNewFailure with { SelectedPostAction = UpsertTargetAction.Create });
+        result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);

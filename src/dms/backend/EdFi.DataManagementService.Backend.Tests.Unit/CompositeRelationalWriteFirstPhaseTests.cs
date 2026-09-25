@@ -454,7 +454,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .BeOfType<RelationalWriteExecutorResult.Upsert>()
             .Which.Result.Should()
             .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
-        resolution.ImmediateResult!.SelectedPostAction.Should().Be(UpsertTargetAction.Update);
+        TargetActionOf(resolution.ImmediateResult).Should().Be(UpsertTargetAction.Update);
     }
 
     [Test]
@@ -471,7 +471,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         var resolution = await CreateSut().ResolveAsync(input, session);
 
-        resolution.ImmediateResult!.SelectedPostAction.Should().Be(UpsertTargetAction.Create);
+        TargetActionOf(resolution.ImmediateResult).Should().Be(UpsertTargetAction.Create);
     }
 
     [Test]
@@ -1461,9 +1461,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var resolution = await CreateSut().ResolveAsync(input, session);
 
         // The owed failure is the existing-document branch's configuration, so it is attributed to Update.
-        resolution
-            .ImmediateResult.Should()
-            .Be(deferred with { SelectedPostAction = UpsertTargetAction.Update });
+        resolution.ImmediateResult.Should().Be(AttributedTo(deferred, UpsertTargetAction.Update));
         resolution.Outcome.Should().BeNull();
         // Capture, then the namespace segment, then the deferred failure in the ownership slot: no
         // relationship, reference or hydration command follows it.
@@ -1811,4 +1809,31 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     private sealed class FakeDbException(string message) : DbException(message);
+
+    /// <summary>
+    /// <paramref name="result"/>'s security-configuration failure with <paramref name="action"/> as the action
+    /// it is attributed to.
+    /// </summary>
+    private static RelationalWriteExecutorResult AttributedTo(
+        RelationalWriteExecutorResult result,
+        UpsertTargetAction action
+    )
+    {
+        var upsert = (RelationalWriteExecutorResult.Upsert)result;
+        return upsert with
+        {
+            Result = ((UpsertResult.UpsertFailureSecurityConfiguration)upsert.Result) with
+            {
+                TargetAction = action,
+            },
+        };
+    }
+
+    private static UpsertTargetAction? TargetActionOf(RelationalWriteExecutorResult? result) =>
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.TargetAction;
 }

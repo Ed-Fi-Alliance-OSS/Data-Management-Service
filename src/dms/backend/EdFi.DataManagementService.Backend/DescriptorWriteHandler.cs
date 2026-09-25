@@ -131,7 +131,7 @@ internal sealed class DescriptorWriteHandler(
         // A security-configuration failure reached once the target selected a branch is logged against that
         // branch's action.
         return selection.SelectedAction is { } selectedAction
-            ? AttributeDescriptorPostAction(result, selectedAction)
+            ? PostActionAttribution.Apply(result, selectedAction)
             : result;
     }
 
@@ -2678,19 +2678,11 @@ internal sealed class DescriptorWriteHandler(
 
         public DescriptorPostBranch Select(RelationalWriteTargetContext targetContext)
         {
-            (SelectedAction, var branch) = targetContext switch
-            {
-                RelationalWriteTargetContext.CreateNew => (UpsertTargetAction.Create, branches.CreateNew),
-                RelationalWriteTargetContext.ExistingDocument => (
-                    UpsertTargetAction.Update,
-                    branches.ExistingDocument
-                ),
-                _ => throw new InvalidOperationException(
-                    $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor POST."
-                ),
-            };
+            SelectedAction = PostTargetAction.For(targetContext);
 
-            return branch;
+            return SelectedAction is UpsertTargetAction.Create
+                ? branches.CreateNew
+                : branches.ExistingDocument;
         }
     }
 
@@ -2824,17 +2816,6 @@ internal sealed class DescriptorWriteHandler(
 
         return immediate.Result;
     }
-
-    private static UpsertResult AttributeDescriptorPostAction(
-        UpsertResult result,
-        UpsertTargetAction action
-    ) =>
-        result is UpsertResult.UpsertFailureSecurityConfiguration { TargetAction: null } securityConfiguration
-            ? securityConfiguration with
-            {
-                TargetAction = action,
-            }
-            : result;
 
     private async Task<DescriptorWriteAppliedResult<UpsertResult>> InsertDescriptorAsync(
         DescriptorWriteRequest request,

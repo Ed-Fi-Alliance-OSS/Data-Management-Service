@@ -1262,7 +1262,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         {
             input = input with { PostTargetAuthorizationBundles = null };
 
-            switch (bundles.Select(targetContext).Branch)
+            switch (bundles.Select(targetContext))
             {
                 case PostBranchAuthorization.Immediate immediate:
                     return (input.Resolve(targetContext), immediate.Result);
@@ -1320,14 +1320,9 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         RelationalWriteTargetContext targetContext
     )
     {
-        if (input.TargetRequest is not RelationalWriteTargetRequest.Post)
-        {
-            return null;
-        }
-
-        return targetContext is RelationalWriteTargetContext.CreateNew
-            ? UpsertTargetAction.Create
-            : UpsertTargetAction.Update;
+        return input.TargetRequest is RelationalWriteTargetRequest.Post
+            ? PostTargetAction.For(targetContext)
+            : null;
     }
 
     private static RelationshipAuthorizationResult.Authorized? GetExistingResourceProposedAuthorization(

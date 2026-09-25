@@ -223,15 +223,6 @@ public sealed class RelationalDocumentStoreRepository(
                 static executorResult =>
                     executorResult switch
                     {
-                        // A security-configuration failure decided after the target was observed names the
-                        // action whose configuration failed, so it is logged against that action.
-                        RelationalWriteExecutorResult.Upsert(
-                            UpsertResult.UpsertFailureSecurityConfiguration securityConfigurationFailure
-                        ) when executorResult.SelectedPostAction is { } selectedPostAction =>
-                            securityConfigurationFailure with
-                            {
-                                TargetAction = selectedPostAction,
-                            },
                         RelationalWriteExecutorResult.Upsert(var result) => result,
                         RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
                             "Relational write executor returned an update result for a POST request."

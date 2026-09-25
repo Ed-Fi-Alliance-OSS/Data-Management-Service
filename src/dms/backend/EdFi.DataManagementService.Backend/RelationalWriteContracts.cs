@@ -1113,19 +1113,10 @@ internal sealed record PostTargetAuthorizationBundles(
 )
 {
     /// <summary>
-    /// The branch and action the observed target selects.
+    /// The branch the observed target selects.
     /// </summary>
-    public (PostBranchAuthorization Branch, UpsertTargetAction Action) Select(
-        RelationalWriteTargetContext targetContext
-    ) =>
-        targetContext switch
-        {
-            RelationalWriteTargetContext.CreateNew => (CreateNew, UpsertTargetAction.Create),
-            RelationalWriteTargetContext.ExistingDocument => (ExistingDocument, UpsertTargetAction.Update),
-            _ => throw new InvalidOperationException(
-                $"POST branch selection does not support target context '{targetContext.GetType().Name}'."
-            ),
-        };
+    public PostBranchAuthorization Select(RelationalWriteTargetContext targetContext) =>
+        PostTargetAction.For(targetContext) is UpsertTargetAction.Create ? CreateNew : ExistingDocument;
 
     /// <summary>
     /// Whether the checks cannot be co-batched with the capture. A branch result owed right after capture
@@ -1299,13 +1290,6 @@ public abstract record RelationalWriteExecutorResult
     public RelationalWriteExecutorAttemptOutcome AttemptOutcome { get; init; }
 
     /// <summary>
-    /// For a POST security-configuration failure decided after the attempt observed its target, the action
-    /// that target selected, so the failure is attributed to the action whose configuration failed. Null on
-    /// every other result.
-    /// </summary>
-    public UpsertTargetAction? SelectedPostAction { get; init; }
-
-    /// <summary>
     /// Custom-view checks configured ahead of a POST branch's planning failure, validated after the write
     /// session closes and before the result is returned, so a missing or non-conforming view keeps its own
     /// failure instead of being masked by the branch's.
@@ -1377,6 +1361,22 @@ public abstract record RelationalWriteExecutorResult
 }
 
 /// <summary>
+/// The action a POST's observed target selects: Create for a new document, Update for an existing one.
+/// </summary>
+internal static class PostTargetAction
+{
+    public static UpsertTargetAction For(RelationalWriteTargetContext targetContext) =>
+        targetContext switch
+        {
+            RelationalWriteTargetContext.CreateNew => UpsertTargetAction.Create,
+            RelationalWriteTargetContext.ExistingDocument => UpsertTargetAction.Update,
+            _ => throw new InvalidOperationException(
+                $"POST action selection does not support target context '{targetContext.GetType().Name}'."
+            ),
+        };
+}
+
+/// <summary>
 /// Attributes a POST's security-configuration failure to the action its observed target selected.
 /// </summary>
 internal static class PostActionAttribution
@@ -1390,18 +1390,26 @@ internal static class PostActionAttribution
         UpsertTargetAction? selectedPostAction
     )
     {
-        var isUnattributedSecurityConfigurationFailure =
-            result is RelationalWriteExecutorResult.Upsert upsert
-            && upsert.Result is UpsertResult.UpsertFailureSecurityConfiguration
-            && upsert.SelectedPostAction is null;
+        if (selectedPostAction is not { } action || result is not RelationalWriteExecutorResult.Upsert upsert)
+        {
+            return result;
+        }
 
-        return selectedPostAction is not null && isUnattributedSecurityConfigurationFailure
-            ? result with
+        var attributed = Apply(upsert.Result, action);
+        return ReferenceEquals(attributed, upsert.Result) ? result : upsert with { Result = attributed };
+    }
+
+    /// <summary>
+    /// <paramref name="result"/> attributed to <paramref name="action"/> when it is a security-configuration
+    /// failure not yet attributed; otherwise <paramref name="result"/> unchanged.
+    /// </summary>
+    public static UpsertResult Apply(UpsertResult result, UpsertTargetAction action) =>
+        result is UpsertResult.UpsertFailureSecurityConfiguration { TargetAction: null } failure
+            ? failure with
             {
-                SelectedPostAction = selectedPostAction,
+                TargetAction = action,
             }
             : result;
-    }
 }
 
 /// <summary>
