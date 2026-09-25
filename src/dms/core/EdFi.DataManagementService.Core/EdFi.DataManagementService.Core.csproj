@@ -18,6 +18,7 @@
         <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Http" />
         <PackageReference Include="Microsoft.Extensions.Logging" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
@@ -59,6 +60,12 @@
         <None Include="ApiSchema/JsonSchemaForApiSchema.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- The fixed identity OpenAPI document (D2), embedded rather than loaded from disk so the
+             served document travels with the assembly. Precedent:
+             src/config/backend/EdFi.DmsConfigurationService.Backend/EdFi.DmsConfigurationService.Backend.csproj:20. -->
+        <EmbeddedResource Include="OpenApi/identity-v2-openapi.json" />
     </ItemGroup>
     <ItemGroup>
         <None Update="ApiSchema\ApiSchema.json">

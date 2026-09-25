@@ -16,14 +16,19 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSettings) : IEndpointModule
+public partial class MetadataEndpointModule(
+    IOptions<FrontendAppSettings> appSettings,
+    IOptions<CoreAppSettings> coreOptions
+) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
+    private const string IdentityOpenApiRouteBase = "identity/v2";
 
     /// <summary>
     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
@@ -241,7 +246,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false);
+        bool identityManagementEnabled = coreOptions.Value.EnableIdentityManagement;
+
+        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false, identityManagementEnabled);
 
         MapTenantOnlyMetadataRejections(endpoints);
 
@@ -252,7 +259,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
         if (!string.IsNullOrEmpty(routePattern))
         {
-            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true);
+            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true, identityManagementEnabled);
         }
     }
 
@@ -274,7 +281,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     private static void MapMetadataEndpoints(
         IEndpointRouteBuilder endpoints,
         string routePattern,
-        bool validateRoute
+        bool validateRoute,
+        bool identityManagementEnabled
     )
     {
         endpoints.MapGet(
@@ -327,7 +335,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                     return;
                 }
 
-                await GetSections(httpContext, apiService);
+                await GetSections(httpContext, apiService, identityManagementEnabled);
             }
         );
         endpoints.MapGet(
@@ -384,6 +392,27 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 await GetChangeQueriesOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
             }
         );
+        if (identityManagementEnabled)
+        {
+            endpoints.MapGet(
+                $"{routePattern}/metadata/identity/v2/swagger.json",
+                async (
+                    HttpContext httpContext,
+                    IMetadataRouteValidator metadataRouteValidator,
+                    IApiService apiService,
+                    IDataStoreProvider dataStoreProvider,
+                    IOptions<FrontendAppSettings> options
+                ) =>
+                {
+                    if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                    {
+                        return;
+                    }
+
+                    await GetIdentityOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+                }
+            );
+        }
         endpoints.MapGet(
             $"{routePattern}/metadata/specifications/{{section}}-spec.json",
             async (
@@ -545,6 +574,23 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     }
 
     /// <summary>
+    /// Serves the fixed identity OpenAPI document (design.md D2). Unlike Change-Queries, the identity
+    /// document is always present once mapped - the route itself is mapped only when
+    /// AppSettings:EnableIdentityManagement is true - so there is no missing-document 404 branch here.
+    /// </summary>
+    internal static async Task GetIdentityOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDataStoreProvider dataStoreProvider,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, IdentityOpenApiRouteBase);
+        JsonNode content = apiService.GetIdentityOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    /// <summary>
     /// Returns resource OpenAPI spec for a specific profile (cached).
     /// </summary>
     internal static async Task GetProfileResourceOpenApiSpec(
@@ -573,7 +619,11 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
-    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetSections(
+        HttpContext httpContext,
+        IApiService apiService,
+        bool identityManagementEnabled = false
+    )
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
@@ -588,22 +638,30 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             );
         }
 
+        const string SpecificationsSuffix = "/specifications";
+        string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
+        string metadataPrefix = requestPath.EndsWith(
+            "/metadata/specifications",
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? baseUrl[..^SpecificationsSuffix.Length]
+            : $"{httpContext.Request.RootUrl()}/metadata";
+
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
-            const string SpecificationsSuffix = "/specifications";
-            string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
-            string metadataPrefix = requestPath.EndsWith(
-                "/metadata/specifications",
-                StringComparison.OrdinalIgnoreCase
-            )
-                ? baseUrl[..^SpecificationsSuffix.Length]
-                : $"{httpContext.Request.RootUrl()}/metadata";
             sections.Add(
                 new RouteInformation(
                     "Change-Queries",
                     $"{metadataPrefix}/changequeries/v1/swagger.json",
                     "Other"
                 )
+            );
+        }
+
+        if (identityManagementEnabled)
+        {
+            sections.Add(
+                new RouteInformation("Identity", $"{metadataPrefix}/identity/v2/swagger.json", "Other")
             );
         }
 

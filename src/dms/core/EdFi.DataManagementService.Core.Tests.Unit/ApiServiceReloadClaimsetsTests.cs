@@ -91,7 +91,8 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
             A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 
@@ -246,7 +247,8 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
             A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 

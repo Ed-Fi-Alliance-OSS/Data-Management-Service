@@ -16,7 +16,9 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -433,6 +435,47 @@ public static class AspNetCoreFrontend
         "EdFi.DataManagementService.Frontend.CorrelationIdIngestion";
 
     /// <summary>
+    /// The key under which this request's one <c>AppSettings</c> read outcome - the resolved
+    /// value, or the fact that reading it threw <see cref="OptionsValidationException"/> - is
+    /// cached on <see cref="HttpContext.Items"/>, so a second consumer in the same request
+    /// (<c>LoggingMiddleware</c> ingesting the correlation ID and, separately, redacting an
+    /// identity route) reuses it rather than reading, and on a host stuck with invalid
+    /// configuration re-throwing, again.
+    /// </summary>
+    internal const string AppSettingsSnapshotItemsKey =
+        "EdFi.DataManagementService.Frontend.AppSettingsSnapshot";
+
+    /// <summary>
+    /// Reads <see cref="IOptions{TOptions}.Value"/> at most once per request, caching the outcome
+    /// - including an unreadable one - on <see cref="HttpContext.Items"/>. Every other consumer in
+    /// the same request calls this instead of reading <paramref name="options"/> directly, so the
+    /// total cost of a host whose <c>AppSettings</c> fail validation stays one read (and one
+    /// thrown <see cref="OptionsValidationException"/>) per request, not one per consumer.
+    /// </summary>
+    /// <returns>The resolved settings, or null when the options value could not be read.</returns>
+    internal static AppSettings? TryReadAppSettings(HttpContext context, IOptions<AppSettings> options)
+    {
+        IDictionary<object, object?> items = context.Items;
+        if (items.TryGetValue(AppSettingsSnapshotItemsKey, out object? cached))
+        {
+            return cached as AppSettings;
+        }
+
+        AppSettings? result;
+        try
+        {
+            result = options.Value;
+        }
+        catch (OptionsValidationException)
+        {
+            result = null;
+        }
+
+        items[AppSettingsSnapshotItemsKey] = result;
+        return result;
+    }
+
+    /// <summary>
     /// <see cref="ExtractTraceIdFrom"/> plus the derived facts about what normalization did to a
     /// client-supplied value, for the one caller - <c>LoggingMiddleware</c> - that reports them.
     /// </summary>
@@ -459,15 +502,8 @@ public static class AspNetCoreFrontend
             return ingested;
         }
 
-        AppSettings appSettings;
-        try
-        {
-            // The only statement here that can throw OptionsValidationException, and deliberately
-            // the only one inside the try: a validation failure anywhere further down would be a
-            // different fault with a different answer.
-            appSettings = options.Value;
-        }
-        catch (OptionsValidationException)
+        AppSettings? appSettings = TryReadAppSettings(request.HttpContext, options);
+        if (appSettings is null)
         {
             return IngestUnreadableConfiguration(request.HttpContext);
         }
@@ -1209,6 +1245,263 @@ public static class AspNetCoreFrontend
                 ),
                 httpContext.Request.Method
             ),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// The literal route segment every identity operation route is anchored on, used both to
+    /// derive the redacted route-template path (D11) and to locate the real request path's tail
+    /// for the Location header math in <see cref="ToResult"/>.
+    /// </summary>
+    private const string IdentitiesRouteSegment = "/identity/v2/identities";
+
+    /// <summary>
+    /// The route parameter name for the identity get-by-id segment (IdentityEndpointModule) and the
+    /// <see cref="Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> <see cref="IdentityGetById"/>
+    /// binds from. Deliberately not "id": a configured route-qualifier segment (AppSettings:
+    /// RouteQualifierSegments) can itself be named "id", and the qualifier prefix segments are built
+    /// from that configured name (FixedRoutePattern), so a literal "id" here would make the identity
+    /// route template repeat a parameter name and fail host start. Follows the
+    /// "__metadataRouteQualifier{n}" precedent (MetadataRouteValidator) of a double-underscore name no
+    /// user-configured qualifier can collide with.
+    /// </summary>
+    internal const string IdentityIdRouteParameterName = "__identityId";
+
+    /// <summary>
+    /// The route parameter name for the identity results-poll token segment (IdentityEndpointModule)
+    /// and the <see cref="Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> <see cref="IdentityResults"/>
+    /// binds from. See <see cref="IdentityIdRouteParameterName"/> for why this is not the literal
+    /// "token".
+    /// </summary>
+    internal const string IdentityTokenRouteParameterName = "__identityToken";
+
+    /// <summary>
+    /// The real, unredacted request path in its escaped (percent-encoded) form, no leading slash, used
+    /// only as the dmsPath argument to <see cref="ToResult"/>. <see cref="ToResult"/> strips exactly
+    /// this many characters off the tail of <see cref="HttpRequestResponseExtensions.UrlWithPathSegment"/>,
+    /// which is itself built from the escaped path, so this must be the escaped path too - a decoded
+    /// value would be the wrong length whenever a segment (for example a results token or a route
+    /// qualifier) contains a character that needed escaping. For identity routes the value must also
+    /// span the whole path - tenant, route qualifiers, and all - because
+    /// <see cref="RequestInfo.IdentityPollPathPrefix"/> is itself already tenant/qualifier-qualified
+    /// (it is derived from <see cref="BuildIdentityTemplatePath"/>, which carries that prefix on
+    /// <see cref="FrontendRequest.Path"/> for D11). Stripping only the identities tail here, as a
+    /// non-identity dmsPath would, would leave the tenant/qualifier prefix in the computed base and
+    /// double it when Core's already-qualified Location path is appended.
+    /// </summary>
+    private static string ExtractIdentityDmsPath(HttpRequest request) =>
+        request.Path.ToUriComponent().TrimStart('/');
+
+    /// <summary>
+    /// The redacted route-template path carried on <see cref="FrontendRequest.Path"/> for D11:
+    /// tenant and route-qualifier segments are literal and escaped (read from the real request path's
+    /// escaped form, so a qualifier value carrying a space or other reserved character stays a valid
+    /// URL path segment when it reaches <see cref="ToResult"/>'s Location header), while any identifier
+    /// segment is replaced by a placeholder so the identifier itself never reaches a log. Also the
+    /// source Core's ComputeIdentityPollPathPrefix reads to build the poll URL. The route segment match
+    /// is case-insensitive because ASP.NET Core routing matches these routes case-insensitively, so a
+    /// differently-cased request (for example .../Identity/V2/Identities/find) must still find the
+    /// prefix boundary; the emitted "/identity/v2/identities" suffix always stays canonical lowercase
+    /// since it comes from the <see cref="IdentitiesRouteSegment"/> constant, not the request text.
+    /// </summary>
+    private static string BuildIdentityTemplatePath(HttpRequest request, string operationSuffix)
+    {
+        string requestPath = request.Path.ToUriComponent();
+        int segmentIndex = requestPath.IndexOf(IdentitiesRouteSegment, StringComparison.OrdinalIgnoreCase);
+        string prefix = segmentIndex >= 0 ? requestPath[..segmentIndex] : string.Empty;
+        return $"{prefix}{IdentitiesRouteSegment}{operationSuffix}";
+    }
+
+    /// <summary>
+    /// The configured Kestrel request-line budget, read from the running server so Core can bound
+    /// a composed poll path against the real deployment limit rather than a hard-coded guess, reduced
+    /// by <see cref="HttpRequest.PathBase"/>'s escaped length. Core's composed-path arithmetic
+    /// (<see cref="Identity.IdentityRequestTokenRule.Evaluate"/>) measures the prefix from
+    /// <see cref="HttpRequest.Path"/>, which excludes PathBase, but the real request line the client
+    /// sends - and the one Kestrel measures against <c>MaxRequestLineSize</c> - is the fully qualified
+    /// path, PathBase included (<see cref="HttpRequestResponseExtensions.RootUrl"/>;
+    /// <c>UsePathBase</c> in Program.cs from <c>AppSettings:PathBase</c>). Shrinking the budget passed
+    /// to Core here keeps its arithmetic describing the real request line without Core needing to know
+    /// PathBase exists.
+    /// </summary>
+    private static int ResolveMaxRequestLineSize(
+        HttpRequest httpRequest,
+        IOptions<KestrelServerOptions> kestrelOptions
+    ) => kestrelOptions.Value.Limits.MaxRequestLineSize - httpRequest.PathBase.ToUriComponent().Length;
+
+    /// <summary>
+    /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest for one of the five identity
+    /// operation entry points. Unlike <see cref="FromRequest"/>, the path is supplied by the
+    /// caller as the already-redacted route template rather than derived from a dmsPath route
+    /// value, and no query-parameter canonicalization applies (identity has no partitions
+    /// operation).
+    /// </summary>
+    private static async Task<FrontendRequest> FromIdentityRequest(
+        HttpRequest httpRequest,
+        string path,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions,
+        bool includeBody
+    )
+    {
+        JsonBodyExtractionResult jsonBody = includeBody
+            ? await ExtractJsonBodyFrom(httpRequest)
+            : JsonBodyExtractionResult.Empty;
+
+        return new(
+            Body: null,
+            Form: null,
+            Headers: ExtractHeadersFrom(httpRequest),
+            Path: path,
+            QueryParameters: httpRequest.Query.ToDictionary(
+                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber: false),
+                x => x.Value[^1] ?? ""
+            ),
+            TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
+            RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
+            Tenant: ExtractTenantFrom(httpRequest, appSettings),
+            ParsedBody: jsonBody.ParsedBody,
+            BodyParseErrorMessage: jsonBody.ParseErrorMessage,
+            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath,
+            ResponseContentCoding: HttpMethods.IsGet(httpRequest.Method)
+                ? ResolveResponseContentCoding(httpRequest.HttpContext)
+                : ResponseContentCoding.Identity,
+            MaxRequestLineSize: ResolveMaxRequestLineSize(httpRequest, kestrelOptions)
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity create request: POST /identity/v2/identities
+    /// </summary>
+    public static async Task<IResult> IdentityCreate(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, string.Empty),
+            appSettings,
+            kestrelOptions,
+            includeBody: true
+        );
+
+        return ToResult(
+            await apiService.IdentityCreate(frontendRequest, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity get-by-id request: GET /identity/v2/identities/{id}.
+    /// Also reached by GET /identity/v2/identities/results with id = "results", since that path has
+    /// no further segment for the results-polling route to match.
+    /// </summary>
+    public static async Task<IResult> IdentityGetById(
+        HttpContext httpContext,
+        IApiService apiService,
+        [FromRoute(Name = IdentityIdRouteParameterName)] string id,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/{id}"),
+            appSettings,
+            kestrelOptions,
+            includeBody: false
+        );
+
+        return ToResult(
+            await apiService.IdentityGetById(frontendRequest, id, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity find request: POST /identity/v2/identities/find
+    /// </summary>
+    public static async Task<IResult> IdentityFind(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/find"),
+            appSettings,
+            kestrelOptions,
+            includeBody: true
+        );
+
+        return ToResult(
+            await apiService.IdentityFind(frontendRequest, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity search request: POST /identity/v2/identities/search
+    /// </summary>
+    public static async Task<IResult> IdentitySearch(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/search"),
+            appSettings,
+            kestrelOptions,
+            includeBody: true
+        );
+
+        return ToResult(
+            await apiService.IdentitySearch(frontendRequest, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity asynchronous job results poll request:
+    /// GET /identity/v2/identities/results/{token}
+    /// </summary>
+    public static async Task<IResult> IdentityResults(
+        HttpContext httpContext,
+        IApiService apiService,
+        [FromRoute(Name = IdentityTokenRouteParameterName)] string token,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/results/{token}"),
+            appSettings,
+            kestrelOptions,
+            includeBody: false
+        );
+
+        return ToResult(
+            await apiService.IdentityResults(frontendRequest, token, httpContext.RequestAborted),
             httpContext,
             dmsPath
         );

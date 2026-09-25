@@ -30,7 +30,12 @@ public class LoggingMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
         var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
-        var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Path.Value);
+        // Redact an identity get-by-id or results-poll identifier (D11) before sanitizing, so the
+        // scope Path property and every rendered message template below carry the redacted value,
+        // never the real identifier. Every other path - including the other four identity routes,
+        // which carry no identifier - passes through unchanged.
+        var redactedPath = RedactPath(context, context.Request.Path, _appSettings);
+        var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(redactedPath);
         var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
         // Normalized at the ingestion boundary by AspNetCoreFrontend, so no second,
         // differently-shaped normalization happens here; Method and Path keep the stricter
@@ -245,4 +250,32 @@ public class LoggingMiddleware
 
     private static int GetFailureStatusCode(HttpContext context) =>
         context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;
+
+    /// <summary>
+    /// Redacts an identity get-by-id or results-poll identifier from <paramref name="path"/> (D11).
+    /// </summary>
+    /// <remarks>
+    /// Reads <see cref="AppSettings.MultiTenancy"/> and the configured route-qualifier segments to
+    /// build the redaction pattern, through <see cref="AspNetCoreFrontend.TryReadAppSettings"/>
+    /// rather than <paramref name="appSettings"/> directly: that helper caches the read (or the
+    /// fact that it threw) on <see cref="HttpContext.Items"/>, so a request whose <c>AppSettings</c>
+    /// failed validation costs one read and one thrown <see cref="OptionsValidationException"/>
+    /// total, shared with <see cref="AspNetCoreFrontend.IngestCorrelationIdFrom"/> below, not a
+    /// second one for redaction. Degrades to no redaction, rather than throwing, when the options
+    /// value cannot be read.
+    /// </remarks>
+    private static string? RedactPath(HttpContext context, PathString path, IOptions<AppSettings> appSettings)
+    {
+        AppSettings? settings = AspNetCoreFrontend.TryReadAppSettings(context, appSettings);
+        if (settings is null)
+        {
+            return path.Value;
+        }
+
+        return IdentityRoutePathRedactor.Redact(
+            path,
+            settings.GetRouteQualifierSegmentsArray(),
+            settings.MultiTenancy
+        );
+    }
 }

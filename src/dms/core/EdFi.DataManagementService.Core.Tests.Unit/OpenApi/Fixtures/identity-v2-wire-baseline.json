@@ -1,0 +1,1262 @@
+{
+  "components": {
+    "headers": {
+      "CacheControl": {
+        "description": "Every identity operation response is not cacheable by a shared or private HTTP cache (RFC 9111 5.2.2.5).",
+        "schema": {
+          "enum": [
+            "no-store"
+          ],
+          "type": "string"
+        }
+      },
+      "Location": {
+        "description": "The poll URL for retrieving the result of a previously accepted asynchronous identity request.",
+        "schema": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "RetryAfter": {
+        "description": "The number of seconds to wait before retrying, present only when the rate limiter supplies it.",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Identity400": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "createFieldError": {
+                "summary": "A create request field failure, keyed by its JSONPath.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "Data validation failed. See \u0027validationErrors\u0027 for details.",
+                  "errors": [],
+                  "status": 400,
+                  "title": "Data Validation Failed",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "validationErrors": {
+                    "$.firstName": [
+                      "First name is required."
+                    ]
+                  }
+                }
+              },
+              "pathlessError": {
+                "summary": "A provider error with no associated path, appended to the document-level errors collection.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The request could not be processed. See \u0027errors\u0027 for details.",
+                  "errors": [
+                    "The request could not be evaluated."
+                  ],
+                  "status": 400,
+                  "title": "Bad Request",
+                  "type": "urn:ed-fi:api:bad-request",
+                  "validationErrors": {}
+                }
+              },
+              "searchItemError": {
+                "summary": "A search batch item failure, keyed by its zero-based JSONPath array index.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "Data validation failed. See \u0027validationErrors\u0027 for details.",
+                  "errors": [],
+                  "status": 400,
+                  "title": "Data Validation Failed",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "validationErrors": {
+                    "$[2].firstName": [
+                      "First name is required for item 2."
+                    ]
+                  }
+                }
+              },
+              "twoMessagesOneKey": {
+                "summary": "Two provider error messages for the same path, grouped under one validationErrors key.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "Data validation failed. See \u0027validationErrors\u0027 for details.",
+                  "errors": [],
+                  "status": 400,
+                  "title": "Data Validation Failed",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "validationErrors": {
+                    "$.firstName": [
+                      "First name is required.",
+                      "First name must not exceed 75 characters."
+                    ]
+                  }
+                }
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        },
+        "description": "The request data was invalid, either failing core schema validation or the identity provider\u0027s own InvalidProperties diagnosis.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        }
+      },
+      "Identity404": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "identityNotFound": {
+                "summary": "No matching identity, results token, or namespace grant was found.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The specified data could not be found.",
+                  "errors": [],
+                  "status": 404,
+                  "title": "Not Found",
+                  "type": "urn:ed-fi:api:identities:not-found",
+                  "validationErrors": {}
+                }
+              },
+              "operationNotSupported": {
+                "summary": "The registered identity provider does not support this operation.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The identity provider does not support this operation.",
+                  "errors": [],
+                  "status": 404,
+                  "title": "Operation Not Supported",
+                  "type": "urn:ed-fi:api:identities:operation-not-supported",
+                  "validationErrors": {}
+                }
+              }
+            },
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/IdentityOperationNotSupportedProblemDetails"
+                },
+                {
+                  "$ref": "#/components/schemas/IdentityNotFoundProblemDetails"
+                }
+              ]
+            }
+          }
+        },
+        "description": "Either the identity provider does not support the requested operation, or the provider reported no matching identity, namespace, or job for this request.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        }
+      },
+      "Identity415": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "unsupportedMediaType": {
+                "summary": "An unsupported request Content-Type.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The value specified in the \u0027Content-Type\u0027 header is not supported by this host.",
+                  "errors": [
+                    "The value specified in the \u0027Content-Type\u0027 header is not supported by this host."
+                  ],
+                  "status": 415,
+                  "title": "Unsupported Media Type",
+                  "type": "urn:ed-fi:api:unsupported-media-type",
+                  "validationErrors": {}
+                }
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        },
+        "description": "The request\u0027s Content-Type is not application/json or text/json.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        }
+      },
+      "Identity429": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "tooManyRequests": {
+                "summary": "The configured request rate was exceeded.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The number of allowed requests has been exceeded. Retry the request later.",
+                  "errors": [],
+                  "status": 429,
+                  "title": "Too Many Requests",
+                  "type": "urn:ed-fi:api:too-many-requests",
+                  "validationErrors": {}
+                }
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        },
+        "description": "The global rate limiter rejected this request.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        }
+      },
+      "Identity500": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "providerConfiguration": {
+                "summary": "Provider activation or its capabilities getter threw while the request was live.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The identity provider could not be initialized or its capabilities evaluated.",
+                  "errors": [],
+                  "status": 500,
+                  "title": "Identity provider configuration failure",
+                  "type": "urn:ed-fi:api:identities:provider-configuration",
+                  "validationErrors": {}
+                }
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/IdentityProviderConfigurationProblemDetails"
+            }
+          }
+        },
+        "description": "The identity provider could not be activated or its capabilities could not be evaluated.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        }
+      },
+      "Identity502": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "providerContractViolation": {
+                "summary": "The identity provider returned a result shape the contract forbids for this operation.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The identity provider returned Success with neither a payload nor a request token.",
+                  "errors": [],
+                  "status": 502,
+                  "title": "Identity Provider Contract Violation",
+                  "type": "urn:ed-fi:api:identities:provider-contract-violation",
+                  "validationErrors": {}
+                }
+              },
+              "upstreamFailure": {
+                "summary": "The identity provider threw while the request was live.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The Identity Management service encountered an unexpected error and could not complete the request.",
+                  "errors": [],
+                  "status": 502,
+                  "title": "Identity Management Upstream Failure",
+                  "type": "urn:ed-fi:api:identities:upstream-failure",
+                  "validationErrors": {}
+                }
+              }
+            },
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/IdentityProviderContractViolationProblemDetails"
+                },
+                {
+                  "$ref": "#/components/schemas/IdentityUpstreamFailureProblemDetails"
+                }
+              ]
+            }
+          }
+        },
+        "description": "The identity provider violated the contract for this operation, or failed while the request was live.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        }
+      },
+      "Identity502Results": {
+        "content": {
+          "application/problem\u002Bjson": {
+            "examples": {
+              "jobFailed": {
+                "summary": "The previously accepted asynchronous job failed permanently; stop polling this job.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The accepted identity request failed permanently. Stop polling this job.",
+                  "errors": [],
+                  "status": 502,
+                  "title": "Identity job failed",
+                  "type": "urn:ed-fi:api:identities:job-failed",
+                  "validationErrors": {}
+                }
+              },
+              "providerContractViolation": {
+                "summary": "The identity provider returned a result shape the contract forbids for this operation.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The identity provider returned Success with neither a payload nor a request token.",
+                  "errors": [],
+                  "status": 502,
+                  "title": "Identity Provider Contract Violation",
+                  "type": "urn:ed-fi:api:identities:provider-contract-violation",
+                  "validationErrors": {}
+                }
+              },
+              "upstreamFailure": {
+                "summary": "The identity provider threw while the request was live.",
+                "value": {
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "detail": "The Identity Management service encountered an unexpected error and could not complete the request.",
+                  "errors": [],
+                  "status": 502,
+                  "title": "Identity Management Upstream Failure",
+                  "type": "urn:ed-fi:api:identities:upstream-failure",
+                  "validationErrors": {}
+                }
+              }
+            },
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/IdentityProviderContractViolationProblemDetails"
+                },
+                {
+                  "$ref": "#/components/schemas/IdentityUpstreamFailureProblemDetails"
+                },
+                {
+                  "$ref": "#/components/schemas/IdentityJobFailedProblemDetails"
+                }
+              ]
+            }
+          }
+        },
+        "description": "The identity provider violated the contract for this operation, or failed while the request was live.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        }
+      }
+    },
+    "schemas": {
+      "IdentityCreateRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "BirthDate": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "BirthLocation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Location"
+              }
+            ],
+            "nullable": true
+          },
+          "BirthOrder": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "FirstName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "GenerationCodeSuffix": {
+            "nullable": true,
+            "type": "string"
+          },
+          "LastSurname": {
+            "nullable": true,
+            "type": "string"
+          },
+          "MiddleName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "SexType": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityJobFailedProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "urn:ed-fi:api:identities:job-failed"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "IdentityNotFoundProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "urn:ed-fi:api:identities:not-found"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "IdentityOperationNotSupportedProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "urn:ed-fi:api:identities:operation-not-supported"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "IdentityProviderConfigurationProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "urn:ed-fi:api:identities:provider-configuration"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "IdentityProviderContractViolationProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "urn:ed-fi:api:identities:provider-contract-violation"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "IdentityResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "BirthDate": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "BirthLocation": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "BirthOrder": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "FirstName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "GenerationCodeSuffix": {
+            "nullable": true,
+            "type": "string"
+          },
+          "LastSurname": {
+            "nullable": true,
+            "type": "string"
+          },
+          "MiddleName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "Score": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "SexType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "UniqueId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "UniqueId",
+          "LastSurname",
+          "FirstName",
+          "MiddleName",
+          "GenerationCodeSuffix",
+          "SexType",
+          "BirthDate",
+          "BirthOrder",
+          "BirthLocation",
+          "Score"
+        ],
+        "type": "object"
+      },
+      "IdentitySearchRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "BirthDate": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "BirthLocation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Location"
+              }
+            ],
+            "nullable": true
+          },
+          "BirthOrder": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "FirstName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "GenerationCodeSuffix": {
+            "nullable": true,
+            "type": "string"
+          },
+          "LastSurname": {
+            "nullable": true,
+            "type": "string"
+          },
+          "MiddleName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "SexType": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentitySearchResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "SearchResponses": {
+            "items": {
+              "$ref": "#/components/schemas/IdentitySearchResponses"
+            },
+            "type": "array"
+          },
+          "Status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "Status"
+        ],
+        "type": "object"
+      },
+      "IdentitySearchResponseComplete": {
+        "additionalProperties": true,
+        "properties": {
+          "SearchResponses": {
+            "items": {
+              "$ref": "#/components/schemas/IdentitySearchResponses"
+            },
+            "type": "array"
+          },
+          "Status": {
+            "enum": [
+              "Complete"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "Status",
+          "SearchResponses"
+        ],
+        "type": "object"
+      },
+      "IdentitySearchResponseIncomplete": {
+        "additionalProperties": true,
+        "properties": {
+          "SearchResponses": {
+            "items": {
+              "$ref": "#/components/schemas/IdentitySearchResponses"
+            },
+            "type": "array"
+          },
+          "Status": {
+            "enum": [
+              "Incomplete"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "Status"
+        ],
+        "type": "object"
+      },
+      "IdentitySearchResponses": {
+        "additionalProperties": true,
+        "properties": {
+          "Responses": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "Responses"
+        ],
+        "type": "object"
+      },
+      "IdentityUpstreamFailureProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "urn:ed-fi:api:identities:upstream-failure"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "Location": {
+        "additionalProperties": true,
+        "properties": {
+          "City": {
+            "nullable": true,
+            "type": "string"
+          },
+          "Country": {
+            "nullable": true,
+            "type": "string"
+          },
+          "InternationalProvince": {
+            "nullable": true,
+            "type": "string"
+          },
+          "StateAbbreviation": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProblemDetails": {
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "validationErrors": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "type",
+          "title",
+          "status",
+          "correlationId"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "oauth2_client_credentials": {
+        "description": "Ed-Fi API OAuth 2.0 Client Credentials Grant Type authorization",
+        "flows": {
+          "clientCredentials": {
+            "scopes": {},
+            "tokenUrl": "{tokenUrl}"
+          }
+        },
+        "type": "oauth2"
+      }
+    }
+  },
+  "info": {
+    "title": "Identity API Endpoints",
+    "version": "2"
+  },
+  "openapi": "3.0.1",
+  "paths": {
+    "/identities": {
+      "post": {
+        "operationId": "createIdentity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityCreateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": "604700123",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The identity was created. The response body is the new UniqueId as a JSON string; no Location header is returned.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Identity400"
+          },
+          "404": {
+            "$ref": "#/components/responses/Identity404"
+          },
+          "415": {
+            "$ref": "#/components/responses/Identity415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Identity429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Identity500"
+          },
+          "502": {
+            "$ref": "#/components/responses/Identity502"
+          }
+        },
+        "summary": "Creates a new identity"
+      }
+    },
+    "/identities/find": {
+      "post": {
+        "operationId": "findIdentities",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "complete": {
+                    "summary": "A completed synchronous result with one match and one no-match entry.",
+                    "value": {
+                      "SearchResponses": [
+                        {
+                          "Responses": [
+                            {
+                              "BirthDate": "2011-05-02T00:00:00Z",
+                              "BirthLocation": {
+                                "City": "Austin",
+                                "Country": "US",
+                                "InternationalProvince": null,
+                                "StateAbbreviation": "TX"
+                              },
+                              "BirthOrder": 1,
+                              "FirstName": "Sofia",
+                              "GenerationCodeSuffix": null,
+                              "LastSurname": "Vasquez",
+                              "MiddleName": null,
+                              "Score": 92.5,
+                              "SexType": "Female",
+                              "UniqueId": "604700123"
+                            }
+                          ]
+                        },
+                        {
+                          "Responses": []
+                        }
+                      ],
+                      "Status": "Complete"
+                    }
+                  },
+                  "noMatch": {
+                    "summary": "A completed synchronous result with no matching identity for any submitted entry.",
+                    "value": {
+                      "SearchResponses": [
+                        {
+                          "Responses": []
+                        },
+                        {
+                          "Responses": []
+                        }
+                      ],
+                      "Status": "Complete"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponseComplete"
+                }
+              }
+            },
+            "description": "The synchronous, complete result of the request.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
+          },
+          "202": {
+            "description": "The request was accepted for asynchronous processing. Poll Location for the result.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "description": "The poll URL for retrieving the result of this accepted asynchronous identity request.",
+                "required": true,
+                "schema": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Identity400"
+          },
+          "404": {
+            "$ref": "#/components/responses/Identity404"
+          },
+          "415": {
+            "$ref": "#/components/responses/Identity415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Identity429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Identity500"
+          },
+          "502": {
+            "$ref": "#/components/responses/Identity502"
+          }
+        },
+        "summary": "Finds identities matching one or more submitted UniqueIds"
+      }
+    },
+    "/identities/results/{id}": {
+      "get": {
+        "operationId": "getIdentityResults",
+        "parameters": [
+          {
+            "description": "The request token returned by the accepted asynchronous find or search job.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "complete": {
+                    "summary": "The job completed; SearchResponses carries the final result.",
+                    "value": {
+                      "SearchResponses": [
+                        {
+                          "Responses": [
+                            {
+                              "BirthDate": "2011-05-02T00:00:00Z",
+                              "BirthLocation": {
+                                "City": "Austin",
+                                "Country": "US",
+                                "InternationalProvince": null,
+                                "StateAbbreviation": "TX"
+                              },
+                              "BirthOrder": 1,
+                              "FirstName": "Sofia",
+                              "GenerationCodeSuffix": null,
+                              "LastSurname": "Vasquez",
+                              "MiddleName": null,
+                              "Score": 92.5,
+                              "SexType": "Female",
+                              "UniqueId": "604700123"
+                            }
+                          ]
+                        },
+                        {
+                          "Responses": []
+                        }
+                      ],
+                      "Status": "Complete"
+                    }
+                  },
+                  "incomplete": {
+                    "summary": "The job is still running; SearchResponses is not yet present.",
+                    "value": {
+                      "Status": "Incomplete"
+                    }
+                  }
+                },
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/IdentitySearchResponseComplete"
+                    },
+                    {
+                      "$ref": "#/components/schemas/IdentitySearchResponseIncomplete"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "The current state of a previously accepted asynchronous find or search job. Location is present only while the job is still Incomplete.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Identity400"
+          },
+          "404": {
+            "$ref": "#/components/responses/Identity404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Identity429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Identity500"
+          },
+          "502": {
+            "$ref": "#/components/responses/Identity502Results"
+          }
+        },
+        "summary": "Retrieves the result of a previously accepted asynchronous find or search job"
+      }
+    },
+    "/identities/search": {
+      "post": {
+        "operationId": "searchIdentities",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/IdentitySearchRequest"
+                },
+                "type": "array"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/IdentitySearchRequest"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "complete": {
+                    "summary": "A completed synchronous result with one match and one no-match entry.",
+                    "value": {
+                      "SearchResponses": [
+                        {
+                          "Responses": [
+                            {
+                              "BirthDate": "2011-05-02T00:00:00Z",
+                              "BirthLocation": {
+                                "City": "Austin",
+                                "Country": "US",
+                                "InternationalProvince": null,
+                                "StateAbbreviation": "TX"
+                              },
+                              "BirthOrder": 1,
+                              "FirstName": "Sofia",
+                              "GenerationCodeSuffix": null,
+                              "LastSurname": "Vasquez",
+                              "MiddleName": null,
+                              "Score": 92.5,
+                              "SexType": "Female",
+                              "UniqueId": "604700123"
+                            }
+                          ]
+                        },
+                        {
+                          "Responses": []
+                        }
+                      ],
+                      "Status": "Complete"
+                    }
+                  },
+                  "noMatch": {
+                    "summary": "A completed synchronous result with no matching identity for any submitted entry.",
+                    "value": {
+                      "SearchResponses": [
+                        {
+                          "Responses": []
+                        },
+                        {
+                          "Responses": []
+                        }
+                      ],
+                      "Status": "Complete"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponseComplete"
+                }
+              }
+            },
+            "description": "The synchronous, complete result of the request.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
+          },
+          "202": {
+            "description": "The request was accepted for asynchronous processing. Poll Location for the result.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "description": "The poll URL for retrieving the result of this accepted asynchronous identity request.",
+                "required": true,
+                "schema": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Identity400"
+          },
+          "404": {
+            "$ref": "#/components/responses/Identity404"
+          },
+          "415": {
+            "$ref": "#/components/responses/Identity415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Identity429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Identity500"
+          },
+          "502": {
+            "$ref": "#/components/responses/Identity502"
+          }
+        },
+        "summary": "Searches for identities matching one or more submitted demographic requests"
+      }
+    },
+    "/identities/{id}": {
+      "get": {
+        "operationId": "getIdentityById",
+        "parameters": [
+          {
+            "description": "The UniqueId of the identity to retrieve.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "BirthDate": "2011-05-02T00:00:00Z",
+                  "BirthLocation": {
+                    "City": "Austin",
+                    "Country": "US",
+                    "InternationalProvince": null,
+                    "StateAbbreviation": "TX"
+                  },
+                  "BirthOrder": 1,
+                  "FirstName": "Sofia",
+                  "GenerationCodeSuffix": null,
+                  "LastSurname": "Vasquez",
+                  "MiddleName": null,
+                  "Score": null,
+                  "SexType": "Female",
+                  "UniqueId": "604700123"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            },
+            "description": "The identity matching the supplied UniqueId.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Identity400"
+          },
+          "404": {
+            "$ref": "#/components/responses/Identity404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Identity429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Identity500"
+          },
+          "502": {
+            "$ref": "#/components/responses/Identity502"
+          }
+        },
+        "summary": "Retrieves an identity by UniqueId"
+      }
+    }
+  },
+  "security": [
+    {
+      "oauth2_client_credentials": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "{server}"
+    }
+  ]
+}

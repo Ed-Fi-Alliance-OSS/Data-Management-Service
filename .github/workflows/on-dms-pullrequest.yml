@@ -250,6 +250,7 @@ jobs:
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
             "eng/docker-compose/tests/E2ETestProcessContext.Tests.ps1",
             "eng/docker-compose/tests/E2EIdentityEnvironment.Tests.ps1",
+            "eng/docker-compose/tests/IdentityToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",

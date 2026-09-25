@@ -179,6 +179,16 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// POST to an arbitrary route-qualified path, for callers (such as cross-tenant identity
+    /// authorization checks) that need a path the tenant baked into this client's constructor does
+    /// not match.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostByLocationAsync(string location, object body)
+    {
+        return await _httpClient.PostAsJsonAsync(location, body);
+    }
+
+    /// <summary>
     /// GET a resource without route qualifiers (for error testing)
     /// </summary>
     public async Task<HttpResponseMessage> GetResourceWithoutQualifiersAsync(string resource)
@@ -296,6 +306,87 @@ public class DmsApiClient : IDisposable
 
         return await _httpClient.PostAsync(url, null);
     }
+
+    /// <summary>
+    /// The route-qualified identity API path under an explicit tenant, districtId, and schoolYear.
+    /// Unlike <see cref="ResourcePath"/>, the tenant is always taken from the argument rather than
+    /// the constructor's <c>_tenant</c> field, so one client (carrying one bearer token) can probe
+    /// an identity route under a tenant its own token was never minted for (cross-tenant binding
+    /// checks) as easily as its own tenant's route.
+    /// </summary>
+    private static string IdentityPath(string tenant, string districtId, string schoolYear, string suffix) =>
+        $"/{tenant}/{districtId}/{schoolYear}/identity/v2/identities{suffix}";
+
+    /// <summary>
+    /// POST an identity create request.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostIdentityCreateAsync(
+        string tenant,
+        string districtId,
+        string schoolYear,
+        object body
+    ) => await _httpClient.PostAsJsonAsync(IdentityPath(tenant, districtId, schoolYear, ""), body);
+
+    /// <summary>
+    /// GET an identity by its route value. Also used with id "results" (no further segment), which
+    /// the identity route module resolves to get-by-id rather than the results route.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetIdentityByIdAsync(
+        string tenant,
+        string districtId,
+        string schoolYear,
+        string id
+    ) => await _httpClient.GetAsync(IdentityPath(tenant, districtId, schoolYear, $"/{id}"));
+
+    /// <summary>
+    /// POST an identity find request.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostIdentityFindAsync(
+        string tenant,
+        string districtId,
+        string schoolYear,
+        object body
+    ) => await _httpClient.PostAsJsonAsync(IdentityPath(tenant, districtId, schoolYear, "/find"), body);
+
+    /// <summary>
+    /// POST an identity search request.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostIdentitySearchAsync(
+        string tenant,
+        string districtId,
+        string schoolYear,
+        object body
+    ) => await _httpClient.PostAsJsonAsync(IdentityPath(tenant, districtId, schoolYear, "/search"), body);
+
+    /// <summary>
+    /// GET an identity results poll by its request token.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetIdentityResultsAsync(
+        string tenant,
+        string districtId,
+        string schoolYear,
+        string requestToken
+    ) => await _httpClient.GetAsync(IdentityPath(tenant, districtId, schoolYear, $"/results/{requestToken}"));
+
+    /// <summary>
+    /// GET the identity OpenAPI (swagger) document under an explicit tenant, districtId, and
+    /// schoolYear route prefix.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetIdentitySwaggerAsync(
+        string tenant,
+        string districtId,
+        string schoolYear
+    ) => await _httpClient.GetAsync($"/{tenant}/{districtId}/{schoolYear}/metadata/identity/v2/swagger.json");
+
+    /// <summary>
+    /// GET the metadata specification listing under an explicit tenant, districtId, and schoolYear
+    /// route prefix.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetMetadataSpecificationsAsync(
+        string tenant,
+        string districtId,
+        string schoolYear
+    ) => await _httpClient.GetAsync($"/{tenant}/{districtId}/{schoolYear}/metadata/specifications");
 
     protected virtual void Dispose(bool disposing)
     {

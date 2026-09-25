@@ -39,7 +39,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         {
             _logger.LogDebug(
                 "Entering ResourceActionAuthorizationMiddleware - {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             if (!ValidateClientAuthorizations(requestInfo))
@@ -95,7 +95,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             _logger.LogError(
                 ex,
                 "ResourceActionAuthorizationMiddleware: Error while authorizing the request - {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
@@ -121,7 +121,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         {
             _logger.LogWarning(
                 "ResourceActionAuthorizationMiddleware: No ClientAuthorizations found - JWT authentication may have failed - {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             CreateUnauthorizedResponse(requestInfo);
             return false;
@@ -135,7 +135,10 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     private async Task<ClaimSet?> GetClaimSetForClient(RequestInfo requestInfo)
     {
         string claimSetName = requestInfo.ClientAuthorizations.ClaimSetName;
-        _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
+        _logger.LogInformation(
+            "Claim set name from token scope - {ClaimSetName}",
+            LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName)
+        );
 
         _logger.LogInformation("Retrieving claim set list");
         IList<ClaimSet> claimsList = await _claimSetProvider.GetAllClaimSets(
@@ -148,8 +151,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         {
             _logger.LogInformation(
                 "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
-                claimSetName,
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
         }
 
@@ -194,7 +197,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             _logger.LogDebug(
                 "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
                 resourceClaimName,
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             CreateForbiddenResponse(requestInfo);
             return false;
@@ -257,7 +260,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 "ResourceAuthorizationMiddleware: Can not perform {RequestMethod} on the resource {ResourceName} - {TraceId}",
                 requestInfo.Method.ToString(),
                 resourceClaimName,
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             CreateActionDeniedResponse(requestInfo, actionName, resourceClaimName, claimSetName);
             return false;
