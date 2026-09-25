@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
@@ -121,6 +122,32 @@ public class JobRetentionServiceTests
                 .Field("Count")
                 .Should()
                 .Be(1_120);
+    }
+
+    [TestFixture]
+    public class Given_a_retention_with_fractional_seconds
+    {
+        private RetentionHarness _harness = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new RetentionHarness();
+            _harness.Settings.FinishedJobRetention = TimeSpan.Parse(
+                "01:00:00.900",
+                CultureInfo.InvariantCulture
+            );
+            await _harness.Service.StartAsync(CancellationToken.None);
+            await HostedServiceProbe.Until(() => _harness.CallCount == 1, "the first sweep ran");
+            await HostedServiceProbe.StopAsync(_harness.Service);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_rounds_the_retention_up_so_nothing_is_deleted_early() =>
+            _harness.Repository.Calls.Single().RetentionSeconds.Should().Be(3_601);
     }
 
     [TestFixture]

@@ -46,7 +46,8 @@ public sealed class JobRetentionService(
 
     private async Task SweepAsync(JobOptions settings, CancellationToken stoppingToken)
     {
-        int retentionSeconds = (int)settings.FinishedJobRetention.TotalSeconds;
+        // Rounded up: a fractional retention must never let a job be deleted before its full window has passed.
+        int retentionSeconds = (int)Math.Ceiling(settings.FinishedJobRetention.TotalSeconds);
         int deleted = 0;
 
         // Only the type chain is kept; the exception object is never logged (D-16a).
