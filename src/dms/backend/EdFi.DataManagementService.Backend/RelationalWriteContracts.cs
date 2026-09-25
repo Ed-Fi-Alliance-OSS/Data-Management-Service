@@ -999,7 +999,9 @@ public sealed record RelationalWriteExecutorInput
     internal PostTargetAuthorizationBundles? PostTargetAuthorizationBundles { get; init; }
 
     /// <summary>
-    /// This input with its authorization members replaced by one POST branch's inputs.
+    /// This input with its authorization members replaced by <paramref name="inputs"/>. Every write path
+    /// sets its authorization through here, so a member added to <see cref="PostBranchAuthorizationInputs"/>
+    /// and left out of this method is dropped for every write, not only for a POST whose branches differ.
     /// </summary>
     internal RelationalWriteExecutorInput WithPostBranchInputs(PostBranchAuthorizationInputs inputs) =>
         this with
@@ -1054,9 +1056,19 @@ internal sealed record PostRelationshipAuthorizationPlans(
 );
 
 /// <summary>
-/// The authorization one POST branch applies: exactly what the POST preflight plans for that branch's
-/// action list, including its own create-new and existing-resource relationship plans.
+/// The authorization a write's preflight plans for the executor. A PUT and a POST whose Create and Update
+/// policies match carry one; a POST whose policies differ carries one per branch, each exactly what the
+/// preflight plans for that branch's action list, including its own create-new and existing-resource
+/// relationship plans.
 /// </summary>
+/// <param name="StoredOwnershipAuthorization">
+/// The ownership check, or <see langword="null"/> when <c>OwnershipBased</c> is not configured. Ownership has
+/// one value source, the stored token, so it decides an update and is vacuous for a create.
+/// </param>
+/// <param name="DeferredStoredOwnershipFailureResult">
+/// The failure a POST owes if it resolves to an existing target while its ownership check could not be
+/// parameterized; see <see cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>.
+/// </param>
 internal sealed record PostBranchAuthorizationInputs(
     RelationshipAuthorizationResult? StoredRelationshipAuthorization,
     RelationshipAuthorizationResult? ProposedRelationshipAuthorization,
@@ -1066,7 +1078,14 @@ internal sealed record PostBranchAuthorizationInputs(
     RelationalCustomViewAuthorization? CustomViewAuthorization,
     RelationalOwnershipAuthorization? StoredOwnershipAuthorization,
     RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult
-);
+)
+{
+    /// <summary>
+    /// No authorization input at all: the value a write without a preflight carries.
+    /// </summary>
+    public static PostBranchAuthorizationInputs None { get; } =
+        new(null, null, null, null, null, null, null, null);
+}
 
 /// <summary>
 /// One POST branch: either the authorization to apply, or the result the branch owes as soon as the target

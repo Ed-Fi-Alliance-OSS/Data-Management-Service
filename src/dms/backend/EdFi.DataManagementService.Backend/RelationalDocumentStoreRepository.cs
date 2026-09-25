@@ -3072,7 +3072,7 @@ public sealed class RelationalDocumentStoreRepository(
         ) switch
         {
             WriteGuardRailPreflightResult<UpsertResult>.Continue continueResult =>
-                new PostBranchAuthorization.Authorized(continueResult.ToPostBranchInputs()),
+                new PostBranchAuthorization.Authorized(continueResult.Authorization),
             WriteGuardRailPreflightResult<UpsertResult>.Stop stop => ToImmediateBranch(stop),
             var unsupported => throw new InvalidOperationException(
                 $"Unsupported relational write preflight result '{unsupported.GetType().Name}'."
@@ -3990,14 +3990,7 @@ public sealed class RelationalDocumentStoreRepository(
             return failureFactory(ex.Message);
         }
 
-        RelationshipAuthorizationResult? storedRelationshipAuthorization = null;
-        RelationshipAuthorizationResult? proposedRelationshipAuthorization = null;
-        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
-        PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null;
-        RelationalCustomViewAuthorization? customViewAuthorization = null;
-        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null;
-        RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null;
+        var authorization = PostBranchAuthorizationInputs.None;
         PostTargetAuthorizationBundles? postTargetAuthorizationBundles = null;
 
         if (preflight is not null)
@@ -4007,15 +4000,7 @@ public sealed class RelationalDocumentStoreRepository(
             switch (preflightResult)
             {
                 case WriteGuardRailPreflightResult<TResult>.Continue continueResult:
-                    storedRelationshipAuthorization = continueResult.StoredRelationshipAuthorization;
-                    proposedRelationshipAuthorization = continueResult.ProposedRelationshipAuthorization;
-                    storedNamespaceAuthorization = continueResult.StoredNamespaceAuthorization;
-                    proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
-                    postRelationshipAuthorizationPlans = continueResult.PostRelationshipAuthorizationPlans;
-                    customViewAuthorization = continueResult.CustomViewAuthorization;
-                    storedOwnershipAuthorization = continueResult.StoredOwnershipAuthorization;
-                    deferredStoredOwnershipFailureResult =
-                        continueResult.DeferredStoredOwnershipFailureResult;
+                    authorization = continueResult.Authorization;
                     postTargetAuthorizationBundles = continueResult.PostTargetAuthorizationBundles;
                     break;
 
@@ -4073,20 +4058,12 @@ public sealed class RelationalDocumentStoreRepository(
                         ),
                         tenantKey: tenantKey,
                         profileWriteContext: profileWriteContext,
-                        writePrecondition: writePrecondition,
-                        storedRelationshipAuthorization: storedRelationshipAuthorization,
-                        proposedRelationshipAuthorization: proposedRelationshipAuthorization,
-                        storedNamespaceAuthorization: storedNamespaceAuthorization,
-                        proposedNamespaceAuthorization: proposedNamespaceAuthorization
+                        writePrecondition: writePrecondition
                     )
                     {
-                        PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
-                        CustomViewAuthorization = customViewAuthorization,
                         CreatorOwnershipTokenId = creatorOwnershipTokenId,
-                        StoredOwnershipAuthorization = storedOwnershipAuthorization,
-                        DeferredStoredOwnershipFailureResult = deferredStoredOwnershipFailureResult,
                         PostTargetAuthorizationBundles = postTargetAuthorizationBundles,
-                    }
+                    }.WithPostBranchInputs(authorization)
                 )
                 .ConfigureAwait(false);
 
@@ -4167,52 +4144,43 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null
             )
             {
-                ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
-                ValidateProposedRelationshipAuthorization(proposedRelationshipAuthorization);
-                StoredRelationshipAuthorization = storedRelationshipAuthorization;
-                ProposedRelationshipAuthorization = proposedRelationshipAuthorization;
-                StoredNamespaceAuthorization = storedNamespaceAuthorization;
-                ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
-                PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans;
-                CustomViewAuthorization = customViewAuthorization;
-                StoredOwnershipAuthorization = storedOwnershipAuthorization;
-                DeferredStoredOwnershipFailureResult = deferredStoredOwnershipFailureResult;
+                Authorization = Validated(
+                    new PostBranchAuthorizationInputs(
+                        storedRelationshipAuthorization,
+                        proposedRelationshipAuthorization,
+                        storedNamespaceAuthorization,
+                        proposedNamespaceAuthorization,
+                        postRelationshipAuthorizationPlans,
+                        customViewAuthorization,
+                        storedOwnershipAuthorization,
+                        deferredStoredOwnershipFailureResult
+                    )
+                );
             }
 
-            public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
+            private Continue(PostBranchAuthorizationInputs authorization)
+            {
+                Authorization = Validated(authorization);
+            }
 
-            public RelationshipAuthorizationResult? ProposedRelationshipAuthorization { get; }
-
-            public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
-
-            public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
-
-            /// <summary>
-            /// The ownership check planned for this write, or <see langword="null"/> when
-            /// <c>OwnershipBased</c> is not configured. Ownership has one value source — the stored token —
-            /// so unlike namespace and custom view there is no proposed counterpart: the check decides an
-            /// update and is vacuous for a create.
-            /// </summary>
-            public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; }
+            private static PostBranchAuthorizationInputs Validated(
+                PostBranchAuthorizationInputs authorization
+            )
+            {
+                ValidateStoredRelationshipAuthorization(authorization.StoredRelationshipAuthorization);
+                ValidateProposedRelationshipAuthorization(authorization.ProposedRelationshipAuthorization);
+                return authorization;
+            }
 
             /// <summary>
-            /// The failure a POST owes if it resolves to an existing target while its ownership check could
-            /// not be parameterized, or <see langword="null"/>; see
-            /// <see cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>.
+            /// The authorization planned for this write. It reaches the executor as one value, through
+            /// <see cref="RelationalWriteExecutorInput.WithPostBranchInputs"/>, on every write path.
             /// </summary>
-            public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; }
-
-            /// <summary>
-            /// Every custom-view check planned for this write, across both value sources. Null when no custom
-            /// view participates.
-            /// </summary>
-            public RelationalCustomViewAuthorization? CustomViewAuthorization { get; }
-
-            public PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; }
+            public PostBranchAuthorizationInputs Authorization { get; }
 
             /// <summary>
             /// The per-branch authorization of a POST whose branches differ, or <see langword="null"/>. When
-            /// set, this result's own members are the ExistingDocument branch's inputs, or empty when that
+            /// set, <see cref="Authorization"/> is the ExistingDocument branch's inputs, or empty when that
             /// branch owes an immediate result.
             /// </summary>
             public PostTargetAuthorizationBundles? PostTargetAuthorizationBundles { get; private init; }
@@ -4223,34 +4191,10 @@ public sealed class RelationalDocumentStoreRepository(
 
                 var existing = bundles.ExistingDocument is PostBranchAuthorization.Authorized authorized
                     ? authorized.Inputs
-                    : null;
+                    : PostBranchAuthorizationInputs.None;
 
-                return new Continue(
-                    existing?.StoredRelationshipAuthorization,
-                    existing?.ProposedRelationshipAuthorization,
-                    existing?.StoredNamespaceAuthorization,
-                    existing?.ProposedNamespaceAuthorization,
-                    existing?.PostRelationshipAuthorizationPlans,
-                    existing?.CustomViewAuthorization,
-                    existing?.StoredOwnershipAuthorization,
-                    existing?.DeferredStoredOwnershipFailureResult
-                )
-                {
-                    PostTargetAuthorizationBundles = bundles,
-                };
+                return new Continue(existing) { PostTargetAuthorizationBundles = bundles };
             }
-
-            public PostBranchAuthorizationInputs ToPostBranchInputs() =>
-                new(
-                    StoredRelationshipAuthorization,
-                    ProposedRelationshipAuthorization,
-                    StoredNamespaceAuthorization,
-                    ProposedNamespaceAuthorization,
-                    PostRelationshipAuthorizationPlans,
-                    CustomViewAuthorization,
-                    StoredOwnershipAuthorization,
-                    DeferredStoredOwnershipFailureResult
-                );
 
             private static void ValidateStoredRelationshipAuthorization(
                 RelationshipAuthorizationResult? storedRelationshipAuthorization
