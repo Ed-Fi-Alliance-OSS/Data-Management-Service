@@ -202,6 +202,14 @@
                       "name": "NoFurtherAuthorizationRequired"
                     }
                   ]
+                },
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
                 }
               ]
             }
@@ -310,6 +318,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         },
@@ -1426,6 +1437,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         },
@@ -1664,6 +1678,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         },
@@ -1965,6 +1982,9 @@
               "actions": [
                 {
                   "name": "Create"
+                },
+                {
+                  "name": "Update"
                 }
               ]
             },
@@ -2141,6 +2161,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -2211,6 +2234,9 @@
               "actions": [
                 {
                   "name": "Create"
+                },
+                {
+                  "name": "Update"
                 }
               ]
             }
@@ -2426,6 +2452,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -2557,6 +2586,9 @@
               "actions": [
                 {
                   "name": "Create"
+                },
+                {
+                  "name": "Update"
                 }
               ]
             }
@@ -2743,6 +2775,9 @@
               "actions": [
                 {
                   "name": "Create"
+                },
+                {
+                  "name": "Update"
                 }
               ]
             }
@@ -2792,6 +2827,9 @@
               "actions": [
                 {
                   "name": "Create"
+                },
+                {
+                  "name": "Update"
                 }
               ]
             }
@@ -3566,6 +3604,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -3674,6 +3715,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -3850,6 +3894,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -4118,6 +4165,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -4219,6 +4269,9 @@
               "actions": [
                 {
                   "name": "Create"
+                },
+                {
+                  "name": "Update"
                 }
               ]
             }
@@ -4380,6 +4433,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -4441,6 +4497,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -4751,6 +4810,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -4856,6 +4918,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }
@@ -4917,6 +4982,9 @@
           "actions": [
             {
               "name": "Create"
+            },
+            {
+              "name": "Update"
             }
           ]
         }

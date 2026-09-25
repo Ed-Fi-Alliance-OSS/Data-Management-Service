@@ -1229,7 +1229,9 @@ dotnet $bulkLoadClientDll `
 **Step 6. Clean up.** Remove the seed workspace on success (leave it on failure to aid debugging).
 
 > **Seed rerun tolerance.** When `load-dms-seed-data.ps1` is invoked against a database that already contains seed
-> data (e.g., re-running bootstrap without `-v` teardown), duplicate resources are expected to produce
+> data (e.g., re-running bootstrap without `-v` teardown), a re-POSTed resource is an upsert of the existing
+> record, which DMS authorizes as `Update`; the `SeedLoader` `Update` grants (Section 7.2) let it answer
+> `200 OK`. Duplicate resources that DMS cannot resolve as an upsert are expected to produce
 > `409 Conflict` responses from the DMS API. Bootstrap may pass `--continue-on-error`, but rerun tolerance is
 > a required BulkLoadClient contract for Story 02 delivery, not a guaranteed DMS-916 behavior until ODS-6738
 > delivers and verifies it. Under that contract, BulkLoadClient classifies duplicate-resource `409 Conflict`
@@ -1498,18 +1500,19 @@ already present there and must not invent a synthetic
 
 | Resource claim URI pattern | Authorization strategy source | Operations |
 |---|---|---|
-| `http://ed-fi.org/identity/claims/domains/systemDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| `http://ed-fi.org/identity/claims/domains/managedDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/schoolYearType` | Explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` | Create |
-| `http://ed-fi.org/identity/claims/domains/educationOrganizations` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/school` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/course` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/student` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| `http://ed-fi.org/identity/claims/ed-fi/studentSchoolAssociation` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
-| *(extension resource claims per selected built-in extension seed source)* | Inherited from the extension claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant unless a future design names a specific closed-enum exception | Create |
+| `http://ed-fi.org/identity/claims/domains/systemDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| `http://ed-fi.org/identity/claims/domains/managedDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| `http://ed-fi.org/identity/claims/ed-fi/schoolYearType` | Explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` | Create, Update |
+| `http://ed-fi.org/identity/claims/domains/educationOrganizations` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| `http://ed-fi.org/identity/claims/ed-fi/school` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| `http://ed-fi.org/identity/claims/ed-fi/course` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| `http://ed-fi.org/identity/claims/ed-fi/student` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| `http://ed-fi.org/identity/claims/ed-fi/studentSchoolAssociation` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
+| *(extension resource claims per selected built-in extension seed source)* | Inherited from the extension claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant unless a future design names a specific closed-enum exception | Create, Update |
 
 > **Note:** Read (GET) access is not required by the bootstrap seed-loading contract. BulkLoadClient uses
-> POST for seed records; duplicate detection and `--continue-on-error` handling for `409 Conflict` responses
+> POST for seed records. A POST that finds an existing record is authorized as `Update`, not `Create`, so
+> every grant carries `Update` alongside `Create` and a rerun against a seeded database is answered `200`; duplicate detection and `--continue-on-error` handling for `409 Conflict` responses
 > remain part of the required BulkLoadClient rerun-tolerance contract in Section 6.1.2.
 
 **schoolYearType override exception:** SeedLoader grants on every other resource claim above resolve their
@@ -1517,15 +1520,15 @@ runtime authorization strategy by inheriting from the claim hierarchy (`Namespac
 `RelationshipsWithEdOrgsAndPeople`, etc.); the SeedLoader Application's namespace prefixes and EdOrg IDs
 then continue to gate writes at runtime. `schoolYearType` is the one exception: its parent
 `http://ed-fi.org/identity/claims/domains/edFiTypes` defines a `defaultAuthorization` with only the `Read`
-action, so a SeedLoader `Create` grant on `schoolYearType` would otherwise inherit zero strategies and
-403 the Story-02 REST precondition POST. The original bootstrap design did not contemplate
+action, so a SeedLoader `Create` or `Update` grant on `schoolYearType` would otherwise inherit zero
+strategies and 403 the Story-02 REST precondition POST. The original bootstrap design did not contemplate
 `schoolYearType` as a write endpoint because v5.x models it as a closed XSD enumeration that cannot be
 loaded through any bulk interchange XSD; Story 02 introduced the REST precondition to materialize
 `SchoolYearType` rows for the configured year range
 (see [`02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) acceptance criteria for
-`Minimal`/`Populated`). The SeedLoader `Create` grant on `schoolYearType` therefore declares an explicit
-`authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` — and this is the only
-SeedLoader grant in the embedded `Claims.json` that may carry an override. The
+`Minimal`/`Populated`). The SeedLoader `Create` and `Update` grants on `schoolYearType` therefore declare
+an explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` — and these are the
+only SeedLoader grants in the embedded `Claims.json` that may carry an override. The
 `Given_Embedded_Claims_Json` unit fixture enforces both halves of this rule (no overrides on any other
 SeedLoader grant; an explicit override on `schoolYearType`).
 
