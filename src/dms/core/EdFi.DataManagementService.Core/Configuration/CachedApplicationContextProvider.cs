@@ -34,6 +34,13 @@ public sealed class CachedApplicationContextProvider(
     // so one caller cancelling never aborts a fill another caller still needs.
     private readonly ConcurrentDictionary<RequestLookupKey, Lazy<SharedFill>> _requestResults = [];
 
+    // Every SharedFill this provider instance has ever created, regardless of whether it is still
+    // the memo for its key: a fill can be evicted (abandoned while a later caller was refused) or
+    // overwritten (a reload always installs its own fill in place of whatever was there) without
+    // ever being removed from here. Dispose walks this instead of _requestResults so every fill's
+    // CancellationTokenSource is disposed exactly once, however the fill left the dictionary.
+    private readonly ConcurrentBag<SharedFill> _createdFills = [];
+
     /// <summary>
     /// Gets the request-scoped memoization key for a client ID and tenant.
     /// </summary>
@@ -95,13 +102,15 @@ public sealed class CachedApplicationContextProvider(
 
         RequestLookupKey key = GetRequestLookupKey(clientId, tenant);
 
-        // Drop the request-scoped memo so a reload is not shadowed by an earlier lookup in this scope.
+        // Drop the request-scoped memo so a concurrent Get in this scope does not reuse a pre-reload
+        // result while the reload starts. The reload itself never joins an existing fill: it
+        // installs its own below, overwriting anything a concurrent Get inserts in between.
         _requestResults.TryRemove(key, out _);
 
         var cacheKey = GetCacheKey(clientId, tenant);
         await hybridCache.RemoveAsync(cacheKey, cancellationToken);
 
-        return await AwaitSharedFillAsync(
+        return await AwaitOwnSharedFillAsync(
             key,
             fillCancellationToken =>
                 GetOrCreateResultAsync(
@@ -130,16 +139,26 @@ public sealed class CachedApplicationContextProvider(
         CancellationToken callerCancellationToken
     )
     {
+        // A pre-cancelled caller must never start (or join, and thereby keep alive) a fill: there is
+        // no result it could ever observe, so it should not pay for - or cause - one.
+        callerCancellationToken.ThrowIfCancellationRequested();
+
         SharedFill fill;
         while (true)
         {
-            Lazy<SharedFill> lazyFill = _requestResults.GetOrAdd(
-                key,
-                new Lazy<SharedFill>(
-                    () => new SharedFill(startFill),
-                    LazyThreadSafetyMode.ExecutionAndPublication
-                )
-            );
+            // The fast path skips allocating a new Lazy and its closures whenever the key already
+            // has an entry; GetOrAdd is only reached when it does not (or no longer does, having
+            // just been evicted below).
+            if (!_requestResults.TryGetValue(key, out Lazy<SharedFill>? lazyFill))
+            {
+                lazyFill = _requestResults.GetOrAdd(
+                    key,
+                    new Lazy<SharedFill>(
+                        () => CreateTrackedSharedFill(startFill),
+                        LazyThreadSafetyMode.ExecutionAndPublication
+                    )
+                );
+            }
             fill = lazyFill.Value;
 
             if (fill.TryAddWaiter())
@@ -156,6 +175,40 @@ public sealed class CachedApplicationContextProvider(
             );
         }
 
+        return await AwaitFillAsync(fill, callerCancellationToken);
+    }
+
+    /// <summary>
+    /// Starts a fill that belongs only to this call and installs it as the scope's memo for the
+    /// key, unconditionally overwriting whatever fill - another caller's, or none - is memoized
+    /// there. Used by reload, which must never join another caller's lookup: a reload that is still
+    /// eligible to join something is by definition not reloading it.
+    /// </summary>
+    private async Task<ApplicationContextResult> AwaitOwnSharedFillAsync(
+        RequestLookupKey key,
+        Func<CancellationToken, Task<ApplicationContextResult>> startFill,
+        CancellationToken callerCancellationToken
+    )
+    {
+        var lazyFill = new Lazy<SharedFill>(
+            () => CreateTrackedSharedFill(startFill),
+            LazyThreadSafetyMode.ExecutionAndPublication
+        );
+        _requestResults[key] = lazyFill;
+        SharedFill fill = lazyFill.Value;
+
+        // Always succeeds: this fill was just constructed and installed by this call, so no other
+        // caller can have observed it yet, and it cannot already be abandoned or cancelled.
+        _ = fill.TryAddWaiter();
+
+        return await AwaitFillAsync(fill, callerCancellationToken);
+    }
+
+    private static async Task<ApplicationContextResult> AwaitFillAsync(
+        SharedFill fill,
+        CancellationToken callerCancellationToken
+    )
+    {
         try
         {
             return await fill.Task.WaitAsync(callerCancellationToken);
@@ -164,6 +217,19 @@ public sealed class CachedApplicationContextProvider(
         {
             fill.RemoveWaiter();
         }
+    }
+
+    /// <summary>
+    /// Constructs a SharedFill and records it so Dispose can reach it however it later leaves
+    /// _requestResults - evicted as abandoned, or overwritten by a reload's own fill.
+    /// </summary>
+    private SharedFill CreateTrackedSharedFill(
+        Func<CancellationToken, Task<ApplicationContextResult>> startFill
+    )
+    {
+        var fill = new SharedFill(startFill);
+        _createdFills.Add(fill);
+        return fill;
     }
 
     private async Task<ApplicationContextResult> GetOrCreateResultAsync(
@@ -215,16 +281,15 @@ public sealed class CachedApplicationContextProvider(
     /// <summary>
     /// Disposes every fill this request scope created. The provider is scoped, so the container
     /// disposes it when the request scope ends, which is when no caller can still be waiting on a
-    /// fill and no fill can still need its token.
+    /// fill and no fill can still need its token. Walking _createdFills rather than the current
+    /// contents of _requestResults is what makes this true: a fill that was evicted as abandoned, or
+    /// overwritten by a later reload, is disposed exactly the same as one still memoized at the end.
     /// </summary>
     public void Dispose()
     {
-        foreach (Lazy<SharedFill> lazyFill in _requestResults.Values)
+        foreach (SharedFill fill in _createdFills)
         {
-            if (lazyFill.IsValueCreated)
-            {
-                lazyFill.Value.Dispose();
-            }
+            fill.Dispose();
         }
 
         _requestResults.Clear();
@@ -237,9 +302,11 @@ public sealed class CachedApplicationContextProvider(
     /// its own CancellationTokenSource, cancelled only when the last waiter leaves before the fill
     /// has finished, so a single caller's cancellation never aborts a fill another caller still
     /// needs, and a cancelled caller's own token is never used as the fill's cancellation source.
-    /// Once abandoned that way, the fill admits no further waiters: a later caller evicts it and
-    /// starts its own. A fill that completed while waiters were present stays admitted as the
-    /// request-scoped memo, whatever its waiter count does afterwards.
+    /// Once abandoned that way, the fill admits no further waiters unless and until it goes on to
+    /// complete successfully anyway - its own token being cancelled does not stop it, only asks it
+    /// to stop - in which case that result is valid and later callers reuse it like any other. A
+    /// fill that never reaches a successful completion after being abandoned admits nothing further:
+    /// a later caller evicts it and starts its own.
     /// </summary>
     private sealed class SharedFill : IDisposable
     {
@@ -257,13 +324,21 @@ public sealed class CachedApplicationContextProvider(
         public Task<ApplicationContextResult> Task { get; }
 
         /// <summary>
-        /// Registers a caller's interest. Returns false when the fill was abandoned (or ended
-        /// cancelled), in which case the caller must not await it.
+        /// Registers a caller's interest. Returns false when the fill was abandoned without ever
+        /// completing successfully (or ended cancelled), in which case the caller must not await it.
+        /// A fill that has already completed successfully is always admitted, whatever _abandoned is:
+        /// its result is valid and there is nothing left for abandonment to protect a caller from.
         /// </summary>
         public bool TryAddWaiter()
         {
             lock (_gate)
             {
+                if (Task.IsCompletedSuccessfully)
+                {
+                    _waiterCount++;
+                    return true;
+                }
+
                 if (_abandoned || Task.IsCanceled)
                 {
                     return false;
@@ -282,20 +357,18 @@ public sealed class CachedApplicationContextProvider(
         /// </summary>
         public void RemoveWaiter()
         {
-            bool cancelFill = false;
             lock (_gate)
             {
                 _waiterCount--;
                 if (_waiterCount == 0 && !_abandoned && !_disposed && !Task.IsCompleted)
                 {
                     _abandoned = true;
-                    cancelFill = true;
-                }
-            }
 
-            if (cancelFill)
-            {
-                _fillCancellationSource.Cancel();
+                    // Cancel runs under the same lock and !_disposed check as Dispose, so it can never
+                    // hit a disposed source. Its callbacks belong to HttpClient, HybridCache, and
+                    // Task.WaitAsync internals, none of which re-enter this lock.
+                    _fillCancellationSource.Cancel();
+                }
             }
         }
 
@@ -309,9 +382,8 @@ public sealed class CachedApplicationContextProvider(
                 }
 
                 _disposed = true;
+                _fillCancellationSource.Dispose();
             }
-
-            _fillCancellationSource.Dispose();
         }
     }
 }
