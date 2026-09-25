@@ -531,7 +531,9 @@ Step 5.1 notes: `docs/CMS-BACKGROUND-JOBS.md` covers the components and switches
 
 ## 11. Final validation and acceptance-criteria evidence (step 5.2)
 
-Validated at `8dbd25b01` (step 5.1) on 2026-09-24, locally, one run per lane. CI has not run: pull request #1294 is a draft, and draft pull requests skip every CI job, so every CI check is still pending and is listed here only as the gate that will confirm these results when the pull request is marked ready.
+Validated at `8dbd25b01` (step 5.1) on 2026-09-24, locally, one run per lane. The CMS validation gates have not run in CI: pull request #1294 is a draft, and the pull-request validation workflows skip their build, test, and E2E jobs while it is, so those checks are still pending and are listed here only as the gates that will confirm these results when the pull request is marked ready.
+
+One CI workflow did run on the draft: Automatic Dependency Submission (`submit-nuget`, run 36099061421) failed while restoring the plugin-deployment fixture `eng/docker-compose/tests/plugin-deployment/Acme.SampleValidator` (`NU1101`: `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` are absent from its local verification feed). This branch does not touch that fixture, the same workflow also failed on `main` on 2026-09-24, and the failure does not bear on the CMS results below.
 
 ### 11.1 Local results
 

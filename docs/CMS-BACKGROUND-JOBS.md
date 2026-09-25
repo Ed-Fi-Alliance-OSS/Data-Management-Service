@@ -169,9 +169,10 @@ resolved from), the attempt number and maximum, and a fence.
 that holds the job's row lock, and commits only if the execution still owns the job:
 
 - A fence waits for a renewal in progress, and a renewal never runs during a fence.
-- The fence is refused (`JobLeaseLostException`) without touching the database when ownership is
-  already uncertain, when the lease no longer matches, or when less than 2 s of lease remains once
-  the row lock is held.
+- The fence is refused (`JobLeaseLostException`) without touching the database when the
+  execution's ownership is already uncertain. Otherwise it first acquires the job's row lock, and
+  is then refused with the same exception when the lease no longer matches or when less than 2 s of
+  lease remains, both judged by database time after the lock is held.
 - The work, the final ownership check, and the commit share one deadline: the smaller of
   `FenceTimeout` and the remaining lease less 1 s.
 - `JobFenceUnavailableException` means the row lock was not acquired within 5 s; it is transient.
@@ -285,9 +286,11 @@ the service):
   permanently. When a release introduces a new job type, finish rolling it out before enabling the
   feature that enqueues it, or run instances of the previous release with
   `JobSettings:WorkerEnabled=false` until they are replaced.
-- **Capacity:** with an idle queue, a committed job is claimed after about half a `PollInterval` on
-  average and at most one `PollInterval` plus a claim round trip. Under a backlog, throughput is
-  roughly `instances × MaxConcurrentJobs ÷ mean job duration`. These are estimates, validated by
-  the operational assessment in `reference/design/jobs-DMS-1437/operational-assessment.md`.
+- **Capacity:** with an idle queue and a healthy database, a committed job is typically claimed
+  within about one `PollInterval` (about half of one on average). This is an estimate, not an upper
+  bound: each poll also runs the exhaustion sweep before it claims, and a slow sweep, claim, or
+  failed poll delays the next claim. Under a backlog, throughput is roughly
+  `instances × MaxConcurrentJobs ÷ mean job duration`. Both are estimates, validated by the
+  operational assessment in `reference/design/jobs-DMS-1437/operational-assessment.md`.
 - **Docker Compose:** the provided compose files map `DMS_CONFIG_JOBS_*` variables onto
   `JobSettings__*`. Test hosts set all three switches to `false`.
