@@ -97,7 +97,7 @@ public class ClaimSetRepository(
             string sql = $"""
                 SELECT Id AS id, AuthorizationStrategyName AS authorizationstrategyname, DisplayName AS displayname
                 FROM dmscs.AuthorizationStrategy
-                WHERE {TenantContext.TenantWhereClause()};
+                WHERE TenantId IS NULL OR {TenantContext.TenantWhereClause()};
                 """;
 
             var authorizationStrategies = await connection.QueryAsync(sql, new { TenantId });
@@ -1019,6 +1019,82 @@ public class ClaimSetRepository(
             };
         }
     }
+
+    public async Task<ClaimSetResourceActionMutationResult> GrantResourceClaimActions(
+        ResourceClaimActionMutationCommand command
+    ) => await CreateResourceActionMutationWorkflow().GrantResourceClaimActions(command);
+
+    public async Task<ClaimSetResourceActionMutationResult> ModifyResourceClaimActions(
+        ResourceClaimActionMutationCommand command
+    ) => await CreateResourceActionMutationWorkflow().ModifyResourceClaimActions(command);
+
+    public async Task<ClaimSetResourceActionMutationResult> RevokeResourceClaimActions(
+        int claimSetId,
+        int resourceClaimId
+    ) => await CreateResourceActionMutationWorkflow().RevokeResourceClaimActions(claimSetId, resourceClaimId);
+
+    public async Task<ClaimSetResourceActionMutationResult> OverrideAuthorizationStrategy(
+        AuthorizationStrategyOverrideCommand command
+    ) => await CreateResourceActionMutationWorkflow().OverrideAuthorizationStrategy(command);
+
+    public async Task<ClaimSetResourceActionMutationResult> ResetAuthorizationStrategies(
+        int claimSetId,
+        int resourceClaimId
+    ) => await CreateResourceActionMutationWorkflow().ResetAuthorizationStrategies(claimSetId, resourceClaimId);
+
+    private ClaimSetResourceActionMutationWorkflow CreateResourceActionMutationWorkflow() =>
+        new(
+            GetActions().ToList(),
+            claimsHierarchyRepository,
+            claimsHierarchyManager,
+            OpenConnection,
+            LoadClaimSetForMutation,
+            LoadResourceClaimMetadata,
+            GetAuthorizationStrategies,
+            logger
+        );
+
+    private async Task<DbConnection> OpenConnection()
+    {
+        var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    private async Task<ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult?> LoadClaimSetForMutation(
+        DbConnection connection,
+        DbTransaction transaction,
+        int claimSetId
+    )
+    {
+        string claimSetSql = $"""
+                SELECT ClaimSetName, IsSystemReserved
+                FROM dmscs.ClaimSet
+                WHERE Id = @ClaimSetId AND {ClaimSetWhereClause()};
+                """;
+
+        return await connection.QuerySingleOrDefaultAsync<
+            ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult
+        >(
+            claimSetSql,
+            new { ClaimSetId = claimSetId, TenantId },
+            transaction
+        );
+    }
+
+    private static async Task<List<ResourceClaimMetadataRow>> LoadResourceClaimMetadata(
+        DbConnection connection,
+        DbTransaction transaction
+    )
+    {
+        const string sql =
+            "SELECT Id, ClaimName FROM dmscs.ResourceClaim WHERE TenantId IS NULL";
+
+        return (
+            await connection.QueryAsync<ResourceClaimMetadataRow>(sql, transaction: transaction)
+        ).ToList();
+    }
+
 
     private static ClaimSetResponse CreateClaimSetResponse(dynamic row, List<Claim> hierarchy)
     {

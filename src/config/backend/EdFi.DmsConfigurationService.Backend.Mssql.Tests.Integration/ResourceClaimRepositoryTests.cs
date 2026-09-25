@@ -608,31 +608,27 @@ public class ResourceClaimRepositoryTests : DatabaseTestBase
         }
 
         [Test]
-        public async Task It_fails_for_actions_when_tenant_scoped_auth_strategy_lookup_has_no_matching_rows()
+        public async Task It_resolves_global_auth_strategies_for_actions_in_a_multitenant_context()
         {
-            // ResourceClaim metadata (TenantId IS NULL) remains visible, but authorization strategies
-            // still follow the tenant-scoped IClaimSetRepository behavior. With no strategies for this
-            // tenant, DefaultAuthorization references cannot resolve. Per story line 104, endpoints
-            // must fail closed when any referenced auth strategy cannot be resolved, even if the
-            // endpoint doesn't return auth strategies in its response.
+            // Seeded authorization strategies are global (TenantId IS NULL) and must remain visible
+            // when a tenant-scoped repository resolves authorization metadata.
             var multitenantContext = new TenantContext.Multitenant(999, "test-tenant");
             var result = await CreateRepository(multitenantContext)
                 .GetResourceClaimActions(new ResourceClaimActionQuery());
 
-            result.Should().BeOfType<ResourceClaimActionListResult.FailureProjectionIntegrity>();
+            result.Should().BeOfType<ResourceClaimActionListResult.Success>();
         }
 
         [Test]
-        public async Task It_fails_for_auth_strategies_when_tenant_scoped_lookup_has_no_matching_rows()
+        public async Task It_resolves_global_auth_strategies_for_auth_strategy_reads_in_a_multitenant_context()
         {
-            // ResourceClaim metadata (TenantId IS NULL) remains visible, but authorization strategies
-            // still follow the tenant-scoped IClaimSetRepository behavior. With no strategies for this
-            // tenant, DefaultAuthorization references cannot resolve and the projection must fail closed.
+            // The authorization-strategy projection must include globally seeded strategies for a
+            // tenant that has no tenant-local strategy rows.
             var multitenantContext = new TenantContext.Multitenant(999, "test-tenant");
             var result = await CreateRepository(multitenantContext)
                 .GetResourceClaimActionAuthStrategies(new ResourceClaimActionAuthStrategyQuery());
 
-            result.Should().BeOfType<ResourceClaimActionAuthStrategyListResult.FailureProjectionIntegrity>();
+            result.Should().BeOfType<ResourceClaimActionAuthStrategyListResult.Success>();
         }
     }
 

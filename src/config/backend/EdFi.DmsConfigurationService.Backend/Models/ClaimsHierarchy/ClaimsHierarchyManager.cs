@@ -9,11 +9,48 @@ namespace EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 
 public interface IClaimsHierarchyManager
 {
+    ClaimSetResourceActionStatus GetClaimSetResourceActionStatus(
+        string claimSetName,
+        string resourceClaimName,
+        string actionName,
+        List<Claim> claims
+    );
     void RemoveClaimSetFromHierarchy(string claimSetName, List<Claim> claims);
 
     void CloneClaimSetInHierarchy(string sourceClaimSetName, string targetClaimSetName, List<Claim> claims);
 
+    bool ReplaceClaimSetResourceActions(
+        string claimSetName,
+        string resourceClaimName,
+        IReadOnlyCollection<string> enabledActionNames,
+        IReadOnlyCollection<string> suppliedActionNames,
+        List<Claim> claims
+    );
+
+    bool RemoveClaimSetResourceActions(string claimSetName, string resourceClaimName, List<Claim> claims);
+
+    bool OverrideClaimSetResourceActionStrategies(
+        string claimSetName,
+        string resourceClaimName,
+        string actionName,
+        IReadOnlyCollection<string> authorizationStrategyNames,
+        List<Claim> claims
+    );
+
+    bool ResetClaimSetResourceActionStrategies(
+        string claimSetName,
+        string resourceClaimName,
+        List<Claim> claims
+    );
+
     IReadOnlyList<string> ApplyImportedClaimSetToHierarchy(ClaimSetImportCommand command, List<Claim> claims);
+}
+
+public enum ClaimSetResourceActionStatus
+{
+    MissingAssociation,
+    Disabled,
+    Enabled,
 }
 
 public class ClaimsHierarchyManager : IClaimsHierarchyManager
@@ -76,6 +113,145 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
                 CloneClaimSetInHierarchy(sourceClaimSetName, targetClaimSetName, claim.Claims);
             }
         }
+    }
+
+    public bool ReplaceClaimSetResourceActions(
+        string claimSetName,
+        string resourceClaimName,
+        IReadOnlyCollection<string> enabledActionNames,
+        IReadOnlyCollection<string> suppliedActionNames,
+        List<Claim> claims
+    )
+    {
+        Claim? claim = FindClaim(resourceClaimName, claims);
+        if (claim is null)
+        {
+            return false;
+        }
+
+        ClaimSet? claimSet = FindClaimSetExact(claim, claimSetName);
+        if (claimSet is null)
+        {
+            claimSet = new ClaimSet { Name = claimSetName, Actions = [] };
+            claim.ClaimSets.Add(claimSet);
+        }
+
+        HashSet<string> enabledActions = new(enabledActionNames, StringComparer.OrdinalIgnoreCase);
+        HashSet<string> disabledActions = new(
+            suppliedActionNames.Where(actionName => !enabledActions.Contains(actionName)),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        claimSet.Actions.RemoveAll(action => disabledActions.Contains(action.Name));
+
+        foreach (
+            string actionName in enabledActionNames.Where(actionName =>
+                !claimSet.Actions.Exists(action =>
+                    action.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+        )
+        {
+            claimSet.Actions.Add(
+                new ClaimSetAction { Name = actionName, AuthorizationStrategyOverrides = [] }
+            );
+        }
+
+        return true;
+    }
+
+    public bool RemoveClaimSetResourceActions(
+        string claimSetName,
+        string resourceClaimName,
+        List<Claim> claims
+    )
+    {
+        Claim? claim = FindClaim(resourceClaimName, claims);
+        if (claim is null)
+        {
+            return false;
+        }
+
+        return claim.ClaimSets.RemoveAll(claimSet =>
+                claimSet.Name.Equals(claimSetName, StringComparison.Ordinal)
+            ) > 0;
+    }
+
+    public bool OverrideClaimSetResourceActionStrategies(
+        string claimSetName,
+        string resourceClaimName,
+        string actionName,
+        IReadOnlyCollection<string> authorizationStrategyNames,
+        List<Claim> claims
+    )
+    {
+        Claim? claim = FindClaim(resourceClaimName, claims);
+        ClaimSet? claimSet = claim is null ? null : FindClaimSetExact(claim, claimSetName);
+        ClaimSetAction? action = claimSet?.Actions.Find(existing =>
+            existing.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (action is null)
+        {
+            return false;
+        }
+
+        action.AuthorizationStrategyOverrides =
+        [
+            .. authorizationStrategyNames.Select(strategyName => new AuthorizationStrategy
+            {
+                Name = strategyName,
+            }),
+        ];
+
+        return true;
+    }
+
+    public ClaimSetResourceActionStatus GetClaimSetResourceActionStatus(
+        string claimSetName,
+        string resourceClaimName,
+        string actionName,
+        List<Claim> claims
+    )
+    {
+        Claim? claim = FindClaim(resourceClaimName, claims);
+        ClaimSet? claimSet = claim is null ? null : FindClaimSetExact(claim, claimSetName);
+        if (claimSet is null)
+        {
+            return ClaimSetResourceActionStatus.MissingAssociation;
+        }
+
+        return claimSet.Actions.Exists(action =>
+            action.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
+        )
+            ? ClaimSetResourceActionStatus.Enabled
+            : ClaimSetResourceActionStatus.Disabled;
+    }
+
+    public bool ResetClaimSetResourceActionStrategies(
+        string claimSetName,
+        string resourceClaimName,
+        List<Claim> claims
+    )
+    {
+        Claim? claim = FindClaim(resourceClaimName, claims);
+        if (claim is null)
+        {
+            return false;
+        }
+
+        ClaimSet? claimSet = FindClaimSetExact(claim, claimSetName);
+        if (claimSet is null)
+        {
+            return false;
+        }
+
+        foreach (ClaimSetAction action in claimSet.Actions)
+        {
+            action.AuthorizationStrategyOverrides = [];
+        }
+
+        return true;
     }
 
     public IReadOnlyList<string> ApplyImportedClaimSetToHierarchy(
@@ -178,6 +354,30 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         AddClaims(claims);
         return claimLookup;
     }
+
+    private static Claim? FindClaim(string resourceClaimName, IEnumerable<Claim> claims)
+    {
+        foreach (Claim claim in claims)
+        {
+            if (claim.Name.Equals(resourceClaimName, StringComparison.OrdinalIgnoreCase))
+            {
+                return claim;
+            }
+
+            Claim? child = FindClaim(resourceClaimName, claim.Claims);
+            if (child is not null)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static ClaimSet? FindClaimSetExact(Claim claim, string claimSetName) =>
+        claim.ClaimSets.Find(claimSet =>
+            claimSet.Name.Equals(claimSetName, StringComparison.Ordinal)
+        );
 
     private static IEnumerable<ResourceClaim> Flatten(IEnumerable<ResourceClaim> resourceClaims)
     {

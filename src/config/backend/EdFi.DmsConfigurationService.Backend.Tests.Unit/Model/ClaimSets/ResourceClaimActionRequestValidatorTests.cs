@@ -1,0 +1,251 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json;
+using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using FluentAssertions;
+
+namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Model.ClaimSets;
+
+[TestFixture]
+public class ResourceClaimActionRequestValidatorTests
+{
+    [TestFixture]
+    public class Given_json_null_collection_elements
+    {
+        private const string ActionsJson = """
+            { "claimSetId": 1, "resourceClaimId": 2,
+              "resourceClaimActions": [null, { "name": "Read", "enabled": true }] }
+            """;
+
+        [Test]
+        public async Task It_rejects_null_action_elements_on_grant()
+        {
+            var request = JsonSerializer.Deserialize<AddResourceClaimActionsOnClaimSetRequest>(
+                ActionsJson, JsonSerializerOptions.Web
+            )!;
+
+            var result = await new AddResourceClaimActionsOnClaimSetRequest.Validator().ValidateAsync(request);
+
+            result.Errors.Should().Contain(error => error.PropertyName == "ResourceClaimActions[0]");
+        }
+
+        [Test]
+        public async Task It_rejects_null_action_elements_on_modify()
+        {
+            var request = JsonSerializer.Deserialize<EditResourceClaimActionsOnClaimSetRequest>(
+                ActionsJson, JsonSerializerOptions.Web
+            )!;
+
+            var result = await new EditResourceClaimActionsOnClaimSetRequest.Validator().ValidateAsync(request);
+
+            result.Errors.Should().Contain(error => error.PropertyName == "ResourceClaimActions[0]");
+        }
+
+        [Test]
+        public async Task It_rejects_null_authorization_strategy_elements()
+        {
+            var request = JsonSerializer.Deserialize<OverrideAuthStategyOnClaimSetRequest>(
+                """
+                { "claimSetId": 1, "resourceClaimId": 2, "actionName": "Read",
+                  "authorizationStrategies": [null, "NamespaceBased"] }
+                """, JsonSerializerOptions.Web
+            )!;
+
+            var result = await new OverrideAuthStategyOnClaimSetRequest.Validator().ValidateAsync(request);
+
+            result.Errors.Should().Contain(error => error.PropertyName == "AuthorizationStrategies[0]");
+        }
+    }
+
+    [Test]
+    public async Task It_rejects_empty_action_collections()
+    {
+        var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions = [],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimActions");
+    }
+
+    [Test]
+    public async Task It_rejects_null_action_collections()
+    {
+        var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions = null!,
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimActions");
+    }
+
+    [Test]
+    public async Task It_rejects_disabled_only_action_collections()
+    {
+        var validator = new EditResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new EditResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions = [new() { Name = "Read", Enabled = false }],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimActions");
+    }
+
+    [Test]
+    public async Task It_rejects_action_entries_without_names()
+    {
+        var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions = [new() { Name = null, Enabled = true }],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimActions");
+    }
+
+    [Test]
+    public async Task It_rejects_duplicate_actions_case_insensitively()
+    {
+        var validator = new AddResourceClaimActionsOnClaimSetRequest.Validator();
+        var request = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ResourceClaimActions =
+            [
+                new() { Name = "Read", Enabled = true },
+                new() { Name = "read", Enabled = true },
+            ],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("duplicated"));
+    }
+
+    [Test]
+    public async Task It_rejects_missing_override_fields()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 0,
+            ResourceClaimId = 0,
+            ActionName = string.Empty,
+            AuthorizationStrategies = [],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ClaimSetId");
+        result.Errors.Should().Contain(e => e.PropertyName == "ResourceClaimId");
+        result.Errors.Should().Contain(e => e.PropertyName == "ActionName");
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthorizationStrategies");
+    }
+
+    [Test]
+    public async Task It_rejects_duplicate_override_authorization_strategy_names_case_insensitively()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ActionName = "Read",
+            AuthorizationStrategies = ["NoFurtherAuthorizationRequired", "nofurtherauthorizationrequired"],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthorizationStrategies");
+    }
+
+    [Test]
+    public async Task It_rejects_duplicate_override_authorization_strategy_ids()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ActionName = "Read",
+            AuthStrategyIds = [1, 1],
+            AuthorizationStrategies = ["NoFurtherAuthorizationRequired"],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthStrategyIds");
+    }
+
+    [Test]
+    public async Task It_rejects_a_mixed_duplicate_override_authorization_strategy_request()
+    {
+        var validator = new OverrideAuthStategyOnClaimSetRequest.Validator();
+        var request = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 2,
+            ActionName = "Read",
+            AuthStrategyIds = [1, 1],
+            AuthorizationStrategies = ["NoFurtherAuthorizationRequired", "nofurtherauthorizationrequired"],
+        };
+
+        var result = await validator.ValidateAsync(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthStrategyIds");
+        result.Errors.Should().Contain(e => e.PropertyName == "AuthorizationStrategies");
+    }
+
+    [Test]
+    public void It_defaults_request_action_and_strategy_collections()
+    {
+        var actionsRequest = new AddResourceClaimActionsOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 1,
+            ResourceClaimActions = [],
+        };
+        var overrideRequest = new OverrideAuthStategyOnClaimSetRequest
+        {
+            ClaimSetId = 1,
+            ResourceClaimId = 1,
+            ActionName = "Read",
+            AuthorizationStrategies = [],
+        };
+
+        actionsRequest.ResourceClaimActions.Should().BeEmpty();
+        overrideRequest.AuthStrategyIds.Should().BeEmpty();
+        overrideRequest.AuthorizationStrategies.Should().BeEmpty();
+    }
+}

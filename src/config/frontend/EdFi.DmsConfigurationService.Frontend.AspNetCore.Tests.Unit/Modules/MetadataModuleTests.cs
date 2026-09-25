@@ -98,6 +98,8 @@ public class MetadataModuleTests
     /// </summary>
     private static readonly string[] ExpectedSchemaIdentifierFormats =
     [
+        "AddResourceClaimActionsOnClaimSetRequest.claimSetId int32",
+        "AddResourceClaimActionsOnClaimSetRequest.resourceClaimId int32",
         "ApiClientCredentialsResponse.id int32",
         "ApiClientCredentialsResponse.applicationId int32",
         "ApiClientInsertCommand.applicationId int32",
@@ -140,6 +142,11 @@ public class MetadataModuleTests
         "DataStoreDerivativeUpdateCommand.id int32",
         "DataStoreDerivativeUpdateCommand.dataStoreId int32",
         "DataStoreUpdateCommand.id int32",
+        "EditResourceClaimActionsOnClaimSetRequest.claimSetId int32",
+        "EditResourceClaimActionsOnClaimSetRequest.resourceClaimId int32",
+        "OverrideAuthStategyOnClaimSetRequest.authStrategyIds int32",
+        "OverrideAuthStategyOnClaimSetRequest.claimSetId int32",
+        "OverrideAuthStategyOnClaimSetRequest.resourceClaimId int32",
         "OwnershipTokenResponse.id int32",
         "OwnershipTokenUpdateCommand.id int32",
         "ProfileUpdateCommand.id int32",
