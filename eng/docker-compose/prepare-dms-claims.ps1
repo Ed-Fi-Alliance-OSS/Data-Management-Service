@@ -6,22 +6,18 @@
 [CmdletBinding()]
 param(
     [string]
-    $ClaimsDirectoryPath
+    $ClaimsDirectoryPath,
+
+    # Test-only: also stage the test-owned E2E claimset fragments, which define the E2E claim sets
+    # the embedded Claims.json does not declare. Only the Kafka CDC E2E setup passes this.
+    [switch]
+    $IncludeE2EClaimSets
 )
 
 Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-catalog.psm1") -Force
-
-$baselineFragmentFileNames = [System.Collections.Generic.HashSet[string]]::new(
-    [string[]]@(
-        "001-namespace-claimset.json",
-        "002-nofurtherauth-claimset.json",
-        "003-edorgsonly-claimset.json"
-    ),
-    [System.StringComparer]::OrdinalIgnoreCase
-)
 
 function Read-JsonHashtable {
     param(
@@ -164,15 +160,9 @@ function Get-UserFragmentFile {
             Sort-Object -Property FullName
     )
 
-    $reservedFiles = @($claimsetFiles | Where-Object { $baselineFragmentFileNames.Contains($_.Name) })
-    if ($reservedFiles.Count -gt 0) {
-        $reservedFileNames = @($reservedFiles | ForEach-Object { $_.Name }) -join ", "
-        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' contains reserved baseline fragment filename(s): $(Format-LogSafeText $reservedFileNames). Baseline fragment names are reserved."
-    }
-
     $files = @($claimsetFiles | ForEach-Object { $_.FullName })
     if ($files.Count -eq 0) {
-        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' does not contain any non-baseline *-claimset.json files."
+        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' does not contain any *-claimset.json files."
     }
 
     return $files
@@ -252,7 +242,13 @@ function Assert-FragmentValidAndExtractCheck {
         $SeenChecks,
 
         [System.Collections.ArrayList]
-        $ExpectedVerificationChecks
+        $ExpectedVerificationChecks,
+
+        # Validates the fragment structure but adds no checks from its non-parent entries. The E2E
+        # fragments use endpoint-style names (e.g. ed-fi/schoolYearTypes) that never match the leaf
+        # URIs the claims-ready gate compares, so their readiness checks come from a canonical file.
+        [switch]
+        $SkipImplicitVerificationCheck
 
     )
 
@@ -372,13 +368,15 @@ function Assert-FragmentValidAndExtractCheck {
             throw "Claimset fragment '$(Format-LogSafeText $Path)' uses unknown effective claim set '$(Format-LogSafeText $fragmentName)'."
         }
 
-        foreach ($implicitVerificationCheck in $implicitVerificationChecks) {
-            Add-ExpectedVerificationCheck `
-                -Seen $SeenChecks `
-                -Checks $ExpectedVerificationChecks `
-                -ClaimSetName $fragmentName `
-                -ResourceClaim $implicitVerificationCheck.ResourceClaim `
-                -Action $implicitVerificationCheck.Action
+        if (-not $SkipImplicitVerificationCheck) {
+            foreach ($implicitVerificationCheck in $implicitVerificationChecks) {
+                Add-ExpectedVerificationCheck `
+                    -Seen $SeenChecks `
+                    -Checks $ExpectedVerificationChecks `
+                    -ClaimSetName $fragmentName `
+                    -ResourceClaim $implicitVerificationCheck.ResourceClaim `
+                    -Action $implicitVerificationCheck.Action
+            }
         }
     }
 }
@@ -527,14 +525,77 @@ foreach ($userFragmentFile in $userFragmentFiles) {
     Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $userFragmentFile
 }
 
-$effectiveClaimSetNames = Get-EffectiveClaimSetName
+# Get-EffectiveClaimSetName's set is enumerated on return, and each [HashSet[string]] parameter
+# rebinds the resulting array as a new set; materialize one set so the E2E names added below reach
+# the validation calls. The default comparer is the one that rebinding already applies today.
+$effectiveClaimSetNames = [System.Collections.Generic.HashSet[string]]::new([string[]]@(Get-EffectiveClaimSetName))
+
+# The E2E fragments are added directly, bypassing the reserved-name check that guards only user
+# -ClaimsDirectoryPath files. Each defines its top-level name as a claim set (CMS registers it at
+# composition), so those names alone join the effective claim sets the fragments are validated against.
+$e2eFragmentPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+if ($IncludeE2EClaimSets) {
+    $e2eFragmentsDirectory = Get-E2EClaimsFragmentsDirectory
+    if (-not (Test-Path -LiteralPath $e2eFragmentsDirectory -PathType Container)) {
+        throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $e2eFragmentsDirectory)"
+    }
+
+    $e2eFragmentFiles = @(Get-ChildItem -LiteralPath $e2eFragmentsDirectory -File -Filter "*-claimset.json" | Sort-Object -Property Name)
+    if ($e2eFragmentFiles.Count -eq 0) {
+        throw "E2E claimset fragment directory '$(Format-LogSafePath $e2eFragmentsDirectory)' does not contain any *-claimset.json files."
+    }
+
+    foreach ($e2eFragmentFile in $e2eFragmentFiles) {
+        Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $e2eFragmentFile.FullName
+        $null = $e2eFragmentPaths.Add($e2eFragmentFile.FullName)
+        $e2eFragment = Read-JsonHashtable -Path $e2eFragmentFile.FullName -ArtifactName "Claimset fragment"
+        Add-EffectiveClaimSetName `
+            -ClaimSetNames $effectiveClaimSetNames `
+            -Name (Get-ValueOrNull -Hashtable $e2eFragment -Key "name")
+    }
+}
 
 foreach ($fragment in $fragments) {
     Assert-FragmentValidAndExtractCheck `
         -Path $fragment.SourcePath `
         -EffectiveClaimSetNames $effectiveClaimSetNames `
         -SeenChecks $seenChecks `
-        -ExpectedVerificationChecks $expectedVerificationChecks
+        -ExpectedVerificationChecks $expectedVerificationChecks `
+        -SkipImplicitVerificationCheck:($e2eFragmentPaths.Contains($fragment.SourcePath))
+}
+
+# The E2E claim sets are verified by one canonical probe each: a full leaf URI and action taken from
+# the grants the suites run against, which the claims-ready gate can match literally.
+if ($IncludeE2EClaimSets) {
+    $e2eReadinessChecksPath = Join-Path $e2eFragmentsDirectory "e2e-readiness-checks.json"
+    if (-not (Test-Path -LiteralPath $e2eReadinessChecksPath -PathType Leaf)) {
+        throw "E2E readiness checks file was not found: $(Format-LogSafePath $e2eReadinessChecksPath)"
+    }
+
+    # -NoEnumerate keeps the top-level array intact so a single-entry or non-array file is detected.
+    try {
+        $e2eReadinessChecks = Get-Content -LiteralPath $e2eReadinessChecksPath -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+    } catch {
+        throw "E2E readiness checks '$(Format-LogSafePath $e2eReadinessChecksPath)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+    }
+    if ($e2eReadinessChecks -isnot [System.Collections.IList]) {
+        throw "E2E readiness checks '$(Format-LogSafePath $e2eReadinessChecksPath)' must be a JSON array."
+    }
+
+    foreach ($e2eReadinessCheck in @($e2eReadinessChecks)) {
+        if ($e2eReadinessCheck -isnot [System.Collections.IDictionary]) {
+            throw "E2E readiness checks '$(Format-LogSafePath $e2eReadinessChecksPath)' has an entry that is not a JSON object."
+        }
+
+        Add-ExpectedVerificationCheck `
+            -Seen $seenChecks `
+            -Checks $expectedVerificationChecks `
+            -ClaimSetName ([string](Get-ValueOrNull -Hashtable $e2eReadinessCheck -Key "claimSetName")) `
+            -ResourceClaim ([string](Get-ValueOrNull -Hashtable $e2eReadinessCheck -Key "resourceClaim")) `
+            -Action ([string](Get-ValueOrNull -Hashtable $e2eReadinessCheck -Key "action")) `
+            -ThrowOnInvalid `
+            -Source "E2E readiness checks"
+    }
 }
 
 $temporaryRoot = Join-Path (Join-Path $bootstrapRoot ".tmp") "claims-$([Guid]::NewGuid().ToString('N'))"

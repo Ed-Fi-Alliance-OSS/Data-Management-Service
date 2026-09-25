@@ -17,7 +17,7 @@ public class ClaimSetCommandValidator<T> : AbstractValidator<T>
         RuleFor(c => c.Name)
             .NotEmpty()
             .WithMessage("Please provide a valid claim set name.")
-            .MaximumLength(256)
+            .MaximumLength(ValidationConstants.ClaimSetNameMaxLength)
             .WithMessage("The claim set name must be less than 256 characters.");
 
         RuleFor(m => m.Name)

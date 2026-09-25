@@ -216,7 +216,7 @@ Content-Type: application/json
 {
   "vendorId": {{vendorId}},
   "applicationName": "Multi-District Test App",
-  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "claimSetName": "EdFiSandbox",
   "educationOrganizationIds": [255901, 255902],
   "dataStoreIds": [{{dataStore1Id}}, {{dataStore2Id}}, {{dataStore3Id}}]
 }

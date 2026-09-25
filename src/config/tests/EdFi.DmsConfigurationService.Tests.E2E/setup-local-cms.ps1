@@ -12,7 +12,7 @@
     to match CI/CD behavior and avoid database contamination.
 
     The script runs:
-    ./start-local-config.ps1 -EnvironmentFile ./.env.config.e2e -r
+    ./start-local-config.ps1 -EnvironmentFile ./.env.config.e2e -r -AddE2EClaimSets
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -64,7 +64,7 @@ try {
     Write-Host ""
 
     # Run the start script with E2E configuration (matches CI/CD behavior)
-    ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r
+    ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -AddE2EClaimSets
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start CMS environment. Exit code: $LASTEXITCODE"

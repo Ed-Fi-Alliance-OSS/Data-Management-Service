@@ -102,7 +102,7 @@ function Invoke-E2ECdcSetup {
                 -OriginalEnvironmentFile $OriginalEnvironmentFile -DatabaseEngine $DatabaseEngine `
                 -EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath `
                 -DataStoreDatabaseName $DatabaseName -SeparateConfigDatabase -EnableConfig `
-                -IdentityProvider $IdentityProvider -UseEnvironmentFileSchemaSettings `
+                -IdentityProvider $IdentityProvider -UseEnvironmentFileSchemaSettings -IncludeE2EClaimSets `
                 -RebuildLocalImages:(!$SkipDockerBuild -and !$UsePublishedImage) -BeforeCdcAdmission $snapshot
         } | Out-Host
     }

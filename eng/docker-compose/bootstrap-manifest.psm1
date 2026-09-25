@@ -610,6 +610,68 @@ function Restore-BootstrapEnvSnapshot {
     }
 }
 
+function Get-E2EClaimsFragmentsDirectory {
+    <#
+    .SYNOPSIS
+    Absolute path to the test-owned E2E claimset fragments (and their readiness checks file).
+    #>
+    return Join-Path $script:RepoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
+}
+
+function Initialize-E2EClaimsWorkspace {
+    <#
+    .SYNOPSIS
+    Stages the default claimset fragments plus the test-owned E2E claimset fragments into
+    eng/docker-compose/.e2e-claims and returns its absolute path, for use as the CMS claims mount.
+    .DESCRIPTION
+    The directory is created only when missing and is never deleted or replaced: a later startup
+    phase calls this again while CMS is bind-mounted to it, and replacing it would leave CMS mounted
+    to the orphaned original. Content is synced in place instead: every intended file is copied over
+    its staged copy and stale *-claimset.json files are removed.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal E2E staging helper; the E2E setup scripts do not expose -WhatIf end to end.')]
+    param()
+
+    $sourceDirectories = @(
+        (Join-Path $script:RepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"),
+        (Get-E2EClaimsFragmentsDirectory)
+    )
+
+    $intendedSources = [System.Collections.Generic.Dictionary[string, string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($sourceDirectory in $sourceDirectories) {
+        if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
+            throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $sourceDirectory)"
+        }
+
+        foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claimset.json" -File | Sort-Object -Property Name)) {
+            if ($intendedSources.ContainsKey($fragment.Name)) {
+                throw "Claimset fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafeText $fragment.FullName)' and '$(Format-LogSafeText ($intendedSources[$fragment.Name]))'."
+            }
+
+            $intendedSources[$fragment.Name] = $fragment.FullName
+        }
+    }
+
+    $workspace = Join-Path $script:DockerComposeRoot ".e2e-claims"
+    if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
+        New-Item -ItemType Directory -Path $workspace -ErrorAction Stop | Out-Null
+    }
+
+    foreach ($staged in @(Get-ChildItem -LiteralPath $workspace -Filter "*-claimset.json" -File)) {
+        if (-not $intendedSources.ContainsKey($staged.Name)) {
+            Remove-Item -LiteralPath $staged.FullName -Force -ErrorAction Stop
+        }
+    }
+
+    foreach ($fileName in $intendedSources.Keys) {
+        Copy-Item -LiteralPath $intendedSources[$fileName] -Destination (Join-Path $workspace $fileName) -Force -ErrorAction Stop
+    }
+
+    return $workspace
+}
+
 function Invoke-BootstrapStartupConfiguration {
     <#
     .SYNOPSIS
@@ -656,11 +718,12 @@ function Invoke-BootstrapStartupConfiguration {
             Write-Information "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)." -InformationAction Continue
         }
     } elseif ($AddExtensionSecurityMetadata) {
-        # Non-bootstrap mode: activate Hybrid claims so extension claimset fragments
-        # are loaded from /app/additional-claims (already mounted by the Config Service compose file).
+        # Non-bootstrap mode: activate Hybrid claims so the extension and E2E claimset fragments
+        # staged in .e2e-claims are loaded from /app/additional-claims. Every caller of this branch
+        # is an E2E setup path, and the E2E claim sets are defined only by test-owned fragments.
         $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
         $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
         Write-Information "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)." -InformationAction Continue
     }
 
@@ -716,5 +779,7 @@ Export-ModuleMember -Function `
     Set-BootstrapStartupEnvironment, `
     Get-BootstrapEnvSnapshot, `
     Restore-BootstrapEnvSnapshot, `
+    Get-E2EClaimsFragmentsDirectory, `
+    Initialize-E2EClaimsWorkspace, `
     Invoke-BootstrapStartupConfiguration, `
     Remove-BootstrapWorkspaceIfRequested

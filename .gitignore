@@ -63,6 +63,7 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 eng/docker-compose/.bootstrap/
+eng/docker-compose/.e2e-claims/
 eng/docker-compose/.cdc-deployments/
 eng/docker-compose/.cdc-diagnostics/
 eng/docker-compose/.cdc-state

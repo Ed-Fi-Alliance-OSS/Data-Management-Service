@@ -12,20 +12,20 @@ Feature: ClaimSets endpoints
                   """
                   [
                       {
-                          "id": {claimSetId:E2E-NameSpaceBasedClaimSet},
-                          "claimSetName": "E2E-NameSpaceBasedClaimSet",
+                          "id": {claimSetId:SISVendor},
+                          "claimSetName": "SISVendor",
                           "_isSystemReserved": true,
                           "_applications": []
                       },
                       {
-                          "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                          "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+                          "id": {claimSetId:EdFiSandbox},
+                          "claimSetName": "EdFiSandbox",
                           "_isSystemReserved": true,
                           "_applications": []
                       },
                       {
-                          "id": {claimSetId:E2E-RelationshipsWithEdOrgsOnlyClaimSet},
-                          "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                          "id": {claimSetId:RosterVendor},
+                          "claimSetName": "RosterVendor",
                           "_isSystemReserved": true,
                           "_applications": []
                       }
@@ -39,8 +39,8 @@ Feature: ClaimSets endpoints
                   """
                   [
                       {
-                          "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                          "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+                          "id": {claimSetId:EdFiSandbox},
+                          "claimSetName": "EdFiSandbox",
                           "_isSystemReserved": true,
                           "_applications": []
                       }

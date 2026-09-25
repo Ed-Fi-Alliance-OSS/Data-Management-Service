@@ -107,22 +107,24 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "For ed orgs",
-    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [ 255, 255901 ],
     "dataStoreIds": [{{dataStoreId}}]
 }
 
-# This Vendor is allowed to work with two education organizations and the
-# schools that belong to them. Note the `claimSetName` as well. "Claim sets"
+# This Application is bound to two education organizations; claim sets that
+# authorize by relationship limit it to data tied to those education
+# organizations and the schools that belong to them. Note the `claimSetName`
+# as well. "Claim sets"
 # define which Descriptors and Resources can be accessed by a client, and which
-# HTTP verbs can be used (POST, GET, PUT, DELETE) with each type. At this time
-# the out-of-the-box claimsets are relatively limited, though this will change
-# before the 1.0 release. Claimsets can be managed through the Configuration
-# Service, but that is an advanced topic that will not be covered in this
-# tutorial. The following command shows the restrictions on this claimset:
+# HTTP verbs can be used (POST, GET, PUT, DELETE) with each type. `EdFiSandbox`
+# is a broad, out-of-the-box claim set intended for sandbox exploration.
+# Claimsets can be managed through the Configuration Service, but that is an
+# advanced topic that will not be covered in this tutorial. The following
+# command shows the permissions and restrictions on this claimset:
 
 ###
-GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=EdFiSandbox
 Authorization: bearer {{configToken}}
 
 # As you can see, this claimset can be used with the following types, among
@@ -327,12 +329,11 @@ Content-Type: application/json
 }
 
 # Local Education Agency (LEA) has a _reference_ to a State Education Agency
-# (LEA). What happens when you try to create an LEA with an SEA that does not
-# yet exist? You get a 403 Forbidden response code! For most references this
-# would be a 409 Conflict response, but remember that the Application created in
-# the Configuration Service has a restricted list of education organizations it
-# can work with. The authorization kicks you out before the system can look to
-# see if the ID is real.
+# (SEA). What happens when you try to create an LEA with an SEA that does not
+# yet exist? You get a 409 Conflict response code: the reference cannot be
+# resolved. `EdFiSandbox` does not restrict writes to education organizations
+# themselves; its education organization restrictions apply to
+# relationship-based data such as Bell Schedules, shown below.
 
 ###
 POST {{dataApi}}/ed-fi/localEducationAgencies
@@ -455,13 +456,14 @@ Content-Type: application/json
 # Below is a hodge podge of additional HTTP commands and demonstrations.
 #########
 
-### Another useful claimset: E2E-NoFurtherAuthRequiredClaimSet
-GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=E2E-NoFurtherAuthRequiredClaimSet
+### Another out-of-the-box claimset: SISVendor
+GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=SISVendor
 Authorization: bearer {{configToken}}
 
 # What happens when you try to access a resource type that is not covered by the
 # claimset? Assuming you have an otherwise valid token, you will get a 403
-# Forbidden response.
+# Forbidden response. `EdFiSandbox` covers students, so this request succeeds;
+# a client whose claimset does not cover students receives the 403.
 
 ###
 POST {{dataApi}}/ed-fi/students
@@ -501,4 +503,6 @@ Content-Type: application/json
   "shortDescription": "Regular public school district"
 }
 
-# OOPS, that worked. Should it have?
+# That request is rejected with 403 Forbidden. `EdFiSandbox` authorizes
+# Descriptor writes by namespace, and `uri://eddy-fi.org` is not one of the
+# vendor's `namespacePrefixes`.

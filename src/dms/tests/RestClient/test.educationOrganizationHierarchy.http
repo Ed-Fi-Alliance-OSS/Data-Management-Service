@@ -85,7 +85,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [6001010, 60010, 600],
     "dataStoreIds": [{{dataStoreId}}]
 }
@@ -276,7 +276,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application 22",
-    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [123456],
     "dataStoreIds": [{{dataStoreId}}]
 }

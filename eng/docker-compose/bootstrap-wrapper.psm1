@@ -527,6 +527,11 @@ function Invoke-BootstrapWrapper {
 
         [Switch]$AddExtensionSecurityMetadata,
 
+        # Test-only: stage the test-owned E2E claim sets. Forwarded to prepare-dms-claims.ps1, which
+        # then always runs in the staging phase so a workspace staged without them is rejected before
+        # infrastructure starts. Only the Kafka CDC E2E setup passes this.
+        [Switch]$IncludeE2EClaimSets,
+
         [Switch]$NoDataStore,
 
         [Switch]$AddSmokeTestCredentials,
@@ -895,10 +900,16 @@ function Invoke-BootstrapWrapper {
                 }
             }
 
+            # -IncludeE2EClaimSets always reruns claims staging: a complete workspace staged without the
+            # E2E claim sets would otherwise be reused silently, and its guarded rerun rejects it here.
             if ((Test-Path -LiteralPath $prepareClaimsScript) -and
-                (-not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
+                ($IncludeE2EClaimSets -or -not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
                 $global:LASTEXITCODE = 0
-                & $prepareClaimsScript
+                $prepareClaimsArgs = @{}
+                if ($IncludeE2EClaimSets) {
+                    $prepareClaimsArgs["IncludeE2EClaimSets"] = $true
+                }
+                & $prepareClaimsScript @prepareClaimsArgs
                 if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                     throw "prepare-dms-claims.ps1 failed with exit code $LASTEXITCODE."
                 }
