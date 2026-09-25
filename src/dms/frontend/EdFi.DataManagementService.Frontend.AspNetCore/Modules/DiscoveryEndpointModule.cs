@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
@@ -217,9 +218,13 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         {
             string segmentName = routeQualifierSegments[index];
             // Metadata routes use positional aliases to avoid collisions with endpoint parameters.
+            // On mapped routes, absent aliases mean an unqualified request, not named qualifiers.
             string routeValueName =
                 useMetadataRouteValues
-                && httpContext.Request.RouteValues.ContainsKey($"__metadataRouteQualifier{index}")
+                && (
+                    httpContext.GetEndpoint() is RouteEndpoint
+                    || httpContext.Request.RouteValues.ContainsKey($"__metadataRouteQualifier{index}")
+                )
                     ? $"__metadataRouteQualifier{index}"
                     : segmentName;
             if (
