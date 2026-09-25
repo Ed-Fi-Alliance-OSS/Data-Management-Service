@@ -125,6 +125,25 @@ if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     }
 }
 
+if (-not (Get-Command Format-LogSafePath -ErrorAction SilentlyContinue)) {
+    function Format-LogSafePath {
+        param($Value)
+
+        if ($null -eq $Value) { return "" }
+        $text = [string]$Value
+        if ([string]::IsNullOrEmpty($text)) { return "" }
+
+        $builder = [System.Text.StringBuilder]::new()
+        foreach ($character in $text.ToCharArray()) {
+            if (-not [char]::IsControl($character)) {
+                $null = $builder.Append($character)
+            }
+        }
+
+        return $builder.ToString()
+    }
+}
+
 if (-not (Get-Command Read-RequiredJsonBoolean -ErrorAction SilentlyContinue)) {
     function Read-RequiredJsonBoolean {
         param(
@@ -840,7 +859,7 @@ function Invoke-SchemaWorkspaceStaging {
 
         Set-BootstrapManifestSection -Name "schema" -Value $schemaSection
 
-        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafeText $finalWorkspace)"
+        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafePath $finalWorkspace)"
         Write-Output "Effective schema hash: $effectiveSchemaHash"
     } finally {
         if (-not $temporaryMoved -and (Test-Path -LiteralPath $temporaryRoot)) {

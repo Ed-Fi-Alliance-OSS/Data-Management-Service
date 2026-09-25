@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -175,9 +176,10 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
     /// If segments are present in the request, uses actual values.
     /// If segments are not present in request, uses placeholders.
     /// </summary>
-    private static string BuildRouteQualifierPrefix(
+    internal static string BuildRouteQualifierPrefix(
         HttpContext httpContext,
-        IOptions<AppSettings> appSettings
+        IOptions<AppSettings> appSettings,
+        bool useMetadataRouteValues = false
     )
     {
         string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
@@ -203,10 +205,21 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         }
 
         // Add route qualifier segments
-        foreach (string segmentName in routeQualifierSegments)
+        for (int index = 0; index < routeQualifierSegments.Length; index++)
         {
+            string segmentName = routeQualifierSegments[index];
+            // Metadata routes use positional aliases to avoid collisions with endpoint parameters.
+            // On mapped routes, absent aliases mean an unqualified request, not named qualifiers.
+            string routeValueName =
+                useMetadataRouteValues
+                && (
+                    httpContext.GetEndpoint() is RouteEndpoint
+                    || httpContext.Request.RouteValues.ContainsKey($"__metadataRouteQualifier{index}")
+                )
+                    ? $"__metadataRouteQualifier{index}"
+                    : segmentName;
             if (
-                httpContext.Request.RouteValues.TryGetValue(segmentName, out object? value)
+                httpContext.Request.RouteValues.TryGetValue(routeValueName, out object? value)
                 && value is string stringValue
                 && !string.IsNullOrWhiteSpace(stringValue)
             )
