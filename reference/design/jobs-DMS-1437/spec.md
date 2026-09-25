@@ -528,3 +528,50 @@ Step 5.1 notes: `docs/CMS-BACKGROUND-JOBS.md` covers the components and switches
 - **U-2 (AC 14):** closed. Step 0.2 retained every candidate default and adjusted two bounds (§0.00), approved with the step 0.2 follow-up; step 2.11 re-verified every value through the implemented repositories (§6.2).
 - **Q15:** approved (round 3); closed.
 - **U-1:** closed by §1.4.1 and step 0.1.
+
+## 11. Final validation and acceptance-criteria evidence (step 5.2)
+
+Validated at `8dbd25b01` (step 5.1) on 2026-09-24, locally, one run per lane. CI has not run: pull request #1294 is a draft, and draft pull requests skip every CI job, so every CI check is still pending and is listed here only as the gate that will confirm these results when the pull request is marked ready.
+
+### 11.1 Local results
+
+| Gate or lane | Command | Result |
+| --- | --- | --- |
+| Release build | `./build-config.ps1 Build -Configuration Release` | 0 warnings, 0 errors; no lock-file changes |
+| Locked restore | `dotnet restore src/config/EdFi.DmsConfigurationService.sln --locked-mode` | exit 0 |
+| Format | `dotnet csharpier check src/config` | clean (567 files) |
+| Unit | `./build-config.ps1 UnitTest -Configuration Release` | Backend 1211/1211, Frontend 1548/1548 |
+| Integration | `./build-config.ps1 IntegrationTest -Configuration Release` (PostgreSQL on 5432; `ConnectionStrings__MssqlAdmin` on a dedicated SQL Server 2025) | PostgreSQL 798/798, SQL Server 847/847; the `[Explicit]` probe fixtures print as skipped and are not counted |
+| E2E, PostgreSQL, self-contained | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained` (image rebuilt from the branch) | 225 passed, 0 failed, 6 skipped (`@MultitenantOnly` on a single-tenant stack) |
+| E2E, PostgreSQL, Keycloak | `… -SkipDockerBuild -IdentityProvider keycloak` | 222 passed, 0 failed, 9 skipped (6 `@MultitenantOnly`, 3 `@SelfContainedOnly`) |
+| E2E, SQL Server | `… -EnvironmentFile ./.env.config.mssql.e2e -E2ETestFilter "TestCategory=MssqlRepresentative"` | 24/24 (23 existing representative scenarios plus `Jobs` 03) |
+| E2E, SQL Server, multi-tenant | `… -EnvironmentFile ./.env.config.mssql.multitenant.e2e -E2ETestFilter "TestCategory=MssqlMultitenantRepresentative"` | 6/6 (4 `Tenants` scenarios plus `Jobs` 05 and 06) |
+
+Each E2E lane ran in a fresh `pwsh -NoProfile` process, listed `EdFi.DmsConfigurationService.Tests.E2E.dll`, and reported a totals line; the container's `AppSettings__Datastore`, `AppSettings__MultiTenancy`, and `AppSettings__IdentityProvider` were checked after each run. `ApiClients.feature` scenarios 09 and 15 print as skipped in every PostgreSQL lane because of pre-existing undefined bindings, and are excluded from the totals.
+
+### 11.2 Acceptance criteria
+
+"Local" means verified by the §11.1 runs; "CI" means the pull-request job that will re-run the same evidence once the pull request leaves draft.
+
+| AC | Criterion (short) | Evidence | Local | CI (pending) |
+| --- | --- | --- | --- | --- |
+| 1 | Job schema on both providers | `JobSchemaTests` ×2, `JobUpgradeTests` ×2, `DatabaseShapeTests`, `DeployTests` | Integration | Backend integration jobs |
+| 2 | `Pending` persisted before the response; no 404 race | `JobRepositoryTests` caller-transaction fixtures ×2; `JobApiIntegrationTests.Given_a_job_enqueued_in_a_committed_caller_transaction` ×2 (read by the next request) and the rolled-back fixture | Integration | Backend integration jobs |
+| 3 | OpenAPI shape; 404 absent or other tenant | `JobModuleTests`, `JobOpenApiContractTests` (against the pinned fragment); `JobApiIntegrationTests.Given_jobs_of_two_tenants_and_without_a_tenant` ×2; E2E `Jobs` 03 and 06 | Unit, integration, E2E | Unit, integration, E2E jobs |
+| 4 | Read-only-or-admin policy; no secrets or other tenants' data | `JobModuleTests` (admin, read-only 200; auth-metadata 403; anonymous 401; failure logs without messages); E2E `Jobs` 01, 02, 04 | Unit, E2E | Unit, E2E jobs |
+| 5 | Atomic claim/reclaim on database UTC; one live lease; fenced writes | `JobLeaseRepositoryTests` ×2 (concurrent claims, token increments, expired and stale writes rejected, lock waits past expiry, fences); `JobExecutorTests` | Unit, integration | Unit, integration jobs |
+| 6 | Scope per job with the persisted tenant | `JobExecutorTests` (scope per job, tenant installed before handler resolution, scope disposed, `TenantUnavailable`) | Unit | Unit job |
+| 7 | `Completed`/`Error` written only under the matching lease | `JobLeaseRepositoryTests` ×2, `JobErrorCodeRegistryTests`; `JobApiIntegrationTests` completed and failed fixtures ×2 | Unit, integration | Unit, integration jobs |
+| 8 | Transient retry state; exhaustion to `Error` | `JobLeaseRepositoryTests` ×2 (retry, exhaust batches), `JobExecutorTests`, `JobWorkerServiceTests`, `RetryBackoffTests` | Unit, integration | Unit, integration jobs |
+| 9 | Abandoned work reclaimed; late commit rejected | `JobLeaseRepositoryTests` ×2; `JobRuntimeIntegrationTests.Given_an_abandoned_in_progress_job_after_a_restart` ×2 | Integration | Backend integration jobs |
+| 10 | Renewal before expiry; failure cancels; idempotent retry | `JobExecutorTests` renewal and uncertainty fixtures; `JobRuntimeIntegrationTests` ×2 (outlives the original lease, completion and fence commit faults with reconciliation, renewal behind a fence commit) | Unit, integration | Unit, integration jobs |
+| 11 | Shutdown stops claims, cancels, releases or leaves; late completion fenced | `JobWorkerServiceTests`; `JobRuntimeIntegrationTests.Given_a_shutdown_release_followed_by_a_reclaim` ×2 | Unit, integration | Unit, integration jobs |
+| 12 | Versioned, bounded, identifier-only payloads; unknown types fail terminally | `JobPayloadContractTests`, `JobHandlerRegistryTests`, `JobEnqueuerTests`, `JobExecutorTests` terminal fixtures; `JobLeaseRepositoryTests.It_claims_persisted_unknown_type_for_executor_to_terminate` ×2 | Unit, integration | Unit, integration jobs |
+| 13 | Configurable retention that never removes active jobs | `JobRetentionRepositoryTests` ×2, `JobRetentionServiceTests` | Unit, integration | Unit, integration jobs |
+| 14 | Documented, startup-validated settings | `JobOptionsValidatorTests`, `JobOptionsStartupTests`; operational assessment (steps 0.2, 2.11); `docs/CONFIGURATION.md`, `docs/CMS-BACKGROUND-JOBS.md` | Unit; review | Unit job |
+| 15 | Structured logs and metrics without secrets; UTC `Z` timestamps | `JobDiagnosticsTests`, `JobMetricsTests`, `JobExecutorTests` logging, `JobModuleTests` (`Z`, nulls present, sanitized failure log); `JobApiIntegrationTests` stored-time fixtures ×2 | Unit, integration | Unit, integration jobs |
+| 16 | No Quartz, broker, or new service | `src/Directory.Packages.props` unchanged against `origin/main`; no Quartz reference in `src/config`; locked restore passes; no new project or compose service | Build, restore | Lock-file verification job |
+| 17 | Schedule schema; one schedule per tenant and type | `JobScheduleSchemaTests` ×2, `JobScheduleUpgradeTests` ×2 | Integration | Backend integration jobs |
+| 18 | Atomic, fenced materialization; occurrence uniqueness; lease recovery | `JobScheduleRepositoryTests` ×2 | Integration | Backend integration jobs |
+| 19 | Scheduled jobs share the manual path; disable keeps history | `JobScheduleRepositoryTests` ×2 (disable keeps jobs and `Id`); `JobRuntimeIntegrationTests.Given_a_due_schedule_run_by_the_dispatcher_and_the_worker` ×2 | Integration | Backend integration jobs |
+| 20 | Coalescing: one job after downtime, next run at the first future boundary | `ScheduleOccurrenceMathTests`; `JobScheduleRepositoryTests` ×2 (multi-interval downtime, fresh time after insert, fractional-second boundary vectors) | Unit, integration | Unit, integration jobs |
