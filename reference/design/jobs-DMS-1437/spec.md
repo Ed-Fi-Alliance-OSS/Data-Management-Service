@@ -1,6 +1,6 @@
 # DMS-1437 Implementation Spec — Durable CMS jobs, schedules, and `GET /v3/jobs/{jobId}`
 
-Status: **v3.2, approved**. v3.1 was approved as the implementation plan (2026-09-23) and committed at step 0.1. v3.2 applies the step 0.2 review decisions (§0.00, A1–A7) and was approved with the step 0.2 follow-up (`5b0b864c5`, 2026-09-23). Standalone; supersedes v1–v3.1. Step 0.2 is complete, and Q3 is closed for the initial settings decision; the step 2.11 re-verification remains required. Phase 1 is in progress, one reviewed step at a time.
+Status: **v3.2, approved**. v3.1 was approved as the implementation plan (2026-09-23) and committed at step 0.1. v3.2 applies the step 0.2 review decisions (§0.00, A1–A7) and was approved with the step 0.2 follow-up (`5b0b864c5`, 2026-09-23). Standalone; supersedes v1–v3.1. Step 0.2 is complete, and Q3 is closed for the initial settings decision; the step 2.11 re-verification confirmed every setting. Phases 0–4 are implemented and approved; Phase 5 (documentation and final validation) is the last group, and the acceptance-criteria evidence is §2.
 Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1437`, branch `DMS-1437`. Review baseline: `d61921f09`, which was `origin/main` when this spec was written and reviewed; it is not the current branch position.
 
 ## 0. Review history and dispositions
@@ -521,8 +521,10 @@ Checks within a group: run the affected tests during development. After the grou
 
 **5.1 Documentation.** Files: `docs/CMS-BACKGROUND-JOBS.md` (configuration, recovery, retention, observability, handler contract, fence rules, idempotency, deployment sequencing, attempt semantics), `docs/CONFIGURATION.md` link, spec finalization. Commit `[DMS-1437] Document CMS background jobs`. **5.2 Final validation:** all §8 lanes and gates; AC evidence table; request push authorization.
 
+Step 5.1 notes: `docs/CMS-BACKGROUND-JOBS.md` covers the components and switches, configuration and fixed limits, the lifecycle and attempt semantics, failure classification and the built-in error codes, the polling endpoint with the step 4.1 OpenAPI differences, the handler and payload contracts, fence rules and idempotency, enqueueing, schedules and coalescing, recovery including the unknown-outcome table, retention, the log events with their levels as the code emits them, the metric instruments, and deployment sequencing. `docs/CONFIGURATION.md` links to it from the `JobSettings` section.
+
 ## 10. Explicitly unresolved items
 
-- **U-2 (AC 14).** Step 0.2 retained every candidate default and adjusted two bounds (§0.00), and the decision was approved with the step 0.2 follow-up. Step 2.11 re-verifies it before Phase 3.
+- **U-2 (AC 14):** closed. Step 0.2 retained every candidate default and adjusted two bounds (§0.00), approved with the step 0.2 follow-up; step 2.11 re-verified every value through the implemented repositories (§6.2).
 - **Q15:** approved (round 3); closed.
 - **U-1:** closed by §1.4.1 and step 0.1.
