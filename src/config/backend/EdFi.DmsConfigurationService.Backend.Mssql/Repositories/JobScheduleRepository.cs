@@ -118,7 +118,7 @@ public sealed class JobScheduleRepository(
     // on a page lock only makes the choice conservative, and the advance validates with its own fresh time. An
     // expired lease counts as free (defensive recovery); a live one does not.
     private const string LockDueSql = """
-        SELECT TOP (1) Id, NextRunAt
+        SELECT TOP (1) Id, NextRunAt, ScheduleType
         FROM dmscs.JobSchedule WITH (UPDLOCK, READPAST, ROWLOCK)
         WHERE Enabled = 1
           AND NextRunAt <= SYSUTCDATETIME()
@@ -488,12 +488,14 @@ public sealed class JobScheduleRepository(
             return inserted == 0
                 ? new JobScheduleMaterializeResult.AlreadyEnqueued(
                     due.Id,
+                    due.ScheduleType,
                     occurrence,
                     newNextRunAt,
                     databaseUtcNow
                 )
                 : new JobScheduleMaterializeResult.Materialized(
                     due.Id,
+                    due.ScheduleType,
                     newJobId,
                     occurrence,
                     newNextRunAt,
@@ -534,7 +536,7 @@ public sealed class JobScheduleRepository(
     private static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
     // Positional rows: Dapper binds the columns to the constructor in order, by name and type.
-    private sealed record DueRow(long Id, DateTime NextRunAt);
+    private sealed record DueRow(long Id, DateTime NextRunAt, string ScheduleType);
 
     private sealed record AdvancedRow(DateTime NewNextRunAt, DateTime DatabaseUtcNow);
 

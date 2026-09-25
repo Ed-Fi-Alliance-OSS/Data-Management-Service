@@ -111,7 +111,7 @@ public sealed class JobScheduleRepository(
     // expired lease counts as free (defensive recovery); a live one does not.
     private const string LockDueSql = $"""
         {FreshTime}
-        SELECT s."Id", s."NextRunAt"
+        SELECT s."Id", s."NextRunAt", s."ScheduleType"
         FROM "dmscs"."JobSchedule" AS s, t
         WHERE s."Enabled"
           AND s."NextRunAt" <= t.now
@@ -473,12 +473,14 @@ public sealed class JobScheduleRepository(
             return inserted == 0
                 ? new JobScheduleMaterializeResult.AlreadyEnqueued(
                     due.Id,
+                    due.ScheduleType,
                     occurrence,
                     newNextRunAt,
                     databaseUtcNow
                 )
                 : new JobScheduleMaterializeResult.Materialized(
                     due.Id,
+                    due.ScheduleType,
                     newJobId,
                     occurrence,
                     newNextRunAt,
@@ -516,7 +518,7 @@ public sealed class JobScheduleRepository(
     private static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
     // Positional rows: Dapper binds the columns to the constructor in order, by name and type.
-    private sealed record DueRow(long Id, DateTime NextRunAt);
+    private sealed record DueRow(long Id, DateTime NextRunAt, string ScheduleType);
 
     private sealed record AdvancedRow(DateTime NewNextRunAt, DateTime DatabaseUtcNow);
 

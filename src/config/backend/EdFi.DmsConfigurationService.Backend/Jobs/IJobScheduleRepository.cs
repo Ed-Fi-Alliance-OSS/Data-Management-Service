@@ -77,6 +77,7 @@ public record JobScheduleMaterializeResult
     /// </summary>
     public record Materialized(
         long ScheduleId,
+        string ScheduleType,
         string JobId,
         DateTime Occurrence,
         DateTime NewNextRunAt,
@@ -89,6 +90,7 @@ public record JobScheduleMaterializeResult
     /// </summary>
     public record AlreadyEnqueued(
         long ScheduleId,
+        string ScheduleType,
         DateTime Occurrence,
         DateTime NewNextRunAt,
         DateTime DatabaseUtcNow

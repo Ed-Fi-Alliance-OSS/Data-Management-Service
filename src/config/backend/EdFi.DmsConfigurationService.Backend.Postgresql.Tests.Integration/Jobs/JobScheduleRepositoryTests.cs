@@ -201,6 +201,7 @@ public class JobScheduleRepositoryTests
     [TestFixture]
     public class Given_a_due_schedule : JobScheduleTestBase
     {
+        private const string DueScheduleType = "Test.DueSchedule";
         private long _tenantId;
         private long _scheduleId;
         private DateTime _seededNextRunAt;
@@ -218,6 +219,7 @@ public class JobScheduleRepositoryTests
             _scheduleId = await SeedScheduleAsync(
                 nextRunOffset: -10,
                 intervalMinutes: 60,
+                scheduleType: DueScheduleType,
                 tenantId: _tenantId
             );
             _seededNextRunAt = (await ReadScheduleAsync(_scheduleId)).NextRunAt;
@@ -240,6 +242,7 @@ public class JobScheduleRepositoryTests
         {
             JobScheduleMaterializeResult.Materialized materialized = MaterializedOf(_result);
             materialized.ScheduleId.Should().Be(_scheduleId);
+            materialized.ScheduleType.Should().Be(DueScheduleType);
             materialized.JobId.Should().Be(_jobId);
             materialized.Occurrence.Should().Be(_seededNextRunAt);
             materialized.NewNextRunAt.Should().Be(_seededNextRunAt.AddMinutes(60));
