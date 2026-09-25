@@ -698,7 +698,7 @@ public class ClaimsHierarchyManagerTests
 
         // Act
         bool changed = _claimsHierarchyManager.OverrideClaimSetResourceActionStrategies(
-            "sis vendor",
+            "SIS Vendor",
             "CLAIM-A",
             "read",
             ["NamespaceBased"],
