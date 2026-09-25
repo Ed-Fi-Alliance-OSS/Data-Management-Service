@@ -251,7 +251,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
                       "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
-                      "staffReference": {  "staffUniqueId": "s0002"  },
+                      "staffReference": {  "staffUniqueId": "s0003"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
                     }
