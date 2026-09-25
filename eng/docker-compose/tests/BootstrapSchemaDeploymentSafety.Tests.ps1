@@ -2098,6 +2098,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $content | Should -Not -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafeText \$finalWorkspace\)'
         }
 
+        It "keeps the path-safe formatter available in isolated script execution" {
+            $prepareSchemaPath = Join-Path $script:sourceDockerComposeRoot "prepare-dms-schema.ps1"
+            $content = Get-Content -LiteralPath $prepareSchemaPath -Raw
+
+            $content | Should -Match '(?s)if \(-not \(Get-Command Format-LogSafePath .*?\)\).*?function Format-LogSafePath'
+        }
+
         It "guidance preserves backslashes in Windows-style staged paths" {
             . $script:repo.ProvisionScript
 

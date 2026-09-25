@@ -388,7 +388,7 @@ function Resolve-BootstrapDataStandard {
     }
 
     if (-not (Test-Path -LiteralPath $repoRoot -PathType Container)) {
-        throw "Data Standard repo directory not found after fetch: $(Format-LogSafeText $repoRoot)"
+        throw "Data Standard repo directory not found after fetch: $(Format-LogSafePath $repoRoot)"
     }
 
     return $repoRoot
