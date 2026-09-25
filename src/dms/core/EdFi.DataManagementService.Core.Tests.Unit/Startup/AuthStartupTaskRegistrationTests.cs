@@ -8,6 +8,8 @@ using EdFi.DataManagementService.Core.Startup;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using NUnit.Framework;
 using Serilog;
 
@@ -101,6 +103,75 @@ public class AuthStartupTaskRegistrationTests
             settings.MaxRetryAttempts.Should().Be(7);
             settings.BaseDelayMilliseconds.Should().Be(25);
             settings.UseJitter.Should().BeFalse();
+        }
+    }
+
+    private static ServiceProvider BuildJwtAuthenticationProvider(Dictionary<string, string?> settings)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+
+        var services = new ServiceCollection();
+        services.AddJwtAuthentication(configuration);
+
+        return services.BuildServiceProvider();
+    }
+
+    [TestFixture]
+    public class Given_Jwt_Authentication_Without_An_Authority : AuthStartupTaskRegistrationTests
+    {
+        private Action _resolve = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceProvider provider = BuildJwtAuthenticationProvider(
+                new Dictionary<string, string?>
+                {
+                    ["JwtAuthentication:MetadataAddress"] =
+                        "https://keycloak.example.com/realms/edfi/.well-known/openid-configuration",
+                }
+            );
+
+            _resolve = () => provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();
+        }
+
+        [Test]
+        public void It_throws_naming_the_missing_authority_setting()
+        {
+            _resolve
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("JwtAuthentication:Authority must be configured for JWT authentication");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Jwt_Authentication_With_Authority_And_Metadata_Address
+        : AuthStartupTaskRegistrationTests
+    {
+        private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceProvider provider = BuildJwtAuthenticationProvider(
+                new Dictionary<string, string?>
+                {
+                    ["JwtAuthentication:Authority"] = "https://keycloak.example.com/realms/edfi",
+                    ["JwtAuthentication:MetadataAddress"] =
+                        "https://keycloak.example.com/realms/edfi/.well-known/openid-configuration",
+                }
+            );
+
+            _configurationManager = provider.GetRequiredService<
+                IConfigurationManager<OpenIdConnectConfiguration>
+            >();
+        }
+
+        [Test]
+        public void It_resolves_a_configuration_manager()
+        {
+            _configurationManager.Should().BeOfType<ConfigurationManager<OpenIdConnectConfiguration>>();
         }
     }
 }
