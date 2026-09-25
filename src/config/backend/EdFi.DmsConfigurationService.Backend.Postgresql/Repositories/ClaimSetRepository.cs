@@ -97,7 +97,7 @@ public class ClaimSetRepository(
             string sql = $"""
                 SELECT "Id", "AuthorizationStrategyName", "DisplayName"
                 FROM "dmscs"."AuthorizationStrategy"
-                WHERE {TenantContext.TenantWhereClause()};
+                WHERE "TenantId" IS NULL OR {TenantContext.TenantWhereClause()};
                 """;
 
             var authorizationStrategies = await connection.QueryAsync(sql, new { TenantId });
