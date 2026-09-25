@@ -83,7 +83,7 @@ services:
       DataManagement__DocumentCache__Status__EndpointTimeout: ${DMS_DOCUMENTCACHE_STATUS_ENDPOINT_TIMEOUT:-00:00:30}
       DataManagement__DocumentCache__Status__RequiredRole: ${DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE:-}
       # JWT Authentication
-      JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
+      JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://localhost:8045/realms/edfi}
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-account}
       JwtAuthentication__MetadataAddress: ${DMS_JWT_METADATA_ADDRESS:-}
       JwtAuthentication__RequireHttpsMetadata: ${DMS_JWT_REQUIRE_HTTPS_METADATA:-false}

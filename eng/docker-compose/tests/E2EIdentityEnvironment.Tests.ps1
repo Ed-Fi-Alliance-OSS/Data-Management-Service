@@ -34,6 +34,7 @@ DMS_JWT_METADATA_ADDRESS=http://default-cms:8081/.well-known/openid-configuratio
 KEYCLOAK_OAUTH_TOKEN_ENDPOINT=http://custom-keycloak:8080/realms/custom/protocol/openid-connect/token
 KEYCLOAK_DMS_JWT_AUTHORITY=http://custom-keycloak:8080/realms/custom
 KEYCLOAK_DMS_JWT_METADATA_ADDRESS=http://custom-keycloak:8080/realms/custom/.well-known/openid-configuration
+KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://custom-keycloak-internal:8080/realms/custom
 SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT=http://custom-cms:8081/oauth/token
 SELF_CONTAINED_DMS_JWT_AUTHORITY=http://custom-cms:8081
 SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS=http://custom-cms:8081/.well-known/openid-configuration
@@ -77,11 +78,13 @@ Describe 'E2E identity settings survive startup cleanup and reach test child pro
         @{
             Provider = 'keycloak'
             Authority = 'http://custom-keycloak:8080/realms/custom'
+            ConfigAuthority = 'http://custom-keycloak-internal:8080/realms/custom'
             Token = 'http://custom-keycloak:8080/realms/custom/protocol/openid-connect/token'
         },
         @{
             Provider = 'self-contained'
             Authority = 'http://custom-cms:8081'
+            ConfigAuthority = 'http://custom-cms:8081'
             Token = 'http://custom-cms:8081/oauth/token'
         }
     ) {
@@ -104,7 +107,7 @@ Describe 'E2E identity settings survive startup cleanup and reach test child pro
         $script:observedIdentity.Provider | Should -BeExactly $Provider
         $script:observedIdentity.Authority | Should -BeExactly $Authority
         $script:observedIdentity.Metadata | Should -BeExactly "$Authority/.well-known/openid-configuration"
-        $script:observedIdentity.ConfigAuthority | Should -BeExactly $Authority
+        $script:observedIdentity.ConfigAuthority | Should -BeExactly $ConfigAuthority
         $script:observedIdentity.Token | Should -BeExactly $Token
         foreach ($name in $script:identityNames) {
             Test-Path -LiteralPath "Env:$name" | Should -BeFalse
@@ -113,7 +116,9 @@ Describe 'E2E identity settings survive startup cleanup and reach test child pro
 
     It 'rejects <State> <Prefix>_<Key> before changing the environment or running tests' -ForEach @(
         foreach ($provider in 'keycloak', 'self-contained') {
-            foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS') {
+            $keys = @('OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS')
+            if ($provider -eq 'keycloak') { $keys += 'DMS_CONFIG_IDENTITY_AUTHORITY' }
+            foreach ($key in $keys) {
                 foreach ($state in 'missing', 'empty', 'whitespace') {
                     @{
                         Provider = $provider
