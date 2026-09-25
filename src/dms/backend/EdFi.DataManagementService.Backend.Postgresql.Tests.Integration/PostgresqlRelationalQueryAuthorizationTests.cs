@@ -1759,7 +1759,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         IReadOnlyList<string>? namespacePrefixes = null,
         short? creatorOwnershipTokenId = null,
         IReadOnlyList<short>? ownershipTokenIds = null,
-        Dictionary<string, string>? headers = null
+        Dictionary<string, string>? headers = null,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -1783,7 +1784,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         )
         {
             AuthorizationContext = new RelationalAuthorizationContext(
-                [],
+                claimEducationOrganizationIds ?? [],
                 namespacePrefixes ?? [],
                 creatorOwnershipTokenId,
                 ownershipTokenIds ?? []

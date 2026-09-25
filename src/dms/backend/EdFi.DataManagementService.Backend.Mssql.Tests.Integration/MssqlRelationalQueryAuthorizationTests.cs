@@ -2167,7 +2167,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<string>? namespacePrefixes = null,
         short? creatorOwnershipTokenId = null,
         IReadOnlyList<short>? ownershipTokenIds = null,
-        Dictionary<string, string>? headers = null
+        Dictionary<string, string>? headers = null,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -2191,7 +2192,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         )
         {
             AuthorizationContext = new RelationalAuthorizationContext(
-                [],
+                claimEducationOrganizationIds ?? [],
                 namespacePrefixes ?? [],
                 creatorOwnershipTokenId,
                 ownershipTokenIds ?? []

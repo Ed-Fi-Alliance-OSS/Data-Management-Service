@@ -41,6 +41,14 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
     private const string SchoolResource = "School";
     private const string MissingCustomViewStrategyName = "SchoolWithMissingPostActionView";
     private const short CreatorToken = 11;
+    private const string RootChildProject = RelationshipAuthorizationCrudTestSupport.ProjectEndpointName;
+    private const string RootChildResource =
+        RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName;
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private const int AuthorizedSchoolId = (int)RelationshipAuthorizationCrudTestSupport.AuthorizedSchoolId;
+    private const int UnauthorizedSchoolId = (int)
+        RelationshipAuthorizationCrudTestSupport.UnauthorizedSchoolId;
     private const short ForeignToken = 22;
 
     private static readonly TimeSpan _blockTimeout = TimeSpan.FromSeconds(30);
@@ -62,6 +70,9 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
         AuthorizationStrategyNameConstants.OwnershipBased
     );
     private static readonly UpsertActionPolicy _notPermitted = UpsertActionPolicy.NotPermitted.Instance;
+    private static readonly UpsertActionPolicy _edOrgsOnly = Permitted(
+        RelationshipAuthorizationCrudTestSupport.RelationshipsWithEdOrgsOnly
+    );
 
     private MssqlRelationalQueryAuthorizationTestContext _context = null!;
 
@@ -279,6 +290,81 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
         );
 
         owner.Should().BeOfType<UpsertResult.UpdateSuccess>();
+    }
+
+    // ── Strategy difference: relationship ────────────────────────────────
+
+    [Test]
+    public async Task It_applies_only_the_update_relationship_check_to_an_existing_record()
+    {
+        await SeedRelationshipSchoolsAsync();
+        var updateChecksRelationship = Pair(_noFurther, _edOrgsOnly);
+
+        // The school is outside the claim, and only Update carries a relationship strategy.
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await PostRelationshipAsync(
+                RootChildBody("Original", UnauthorizedSchoolId),
+                _firstUuid,
+                updateChecksRelationship
+            )
+        );
+        var before = await _context.ReadSideEffectStateAsync(RootChildProject, RootChildResource, _firstUuid);
+
+        // The proposed school is authorized, so only the stored school can refuse this update.
+        var changed = await PostRelationshipAsync(
+            RootChildBody("Changed", AuthorizedSchoolId),
+            _secondUuid,
+            updateChecksRelationship
+        );
+
+        changed
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Stored);
+        (await _context.ReadSideEffectStateAsync(RootChildProject, RootChildResource, _firstUuid))
+            .Should()
+            .BeEquivalentTo(before);
+        (await _context.CountDocumentsAsync(RootChildProject, RootChildResource)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_applies_only_the_create_relationship_check_to_a_new_record()
+    {
+        await SeedRelationshipSchoolsAsync();
+        var createChecksRelationship = Pair(_edOrgsOnly, _noFurther);
+
+        var refused = await PostRelationshipAsync(
+            RootChildBody("Original", UnauthorizedSchoolId),
+            _firstUuid,
+            createChecksRelationship
+        );
+
+        refused
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        (await _context.CountDocumentsAsync(RootChildProject, RootChildResource)).Should().Be(0);
+
+        await SeedAsync(
+            RootChildProject,
+            RootChildResource,
+            RootChildBody("Original", UnauthorizedSchoolId),
+            _firstUuid
+        );
+        var seeded = await _context.ReadSideEffectStateAsync(RootChildProject, RootChildResource, _firstUuid);
+
+        var updated = await PostRelationshipAsync(
+            RootChildBody("Changed", UnauthorizedSchoolId),
+            _secondUuid,
+            createChecksRelationship
+        );
+
+        updated.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        (await _context.ReadSideEffectStateAsync(RootChildProject, RootChildResource, _firstUuid))
+            .Document.ContentVersion.Should()
+            .BeGreaterThan(seeded.Document.ContentVersion);
     }
 
     // ── Strategy difference: custom view ─────────────────────────────────
@@ -661,6 +747,45 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
             creatorOwnershipTokenId,
             ownershipTokenIds,
             headers
+        );
+
+    /// <summary>
+    /// Seeds one school the claim reaches through the EdOrg hierarchy and one it does not.
+    /// </summary>
+    private async Task SeedRelationshipSchoolsAsync()
+    {
+        await _context.SeedSchoolDescriptorDataAsync();
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(
+                new QuerySchoolSeed(NewUuid(), AuthorizedSchoolId, "Authorized School")
+            )
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(
+                new QuerySchoolSeed(NewUuid(), UnauthorizedSchoolId, "Unauthorized School")
+            )
+        );
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, AuthorizedSchoolId);
+    }
+
+    private Task<UpsertResult> PostRelationshipAsync(
+        JsonNode body,
+        DocumentUuid documentUuid,
+        UpsertActionAuthorization actionAuthorization
+    ) =>
+        _context.UpsertWithActionAuthorizationAsync(
+            RootChildProject,
+            RootChildResource,
+            body,
+            documentUuid,
+            actionAuthorization,
+            _prefixes,
+            claimEducationOrganizationIds: [ClaimEducationOrganizationId]
+        );
+
+    private static JsonNode RootChildBody(string name, int schoolId) =>
+        RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(
+            new AuthorizationRootChildSeed(_firstUuid, 2200, name, schoolId, [])
         );
 
     private Task<UpsertResult> SeedAsync(
