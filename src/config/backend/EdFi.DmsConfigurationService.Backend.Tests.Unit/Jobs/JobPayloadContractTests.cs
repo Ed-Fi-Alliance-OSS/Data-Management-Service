@@ -313,6 +313,27 @@ public sealed class ImmutablePayload(
     public IReadOnlyList<ImmutableItem> Items { get; } = items;
 }
 
+/// <summary>A contract-valid payload whose constructor rejects an identifier out of range, as a consumer's may.</summary>
+public sealed class RangeCheckedPayload
+{
+    public RangeCheckedPayload(long dataStoreId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dataStoreId);
+        DataStoreId = dataStoreId;
+    }
+
+    public long DataStoreId { get; }
+}
+
+/// <summary>A contract-valid payload whose constructor fails for a reason that has nothing to do with its input.</summary>
+public sealed class BrokenConstructorPayload(int count)
+{
+    public int Count { get; } = Fail(count);
+
+    private static int Fail(int value) =>
+        throw new NotSupportedException($"A defect, not a rejected value ({value}).");
+}
+
 public class JobPayloadContractTests
 {
     private static ProbePayload ValidPayload() =>
@@ -643,6 +664,57 @@ public class JobPayloadContractTests
                 .BeOfType<JobPayloadReadResult<ImmutablePayload>.Success>()
                 .Which.Payload.Should()
                 .BeEquivalentTo(Immutable());
+    }
+
+    [TestFixture]
+    public class Given_a_payload_constructor_that_rejects_its_input
+    {
+        private IReadOnlyList<string> _violations = [];
+        private JobPayloadReadResult<RangeCheckedPayload> _rejected = null!;
+        private JobPayloadReadResult<RangeCheckedPayload> _accepted = null!;
+        private Exception? _defect;
+
+        [SetUp]
+        public void Setup()
+        {
+            _defect = null;
+            _violations = JobPayloadContract.Violations(typeof(RangeCheckedPayload));
+            _rejected = JobPayloadSerializer.Deserialize<RangeCheckedPayload>("{\"dataStoreId\":-1}");
+            _accepted = JobPayloadSerializer.Deserialize<RangeCheckedPayload>("{\"dataStoreId\":7}");
+            try
+            {
+                JobPayloadSerializer.Deserialize<BrokenConstructorPayload>("{\"count\":1}");
+            }
+            catch (Exception exception)
+            {
+                _defect = exception;
+            }
+        }
+
+        [Test]
+        public void It_accepts_the_payload_type_as_contract_valid() => _violations.Should().BeEmpty();
+
+        [Test]
+        public void It_rejects_the_value_with_a_fixed_reason_code() =>
+            _rejected
+                .Should()
+                .Be(
+                    new JobPayloadReadResult<RangeCheckedPayload>.Failure(
+                        JobPayloadFailureReasons.InvalidJson
+                    )
+                );
+
+        [Test]
+        public void It_reads_a_value_the_constructor_accepts() =>
+            _accepted
+                .Should()
+                .BeOfType<JobPayloadReadResult<RangeCheckedPayload>.Success>()
+                .Which.Payload.DataStoreId.Should()
+                .Be(7);
+
+        [Test]
+        public void It_lets_a_constructor_defect_escape() =>
+            _defect.Should().BeOfType<NotSupportedException>();
     }
 
     [TestFixture]

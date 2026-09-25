@@ -1116,11 +1116,235 @@ public class JobLeaseRepositoryTests
             _elapsed
                 .Should()
                 .BeLessThan(TimeSpan.FromSeconds(4), "the deadline is at most the remaining lease less 1 s");
-            _thrown.Should().BeAssignableTo<OperationCanceledException>();
+
+            // The fence stops waiting at the deadline, before the work's cancellation is observed, so a reached
+            // deadline is a lost lease (D-5 step 5) whether or not the work honors its token.
+            _thrown.Should().BeOfType<JobLeaseLostException>();
         }
 
         [Test]
         public void It_rolls_back_the_cancelled_work() => _fencedWrites.Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_fenced_work_that_settles_long_after_its_cancellation : JobLeaseTestBase
+    {
+        private JobExecutionOwnership _ownership = null!;
+        private Exception? _thrown;
+        private TimeSpan _elapsed;
+        private TimeSpan _renewalAdmittedAfter;
+        private bool _workCancelled;
+        private bool _workSettledWhenTheFenceReturned;
+        private bool _rowLockedWhileTheWorkWasPending;
+        private Exception? _workOutcome;
+        private long _fencedWrites;
+        private bool _rowLockable;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            bool workSettled = false;
+            long id = await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            _ownership = new JobExecutionOwnership();
+            PendingOperation cleanups = new("NoOperationIsHeld", TimeSpan.Zero);
+            IJobFence fence = new PostgresqlJobFenceFactory(
+                Configuration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                SessionHooks = cleanups.Hooks,
+            }.Create(claimed, _ownership);
+
+            long started = Stopwatch.GetTimestamp();
+            Task<Exception?> fenced = ThrownByAsync(() =>
+                fence.ExecuteAsync(
+                    async (transaction, token) =>
+                    {
+                        await FencedWriteAsync(transaction, token);
+
+                        // The work observes its cancellation but settles only 3 s later, as a command does while its
+                        // provider waits for the cancellation to be acknowledged; then it writes again.
+                        TaskCompletionSource cancelled = new(
+                            TaskCreationOptions.RunContinuationsAsynchronously
+                        );
+                        await using CancellationTokenRegistration registration = token.Register(() =>
+                            cancelled.TrySetResult()
+                        );
+                        await cancelled.Task;
+                        _workCancelled = true;
+                        await Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None);
+                        await FencedWriteAsync(transaction, CancellationToken.None);
+                        workSettled = true;
+                    },
+                    CancellationToken.None
+                )
+            );
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
+            using (IDisposable renewal = await _ownership.EnterForRenewalAsync(CancellationToken.None))
+            {
+                _renewalAdmittedAfter = Stopwatch.GetElapsedTime(started);
+            }
+
+            _thrown = await fenced;
+            _elapsed = Stopwatch.GetElapsedTime(started);
+            _workSettledWhenTheFenceReturned = workSettled;
+            _rowLockedWhileTheWorkWasPending = !await RowIsLockableAsync(id);
+
+            _workOutcome = await cleanups.CleanupAsync();
+            _fencedWrites = await FencedWriteCountAsync();
+            _rowLockable = await RowIsLockableAsync(id);
+        }
+
+        [Test]
+        public void It_returns_at_the_fence_deadline_while_the_work_is_still_pending()
+        {
+            _elapsed
+                .Should()
+                .BeLessThan(TimeSpan.FromSeconds(2.7), "the work settles 3 s after the deadline");
+            _workSettledWhenTheFenceReturned.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_releases_the_gate_to_a_waiting_renewal_within_the_fence_deadline() =>
+            _renewalAdmittedAfter.Should().BeLessThan(TimeSpan.FromSeconds(2.7));
+
+        [Test]
+        public void It_reports_the_lease_lost_and_cancels_the_work()
+        {
+            _thrown.Should().BeOfType<JobLeaseLostException>();
+            _workCancelled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_keeps_the_transaction_open_until_the_work_settles() =>
+            _rowLockedWhileTheWorkWasPending.Should().BeTrue();
+
+        [Test]
+        public void It_lets_the_work_finish_on_its_own_session() => _workOutcome.Should().BeNull();
+
+        [Test]
+        public void It_commits_none_of_the_work_once_cleanup_releases_the_session()
+        {
+            _fencedWrites.Should().Be(0);
+            _rowLockable.Should().BeTrue();
+            _ownership
+                .State.Should()
+                .Be(JobOwnershipState.Owned, "only the executor decides on the lost lease");
+        }
+    }
+
+    [TestFixture]
+    public class Given_fenced_work_that_blocks_before_returning_its_task : JobLeaseTestBase
+    {
+        private CancellationTokenSource _escape = null!;
+        private Exception? _thrown;
+        private TimeSpan _elapsed;
+        private TimeSpan _renewalAdmittedAfter;
+        private bool _workCancelled;
+        private bool _escaped;
+        private Exception? _workOutcome;
+        private long _fencedWrites;
+        private bool _rowLockable;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _escape = new CancellationTokenSource();
+            _workCancelled = false;
+            _escaped = false;
+            long id = await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            JobExecutionOwnership ownership = new();
+            PendingOperation cleanups = new("NoOperationIsHeld", TimeSpan.Zero);
+            IJobFence fence = new PostgresqlJobFenceFactory(
+                Configuration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                SessionHooks = cleanups.Hooks,
+            }.Create(claimed, ownership);
+            CancellationToken escape = _escape.Token;
+
+            long started = Stopwatch.GetTimestamp();
+            Task<Exception?> fenced = Task.Run(async () =>
+            {
+                Exception? thrown = await ThrownByAsync(() =>
+                    fence.ExecuteAsync(
+                        (transaction, token) =>
+                        {
+                            // A cancellation-aware callback that writes and then blocks before it returns a task:
+                            // only its token's cancellation ends it. The escape exists only so a fence that never
+                            // cancels the token cannot wedge the fixture.
+                            transaction.Connection!.Execute(
+                                """INSERT INTO "dmscs"."OwnershipToken" ("Description") VALUES ('fenced-write');""",
+                                transaction: transaction
+                            );
+                            _workCancelled = WaitHandle.WaitAny([token.WaitHandle, escape.WaitHandle]) == 0;
+                            token.ThrowIfCancellationRequested();
+                            return Task.CompletedTask;
+                        },
+                        CancellationToken.None
+                    )
+                );
+                _elapsed = Stopwatch.GetElapsedTime(started);
+                return thrown;
+            });
+            Task<TimeSpan> renewal = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200));
+                using IDisposable gate = await ownership.EnterForRenewalAsync(CancellationToken.None);
+                return Stopwatch.GetElapsedTime(started);
+            });
+
+            try
+            {
+                _thrown = await fenced.WaitAsync(TimeSpan.FromSeconds(8));
+            }
+            catch (TimeoutException)
+            {
+                _escaped = true;
+                await _escape.CancelAsync();
+                _thrown = await fenced;
+            }
+
+            _renewalAdmittedAfter = await renewal;
+            _workOutcome = await cleanups.CleanupAsync();
+            _fencedWrites = await FencedWriteCountAsync();
+            _rowLockable = await RowIsLockableAsync(id);
+        }
+
+        [TearDown]
+        public void TearDown() => _escape.Dispose();
+
+        [Test]
+        public void It_returns_at_the_fence_deadline_while_the_callback_is_blocked()
+        {
+            _escaped.Should().BeFalse("the fence must stop waiting on its own");
+            _elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7));
+        }
+
+        [Test]
+        public void It_releases_the_gate_to_a_waiting_renewal_within_the_fence_deadline() =>
+            _renewalAdmittedAfter.Should().BeLessThan(TimeSpan.FromSeconds(2.7));
+
+        [Test]
+        public void It_reports_the_lease_lost_and_cancels_the_blocked_callback()
+        {
+            _thrown.Should().BeOfType<JobLeaseLostException>();
+            _workCancelled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_observes_the_callback_ending_in_its_cancellation() =>
+            _workOutcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_commits_none_of_the_work_once_cleanup_releases_the_session()
+        {
+            _fencedWrites.Should().Be(0);
+            _rowLockable.Should().BeTrue();
+        }
     }
 
     [TestFixture]

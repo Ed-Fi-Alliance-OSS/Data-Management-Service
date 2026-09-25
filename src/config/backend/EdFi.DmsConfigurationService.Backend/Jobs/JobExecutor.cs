@@ -93,12 +93,18 @@ public sealed class JobExecutor(
             stoppingToken
         );
 
-        Decision decision = await PrepareAsync(job, scope.ServiceProvider);
-        if (decision is Decision.Run run)
+        // Renewal starts with the claim's lease, before preparation: the tenant lookup is a database call, and a slow
+        // one must not use up the lease before the first renewal is even scheduled.
+        RenewalLoop renewal = new(this, job, ownership, execution);
+        renewal.Start();
+        Decision decision;
+        try
         {
-            RenewalLoop renewal = new(this, job, ownership, execution);
-            renewal.Start();
-            try
+            decision = await PrepareAsync(job, scope.ServiceProvider);
+
+            // A renewal that failed during preparation made the execution uncertain: the handler never runs, and
+            // finalization writes nothing.
+            if (decision is Decision.Run run && ownership.State == JobOwnershipState.Owned)
             {
                 decision = await RunHandlerAsync(
                     job,
@@ -109,11 +115,12 @@ public sealed class JobExecutor(
                     stoppingToken
                 );
             }
-            finally
-            {
-                // An in-flight renewal completes, within RenewalTimeout, before the outcome is decided (D-7a).
-                await renewal.StopAsync();
-            }
+        }
+        finally
+        {
+            // An in-flight renewal completes, within RenewalTimeout, before the outcome is decided (D-7a). Every
+            // path stops the loop, so no renewal outlives the execution.
+            await renewal.StopAsync();
         }
 
         JobExecutionResult result = await FinalizeAsync(job, ownership, decision, started);

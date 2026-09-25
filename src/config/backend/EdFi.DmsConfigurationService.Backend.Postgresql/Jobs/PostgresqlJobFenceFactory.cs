@@ -42,9 +42,11 @@ public sealed class PostgresqlJobFenceFactory(
     /// </para>
     /// <para>
     /// While the fence holds the execution gate, every database wait runs through a
-    /// <see cref="JobDatabaseSession"/>: the acquisition under its own timeout, and the revalidation, the commit,
-    /// and the rollback of a transaction left open under the fence deadline, which the fence therefore never
-    /// outlasts. A commit whose wait the deadline ends has an unknown outcome and makes the execution uncertain.
+    /// <see cref="JobDatabaseSession"/>: the acquisition under its own timeout, and the consumer's work, the
+    /// revalidation, the commit, and the rollback of a transaction left open under the fence deadline, which the
+    /// fence therefore never outlasts. Work the deadline abandons is a lost lease; it can never commit, because the
+    /// fence commits only after the work returns. A commit whose wait the deadline ends has an unknown outcome and
+    /// makes the execution uncertain.
     /// </para>
     /// </remarks>
     private sealed class PostgresqlJobFence(
@@ -129,13 +131,29 @@ public sealed class PostgresqlJobFenceFactory(
                 remainingLease - JobLeaseTimings.FenceLeaseReserve
             );
             state.Deadline = JobDeadline.Start(fenceTimeout);
-            using JobDeadlineCancellation deadline = state.Deadline.CreateCancellation(cancellationToken);
 
-            await work(session.Transaction!, deadline.Token);
+            // The work is waited for like every other operation under the gate: no longer than the deadline. When the
+            // deadline ends the wait first, cleanup owns the pending work, the transaction, and the connection; it
+            // cancels the work's token, waits for the work to settle, and only then rolls back and releases them. The
+            // work is dispatched to the thread pool, so a callback that blocks before it returns its task cannot keep
+            // this wait from starting.
+            try
+            {
+                await session.RunAsync(
+                    "Work",
+                    token => Task.Run(() => work(session.Transaction!, token), CancellationToken.None),
+                    state.Deadline,
+                    cancellationToken
+                );
+            }
+            catch (TimeoutException) when (session.HandedOver || state.Deadline.Expired)
+            {
+                throw new JobLeaseLostException();
+            }
 
             // (5) The work returned: ownership must still be certain and the deadline not reached.
             cancellationToken.ThrowIfCancellationRequested();
-            if (deadline.IsCancellationRequested || ownership.State != JobOwnershipState.Owned)
+            if (state.Deadline.Expired || ownership.State != JobOwnershipState.Owned)
             {
                 throw new JobLeaseLostException();
             }

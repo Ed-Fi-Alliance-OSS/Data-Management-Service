@@ -25,8 +25,9 @@ public static class JobPayloadFailureReasons
 
     /// <summary>
     /// Not valid for the payload type: malformed JSON, an unexpected or duplicate member, <c>$type</c> or
-    /// other metadata, a trailing comma, a comment, a number in a string, or nesting deeper than
-    /// <see cref="JobPayloadContract.MaxDepth"/>.
+    /// other metadata, a trailing comma, a comment, a number in a string, nesting deeper than
+    /// <see cref="JobPayloadContract.MaxDepth"/>, or a value the type's constructor or setter rejects with an
+    /// <see cref="ArgumentException"/>.
     /// </summary>
     public const string InvalidJson = nameof(InvalidJson);
 
@@ -120,9 +121,12 @@ public static class JobPayloadSerializer
         {
             payload = JsonSerializer.Deserialize<TPayload>(json, Options);
         }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        catch (Exception exception)
+            when (exception is JsonException or InvalidOperationException or ArgumentException)
         {
-            // Neither the exception message nor the input is kept: both can echo payload content.
+            // An ArgumentException comes from the payload type's own constructor or setter rejecting a value it was
+            // given; the serializer's arguments are never null here. Neither the exception message nor the input is
+            // kept: both can echo payload content.
             return new JobPayloadReadResult<TPayload>.Failure(JobPayloadFailureReasons.InvalidJson);
         }
 

@@ -21,8 +21,16 @@ public sealed record ExecutorPayload([property: JobIdentifier(64)] string Code, 
 
 public sealed class ExecutorValidator : IJobPayloadValidator<ExecutorPayload>
 {
+    /// <summary>A number the validator throws on, standing in for a programming error during preparation.</summary>
+    public const int Throws = 13;
+
     public IReadOnlyList<string> Validate(ExecutorPayload payload) =>
-        payload.Number < 0 ? ["NumberOutOfRange"] : [];
+        payload.Number switch
+        {
+            Throws => throw new InvalidOperationException("The validator failed."),
+            < 0 => ["NumberOutOfRange"],
+            _ => [],
+        };
 }
 
 /// <summary>What the test's handler does, and what it observed when it was resolved.</summary>
@@ -57,6 +65,33 @@ public sealed class ExecutorHandler : IJobHandler<ExecutorPayload>
     {
         _script.Started.TrySetResult();
         return _script.Run(context, payload, cancellationToken);
+    }
+}
+
+public sealed class RangeCheckedValidator : IJobPayloadValidator<RangeCheckedPayload>
+{
+    public IReadOnlyList<string> Validate(RangeCheckedPayload payload) => [];
+}
+
+/// <summary>A handler for <see cref="RangeCheckedPayload"/> that counts its resolutions in the shared script.</summary>
+public sealed class RangeCheckedHandler : IJobHandler<RangeCheckedPayload>
+{
+    private readonly HandlerScript _script;
+
+    public RangeCheckedHandler(HandlerScript script)
+    {
+        _script = script;
+        script.Resolutions++;
+    }
+
+    public Task ExecuteAsync(
+        JobExecutionContext context,
+        RangeCheckedPayload payload,
+        CancellationToken cancellationToken
+    )
+    {
+        _script.Started.TrySetResult();
+        return Task.CompletedTask;
     }
 }
 
@@ -246,18 +281,25 @@ public sealed class ScriptedTenantRepository : ITenantRepository
 
     public bool Fails { get; set; }
 
-    public Task<TenantGetResult> GetTenant(long id)
+    /// <summary>Awaited before the lookup answers, so a test can hold the lookup pending.</summary>
+    public Func<Task> BeforeLookup { get; set; } = () => Task.CompletedTask;
+
+    public async Task<TenantGetResult> GetTenant(long id)
+    {
+        await BeforeLookup();
+        return Lookup(id);
+    }
+
+    private TenantGetResult Lookup(long id)
     {
         if (Fails)
         {
-            return Task.FromResult<TenantGetResult>(new TenantGetResult.FailureUnknown("the lookup failed"));
+            return new TenantGetResult.FailureUnknown("the lookup failed");
         }
 
-        return Task.FromResult<TenantGetResult>(
-            Tenants.TryGetValue(id, out string? name)
-                ? new TenantGetResult.Success(new TenantResponse { Id = id, Name = name })
-                : new TenantGetResult.FailureNotFound()
-        );
+        return Tenants.TryGetValue(id, out string? name)
+            ? new TenantGetResult.Success(new TenantResponse { Id = id, Name = name })
+            : new TenantGetResult.FailureNotFound();
     }
 
     public Task<TenantInsertResult> InsertTenant(TenantInsertCommand command) =>
@@ -349,6 +391,7 @@ public sealed class CapturingLogger<T> : ILogger<T>
 public sealed class ExecutorHarness : IDisposable
 {
     public const string JobType = "Test.Execute";
+    public const string RangeCheckedJobType = "Test.RangeChecked";
     public const int MaxAttempts = 5;
 
     private readonly ServiceProvider _provider;
@@ -360,6 +403,10 @@ public sealed class ExecutorHarness : IDisposable
         services.AddScoped<ITenantContextProvider, TenantContextProvider>();
         services.AddSingleton<ITenantRepository>(Tenants);
         services.AddJobHandler<ExecutorHandler, ExecutorPayload, ExecutorValidator>(JobType, 1, 2);
+        services.AddJobHandler<RangeCheckedHandler, RangeCheckedPayload, RangeCheckedValidator>(
+            RangeCheckedJobType,
+            1
+        );
         services.AddJobErrorCode("ConsumerRejected", "The consumer rejected the job.");
         _provider = services.BuildServiceProvider();
         Scopes = new TrackingScopeFactory(_provider.GetRequiredService<IServiceScopeFactory>());

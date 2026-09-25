@@ -47,6 +47,44 @@ public class JobApiIntegrationTests
         ) => Task.CompletedTask;
     }
 
+    private const string RangeCheckedJobType = "Api.RangeChecked";
+
+    /// <summary>A contract-valid payload whose constructor rejects an identifier out of range.</summary>
+    public sealed class RangeCheckedPayload
+    {
+        public RangeCheckedPayload(long dataStoreId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dataStoreId);
+            DataStoreId = dataStoreId;
+        }
+
+        public long DataStoreId { get; }
+    }
+
+    public sealed class RangeCheckedValidator : IJobPayloadValidator<RangeCheckedPayload>
+    {
+        public IReadOnlyList<string> Validate(RangeCheckedPayload payload) => [];
+    }
+
+    /// <summary>How many times the range-checked handler ran.</summary>
+    public sealed class HandlerInvocations
+    {
+        public int Count;
+    }
+
+    public sealed class RangeCheckedHandler(HandlerInvocations invocations) : IJobHandler<RangeCheckedPayload>
+    {
+        public Task ExecuteAsync(
+            JobExecutionContext context,
+            RangeCheckedPayload payload,
+            CancellationToken cancellationToken
+        )
+        {
+            Interlocked.Increment(ref invocations.Count);
+            return Task.CompletedTask;
+        }
+    }
+
     /// <summary>A job's stored times, read on the fixture's own connection.</summary>
     public sealed class StoredTimes
     {
@@ -90,12 +128,17 @@ public class JobApiIntegrationTests
                 {
                     services.AddTestAuthentication();
                     services.AddJobHandler<ApiHandler, ApiPayload, ApiValidator>(JobType, 1);
+                    services.AddSingleton<HandlerInvocations>();
+                    services.AddJobHandler<RangeCheckedHandler, RangeCheckedPayload, RangeCheckedValidator>(
+                        RangeCheckedJobType,
+                        1
+                    );
                 });
             });
             _factory.CreateClient().Dispose();
         }
 
-        private IServiceProvider Services => _factory!.Services;
+        protected IServiceProvider Services => _factory!.Services;
 
         /// <summary>Enqueues through the host's enqueuer inside a caller transaction, then commits or rolls back.</summary>
         protected async Task<string> EnqueueAsync(TenantContext? tenant = null, bool commit = true)
@@ -350,6 +393,58 @@ public class JobApiIntegrationTests
         [Test]
         public void It_returns_the_registered_error_message() =>
             _read.Body["errorMessage"]!.GetValue<string>().Should().Be(_failure.Message);
+    }
+
+    [TestFixture]
+    public class Given_a_stored_payload_its_constructor_rejects : JobApiTestBase
+    {
+        private JobExecutionResult _result = null!;
+        private StatusRead _read = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            StartHost();
+            string jobId = Guid.NewGuid().ToString("N");
+            await Connection!.ExecuteAsync(
+                """
+                INSERT INTO "dmscs"."Job" ("JobId", "JobType", "PayloadVersion", "Payload", "Status", "NextAttemptAt")
+                VALUES (@JobId, @JobType, 1, '{"dataStoreId":-1}', 'Pending', (now() AT TIME ZONE 'UTC'));
+                """,
+                new { JobId = jobId, JobType = RangeCheckedJobType }
+            );
+            ClaimedJob job = await ClaimAsync();
+            _result = await Services
+                .GetRequiredService<JobExecutor>()
+                .ExecuteAsync(job, CancellationToken.None);
+            _read = await GetStatusAsync(jobId);
+        }
+
+        [Test]
+        public void It_fails_the_job_terminally_as_an_invalid_payload() =>
+            _result
+                .Should()
+                .Be(new JobExecutionResult(JobExecutionOutcome.Failed, ErrorCode: "InvalidPayload"));
+
+        [Test]
+        public void It_never_invokes_the_handler() =>
+            Services.GetRequiredService<HandlerInvocations>().Count.Should().Be(0);
+
+        [Test]
+        public void It_polls_as_error_with_the_registered_message()
+        {
+            _read.Body["status"]!.GetValue<string>().Should().Be("Error");
+            _read.Body["finishedAt"]!.GetValue<string>().Should().EndWith("Z");
+            _read.Body["errorMessage"]!.GetValue<string>().Should().Be(JobErrorCode.InvalidPayload.Message);
+        }
+
+        [Test]
+        public void It_exposes_nothing_of_the_constructor_exception()
+        {
+            _read.Content.Should().NotContain("ArgumentOutOfRange");
+            _read.Content.Should().NotContain("non-zero");
+            _read.Content.Should().NotContain("dataStoreId");
+        }
     }
 
     [TestFixture]

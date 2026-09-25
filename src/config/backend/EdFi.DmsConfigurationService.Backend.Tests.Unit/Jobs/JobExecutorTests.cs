@@ -608,6 +608,51 @@ public class JobExecutorTests
     }
 
     [TestFixture]
+    public class Given_a_stored_payload_its_constructor_rejects
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness();
+            _result = await _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(
+                    jobType: ExecutorHarness.RangeCheckedJobType,
+                    payloadJson: """{"dataStoreId":-1}"""
+                ),
+                CancellationToken.None
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_fails_terminally_with_the_registered_invalid_payload_message()
+        {
+            _result
+                .Should()
+                .Be(new JobExecutionResult(JobExecutionOutcome.Failed, ErrorCode: "InvalidPayload"));
+            _harness
+                .Leases.OutcomeWrites.Should()
+                .Equal($"FailTerminal:InvalidPayload:{JobErrorCode.InvalidPayload.Message}");
+        }
+
+        [Test]
+        public void It_never_resolves_the_handler() => _harness.Script.Resolutions.Should().Be(0);
+
+        [Test]
+        public void It_logs_nothing_of_the_constructor_exception() =>
+            _harness
+                .Logger.Entries.Should()
+                .NotContain(entry =>
+                    entry.Message.Contains("dataStoreId") || entry.Message.Contains("ArgumentOutOfRange")
+                );
+    }
+
+    [TestFixture]
     public class Given_a_tenant_job_in_a_multi_tenant_service
     {
         private ExecutorHarness _harness = null!;
@@ -698,6 +743,199 @@ public class JobExecutorTests
             _result.Outcome.Should().Be(JobExecutionOutcome.RetryScheduled);
             _harness.Script.Resolutions.Should().Be(0);
         }
+    }
+
+    /// <summary>
+    /// Settings that pass startup validation with no slack (12 + 5 + 1 + 5 + 6 + 10 = 39 s), and a lease the scripted
+    /// repository models by time: a renewal succeeds only before the current expiry and then extends it.
+    /// </summary>
+    private static void UseTightLease(ExecutorHarness harness, Action onRenewalRejected)
+    {
+        harness.Settings.LeaseDuration = TimeSpan.FromSeconds(39);
+        harness.Settings.RenewalInterval = TimeSpan.FromSeconds(12);
+        harness.Settings.FenceTimeout = TimeSpan.FromSeconds(1);
+        DateTimeOffset leaseExpiresAt = harness.Time.GetUtcNow() + harness.Settings.LeaseDuration;
+        harness.Leases.NextRenewal = () =>
+        {
+            DateTimeOffset now = harness.Time.GetUtcNow();
+            if (now >= leaseExpiresAt)
+            {
+                onRenewalRejected();
+                return Task.FromResult<JobWriteResult>(new JobWriteResult.OwnershipLost());
+            }
+
+            leaseExpiresAt = now + harness.Settings.LeaseDuration;
+            return ScriptedLeaseRepository.Succeed();
+        };
+    }
+
+    /// <summary>Moves the fake clock one second at a time, letting the renewal loop run after each step.</summary>
+    private static async Task AdvanceSecondsAsync(ExecutorHarness harness, int seconds)
+    {
+        for (int second = 0; second < seconds; second++)
+        {
+            harness.Time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(TimeSpan.FromMilliseconds(5));
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_tenant_lookup_that_outlasts_a_renewal_interval
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private int _renewalsDuringLookup;
+        private int _rejectedRenewals;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _rejectedRenewals = 0;
+            _harness = new ExecutorHarness(multiTenancy: true);
+            _harness.Tenants.Tenants[7] = "district-7";
+            UseTightLease(_harness, () => _rejectedRenewals++);
+
+            TaskCompletionSource lookupStarted = ScriptedLeaseRepository.NewSignal();
+            TaskCompletionSource lookup = ScriptedLeaseRepository.NewSignal();
+            _harness.Tenants.BeforeLookup = () =>
+            {
+                lookupStarted.TrySetResult();
+                return lookup.Task;
+            };
+            TaskCompletionSource finish = ScriptedLeaseRepository.NewSignal();
+            _harness.Script.Run = (_, _, token) => finish.Task.WaitAsync(token);
+
+            Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(tenantId: 7),
+                CancellationToken.None
+            );
+            await lookupStarted.Task.WaitAsync(_wait);
+
+            // The lookup takes 28 s; the handler then runs until 45 s, past the claim's 39 s lease.
+            await AdvanceSecondsAsync(_harness, 28);
+            _renewalsDuringLookup = _harness.Leases.Calls.Count(call => call == "Renew");
+            lookup.SetResult();
+            await _harness.Script.Started.Task.WaitAsync(_wait);
+            await AdvanceSecondsAsync(_harness, 17);
+            finish.TrySetResult();
+            _result = await running.WaitAsync(_wait);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_uses_settings_that_pass_startup_validation() =>
+            new JobOptionsValidator().Validate(null, _harness.Settings).Succeeded.Should().BeTrue();
+
+        [Test]
+        public void It_renews_while_the_tenant_lookup_is_pending() => _renewalsDuringLookup.Should().Be(2);
+
+        [Test]
+        public void It_keeps_the_lease_and_completes_the_job()
+        {
+            _rejectedRenewals.Should().Be(0);
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.Completed));
+            _harness.Leases.Calls.Should().Equal("Renew", "Renew", "Renew", "Complete");
+        }
+
+        [Test]
+        public void It_installs_the_tenant_before_the_handler_is_resolved() =>
+            _harness.Script.TenantAtResolution.Should().Be(new TenantContext.Multitenant(7, "district-7"));
+    }
+
+    [TestFixture]
+    public class Given_a_renewal_that_fails_while_the_tenant_lookup_is_pending
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness(multiTenancy: true);
+            _harness.Tenants.Tenants[7] = "district-7";
+            UseTightLease(_harness, () => { });
+            _harness.Leases.NextRenewal = () =>
+                Task.FromResult<JobWriteResult>(new JobWriteResult.OwnershipLost());
+
+            TaskCompletionSource lookupStarted = ScriptedLeaseRepository.NewSignal();
+            TaskCompletionSource lookup = ScriptedLeaseRepository.NewSignal();
+            _harness.Tenants.BeforeLookup = () =>
+            {
+                lookupStarted.TrySetResult();
+                return lookup.Task;
+            };
+
+            Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(tenantId: 7),
+                CancellationToken.None
+            );
+            await lookupStarted.Task.WaitAsync(_wait);
+            await AdvanceSecondsAsync(_harness, 13);
+            lookup.SetResult();
+            _result = await running.WaitAsync(_wait);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_never_resolves_the_handler() => _harness.Script.Resolutions.Should().Be(0);
+
+        [Test]
+        public void It_ends_uncertain_without_an_outcome_write()
+        {
+            _result
+                .Should()
+                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "RenewalOwnershipLost"));
+            _harness.Leases.OutcomeWrites.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_preparation_that_throws
+    {
+        private ExecutorHarness _harness = null!;
+        private Exception? _failure;
+        private int _renewalsAfterwards;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _failure = null;
+            _harness = new ExecutorHarness();
+            try
+            {
+                await _harness.Executor.ExecuteAsync(
+                    ExecutorHarness.Job(
+                        payloadJson: $$"""{"code":"a","number":{{ExecutorValidator.Throws}}}"""
+                    ),
+                    CancellationToken.None
+                );
+            }
+            catch (Exception exception)
+            {
+                _failure = exception;
+            }
+
+            await AdvanceSecondsAsync(_harness, (int)_harness.Settings.RenewalInterval.TotalSeconds * 2);
+            _renewalsAfterwards = _harness.Leases.Calls.Count(call => call == "Renew");
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_lets_the_programming_error_escape() =>
+            _failure.Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_stops_the_renewal_loop_so_no_renewal_outlives_the_execution() =>
+            _renewalsAfterwards.Should().Be(0);
+
+        [Test]
+        public void It_disposes_the_scope() => _harness.Scopes.Disposed.Should().Be(1);
     }
 
     [TestFixture]
