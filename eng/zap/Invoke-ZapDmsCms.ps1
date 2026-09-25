@@ -1,12 +1,3 @@
-<#
-.SYNOPSIS
-    Runs OWASP ZAP scans against a local DMS and Configuration Service stack.
-.NOTES
-    Requires a stack started through the E2E setup (for example
-    src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1). The scan provisions its DMS
-    client with the E2E-RelationshipsWithEdOrgsOnlyClaimSet claim set, which a default stack does not load:
-    the E2E claim sets are defined only by the test-owned E2E claimset fragments.
-#>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Security scan entry script intentionally writes operator progress and report locations to the console.')]
 param(
     [string]$DmsBaseUrl = "http://localhost:8080",
@@ -77,7 +68,7 @@ function New-DmsClient
     $applicationBody = @{
         vendorId = $vendor.id
         applicationName = "ZAP App $(Get-Random -Minimum 1000 -Maximum 9999999)"
-        claimSetName = "E2E-RelationshipsWithEdOrgsOnlyClaimSet"
+        claimSetName = "EdFiSandbox"
         educationOrganizationIds = @(255, 255901)
         dataStoreIds = @($instance.id)
     } | ConvertTo-Json
@@ -189,7 +180,7 @@ Write-Host "Requesting DMS token..."
 $dmsAuth = New-DmsToken -ClientId $client.ClientId -ClientSecret $client.ClientSecret
 
 Write-Host "Validating CMS access..."
-Invoke-RestMethod -Method Get -Uri "$CmsBaseUrl/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet" -Headers @{ Authorization = "Bearer $configToken" } | Out-Null
+Invoke-RestMethod -Method Get -Uri "$CmsBaseUrl/v3/authorizationMetadata?claimSetName=EdFiSandbox" -Headers @{ Authorization = "Bearer $configToken" } | Out-Null
 
 Write-Host "Validating DMS access..."
 Invoke-RestMethod -Method Get -Uri "$($dmsAuth.DataApi)/ed-fi/gradeLevelDescriptors" -Headers @{ Authorization = "Bearer $($dmsAuth.Token)" } | Out-Null

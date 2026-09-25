@@ -448,10 +448,26 @@ empty database, so a database provisioned by an earlier release keeps these clai
 grants after an upgrade. They are system-reserved, so neither a claims reload nor
 `DELETE /v3/claimSets/{id}` removes them. To remove them:
 
-1. Confirm that no application uses one of them. Check the `claimSetName` of each application
-   returned by `GET /v3/applications`. Applications are not tied to claim set rows, so an
-   application left on a removed claim set has every DMS request fail with a
-   security-configuration error.
+1. Confirm that no application in any tenant uses one of them. System-reserved claim sets are
+   shared by every tenant, and `GET /v3/applications` returns only the calling tenant's
+   applications, so query the table directly:
+
+   ```sql
+   SELECT ApplicationName, ClaimSetName FROM dmscs.Application
+   WHERE ClaimSetName IN (
+       'E2E-NameSpaceBasedClaimSet',
+       'E2E-NoFurtherAuthRequiredClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
+   );
+   ```
+
+   On PostgreSQL, quote the identifiers: `"dmscs"."Application"`, `"ApplicationName"` and
+   `"ClaimSetName"`. Move every application this returns to another claim set first.
+   Applications are not tied to claim set rows, so an application left on a removed claim set has
+   every DMS request fail with a security-configuration error.
 2. Delete the six rows from the `dmscs.ClaimSet` table:
 
    ```sql
@@ -467,9 +483,12 @@ grants after an upgrade. They are system-reserved, so neither a claims reload no
    ```
 
    On PostgreSQL, quote the identifiers: `"dmscs"."ClaimSet"` and `"ClaimSetName"`.
-3. If the management endpoints are enabled, call `POST /management/reload-claims` to drop the six
-   claim sets' grants from the stored claims hierarchy. Otherwise the grants stay in the hierarchy,
-   but no claim set or application refers to them.
+
+The six claim sets' grants stay in the stored claims hierarchy. They have no effect unless a claim
+set with one of these names is created again, which would inherit them, so do not reuse these
+names. Do not use `POST /management/reload-claims` to clear them: a reload replaces the whole
+stored claims document, which deletes every claim set that is not system-reserved and every grant
+that is not in the configured claims source.
 
 ## Security and Production Considerations
 
