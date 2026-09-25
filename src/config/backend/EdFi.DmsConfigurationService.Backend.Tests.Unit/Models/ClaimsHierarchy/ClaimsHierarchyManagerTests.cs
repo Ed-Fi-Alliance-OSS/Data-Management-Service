@@ -486,6 +486,57 @@ public class ClaimsHierarchyManagerTests
     }
 
     [Test]
+    public void TargetedMutations_ShouldPreserveDistinctCaseSensitiveClaimSetIdentities()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "EdFiSandbox",
+                        Actions = [new() { Name = "Read" }],
+                    },
+                    new()
+                    {
+                        Name = "edfisandbox",
+                        Actions = [new() { Name = "Create" }],
+                    },
+                ],
+            },
+        ];
+
+        bool changed = _claimsHierarchyManager.ReplaceClaimSetResourceActions(
+            "edfisandbox",
+            "claim-a",
+            ["Update"],
+            ["Update"],
+            claims
+        );
+
+        changed.Should().BeTrue();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "EdFiSandbox")
+            .Actions.Select(action => action.Name)
+            .Should()
+            .Equal("Read");
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "edfisandbox")
+            .Actions.Select(action => action.Name)
+            .Should()
+            .Equal("Create", "Update");
+
+        _claimsHierarchyManager
+            .RemoveClaimSetResourceActions("edfisandbox", "claim-a", claims)
+            .Should()
+            .BeTrue();
+        claims[0].ClaimSets.Should().ContainSingle().Which.Name.Should().Be("EdFiSandbox");
+    }
+
+    [Test]
     public void ReplaceClaimSetResourceActions_ShouldRemoveOnlyExplicitlyDisabledActions()
     {
         // Arrange
