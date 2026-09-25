@@ -190,8 +190,7 @@ schema contract and claims-staging contract rather than introducing a second pat
   The E2E fragments (`001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`,
   `003-edorgsonly-claimset.json` and the `003a`–`003c` variants) are test-owned: they live under the CMS E2E
   project's `TestData/Claims/Fragments/`, define the E2E claim sets that the embedded `Claims.json` does not
-  declare, and are staged only by the test-only `-IncludeE2EClaimSets` path. Their `001`–`003` file names stay
-  reserved, so a `-ClaimsDirectoryPath` fragment cannot reuse them. Staged extensions whose `projectName` is not in the lookup are treated as
+  declare, and are staged only by the test-only `-IncludeE2EClaimSets` path. Staged extensions whose `projectName` is not in the lookup are treated as
   unmapped: `-ClaimsDirectoryPath` is required and the caller-supplied fragments are the only security
   inputs for those projects. The lookup is a v1 implementation detail of the claims phase, not a separate
   catalog artifact in the repo.

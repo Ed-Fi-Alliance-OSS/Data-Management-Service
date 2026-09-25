@@ -19,15 +19,6 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-catalog.psm1") -Force
 
-$baselineFragmentFileNames = [System.Collections.Generic.HashSet[string]]::new(
-    [string[]]@(
-        "001-namespace-claimset.json",
-        "002-nofurtherauth-claimset.json",
-        "003-edorgsonly-claimset.json"
-    ),
-    [System.StringComparer]::OrdinalIgnoreCase
-)
-
 function Read-JsonHashtable {
     param(
         [Parameter(Mandatory)]
@@ -169,15 +160,9 @@ function Get-UserFragmentFile {
             Sort-Object -Property FullName
     )
 
-    $reservedFiles = @($claimsetFiles | Where-Object { $baselineFragmentFileNames.Contains($_.Name) })
-    if ($reservedFiles.Count -gt 0) {
-        $reservedFileNames = @($reservedFiles | ForEach-Object { $_.Name }) -join ", "
-        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' contains reserved baseline fragment filename(s): $(Format-LogSafeText $reservedFileNames). Baseline fragment names are reserved."
-    }
-
     $files = @($claimsetFiles | ForEach-Object { $_.FullName })
     if ($files.Count -eq 0) {
-        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' does not contain any non-baseline *-claimset.json files."
+        throw "ClaimsDirectoryPath '$(Format-LogSafeText ($directory.FullName))' does not contain any *-claimset.json files."
     }
 
     return $files
