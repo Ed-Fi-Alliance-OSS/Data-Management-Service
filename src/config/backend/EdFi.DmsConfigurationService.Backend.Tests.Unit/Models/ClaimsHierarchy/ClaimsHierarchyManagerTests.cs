@@ -722,6 +722,97 @@ public class ClaimsHierarchyManagerTests
     }
 
     [Test]
+    public void OverrideClaimSetResourceActionStrategies_ShouldUseExactClaimSetIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "EdFiSandbox",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Reserved" }],
+                            },
+                        ],
+                    },
+                    new()
+                    {
+                        Name = "edfisandbox",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Old" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        bool changed = _claimsHierarchyManager.OverrideClaimSetResourceActionStrategies(
+            "edfisandbox",
+            "claim-a",
+            "Read",
+            ["NamespaceBased"],
+            claims
+        );
+
+        changed.Should().BeTrue();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "EdFiSandbox")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Reserved");
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "edfisandbox")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("NamespaceBased");
+    }
+
+    [Test]
+    public void GetClaimSetResourceActionStatus_ShouldUseExactClaimSetIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new() { Name = "EdFiSandbox", Actions = [new() { Name = "Read" }] },
+                    new() { Name = "edfisandbox", Actions = [new() { Name = "Create" }] },
+                ],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .GetClaimSetResourceActionStatus("edfisandbox", "claim-a", "Create", claims)
+            .Should()
+            .Be(ClaimSetResourceActionStatus.Enabled);
+        _claimsHierarchyManager
+            .GetClaimSetResourceActionStatus("edfisandbox", "claim-a", "Read", claims)
+            .Should()
+            .Be(ClaimSetResourceActionStatus.Disabled);
+        _claimsHierarchyManager
+            .GetClaimSetResourceActionStatus("EDFISANDBOX", "claim-a", "Read", claims)
+            .Should()
+            .Be(ClaimSetResourceActionStatus.MissingAssociation);
+    }
+
+    [Test]
     public void ResetClaimSetResourceActionStrategies_ShouldRemoveOverridesOnlyFromTargetAssociation()
     {
         // Arrange
@@ -851,5 +942,72 @@ public class ClaimsHierarchyManagerTests
         );
 
         changed.Should().BeFalse();
+    }
+
+    [Test]
+    public void ResetClaimSetResourceActionStrategies_ShouldUseExactClaimSetIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "claim-a",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "EdFiSandbox",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Reserved" }],
+                            },
+                        ],
+                    },
+                    new()
+                    {
+                        Name = "edfisandbox",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Custom" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .ResetClaimSetResourceActionStrategies("edfisandbox", "claim-a", claims)
+            .Should()
+            .BeTrue();
+
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "EdFiSandbox")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Reserved");
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "edfisandbox")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Should()
+            .BeEmpty();
+
+        _claimsHierarchyManager
+            .ResetClaimSetResourceActionStrategies("EDFISANDBOX", "claim-a", claims)
+            .Should()
+            .BeFalse();
+        claims[0]
+            .ClaimSets.Single(claimSet => claimSet.Name == "EdFiSandbox")
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Reserved");
     }
 }
