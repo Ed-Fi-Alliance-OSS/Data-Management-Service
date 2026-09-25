@@ -50,7 +50,7 @@ type. All other flows use the ordinary resource. Flows may share fixtures and st
 | Descriptor CRUD | Establish the same results through the descriptor API path. |
 | Overlapping update and projection | Older projection cannot acknowledge newer unprojected work; cache and consumer eventually converge. |
 | Delete before first projection | Canonical deletion emits a tombstone; subsequent projection does not resurrect the document. |
-| Online cache rebuild | Repopulate the cache and return to `Tracking`; consumer state remains intact without domain tombstones. |
+| Online cache rebuild | After consuming published documents, run the supported online cache rebuild. Verify cache repopulation and return to `Tracking`; consumer state remains intact without domain tombstones. |
 | Projector restart | After an actual executor restart, drain retained work across multiple pages and converge cache/Kafka state while ordinary API traffic remains available. |
 | Unavailable continuity evidence | Report `unknown` and not ready; reject managed restart/resume without a terminal latch. API writes succeed during the fault. Fresh affirmative evidence permits recovery and a subsequent API mutation publishes on the same binding. |
 | Proven history loss | Detect and durably retain `lost`, remain not ready, contain the connector, and reject managed restart/resume despite later healthy-looking observations. API writes succeed after containment. |
