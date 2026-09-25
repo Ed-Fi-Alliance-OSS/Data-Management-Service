@@ -58,6 +58,20 @@ services:
       ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
       ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
       ClaimsOptions__DataStandardVersion: ${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}
+      JobSettings__WorkerEnabled: ${DMS_CONFIG_JOBS_WORKER_ENABLED:-true}
+      JobSettings__SchedulerEnabled: ${DMS_CONFIG_JOBS_SCHEDULER_ENABLED:-true}
+      JobSettings__RetentionEnabled: ${DMS_CONFIG_JOBS_RETENTION_ENABLED:-true}
+      JobSettings__PollInterval: ${DMS_CONFIG_JOBS_POLL_INTERVAL:-00:00:05}
+      JobSettings__LeaseDuration: ${DMS_CONFIG_JOBS_LEASE_DURATION:-00:05:00}
+      JobSettings__RenewalInterval: ${DMS_CONFIG_JOBS_RENEWAL_INTERVAL:-00:01:00}
+      JobSettings__FenceTimeout: ${DMS_CONFIG_JOBS_FENCE_TIMEOUT:-00:00:10}
+      JobSettings__MaxAttempts: ${DMS_CONFIG_JOBS_MAX_ATTEMPTS:-5}
+      JobSettings__RetryBackoffBase: ${DMS_CONFIG_JOBS_RETRY_BACKOFF_BASE:-00:00:30}
+      JobSettings__RetryBackoffMaximum: ${DMS_CONFIG_JOBS_RETRY_BACKOFF_MAXIMUM:-00:15:00}
+      JobSettings__MaxConcurrentJobs: ${DMS_CONFIG_JOBS_MAX_CONCURRENT_JOBS:-2}
+      JobSettings__FinishedJobRetention: ${DMS_CONFIG_JOBS_FINISHED_JOB_RETENTION:-7.00:00:00}
+      JobSettings__RetentionInterval: ${DMS_CONFIG_JOBS_RETENTION_INTERVAL:-01:00:00}
+      JobSettings__RetentionBatchSize: ${DMS_CONFIG_JOBS_RETENTION_BATCH_SIZE:-500}
       IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
       IdentitySettings__HashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
       IdentitySettings__TokenCleanupEnabled: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}

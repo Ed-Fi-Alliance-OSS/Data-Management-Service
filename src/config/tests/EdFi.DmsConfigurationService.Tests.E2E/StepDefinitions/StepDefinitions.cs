@@ -195,6 +195,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task WhenASecurityGetRequestIsMadeToWithHeader(string url, string header, string value) =>
         await WhenAGETRequestIsMadeToWithHeader(url, header, value);
 
+    [When("an unauthenticated GET request is made to {string}")]
+    public async Task WhenAnUnauthenticatedGetRequestIsMadeTo(string url)
+    {
+        url = await ReplaceIdsAsync(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(url)!;
+    }
+
     [When("an {string} request is made to {string} with headers")]
     public async Task WhenAnRequestIsMadeToWithHeaders(string method, string url, DataTable headersTable)
     {

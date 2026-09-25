@@ -142,6 +142,9 @@ public class MetadataModuleTests
         "DataStoreUpdateCommand.id int32",
         "OwnershipTokenResponse.id int32",
         "OwnershipTokenUpdateCommand.id int32",
+        // Not an identifier: the framework ProblemDetails schema that GET /v3/jobs/{jobId} declares for its
+        // problem responses carries the HTTP status as an int32.
+        "ProblemDetails.status int32",
         "ProfileUpdateCommand.id int32",
         "VendorUpdateCommand.id int32",
     ];

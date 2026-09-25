@@ -1,0 +1,4564 @@
+openapi: 3.0.1
+info:
+  title: Ed-Fi Management API
+  description: 'The Ed-Fi Management API is a REST API-based administrative interface for managing vendors, applications, client credentials, and authorization rules for accessing an Ed-Fi API.'
+  version: 3.0.0
+paths:
+  '/v3/tenants/{tenantName}/dataStores/edOrgs':
+    get:
+      tags:
+        - Tenants
+      summary: Retrieves the data stores and their education organizations for a specific tenant
+      description: Returns the tenant along with each of its data stores and the education organizations within them. In multi-tenant mode the tenant header must be supplied and must match the tenantName in the route. In single-tenant mode only the default tenant name is accepted.
+      parameters:
+        - name: tenantName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tenantDetailsResponse'
+  /v3/resourceClaims:
+    get:
+      tags:
+        - ResourceClaims
+      summary: Retrieves all resourceClaims.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          description: Resource Claim Id
+          schema:
+            type: integer
+            format: int32
+        - name: name
+          in: query
+          description: Resource Claim Name
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/resourceClaimModel'
+  '/v3/resourceClaims/{id}':
+    get:
+      tags:
+        - ResourceClaims
+      summary: Retrieves a specific resourceClaim based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/resourceClaimModel'
+  /v3/resourceClaimActions:
+    get:
+      tags:
+        - ResourceClaimActions
+      summary: Retrieves all resourceClaimActions.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: resourceName
+          in: query
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/resourceClaimActionModel'
+  /v3/resourceClaimActionAuthStrategies:
+    get:
+      tags:
+        - ResourceClaimActionAuthStrategies
+      summary: Retrieves all resourceClaimActionAuthStrategies.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: resourceName
+          in: query
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/resourceClaimActionAuthStrategyModel'
+  /v3/vendors:
+    get:
+      tags:
+        - Vendors
+      summary: Retrieves all vendors.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          description: Vendor/ company id
+          schema:
+            type: integer
+            format: int32
+        - name: company
+          in: query
+          description: Vendor/ company name
+          schema:
+            type: string
+        - name: namespacePrefixes
+          in: query
+          description: Namespace prefix for the vendor. Multiple namespace prefixes can be provided as comma separated list if required.
+          schema:
+            type: string
+        - name: contactName
+          in: query
+          description: Vendor contact name
+          schema:
+            type: string
+        - name: contactEmailAddress
+          in: query
+          description: Vendor contact email id
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/vendorModel'
+    post:
+      tags:
+        - Vendors
+      summary: Creates vendor based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addVendorRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/vendors/{id}':
+    get:
+      tags:
+        - Vendors
+      summary: Retrieves a specific vendor based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/vendorModel'
+    put:
+      tags:
+        - Vendors
+      summary: Updates vendor based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editVendorRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - Vendors
+      summary: Deletes an existing vendor using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  /v3/profiles:
+    get:
+      tags:
+        - Profiles
+      summary: Retrieves all profiles.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          description: Profile id
+          schema:
+            type: integer
+            format: int32
+        - name: name
+          in: query
+          description: Profile name
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/profileModel'
+    post:
+      tags:
+        - Profiles
+      summary: Creates profile based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addProfileRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/profiles/{id}':
+    get:
+      tags:
+        - Profiles
+      summary: Retrieves a specific profile based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/profileDetailsModel'
+    put:
+      tags:
+        - Profiles
+      summary: Updates profile based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editProfileRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - Profiles
+      summary: Deletes an existing profile using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  '/v3/jobs/{jobId}':
+    get:
+      tags:
+        - Jobs
+      summary: Get job status
+      description: Get the status of a job by its ID
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jobStatusResult'
+  /v3/dataStores:
+    get:
+      tags:
+        - DataStores
+      summary: Retrieves all dataStores.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: dataStoreType
+          in: query
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/dataStoreModel'
+    post:
+      tags:
+        - DataStores
+      summary: Creates dataStore based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addDataStoreRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/dataStores/{id}':
+    get:
+      tags:
+        - DataStores
+      summary: Retrieves a specific dataStore based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dataStoreDetailModel'
+    put:
+      tags:
+        - DataStores
+      summary: Updates dataStore based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editDataStoreRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - DataStores
+      summary: Deletes an existing dataStore using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  /v3/dataStores/manage:
+    get:
+      tags:
+        - DataStores
+      summary: Retrieves all dataStores.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/dataStoreManageModel'
+    post:
+      tags:
+        - DataStores
+      summary: Asynchronously creates a data store based on the supplied values
+      description: Asynchronously creates a data store based on the supplied values. The request is accepted and the creation process is queued for processing.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addDataStoreManageRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '202':
+          description: 'Accepted. The dataStore record has been created and provisioning has been queued; the database is not yet available. The response has no body. Poll the resource identified by the Location header and read its status property, which progresses PendingCreate, CreateInProgress, then Created or CreateFailed.'
+          headers:
+            Location:
+              description: 'Absolute URL of the created dataStore, of the form {scheme}://{host}/v3/dataStores/manage/{id}.'
+              schema:
+                type: string
+                format: uri
+  '/v3/dataStores/manage/{id}':
+    get:
+      tags:
+        - DataStores
+      summary: Retrieves a specific dataStore based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dataStoreManageModel'
+    delete:
+      tags:
+        - DataStores
+      summary: Asynchronously deletes a data store based on the supplied values
+      description: Asynchronously deletes a data store. The request is accepted and the deletion process is queued for processing.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  /v3/dataStoreDerivatives:
+    get:
+      tags:
+        - DataStoreDerivatives
+      summary: Retrieves all dataStoreDerivatives.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/dataStoreDerivativeModel'
+    post:
+      tags:
+        - DataStoreDerivatives
+      summary: Creates dataStoreDerivative based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addDataStoreDerivativeRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/dataStoreDerivatives/{id}':
+    get:
+      tags:
+        - DataStoreDerivatives
+      summary: Retrieves a specific dataStoreDerivative based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dataStoreDerivativeModel'
+    put:
+      tags:
+        - DataStoreDerivatives
+      summary: Updates dataStoreDerivative based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editDataStoreDerivativeRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - DataStoreDerivatives
+      summary: Deletes an existing dataStoreDerivative using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  /v3/dataStoreContexts:
+    get:
+      tags:
+        - DataStoreContexts
+      summary: Retrieves all dataStoreContexts.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/dataStoreContextModel'
+    post:
+      tags:
+        - DataStoreContexts
+      summary: Creates dataStoreContext based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addDataStoreContextRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/dataStoreContexts/{id}':
+    get:
+      tags:
+        - DataStoreContexts
+      summary: Retrieves a specific dataStoreContext based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/dataStoreContextModel'
+    put:
+      tags:
+        - DataStoreContexts
+      summary: Updates dataStoreContext based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editDataStoreContextRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - DataStoreContexts
+      summary: Deletes an existing dataStoreContext using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  '/v3/claimSets/{id}/export':
+    get:
+      tags:
+        - ClaimSets
+      summary: Exports a specific claimset by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/claimSetDetailsModel'
+  /v3/claimSets:
+    get:
+      tags:
+        - ClaimSets
+      summary: Retrieves all claimSets.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          description: Claim set id
+          schema:
+            type: integer
+            format: int32
+        - name: name
+          in: query
+          description: Claim set name
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/claimSetModel'
+    post:
+      tags:
+        - ClaimSets
+      summary: Creates claimSet based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/claimSets/{id}':
+    get:
+      tags:
+        - ClaimSets
+      summary: Retrieves a specific claimSet based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/claimSetDetailsModel'
+    put:
+      tags:
+        - ClaimSets
+      summary: Updates claimSet based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - ClaimSets
+      summary: Deletes an existing claimSet using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  /v3/authorizationStrategies:
+    get:
+      tags:
+        - AuthorizationStrategies
+      summary: Retrieves all authorizationStrategies.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/authorizationStrategyModel'
+  /v3/applications:
+    get:
+      tags:
+        - Applications
+      summary: Retrieves all applications.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          description: Application id
+          schema:
+            type: integer
+            format: int32
+        - name: applicationName
+          in: query
+          description: Application name
+          schema:
+            type: string
+        - name: claimsetName
+          in: query
+          description: Claim set name
+          schema:
+            type: string
+        - name: ids
+          in: query
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/applicationModel'
+    post:
+      tags:
+        - Applications
+      summary: Creates application based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addApplicationRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '409':
+          description: 'Conflict. The request is authenticated, but it has a conflict with an existing element'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/applicationResult'
+  '/v3/applications/{id}':
+    get:
+      tags:
+        - Applications
+      summary: Retrieves a specific application based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/applicationModel'
+    put:
+      tags:
+        - Applications
+      summary: Updates application based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editApplicationRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - Applications
+      summary: Deletes an existing application using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  '/v3/dataStores/{id}/applications':
+    get:
+      tags:
+        - DataStores
+      summary: Retrieves applications assigned to a specific data store based on the resource identifier.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/applicationModel'
+  '/v3/vendors/{id}/applications':
+    get:
+      tags:
+        - Vendors
+      summary: Retrieves applications assigned to a specific vendor based on the resource identifier.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/applicationModel'
+  /v3/apiClients:
+    get:
+      tags:
+        - ApiClients
+      summary: Retrieves all apiClients.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: applicationid
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/apiClientModel'
+    post:
+      tags:
+        - ApiClients
+      summary: Creates apiClient based on the supplied values.
+      description: 'The POST operation is used to create a new resource. Clients should NOT include the resource "id" in the JSON body; doing so will result in an error. The web service will check whether a resource with matching natural key values already exists; if a match is found, the request is rejected with an error and no data is changed. Use PUT to update an existing resource by identifier instead.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addApiClientRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/apiClientResult'
+  '/v3/apiClients/{id}':
+    get:
+      tags:
+        - ApiClients
+      summary: Retrieves a specific apiClient based on the identifier.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/apiClientModel'
+    put:
+      tags:
+        - ApiClients
+      summary: Updates apiClient based on the resource identifier.
+      description: 'The PUT operation is used to update a resource by identifier. If the resource identifier ("id") is provided in the JSON body, it will be ignored. Additionally, this API resource is not configured for cascading natural key updates.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editApiClientRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - ApiClients
+      summary: Deletes an existing apiClient using the resource identifier.
+      description: 'The DELETE operation is used to delete an existing resource by identifier. If the resource doesn''t exist, an error will result (the resource will not be found).'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  /v3/actions:
+    get:
+      tags:
+        - Actions
+      summary: Retrieves all actions.
+      description: This GET operation provides access to resources using the "Get" search pattern. The values of any properties of the resource that are specified will be used to return all matching results (if it exists).
+      parameters:
+        - name: offset
+          in: query
+          description: Indicates how many items should be skipped before returning results.
+          schema:
+            type: integer
+            format: int32
+            default: '0'
+        - name: limit
+          in: query
+          description: Indicates the maximum number of items that should be returned in the results.
+          schema:
+            type: integer
+            format: int32
+            default: '25'
+        - name: orderBy
+          in: query
+          description: Indicates the property name by which the results will be sorted.
+          schema:
+            type: string
+            default: ''
+        - name: direction
+          in: query
+          description: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+          schema:
+            title: Indicates whether the result should be sorted in descending order (DESC) or ascending order (ASC).
+            enum:
+              - Ascending
+              - Descending
+            type: string
+            default: Descending
+        - name: id
+          in: query
+          description: Action id
+          schema:
+            type: integer
+            format: int32
+        - name: name
+          in: query
+          description: Action name
+          schema:
+            type: string
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/actionModel'
+  /:
+    get:
+      tags:
+        - Information
+      summary: Retrieve API informational metadata
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/informationResult'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+      security:
+        - { }
+  /v3/dataStores/edOrgs/refresh:
+    post:
+      tags:
+        - DataStores
+      summary: Refreshes education organizations for all data stores
+      description: Triggers a refresh of education organization data from all data stores
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '202':
+          description: Accepted. The refresh has been queued as a background job; it has not completed when this response is returned.
+          headers:
+            Location:
+              description: 'Relative path of the job created for this request, in the form /v3/jobs/{jobId}.'
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jobQueuedResult'
+  '/v3/dataStores/{dataStoreId}/edOrgs/refresh':
+    post:
+      tags:
+        - DataStores
+      summary: Refreshes education organizations for a specific data store
+      description: Triggers a refresh of education organization data for the specified data store
+      parameters:
+        - name: dataStoreId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '202':
+          description: Accepted. The refresh has been queued as a background job; it has not completed when this response is returned.
+          headers:
+            Location:
+              description: 'Relative path of the job created for this request, in the form /v3/jobs/{jobId}.'
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/jobQueuedResult'
+  /v3/claimSets/copy:
+    post:
+      tags:
+        - ClaimSets
+      summary: Copies the existing claimset and create a new one.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/copyClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  /v3/claimSets/import:
+    post:
+      tags:
+        - ClaimSets
+      summary: Imports a new claimset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/importClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  '/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/overrideAuthorizationStrategy':
+    post:
+      tags:
+        - ClaimSets
+      summary: Overrides the default authorization strategies on provided resource claim for a specific action.
+      description: "Override the default authorization strategies on provided resource claim for a specific action.\r\n\r\nex: actionName = read,  authorizationStrategies= [ \"Ownershipbased\" ]"
+      parameters:
+        - name: claimSetId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: resourceClaimId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/overrideAuthStategyOnClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+  '/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}/resetAuthorizationStrategies':
+    post:
+      tags:
+        - ClaimSets
+      summary: Resets to default authorization strategies on provided resource claim.
+      parameters:
+        - name: claimSetId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: resourceClaimId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+  '/v3/claimSets/{claimSetId}/resourceClaimActions':
+    post:
+      tags:
+        - ClaimSets
+      summary: Adds ResourceClaimAction association to a claim set.
+      description: "Add resourceClaimAction association to claim set. At least one action should be enabled. Valid actions are read, create, update, delete, readchanges.\r\nresouceclaimId is required fields."
+      parameters:
+        - name: claimSetId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/addResourceClaimOnClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URI of the resource that was created.
+              schema:
+                type: string
+                format: uri
+  /connect/register:
+    post:
+      tags:
+        - Connect
+      summary: Registers new client
+      description: Registers new client
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                ClientId:
+                  type: string
+                  description: Client id
+                ClientSecret:
+                  type: string
+                  description: Client secret
+                DisplayName:
+                  type: string
+                  description: Client display name
+            encoding:
+              ClientId:
+                style: form
+              ClientSecret:
+                style: form
+              DisplayName:
+                style: form
+      responses:
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: Application registered successfully.
+      security:
+        - { }
+  /connect/token:
+    post:
+      tags:
+        - Connect
+      summary: Retrieves bearer token
+      description: "\nTo authenticate Swagger requests, execute using \"Authorize\" above, not \"Try It Out\" here."
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                grant_type:
+                  type: string
+                scope:
+                  type: string
+      responses:
+        '400':
+          description: 'Bad request, such as invalid scope.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: Sign-in successful.
+      security:
+        - { }
+  '/v3/claimSets/{claimSetId}/resourceClaimActions/{resourceClaimId}':
+    put:
+      tags:
+        - ClaimSets
+      summary: Updates the ResourceClaimActions to a specific resource claim on a claimset.
+      description: 'Updates  the resourceClaimActions to a  specific resource claim on a claimset. At least one action should be enabled. Valid actions are read, create, update, delete, readchanges.'
+      parameters:
+        - name: claimSetId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: resourceClaimId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/editResourceClaimOnClaimSetRequest'
+        required: true
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+    delete:
+      tags:
+        - ClaimSets
+      summary: Deletes a resource claims association from a claimset
+      parameters:
+        - name: claimSetId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: resourceClaimId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '204':
+          description: No Content
+  '/v3/applications/{id}/reset-credential':
+    put:
+      tags:
+        - Applications
+      summary: Reset application credentials. Returns new key and secret.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/applicationResult'
+  '/v3/apiClients/{id}/reset-credential':
+    put:
+      tags:
+        - ApiClients
+      summary: Reset apiclient credentials. Returns new key and secret.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '401':
+          description: Unauthorized. The request requires authentication
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '403':
+          description: 'Forbidden. The request is authenticated, but not authorized to access this resource'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '500':
+          description: Internal server error. An unhandled error occurred on the server. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '404':
+          description: Not found. A resource with given identifier could not be found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '400':
+          description: Bad Request. The request was invalid and cannot be completed. See the response body for details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetails'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/apiClientResult'
+components:
+  schemas:
+    actionForResourceClaimModel:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+      additionalProperties: false
+    actionModel:
+      title: Action
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          nullable: true
+        uri:
+          type: string
+          nullable: true
+      additionalProperties: false
+    actionWithAuthorizationStrategy:
+      type: object
+      properties:
+        actionId:
+          type: integer
+          format: int32
+        actionName:
+          type: string
+          nullable: true
+        authorizationStrategies:
+          type: array
+          items:
+            $ref: '#/components/schemas/authorizationStrategyModelForAction'
+          nullable: true
+      additionalProperties: false
+    addApiClientRequest:
+      title: AddApiClientRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Api client name
+        isApproved:
+          type: boolean
+          description: Is approved
+        applicationId:
+          type: integer
+          description: Application id
+          format: int32
+        dataStoreIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: List of data store id
+      additionalProperties: false
+    addApplicationRequest:
+      title: AddApplicationRequest
+      type: object
+      properties:
+        applicationName:
+          type: string
+          description: Application name
+        vendorId:
+          type: integer
+          description: Vendor/ company id
+          format: int32
+        claimSetName:
+          type: string
+          description: Claim set name
+        profileIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: Profile id
+          nullable: true
+        educationOrganizationIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: Education organization ids
+        dataStoreIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: List of data store id
+        enabled:
+          type: boolean
+          description: Indicates whether the ApiClient's credetials is enabled. Defaults to true if not provided.
+          nullable: true
+      additionalProperties: false
+    addClaimSetRequest:
+      title: AddClaimSetRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Claim set name
+      additionalProperties: false
+    addDataStoreContextRequest:
+      title: AddDataStoreContextRequest
+      type: object
+      properties:
+        dataStoreId:
+          type: integer
+          description: Data store context data store id.
+          format: int32
+        contextKey:
+          type: string
+          description: context key.
+        contextValue:
+          type: string
+          description: context value.
+      additionalProperties: false
+    addDataStoreDerivativeRequest:
+      title: AddDataStoreDerivativeRequest
+      type: object
+      properties:
+        dataStoreId:
+          type: integer
+          description: Data store derivative data store id.
+          format: int32
+        derivativeType:
+          type: string
+          description: derivative type.
+        connectionString:
+          type: string
+          description: connection string.
+      additionalProperties: false
+    addDataStoreManageRequest:
+      title: AddDataStoreManageRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the DataStore database (46 characters or fewer)
+        databaseTemplate:
+          type: string
+          description: Database template to use for the DataStore database
+      additionalProperties: false
+    addDataStoreRequest:
+      title: AddDataStoreRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Data store name
+        dataStoreType:
+          type: string
+          description: Data store type
+          nullable: true
+        connectionString:
+          type: string
+          description: Data store connection string
+      additionalProperties: false
+    addProfileRequest:
+      title: AddProfileRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Profile name
+        definition:
+          type: string
+          description: Profile definition
+      additionalProperties: false
+      example: "{\r\n  \"name\": \"Test-Profile\",\r\n  \"definition\": \"<Profile name=\\\"Test-Profile\\\"><Resource name=\\\"Resource1\\\"><ReadContentType memberSelection=\\\"IncludeOnly\\\"><Collection name=\\\"Collection1\\\" memberSelection=\\\"IncludeOnly\\\"><Property name=\\\"Property1\\\" /><Property name=\\\"Property2\\\" /></Collection></ReadContentType><WriteContentType memberSelection=\\\"IncludeOnly\\\"><Collection name=\\\"Collection2\\\" memberSelection=\\\"IncludeOnly\\\"><Property name=\\\"Property1\\\" /><Property name=\\\"Property2\\\" /></Collection></WriteContentType></Resource></Profile>\"\r\n}"
+    addResourceClaimOnClaimSetRequest:
+      title: AddResourceClaimActionsOnClaimSetRequest
+      type: object
+      properties:
+        claimSetId:
+          type: integer
+          description: Claim set id
+          format: int32
+        resourceClaimId:
+          type: integer
+          description: Resource Claim Id
+          format: int32
+        resourceClaimActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/resourceClaimAction'
+      additionalProperties: false
+    addVendorRequest:
+      title: AddVendorRequest
+      type: object
+      properties:
+        company:
+          type: string
+          description: Vendor/ company name
+        namespacePrefixes:
+          type: string
+          description: Namespace prefix for the vendor. Multiple namespace prefixes can be provided as comma separated list if required.
+        contactName:
+          type: string
+          description: Vendor contact name
+        contactEmailAddress:
+          type: string
+          description: Vendor contact email id
+      additionalProperties: false
+    adminApiError:
+      title: AdminApiError
+      type: object
+      additionalProperties: false
+      description: Wrapper schema for all error responses
+    apiClientModel:
+      title: ApiClient
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        clientId:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        isApproved:
+          type: boolean
+        applicationId:
+          type: integer
+          format: int32
+        keyStatus:
+          type: string
+          nullable: true
+        educationOrganizationIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          nullable: true
+        dataStoreIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          nullable: true
+      additionalProperties: false
+    apiClientResult:
+      title: ApiClientResult
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          nullable: true
+        key:
+          type: string
+          nullable: true
+        secret:
+          type: string
+          nullable: true
+        applicationId:
+          type: integer
+          format: int32
+      additionalProperties: false
+    applicationModel:
+      title: Application
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        applicationName:
+          type: string
+          nullable: true
+        claimSetName:
+          type: string
+          nullable: true
+        educationOrganizationIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          nullable: true
+        vendorId:
+          type: integer
+          format: int32
+          nullable: true
+        profileIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          nullable: true
+        dataStoreIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          nullable: true
+        enabled:
+          type: boolean
+      additionalProperties: false
+    applicationResult:
+      title: ApplicationKeySecret
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        key:
+          type: string
+          nullable: true
+        secret:
+          type: string
+          nullable: true
+      additionalProperties: false
+    authorizationStrategy:
+      title: ResourceClaimAuthorizationStrategy
+      type: object
+      properties:
+        authStrategyName:
+          type: string
+          nullable: true
+      additionalProperties: false
+    authorizationStrategyModel:
+      title: AuthorizationStrategy
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          nullable: true
+        displayName:
+          type: string
+          nullable: true
+      additionalProperties: false
+    authorizationStrategyModelForAction:
+      type: object
+      properties:
+        authStrategyId:
+          type: integer
+          format: int32
+        authStrategyName:
+          type: string
+          nullable: true
+      additionalProperties: false
+    claimSetDetailsModel:
+      title: ClaimSetWithResources
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        claimSetName:
+          type: string
+          nullable: true
+        _isSystemReserved:
+          type: boolean
+          readOnly: true
+        _applications:
+          type: array
+          items:
+            $ref: '#/components/schemas/simpleApplicationModel'
+          nullable: true
+          readOnly: true
+        resourceClaims:
+          type: array
+          items:
+            $ref: '#/components/schemas/claimSetResourceClaimModel'
+          nullable: true
+      additionalProperties: false
+    claimSetModel:
+      title: ClaimSet
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        claimSetName:
+          type: string
+          nullable: true
+        _isSystemReserved:
+          type: boolean
+          readOnly: true
+        _applications:
+          type: array
+          items:
+            $ref: '#/components/schemas/simpleApplicationModel'
+          nullable: true
+          readOnly: true
+      additionalProperties: false
+    claimSetResourceClaimActionAuthStrategies:
+      title: ClaimSetResourceClaimActionAuthorizationStrategies
+      type: object
+      properties:
+        actionName:
+          type: string
+          nullable: true
+        authorizationStrategies:
+          type: array
+          items:
+            $ref: '#/components/schemas/authorizationStrategy'
+          nullable: true
+      additionalProperties: false
+    claimSetResourceClaimModel:
+      title: ClaimSetResourceClaim
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        claimName:
+          type: string
+          nullable: true
+        parentClaimName:
+          type: string
+          nullable: true
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/resourceClaimAction'
+          nullable: true
+        _defaultAuthorizationStrategies:
+          type: array
+          items:
+            $ref: '#/components/schemas/claimSetResourceClaimActionAuthStrategies'
+          nullable: true
+          readOnly: true
+        authorizationStrategyOverrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/claimSetResourceClaimActionAuthStrategies'
+          nullable: true
+      additionalProperties: false
+    copyClaimSetRequest:
+      title: CopyClaimSetRequest
+      type: object
+      properties:
+        originalId:
+          type: integer
+          description: ClaimSet id to copy
+          format: int32
+        name:
+          type: string
+          description: New claimset name
+      additionalProperties: false
+    dataStoreContextModel:
+      title: DataStoreContext
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        dataStoreId:
+          type: integer
+          format: int32
+        contextKey:
+          type: string
+          nullable: true
+        contextValue:
+          type: string
+          nullable: true
+      additionalProperties: false
+    dataStoreDerivativeModel:
+      title: DataStoreDerivative
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        dataStoreId:
+          type: integer
+          format: int32
+        derivativeType:
+          type: string
+          nullable: true
+      additionalProperties: false
+    dataStoreDetailModel:
+      title: DataStoreDetail
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          nullable: true
+        dataStoreType:
+          type: string
+          nullable: true
+        dataStoreContexts:
+          type: array
+          items:
+            $ref: '#/components/schemas/dataStoreContextModel'
+          nullable: true
+        dataStoreDerivatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/dataStoreDerivativeModel'
+          nullable: true
+      additionalProperties: false
+    dataStoreManageModel:
+      title: DataStoreManage
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        dataStoreId:
+          type: integer
+          format: int32
+          nullable: true
+        dataStoreName:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        databaseTemplate:
+          type: string
+          nullable: true
+        databaseName:
+          type: string
+          nullable: true
+        lastRefreshed:
+          type: string
+          format: date-time
+          nullable: true
+        lastModifiedDate:
+          type: string
+          format: date-time
+          nullable: true
+      additionalProperties: false
+    dataStoreModel:
+      title: DataStore
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          nullable: true
+        dataStoreType:
+          type: string
+          nullable: true
+      additionalProperties: false
+    editApiClientRequest:
+      title: EditApiClientRequest
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Api client id.
+          format: int32
+        name:
+          type: string
+          description: Api client name
+        isApproved:
+          type: boolean
+          description: Is approved
+        applicationId:
+          type: integer
+          description: Application id
+          format: int32
+        dataStoreIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: List of data store id
+      additionalProperties: false
+    editApplicationRequest:
+      title: EditApplicationRequest
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Application id
+          format: int32
+        applicationName:
+          type: string
+          description: Application name
+        vendorId:
+          type: integer
+          description: Vendor/ company id
+          format: int32
+        claimSetName:
+          type: string
+          description: Claim set name
+        profileIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: Profile id
+          nullable: true
+        educationOrganizationIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: Education organization ids
+        dataStoreIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: List of data store id
+        enabled:
+          type: boolean
+          description: Indicates whether the ApiClient's credetials is enabled. Defaults to true if not provided.
+          nullable: true
+      additionalProperties: false
+    editClaimSetRequest:
+      title: EditClaimSetRequest
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Claim set id
+          format: int32
+        name:
+          type: string
+          description: Claim set name
+      additionalProperties: false
+    editDataStoreContextRequest:
+      title: EditDataStoreContextRequest
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Data store context id.
+          format: int32
+        dataStoreId:
+          type: integer
+          description: Data store context data store id.
+          format: int32
+        contextKey:
+          type: string
+          description: context key.
+        contextValue:
+          type: string
+          description: context value.
+      additionalProperties: false
+    editDataStoreDerivativeRequest:
+      title: EditDataStoreDerivativeRequest
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Data store derivative id.
+          format: int32
+        dataStoreId:
+          type: integer
+          description: Data store derivative data store id.
+          format: int32
+        derivativeType:
+          type: string
+          description: derivative type.
+        connectionString:
+          type: string
+          description: connection string.
+      additionalProperties: false
+    editDataStoreRequest:
+      title: EditDataStoreRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Data store name
+        dataStoreType:
+          type: string
+          description: Data store type
+          nullable: true
+        connectionString:
+          type: string
+          description: Data store connection string
+          nullable: true
+        id:
+          type: integer
+          description: Data store id.
+          format: int32
+      additionalProperties: false
+    editProfileRequest:
+      title: EditProfileRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Profile name
+        definition:
+          type: string
+          description: Profile definition
+        id:
+          type: integer
+          description: Profile id
+          format: int32
+      additionalProperties: false
+      example: "{\r\n  \"name\": \"Test-Profile\",\r\n  \"definition\": \"<Profile name=\\\"Test-Profile\\\"><Resource name=\\\"Resource1\\\"><ReadContentType memberSelection=\\\"IncludeOnly\\\"><Collection name=\\\"Collection1\\\" memberSelection=\\\"IncludeOnly\\\"><Property name=\\\"Property1\\\" /><Property name=\\\"Property2\\\" /></Collection></ReadContentType><WriteContentType memberSelection=\\\"IncludeOnly\\\"><Collection name=\\\"Collection2\\\" memberSelection=\\\"IncludeOnly\\\"><Property name=\\\"Property1\\\" /><Property name=\\\"Property2\\\" /></Collection></WriteContentType></Resource></Profile>\"\r\n}"
+    editResourceClaimOnClaimSetRequest:
+      title: EditResourceClaimActionsOnClaimSetRequest
+      type: object
+      properties:
+        claimSetId:
+          type: integer
+          description: Claim set id
+          format: int32
+        resourceClaimId:
+          type: integer
+          description: Resource Claim Id
+          format: int32
+        resourceClaimActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/resourceClaimAction'
+      additionalProperties: false
+    editVendorRequest:
+      title: EditVendorRequest
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Vendor/ company id
+          format: int32
+        company:
+          type: string
+          description: Vendor/ company name
+        namespacePrefixes:
+          type: string
+          description: Namespace prefix for the vendor. Multiple namespace prefixes can be provided as comma separated list if required.
+        contactName:
+          type: string
+          description: Vendor contact name
+        contactEmailAddress:
+          type: string
+          description: Vendor contact email id
+      additionalProperties: false
+    educationOrganizationModel:
+      title: EducationOrganization
+      type: object
+      properties:
+        educationOrganizationId:
+          type: integer
+          description: Education organization identifier
+          format: int64
+        nameOfInstitution:
+          type: string
+          description: Name of the education organization
+        shortNameOfInstitution:
+          type: string
+          description: Short name of the education organization
+          nullable: true
+        discriminator:
+          type: string
+          description: 'Type of education organization (e.g., LocalEducationAgency, School)'
+        parentId:
+          type: integer
+          description: Parent education organization identifier
+          format: int64
+          nullable: true
+      additionalProperties: false
+    importClaimSetRequest:
+      title: ImportClaimSetRequest
+      type: object
+      properties:
+        name:
+          type: string
+          description: Claim set name
+        resourceClaims:
+          type: array
+          items:
+            $ref: '#/components/schemas/claimSetResourceClaimModel'
+          description: Resource Claims
+      additionalProperties: false
+    informationResult:
+      title: Information
+      type: object
+      properties:
+        tenancy:
+          $ref: '#/components/schemas/tenancyResult'
+        version:
+          type: string
+          description: Application version
+        build:
+          type: string
+          description: Build / release version
+        specificationVersion:
+          type: string
+          description: Management API specification version
+      additionalProperties: false
+    jobQueuedResult:
+      type: object
+      properties:
+        jobId:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+      additionalProperties: false
+    jobStatusResult:
+      type: object
+      properties:
+        jobId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+      additionalProperties: false
+    overrideAuthStategyOnClaimSetRequest:
+      title: OverrideAuthStategyOnClaimSetRequest
+      type: object
+      properties:
+        claimSetId:
+          type: integer
+          description: Claim set id
+          format: int32
+        resourceClaimId:
+          type: integer
+          description: Resource Claim Id
+          format: int32
+        actionName:
+          type: string
+          nullable: true
+        authStrategyIds:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: Authorization Strategy Ids
+        authorizationStrategies:
+          type: array
+          items:
+            type: string
+          description: AuthorizationStrategy Names
+      additionalProperties: false
+    problemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          format: int32
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+      additionalProperties: { }
+    profileDetailsModel:
+      title: ProfileDetails
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        definition:
+          type: string
+          nullable: true
+      additionalProperties: false
+    profileModel:
+      title: Profile
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          nullable: true
+        name:
+          type: string
+          nullable: true
+      additionalProperties: false
+    registerClientRequest:
+      title: RegisterClientRequest
+      type: object
+      properties:
+        clientId:
+          type: string
+          description: Client id
+        clientSecret:
+          type: string
+          description: Client secret
+        displayName:
+          type: string
+          description: Client display name
+      additionalProperties: false
+    resourceClaimAction:
+      title: ResourceClaimAction
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+      additionalProperties: false
+    resourceClaimActionAuthStrategyModel:
+      type: object
+      properties:
+        resourceClaimId:
+          type: integer
+          format: int32
+        resourceName:
+          type: string
+          nullable: true
+        claimName:
+          type: string
+          nullable: true
+        authorizationStrategiesForActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/actionWithAuthorizationStrategy'
+          nullable: true
+      additionalProperties: false
+    resourceClaimActionModel:
+      type: object
+      properties:
+        resourceClaimId:
+          type: integer
+          format: int32
+        resourceName:
+          type: string
+          nullable: true
+        claimName:
+          type: string
+          nullable: true
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/actionForResourceClaimModel'
+          nullable: true
+      additionalProperties: false
+    resourceClaimModel:
+      title: ResourceClaimModel
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          nullable: true
+        parentId:
+          type: integer
+          format: int32
+          nullable: true
+        parentName:
+          type: string
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/resourceClaimModel'
+          description: Children are collection of SimpleResourceClaimModel
+          nullable: true
+      additionalProperties: false
+    simpleApplicationModel:
+      title: Application
+      type: object
+      properties:
+        applicationName:
+          type: string
+          nullable: true
+      additionalProperties: false
+    tenancyResult:
+      title: Tenancy
+      type: object
+      properties:
+        multitenantMode:
+          type: boolean
+          description: Indicates whether multi-tenant mode is enabled
+        tenants:
+          type: array
+          items:
+            type: string
+          description: List of available tenant names
+      additionalProperties: false
+    tenantDataStoreModel:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          nullable: true
+        dataStoreManageId:
+          type: integer
+          format: int32
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        dataStoreType:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        databaseTemplate:
+          type: string
+          nullable: true
+        databaseName:
+          type: string
+          nullable: true
+        educationOrganizations:
+          title: EducationOrganizations
+          type: array
+          items:
+            $ref: '#/components/schemas/educationOrganizationModel'
+          nullable: true
+      additionalProperties: false
+    tenantDetailsResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        dataStores:
+          type: array
+          items:
+            $ref: '#/components/schemas/tenantDataStoreModel'
+          nullable: true
+      additionalProperties: false
+    vendorModel:
+      title: Vendor
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        namespacePrefixes:
+          type: string
+          nullable: true
+        contactName:
+          type: string
+          nullable: true
+        contactEmailAddress:
+          type: string
+          nullable: true
+      additionalProperties: false
+  securitySchemes:
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://localhost/connect/token
+          scopes:
+            edfi_admin_api/full_access: Full access to the Management API
+security:
+  - oauth:
+      - edfi_admin_api/full_access

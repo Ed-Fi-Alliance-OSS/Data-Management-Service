@@ -52,6 +52,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "OpenIddictApplication"),
                     new("dmscs", "OpenIddictApplicationScope"),
                     new("dmscs", "OpenIddictToken"),
+                    new("dmscs", "Job"),
+                    new("dmscs", "JobSchedule"),
                 ],
                 DbAdapter = DbAdapter.Postgres,
             }
