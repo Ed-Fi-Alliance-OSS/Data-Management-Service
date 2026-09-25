@@ -35,13 +35,7 @@ public sealed class JobWorkerService(
     private long _nextExecution;
 
     /// <summary>The lease owner this replica claims as: unique per process, and never longer than 200 characters.</summary>
-    public string Owner { get; } = NewOwner();
-
-    private static string NewOwner()
-    {
-        string owner = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
-        return owner.Length > 200 ? owner[^200..] : owner;
-    }
+    public string Owner { get; } = JobLeaseOwner.Create();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

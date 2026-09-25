@@ -239,6 +239,11 @@ public static class WebApplicationBuilderExtensions
         {
             services.AddHostedService<JobWorkerService>();
         }
+
+        if (configured.SchedulerEnabled)
+        {
+            services.AddHostedService<JobScheduleDispatcherService>();
+        }
     }
 
     /// <summary>The PostgreSQL job repositories and factories (spec D-1).</summary>

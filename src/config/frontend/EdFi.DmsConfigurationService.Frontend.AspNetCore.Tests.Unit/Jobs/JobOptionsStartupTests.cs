@@ -156,7 +156,7 @@ public class JobOptionsStartupTests
         private JobLeaseTimings _timings = null!;
         private JobRuntimeEnvironment _environment = null!;
         private readonly Dictionary<Type, Type> _registered = [];
-        private int _workers;
+        private int _jobServices;
 
         [SetUp]
         public async Task Act()
@@ -172,7 +172,9 @@ public class JobOptionsStartupTests
             _options = scope.ServiceProvider.GetRequiredService<IOptions<JobOptions>>().Value;
             _timings = scope.ServiceProvider.GetRequiredService<JobLeaseTimings>();
             _environment = scope.ServiceProvider.GetRequiredService<JobRuntimeEnvironment>();
-            _workers = _factory.Services.GetServices<IHostedService>().OfType<JobWorkerService>().Count();
+            _jobServices = _factory
+                .Services.GetServices<IHostedService>()
+                .Count(hosted => hosted.GetType().Namespace == typeof(JobWorkerService).Namespace);
             foreach (
                 Type service in new[]
                 {
@@ -220,7 +222,8 @@ public class JobOptionsStartupTests
         public void It_publishes_the_tenancy_mode() => _environment.MultiTenancy.Should().BeFalse();
 
         [Test]
-        public void It_registers_no_worker_while_the_switch_is_off() => _workers.Should().Be(0);
+        public void It_registers_no_job_hosted_service_while_the_switches_are_off() =>
+            _jobServices.Should().Be(0);
 
         [Test]
         public void It_registers_the_postgresql_job_services() =>
@@ -298,27 +301,34 @@ public class JobOptionsStartupTests
         public void It_publishes_the_tenancy_mode() => _environment.MultiTenancy.Should().BeTrue();
     }
 
-    [TestFixture]
-    public class Given_the_worker_switched_on_at_startup
+    [TestFixture("JobSettings:WorkerEnabled", typeof(JobWorkerService))]
+    [TestFixture("JobSettings:SchedulerEnabled", typeof(JobScheduleDispatcherService))]
+    public class Given_a_hosted_service_switched_on_at_startup(string key, Type service)
     {
         private WebApplicationFactory<Program> _factory = null!;
-        private int _workers;
+        private Type[] _jobServices = [];
         private JobExecutor? _executor;
 
         [SetUp]
         public void Act()
         {
-            // The worker starts with the host, so it gets a database it can never reach.
+            // The service starts with the host, so it gets a database it can never reach.
             _factory = CreateFactory(
                 [],
                 new Dictionary<string, string>
                 {
-                    ["JobSettings:WorkerEnabled"] = "true",
+                    [key] = "true",
                     ["DatabaseSettings:DatabaseConnection"] =
                         "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1",
                 }
             );
-            _workers = _factory.Services.GetServices<IHostedService>().OfType<JobWorkerService>().Count();
+            _jobServices =
+            [
+                .. _factory
+                    .Services.GetServices<IHostedService>()
+                    .Select(hosted => hosted.GetType())
+                    .Where(type => type.Namespace == typeof(JobWorkerService).Namespace),
+            ];
             _executor = _factory.Services.GetService<JobExecutor>();
         }
 
@@ -326,7 +336,7 @@ public class JobOptionsStartupTests
         public void TearDown() => _factory.Dispose();
 
         [Test]
-        public void It_registers_one_worker() => _workers.Should().Be(1);
+        public void It_registers_only_that_service() => _jobServices.Should().Equal(service);
 
         [Test]
         public void It_registers_the_executor() => _executor.Should().NotBeNull();
