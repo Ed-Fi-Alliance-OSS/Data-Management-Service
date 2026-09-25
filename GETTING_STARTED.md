@@ -89,25 +89,29 @@ cd Data-Management-Service/eng/docker-compose
 cp .env.example .env
 ```
 
-Now, start all of the required services, building from source code, with the
-following command. The .NET SDK is not required, as the build will occur inside
-a container.
+Start the complete local environment with the bootstrap wrapper:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig
+./bootstrap-local-dms.ps1
 ```
 
-This may take around a minute to startup. This script not only starts the
-containers, it also calls an additional script for configuring Keycloak.
+The wrapper stages the schema and claims workspaces, starts the infrastructure,
+configures the data store, provisions its schema, and then starts DMS. The .NET
+SDK is not required because build work occurs inside containers. Startup may
+take around a minute.
 
-Next, create the initial data store. As of DMS-1153, `start-local-dms.ps1` is
-infrastructure-only and no longer creates one automatically; the DMS container
-keeps restarting until at least one data store is registered in the
-Configuration Service:
+Existing local images are reused by default. To rebuild them before startup,
+explicitly pass `-Rebuild` (or its shorter `-r` alias):
 
 ```powershell
-./configure-local-data-store.ps1
+./bootstrap-local-dms.ps1 -Rebuild
 ```
+
+For advanced workflows that need phase-level control, the individual commands
+remain available. For example, `start-local-dms.ps1 -InfraOnly` starts the
+infrastructure without DMS, and `configure-local-data-store.ps1` registers or
+selects the data store. Their help and terminal guidance describe the inputs for
+the subsequent provisioning and DMS-start phases.
 
 Once started, try the following HTTP request, which will load the Ed-Fi
 Discovery API endpoint from the DMS.
@@ -123,6 +127,28 @@ instructions and sample HTTP commands. If using the Rest Client extension, you
 can right-click on any command to generate a Curl command. Alternatively, you
 can create a code snippet in one of more than a dozen supported languages,
 including C# and Python.
+
+To authenticate with DMS, first call the Discovery endpoint and read the DMS
+token-proxy URL from `urls.oauth`. POST the client-credentials grant to that URL
+using HTTP Basic credentials:
+
+```http
+# @name discovery
+GET http://localhost:8080
+
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+POST {{tokenUrl}}
+Authorization: Basic <client-id>:<client-secret>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+```
+
+The DMS token proxy accepts the client credentials through the `Authorization`
+header, not as form fields. Calling the Configuration Service `/connect/token`
+endpoint directly is a separate endpoint contract; see the working examples in
+[getting-started.http](./getting-started.http).
 
 For the most part, interacting with the Data Management Service is the same as
 interacting with the Ed-Fi ODS/API. The following ODS/API documentation pertains
