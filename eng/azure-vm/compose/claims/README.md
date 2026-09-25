@@ -42,10 +42,13 @@ Two ways:
 2. **File-based:** set `DMS_CONFIG_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
    fragments in this directory (mounted into both Config Services at `/app/additional-claims`).
    Each file must be named `*-claimset.json` and hold `{ "name": "<ClaimSetName>",
-   "resourceClaims": [ ... ] }` — the fragment shape used by the built-in fragments under
-   `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. This is
-   **not** the API `export`/`import` shape (which uses `claimSetName`), so copy a fragment rather
-   than an API export. Restart the `*-config` services (or use the management reload).
+   "resourceClaims": [ ... ] }` — see the "A fragment that defines a claim set" example in
+   `docs/CLAIMS-LOADING-GUIDE.md`. Its resource claims must not be `"isParent": true`: a fragment
+   with only parent entries (like the built-in fragments under
+   `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`) attaches
+   grants to existing claim sets and creates no claim set. This is **not** the API
+   `export`/`import` shape (which uses `claimSetName`), so start from that example rather than an
+   API export. Restart the `*-config` services (or use the management reload).
 
 > Keep this directory free of partial/invalid fragments while in Hybrid mode — a malformed
 > claim set can fail CMS startup. Files not named `*-claimset.json` (like this README) are ignored.

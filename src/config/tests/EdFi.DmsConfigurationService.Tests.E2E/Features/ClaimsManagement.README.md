@@ -41,8 +41,8 @@ The following fragment files must be present in the mounted volume (`/app/additi
 - `003a-edorgsonly-inverted-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet)
 - `003b-edorgsonly-or-inverted-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet)
 - `003c-edorgsonly-mixed-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet)
-- `004-sample-extension-claimset.json` (SampleExtensionResourceClaims)
-- `005-homograph-extension-claimset.json` (HomographExtensionResourceClaims)
+- `004-sample-extension-claimset.json` (top-level name `SampleExtensionClaims`; label only, parent-only fragment, grants attach to `EdFiSandbox`)
+- `005-homograph-extension-claimset.json` (top-level name `HomographExtensionClaims`; label only, parent-only fragment, grants attach to `EdFiSandbox`)
 
 The six E2E fragments (`001` through `003c`) come from the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/` directory, and `004`/`005` come from `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. The E2E setup stages both into `eng/docker-compose/.e2e-claims/` and mounts that directory into the container: `setup-local-cms.ps1` and `build-config.ps1 E2ETest` pass `-AddE2EClaimSets` to `start-local-config.ps1`, and the DMS E2E setup does the same through `-AddExtensionSecurityMetadata`. The E2E claim sets are not declared in the embedded `Claims.json`; the Configuration Service registers each one from its fragment's top-level `name`.
 

@@ -27,13 +27,13 @@ live in the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/
 directory and are staged together with the files below only by the E2E setup scripts.
 
 ### 004-sample-extension-claimset.json
-**Claim Set Name**: `SampleExtensionResourceClaims`
+**Top-level name**: `SampleExtensionClaims` (label only; parent-only fragment, grants attach to `EdFiSandbox`)
 - Demonstrates extension resource claims
 - Includes custom extension resources with various authorization patterns
 - Used for testing extension-based authorization scenarios
 
 ### 005-homograph-extension-claimset.json
-**Claim Set Name**: `HomographExtensionResourceClaims`
+**Top-level name**: `HomographExtensionClaims` (label only; parent-only fragment, grants attach to `EdFiSandbox`)
 - Demonstrates homograph extension resources
 - Includes resources with similar names but different namespaces
 - Used for testing namespace collision handling
