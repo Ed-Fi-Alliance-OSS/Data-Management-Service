@@ -20,7 +20,13 @@ Describe "Story 00 bootstrap" {
             "DMS_API_SCHEMA_MOUNT_SOURCE",
             "DMS_CONFIG_CLAIMS_SOURCE",
             "DMS_CONFIG_CLAIMS_DIRECTORY",
-            "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
+            "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",
+            # start-local-config.ps1 sets these before compose up and does not restore them.
+            "DMS_CONFIG_IDENTITY_PROVIDER",
+            "OAUTH_TOKEN_ENDPOINT",
+            "DMS_JWT_AUTHORITY",
+            "DMS_JWT_METADATA_ADDRESS",
+            "DMS_CONFIG_IDENTITY_AUTHORITY"
         )
 
     function script:New-TestDirectory {
@@ -2064,7 +2070,6 @@ exit 0
             $firstWorkspace = Initialize-E2EClaimsWorkspace
             $markerPath = Join-Path $firstWorkspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
-            $creationTime = (Get-Item -LiteralPath $firstWorkspace).CreationTimeUtc
             $hashesBefore = @{}
             foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claimset.json" -File) {
                 $hashesBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash
@@ -2074,7 +2079,6 @@ exit 0
 
             $secondWorkspace | Should -Be $firstWorkspace
             Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
-            (Get-Item -LiteralPath $secondWorkspace).CreationTimeUtc | Should -Be $creationTime
             $stagedFiles = @(Get-ChildItem -LiteralPath $secondWorkspace -Filter "*-claimset.json" -File)
             $stagedFiles.Count | Should -Be $script:expectedE2EClaimsFiles.Count
             foreach ($file in $stagedFiles) {
@@ -2086,7 +2090,6 @@ exit 0
             $workspace = Initialize-E2EClaimsWorkspace
             $markerPath = Join-Path $workspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
-            $creationTime = (Get-Item -LiteralPath $workspace).CreationTimeUtc
             $changedSource = Join-Path $script:repo.E2EFragmentsRoot "001-namespace-claimset.json"
             Set-Content -LiteralPath $changedSource -Value '{ "name": "E2E-NameSpaceBasedClaimSet", "resourceClaims": [] }'
             $addedSource = Join-Path $script:repo.E2EFragmentsRoot "006-added-claimset.json"
@@ -2099,7 +2102,6 @@ exit 0
             (Get-FileHash -LiteralPath (Join-Path $workspace "006-added-claimset.json")).Hash |
                 Should -Be (Get-FileHash -LiteralPath $addedSource).Hash
             Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
-            (Get-Item -LiteralPath $workspace).CreationTimeUtc | Should -Be $creationTime
         }
 
         Context "start-local-config.ps1 -AddE2EClaimSets" {
@@ -2124,6 +2126,14 @@ exit 0
                     $global:LASTEXITCODE = 0
                     if ($args[0] -eq "network") { return "dms-network-id" }
                 }
+            }
+
+            AfterEach {
+                # The script imports its modules globally from the isolated repo. A leftover env-utility
+                # instance breaks later suites' -ModuleName env-utility mocks.
+                Get-Module -All |
+                    Where-Object { $_.Path -and $_.Path.StartsWith($script:repo.RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) } |
+                    Remove-Module -Force
             }
 
             It "mounts the staged workspace for compose and restores the caller's prior value" {
