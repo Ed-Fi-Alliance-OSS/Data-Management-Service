@@ -54,8 +54,9 @@ public interface IDataStoreProvider
     /// Loads all tenant names from the Configuration Service.
     /// Used at startup when multi-tenancy is enabled to pre-populate the instance cache for all tenants.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token for the Configuration Service request.</param>
     /// <returns>A list of tenant names</returns>
-    Task<IList<string>> LoadTenants();
+    Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Checks if a tenant has been loaded into the cache.

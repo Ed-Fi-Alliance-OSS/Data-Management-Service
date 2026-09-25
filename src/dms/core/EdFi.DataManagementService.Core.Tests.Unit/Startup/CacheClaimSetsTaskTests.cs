@@ -6,8 +6,10 @@
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -25,12 +27,19 @@ public class CacheClaimSetsTaskTests
         IDataStoreProvider dataStoreProvider,
         bool multiTenancy
     ) =>
-        new(
+        CreateTask(
             claimSetProvider,
             dataStoreProvider,
-            Options.Create(AppSettingsWith(multiTenancy)),
+            multiTenancy,
             NullLogger<CacheClaimSetsTask>.Instance
         );
+
+    private static CacheClaimSetsTask CreateTask(
+        IClaimSetProvider claimSetProvider,
+        IDataStoreProvider dataStoreProvider,
+        bool multiTenancy,
+        ILogger<CacheClaimSetsTask> logger
+    ) => new(claimSetProvider, dataStoreProvider, Options.Create(AppSettingsWith(multiTenancy)), logger);
 
     [TestFixture]
     public class Given_Default_Construction : CacheClaimSetsTaskTests
@@ -79,13 +88,14 @@ public class CacheClaimSetsTaskTests
         [Test]
         public void It_calls_get_all_claim_sets_once_with_no_tenant()
         {
-            A.CallTo(() => _claimSetProvider.GetAllClaimSets(null)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(null, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
         public void It_does_not_load_tenants()
         {
-            A.CallTo(() => _dataStoreProvider.LoadTenants()).MustNotHaveHappened();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._)).MustNotHaveHappened();
         }
     }
 
@@ -100,7 +110,8 @@ public class CacheClaimSetsTaskTests
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
             _dataStoreProvider = A.Fake<IDataStoreProvider>();
-            A.CallTo(() => _dataStoreProvider.LoadTenants()).Returns<IList<string>>(["tenant-a", "tenant-b"]);
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns<IList<string>>(["tenant-a", "tenant-b"]);
 
             var task = CreateTask(_claimSetProvider, _dataStoreProvider, multiTenancy: true);
             await task.ExecuteAsync(CancellationToken.None);
@@ -109,16 +120,17 @@ public class CacheClaimSetsTaskTests
         [Test]
         public void It_loads_tenants_once()
         {
-            A.CallTo(() => _dataStoreProvider.LoadTenants()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
         public void It_calls_get_all_claim_sets_for_each_tenant_in_order()
         {
-            A.CallTo(() => _claimSetProvider.GetAllClaimSets("tenant-a"))
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets("tenant-a", A<CancellationToken>._))
                 .MustHaveHappenedOnceExactly()
                 .Then(
-                    A.CallTo(() => _claimSetProvider.GetAllClaimSets("tenant-b"))
+                    A.CallTo(() => _claimSetProvider.GetAllClaimSets("tenant-b", A<CancellationToken>._))
                         .MustHaveHappenedOnceExactly()
                 );
         }
@@ -126,7 +138,8 @@ public class CacheClaimSetsTaskTests
         [Test]
         public void It_does_not_call_no_tenant_overload()
         {
-            A.CallTo(() => _claimSetProvider.GetAllClaimSets(null)).MustNotHaveHappened();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(null, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -135,16 +148,30 @@ public class CacheClaimSetsTaskTests
     {
         private CacheClaimSetsTask _task = null!;
         private IClaimSetProvider _claimSetProvider = null!;
+        private RecordingLogger<CacheClaimSetsTask> _logger = null!;
 
         [SetUp]
         public void Setup()
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
-            A.CallTo(() => dataStoreProvider.LoadTenants())
+            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .ThrowsAsync(new InvalidOperationException("tenant load failed"));
 
-            _task = CreateTask(_claimSetProvider, dataStoreProvider, multiTenancy: true);
+            _logger = new RecordingLogger<CacheClaimSetsTask>();
+            _task = CreateTask(_claimSetProvider, dataStoreProvider, multiTenancy: true, _logger);
+        }
+
+        [Test]
+        public async Task It_logs_the_failure_at_critical()
+        {
+            await _task.ExecuteAsync(CancellationToken.None);
+
+            _logger
+                .Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Critical)
+                .Which.Exception.Should()
+                .BeOfType<InvalidOperationException>();
         }
 
         [Test]
@@ -160,7 +187,8 @@ public class CacheClaimSetsTaskTests
         {
             await _task.ExecuteAsync(CancellationToken.None);
 
-            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -173,7 +201,7 @@ public class CacheClaimSetsTaskTests
         public void Setup()
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
                 .ThrowsAsync(new InvalidOperationException("claim set fetch failed"));
 
             _task = CreateTask(claimSetProvider, A.Fake<IDataStoreProvider>(), multiTenancy: false);
@@ -227,7 +255,8 @@ public class CacheClaimSetsTaskTests
                 // expected
             }
 
-            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -241,7 +270,7 @@ public class CacheClaimSetsTaskTests
         public void Setup()
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._))
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
                 .ThrowsAsync(new TaskCanceledException("dependency canceled (e.g. HttpClient timeout)"));
 
             _task = CreateTask(claimSetProvider, A.Fake<IDataStoreProvider>(), multiTenancy: false);
@@ -268,7 +297,7 @@ public class CacheClaimSetsTaskTests
         {
             _claimSetProvider = A.Fake<IClaimSetProvider>();
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
-            A.CallTo(() => dataStoreProvider.LoadTenants())
+            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .ThrowsAsync(new TaskCanceledException("dependency canceled (e.g. HttpClient timeout)"));
 
             _task = CreateTask(_claimSetProvider, dataStoreProvider, multiTenancy: true);
@@ -287,7 +316,8 @@ public class CacheClaimSetsTaskTests
         {
             await _task.ExecuteAsync(CancellationToken.None);
 
-            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
     }
 }

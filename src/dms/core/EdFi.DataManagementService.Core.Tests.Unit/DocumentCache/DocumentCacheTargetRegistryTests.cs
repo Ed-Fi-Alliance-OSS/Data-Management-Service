@@ -1539,7 +1539,7 @@ public class DocumentCacheTargetRegistryTests
 
         public bool IsLoaded(string? tenant = null) => _loadedDataStores.ContainsKey(GetTenantKey(tenant));
 
-        public Task<IList<string>> LoadTenants()
+        public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
         {
             LoadTenantsCallCount++;
             return Task.FromResult<IList<string>>([]);

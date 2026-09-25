@@ -16,8 +16,13 @@ public interface IConfigurationServiceApplicationProvider
     /// </summary>
     /// <param name="clientId">The client ID to look up.</param>
     /// <param name="tenant">The optional tenant context for the request.</param>
+    /// <param name="cancellationToken">Cancellation token for the Configuration Service request.</param>
     /// <returns>The typed application-context lookup outcome.</returns>
-    Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant);
+    Task<ApplicationContextResult> GetApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Forces a reload of application context from the Configuration Service API.
@@ -25,6 +30,11 @@ public interface IConfigurationServiceApplicationProvider
     /// </summary>
     /// <param name="clientId">The client ID to reload.</param>
     /// <param name="tenant">The optional tenant context for the request.</param>
+    /// <param name="cancellationToken">Cancellation token for the Configuration Service request.</param>
     /// <returns>The typed application-context reload outcome.</returns>
-    Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(string clientId, string? tenant);
+    Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    );
 }

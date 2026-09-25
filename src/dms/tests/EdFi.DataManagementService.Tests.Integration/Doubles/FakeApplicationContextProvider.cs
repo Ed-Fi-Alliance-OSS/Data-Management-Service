@@ -30,8 +30,12 @@ internal static class FakeApplicationContextProvider
         );
         ApplicationContextResult result = new ApplicationContextResult.Success(context);
 
-        A.CallTo(() => fake.GetApplicationByClientIdAsync(A<string>._, A<string?>._)).Returns(result);
-        A.CallTo(() => fake.ReloadApplicationByClientIdAsync(A<string>._, A<string?>._)).Returns(result);
+        A.CallTo(() => fake.GetApplicationByClientIdAsync(A<string>._, A<string?>._, A<CancellationToken>._))
+            .Returns(result);
+        A.CallTo(() =>
+                fake.ReloadApplicationByClientIdAsync(A<string>._, A<string?>._, A<CancellationToken>._)
+            )
+            .Returns(result);
 
         return fake;
     }

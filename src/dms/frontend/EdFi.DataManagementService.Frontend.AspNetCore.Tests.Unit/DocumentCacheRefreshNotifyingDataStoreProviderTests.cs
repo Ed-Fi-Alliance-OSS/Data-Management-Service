@@ -629,7 +629,8 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
 
         public bool IsLoaded(string? tenant = null) => true;
 
-        public Task<IList<string>> LoadTenants() => Task.FromResult<IList<string>>([]);
+        public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IList<string>>([]);
 
         public bool TenantExists(string tenant) => true;
 

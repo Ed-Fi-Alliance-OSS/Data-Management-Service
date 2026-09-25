@@ -38,7 +38,11 @@ public class CachedClaimSetProvider(
     /// and caches the result for future requests. Uses tenant-specific cache keys in multi-tenant mode.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios.</param>
-    public async Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+    /// <param name="cancellationToken">Cancellation token for the claim-set retrieval operation.</param>
+    public async Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var cacheKey = GetCacheKey(tenant);
 
@@ -48,7 +52,7 @@ public class CachedClaimSetProvider(
         }
 
         var cacheKeyLock = _cacheKeyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
-        await cacheKeyLock.WaitAsync();
+        await cacheKeyLock.WaitAsync(cancellationToken);
         try
         {
             if (memoryCache.TryGetValue(cacheKey, out cachedClaimSets))
@@ -61,7 +65,7 @@ public class CachedClaimSetProvider(
                 LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
 
-            var claimSets = await claimSetProvider.GetAllClaimSets(tenant);
+            var claimSets = await claimSetProvider.GetAllClaimSets(tenant, cancellationToken);
             if (claimSets is null)
             {
                 return [];

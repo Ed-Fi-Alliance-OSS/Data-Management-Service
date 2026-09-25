@@ -26,24 +26,30 @@ public class ConfigurationServiceApplicationProvider(
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     /// <inheritdoc />
-    public async Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant)
+    public async Task<ApplicationContextResult> GetApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await FetchApplicationByClientIdAsync(clientId, tenant);
+        return await FetchApplicationByClientIdAsync(clientId, tenant, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(
         string clientId,
-        string? tenant
+        string? tenant,
+        CancellationToken cancellationToken = default
     )
     {
         logger.LogInformation("Force reloading application context for clientId: {ClientId}", clientId);
-        return await FetchApplicationByClientIdAsync(clientId, tenant);
+        return await FetchApplicationByClientIdAsync(clientId, tenant, cancellationToken);
     }
 
     private async Task<ApplicationContextResult> FetchApplicationByClientIdAsync(
         string clientId,
-        string? tenant
+        string? tenant,
+        CancellationToken cancellationToken
     )
     {
         try
@@ -51,7 +57,8 @@ public class ConfigurationServiceApplicationProvider(
             string configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
                 configurationServiceContext.clientId,
                 configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
+                configurationServiceContext.scope,
+                cancellationToken
             );
 
             logger.LogDebug("Fetching application context for clientId: {ClientId}", clientId);
@@ -69,7 +76,8 @@ public class ConfigurationServiceApplicationProvider(
 
             request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
             using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
-                request
+                request,
+                cancellationToken
             );
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -88,7 +96,7 @@ public class ConfigurationServiceApplicationProvider(
                 return new ApplicationContextResult.Unavailable();
             }
 
-            string responseBody = await response.Content.ReadAsStringAsync();
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             ApplicationContext? applicationContext = DeserializeApplicationContext(responseBody);
 
             if (applicationContext is null)
@@ -145,6 +153,10 @@ public class ConfigurationServiceApplicationProvider(
                     OwnershipTokenIds = [.. applicationContext.OwnershipTokenIds.Distinct().Order()],
                 }
             );
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (HttpRequestException ex)
         {

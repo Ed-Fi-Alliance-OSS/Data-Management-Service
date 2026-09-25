@@ -101,7 +101,8 @@ internal static class FakeDataStoreProvider
 
         public bool IsLoaded(string? tenant = null) => true;
 
-        public Task<IList<string>> LoadTenants() => Task.FromResult<IList<string>>([DefaultTenantKey]);
+        public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IList<string>>([DefaultTenantKey]);
 
         public bool TenantExists(string tenant) => true;
 
@@ -174,7 +175,8 @@ internal sealed class MutableInstanceProvider : IDataStoreProvider
 
     public bool IsLoaded(string? tenant = null) => true;
 
-    public Task<IList<string>> LoadTenants() => Task.FromResult<IList<string>>([DefaultTenantKey]);
+    public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IList<string>>([DefaultTenantKey]);
 
     public bool TenantExists(string tenant) => true;
 
