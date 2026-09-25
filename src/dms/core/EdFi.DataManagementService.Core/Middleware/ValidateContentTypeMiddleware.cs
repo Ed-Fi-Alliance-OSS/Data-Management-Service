@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -32,11 +33,14 @@ internal enum ContentTypePolicy
 }
 
 /// <summary>
-/// Validates the request Content-Type for baseline data resource write requests (POST/PUT).
-/// An explicit, unsupported media type is rejected with 415 before the body is parsed, matching
-/// ODS/API behavior. Baseline JSON (application/json, text/json) is accepted, and Ed-Fi profile
-/// media types (application/vnd.ed-fi.*) are deferred to ProfileResolutionMiddleware. A missing
-/// Content-Type is not rejected here.
+/// Validates the request Content-Type for an incoming request before its body is parsed,
+/// rejecting an explicit, unsupported media type with 415, matching ODS/API behavior. A missing
+/// Content-Type is never rejected here. Which media types beyond baseline JSON (application/json,
+/// text/json) are supported depends on the configured <see cref="ContentTypePolicy"/>: under
+/// <see cref="ContentTypePolicy.ResourceWrite"/>, used for data resource POST/PUT, an Ed-Fi profile
+/// media type (application/vnd.ed-fi.*) is also accepted, with profile validation itself deferred
+/// to ProfileResolutionMiddleware; under <see cref="ContentTypePolicy.BaselineJsonOnly"/>, every
+/// other value - profile media types included - is rejected.
 /// </summary>
 internal class ValidateContentTypeMiddleware(
     ILogger _logger,
@@ -50,7 +54,7 @@ internal class ValidateContentTypeMiddleware(
     {
         _logger.LogDebug(
             "Entering ValidateContentTypeMiddleware - {TraceId}",
-            requestInfo.FrontendRequest.TraceId.Value
+            LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
         );
 
         if (IsSupportedContentType(GetContentType(requestInfo.FrontendRequest)))
@@ -60,8 +64,9 @@ internal class ValidateContentTypeMiddleware(
         }
 
         _logger.LogDebug(
-            "Rejecting unsupported write Content-Type - {TraceId}",
-            requestInfo.FrontendRequest.TraceId.Value
+            "Rejecting unsupported Content-Type under policy {ContentTypePolicy} - {TraceId}",
+            _policy,
+            LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
         );
 
         requestInfo.FrontendResponse = new FrontendResponse(

@@ -107,8 +107,7 @@ public class CachedClaimSetProvider(
     /// Called during manual reload operations.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier. When null, invalidates default cache.</param>
-    /// <param name="cancellationToken">Cancellation token for the invalidation operation.</param>
-    public Task InvalidateCacheAsync(string? tenant = null, CancellationToken cancellationToken = default)
+    public Task InvalidateCacheAsync(string? tenant = null)
     {
         var cacheKey = GetCacheKey(tenant);
         memoryCache.Remove(cacheKey);

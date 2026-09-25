@@ -12,9 +12,9 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
 
 /// <summary>
-/// Reflects over the CMS provider surface named in story DMS-1515 design decision D5 and asserts every
-/// listed method's last parameter is a defaulted <see cref="CancellationToken"/>, so a caller's
-/// cancellation can be threaded all the way to the Configuration Service.
+/// Reflects over the Configuration Service provider surface and asserts every listed method's last
+/// parameter is a defaulted <see cref="CancellationToken"/>, so a caller's cancellation can be
+/// threaded all the way to the Configuration Service.
 /// </summary>
 [TestFixture]
 public class Given_The_Cms_Provider_Cancellation_Surface
@@ -42,10 +42,6 @@ public class Given_The_Cms_Provider_Cancellation_Surface
         yield return new TestCaseData(
             typeof(IConfigurationServiceClaimSetProvider),
             nameof(IConfigurationServiceClaimSetProvider.GetAllClaimSets)
-        );
-        yield return new TestCaseData(
-            typeof(CachedClaimSetProvider),
-            nameof(CachedClaimSetProvider.InvalidateCacheAsync)
         );
     }
 

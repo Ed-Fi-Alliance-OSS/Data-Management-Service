@@ -74,7 +74,7 @@ public class ConfigurationServiceClaimSetProvider(
             request.Headers.Add(TenantHeaderName, tenant);
         }
 
-        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
+        using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
             request,
             cancellationToken
         );

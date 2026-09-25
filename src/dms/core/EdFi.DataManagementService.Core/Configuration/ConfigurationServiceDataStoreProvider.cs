@@ -384,10 +384,6 @@ public class ConfigurationServiceDataStoreProvider(
 
             return tenants;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
         catch (HttpRequestException ex)
         {
             logger.LogError(
@@ -431,7 +427,7 @@ public class ConfigurationServiceDataStoreProvider(
         using var request = new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
         // No tenant header needed for tenants endpoint
-        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
+        using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
             request,
             cancellationToken
         );
