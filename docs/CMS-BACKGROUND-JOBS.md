@@ -279,7 +279,7 @@ the service):
 ## Deployment
 
 - **Database:** the `dmscs.JobSchedule` and `dmscs.Job` tables are added by the CMS deploy scripts
-  (`0032`, `0033`) on PostgreSQL and SQL Server. The change is additive; a downgrade leaves the
+  (`0033`, `0034`) on PostgreSQL and SQL Server. The change is additive; a downgrade leaves the
   tables in place.
 - **Job type rollout:** every instance with the worker enabled must register every job type and
   payload version that may be enqueued, because a claimed job of an unknown type or version fails

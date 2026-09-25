@@ -28,7 +28,7 @@ internal static class JobTableObjects
 }
 
 /// <summary>
-/// Upgrades an isolated database deployed and journaled through script 0032 through script 0033 only,
+/// Upgrades an isolated database deployed and journaled through script 0033 through script 0034 only,
 /// and checks that the upgrade adds exactly the Job script and table and that a repeat deploy adds nothing.
 /// </summary>
 [TestFixture]
@@ -99,8 +99,8 @@ public class Given_a_database_deployed_through_the_JobSchedule_script
 }
 
 /// <summary>
-/// Upgrades an isolated database deployed and journaled through script 0031, before DMS-1437, through
-/// both DMS-1437 migrations in one deploy, and checks that exactly scripts 0032 and 0033 are journaled,
+/// Upgrades an isolated database deployed and journaled through script 0032, before DMS-1437, through
+/// both DMS-1437 migrations in one deploy, and checks that exactly scripts 0033 and 0034 are journaled,
 /// in that order, that both tables exist, and that a repeat deploy adds nothing.
 /// </summary>
 [TestFixture]

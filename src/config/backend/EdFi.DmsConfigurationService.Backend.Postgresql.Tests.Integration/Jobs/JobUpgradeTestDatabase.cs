@@ -20,12 +20,12 @@ internal sealed class JobUpgradeTestDatabase
     private const string ScriptsSegment = ".Deploy.Scripts.";
     private const string ScriptNamePrefix = "EdFi.DmsConfigurationService.Backend.Postgresql.Deploy.Scripts.";
 
-    public const int PreTicketScript = 31;
-    public const int JobScheduleScript = 32;
-    public const int JobScript = 33;
+    public const int PreTicketScript = 32;
+    public const int JobScheduleScript = 33;
+    public const int JobScript = 34;
 
-    public const string JobScheduleScriptName = ScriptNamePrefix + "0032_Create_JobSchedule_Table.sql";
-    public const string JobScriptName = ScriptNamePrefix + "0033_Create_Job_Table.sql";
+    public const string JobScheduleScriptName = ScriptNamePrefix + "0033_Create_JobSchedule_Table.sql";
+    public const string JobScriptName = ScriptNamePrefix + "0034_Create_Job_Table.sql";
 
     private readonly string _databaseName;
 

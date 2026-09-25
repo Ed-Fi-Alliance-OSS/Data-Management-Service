@@ -8,8 +8,8 @@ using FluentAssertions;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs;
 
 /// <summary>
-/// Upgrades an isolated database deployed and journaled through script 0031, the state a real
-/// deployment from before DMS-1437 upgrades from, through script 0032 only, and checks that the
+/// Upgrades an isolated database deployed and journaled through script 0032, the state a real
+/// deployment from before DMS-1437 upgrades from, through script 0033 only, and checks that the
 /// upgrade adds exactly the JobSchedule script and table and that a repeat deploy adds nothing.
 /// </summary>
 [TestFixture]
@@ -60,7 +60,7 @@ public class Given_a_database_deployed_before_the_JobSchedule_script
     public void It_adds_the_JobSchedule_table_with_its_constraints_and_indexes()
     {
         _tableExistsAfterUpgrade.Should().BeTrue();
-        _jobTableExistsAfterUpgrade.Should().BeFalse("the upgrade is bounded through script 0032");
+        _jobTableExistsAfterUpgrade.Should().BeFalse("the upgrade is bounded through script 0033");
         _objectsAfterUpgrade
             .Should()
             .BeEquivalentTo(
