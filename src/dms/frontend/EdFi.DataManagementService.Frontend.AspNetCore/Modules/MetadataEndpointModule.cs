@@ -25,6 +25,37 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
 
+    private static string GetPublicOAuthTokenUrl(
+        HttpContext httpContext,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        string prefix = DiscoveryEndpointModule.BuildRouteQualifierPrefix(
+            httpContext,
+            appSettings,
+            useMetadataRouteValues: true
+        );
+        return $"{httpContext.Request.RootUrl()}{prefix}/oauth/token";
+    }
+
+    private static JsonNode WithPublicOAuthTokenUrl(JsonNode content, string tokenUrl)
+    {
+        JsonNode response = content.DeepClone();
+        if (
+            response["components"]
+                ?["securitySchemes"]
+                ?["oauth2_client_credentials"]
+                ?["flows"]
+                ?["clientCredentials"]
+            is JsonObject clientCredentials
+        )
+        {
+            clientCredentials["tokenUrl"] = tokenUrl;
+        }
+
+        return response;
+    }
+
     /// <summary>
     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
     /// </summary>
@@ -505,7 +536,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetDescriptorOpenApiSpec(
@@ -517,7 +550,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetChangeQueriesOpenApiSpec(
@@ -541,7 +576,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     /// <summary>
@@ -570,7 +607,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
@@ -642,8 +681,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         }
 
         string section = sectionValueString.ToLowerInvariant();
-        string? rootUrl = httpContext.Request.RootUrl();
-        string oAuthUrl = options.Value.AuthenticationService;
+        string rootUrl = httpContext.Request.RootUrl();
+        string oAuthUrl = GetPublicOAuthTokenUrl(httpContext, options);
         if (
             Array.Exists(
                 _sections,
@@ -651,7 +690,10 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             )
         )
         {
-            var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
+            JsonNode content = WithPublicOAuthTokenUrl(
+                contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl),
+                oAuthUrl
+            );
             content["servers"] = GetServers(httpContext, dataStoreProvider, options, DataOpenApiRouteBase);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }

@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
@@ -26,15 +27,36 @@ public class Given_real_ApiSchema_change_queries_metadata
 {
     private const string AuthenticationService = "https://auth.example.org/oauth/token";
 
-    [Test]
-    public async Task It_serves_the_core_standalone_document_with_server_and_security_metadata()
+    [TestCase(false, "http://localhost/changeQueries/v1", "http://localhost/oauth/token")]
+    [TestCase(
+        true,
+        "http://localhost/dms-api/{tenant}/{districtId}/{schoolYear}/changeQueries/v1",
+        "http://localhost/dms-api/tenant-a/255901/2026/oauth/token"
+    )]
+    public async Task It_serves_the_core_standalone_document_with_server_and_security_metadata(
+        bool qualified,
+        string expectedServerUrl,
+        string expectedTokenUrl
+    )
     {
         await using var factory = CreateFactory(
-            CreateApiSchemaNodes(coreChangeQueries: true, extensionChangeQueries: false)
+            CreateApiSchemaNodes(coreChangeQueries: true, extensionChangeQueries: false),
+            qualified
+                ? new Dictionary<string, string?>
+                {
+                    ["AppSettings:PathBase"] = "dms-api",
+                    ["AppSettings:MultiTenancy"] = "true",
+                    ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
+                }
+                : null
         );
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+        var response = await client.GetAsync(
+            qualified
+                ? "/dms-api/tenant-a/255901/2026/metadata/changequeries/v1/swagger.json"
+                : "/metadata/changequeries/v1/swagger.json"
+        );
         string content = await response.Content.ReadAsStringAsync();
         JsonNode json = JsonNode.Parse(content)!;
 
@@ -44,13 +66,13 @@ public class Given_real_ApiSchema_change_queries_metadata
             .GetValue<string>()
             .Should()
             .Be("Core available change versions");
-        json["servers"]![0]!["url"]!.GetValue<string>().Should().Be("http://localhost/changeQueries/v1");
+        json["servers"]![0]!["url"]!.GetValue<string>().Should().Be(expectedServerUrl);
         json["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]!["clientCredentials"]![
             "tokenUrl"
         ]!
             .GetValue<string>()
             .Should()
-            .Be(AuthenticationService);
+            .Be(expectedTokenUrl);
         json["security"]!.AsArray().Should().ContainSingle();
     }
 
@@ -153,6 +175,26 @@ public class Given_real_ApiSchema_change_queries_metadata
             builder.ConfigureServices(services =>
             {
                 TestMockHelper.AddEssentialMocks(services);
+
+                var dataStoreProvider = A.Fake<IDataStoreProvider>();
+                var dataStore = new DataStore(
+                    1,
+                    "Test",
+                    "TestInstance",
+                    "test-connection-string",
+                    new Dictionary<RouteQualifierName, RouteQualifierValue>
+                    {
+                        [new("districtId")] = new("255901"),
+                        [new("schoolYear")] = new("2026"),
+                    }
+                );
+                A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).Returns([dataStore]);
+                A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
+                    .Returns([dataStore]);
+                A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(["tenant-a"]);
+                A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys()).Returns(["tenant-a"]);
+                A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>._)).Returns(true);
+                services.Replace(ServiceDescriptor.Singleton(dataStoreProvider));
 
                 services.Replace(ServiceDescriptor.Singleton(CreateApiSchemaProvider(apiSchemaNodes)));
 
