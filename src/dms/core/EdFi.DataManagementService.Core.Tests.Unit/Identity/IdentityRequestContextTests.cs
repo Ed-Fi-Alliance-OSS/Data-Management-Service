@@ -24,7 +24,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 /// silently overwriting, and <see cref="IdentityRequestContext.ClientId" /> is passed through with its
 /// original case.
 /// </summary>
-[TestFixture]
 public class IdentityRequestContextTests
 {
     /// <summary>
@@ -98,130 +97,202 @@ public class IdentityRequestContextTests
     private static IdentityHandler CreateHandler() =>
         new(
             new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance),
-            8192,
+            IdentityHandler.DefaultMaxRequestLineSize,
             NullLogger<IdentityHandler>.Instance
         );
 
-    [Test]
-    public async Task Tenant_spelling_is_preserved_exactly()
+    [TestFixture]
+    public class Given_A_Mixed_Case_Tenant : IdentityRequestContextTests
     {
-        (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
-            [],
-            tenant: "TenantMixedCase",
-            clientId: "client-1"
-        );
+        private CapturingIdentityService _provider = null!;
 
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
-
-        provider.CapturedContext!.Tenant.Should().Be("TenantMixedCase");
-    }
-
-    [Test]
-    public async Task A_null_tenant_denotes_single_tenant_mode()
-    {
-        (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
-            [],
-            tenant: null,
-            clientId: "client-1"
-        );
-
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
-
-        provider.CapturedContext!.Tenant.Should().BeNull();
-    }
-
-    [Test]
-    public async Task Route_qualifier_names_and_values_preserve_spelling()
-    {
-        Dictionary<RouteQualifierName, RouteQualifierValue> qualifiers = new()
+        [SetUp]
+        public async Task Setup()
         {
-            [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
-            [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2026"),
-        };
-        (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
-            qualifiers,
-            tenant: "tenant-a",
-            clientId: "client-1"
-        );
-
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
-
-        provider
-            .CapturedContext!.RouteQualifiers.Should()
-            .BeEquivalentTo(
-                new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2026" }
+            (RequestInfo requestInfo, _provider) = CreateExecutedCreateRequest(
+                [],
+                tenant: "TenantMixedCase",
+                clientId: "client-1"
             );
-    }
 
-    [Test]
-    public async Task Route_qualifier_keys_compare_case_insensitively()
-    {
-        Dictionary<RouteQualifierName, RouteQualifierValue> qualifiers = new()
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_preserves_the_tenant_spelling_exactly()
         {
-            [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
-        };
-        (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
-            qualifiers,
-            tenant: "tenant-a",
-            clientId: "client-1"
-        );
-
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
-
-        // Looking the key up with a different case still finds it: proves the map's comparer is
-        // OrdinalIgnoreCase, not just that the original spelling round-trips.
-        provider.CapturedContext!.RouteQualifiers.Should().ContainKey("DISTRICTID");
-        provider.CapturedContext!.RouteQualifiers["DISTRICTID"].Should().Be("255901");
+            _provider.CapturedContext!.Tenant.Should().Be("TenantMixedCase");
+        }
     }
 
-    [Test]
-    public async Task A_qualifier_name_collision_under_case_insensitive_comparison_throws()
+    [TestFixture]
+    public class Given_A_Null_Tenant : IdentityRequestContextTests
     {
-        Dictionary<RouteQualifierName, RouteQualifierValue> qualifiers = new()
+        private CapturingIdentityService _provider = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
-            [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
-            [new RouteQualifierName("DistrictId")] = new RouteQualifierValue("999999"),
-        };
-        (RequestInfo requestInfo, CapturingIdentityService _) = CreateExecutedCreateRequest(
-            qualifiers,
-            tenant: "tenant-a",
-            clientId: "client-1"
-        );
+            (RequestInfo requestInfo, _provider) = CreateExecutedCreateRequest(
+                [],
+                tenant: null,
+                clientId: "client-1"
+            );
 
-        Func<Task> act = async () => await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        }
 
-        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
-        thrown.Which.Message.Should().Contain("qualifier").And.Contain("collides");
+        [Test]
+        public void It_denotes_single_tenant_mode()
+        {
+            _provider.CapturedContext!.Tenant.Should().BeNull();
+        }
     }
 
-    [TestCase("Client-One")]
-    [TestCase("client-one")]
-    [TestCase("CLIENT-ONE")]
-    public async Task ClientId_is_passed_through_unchanged_with_its_original_case(string clientId)
+    [TestFixture]
+    public class Given_Route_Qualifiers_With_Distinct_Names : IdentityRequestContextTests
     {
-        (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
-            [],
-            tenant: "tenant-a",
-            clientId: clientId
-        );
+        private CapturingIdentityService _provider = null!;
 
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        [SetUp]
+        public async Task Setup()
+        {
+            Dictionary<RouteQualifierName, RouteQualifierValue> qualifiers = new()
+            {
+                [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
+                [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2026"),
+            };
+            (RequestInfo requestInfo, _provider) = CreateExecutedCreateRequest(
+                qualifiers,
+                tenant: "tenant-a",
+                clientId: "client-1"
+            );
 
-        provider.CapturedContext!.ClientId.Should().Be(clientId);
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_preserves_names_and_values_spelling()
+        {
+            _provider
+                .CapturedContext!.RouteQualifiers.Should()
+                .BeEquivalentTo(
+                    new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2026" }
+                );
+        }
     }
 
-    [Test]
-    public async Task TraceId_is_carried_from_the_frontend_request()
+    [TestFixture]
+    public class Given_A_Route_Qualifier_Looked_Up_With_A_Different_Case : IdentityRequestContextTests
     {
-        (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
-            [],
-            tenant: "tenant-a",
-            clientId: "client-1"
-        );
-        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { TraceId = new TraceId("trace-xyz") };
+        private CapturingIdentityService _provider = null!;
 
-        await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        [SetUp]
+        public async Task Setup()
+        {
+            Dictionary<RouteQualifierName, RouteQualifierValue> qualifiers = new()
+            {
+                [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
+            };
+            (RequestInfo requestInfo, _provider) = CreateExecutedCreateRequest(
+                qualifiers,
+                tenant: "tenant-a",
+                clientId: "client-1"
+            );
 
-        provider.CapturedContext!.TraceId.Should().Be("trace-xyz");
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_finds_the_key_under_a_different_case()
+        {
+            // Looking the key up with a different case still finds it: proves the map's comparer is
+            // OrdinalIgnoreCase, not just that the original spelling round-trips.
+            _provider.CapturedContext!.RouteQualifiers.Should().ContainKey("DISTRICTID");
+        }
+
+        [Test]
+        public void It_returns_the_correct_value_for_that_key()
+        {
+            _provider.CapturedContext!.RouteQualifiers["DISTRICTID"].Should().Be("255901");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Qualifier_Name_Collision_Under_Case_Insensitive_Comparison
+        : IdentityRequestContextTests
+    {
+        /// <summary>
+        /// An exception test: the act throws, so it stays inside the assertion rather than moving to
+        /// SetUp, but the message's two content checks are one logical outcome about the same
+        /// exception.
+        /// </summary>
+        [Test]
+        public async Task It_throws_naming_the_qualifier_and_the_collision()
+        {
+            Dictionary<RouteQualifierName, RouteQualifierValue> qualifiers = new()
+            {
+                [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
+                [new RouteQualifierName("DistrictId")] = new RouteQualifierValue("999999"),
+            };
+            (RequestInfo requestInfo, CapturingIdentityService _) = CreateExecutedCreateRequest(
+                qualifiers,
+                tenant: "tenant-a",
+                clientId: "client-1"
+            );
+
+            Func<Task> act = async () => await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+
+            var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+            thrown.Which.Message.Should().Contain("qualifier").And.Contain("collides");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Various_ClientId_Casings : IdentityRequestContextTests
+    {
+        [TestCase("Client-One")]
+        [TestCase("client-one")]
+        [TestCase("CLIENT-ONE")]
+        public async Task It_passes_the_ClientId_through_unchanged_with_its_original_case(string clientId)
+        {
+            (RequestInfo requestInfo, CapturingIdentityService provider) = CreateExecutedCreateRequest(
+                [],
+                tenant: "tenant-a",
+                clientId: clientId
+            );
+
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+
+            provider.CapturedContext!.ClientId.Should().Be(clientId);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Custom_Trace_Id : IdentityRequestContextTests
+    {
+        private CapturingIdentityService _provider = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (RequestInfo requestInfo, _provider) = CreateExecutedCreateRequest(
+                [],
+                tenant: "tenant-a",
+                clientId: "client-1"
+            );
+            requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+            {
+                TraceId = new TraceId("trace-xyz"),
+            };
+
+            await CreateHandler().Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_is_carried_from_the_frontend_request()
+        {
+            _provider.CapturedContext!.TraceId.Should().Be("trace-xyz");
+        }
     }
 }

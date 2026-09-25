@@ -12,8 +12,10 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -32,8 +34,10 @@ public class ServiceClaimAuthorizationMiddlewareTests
     private const string ClaimSetName = "IdentityClaims";
     private static readonly string _identityClaimUri = $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity";
 
-    private static ServiceClaimAuthorizationMiddleware CreateMiddleware(IClaimSetProvider claimSetProvider) =>
-        new(claimSetProvider, NullLogger<ServiceClaimAuthorizationMiddleware>.Instance);
+    private static ServiceClaimAuthorizationMiddleware CreateMiddleware(
+        IClaimSetProvider claimSetProvider,
+        ILogger<ServiceClaimAuthorizationMiddleware>? logger = null
+    ) => new(claimSetProvider, logger ?? NullLogger<ServiceClaimAuthorizationMiddleware>.Instance);
 
     private static IClaimSetProvider CreateProvider(params ClaimSet[] claimSets)
     {
@@ -48,7 +52,8 @@ public class ServiceClaimAuthorizationMiddlewareTests
 
     private static RequestInfo CreateRequestInfo(
         IdentityOperation operation,
-        string claimSetName = ClaimSetName
+        string claimSetName = ClaimSetName,
+        string traceId = "service-claim-authorization"
     )
     {
         var frontendRequest = new FrontendRequest(
@@ -57,7 +62,7 @@ public class ServiceClaimAuthorizationMiddlewareTests
             Form: null,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("service-claim-authorization"),
+            TraceId: new TraceId(traceId),
             RouteQualifiers: [],
             Tenant: Tenant
         );
@@ -229,6 +234,165 @@ public class ServiceClaimAuthorizationMiddlewareTests
         public void It_is_forbidden()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+        }
+    }
+
+    /// <summary>
+    /// AGENTS.md Logging: a claim-set name is derived from the JWT scope and a trace id may come
+    /// from a client correlation header, so both must be sanitized before reaching the "no matching
+    /// claim set" log line.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_No_Claim_Set_Matches_A_Scope_And_Trace_Id_Containing_Control_Characters
+    {
+        private const string InjectedClaimSetName = "Bad\r\nInjected";
+        private const string InjectedTraceId = "trace\r\nid";
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimSet unrelatedClaimSet = new(
+                "SomeOtherClaimSet",
+                [
+                    IdentityResourceClaim(
+                        "Create",
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                ]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(unrelatedClaimSet);
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            RequestInfo requestInfo = CreateRequestInfo(
+                IdentityOperation.Create,
+                claimSetName: InjectedClaimSetName,
+                traceId: InjectedTraceId
+            );
+
+            await CreateMiddleware(claimSetProvider, _logger).Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_scope_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle().Subject;
+            record.Level.Should().Be(LogLevel.Information);
+            record.Properties["Scope"].Should().Be("BadInjected");
+        }
+
+        [Test]
+        public void It_logs_the_trace_id_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle().Subject;
+            record.Properties["TraceId"].Should().Be("traceid");
+        }
+    }
+
+    /// <summary>
+    /// AGENTS.md Logging: the matched claim set's name and the request's trace id must be sanitized
+    /// before reaching the "does not grant the required action" log line.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Claim_Set_Does_Not_Grant_The_Required_Action_And_Contains_Control_Characters
+    {
+        private const string InjectedClaimSetName = "Bad\r\nInjected";
+        private const string InjectedTraceId = "trace\r\nid";
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimSet claimSet = new(
+                InjectedClaimSetName,
+                [
+                    IdentityResourceClaim(
+                        "Update",
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                ]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            RequestInfo requestInfo = CreateRequestInfo(
+                IdentityOperation.Create,
+                claimSetName: InjectedClaimSetName,
+                traceId: InjectedTraceId
+            );
+
+            await CreateMiddleware(claimSetProvider, _logger).Execute(requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_claim_set_name_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Debug).Subject;
+            record.Properties["ClaimSetName"].Should().Be("BadInjected");
+        }
+
+        [Test]
+        public void It_logs_the_trace_id_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Debug).Subject;
+            record.Properties["TraceId"].Should().Be("traceid");
+        }
+    }
+
+    /// <summary>
+    /// AGENTS.md Logging: the security-configuration-failure log line composes the claim-set name and
+    /// trace id into the log message itself, so both must be sanitized there even though the response
+    /// body's message keeps the raw claim-set name - the body is not a log.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Matched_Action_Has_An_Unknown_Strategy_And_Contains_Control_Characters
+    {
+        private const string InjectedClaimSetName = "Bad\r\nInjected";
+        private const string InjectedTraceId = "trace\r\nid";
+        private RequestInfo _requestInfo = null!;
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimSet claimSet = new(
+                InjectedClaimSetName,
+                [IdentityResourceClaim("Create", "SomeUnknownStrategy")]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            _requestInfo = CreateRequestInfo(
+                IdentityOperation.Create,
+                claimSetName: InjectedClaimSetName,
+                traceId: InjectedTraceId
+            );
+
+            await CreateMiddleware(claimSetProvider, _logger).Execute(_requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_claim_set_name_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Error).Subject;
+            record.Properties["ClaimSetName"].Should().Be("BadInjected");
+        }
+
+        [Test]
+        public void It_logs_the_trace_id_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Error).Subject;
+            record.Properties["TraceId"].Should().Be("traceid");
+        }
+
+        [Test]
+        public void It_keeps_the_unsanitized_claim_set_name_in_the_response_body()
+        {
+            string[] errors = _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .ToArray();
+            errors.Should().ContainSingle(error => error.Contains(InjectedClaimSetName));
         }
     }
 

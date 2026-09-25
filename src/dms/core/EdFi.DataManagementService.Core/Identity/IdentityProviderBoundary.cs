@@ -13,6 +13,19 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Identity;
 
 /// <summary>
+/// The outcome of <see cref="IdentityProviderBoundary.InvokeAsync{T}" />: distinguishes "the boundary
+/// already failed the request" (<see cref="BoundaryFailed" /> is true, a sanitized upstream-failure 502
+/// is already on <see cref="RequestInfo.FrontendResponse" />, and <see cref="Result" /> is always null)
+/// from "the operation returned normally" (<see cref="BoundaryFailed" /> is false, and
+/// <see cref="Result" /> is the operation's own return value - which may itself be null when a
+/// provider breaks the non-nullable <see cref="IIdentityService" /> contract). The caller must check
+/// <see cref="BoundaryFailed" /> before treating a null <see cref="Result" /> as a provider-contract
+/// violation.
+/// </summary>
+internal readonly record struct IdentityInvocation<T>(bool BoundaryFailed, T? Result)
+    where T : class;
+
+/// <summary>
 /// The three-call-site sanitized boundary around a request-scoped <see cref="IIdentityService" />
 /// (design.md "Provider Execution and Exception Boundary", D9): request-scoped activation
 /// (<see cref="Activate" />), the <c>Capabilities</c> getter (<see cref="ReadCapabilities" />), and an
@@ -106,16 +119,21 @@ internal sealed class IdentityProviderBoundary(ILogger<IdentityProviderBoundary>
     /// <summary>
     /// Invokes one identity operation call inside the sanitized boundary. A throwing operation is
     /// caught here and produces a sanitized upstream-failure 502; it establishes no terminal job
-    /// state. The caller maps no result when this returns null.
+    /// state and returns with <see cref="IdentityInvocation{T}.BoundaryFailed" /> set so the caller
+    /// maps no result and sets no response of its own. A non-throwing operation that itself returns
+    /// null - a provider breaking the non-nullable <see cref="IIdentityService" /> contract - is not a
+    /// boundary failure: <see cref="RequestInfo.FrontendResponse" /> is left untouched and the caller
+    /// is responsible for mapping the null result, for example to the provider-contract-violation 502.
     /// </summary>
-    public async Task<T?> InvokeAsync<T>(Func<Task<T>> operation, RequestInfo requestInfo)
+    public async Task<IdentityInvocation<T>> InvokeAsync<T>(Func<Task<T>> operation, RequestInfo requestInfo)
         where T : class
     {
         requestInfo.RequestCancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            return await operation();
+            T? result = await operation();
+            return new IdentityInvocation<T>(BoundaryFailed: false, Result: result);
         }
         catch (OperationCanceledException ex)
             when (requestInfo.RequestCancellationToken.IsCancellationRequested)
@@ -125,7 +143,7 @@ internal sealed class IdentityProviderBoundary(ILogger<IdentityProviderBoundary>
         catch (Exception ex)
         {
             FailUpstream(ex, requestInfo);
-            return null;
+            return new IdentityInvocation<T>(BoundaryFailed: true, Result: null);
         }
     }
 

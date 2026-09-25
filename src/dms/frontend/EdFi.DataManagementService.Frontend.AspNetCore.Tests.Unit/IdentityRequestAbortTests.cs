@@ -293,61 +293,75 @@ public class IdentityRequestAbortTests
         return new TestHost(factory, handler, requestAbortedObserved, identityService);
     }
 
-    [Test]
-    public async Task Cancelling_the_client_token_aborts_the_request_before_the_identity_provider_runs()
+    /// <summary>
+    /// Timing/concurrency scenario: the act gates on a <see cref="TaskCompletionSource" /> that must be
+    /// observed mid-flight (the CMS call reaching its gate, then client cancellation, then the abort
+    /// propagating), so it cannot sensibly move into <c>[SetUp]</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Client_Cancels_While_The_Identity_Pipeline_Is_Blocked_At_The_Cms_Gate
     {
-        TestHost host = CreateHost();
-        await using WebApplicationFactory<Program> factory = host.Factory;
-        using HttpClient client = factory.CreateClient();
-        using var cancellationSource = new CancellationTokenSource();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/v2/identities/605943412");
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            "identity-request-abort-bearer"
-        );
+        [Test]
+        public async Task It_aborts_the_request_before_the_identity_provider_runs()
+        {
+            TestHost host = CreateHost();
+            await using WebApplicationFactory<Program> factory = host.Factory;
+            using HttpClient client = factory.CreateClient();
+            using var cancellationSource = new CancellationTokenSource();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/v2/identities/605943412");
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                "identity-request-abort-bearer"
+            );
 
-        Task<HttpResponseMessage> requestTask = client.SendAsync(request, cancellationSource.Token);
+            Task<HttpResponseMessage> requestTask = client.SendAsync(request, cancellationSource.Token);
 
-        await host.Handler.GateReached.WaitAsync(TimeSpan.FromSeconds(5));
+            await host.Handler.GateReached.WaitAsync(TimeSpan.FromSeconds(5));
 
-        await cancellationSource.CancelAsync();
+            await cancellationSource.CancelAsync();
 
-        Func<Task> act = async () => await requestTask;
-        await act.Should().ThrowAsync<TaskCanceledException>();
+            Func<Task> act = async () => await requestTask;
+            await act.Should().ThrowAsync<TaskCanceledException>();
 
-        await host.RequestAbortedObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await host.RequestAbortedObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        A.CallTo(host.IdentityService).MustNotHaveHappened();
+            A.CallTo(host.IdentityService).MustNotHaveHappened();
+        }
     }
 
     /// <summary>
     /// The negative control: with the identical gate, releasing it instead of cancelling the client must
     /// let the request reach the identity service. Without this, "MustNotHaveHappened" above would be
-    /// vacuously true regardless of whether cancellation ever propagated correctly.
+    /// vacuously true regardless of whether cancellation ever propagated correctly. Same timing/gating
+    /// constraint as above: the act cannot sensibly move into <c>[SetUp]</c>.
     /// </summary>
-    [Test]
-    public async Task Releasing_the_gate_without_cancelling_reaches_the_identity_provider()
+    [TestFixture]
+    public class Given_The_Gate_Releases_Without_Client_Cancellation
     {
-        TestHost host = CreateHost();
-        await using WebApplicationFactory<Program> factory = host.Factory;
-        using HttpClient client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/v2/identities/605943412");
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            "identity-request-abort-bearer"
-        );
+        [Test]
+        public async Task It_reaches_the_identity_provider()
+        {
+            TestHost host = CreateHost();
+            await using WebApplicationFactory<Program> factory = host.Factory;
+            using HttpClient client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/v2/identities/605943412");
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                "identity-request-abort-bearer"
+            );
 
-        Task<HttpResponseMessage> requestTask = client.SendAsync(request);
+            Task<HttpResponseMessage> requestTask = client.SendAsync(request);
 
-        await host.Handler.GateReached.WaitAsync(TimeSpan.FromSeconds(5));
+            await host.Handler.GateReached.WaitAsync(TimeSpan.FromSeconds(5));
 
-        host.Handler.ReleaseGate();
+            host.Handler.ReleaseGate();
 
-        using HttpResponseMessage response = await requestTask.WaitAsync(TimeSpan.FromSeconds(5));
+            using HttpResponseMessage response = await requestTask.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // NoIdentityService-equivalent (Capabilities = None) still answers operation-unsupported 404, but
-        // only after the gate cleared and the pipeline actually reached the capability gate.
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        A.CallTo(() => host.IdentityService.Capabilities).MustHaveHappened();
+            // NoIdentityService-equivalent (Capabilities = None) still answers operation-unsupported 404, but
+            // only after the gate cleared and the pipeline actually reached the capability gate.
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => host.IdentityService.Capabilities).MustHaveHappened();
+        }
     }
 }

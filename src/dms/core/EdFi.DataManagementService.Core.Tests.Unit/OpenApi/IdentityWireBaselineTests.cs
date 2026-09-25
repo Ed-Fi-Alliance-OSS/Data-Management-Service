@@ -27,7 +27,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 /// <see cref="GoldenFixtureTestHelpers.RunGitDiff(string, string)" />, called directly rather than
 /// copied into a local helper.
 /// </summary>
-[TestFixture]
 public class IdentityWireBaselineTests
 {
     private const string ServerUrl = "http://a/identity/v2";
@@ -41,89 +40,6 @@ public class IdentityWireBaselineTests
         );
 
     private static string ExpectedPath => Path.Combine(ProjectRoot, "OpenApi", "Fixtures", BaselineFileName);
-
-    private static string ActualPath =>
-        Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            "identity-v2-wire-baseline",
-            "actual",
-            BaselineFileName
-        );
-
-    [Test]
-    public void The_normalized_served_document_matches_the_wire_baseline()
-    {
-        string actualJson = SerializeCanonical(BuildNormalizedServedDocument(ServerUrl, TokenUrl));
-
-        Directory.CreateDirectory(Path.GetDirectoryName(ActualPath)!);
-        File.WriteAllText(ActualPath, actualJson);
-
-        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(ExpectedPath)!);
-            File.WriteAllText(ExpectedPath, actualJson);
-            Assert.Fail(
-                $"Regenerated {ExpectedPath}. Re-run without UPDATE_GOLDENS to confirm it now matches."
-            );
-        }
-
-        File.Exists(ExpectedPath)
-            .Should()
-            .BeTrue($"wire baseline missing at {ExpectedPath}. Set UPDATE_GOLDENS=1 to generate it.");
-
-        string diffOutput = GoldenFixtureTestHelpers.RunGitDiff(ExpectedPath, ActualPath);
-        if (!string.IsNullOrWhiteSpace(diffOutput))
-        {
-            Assert.Fail(diffOutput);
-        }
-    }
-
-    [Test]
-    public void The_contract_version_stamp_equals_the_identity_assembly_informational_version_and_is_absent_from_the_baseline()
-    {
-        JsonNode served = BuildServedDocument(ServerUrl, TokenUrl);
-        string expectedVersion = ResolveIdentityContractInformationalVersion();
-
-        served["x-edfi-identity-contract-version"]!.GetValue<string>().Should().Be(expectedVersion);
-
-        JsonNode baseline = JsonNode.Parse(File.ReadAllText(ExpectedPath))!;
-        baseline["x-edfi-identity-contract-version"].Should().BeNull();
-    }
-
-    [Test]
-    public void Two_serves_with_different_servers_and_tokenUrl_normalize_identically()
-    {
-        string first = SerializeCanonical(
-            BuildNormalizedServedDocument(
-                "http://first.example.org/identity/v2",
-                "https://first.example.org/token"
-            )
-        );
-        string second = SerializeCanonical(
-            BuildNormalizedServedDocument(
-                "http://second.example.org/tenant/identity/v2",
-                "https://second.example.org/oauth/token"
-            )
-        );
-
-        first.Should().Be(second);
-    }
-
-    /// <summary>
-    /// Mirrors <c>IdentityOpenApiDocument.ResolveContractVersion</c>'s stripping of a trailing
-    /// <c>+commit</c> metadata suffix, so this test's expectation matches what is actually stamped.
-    /// </summary>
-    private static string ResolveIdentityContractInformationalVersion()
-    {
-        string informationalVersion =
-            typeof(IIdentityService)
-                .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion
-            ?? "0.0.0";
-
-        int plusIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
-        return plusIndex < 0 ? informationalVersion : informationalVersion[..plusIndex];
-    }
 
     private static JsonNode BuildNormalizedServedDocument(string serverUrl, string tokenUrl)
     {
@@ -221,5 +137,132 @@ public class IdentityWireBaselineTests
     {
         string json = node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         return json.Replace("\r\n", "\n") + "\n";
+    }
+
+    /// <summary>
+    /// Follows the golden-fixture call pair <c>PlanContractsManifestGoldenFixtureTests.cs:51-71</c>
+    /// uses: the diff is computed once in <c>SetUp</c> (writing <c>actual</c>, regenerating the golden
+    /// under <c>UPDATE_GOLDENS</c>, and asserting the golden file exists), and the single <c>It_</c>
+    /// fails on any remaining diff.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Identity_Wire_Baseline_GoldenFixture
+    {
+        private string _diffOutput = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            string actualPath = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory,
+                "identity-v2-wire-baseline",
+                "actual",
+                BaselineFileName
+            );
+            string actualJson = SerializeCanonical(BuildNormalizedServedDocument(ServerUrl, TokenUrl));
+
+            Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+            File.WriteAllText(actualPath, actualJson);
+
+            if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(ExpectedPath)!);
+                File.WriteAllText(ExpectedPath, actualJson);
+                Assert.Fail(
+                    $"Regenerated {ExpectedPath}. Re-run without UPDATE_GOLDENS to confirm it now matches."
+                );
+            }
+
+            File.Exists(ExpectedPath)
+                .Should()
+                .BeTrue($"wire baseline missing at {ExpectedPath}. Set UPDATE_GOLDENS=1 to generate it.");
+
+            _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(ExpectedPath, actualPath);
+        }
+
+        [Test]
+        public void It_matches_the_wire_baseline()
+        {
+            if (!string.IsNullOrWhiteSpace(_diffOutput))
+            {
+                Assert.Fail(_diffOutput);
+            }
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Identity_Contract_Version_Stamp
+    {
+        private JsonNode _served = null!;
+        private JsonNode _baseline = null!;
+        private string _expectedVersion = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _served = BuildServedDocument(ServerUrl, TokenUrl);
+            _expectedVersion = ResolveIdentityContractInformationalVersion();
+            _baseline = JsonNode.Parse(File.ReadAllText(ExpectedPath))!;
+        }
+
+        [Test]
+        public void It_equals_the_identity_assembly_informational_version()
+        {
+            _served["x-edfi-identity-contract-version"]!.GetValue<string>().Should().Be(_expectedVersion);
+        }
+
+        [Test]
+        public void It_is_absent_from_the_baseline()
+        {
+            _baseline["x-edfi-identity-contract-version"].Should().BeNull();
+        }
+
+        /// <summary>
+        /// Mirrors <c>IdentityOpenApiDocument.ResolveContractVersion</c>'s stripping of a trailing
+        /// <c>+commit</c> metadata suffix, so this test's expectation matches what is actually stamped.
+        /// </summary>
+        private static string ResolveIdentityContractInformationalVersion()
+        {
+            string informationalVersion =
+                typeof(IIdentityService)
+                    .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                    ?.InformationalVersion
+                ?? "0.0.0";
+
+            int plusIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
+            return plusIndex < 0 ? informationalVersion : informationalVersion[..plusIndex];
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Two_Serves_With_Different_Servers_And_Token_Urls
+    {
+        private string _first = null!;
+        private string _second = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _first = SerializeCanonical(
+                BuildNormalizedServedDocument(
+                    "http://first.example.org/identity/v2",
+                    "https://first.example.org/token"
+                )
+            );
+            _second = SerializeCanonical(
+                BuildNormalizedServedDocument(
+                    "http://second.example.org/tenant/identity/v2",
+                    "https://second.example.org/oauth/token"
+                )
+            );
+        }
+
+        [Test]
+        public void It_normalizes_identically()
+        {
+            _first.Should().Be(_second);
+        }
     }
 }

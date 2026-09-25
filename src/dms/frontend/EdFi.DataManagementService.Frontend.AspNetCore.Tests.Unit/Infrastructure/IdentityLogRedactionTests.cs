@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Identity;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -226,7 +227,81 @@ public class IdentityLogRedactionTests
     }
 
     [TestFixture]
-    public class Given_The_Toggle_Is_On_With_Single_Tenancy
+    public class Given_A_Get_By_Id_Success_With_Single_Tenancy
+    {
+        private HttpResponseMessage _response = null!;
+        private IReadOnlyList<LogEvent> _events = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var sink = new CapturingSerilogSink();
+            var identityService = new FakeIdentityService();
+            _factory = CreateFactory(identityService, sink);
+            _client = _factory.CreateClient();
+
+            _response = await _client.SendAsync(AuthorizedGet($"/identity/v2/identities/{UniqueId}"));
+            _events = sink.Events;
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_never_logs_the_unique_id_in_the_path_or_rendered_message_of_any_completion_event()
+        {
+            // Scoped to the Path property and the rendered message on the frontend and Core
+            // completion events (C6's literal wording), not every property a Verbose capture
+            // happens to see: unrelated framework internals (routing candidate matching, endpoint
+            // selection) legitimately carry the raw path and are out of D11's scope, and this
+            // capture bypasses the production Filter.ByExcluding entirely (see the class remarks),
+            // so it cannot speak to Microsoft.AspNetCore.Hosting.Diagnostics either way - that is
+            // proven separately by Given_The_Production_Logging_Pipeline.
+            foreach (
+                LogEvent completed in _events.Where(e =>
+                    IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
+                )
+            )
+            {
+                ScalarProperty(completed, "Path").Should().NotContain(UniqueId);
+                completed.RenderMessage().Should().NotContain(UniqueId);
+            }
+        }
+
+        [Test]
+        public void It_redacts_the_unique_id_in_the_frontend_completion_path()
+        {
+            // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
+            // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from every value
+            // it sanitizes, redacted or not - unchanged by D11, whose only promise is that the
+            // identifier segment itself never reaches the log.
+            LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
+            ScalarProperty(frontendCompleted, "Path").Should().Be("/identity/v2/identities/id");
+        }
+
+        [Test]
+        public void It_redacts_the_unique_id_in_the_core_completion_path()
+        {
+            LogEvent coreCompleted = _events.Single(IsCoreCompletionEvent);
+            ScalarProperty(coreCompleted, "Path").Should().Be("/identity/v2/identities/id");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Results_Poll_Failure_With_Single_Tenancy
     {
         // Used only by the C7 assertion below, which must inspect every property value on every
         // other captured event (not just Path) to prove the provider's message appears nowhere
@@ -236,63 +311,58 @@ public class IdentityLogRedactionTests
                 ? scalar.Value.ToString() ?? string.Empty
                 : value.ToString();
 
-        [Test]
-        public async Task It_redacts_the_unique_id_on_a_get_by_id_success()
+        private HttpResponseMessage _response = null!;
+        private IReadOnlyList<LogEvent> _events = null!;
+        private LogEvent _errorEvent = null!;
+        private LogEvent _debugEvent = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
             var identityService = new FakeIdentityService();
-            await using var factory = CreateFactory(identityService, sink);
-            using var client = factory.CreateClient();
+            _factory = CreateFactory(identityService, sink);
+            _client = _factory.CreateClient();
 
-            using var response = await client.SendAsync(AuthorizedGet($"/identity/v2/identities/{UniqueId}"));
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            _response = await _client.SendAsync(
+                AuthorizedGet($"/identity/v2/identities/results/{ResultsToken}")
+            );
+            _events = sink.Events;
 
-            IReadOnlyList<LogEvent> events = sink.Events;
-
-            // Scoped to the Path property and the rendered message on the frontend and Core
-            // completion events (C6's literal wording), not every property a Verbose capture
-            // happens to see: unrelated framework internals (routing candidate matching, endpoint
-            // selection) legitimately carry the raw path and are out of D11's scope, and this
-            // capture bypasses the production Filter.ByExcluding entirely (see the class remarks),
-            // so it cannot speak to Microsoft.AspNetCore.Hosting.Diagnostics either way - that is
-            // proven separately by Given_The_Production_Logging_Pipeline.
-            foreach (
-                LogEvent completed in events.Where(e =>
-                    IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
+            _errorEvent = _events.Single(e =>
+                e.Level == LogEventLevel.Error
+                && e.MessageTemplate.Text.Contains("Identity provider threw", StringComparison.Ordinal)
+            );
+            _debugEvent = _events.Single(e =>
+                e.Level == LogEventLevel.Debug
+                && e.MessageTemplate.Text.Contains(
+                    "Identity provider failure detail",
+                    StringComparison.Ordinal
                 )
-            )
-            {
-                ScalarProperty(completed, "Path").Should().NotContain(UniqueId);
-                completed.RenderMessage().Should().NotContain(UniqueId);
-            }
+            );
+        }
 
-            // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
-            // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from every value
-            // it sanitizes, redacted or not - unchanged by D11, whose only promise is that the
-            // identifier segment itself never reaches the log.
-            LogEvent frontendCompleted = events.Single(IsFrontendCompletionEvent);
-            ScalarProperty(frontendCompleted, "Path").Should().Be("/identity/v2/identities/id");
-
-            LogEvent coreCompleted = events.Single(IsCoreCompletionEvent);
-            ScalarProperty(coreCompleted, "Path").Should().Be("/identity/v2/identities/id");
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
         }
 
         [Test]
-        public async Task It_redacts_the_token_on_a_results_poll_failure_and_logs_the_provider_exception_contract()
+        public void It_returns_502_bad_gateway()
         {
-            var sink = new CapturingSerilogSink();
-            var identityService = new FakeIdentityService();
-            await using var factory = CreateFactory(identityService, sink);
-            using var client = factory.CreateClient();
+            _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        }
 
-            using var response = await client.SendAsync(
-                AuthorizedGet($"/identity/v2/identities/results/{ResultsToken}")
-            );
-            response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-
-            IReadOnlyList<LogEvent> events = sink.Events;
+        [Test]
+        public void It_never_logs_the_results_token_in_the_path_or_rendered_message_of_any_completion_event()
+        {
             foreach (
-                LogEvent completed in events.Where(e =>
+                LogEvent completed in _events.Where(e =>
                     IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
                 )
             )
@@ -300,41 +370,65 @@ public class IdentityLogRedactionTests
                 ScalarProperty(completed, "Path").Should().NotContain(ResultsToken);
                 completed.RenderMessage().Should().NotContain(ResultsToken);
             }
+        }
 
-            LogEvent frontendFailed = events.Single(IsFrontendCompletionEvent);
+        [Test]
+        public void It_redacts_the_token_in_the_frontend_completion_path()
+        {
+            LogEvent frontendFailed = _events.Single(IsFrontendCompletionEvent);
             ScalarProperty(frontendFailed, "Path").Should().Be("/identity/v2/identities/results/token");
+        }
 
-            LogEvent coreCompletedOrFailed = events.Single(IsCoreCompletionEvent);
+        [Test]
+        public void It_redacts_the_token_in_the_core_completion_path()
+        {
+            LogEvent coreCompletedOrFailed = _events.Single(IsCoreCompletionEvent);
             ScalarProperty(coreCompletedOrFailed, "Path")
                 .Should()
                 .Be("/identity/v2/identities/results/token");
+        }
 
-            // C7: the provider boundary's sanitized failure-level log carries the exception type,
-            // the stage/operation, and the trace id, plus stack frames - never the provider's own
-            // message; the full exception (with the message) is logged only at Debug.
-            LogEvent errorEvent = events.Single(e =>
-                e.Level == LogEventLevel.Error
-                && e.MessageTemplate.Text.Contains("Identity provider threw", StringComparison.Ordinal)
-            );
-            ScalarProperty(errorEvent, "ExceptionType").Should().Be(nameof(InvalidOperationException));
-            errorEvent.Properties.Should().ContainKey("Operation");
-            errorEvent.Properties.Should().ContainKey("TraceId");
-            errorEvent.Exception.Should().BeNull();
-            errorEvent.RenderMessage().Should().Contain("at ");
-            errorEvent.RenderMessage().Should().NotContain(FakeIdentityService.ResultsFailureMessage);
+        // C7: the provider boundary's sanitized failure-level log carries the exception type, the
+        // stage and operation, and the trace id, plus stack frames, but never the provider's own
+        // message. The full exception (with the message) is logged only at Debug.
+        [Test]
+        public void It_logs_the_exception_type_on_the_error_event()
+        {
+            ScalarProperty(_errorEvent, "ExceptionType").Should().Be(nameof(InvalidOperationException));
+        }
 
-            LogEvent debugEvent = events.Single(e =>
-                e.Level == LogEventLevel.Debug
-                && e.MessageTemplate.Text.Contains(
-                    "Identity provider failure detail",
-                    StringComparison.Ordinal
-                )
-            );
-            debugEvent.Exception.Should().NotBeNull();
-            debugEvent.Exception!.Message.Should().Be(FakeIdentityService.ResultsFailureMessage);
+        [Test]
+        public void It_logs_the_operation_and_trace_id_properties_on_the_error_event()
+        {
+            _errorEvent.Properties.Should().ContainKey("Operation");
+            _errorEvent.Properties.Should().ContainKey("TraceId");
+        }
 
-            events
-                .Where(e => e != debugEvent)
+        [Test]
+        public void It_does_not_attach_the_raw_exception_to_the_error_event()
+        {
+            _errorEvent.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public void It_includes_stack_frames_but_not_the_provider_message_in_the_error_event()
+        {
+            _errorEvent.RenderMessage().Should().Contain("at ");
+            _errorEvent.RenderMessage().Should().NotContain(FakeIdentityService.ResultsFailureMessage);
+        }
+
+        [Test]
+        public void It_logs_the_raw_exception_message_only_at_debug()
+        {
+            _debugEvent.Exception.Should().NotBeNull();
+            _debugEvent.Exception!.Message.Should().Be(FakeIdentityService.ResultsFailureMessage);
+        }
+
+        [Test]
+        public void It_never_leaks_the_provider_message_outside_the_debug_event()
+        {
+            _events
+                .Where(e => e != _debugEvent)
                 .SelectMany(e =>
                     new[] { e.RenderMessage() }
                         .Concat(e.Properties.Values.Select(PropertyText))
@@ -345,37 +439,61 @@ public class IdentityLogRedactionTests
                     text.Contains(FakeIdentityService.ResultsFailureMessage, StringComparison.Ordinal)
                 );
         }
+    }
 
-        /// <summary>
-        /// Negative control (Disciplines: "verify the verifier" / C6): a resource route still logs
-        /// its resolved path at both DMS layers. The complementary half of the negative control - a
-        /// resource route still produces a Microsoft.AspNetCore.Hosting.Diagnostics event while an
-        /// identity id/token route does not - is proven by
-        /// <see cref="Given_The_Production_Logging_Pipeline"/>, which is the only harness that
-        /// actually exercises <c>IdentityHostingDiagnosticsFilter</c> as wired into the production
-        /// pipeline.
-        /// </summary>
-        [Test]
-        public async Task A_resource_route_still_logs_its_resolved_path_at_both_layers()
+    /// <summary>
+    /// Negative control (Disciplines: "verify the verifier" / C6): a resource route still logs its
+    /// resolved path at both DMS layers. The complementary half of the negative control - a resource
+    /// route still produces a Microsoft.AspNetCore.Hosting.Diagnostics event while an identity
+    /// id/token route does not - is proven by <see cref="Given_The_Production_Logging_Pipeline"/>,
+    /// which is the only harness that actually exercises
+    /// <c>IdentityHostingDiagnosticsFilter</c> as wired into the production pipeline.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Toggle_Is_On_With_Single_Tenancy
+    {
+        private HttpResponseMessage _response = null!;
+        private IReadOnlyList<LogEvent> _events = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
             var identityService = new FakeIdentityService();
-            await using var factory = CreateFactory(identityService, sink);
-            using var client = factory.CreateClient();
+            _factory = CreateFactory(identityService, sink);
+            _client = _factory.CreateClient();
 
             // No Authorization header: JwtAuthenticationMiddleware (Core) rejects the request before
             // any backend or datastore call, but only after RequestResponseLoggingMiddleware - the
             // first Core pipeline step - has already wrapped it, so a completion event is still
             // emitted with the real, unredacted path.
-            using var response = await client.GetAsync("/data/ed-fi/students/abc");
-            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            _response = await _client.GetAsync("/data/ed-fi/students/abc");
+            _events = sink.Events;
+        }
 
-            IReadOnlyList<LogEvent> events = sink.Events;
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
 
-            LogEvent frontendEvent = events.Single(IsFrontendCompletionEvent);
+        [Test]
+        public void It_returns_401_unauthorized()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public void It_still_logs_its_resolved_path_at_both_layers()
+        {
+            LogEvent frontendEvent = _events.Single(IsFrontendCompletionEvent);
             ScalarProperty(frontendEvent, "Path").Should().Be("/data/ed-fi/students/abc");
 
-            LogEvent coreEvent = events.Single(IsCoreCompletionEvent);
+            LogEvent coreEvent = _events.Single(IsCoreCompletionEvent);
             ScalarProperty(coreEvent, "Path").Should().Be("/ed-fi/students/abc");
         }
     }
@@ -383,27 +501,49 @@ public class IdentityLogRedactionTests
     [TestFixture]
     public class Given_Multi_Tenancy_Is_Enabled
     {
-        [Test]
-        public async Task It_keeps_the_tenant_and_qualifier_literals_while_redacting_the_identifier()
+        private HttpResponseMessage _response = null!;
+        private IReadOnlyList<LogEvent> _events = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
             var identityService = new FakeIdentityService();
-            await using var factory = CreateFactory(
+            _factory = CreateFactory(
                 identityService,
                 sink,
                 multiTenancy: true,
                 routeQualifierSegments: "districtId,schoolYear"
             );
-            using var client = factory.CreateClient();
+            _client = _factory.CreateClient();
 
-            using var response = await client.SendAsync(
+            _response = await _client.SendAsync(
                 AuthorizedGet($"/tenant-a/255901/2026/identity/v2/identities/{UniqueId}")
             );
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            _events = sink.Events;
+        }
 
-            IReadOnlyList<LogEvent> events = sink.Events;
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_never_logs_the_unique_id_in_the_path_or_rendered_message_of_any_completion_event()
+        {
             foreach (
-                LogEvent completed in events.Where(e =>
+                LogEvent completed in _events.Where(e =>
                     IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
                 )
             )
@@ -411,18 +551,137 @@ public class IdentityLogRedactionTests
                 ScalarProperty(completed, "Path").Should().NotContain(UniqueId);
                 completed.RenderMessage().Should().NotContain(UniqueId);
             }
+        }
 
+        [Test]
+        public void It_keeps_the_tenant_and_qualifier_literals_in_the_frontend_completion_path()
+        {
             // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
             // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from any value,
             // including this one, same as it always has for a non-identity path - only the
             // identifier segment itself is what D11 promises never reaches the log.
             const string expectedPath = "/tenant-a/255901/2026/identity/v2/identities/id";
 
-            LogEvent frontendCompleted = events.Single(IsFrontendCompletionEvent);
+            LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
             ScalarProperty(frontendCompleted, "Path").Should().Be(expectedPath);
+        }
 
-            LogEvent coreCompleted = events.Single(IsCoreCompletionEvent);
+        [Test]
+        public void It_keeps_the_tenant_and_qualifier_literals_in_the_core_completion_path()
+        {
+            const string expectedPath = "/tenant-a/255901/2026/identity/v2/identities/id";
+
+            LogEvent coreCompleted = _events.Single(IsCoreCompletionEvent);
             ScalarProperty(coreCompleted, "Path").Should().Be(expectedPath);
+        }
+    }
+
+    /// <summary>
+    /// Unit-level coverage of <see cref="IdentityRoutePathRedactor.Redact"/> itself (PR review
+    /// finding): ASP.NET Core routing matches these routes case-insensitively and tolerates a
+    /// trailing slash, so the redactor's regexes must too, or an identifier reaches
+    /// <c>LoggingMiddleware</c>'s scope <c>Path</c> unredacted whenever a client or an upstream
+    /// proxy sends the route in a different case or with a trailing slash.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Mixed_Case_Or_Trailing_Slash_Path_For_The_Route_Path_Redactor
+    {
+        [TestCase("/Identity/V2/Identities/605943412", "/Identity/V2/Identities/{id}")]
+        [TestCase("/identity/v2/identities/605943412/", "/identity/v2/identities/{id}")]
+        [TestCase("/IDENTITY/V2/IDENTITIES/605943412/", "/IDENTITY/V2/IDENTITIES/{id}")]
+        public void It_redacts_a_get_by_id_path_regardless_of_case_or_a_trailing_slash(
+            string path,
+            string expected
+        )
+        {
+            IdentityRoutePathRedactor
+                .Redact(new PathString(path), [], multiTenancy: false)
+                .Should()
+                .Be(expected);
+        }
+
+        [TestCase(
+            "/Identity/V2/Identities/Results/SECRET-TOKEN-XYZ",
+            "/Identity/V2/Identities/Results/{token}"
+        )]
+        [TestCase(
+            "/identity/v2/identities/results/SECRET-TOKEN-XYZ/",
+            "/identity/v2/identities/results/{token}"
+        )]
+        public void It_redacts_a_results_poll_path_regardless_of_case_or_a_trailing_slash(
+            string path,
+            string expected
+        )
+        {
+            IdentityRoutePathRedactor
+                .Redact(new PathString(path), [], multiTenancy: false)
+                .Should()
+                .Be(expected);
+        }
+
+        [TestCase("/identity/v2/identities/FIND/")]
+        [TestCase("/identity/v2/identities/Search/")]
+        public void It_leaves_find_and_search_unchanged_even_with_a_trailing_slash(string path)
+        {
+            IdentityRoutePathRedactor.Redact(new PathString(path), [], multiTenancy: false).Should().Be(path);
+        }
+
+        [Test]
+        public void It_keeps_the_tenant_and_qualifier_literal_case_while_redacting_a_mixed_case_trailing_slash_identifier()
+        {
+            IdentityRoutePathRedactor
+                .Redact(
+                    new PathString("/tenant-a/255901/2026/IDENTITY/V2/IDENTITIES/605943412/"),
+                    ["districtId", "schoolYear"],
+                    multiTenancy: true
+                )
+                .Should()
+                .Be("/tenant-a/255901/2026/IDENTITY/V2/IDENTITIES/{id}");
+        }
+    }
+
+    /// <summary>
+    /// Unit-level coverage of <see cref="IdentityHostingDiagnosticsFilter.Matches"/> itself (PR
+    /// review finding), mirroring the case-insensitive and trailing-slash-tolerant cases above but
+    /// against the predicate the framework hosting-diagnostics filter actually evaluates.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Mixed_Case_Or_Trailing_Slash_Path_For_The_Hosting_Diagnostics_Filter
+    {
+        private static LogEvent CaptureHostingDiagnosticsEvent(string path)
+        {
+            var sink = new CapturingSerilogSink();
+            using Logger captureLogger = new LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+
+            captureLogger
+                .ForContext("SourceContext", HostingDiagnosticsSourceContext)
+                .ForContext("Path", path)
+                .ForContext("RequestPath", path)
+                .Information("Request starting {Path}", path);
+
+            return sink.Events.Single();
+        }
+
+        [TestCase("/Identity/V2/Identities/605943412")]
+        [TestCase("/identity/v2/identities/605943412/")]
+        [TestCase("/IDENTITY/V2/IDENTITIES/605943412/")]
+        public void It_matches_a_get_by_id_path_regardless_of_case_or_a_trailing_slash(string path)
+        {
+            IdentityHostingDiagnosticsFilter.Matches(CaptureHostingDiagnosticsEvent(path)).Should().BeTrue();
+        }
+
+        [TestCase("/Identity/V2/Identities/Results/SECRET-TOKEN-XYZ")]
+        [TestCase("/identity/v2/identities/results/SECRET-TOKEN-XYZ/")]
+        public void It_matches_a_results_poll_path_regardless_of_case_or_a_trailing_slash(string path)
+        {
+            IdentityHostingDiagnosticsFilter.Matches(CaptureHostingDiagnosticsEvent(path)).Should().BeTrue();
+        }
+
+        [TestCase("/identity/v2/identities/FIND/")]
+        [TestCase("/identity/v2/identities/Search/")]
+        public void It_does_not_match_find_or_search_even_with_a_trailing_slash(string path)
+        {
+            IdentityHostingDiagnosticsFilter.Matches(CaptureHostingDiagnosticsEvent(path)).Should().BeFalse();
         }
     }
 
