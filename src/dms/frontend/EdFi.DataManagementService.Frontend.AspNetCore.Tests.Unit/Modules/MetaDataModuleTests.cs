@@ -67,6 +67,103 @@ public class MetadataModuleTests
     [TestFixture]
     public class Given_OpenApi_documents_with_internal_authentication_urls
     {
+        [TestCase("section", false, "http://localhost/dms-api/{section}/oauth/token")]
+        [TestCase("profileName", false, "http://localhost/dms-api/{profileName}/oauth/token")]
+        [TestCase("section", true, "http://localhost/dms-api/255901/oauth/token")]
+        [TestCase("profileName", true, "http://localhost/dms-api/255901/oauth/token")]
+        public async Task It_distinguishes_mapped_endpoint_parameters_from_route_qualifiers(
+            string qualifierName,
+            bool qualified,
+            string expectedTokenUrl
+        )
+        {
+            bool discovery = qualifierName is "section";
+            string endpointPattern = discovery
+                ? "/metadata/specifications/{section}-spec.json"
+                : "/metadata/specifications/profiles/{profileName}/resources-spec.json";
+            if (qualified)
+            {
+                endpointPattern = "/{__metadataRouteQualifier0}" + endpointPattern;
+            }
+            var context = CreateHttpContext("/metadata/specifications", "/dms-api");
+            context.SetEndpoint(
+                new RouteEndpoint(
+                    _ => Task.CompletedTask,
+                    RoutePatternFactory.Parse(endpointPattern),
+                    0,
+                    EndpointMetadataCollection.Empty,
+                    "Metadata"
+                )
+            );
+            context.Request.RouteValues[qualifierName] = discovery ? "discovery" : "StudentProfile";
+            if (qualified)
+            {
+                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+            }
+
+            var options = FrontendOptions(settings => settings.RouteQualifierSegments = qualifierName);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            JsonNode document = JsonNode.Parse(
+                """
+                {
+                  "openapi": "3.0.0",
+                  "components": {
+                    "securitySchemes": {
+                      "oauth2_client_credentials": {
+                        "type": "oauth2",
+                        "flows": {
+                          "clientCredentials": {
+                            "tokenUrl": "https://internal-auth.example/oauth/token",
+                            "scopes": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """
+            )!;
+            if (discovery)
+            {
+                var contentProvider = A.Fake<IContentProvider>();
+                A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
+                    .Returns(document);
+                await MetadataEndpointModule.GetSectionMetadata(
+                    context,
+                    contentProvider,
+                    options,
+                    dataStoreProvider
+                );
+            }
+            else
+            {
+                var apiService = A.Fake<IApiService>();
+                A.CallTo(() =>
+                        apiService.GetProfileOpenApiSpecificationAsync(
+                            "StudentProfile",
+                            A<string?>._,
+                            A<JsonArray>._
+                        )
+                    )
+                    .Returns(Task.FromResult<JsonNode?>(document));
+                await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                    context,
+                    "StudentProfile",
+                    dataStoreProvider,
+                    apiService,
+                    options
+                );
+            }
+
+            JsonNode response = (await ReadJsonResponseAsync(context))!;
+            response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                "clientCredentials"
+            ]!["tokenUrl"]!
+                .GetValue<string>()
+                .Should()
+                .Be(expectedTokenUrl);
+        }
+
         [TestCase("resources")]
         [TestCase("descriptors")]
         [TestCase("changeQueries")]
