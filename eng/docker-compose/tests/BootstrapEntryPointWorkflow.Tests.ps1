@@ -2850,6 +2850,7 @@ Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separ
         It "documents the normal wrapper and explicit local-image rebuild commands" {
             $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1'
             $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1\s+-Rebuild'
+            $script:gettingStarted | Should -Match '(?is)`-Rebuild`.{0,100}`-r`\s+alias'
         }
 
         It "documents the Discovery-to-DMS HTTP Basic token flow" {
