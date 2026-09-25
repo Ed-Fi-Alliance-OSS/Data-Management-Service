@@ -2058,19 +2058,16 @@ exit 0
             { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claimset fragment directory does not exist*"
         }
 
-        It "reuses the same directory unchanged when called again, as the -InfraOnly then -DmsOnly phases do" {
+        It "reuses the same directory when called again, as the -InfraOnly then -DmsOnly phases do" {
             # CMS is bind-mounted to this directory after the first phase, so the second call must not
-            # delete or recreate it, and must not rewrite files whose content already matches.
+            # delete or recreate it.
             $firstWorkspace = Initialize-E2EClaimsWorkspace
             $markerPath = Join-Path $firstWorkspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
             $creationTime = (Get-Item -LiteralPath $firstWorkspace).CreationTimeUtc
-            # Copy-Item carries the source timestamp, so a sentinel write time is what exposes a re-copy.
-            $sentinelWriteTime = [datetime]::new(2001, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)
             $hashesBefore = @{}
             foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claimset.json" -File) {
                 $hashesBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash
-                $file.LastWriteTimeUtc = $sentinelWriteTime
             }
 
             $secondWorkspace = Initialize-E2EClaimsWorkspace
@@ -2082,7 +2079,6 @@ exit 0
             $stagedFiles.Count | Should -Be $script:expectedE2EClaimsFiles.Count
             foreach ($file in $stagedFiles) {
                 (Get-FileHash -LiteralPath $file.FullName).Hash | Should -Be $hashesBefore[$file.Name]
-                $file.LastWriteTimeUtc | Should -Be $sentinelWriteTime -Because "$($file.Name) already matched its source and must not be rewritten"
             }
         }
 

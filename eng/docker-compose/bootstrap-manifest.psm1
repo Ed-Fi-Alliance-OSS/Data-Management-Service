@@ -626,8 +626,8 @@ function Initialize-E2EClaimsWorkspace {
     .DESCRIPTION
     The directory is created only when missing and is never deleted or replaced: a later startup
     phase calls this again while CMS is bind-mounted to it, and replacing it would leave CMS mounted
-    to the orphaned original. Content is synced in place instead; unchanged files are not rewritten
-    and stale *-claimset.json files are removed.
+    to the orphaned original. Content is synced in place instead: every intended file is copied over
+    its staged copy and stale *-claimset.json files are removed.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal E2E staging helper; the E2E setup scripts do not expose -WhatIf end to end.')]
     param()
@@ -666,16 +666,7 @@ function Initialize-E2EClaimsWorkspace {
     }
 
     foreach ($fileName in $intendedSources.Keys) {
-        $sourcePath = $intendedSources[$fileName]
-        $stagedPath = Join-Path $workspace $fileName
-        $isCurrent = (Test-Path -LiteralPath $stagedPath -PathType Leaf) -and
-            [System.Linq.Enumerable]::SequenceEqual(
-                [byte[]][System.IO.File]::ReadAllBytes($stagedPath),
-                [byte[]][System.IO.File]::ReadAllBytes($sourcePath)
-            )
-        if (-not $isCurrent) {
-            Copy-Item -LiteralPath $sourcePath -Destination $stagedPath -Force -ErrorAction Stop
-        }
+        Copy-Item -LiteralPath $intendedSources[$fileName] -Destination (Join-Path $workspace $fileName) -Force -ErrorAction Stop
     }
 
     return $workspace
