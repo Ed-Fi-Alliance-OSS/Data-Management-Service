@@ -186,7 +186,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
     )
     {
         Claim? claim = FindClaim(resourceClaimName, claims);
-        ClaimSet? claimSet = claim is null ? null : FindClaimSetExact(claim, claimSetName);
+        ClaimSet? claimSet = claim is null ? null : FindClaimSet(claim, claimSetName);
         ClaimSetAction? action = claimSet?.Actions.Find(existing =>
             existing.Name.Equals(actionName, StringComparison.OrdinalIgnoreCase)
         );
@@ -215,7 +215,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
     )
     {
         Claim? claim = FindClaim(resourceClaimName, claims);
-        ClaimSet? claimSet = claim is null ? null : FindClaimSetExact(claim, claimSetName);
+        ClaimSet? claimSet = claim is null ? null : FindClaimSet(claim, claimSetName);
         if (claimSet is null)
         {
             return ClaimSetResourceActionStatus.MissingAssociation;
@@ -240,7 +240,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
             return false;
         }
 
-        ClaimSet? claimSet = FindClaimSetExact(claim, claimSetName);
+        ClaimSet? claimSet = FindClaimSet(claim, claimSetName);
         if (claimSet is null)
         {
             return false;
@@ -373,6 +373,11 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
 
         return null;
     }
+
+    private static ClaimSet? FindClaimSet(Claim claim, string claimSetName) =>
+        claim.ClaimSets.Find(claimSet =>
+            claimSet.Name.Equals(claimSetName, StringComparison.OrdinalIgnoreCase)
+        );
 
     private static ClaimSet? FindClaimSetExact(Claim claim, string claimSetName) =>
         claim.ClaimSets.Find(claimSet =>
