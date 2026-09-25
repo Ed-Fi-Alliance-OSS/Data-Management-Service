@@ -15,6 +15,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the system has these "people"
                   | personId | sourceSystemDescriptor                      |
                   | p001     | uri://ed-fi.org/SourceSystemDescriptor#Pass |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901,25590100100000"
               And the system has these "Staffs"
                   | staffUniqueId | firstName | lastSurname |
                   | s0001         | peterson  | Buck        |
@@ -22,6 +23,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   | s0003         | Tim       | Buck        |
                   | s0004         | Adam      | Buck        |
                   | s0005         | Francis   | Buck        |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901,25590100100000"
               And the system has these "staffEducationOrganizationAssignmentAssociations"
                   | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference                | staffReference                 |
                   | 10/10/2020 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 25590100100000 } | {  "staffUniqueId": "s0001"  } |

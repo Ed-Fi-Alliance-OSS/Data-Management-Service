@@ -10,21 +10,27 @@ Feature: EducationOrganizationChanges Authorization
               And the system has these "schools"
                   | _storeResultingIdInVariable | schoolId  | nameOfInstitution      | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference       |
                   | SchoolId1                   | 255901001 | Grand Bend High School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 255901} |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | StudentId1                  | "61"            | student-fn | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "studentSchoolAssociations"
                   | _storeResultingIdInVariable |  | studentReference            | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
                   | StudentSchoolAssociationId1 |  | { "studentUniqueId": "61" } | { "schoolId": 255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "contacts"
                   | _storeResultingIdInVariable | contactUniqueId | firstName          | lastSurname |
                   | ContactId1                  | "91111"         | Authorized contact | contact-ln  |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "studentContactAssociations"
                   | studentReference            | contactReference               | emergencyContactStatus |
                   | { "studentUniqueId": "61" } | { "contactUniqueId": "91111" } | "true"                 |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "Staffs"
                   | _storeResultingIdInVariable | staffUniqueId | firstName | lastSurname |
                   | StaffId1                    | s0001         | peterson  | Buck        |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "staffEducationOrganizationAssignmentAssociations"
                   | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference           | staffReference                 |
                   | 10/10/2020 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 255901001 } | {  "staffUniqueId": "s0001"  } |
@@ -265,23 +271,29 @@ Feature: EducationOrganizationChanges Authorization
               And the system has these "schools"
                   | _storeResultingIdInVariable | schoolId  | nameOfInstitution      | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference       |
                   | SchoolId1                   | 255901001 | Grand Bend High School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 255901} |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | StudentId1                  | "61"            | student-fn | student-ln  | 2008-01-01 |
                   | StudentId2                  | "62"            | student-fn | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "studentSchoolAssociations"
                   | _storeResultingIdInVariable |  | studentReference            | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
                   | StudentSchoolAssociationId1 |  | { "studentUniqueId": "61" } | { "schoolId": 255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
                   | StudentSchoolAssociationId2 |  | { "studentUniqueId": "62" } | { "schoolId": 255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "contacts"
                   | _storeResultingIdInVariable | contactUniqueId | firstName          | lastSurname |
                   | ContactId1                  | "91111"         | Authorized contact | contact-ln  |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "studentContactAssociations"
                   | studentReference            | contactReference               | emergencyContactStatus |
                   | { "studentUniqueId": "61" } | { "contactUniqueId": "91111" } | "true"                 |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "Staffs"
                   | _storeResultingIdInVariable | staffUniqueId | firstName | lastSurname |
                   | StaffId1                    | s0001         | peterson  | Buck        |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "staffEducationOrganizationAssignmentAssociations"
                   | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference           | staffReference                 |
                   | 10/10/2020 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 255901001 } | {  "staffUniqueId": "s0001"  } |
@@ -438,6 +450,7 @@ Feature: EducationOrganizationChanges Authorization
               And the system has these "schools"
                   | _storeResultingIdInVariable | schoolId  | nameOfInstitution      | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | SchoolId1                   | 255901001 | Grand Bend High School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | StudentId1                  | "61"            | student-fn | student-ln  | 2008-01-01 |
@@ -448,6 +461,7 @@ Feature: EducationOrganizationChanges Authorization
               And the system has these "Staffs"
                   | _storeResultingIdInVariable | staffUniqueId | firstName | lastSurname |
                   | StaffId1                    | s0001         | peterson  | Buck        |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
 
         @e2e-ci-shard-3
         Scenario: 08 Ensure client can  access the Student  when a School updated to new LEA

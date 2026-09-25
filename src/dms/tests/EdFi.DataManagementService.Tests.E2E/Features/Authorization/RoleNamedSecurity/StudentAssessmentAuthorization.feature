@@ -11,9 +11,11 @@ Feature: StudentAssessment Authorization
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference      |
                   | 255901001 | School 001        | [{ "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" }] | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school" }] | {"localEducationAgencyId": 255901} |
                   | 255901044 | School 044        | [{ "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" }] | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school" }] | {"localEducationAgencyId": 255901} |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901"
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "61"            | student-fn | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these "studentSchoolAssociations"
                   | studentReference          | schoolReference         | entryGradeLevelDescriptor                          | entryDate  |
                   | {"studentUniqueId": "61"} | {"schoolId": 255901001} | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |

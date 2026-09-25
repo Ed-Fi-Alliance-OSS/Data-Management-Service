@@ -508,9 +508,11 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                   And the system has these "schools"
                       | schoolId   | nameOfInstitution  | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                       | 1255901001 | Tracked SSA School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "1255901001"
                   And the system has these "students"
                       | studentUniqueId | firstName | lastSurname | birthDate  |
                       | "11"            | Tracked   | Student     | 2008-01-01 |
+                  And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
 
             @e2e-ci-shard-3
             Scenario: 11 Deleted StudentSchoolAssociation appears in deletes response with student natural key
