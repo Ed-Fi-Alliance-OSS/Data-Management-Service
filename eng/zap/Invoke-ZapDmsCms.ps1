@@ -68,7 +68,7 @@ function New-DmsClient
     $applicationBody = @{
         vendorId = $vendor.id
         applicationName = "ZAP App $(Get-Random -Minimum 1000 -Maximum 9999999)"
-        claimSetName = "E2E-RelationshipsWithEdOrgsOnlyClaimSet"
+        claimSetName = "EdFiSandbox"
         educationOrganizationIds = @(255, 255901)
         dataStoreIds = @($instance.id)
     } | ConvertTo-Json
@@ -180,7 +180,7 @@ Write-Host "Requesting DMS token..."
 $dmsAuth = New-DmsToken -ClientId $client.ClientId -ClientSecret $client.ClientSecret
 
 Write-Host "Validating CMS access..."
-Invoke-RestMethod -Method Get -Uri "$CmsBaseUrl/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet" -Headers @{ Authorization = "Bearer $configToken" } | Out-Null
+Invoke-RestMethod -Method Get -Uri "$CmsBaseUrl/v3/authorizationMetadata?claimSetName=EdFiSandbox" -Headers @{ Authorization = "Bearer $configToken" } | Out-Null
 
 Write-Host "Validating DMS access..."
 Invoke-RestMethod -Method Get -Uri "$($dmsAuth.DataApi)/ed-fi/gradeLevelDescriptors" -Headers @{ Authorization = "Bearer $($dmsAuth.Token)" } | Out-Null

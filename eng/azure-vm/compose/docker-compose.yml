@@ -120,8 +120,8 @@ x-cms-common-env: &cms-common-env
   IdentitySettings__ClientSecretValidation__MaximumLength: "128"
   IdentitySettings__RequireHttpsMetadata: "false"
   IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
-  # Embedded claim sets include E2E-NoFurtherAuthRequiredClaimSet (full access),
-  # E2E-NameSpaceBasedClaimSet, and E2E-RelationshipsWithEdOrgsOnlyClaimSet (school/district-level).
+  # Embedded claim sets include EdFiSandbox (the bootstrap default: broad access, with
+  # relationship-based data scoped to the app's EdOrgs) and the other built-in claim sets.
   # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
   # ./claims (mounted below). Custom claim sets can also be created at runtime via
   # POST/import /v3/claimSets.

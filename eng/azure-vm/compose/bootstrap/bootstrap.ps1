@@ -22,7 +22,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ClaimSetName', Justification = 'Consumed as the default value of the New-ReviewApplication -ClaimSet parameter; the analyzer does not track usage inside nested function parameter defaults.')]
 param(
     [string]$EnvFile = "$PSScriptRoot/../.env",
-    [string]$ClaimSetName = "E2E-NoFurtherAuthRequiredClaimSet",
+    [string]$ClaimSetName = "EdFiSandbox",
     # Override the gateway base URL (default: PUBLIC_BASE_URL from .env). Set to
     # https://localhost when running on the VM to use the loopback and avoid
     # public-IP hairpin issues.
@@ -216,12 +216,12 @@ Write-Output "== Bootstrapping single-tenant stack ($stConfig) =="
 $stToken = Get-CmsToken -CmsUrl $stConfig -ClientId $adminClientId -ClientSecret $adminClientSecret
 $stDataStoreId = Add-DataStore -CmsUrl $stConfig -AccessToken $stToken -Name "Single-Tenant Data Store" `
     -DataStoreType "Review" -PostgresHost "postgres" -PostgresDbName "edfi_st" -PostgresCredential $pgCredential
-# Full-access single-tenant client. Uses the same -ClaimSetName as the multi-tenant apps (default
-# E2E-NoFurtherAuthRequiredClaimSet) so an override applies consistently across all three.
+# Single-tenant client. Uses the same -ClaimSetName as the multi-tenant apps (default EdFiSandbox,
+# bound to the Grand Bend EdOrgs) so an override applies consistently across all three.
 New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stToken `
     -DataStoreIds @([long]$stDataStoreId)
-# To demo school/district-level authorization, add an EdOrg-scoped client via the CMS, e.g.
-# New-ReviewApplication ... -ClaimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" -EducationOrganizationIds @([long]255901)
+# To demo school-level authorization, add a client bound to a single school, e.g.
+# New-ReviewApplication ... -ClaimSet "EdFiSandbox" -EducationOrganizationIds @([long]255901001)
 
 # --- 3. Multi-tenant --------------------------------------------------------
 Write-Output "== Bootstrapping multi-tenant stack ($mtConfig) =="

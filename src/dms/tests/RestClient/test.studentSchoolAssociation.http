@@ -92,7 +92,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [6001010],
     "dataStoreIds": [{{dataStoreId}}]
 }

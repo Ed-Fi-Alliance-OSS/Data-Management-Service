@@ -1,0 +1,35 @@
+{
+  "name": "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+  "resourceClaims": [
+    {
+      "id": 1,
+      "name": "ed-fi/academicWeeks",
+      "actions": [
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            },
+            {
+              "authStrategyId": 2,
+              "name": "OwnershipBased",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    }
+  ]
+}

@@ -648,19 +648,25 @@ filename without extension as the effective claim-set name for composed attachme
 - `isParent: false` (or omitted) - attaches a claimset entry to an existing leaf resource claim and may
   supply `authorizationStrategyOverridesForCrud`.
 
-Fragment files therefore extend the claims hierarchy; they do not replace or augment the top-level
-`claimSets` collection loaded from embedded `Claims.json`. Under the current CMS additive-fragment
-behavior, the embedded top-level claim-set definitions remain authoritative and fragments compose only into
-the hierarchy. In practice this means:
+Fragment files extend the claims hierarchy, and CMS composition may add to the top-level `claimSets`
+collection loaded from embedded `Claims.json` in one case: when a fragment has at least one non-parent
+resource claim, its effective claim-set name (the top-level `name`, or the filename fallback) carries those
+grants. If embedded `Claims.json` does not already declare that name (compared case-insensitively), CMS
+registers it as a system-reserved claim set, so it gets a `ClaimSet` row and `authorizationMetadata` like any
+embedded claim set. Parent-only fragments register nothing; their top-level names are labels. In practice
+this means:
 
 - a fragment may create or extend resource-claim nodes,
 - a fragment may attach actions to claim set names that already exist in embedded `Claims.json`,
-- a fragment may not, by itself, introduce a brand-new top-level claim set definition that
-  `Add-Application` can select later.
+- a fragment with non-parent entries defines its own claim set when that name is not already declared.
 
-DMS-916 therefore bounds `-ClaimsDirectoryPath` to additive fragments that target claim sets already
-present in embedded `Claims.json`. Supporting arbitrary new claim set definitions would require a separate
-full-file `Claims.json` replacement path (filesystem mode), which is outside this story.
+Bootstrap staging is stricter than CMS composition. `prepare-dms-claims.ps1` bounds bootstrap-managed and
+`-ClaimsDirectoryPath` fragments to claim sets already present in embedded `Claims.json`, and fails fast on
+an unknown name. The one exception is the test-only `-IncludeE2EClaimSets` switch, which only the Kafka CDC
+E2E setup passes: it stages the test-owned E2E fragments and treats their six top-level names as effective
+claim sets, without relaxing the rule for any other fragment. Supporting arbitrary new claim set definitions
+through bootstrap staging would require a separate full-file `Claims.json` replacement path (filesystem
+mode), which is outside this story.
 
 The extension claimset files live in
 `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. Docker Compose
@@ -1547,7 +1553,7 @@ Extensions in DMS map to two concerns: (1) security metadata (claimsets) and (2)
 (ApiSchema overlays). Today the two concerns use different startup paths and neither has a single
 selection abstraction.
 
-**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims` and the Config Service compose startup mounts `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets` to that path. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
+**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims`, stages `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets` plus the test-owned E2E fragments from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments` into `eng/docker-compose/.e2e-claims`, and the Config Service compose startup mounts that directory to that path, so the E2E claim sets are loaded too. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
 
 **ApiSchema overlays** are configured through package-backed environment variables:
 `USE_API_SCHEMA_PATH=true`, `API_SCHEMA_PATH=/app/ApiSchema`, and `SCHEMA_PACKAGES=...`. At container

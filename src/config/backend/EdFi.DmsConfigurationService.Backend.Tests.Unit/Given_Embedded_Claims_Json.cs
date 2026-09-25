@@ -8,12 +8,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -89,6 +91,26 @@ public class Given_Embedded_Claims_Json
 
     public static IEnumerable<string> SeedLoaderInventorySource => SeedLoaderInventory;
 
+    // The claim sets a default deployment loads. The E2E claim sets are defined only by the
+    // test-owned claims fragments, never by the shipped Claims.json.
+    private static readonly string[] ShippedClaimSetNames =
+    [
+        "SISVendor",
+        "EdFiSandbox",
+        "RosterVendor",
+        "AssessmentVendor",
+        "AssessmentRead",
+        "BootstrapDescriptorsandEdOrgs",
+        "SeedLoader",
+        "DistrictHostedSISVendor",
+        "EdFiODSAdminApp",
+        "ABConnect",
+        "EdFiAPIPublisherReader",
+        "EdFiAPIPublisherWriter",
+        "FinanceVendor",
+        "EducationPreparationProgram",
+    ];
+
     [SetUp]
     public void Setup()
     {
@@ -117,16 +139,7 @@ public class Given_Embedded_Claims_Json
             .OfType<JsonObject>()
             .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>())
             .Should()
-            .Contain([
-                "E2E-NameSpaceBasedClaimSet",
-                "E2E-NoFurtherAuthRequiredClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
-                "SeedLoader",
-                "EdFiODSAdminApp",
-            ]);
+            .Contain(["SeedLoader", "EdFiODSAdminApp"]);
 
         ClaimNames(claims["claimsHierarchy"]!)
             .Should()
@@ -279,6 +292,92 @@ public class Given_Embedded_Claims_Json
         }
     }
 
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_declares_exactly_the_shipped_claim_sets(string standardFolder)
+    {
+        DeclaredClaimSetNames(LoadEmbeddedClaims(standardFolder))
+            .Should()
+            .BeEquivalentTo(ShippedClaimSetNames);
+    }
+
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_grants_only_declared_claim_sets_and_no_E2E_claim_set(string standardFolder)
+    {
+        JsonObject claims = LoadEmbeddedClaims(standardFolder);
+
+        List<string> grantedClaimSetNames =
+        [
+            .. ClaimNodes(claims["claimsHierarchy"]!)
+                .SelectMany(GrantedClaimSetNames)
+                .Distinct(StringComparer.Ordinal),
+        ];
+
+        grantedClaimSetNames
+            .Should()
+            .Contain("EdFiSandbox", "the hierarchy walk must reach claim set grants");
+        grantedClaimSetNames.Should().BeSubsetOf(DeclaredClaimSetNames(claims));
+        grantedClaimSetNames.Should().NotContain(name => name.StartsWith("E2E-", StringComparison.Ordinal));
+    }
+
+    // Every default compose deployment runs Hybrid with the shipped AdditionalClaimsets directory
+    // mounted, so a non-parent fragment there would register its claim set in every deployment
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_registers_no_claim_set_from_the_default_fragment_directory(string standardFolder)
+    {
+        string defaultFragmentsPath = Path.Combine(
+            Given_E2E_Test_Fragments.FindRepositoryRoot(),
+            "src",
+            "config",
+            "backend",
+            "EdFi.DmsConfigurationService.Backend",
+            "Deploy",
+            "AdditionalClaimsets"
+        );
+        JsonObject baseClaims = LoadEmbeddedClaims(standardFolder);
+
+        ClaimsLoadResult result = new ClaimsFragmentComposer(
+            A.Fake<ILogger<ClaimsFragmentComposer>>()
+        ).ComposeClaimsFromFragments(
+            new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
+            defaultFragmentsPath
+        );
+
+        result.Failures.Should().BeEmpty();
+        JsonObject composed = new()
+        {
+            ["claimSets"] = result.Nodes!.ClaimSetsNode.DeepClone(),
+            ["claimsHierarchy"] = result.Nodes.ClaimsHierarchyNode.DeepClone(),
+        };
+
+        DeclaredClaimSetNames(composed).Should().BeEquivalentTo(ShippedClaimSetNames);
+        ClaimNodes(composed["claimsHierarchy"]!)
+            .SelectMany(GrantedClaimSetNames)
+            .Distinct(StringComparer.Ordinal)
+            .Should()
+            .BeSubsetOf(ShippedClaimSetNames);
+    }
+
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_has_no_empty_claim_sets_on_hierarchy_nodes(string standardFolder)
+    {
+        List<JsonObject> nodesWithClaimSets =
+        [
+            .. ClaimNodes(LoadEmbeddedClaims(standardFolder)["claimsHierarchy"]!)
+                .Where(node => node.ContainsKey("claimSets")),
+        ];
+
+        nodesWithClaimSets.Should().NotBeEmpty();
+        nodesWithClaimSets
+            .Where(node => node["claimSets"] is not JsonArray { Count: > 0 })
+            .Select(node => node["name"]!.GetValue<string>())
+            .Should()
+            .BeEmpty("a hierarchy node whose last grant was removed must drop its claimSets key");
+    }
+
     [TestCaseSource(nameof(SeedLoaderInventorySource))]
     public void It_grants_SeedLoader_Create_with_inherited_authorization(string resourceClaimUri)
     {
@@ -373,6 +472,40 @@ public class Given_Embedded_Claims_Json
             }
         }
     }
+
+    private static IEnumerable<string> DeclaredClaimSetNames(JsonObject claims) =>
+        claims["claimSets"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>());
+
+    private static IEnumerable<JsonObject> ClaimNodes(JsonNode node)
+    {
+        IEnumerable<JsonObject> nodes = node switch
+        {
+            JsonArray array => array.OfType<JsonObject>(),
+            JsonObject obj => [obj],
+            _ => [],
+        };
+
+        foreach (JsonObject claim in nodes)
+        {
+            yield return claim;
+
+            if (claim["claims"] is JsonArray children)
+            {
+                foreach (JsonObject child in ClaimNodes(children))
+                {
+                    yield return child;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> GrantedClaimSetNames(JsonObject claimNode) =>
+        (claimNode["claimSets"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .Select(claimSet => claimSet["name"]!.GetValue<string>());
 
     private static SeedLoaderGrant? FindSeedLoaderGrant(
         JsonNode node,
