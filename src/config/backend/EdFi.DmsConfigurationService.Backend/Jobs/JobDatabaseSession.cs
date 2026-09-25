@@ -18,6 +18,13 @@ public sealed class JobDatabaseSessionHooks
     public Func<string, CancellationToken, Task>? BeforeOperation { get; init; }
 
     /// <summary>
+    /// Runs inside an operation's pending task after the operation has completed, with its name and token. A test uses
+    /// it to fail an operation that took effect, as a lost acknowledgement would: a commit that committed but whose
+    /// caller sees a failure.
+    /// </summary>
+    public Func<string, CancellationToken, Task>? AfterOperation { get; init; }
+
+    /// <summary>
     /// Receives the cleanup task when a session is handed over. The task completes after the connection is
     /// released, with how the pending operation and its cancellation ended.
     /// </summary>
@@ -205,7 +212,13 @@ public sealed class JobDatabaseSession(DbConnection connection, JobDatabaseSessi
             await before(name, token);
         }
 
-        return await operation(token);
+        T result = await operation(token);
+        if (hooks?.AfterOperation is { } after)
+        {
+            await after(name, token);
+        }
+
+        return result;
     }
 
     private void HandOver(Task pending, CancellationTokenSource? operationCancellation)
