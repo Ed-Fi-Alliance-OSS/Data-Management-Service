@@ -2996,31 +2996,13 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (actionAuthorization.TryGetSharedPolicy(out var sharedEvaluators))
         {
-            var sharedPreflight = AuthorizePostRelationshipIfRequired(
+            return AuthorizePostRelationshipIfRequired(
                 authorizationContext,
                 sharedEvaluators,
                 mappingSet,
                 resource,
                 writePlan
             );
-
-            // A security-configuration terminal is logged against the action whose configuration failed, and
-            // only the target says which action that is. The one planned terminal is therefore carried to the
-            // target selection for either branch rather than returned before any session opens.
-            if (
-                sharedPreflight is WriteGuardRailPreflightResult<UpsertResult>.Stop
-                {
-                    Result: UpsertResult.UpsertFailureSecurityConfiguration,
-                } securityConfigurationStop
-            )
-            {
-                var immediate = ToImmediateBranch(securityConfigurationStop);
-                return WriteGuardRailPreflightResult<UpsertResult>.Continue.ForPostBranches(
-                    new PostTargetAuthorizationBundles(immediate, immediate)
-                );
-            }
-
-            return sharedPreflight;
         }
 
         return WriteGuardRailPreflightResult<UpsertResult>.Continue.ForPostBranches(

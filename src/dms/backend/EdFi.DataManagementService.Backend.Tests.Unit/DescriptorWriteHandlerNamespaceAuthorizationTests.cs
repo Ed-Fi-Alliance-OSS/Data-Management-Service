@@ -101,22 +101,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
-    [TestCase(false, UpsertTargetAction.Create)]
-    [TestCase(true, UpsertTargetAction.Update)]
-    public async Task It_returns_security_configuration_for_descriptor_post_with_an_unknown_strategy_without_opening_a_session(
-        bool targetExists,
-        UpsertTargetAction expectedAction
-    )
+    [Test]
+    public async Task It_returns_security_configuration_for_descriptor_post_with_an_unknown_strategy_without_a_lookup_or_session()
     {
         const string unknownStrategyName = "UnknownDescriptorStrategy";
-        // The failure waits for the target lookup, which runs outside any session, so it is logged against the
-        // action that target selects.
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PostResult = targetExists
-                ? new RelationalWriteTargetLookupResult.ExistingDocument(345L, _documentUuid, 44L)
-                : new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
-        };
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
@@ -133,7 +122,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             .Equal(
                 SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([unknownStrategyName])
             );
-        failure.TargetAction.Should().Be(expectedAction);
+        failure.TargetAction.Should().BeNull();
+        targetLookupService.ResolveForPostCallCount.Should().Be(0);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
@@ -2413,11 +2403,10 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_attributes_a_shared_policy_security_configuration_failure_on_the_precondition_path_after_the_lookup()
+    public async Task It_returns_a_shared_policy_security_configuration_failure_on_the_precondition_path_before_the_lookup()
     {
         const string unknownStrategyName = "UnknownDescriptorStrategy";
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
@@ -2431,9 +2420,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             .Should()
             .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
             .Which.TargetAction.Should()
-            .Be(UpsertTargetAction.Create);
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDocumentInsert(command));
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+            .BeNull();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
@@ -2675,6 +2663,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         public RelationalWriteTargetLookupResult PostResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
+        public int ResolveForPostCallCount { get; private set; }
+
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
@@ -2687,6 +2677,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ResolveForPostCallCount++;
             return Task.FromResult(PostResult);
         }
 

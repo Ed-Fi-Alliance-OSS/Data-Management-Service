@@ -1786,7 +1786,36 @@ actual: {requestInfo.FrontendResponse.Body}
         }
 
         [Test]
-        public async Task It_treats_an_unattributed_failure_as_a_contract_violation_without_logging_an_action()
+        public async Task It_logs_an_unattributed_failure_against_both_actions_when_they_share_one_list()
+        {
+            var result = new UpsertFailureSecurityConfiguration(["misconfigured"]);
+            var logger = new RecordingLogger();
+
+            var requestInfo = await ExecuteWithEvidenceAsync(
+                result,
+                new UpsertActionPolicies(
+                    new UpsertActionPolicyEvidence.Permitted("Create", ["SharedStrategy"]),
+                    new UpsertActionPolicyEvidence.Permitted("Update", ["SharedStrategy"])
+                ),
+                "post-shared-security-configuration",
+                logger,
+                new ReturningRepository(result)
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            var logRecord = logger
+                .Records.Where(static record => record.Level == LogLevel.Error)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            logRecord.Properties["CmsAction"].Should().Be("Create, Update");
+            ((IEnumerable<string>)logRecord.Properties["ConfiguredStrategyNames"]!)
+                .Should()
+                .Equal("SharedStrategy");
+        }
+
+        [Test]
+        public async Task It_treats_an_unattributed_failure_as_a_contract_violation_when_the_lists_differ()
         {
             var result = new UpsertFailureSecurityConfiguration(["misconfigured"]);
             var logger = new RecordingLogger();
@@ -1794,7 +1823,10 @@ actual: {requestInfo.FrontendResponse.Body}
             var act = () =>
                 ExecuteWithEvidenceAsync(
                     result,
-                    NoFurtherAuthorizationRequiredUpsertActionPolicies,
+                    new UpsertActionPolicies(
+                        new UpsertActionPolicyEvidence.Permitted("Create", ["CreateStrategy"]),
+                        new UpsertActionPolicyEvidence.Permitted("Update", ["UpdateStrategy"])
+                    ),
                     "post-unattributed-security-configuration",
                     logger,
                     new ReturningRepository(result)

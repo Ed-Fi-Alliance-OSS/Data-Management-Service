@@ -8470,7 +8470,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .And.Contain("auth.EducationOrganizationIdToStudentDocumentId")
             .And.Contain("anchor column")
             .And.NotContain("EducationOrganization subject");
-        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
+        AssertSecurityConfigurationTerminalReturnedBeforeTheExecutor();
     }
 
     [Test]
@@ -10277,7 +10277,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 diagnostic.ProviderOrPlannerFailureKind
                 == AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
             );
-        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
+        AssertSecurityConfigurationTerminalReturnedBeforeTheExecutor();
     }
 
     /// <summary>
@@ -10699,7 +10699,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Contain("Could not find authorization strategy implementations")
             .And.Contain("CustomAuthorizationStrategy");
-        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
+        AssertSecurityConfigurationTerminalReturnedBeforeTheExecutor();
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
@@ -11554,7 +11554,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Contain("Ed-Fi.School")
             .And.Contain("NamespaceBased")
             .And.Contain("no Namespace securable element resolves to a root table column");
-        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
+        AssertSecurityConfigurationTerminalReturnedBeforeTheExecutor();
     }
 
     [Test]
@@ -11586,7 +11586,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Contain("2000 namespace prefixes")
             .And.Contain("exceeds the SQL Server limit");
-        AssertSecurityConfigurationTerminalDeferredToTargetSelection();
+        AssertSecurityConfigurationTerminalReturnedBeforeTheExecutor();
     }
 
     [Test]
@@ -12615,7 +12615,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_attributes_a_shared_security_configuration_terminal_to_the_selected_action()
+    public async Task It_returns_a_shared_security_configuration_terminal_before_the_executor_without_an_action()
     {
         var result = await _sut.UpsertDocument(
             CreateSchoolPostWithActionAuthorization(
@@ -12626,12 +12626,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             )
         );
 
-        // The fixture's executor stands in for a capture that observed no target, so Create is selected.
         result
             .Should()
             .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
             .Which.TargetAction.Should()
-            .Be(UpsertTargetAction.Create);
+            .BeNull();
+        _capturedExecutorRequests.Should().BeEmpty();
     }
 
     private static IUpsertRequest CreateSchoolPostWithActionAuthorization(
@@ -12683,26 +12683,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         );
 
     /// <summary>
-    /// A security-configuration terminal from the one POST preflight both branches share is logged against
-    /// the action whose configuration failed, so it reaches the write session as the owed result of either
-    /// branch rather than returning before the target is observed.
+    /// A security-configuration terminal from the one POST preflight both actions share is the same whichever
+    /// action the target would select, so it returns before any write session opens.
     /// </summary>
-    private void AssertSecurityConfigurationTerminalDeferredToTargetSelection()
-    {
-        var bundles = _capturedExecutorRequests
-            .Should()
-            .ContainSingle()
-            .Subject.PostTargetAuthorizationBundles.Should()
-            .NotBeNull()
-            .And.Subject.As<PostTargetAuthorizationBundles>();
-        var createNew = bundles.CreateNew.Should().BeOfType<PostBranchAuthorization.Immediate>().Subject;
-        bundles.ExistingDocument.Should().BeSameAs(createNew);
-        createNew
-            .Result.Should()
-            .BeOfType<RelationalWriteExecutorResult.Upsert>()
-            .Which.Result.Should()
-            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
-    }
+    private void AssertSecurityConfigurationTerminalReturnedBeforeTheExecutor() =>
+        _capturedExecutorRequests.Should().BeEmpty();
 
     [Test]
     public async Task It_routes_descriptor_post_requests_to_the_descriptor_write_handler()

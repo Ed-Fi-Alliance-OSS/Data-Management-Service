@@ -278,19 +278,40 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
 
     /// <summary>
     /// Logs a POST security-configuration failure against the action its target selected and that action's
-    /// configured strategies. The backend names that action on every such failure.
+    /// configured strategies. A failure decided before the target was observed names no action; that is only
+    /// valid when Create and Update share one strategy list, so it is logged against both.
     /// </summary>
     private FrontendResponse CreateTargetActionSecurityConfigurationResponse(
         RequestInfo requestInfo,
         UpsertFailureSecurityConfiguration failure
     )
     {
-        UpsertTargetAction action =
-            failure.TargetAction
-            ?? throw new InvalidOperationException(
-                "A POST security-configuration failure must name the action its target selected."
+        UpsertActionPolicies policies = RequireUpsertActionPolicies(requestInfo);
+
+        if (failure.TargetAction is not { } action)
+        {
+            if (
+                requestInfo.UpsertActionAuthorization?.TryGetSharedPolicy(out _) is not true
+                || policies.Create is not UpsertActionPolicyEvidence.Permitted shared
+            )
+            {
+                throw new InvalidOperationException(
+                    "A POST security-configuration failure must name the action its target selected unless "
+                        + "Create and Update share one strategy list."
+                );
+            }
+
+            return CreateSecurityConfigurationFailureResponse(
+                _logger,
+                requestInfo,
+                failure.Errors,
+                failure.Diagnostics,
+                cmsAction: $"{policies.Create.ActionName}, {policies.Update.ActionName}",
+                configuredStrategyNames: shared.StrategyNames
             );
-        UpsertActionPolicyEvidence evidence = RequireUpsertActionPolicies(requestInfo).For(action);
+        }
+
+        UpsertActionPolicyEvidence evidence = policies.For(action);
 
         return CreateSecurityConfigurationFailureResponse(
             _logger,

@@ -108,7 +108,7 @@ internal sealed class DescriptorWriteHandler(
         var (preLookupTerminal, branches) = PlanDescriptorPostAuthorization(postRequest, actionAuthorization);
 
         // A terminal both actions share answers before the target is looked up, exactly as one action list
-        // did. It is never a security-configuration failure, so nothing it returns is logged against an action.
+        // did. A security-configuration failure among them names no action, since it is the same for both.
         if (preLookupTerminal is not null)
         {
             return await ValidateThenReturnDescriptorPostImmediateAsync(
@@ -2696,8 +2696,7 @@ internal sealed class DescriptorWriteHandler(
 
     /// <summary>
     /// Plans a descriptor POST's authorization for each action. When both actions carry the same list, one plan
-    /// serves both branches, and a terminal it reaches answers before any lookup, except a security-configuration
-    /// failure, which waits for the target so it is logged against the action that target selects.
+    /// serves both branches, and a terminal it reaches answers before any lookup.
     /// </summary>
     private static (
         DescriptorPostBranch.Immediate? PreLookupTerminal,
@@ -2712,10 +2711,7 @@ internal sealed class DescriptorWriteHandler(
             var sharedOutcome = ResolveDescriptorPostAuthorization(postRequest, sharedEvaluators);
             var sharedBranch = ToDescriptorPostBranch(sharedOutcome);
 
-            return
-                sharedOutcome
-                    is DescriptorWriteAuthorizationPreflightOutcome.Proceed
-                        or DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError
+            return sharedOutcome is DescriptorWriteAuthorizationPreflightOutcome.Proceed
                 ? (null, new DescriptorPostBranches(sharedBranch, sharedBranch))
                 : ((DescriptorPostBranch.Immediate)sharedBranch, null);
         }
