@@ -425,3 +425,67 @@ Describe "Template workflow MSSQL content gates" {
         $script:populatedWorkflow | Should -Not -Match 'ENVIRONMENT_FILE: \$\{\{ inputs\.environment_file \}\}'
     }
 }
+
+# -PostgresCredential is read only when Add-DataStore BUILDS the PostgreSQL connection string. It
+# used to be [Parameter(Mandatory)] anyway, so a caller registering a pre-built (e.g. MSSQL)
+# connection string had to invent a PostgreSQL credential that was never used.
+Describe "Add-DataStore and Add-DmsSchoolYearInstances require -PostgresCredential only without -ConnectionString" {
+    BeforeAll {
+        $script:dmsManagementModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../Dms-Management.psm1"))
+        Import-Module $script:dmsManagementModule -Force
+        $script:mssqlConnectionString = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+    }
+
+    AfterAll {
+        Remove-Module Dms-Management -Force -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        Mock -ModuleName Dms-Management Invoke-Api { [pscustomobject]@{ id = 42 } }
+    }
+
+    It "registers a pre-built MSSQL connection string without -PostgresCredential" {
+        $id = Add-DataStore -CmsUrl "http://cms/" -AccessToken "token" `
+            -ConnectionString $script:mssqlConnectionString -DatabaseEngine mssql
+
+        $id | Should -Be 42
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 1 -Exactly -ParameterFilter {
+            $body = $Body | ConvertFrom-Json
+            $RelativeUrl -eq "v3/dataStores" -and
+                $body.connectionString -eq $script:mssqlConnectionString -and
+                $body.provider -eq "sqlserver"
+        }
+    }
+
+    It "still builds the PostgreSQL connection string from -PostgresCredential when no -ConnectionString is given" {
+        $credential = ConvertTo-PostgresCredential -UserName "postgres" -Secret "abcdefgh1!"
+
+        Add-DataStore -CmsUrl "http://cms/" -AccessToken "token" -PostgresCredential $credential | Out-Null
+
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 1 -Exactly -ParameterFilter {
+            $body = $Body | ConvertFrom-Json
+            $body.provider -eq "postgresql" -and $body.connectionString -match 'username=postgres' -and $body.connectionString -match 'password=abcdefgh1!'
+        }
+    }
+
+    It "rejects a registration with neither -ConnectionString nor -PostgresCredential, before calling the Configuration Service" {
+        { Add-DataStore -CmsUrl "http://cms/" -AccessToken "token" } |
+            Should -Throw "*-PostgresCredential is required when -ConnectionString is not supplied*"
+
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 0 -Exactly
+    }
+
+    It "registers every school year from a pre-built connection string without -PostgresCredential" {
+        Add-DmsSchoolYearInstances -CmsUrl "http://cms/" -AccessToken "token" -StartYear 2025 -EndYear 2026 `
+            -ConnectionString $script:mssqlConnectionString -DatabaseEngine mssql | Out-Null
+
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 2 -Exactly -ParameterFilter { $RelativeUrl -eq "v3/dataStores" }
+    }
+
+    It "rejects a school-year range with neither -ConnectionString nor -PostgresCredential before registering any year" {
+        { Add-DmsSchoolYearInstances -CmsUrl "http://cms/" -AccessToken "token" -StartYear 2025 -EndYear 2026 } |
+            Should -Throw "*-PostgresCredential is required when -ConnectionString is not supplied*"
+
+        Should -Invoke -ModuleName Dms-Management Invoke-Api -Times 0 -Exactly
+    }
+}
