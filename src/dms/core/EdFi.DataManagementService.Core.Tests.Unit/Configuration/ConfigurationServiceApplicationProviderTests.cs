@@ -44,6 +44,31 @@ public class Given_ConfigurationServiceApplicationProvider
             .BeEquivalentTo(new AuthenticationHeaderValue("Bearer", "cms-token"));
     }
 
+    // A base address with a path is how a CMS behind a reverse proxy is reached, e.g.
+    // ConfigurationServiceSettings:BaseUrl = https://gateway/edfi/config/saas/v8.0/ds5.2/core/.
+    // A request URI with a leading slash is an absolute-path reference, which REPLACES that path
+    // rather than appending to it; the base-address-without-a-path fixtures above cannot tell
+    // the two apart.
+    [Test]
+    public async Task It_Should_Request_The_ApiClient_Under_The_Base_Address_Path()
+    {
+        using var fixture = new ProviderFixture(
+            HttpStatusCode.OK,
+            ValidApplicationContextJson(),
+            baseAddress: "https://gateway.example/edfi/config/saas/v8.0/ds5.2/core/"
+        );
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        result.Should().BeOfType<ApplicationContextResult.Success>();
+        fixture
+            .Handler.Request!.RequestUri!.AbsolutePath.Should()
+            .Be("/edfi/config/saas/v8.0/ds5.2/core/v3/apiClients/client-id");
+    }
+
     [Test]
     public async Task It_Should_Return_NotFound_For_A_404_Response()
     {
@@ -408,12 +433,15 @@ public class Given_ConfigurationServiceApplicationProvider
 
     private sealed class ProviderFixture : IDisposable
     {
+        private const string DefaultBaseAddress = "https://cms.example/";
+
         // csharpier-ignore - IDE0055 requires this empty delegating constructor body shape.
         public ProviderFixture(
             HttpStatusCode statusCode,
             string responseBody,
             bool useResponseHandler = false,
-            ILogger<ConfigurationServiceApplicationProvider>? logger = null
+            ILogger<ConfigurationServiceApplicationProvider>? logger = null,
+            string baseAddress = DefaultBaseAddress
         )
             : this(
                 new HttpResponseMessage(statusCode)
@@ -421,21 +449,23 @@ public class Given_ConfigurationServiceApplicationProvider
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
                 },
                 useResponseHandler,
-                logger
+                logger,
+                baseAddress
             )
         { }
 
         public ProviderFixture(Exception exception)
         {
             Handler = new CapturingHttpMessageHandler(exception);
-            Client = new HttpClient(Handler) { BaseAddress = new Uri("https://cms.example/") };
+            Client = new HttpClient(Handler) { BaseAddress = new Uri(DefaultBaseAddress) };
             Provider = CreateProvider(Client);
         }
 
         private ProviderFixture(
             HttpResponseMessage response,
             bool useResponseHandler = false,
-            ILogger<ConfigurationServiceApplicationProvider>? logger = null
+            ILogger<ConfigurationServiceApplicationProvider>? logger = null,
+            string baseAddress = DefaultBaseAddress
         )
         {
             Handler = new CapturingHttpMessageHandler(response);
@@ -447,7 +477,7 @@ public class Given_ConfigurationServiceApplicationProvider
                     InnerHandler = Handler,
                 }
                 : Handler;
-            Client = new HttpClient(messageHandler) { BaseAddress = new Uri("https://cms.example/") };
+            Client = new HttpClient(messageHandler) { BaseAddress = new Uri(baseAddress) };
             Provider = CreateProvider(Client, logger);
         }
 

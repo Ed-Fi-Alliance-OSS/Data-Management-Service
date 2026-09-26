@@ -56,7 +56,7 @@ public class ConfigurationServiceApplicationProvider(
 
             logger.LogDebug("Fetching application context for clientId: {ClientId}", clientId);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/apiClients/{clientId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/apiClients/{clientId}");
             request.Headers.Authorization = new AuthenticationHeaderValue(
                 "Bearer",
                 configurationServiceToken

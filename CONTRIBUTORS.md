@@ -10,3 +10,5 @@ contributors
 graph](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/network/dependencies).
 New contributors should add their name and e-mail address or link to GitHub
 profile to this file with their first pull request.
+
+- Jean-Francois Guertin ([@edg-jf](https://github.com/edg-jf)), EdGraph
