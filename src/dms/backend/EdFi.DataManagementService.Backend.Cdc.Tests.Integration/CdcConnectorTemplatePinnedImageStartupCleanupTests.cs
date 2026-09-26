@@ -593,8 +593,10 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         docker
             .Commands.Should()
             .NotContain(command =>
-                command.StartsWith("run run", StringComparison.Ordinal)
-                && command.Contains(ResourcePrefix + "-connect", StringComparison.Ordinal)
+                (
+                    command.StartsWith("run run", StringComparison.Ordinal)
+                    || command.StartsWith("allow run", StringComparison.Ordinal)
+                ) && command.Contains(ResourcePrefix + "-connect", StringComparison.Ordinal)
             );
         AssertCleanupCommandsWereRun(docker);
     }

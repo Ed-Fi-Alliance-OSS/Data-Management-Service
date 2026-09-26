@@ -278,6 +278,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             docker
         );
 
+        // Keep worker endpoints reserved while the pre-worker phase captures them in requests.
+        using var connectReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        using var metricsReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
         try
         {
             fixture._isolateSourceProducer = isolateSourceProducer;
@@ -286,8 +289,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             if (exposeBroker)
             {
                 using var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-                using var connectReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-                using var metricsReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
                 reservation.Start();
                 connectReservation.Start();
                 metricsReservation.Start();
@@ -312,7 +313,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 return fixture;
             }
             fixture._startupStage = "start-docker-resources";
-            await fixture.StartDockerResourcesAsync(cancellationToken, beforeWorker);
+            await fixture.StartDockerResourcesAsync(
+                cancellationToken,
+                beforeWorker,
+                () =>
+                {
+                    connectReservation.Stop();
+                    metricsReservation.Stop();
+                }
+            );
             fixture._startupStage = "read-connect-port";
             Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);
 
@@ -1273,7 +1282,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task StartDockerResourcesAsync(
         CancellationToken cancellationToken,
-        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker
+        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker,
+        Action releaseWorkerPorts
     )
     {
         await _docker.RunAsync(["network", "create", NetworkName], cancellationToken);
@@ -1284,6 +1294,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             await beforeWorker(this, cancellationToken);
         }
 
+        releaseWorkerPorts();
         await StartKafkaConnectAsync(cancellationToken);
     }
 
@@ -1348,7 +1359,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             }
 
             _controllerBrokerPort = 0;
-            if (attempt == maximumAttempts || !IsBrokerPortBindFailure(result.StandardError))
+            if (attempt == maximumAttempts || !IsPortBindFailure(result.StandardError))
             {
                 throw new BrokerStartupException(result.ToFailureMessage(maximumOutputLength: 1024));
             }
@@ -1361,7 +1372,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         }
     }
 
-    private static bool IsBrokerPortBindFailure(string error) =>
+    private static bool IsPortBindFailure(string error) =>
         error.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
         || error.Contains("port is already allocated", StringComparison.OrdinalIgnoreCase)
         || error.Contains("failed to bind host port", StringComparison.OrdinalIgnoreCase)
@@ -1417,7 +1428,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             );
             return;
         }
-        await _docker.RunAsync(BuildKafkaConnectRunArguments(), cancellationToken);
+        await StartKafkaConnectWithRetryAsync(cancellationToken);
     }
 
     private IReadOnlyList<string> BuildKafkaConnectRunArguments() =>
