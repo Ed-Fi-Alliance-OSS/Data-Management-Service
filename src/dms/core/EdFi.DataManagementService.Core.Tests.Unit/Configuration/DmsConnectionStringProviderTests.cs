@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Core.Configuration;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -294,6 +295,133 @@ public class DmsConnectionStringProviderTests
             var result = _connectionStringProvider!.GetHealthCheckConnectionString();
 
             result.Should().BeNull();
+        }
+    }
+
+    // Records the level of every log call, so a test can assert what a probe-frequency path logs.
+    private sealed class LevelRecordingLogger : ILogger<DmsConnectionStringProvider>
+    {
+        public List<LogLevel> Levels { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Levels.Add(logLevel);
+    }
+
+    // A tenant can exist before its data store does (multi-tenant onboarding), and the health check
+    // calls this on every probe. That state must not produce a Warning each time.
+    [TestFixture]
+    public class Given_A_Loaded_Tenant_With_No_DataStores
+    {
+        private readonly LevelRecordingLogger _logger = new();
+        private string? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "tenant1" }.AsReadOnly());
+            A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored)).Returns(new List<DataStore>());
+
+            _result = new DmsConnectionStringProvider(
+                dataStoreProvider,
+                _logger
+            ).GetHealthCheckConnectionString();
+        }
+
+        [Test]
+        public void It_should_return_null()
+        {
+            _result.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_not_log_a_warning()
+        {
+            _logger
+                .Levels.Should()
+                .NotContain(LogLevel.Warning)
+                .And.OnlyContain(level => level == LogLevel.Debug);
+        }
+    }
+
+    // Data stores exist but none can be probed: the one genuine misconfiguration, still a Warning.
+    [TestFixture]
+    public class Given_DataStores_None_Of_Which_Has_A_ConnectionString
+    {
+        private readonly LevelRecordingLogger _logger = new();
+        private string? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "tenant1" }.AsReadOnly());
+            A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored))
+                .Returns(new List<DataStore> { new(1, "SchoolYear", "No Connection", null, []) });
+
+            _result = new DmsConnectionStringProvider(
+                dataStoreProvider,
+                _logger
+            ).GetHealthCheckConnectionString();
+        }
+
+        [Test]
+        public void It_should_return_null()
+        {
+            _result.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_log_a_warning()
+        {
+            _logger.Levels.Should().Contain(LogLevel.Warning);
+        }
+    }
+
+    // Previously only each tenant's lowest-Id data store was considered, so a tenant whose first
+    // store had no connection string was skipped even though a later store could be probed.
+    [TestFixture]
+    public class Given_The_Lowest_Id_DataStore_Has_No_ConnectionString
+    {
+        private string? _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "tenant1" }.AsReadOnly());
+            A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored))
+                .Returns(
+                    new List<DataStore>
+                    {
+                        new(2, "SchoolYear", "Has Connection", "host=second;database=db2;", []),
+                        new(1, "SchoolYear", "No Connection", null, []),
+                    }
+                );
+
+            _result = new DmsConnectionStringProvider(
+                dataStoreProvider,
+                NullLogger<DmsConnectionStringProvider>.Instance
+            ).GetHealthCheckConnectionString();
+        }
+
+        [Test]
+        public void It_should_return_the_next_data_store_with_a_connection_string()
+        {
+            _result.Should().Be("host=second;database=db2;");
         }
     }
 }
