@@ -457,7 +457,7 @@ public class Given_ConfigurationServiceApplicationProvider
         public ProviderFixture(Exception exception)
         {
             Handler = new CapturingHttpMessageHandler(exception);
-            Client = new HttpClient(Handler) { BaseAddress = new Uri("https://cms.example/") };
+            Client = new HttpClient(Handler) { BaseAddress = new Uri(DefaultBaseAddress) };
             Provider = CreateProvider(Client);
         }
 
