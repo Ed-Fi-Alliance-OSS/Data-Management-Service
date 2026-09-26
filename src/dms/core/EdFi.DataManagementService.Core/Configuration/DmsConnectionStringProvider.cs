@@ -62,9 +62,12 @@ public class DmsConnectionStringProvider(
         // Search across all loaded tenant caches to find the first available instance
         var loadedTenants = dataStoreProvider.GetLoadedTenantKeys();
 
+        // Debug, not Warning: the health check calls this on every probe, and with multi-tenancy no
+        // tenant caches being loaded is the normal state until the first tenant's request arrives.
+        // Single-tenant startup already fails fast when no data stores load.
         if (loadedTenants.Count == 0)
         {
-            logger.LogWarning(
+            logger.LogDebug(
                 "No tenant caches are loaded. The data store provider has no instances. "
                     + "Check that instances were successfully loaded from the Configuration Service."
             );
@@ -86,7 +89,7 @@ public class DmsConnectionStringProvider(
 
             if (!string.IsNullOrWhiteSpace(firstInstance.ConnectionString))
             {
-                logger.LogInformation(
+                logger.LogDebug(
                     "Selected data store for health check: '{Name}' (ID: {DataStoreId}) from tenant '{Tenant}' ({TotalCount} instances in tenant)",
                     firstInstance.Name,
                     firstInstance.Id,
