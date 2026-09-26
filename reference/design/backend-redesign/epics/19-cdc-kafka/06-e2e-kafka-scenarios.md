@@ -101,3 +101,24 @@ administrative-repair matrices remain with E18 and sibling stories. This story a
 no production projector-control API, generic fault framework, diagnostics platform,
 volume benchmark, or PR gating change. Exactly-once delivery, strict native-recovery
 fencing, and same-topic recovery after terminal history loss remain excluded.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. For deterministic pause, overlap, and restart scenarios, must the designated projector run inside the wrapper-started DMS container, or may the E2E fixture own a separate production projection runtime against the admitted database while disabling competing projection and direct fill in DMS? This determines where the internal materialization gates and executor-lifecycle controls must be introduced.
+2. Does “ordinary API traffic remains available” require successful requests throughout the executor restart itself, or only while projection is paused and while retained work drains after restart? The referenced `DocumentCacheHostedProjectorResumeTests` recreates the DMS container and waits for health before checking API availability, so uninterrupted availability would require a different restart topology.
+
+### Answers 1
+
+1. Use a fixture-owned, non-HTTP production projection runtime against the wrapper-admitted database as the designated executor. Prefer this same topology across all eight flows per provider. Reuse `CdcProjectionRuntimeFactory` and the shared E18 runtime composition. This follows [process-local target selection](../../design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection) and reuses [19-04's non-HTTP runtime composition](04-bootstrap-enable-kafka-cdc.md#reuse-and-command-ownership); it adds no production projector-control API or new deployment mode.
+
+   Complete normal wrapper admission first, then hand off projection ownership before scenario mutations. Roll out the HTTP DMS host with an effectively empty `DataManagement:DocumentCache:Targets` list and read acceleration disabled. Remove inherited indexed target environment entries from the generated Compose configuration; an empty array in another configuration source does not remove those entries. Retain the admitted target settings for the fixture/controller runtime. Await shutdown of previous executors and preserve lifecycle, durable work, binding, capture artifacts, and offsets.
+
+   Pass the designated runtime to production controller status and lifecycle services, and serialize their operations with controlled test phases. Status observation does not start processing; managed connector start/restart/resume starts its supplied runtime. Reuse that runtime rather than creating a competing executor or suppressing production recovery behavior. Read projection status from the designated runtime.
+
+   The factory currently builds its service provider internally. Add only a narrow internal composition seam for test decorators and execution observation. Gates must retain real materialization and cache-write/acknowledgement behavior: hold the actual materialized N candidate before publication, commit API N+1, complete the N attempt, and block the next attempt until the required intermediate assertions finish. Make gate waits bounded and cancellation-aware. Extract only the existing consumer/assertion helpers needed to attach to the wrapper-created stack, preserving the shared setup and teardown path. If flows share a binding, orchestrate terminal loss explicitly as the final phase.
+
+2. Require successful ordinary API reads and writes across the executor restart, including while the old executor is stopped and while the replacement drains retained work. Keep the HTTP DMS host running throughout the measured scenario. Stop/dispose the designated runtime completely, then create/start a fresh instance; releasing a gate or changing a poll interval alone is insufficient. An OS-process crash is not required.
+
+   Use bounded requests coordinated with executor lifecycle gates to prove availability before shutdown, after disposal and before replacement start, and during multi-page recovery. Verify writes made during the outage remain queued and subsequently converge in cache and Kafka. This tests the [projection/API-readiness separation](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#projection-operational-health-caught-up-status-and-cdc-admission), without requiring continuous traffic or a general uptime or latency SLA. Adapt the referenced hosted-resume fixture's backlog and convergence assertions, replacing its whole-DMS-container restart with the independent runtime restart. Complete the initial HTTP configuration rollout before this measured interval; waiting for HTTP health after recreating DMS does not supply the required availability evidence.
