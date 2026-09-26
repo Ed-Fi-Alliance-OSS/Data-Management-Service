@@ -296,7 +296,11 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -322,7 +326,11 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
             Headers: [],
             TraceId: new TraceId("pg-29b-seed-course"),
             DocumentUuid: CourseDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

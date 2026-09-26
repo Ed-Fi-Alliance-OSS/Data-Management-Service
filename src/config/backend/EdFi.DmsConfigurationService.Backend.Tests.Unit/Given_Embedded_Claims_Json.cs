@@ -24,13 +24,16 @@ public class Given_Embedded_Claims_Json
 {
     private JsonObject _claims = null!;
 
-    // Resource claims whose SeedLoader Create grant declares an explicit
+    // SeedLoader is granted Update alongside Create because a POST that finds an existing record is
+    // authorized as Update, and re-running seed delivery against a seeded database re-POSTs every record.
+    //
+    // Resource claims whose SeedLoader Create and Update grants declare an explicit
     // NoFurtherAuthorizationRequired override because the inherited authorization chain does not
-    // cover Create. The canonical example is schoolYearType: the parent edFiTypes
-    // defaultAuthorization does not define Create, so the SeedLoader Application would otherwise see
-    // zero strategies on Create and 403 the Story-02 REST precondition POST. See
+    // cover either action. The canonical example is schoolYearType: the parent edFiTypes
+    // defaultAuthorization defines neither Create nor Update, so the SeedLoader Application would otherwise
+    // see zero strategies and 403 the Story-02 REST precondition POST. See
     // bootstrap-design.md §7.2 "schoolYearType override" for the design rationale.
-    private static readonly HashSet<string> SeedLoaderCreateOverrideExceptions = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> SeedLoaderOverrideExceptions = new(StringComparer.Ordinal)
     {
         "http://ed-fi.org/identity/claims/ed-fi/schoolYearType",
     };
@@ -89,7 +92,10 @@ public class Given_Embedded_Claims_Json
         "http://ed-fi.org/identity/claims/services/identity",
     ];
 
-    public static IEnumerable<string> SeedLoaderInventorySource => SeedLoaderInventory;
+    public static IEnumerable<TestCaseData> SeedLoaderGrantSource =>
+        from resourceClaimUri in SeedLoaderInventory
+        from actionName in new[] { "Create", "Update" }
+        select new TestCaseData(resourceClaimUri, actionName);
 
     // The claim sets a default deployment loads. The E2E claim sets are defined only by the
     // test-owned claims fragments, never by the shipped Claims.json.
@@ -148,11 +154,12 @@ public class Given_Embedded_Claims_Json
         SeedLoaderGrant? epdmGrant = FindSeedLoaderGrant(
             claims["claimsHierarchy"]!,
             "http://ed-fi.org/identity/claims/domains/epdm",
-            new SeedLoaderGrant(HasCreate: false, HasOverride: false)
+            "Create",
+            new SeedLoaderGrant(HasAction: false, HasOverride: false)
         );
 
         epdmGrant.Should().NotBeNull();
-        epdmGrant!.HasCreate.Should().BeTrue();
+        epdmGrant!.HasAction.Should().BeTrue();
         epdmGrant.HasOverride.Should().BeFalse();
     }
 
@@ -378,13 +385,17 @@ public class Given_Embedded_Claims_Json
             .BeEmpty("a hierarchy node whose last grant was removed must drop its claimSets key");
     }
 
-    [TestCaseSource(nameof(SeedLoaderInventorySource))]
-    public void It_grants_SeedLoader_Create_with_inherited_authorization(string resourceClaimUri)
+    [TestCaseSource(nameof(SeedLoaderGrantSource))]
+    public void It_grants_SeedLoader_the_action_with_inherited_authorization(
+        string resourceClaimUri,
+        string actionName
+    )
     {
         SeedLoaderGrant? result = FindSeedLoaderGrant(
             _claims["claimsHierarchy"]!,
             resourceClaimUri,
-            new SeedLoaderGrant(HasCreate: false, HasOverride: false)
+            actionName,
+            new SeedLoaderGrant(HasAction: false, HasOverride: false)
         );
 
         result
@@ -394,17 +405,17 @@ public class Given_Embedded_Claims_Json
             );
 
         result!
-            .HasCreate.Should()
-            .BeTrue($"SeedLoader Create must be granted on '{resourceClaimUri}' or any ancestor");
+            .HasAction.Should()
+            .BeTrue($"SeedLoader {actionName} must be granted on '{resourceClaimUri}' or any ancestor");
 
-        if (SeedLoaderCreateOverrideExceptions.Contains(resourceClaimUri))
+        if (SeedLoaderOverrideExceptions.Contains(resourceClaimUri))
         {
             result
                 .HasOverride.Should()
                 .BeTrue(
-                    $"SeedLoader Create on '{resourceClaimUri}' must declare an explicit "
+                    $"SeedLoader {actionName} on '{resourceClaimUri}' must declare an explicit "
                         + "authorizationStrategyOverrides entry because the inherited authorization chain "
-                        + "does not cover Create (e.g. edFiTypes defaultAuthorization does not define Create for "
+                        + $"does not cover {actionName} (e.g. edFiTypes defaultAuthorization does not define it for "
                         + "closed-XSD-enum types); see bootstrap-design.md §7.2 'schoolYearType override'"
                 );
         }
@@ -413,7 +424,7 @@ public class Given_Embedded_Claims_Json
             result
                 .HasOverride.Should()
                 .BeFalse(
-                    $"SeedLoader Create on '{resourceClaimUri}' (or any ancestor) must not declare "
+                    $"SeedLoader {actionName} on '{resourceClaimUri}' (or any ancestor) must not declare "
                         + "authorizationStrategyOverrides — bootstrap-design.md §7.2 requires SeedLoader to inherit "
                         + "the claim's existing authorization strategy so the relationship-based-data strategies "
                         + "still gate the SeedLoader Application's namespace prefixes and EdOrg IDs at runtime"
@@ -421,7 +432,7 @@ public class Given_Embedded_Claims_Json
         }
     }
 
-    private sealed record SeedLoaderGrant(bool HasCreate, bool HasOverride);
+    private sealed record SeedLoaderGrant(bool HasAction, bool HasOverride);
 
     private static IEnumerable<string> ClaimNames(JsonNode node)
     {
@@ -510,6 +521,7 @@ public class Given_Embedded_Claims_Json
     private static SeedLoaderGrant? FindSeedLoaderGrant(
         JsonNode node,
         string targetUri,
+        string actionName,
         SeedLoaderGrant ancestor
     )
     {
@@ -522,7 +534,7 @@ public class Given_Embedded_Claims_Json
                     continue;
                 }
 
-                SeedLoaderGrant? result = FindSeedLoaderGrant(item, targetUri, ancestor);
+                SeedLoaderGrant? result = FindSeedLoaderGrant(item, targetUri, actionName, ancestor);
                 if (result is not null)
                 {
                     return result;
@@ -537,9 +549,9 @@ public class Given_Embedded_Claims_Json
             return null;
         }
 
-        SeedLoaderGrant local = ReadSeedLoaderGrantAt(obj);
+        SeedLoaderGrant local = ReadSeedLoaderGrantAt(obj, actionName);
         SeedLoaderGrant effective = new(
-            HasCreate: ancestor.HasCreate || local.HasCreate,
+            HasAction: ancestor.HasAction || local.HasAction,
             HasOverride: ancestor.HasOverride || local.HasOverride
         );
 
@@ -562,7 +574,7 @@ public class Given_Embedded_Claims_Json
                     continue;
                 }
 
-                SeedLoaderGrant? result = FindSeedLoaderGrant(child, targetUri, effective);
+                SeedLoaderGrant? result = FindSeedLoaderGrant(child, targetUri, actionName, effective);
                 if (result is not null)
                 {
                     return result;
@@ -573,14 +585,14 @@ public class Given_Embedded_Claims_Json
         return null;
     }
 
-    private static SeedLoaderGrant ReadSeedLoaderGrantAt(JsonObject claimNode)
+    private static SeedLoaderGrant ReadSeedLoaderGrantAt(JsonObject claimNode, string actionName)
     {
         if (
             !claimNode.TryGetPropertyValue("claimSets", out JsonNode? claimSetsNode)
             || claimSetsNode is not JsonArray claimSets
         )
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
         JsonObject? seedLoader = claimSets
@@ -591,7 +603,7 @@ public class Given_Embedded_Claims_Json
 
         if (seedLoader is null)
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
         if (
@@ -599,23 +611,23 @@ public class Given_Embedded_Claims_Json
             || actionsNode is not JsonArray actions
         )
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
-        JsonObject? createAction = actions
+        JsonObject? action = actions
             .OfType<JsonObject>()
             .FirstOrDefault(a =>
-                a.TryGetPropertyValue("name", out JsonNode? n) && n?.GetValue<string>() == "Create"
+                a.TryGetPropertyValue("name", out JsonNode? n) && n?.GetValue<string>() == actionName
             );
 
-        if (createAction is null)
+        if (action is null)
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
-        bool hasOverride = createAction.TryGetPropertyValue("authorizationStrategyOverrides", out _);
+        bool hasOverride = action.TryGetPropertyValue("authorizationStrategyOverrides", out _);
 
-        return new SeedLoaderGrant(HasCreate: true, HasOverride: hasOverride);
+        return new SeedLoaderGrant(HasAction: true, HasOverride: hasOverride);
     }
 
     private async Task<ClaimSetMetadata> CreateClaimSetMetadata(string claimSetName)

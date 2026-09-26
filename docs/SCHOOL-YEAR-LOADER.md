@@ -102,6 +102,15 @@ Each school year creates a record with:
 - `currentSchoolYear`: Boolean indicating if this is the current year
 - `schoolYearDescription`: Formatted description (e.g., "2023-2024")
 
+### Re-running Against Existing Years
+
+A POST for a school year that already exists updates that record, so DMS authorizes it as `Update`
+rather than `Create`. The default `BootstrapDescriptorsandEdOrgs` claim set grants only `Create`, matching
+the ODS claim set of the same name, so the loader fails with `403 Forbidden` on the first year that already
+exists. That includes re-running it to extend the range or to move `currentSchoolYear`. For those runs,
+pass `-ClaimSetName` with a claim set that grants both `Create` and `Update` on `schoolYearType`, such as
+`SeedLoader`.
+
 ## Integration with Template Management
 
 The school year loader is automatically used by the database template management system (`eng/DatabaseTemplates/Template-Management.psm1`). This ensures that the functionality is tested whenever database templates are built.

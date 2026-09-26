@@ -640,7 +640,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_W
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private static DocumentInfo CreateSchoolDocumentInfo(long schoolId, ReferentialId? referentialId = null)
     {
@@ -1037,7 +1041,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
     {
@@ -1438,7 +1446,11 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
     {
@@ -1789,7 +1801,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     private static DocumentInfo CreateSchoolYearTypeDocumentInfo(ReferentialId? referentialId = null)
     {
@@ -2472,6 +2488,10 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                     TraceId: new TraceId("mssql-authoritative-sample-student-academic-record-create"),
                     DocumentUuid: StudentAcademicRecordDocumentUuid
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             );
     }
 
@@ -4405,7 +4425,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
     }
 
     private DocumentInfo CreateDocumentInfo(JsonNode requestBody, ReferentialId? referentialId = null)

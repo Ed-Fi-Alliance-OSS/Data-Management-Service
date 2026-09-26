@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
@@ -50,12 +49,19 @@ internal record UpdateRequest(
     /// The normalized request tenant key.
     /// </summary>
     string TenantKey = ""
-) : IUpdateRequest
+)
+    : DocumentWriteRequest(
+        ResourceInfo,
+        DocumentInfo,
+        MappingSet,
+        EdfiDoc,
+        Headers,
+        TraceId,
+        DocumentUuid,
+        BackendProfileWriteContext,
+        TenantKey
+    ),
+        IUpdateRequest
 {
-    public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);
-
     public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; } = [];
-
-    public RelationalAuthorizationContext AuthorizationContext { get; init; } =
-        new RelationalAuthorizationContext([]);
 }

@@ -254,7 +254,8 @@ function Invoke-SchoolYearTypeRestPrecondition {
     POSTs SchoolYearType rows to DMS for the configured year range. v5.x data standards model
     SchoolYearType as a closed XSD enumeration that is not loadable through any bulk interchange,
     so seed delivery creates these rows directly through the DMS REST API before any BulkLoadClient
-    pass. Idempotent: existing rows respond 409 and are tolerated.
+    pass. Idempotent: an existing row is upserted under the SeedLoader Update grant and answers 200;
+    a 409 is also tolerated.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper - no -WhatIf end-to-end.')]
     param(

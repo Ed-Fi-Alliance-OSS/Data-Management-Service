@@ -990,6 +990,33 @@ public sealed record RelationalWriteExecutorInput
     public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
 
     /// <summary>
+    /// For a POST whose Create and Update policies differ, the authorization each branch applies. When
+    /// present, this input's own authorization members hold the ExistingDocument branch's inputs, which is
+    /// what the checks emitted before the target is known must use: they are stored-value checks that run
+    /// only for an observed target. The branch the capture selects is overlaid before resolution. Null for
+    /// PUT and for a POST whose policies are the same.
+    /// </summary>
+    internal PostTargetAuthorizationBundles? PostTargetAuthorizationBundles { get; init; }
+
+    /// <summary>
+    /// This input with its authorization members replaced by <paramref name="inputs"/>. Every write path
+    /// sets its authorization through here, so a member added to <see cref="PostBranchAuthorizationInputs"/>
+    /// and left out of this method is dropped for every write, not only for a POST whose branches differ.
+    /// </summary>
+    internal RelationalWriteExecutorInput WithPostBranchInputs(PostBranchAuthorizationInputs inputs) =>
+        this with
+        {
+            StoredRelationshipAuthorization = inputs.StoredRelationshipAuthorization,
+            ProposedRelationshipAuthorization = inputs.ProposedRelationshipAuthorization,
+            StoredNamespaceAuthorization = inputs.StoredNamespaceAuthorization,
+            ProposedNamespaceAuthorization = inputs.ProposedNamespaceAuthorization,
+            PostRelationshipAuthorizationPlans = inputs.PostRelationshipAuthorizationPlans,
+            CustomViewAuthorization = inputs.CustomViewAuthorization,
+            StoredOwnershipAuthorization = inputs.StoredOwnershipAuthorization,
+            DeferredStoredOwnershipFailureResult = inputs.DeferredStoredOwnershipFailureResult,
+        };
+
+    /// <summary>
     /// Produces the fully resolved executor request for a target the executor observed inside its
     /// write session. All cross-field validation runs in the resolved request's constructor.
     /// </summary>
@@ -1027,6 +1054,84 @@ internal sealed record PostRelationshipAuthorizationPlans(
     RelationshipAuthorizationResult? CreateNewProposedRelationshipAuthorization,
     RelationalWriteExecutorResult? CreateNewImmediateResult
 );
+
+/// <summary>
+/// The authorization a write's preflight plans for the executor. A PUT and a POST whose Create and Update
+/// policies match carry one; a POST whose policies differ carries one per branch, each exactly what the
+/// preflight plans for that branch's action list, including its own create-new and existing-resource
+/// relationship plans.
+/// </summary>
+/// <param name="StoredOwnershipAuthorization">
+/// The ownership check, or <see langword="null"/> when <c>OwnershipBased</c> is not configured. Ownership has
+/// one value source, the stored token, so it decides an update and is vacuous for a create.
+/// </param>
+/// <param name="DeferredStoredOwnershipFailureResult">
+/// The failure a POST owes if it resolves to an existing target while its ownership check could not be
+/// parameterized; see <see cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>.
+/// </param>
+internal sealed record PostBranchAuthorizationInputs(
+    RelationshipAuthorizationResult? StoredRelationshipAuthorization,
+    RelationshipAuthorizationResult? ProposedRelationshipAuthorization,
+    RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+    RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization,
+    PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans,
+    RelationalCustomViewAuthorization? CustomViewAuthorization,
+    RelationalOwnershipAuthorization? StoredOwnershipAuthorization,
+    RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult
+)
+{
+    /// <summary>
+    /// No authorization input at all: the value a write without a preflight carries.
+    /// </summary>
+    public static PostBranchAuthorizationInputs None { get; } =
+        new(null, null, null, null, null, null, null, null);
+}
+
+/// <summary>
+/// One POST branch: either the authorization to apply, or the result the branch owes as soon as the target
+/// selects it.
+/// </summary>
+internal abstract record PostBranchAuthorization
+{
+    private PostBranchAuthorization() { }
+
+    public sealed record Authorized(PostBranchAuthorizationInputs Inputs) : PostBranchAuthorization;
+
+    /// <summary>
+    /// The branch's result, returned right after capture and before any stored check, precondition,
+    /// reference failure, merge or DML.
+    /// </summary>
+    public sealed record Immediate(RelationalWriteExecutorResult Result) : PostBranchAuthorization;
+}
+
+/// <summary>
+/// The branch authorization of a POST whose Create and Update policies differ.
+/// </summary>
+internal sealed record PostTargetAuthorizationBundles(
+    PostBranchAuthorization CreateNew,
+    PostBranchAuthorization ExistingDocument
+)
+{
+    /// <summary>
+    /// The branch the observed target selects.
+    /// </summary>
+    public PostBranchAuthorization Select(RelationalWriteTargetContext targetContext) =>
+        PostTargetAction.For(targetContext) is UpsertTargetAction.Create ? CreateNew : ExistingDocument;
+
+    /// <summary>
+    /// Whether the checks cannot be co-batched with the capture. A branch result owed right after capture
+    /// must precede every stored check, and a create-new relationship result must precede reference
+    /// resolution and hydration, so either one needs the capture to run alone first.
+    /// </summary>
+    public bool RequiresOrderedSegments =>
+        CreateNew is PostBranchAuthorization.Immediate
+        || ExistingDocument is PostBranchAuthorization.Immediate
+        || HasCreateNewRelationshipImmediateResult(CreateNew);
+
+    private static bool HasCreateNewRelationshipImmediateResult(PostBranchAuthorization branch) =>
+        branch is PostBranchAuthorization.Authorized authorized
+        && authorized.Inputs.PostRelationshipAuthorizationPlans?.CreateNewImmediateResult is not null;
+}
 
 /// <summary>
 /// Namespace authorization inputs threaded from the repository write preflight into the executor.
@@ -1185,6 +1290,14 @@ public abstract record RelationalWriteExecutorResult
     public RelationalWriteExecutorAttemptOutcome AttemptOutcome { get; init; }
 
     /// <summary>
+    /// Custom-view checks configured ahead of a POST branch's planning failure, validated after the write
+    /// session closes and before the result is returned, so a missing or non-conforming view keeps its own
+    /// failure instead of being masked by the branch's.
+    /// </summary>
+    internal IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewChecksToValidateAfterSession { get; init; } =
+    [];
+
+    /// <summary>
     /// The executor completed a POST write path.
     /// </summary>
     public sealed record Upsert : RelationalWriteExecutorResult
@@ -1245,6 +1358,58 @@ public abstract record RelationalWriteExecutorResult
             attemptOutcome = AttemptOutcome;
         }
     }
+}
+
+/// <summary>
+/// The action a POST's observed target selects: Create for a new document, Update for an existing one.
+/// </summary>
+internal static class PostTargetAction
+{
+    public static UpsertTargetAction For(RelationalWriteTargetContext targetContext) =>
+        targetContext switch
+        {
+            RelationalWriteTargetContext.CreateNew => UpsertTargetAction.Create,
+            RelationalWriteTargetContext.ExistingDocument => UpsertTargetAction.Update,
+            _ => throw new InvalidOperationException(
+                $"POST action selection does not support target context '{targetContext.GetType().Name}'."
+            ),
+        };
+}
+
+/// <summary>
+/// Attributes a POST's security-configuration failure to the action its observed target selected.
+/// </summary>
+internal static class PostActionAttribution
+{
+    /// <summary>
+    /// <paramref name="result"/> attributed to <paramref name="selectedPostAction"/> when it is a POST
+    /// security-configuration failure not yet attributed; otherwise <paramref name="result"/> unchanged.
+    /// </summary>
+    public static RelationalWriteExecutorResult Apply(
+        RelationalWriteExecutorResult result,
+        UpsertTargetAction? selectedPostAction
+    )
+    {
+        if (selectedPostAction is not { } action || result is not RelationalWriteExecutorResult.Upsert upsert)
+        {
+            return result;
+        }
+
+        var attributed = Apply(upsert.Result, action);
+        return ReferenceEquals(attributed, upsert.Result) ? result : upsert with { Result = attributed };
+    }
+
+    /// <summary>
+    /// <paramref name="result"/> attributed to <paramref name="action"/> when it is a security-configuration
+    /// failure not yet attributed; otherwise <paramref name="result"/> unchanged.
+    /// </summary>
+    public static UpsertResult Apply(UpsertResult result, UpsertTargetAction action) =>
+        result is UpsertResult.UpsertFailureSecurityConfiguration { TargetAction: null } failure
+            ? failure with
+            {
+                TargetAction = action,
+            }
+            : result;
 }
 
 /// <summary>

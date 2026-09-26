@@ -76,7 +76,8 @@ public sealed record DescriptorWriteRequest
     public string TenantKey { get; init; }
 
     /// <summary>
-    /// The effective POST/PUT authorization strategies already resolved by Core.
+    /// The effective PUT authorization strategies already resolved by Core. Always empty for a POST, which is
+    /// authorized from the action policy pair passed to <see cref="IDescriptorWriteHandler.HandlePostAsync"/>.
     /// </summary>
     public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; }
 
@@ -183,10 +184,12 @@ public sealed record DescriptorDeleteRequest
 public interface IDescriptorWriteHandler
 {
     /// <summary>
-    /// Executes a descriptor POST (upsert) write.
+    /// Executes a descriptor POST (upsert) write. The request carries no evaluators of its own; the POST is
+    /// authorized from <paramref name="actionAuthorization"/>.
     /// </summary>
     Task<UpsertResult> HandlePostAsync(
-        DescriptorWriteRequest request,
+        DescriptorWriteRequest postRequest,
+        UpsertActionAuthorization actionAuthorization,
         CancellationToken cancellationToken = default
     );
 

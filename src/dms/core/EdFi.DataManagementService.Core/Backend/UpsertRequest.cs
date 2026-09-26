@@ -4,13 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
-/// An upsert request to a document repository. This extends UpdateRequest because
-/// sometimes upserts are actually updates.
+/// An upsert request to a document repository. It carries a policy for each of the Create and Update
+/// actions rather than one evaluator list, because whether the upsert creates or updates is known only
+/// once the write observes its target.
 /// </summary>
 internal record UpsertRequest(
     /// <summary>
@@ -51,7 +53,7 @@ internal record UpsertRequest(
     /// </summary>
     string TenantKey = ""
 )
-    : UpdateRequest(
+    : DocumentWriteRequest(
         ResourceInfo,
         DocumentInfo,
         MappingSet,
@@ -62,4 +64,13 @@ internal record UpsertRequest(
         BackendProfileWriteContext,
         TenantKey
     ),
-        IUpsertRequest;
+        IUpsertRequest
+{
+    private readonly UpsertActionAuthorization _actionAuthorization = null!;
+
+    public required UpsertActionAuthorization ActionAuthorization
+    {
+        get => _actionAuthorization;
+        init => _actionAuthorization = value ?? throw new ArgumentNullException(nameof(value));
+    }
+}

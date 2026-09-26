@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
@@ -42,7 +43,7 @@ public class Given_Descriptor_Write_Response_Etags
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
         );
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -87,7 +88,7 @@ public class Given_Descriptor_Write_Response_Etags
             new TraceId("descriptor-post-trace")
         );
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -113,7 +114,7 @@ public class Given_Descriptor_Write_Response_Etags
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -150,7 +151,7 @@ public class Given_Descriptor_Write_Response_Etags
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -265,7 +266,7 @@ public class Given_Descriptor_Write_Response_Etags
             ProfileName = ProfileName,
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()

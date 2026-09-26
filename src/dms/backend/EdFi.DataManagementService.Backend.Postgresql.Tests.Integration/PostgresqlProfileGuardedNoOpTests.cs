@@ -370,7 +370,11 @@ internal abstract class RootOnlyShapeProfileGuardedNoOpFixtureBase
             TraceId: new TraceId("pg-profile-guarded-no-op-post-as-update"),
             DocumentUuid: incomingDocumentUuid,
             BackendProfileWriteContext: profileContext
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);

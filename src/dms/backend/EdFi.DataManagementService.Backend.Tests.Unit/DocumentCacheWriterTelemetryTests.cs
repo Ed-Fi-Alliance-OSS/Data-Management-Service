@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
@@ -240,7 +241,9 @@ public class Given_DocumentCacheWriterTelemetry
                 );
                 sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(42L)]);
 
-                await sut.HandlePostAsync(CreatePostDescriptorWriteRequest(mappingSet, documentUuid))
+                await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                        CreatePostDescriptorWriteRequest(mappingSet, documentUuid)
+                    )
                     .ConfigureAwait(false);
                 break;
 
@@ -256,7 +259,9 @@ public class Given_DocumentCacheWriterTelemetry
                 ]);
                 sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-                await sut.HandlePostAsync(CreatePostDescriptorWriteRequest(mappingSet, documentUuid))
+                await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                        CreatePostDescriptorWriteRequest(mappingSet, documentUuid)
+                    )
                     .ConfigureAwait(false);
                 break;
 

@@ -7282,6 +7282,219 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_the_update_denial_before_a_stale_if_match_for_a_post_as_update()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(
+                    new PostBranchAuthorization.Authorized(EmptyPostBranchInputs()),
+                    new PostBranchAuthorization.Immediate(
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+                        )
+                    )
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+                )
+            );
+        // Refused before the current state is hydrated, so neither the precondition nor a no-op compare ran.
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The update branch's own planning, carried in a bundle, must behave exactly as the same planning did
+    /// for a single action list: this mirrors the stale If-Match test of the collapsed path with the
+    /// authorization moved into the existing-document branch.
+    /// </summary>
+    [Test]
+    public async Task It_applies_the_update_branch_exactly_as_the_same_single_list_for_a_post_as_update()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _readMaterializer.ResultToReturn = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var updateInputs = EmptyPostBranchInputs() with
+        {
+            ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+        };
+
+        var result = await _sut.ExecuteAsync(
+            (
+                request with
+                {
+                    PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(
+                        new PostBranchAuthorization.Immediate(
+                            new RelationalWriteExecutorResult.Upsert(
+                                new UpsertResult.UpsertFailureTargetActionNotPermitted(
+                                    UpsertTargetAction.Create
+                                )
+                            )
+                        ),
+                        new PostBranchAuthorization.Authorized(updateInputs)
+                    ),
+                }
+            ).WithPostBranchInputs(updateInputs)
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _readMaterializer.MaterializeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The create branch's own planning, carried in a bundle, must behave exactly as the same planning did
+    /// for a single action list: this mirrors the create-new relationship immediate test of the collapsed path.
+    /// </summary>
+    [Test]
+    public async Task It_applies_the_create_branch_exactly_as_the_same_single_list_for_a_post_create()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.studentReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference]
+        );
+        var createNewFailure = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureSecurityConfiguration([
+                "create-new self person DocumentId unavailable",
+            ])
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(
+                    new PostBranchAuthorization.Authorized(
+                        EmptyPostBranchInputs() with
+                        {
+                            PostRelationshipAuthorizationPlans = CreatePostRelationshipAuthorizationPlans(
+                                createNewImmediateResult: createNewFailure
+                            ),
+                        }
+                    ),
+                    new PostBranchAuthorization.Immediate(
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+                        )
+                    )
+                ),
+            }
+        );
+
+        result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_selects_the_branch_again_from_each_attempts_own_target_observation()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var input = request with
+        {
+            PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(
+                new PostBranchAuthorization.Immediate(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+                    )
+                ),
+                new PostBranchAuthorization.Immediate(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+                    )
+                )
+            ),
+        };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.CreateNew(new DocumentUuid(Guid.NewGuid()))
+        );
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var first = await _sut.ExecuteAsync(input);
+        var second = await _sut.ExecuteAsync(input);
+
+        first
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create));
+        second
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
+    }
+
+    /// <summary>
+    /// <paramref name="result"/>'s security-configuration failure with <paramref name="action"/> as the action
+    /// it is attributed to.
+    /// </summary>
+    private static RelationalWriteExecutorResult AttributedTo(
+        RelationalWriteExecutorResult result,
+        UpsertTargetAction action
+    )
+    {
+        var upsert = (RelationalWriteExecutorResult.Upsert)result;
+        return upsert with
+        {
+            Result = ((UpsertResult.UpsertFailureSecurityConfiguration)upsert.Result) with
+            {
+                TargetAction = action,
+            },
+        };
+    }
+
+    private static PostBranchAuthorizationInputs EmptyPostBranchInputs() =>
+        new(null, null, null, null, null, null, null, null);
+
+    [Test]
     public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
@@ -7307,7 +7520,8 @@ public class Given_Default_Relational_Write_Executor
             }
         );
 
-        result.Should().BeSameAs(createNewFailure);
+        // A security-configuration failure owed by the create branch is attributed to the Create action.
+        result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);

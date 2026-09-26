@@ -101,7 +101,11 @@ file static class WriteSessionCommandStreamTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     public static UpdateRequest CreateUpdateRequest(
         MappingSet mappingSet,
@@ -163,7 +167,11 @@ file static class WriteSessionCommandStreamTestSupport
             Headers: [],
             TraceId: new TraceId("mssql-write-session-tvp-reference-fallback"),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
     }
 
     /// <summary>

@@ -11,9 +11,11 @@ Feature: StudentAssessmentRegistrationBatteryPartAssociation References
                   | schoolId  | nameOfInstitution    | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901901 | Bayside High School  | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#XYZ"} ] |
                   | 255901902 | Westside High School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#XYZ"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901, 255901902"
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "604823"        | Lisa       | Woods       | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901, 255901902"
               And the system has these "studentSchoolAssociations"
                   | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
                   | { "schoolId": 255901901 } | { "studentUniqueId": "604823" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2021-08-23 |

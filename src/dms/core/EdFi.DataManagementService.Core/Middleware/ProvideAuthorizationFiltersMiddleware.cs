@@ -4,10 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -48,16 +50,19 @@ internal class ProvideAuthorizationFiltersMiddleware(ILogger _logger) : IPipelin
                 return;
             }
 
-            requestInfo.AuthorizationStrategyEvaluators =
-            [
-                .. requestInfo.ResourceActionAuthStrategies.Select(
-                    static authorizationStrategy => new AuthorizationStrategyEvaluator(
-                        authorizationStrategy,
-                        [],
-                        FilterOperator.Or
-                    )
-                ),
-            ];
+            if (requestInfo.UpsertActionPolicies is { } upsertActionPolicies)
+            {
+                requestInfo.UpsertActionAuthorization = new UpsertActionAuthorization(
+                    ToUpsertActionPolicy(upsertActionPolicies.Create),
+                    ToUpsertActionPolicy(upsertActionPolicies.Update)
+                );
+            }
+            else
+            {
+                requestInfo.AuthorizationStrategyEvaluators = ToEvaluators(
+                    requestInfo.ResourceActionAuthStrategies
+                );
+            }
         }
         catch (Exception ex)
         {
@@ -80,4 +85,22 @@ internal class ProvideAuthorizationFiltersMiddleware(ILogger _logger) : IPipelin
 
         await next();
     }
+
+    /// <summary>
+    /// A denied action and one granted with no strategies both leave the backend nothing to apply; the
+    /// evidence kept on the request is what tells their responses apart.
+    /// </summary>
+    private static UpsertActionPolicy ToUpsertActionPolicy(UpsertActionPolicyEvidence evidence) =>
+        evidence is UpsertActionPolicyEvidence.Permitted permitted
+            ? new UpsertActionPolicy.Permitted(ToEvaluators(permitted.StrategyNames))
+            : UpsertActionPolicy.NotPermitted.Instance;
+
+    private static AuthorizationStrategyEvaluator[] ToEvaluators(IReadOnlyList<string> strategyNames) =>
+        [
+            .. strategyNames.Select(static authorizationStrategy => new AuthorizationStrategyEvaluator(
+                authorizationStrategy,
+                [],
+                FilterOperator.Or
+            )),
+        ];
 }

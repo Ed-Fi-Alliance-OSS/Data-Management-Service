@@ -70,6 +70,30 @@ internal sealed class MssqlRelationalQueryAuthorizationWriteSessionRecorder
         }
     }
 
+    private Func<CancellationToken, Task>? _beforeNextCommitAsync;
+
+    /// <summary>
+    /// Holds the next write session to commit until <paramref name="beforeCommitAsync"/> completes, so its writes
+    /// stay uncommitted, and their locks held, while another request runs against them.
+    /// </summary>
+    public void HoldNextCommit(Func<CancellationToken, Task> beforeCommitAsync)
+    {
+        lock (_sync)
+        {
+            _beforeNextCommitAsync = beforeCommitAsync;
+        }
+    }
+
+    public Func<CancellationToken, Task>? TakeCommitHold()
+    {
+        lock (_sync)
+        {
+            var hold = _beforeNextCommitAsync;
+            _beforeNextCommitAsync = null;
+            return hold;
+        }
+    }
+
     public void Reset()
     {
         lock (_sync)
@@ -151,8 +175,15 @@ internal sealed class MssqlRelationalQueryAuthorizationRecordingWriteSession(
         return SessionRelationalCommandFactory.CreateCommand(Connection, Transaction, command);
     }
 
-    public Task CommitAsync(CancellationToken cancellationToken = default) =>
-        Transaction.CommitAsync(cancellationToken);
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        if (_recorder.TakeCommitHold() is { } hold)
+        {
+            await hold(cancellationToken);
+        }
+
+        await Transaction.CommitAsync(cancellationToken);
+    }
 
     public Task RollbackAsync(CancellationToken cancellationToken = default) =>
         Transaction.RollbackAsync(cancellationToken);
@@ -2119,6 +2150,145 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <inheritdoc cref="MssqlRelationalQueryAuthorizationWriteSessionRecorder.HoldNextCommit"/>
+    public void HoldNextCommit(Func<CancellationToken, Task> beforeCommitAsync) =>
+        _writeSessionRecorder.HoldNextCommit(beforeCommitAsync);
+
+    /// <summary>
+    /// Issues a POST whose Create and Update authorization differ, which only an explicit policy pair can
+    /// express.
+    /// </summary>
+    public async Task<UpsertResult> UpsertWithActionAuthorizationAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        UpsertActionAuthorization actionAuthorization,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        short? creatorOwnershipTokenId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        Dictionary<string, string>? headers = null,
+        IReadOnlyList<long>? claimEducationOrganizationIds = null
+    )
+    {
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new UpsertRequest(
+            ResourceInfo: resourceHandle.ResourceInfo,
+            DocumentInfo: RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+                requestBody,
+                resourceHandle.ResourceInfo,
+                resourceHandle.ResourceSchema,
+                MappingSet
+            ),
+            MappingSet: MappingSet,
+            EdfiDoc: requestBody,
+            Headers: headers ?? [],
+            TraceId: new TraceId($"post-action-{resourceName}"),
+            DocumentUuid: documentUuid
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds ?? [],
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId,
+                ownershipTokenIds ?? []
+            ),
+            ActionAuthorization = actionAuthorization,
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpsertDocument(request);
+    }
+
+    /// <summary>
+    /// Snapshots the document row, every mapped resource table (the descriptor row for a descriptor), and the
+    /// referential identities of one document, so a denied write can be shown to have moved nothing.
+    /// </summary>
+    public async Task<AuthorizationWriteSideEffectState> ReadSideEffectStateAsync(
+        string projectEndpointName,
+        string resourceName,
+        DocumentUuid documentUuid
+    )
+    {
+        var resourceKeyId = GetCompiledResourceKeyId(projectEndpointName, resourceName);
+        var document = await ReadDocumentStateAsync(documentUuid, resourceKeyId);
+
+        return new AuthorizationWriteSideEffectState(
+            Document: document,
+            ResourceTables: GetResourceHandle(projectEndpointName, resourceName).ResourceInfo.IsDescriptor
+                ? await ReadDescriptorTableStatesAsync(document.DocumentId)
+                : await ReadResourceTableStatesAsync(projectEndpointName, resourceName, document.DocumentId),
+            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
+                document.DocumentId,
+                resourceKeyId
+            )
+        );
+    }
+
+    public async Task<long> CountDocumentsAsync(string projectEndpointName, string resourceName) =>
+        await Database.ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*) FROM [dms].[Document] WHERE [ResourceKeyId] = @resourceKeyId;
+            """,
+            new SqlParameter("@resourceKeyId", GetCompiledResourceKeyId(projectEndpointName, resourceName))
+        );
+
+    /// <summary>
+    /// Returns once a request in this database is blocked by another session, which is how a test knows a write it started is waiting on the
+    /// uncommitted work of a held session rather than guessing with a delay.
+    /// </summary>
+    public async Task WaitUntilASessionIsBlockedAsync(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (
+                await Database.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM sys.dm_exec_requests WHERE blocking_session_id <> 0 AND database_id = DB_ID();"
+                ) > 0
+            )
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25));
+        }
+
+        throw new TimeoutException($"No blocked session was observed within {timeout}.");
+    }
+
+    private async Task<IReadOnlyList<AuthorizationResourceTableState>> ReadDescriptorTableStatesAsync(
+        long documentId
+    )
+    {
+        DbColumnName[] columns =
+        [
+            new("DocumentId"),
+            new("Namespace"),
+            new("CodeValue"),
+            new("ShortDescription"),
+            new("Description"),
+            new("Uri"),
+            new("Discriminator"),
+        ];
+        var rows = await Database.QueryRowsAsync(
+            """
+            SELECT [DocumentId], [Namespace], [CodeValue], [ShortDescription], [Description], [Uri], [Discriminator]
+            FROM [dms].[Descriptor]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+
+        return [new AuthorizationResourceTableState("dms.Descriptor", NormalizeRows(rows, columns))];
+    }
+
     public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationNullableSideEffectStateAsync(
         DocumentUuid documentUuid
     )
@@ -2443,14 +2613,15 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 creatorOwnershipTokenId,
                 []
             ),
-            AuthorizationStrategyEvaluators =
-            [
-                .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(
-                    strategyName,
-                    [],
-                    FilterOperator.And
-                )),
-            ],
+            ActionAuthorization = strategyNames is null or { Count: 0 }
+                ? UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate
+                : UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                        strategyName,
+                        [],
+                        FilterOperator.And
+                    )),
+                ]),
         };
 
         return await scope

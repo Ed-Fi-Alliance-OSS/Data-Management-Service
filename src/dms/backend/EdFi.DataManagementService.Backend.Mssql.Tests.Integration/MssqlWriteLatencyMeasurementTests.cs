@@ -173,6 +173,10 @@ public class Given_A_Mssql_Warm_Steady_State_Write_Latency_Measurement
                     TraceId: new TraceId("mssql-write-latency-upsert"),
                     DocumentUuid: documentUuid ?? new DocumentUuid(Guid.NewGuid())
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             );
     }
 

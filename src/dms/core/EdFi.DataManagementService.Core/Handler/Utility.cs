@@ -141,10 +141,19 @@ public static class Utility
         ILogger logger,
         RequestInfo requestInfo,
         string[] errors,
-        SecurityConfigurationFailureDiagnostic[]? diagnostics = null
+        SecurityConfigurationFailureDiagnostic[]? diagnostics = null,
+        string? cmsAction = null,
+        IReadOnlyList<string>? configuredStrategyNames = null
     )
     {
-        SecurityConfigurationFailureLogger.Log(logger, requestInfo, errors, diagnostics: diagnostics);
+        SecurityConfigurationFailureLogger.Log(
+            logger,
+            requestInfo,
+            errors,
+            cmsAction: cmsAction,
+            configuredStrategyNames: configuredStrategyNames,
+            diagnostics: diagnostics
+        );
 
         return new FrontendResponse(
             StatusCode: 500,

@@ -5,12 +5,14 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Tests.Unit.Handler;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -144,6 +146,58 @@ public class ProvideAuthorizationFiltersMiddlewareTests
         public void It_preserves_raw_strategy_names_with_empty_filters()
         {
             AssertRawStrategyEvaluators(_requestInfo);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_With_Create_And_Update_Evidence : ProvideAuthorizationFiltersMiddlewareTests
+    {
+        private static readonly string[] _updateStrategies =
+        [
+            AuthorizationStrategyNameConstants.NamespaceBased,
+            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+        ];
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public async Task It_passes_each_permitted_list_in_order_and_refuses_the_other_action(
+            bool createDenied
+        )
+        {
+            RequestInfo requestInfo = CreateAuthorizedRequestInfo();
+            requestInfo.ResourceActionAuthStrategies = [];
+            requestInfo.UpsertActionPolicies = new UpsertActionPolicies(
+                createDenied
+                    ? new UpsertActionPolicyEvidence.Denied("Create", "Student", "TestClaimSet")
+                    : new UpsertActionPolicyEvidence.NoStrategies(
+                        "Create",
+                        ["uri://student"],
+                        "uri://student"
+                    ),
+                new UpsertActionPolicyEvidence.Permitted("Update", _updateStrategies)
+            );
+            bool nextCalled = false;
+
+            await Execute(requestInfo, () => nextCalled = true);
+
+            nextCalled.Should().BeTrue();
+            requestInfo
+                .UpsertActionAuthorization!.Create.Should()
+                .BeSameAs(UpsertActionPolicy.NotPermitted.Instance);
+            var update = requestInfo
+                .UpsertActionAuthorization.Update.Should()
+                .BeOfType<UpsertActionPolicy.Permitted>()
+                .Subject;
+            update
+                .Evaluators.Select(static evaluator => evaluator.AuthorizationStrategyName)
+                .Should()
+                .Equal(_updateStrategies);
+            update.Evaluators.Should().OnlyContain(static evaluator => evaluator.Filters.Length == 0);
+            update
+                .Evaluators.Should()
+                .OnlyContain(static evaluator => evaluator.Operator == FilterOperator.Or);
+            requestInfo.AuthorizationStrategyEvaluators.Should().BeEmpty();
         }
     }
 

@@ -92,7 +92,7 @@ public class Given_MssqlDescriptorWriteHandler
             WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
@@ -109,14 +109,16 @@ public class Given_MssqlDescriptorWriteHandler
                 "shortDescription": "Guarded Existing Post"
             }
             """;
-        var createResult = await handler.HandlePostAsync(CreatePostRequest(resource, body));
+        var createResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+            CreatePostRequest(resource, body)
+        );
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         var request = CreatePostRequest(resource, body) with
         {
             WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -137,7 +139,9 @@ public class Given_MssqlDescriptorWriteHandler
                 "shortDescription": "Guarded Existing Put"
             }
             """;
-        var createResult = await handler.HandlePostAsync(CreatePostRequest(resource, body));
+        var createResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+            CreatePostRequest(resource, body)
+        );
         var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
         var request = CreatePutRequest(resource, documentUuid, body) with
         {
@@ -192,7 +196,7 @@ public class Given_MssqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
@@ -232,7 +236,7 @@ public class Given_MssqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
@@ -273,7 +277,7 @@ public class Given_MssqlDescriptorWriteHandler
             }
             """
         );
-        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var createResult = await writeHandler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
 
         ((UpsertResult.InsertSuccess)createResult)
@@ -302,7 +306,7 @@ public class Given_MssqlDescriptorWriteHandler
             }
             """
         );
-        var upsertResult = await writeHandler.HandlePostAsync(upsertRequest);
+        var upsertResult = await writeHandler.HandlePostWithSamePolicyForCreateAndUpdateAsync(upsertRequest);
 
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
             upsertResult,
@@ -359,7 +363,7 @@ public class Given_MssqlDescriptorWriteHandler
             """,
             profileName
         );
-        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var createResult = await writeHandler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
 
         // The profiled POST etag matches a follow-up profiled GET of the same representation.
@@ -410,7 +414,7 @@ public class Given_MssqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var success = (UpsertResult.InsertSuccess)insertResult;
         success.ETag.Should().NotBeNull();
 
@@ -439,7 +443,7 @@ public class Given_MssqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         var result = await handler.HandleDeleteAsync(
@@ -489,7 +493,7 @@ public class Given_MssqlDescriptorWriteHandler
             ),
         };
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         (await ReadStoredOwnershipTokenAsync(request.DocumentUuid)).Should().Be((short)42);
@@ -518,7 +522,7 @@ public class Given_MssqlDescriptorWriteHandler
             ),
         };
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         (await ReadStoredOwnershipTokenAsync(request.DocumentUuid)).Should().BeNull();
@@ -557,7 +561,9 @@ public class Given_MssqlDescriptorWriteHandler
                 ownershipTokenIds: []
             ),
         };
-        (await handler.HandlePostAsync(createRequest)).Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest))
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
 
         var upsertRequest = CreatePostRequest(resource, UpsertBody) with
         {
@@ -568,7 +574,9 @@ public class Given_MssqlDescriptorWriteHandler
                 ownershipTokenIds: []
             ),
         };
-        (await handler.HandlePostAsync(upsertRequest)).Should().BeOfType<UpsertResult.UpdateSuccess>();
+        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(upsertRequest))
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
 
         (await ReadStoredOwnershipTokenAsync(createRequest.DocumentUuid)).Should().Be((short)42);
     }

@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -49,7 +50,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
         var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
         );
 
@@ -88,7 +89,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
         var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
 
-        await sut.HandlePostAsync(CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid));
+        await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+            CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
+        );
 
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         telemetry.Successes.Should().ContainSingle();
@@ -114,7 +117,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
         var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
         );
 
@@ -153,7 +156,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
                 44L
             );
 
-            await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -206,7 +211,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else if (writePath == DescriptorWritePath.PostAsUpdate)
         {
@@ -221,7 +228,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             ]);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -299,7 +308,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             tenantKey: peerTargetKey.TenantKey
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 CreateMappingSet(SqlDialect.Pgsql),
                 documentUuid,
@@ -356,7 +365,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else if (writePath == DescriptorWritePath.PostAsUpdate)
         {
@@ -371,7 +382,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             ]);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -645,7 +658,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else if (writePath == DescriptorWritePath.PostAsUpdate)
         {
@@ -660,7 +675,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             ]);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {

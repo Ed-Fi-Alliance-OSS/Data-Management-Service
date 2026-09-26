@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -41,7 +42,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         // The advisory target re-resolves as CreateNew, so there is no current representation to
         // satisfy If-Match against, and the reason is TargetDoesNotExist rather than Concurrency.
@@ -88,7 +89,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -126,7 +127,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         // The target exists but its current etag does not match the specific-tag If-Match precondition,
         // so the reason is Concurrency rather than TargetDoesNotExist.
@@ -205,7 +206,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(targetLookupService, sessionFactory);
         request = request with { WritePrecondition = new WritePrecondition.IfMatch(currentEtag) };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, currentEtag));
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
@@ -235,7 +236,7 @@ public class Given_Descriptor_Write_Preconditions
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
         var currentEtag = ExpectedComposedDescriptorEtag(44L);
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, currentEtag));
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
@@ -293,7 +294,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -356,7 +357,7 @@ public class Given_Descriptor_Write_Preconditions
             description: "Updated Description"
         );
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
@@ -957,7 +958,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -998,7 +999,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
@@ -1027,7 +1028,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch("\"specific-tag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         sessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -1050,7 +1051,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch("\"any-specific-tag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -1086,7 +1087,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -1125,7 +1126,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch(ExpectedComposedDescriptorEtag(44L)),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -1165,7 +1166,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfNoneMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()

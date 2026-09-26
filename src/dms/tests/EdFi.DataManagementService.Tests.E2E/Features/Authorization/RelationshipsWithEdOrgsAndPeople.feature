@@ -20,10 +20,12 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | schoolId   | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 1255901001 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
                   | 1255901002 | Unauthorized school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "1255901001"
               And the system has these "students"
                   | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | "11"            | Authorized student   | student-ln  | 2008-01-01 |
                   | "12"            | Unauthorized student | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
 
         @e2e-ci-shard-2
         Scenario: 01 Ensure client can create a StudentSchoolAssociation
@@ -275,11 +277,13 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | schoolId   | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 2255901001 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
                   | 2255901002 | Unauthorized school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "2255901001,2255901002"
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | StudentId                   | "21"            | Authorized student   | student-ln  | 2008-01-01 |
                   | UnauthorizedStudentId       | "22"            | Unauthorized student | student-ln  | 2008-01-01 |
                   | UnassociatedStudentId       | "23"            | Unassociated student | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "2255901001,2255901002"
               And the system has these "studentSchoolAssociations"
                   | _storeResultingIdInVariable | studentReference            | schoolReference            | entryGradeLevelDescriptor                            | entryDate  | exitGradeLevel                                       | exitWithdrawTypeDescriptor                                    |
                   | StudentSchoolAssociationId  | { "studentUniqueId": "21" } | { "schoolId": 2255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
@@ -401,11 +405,13 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | schoolId   | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 3255901001 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
                   | 3255901002 | Unauthorized school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "3255901001, 3255901002"
               And the system has these "students"
                   | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | "31"            | Authorized student   | student-ln  | 2008-01-01 |
                   | "32"            | Unauthorized student | student-ln  | 2008-01-01 |
                   | "33"            | Unassociated student | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3255901001, 3255901002"
               And the system has these "studentSchoolAssociations"
                   | studentReference            | schoolReference            | entryGradeLevelDescriptor                            | entryDate  | exitGradeLevel                                       | exitWithdrawTypeDescriptor                                    |
                   | { "studentUniqueId": "31" } | { "schoolId": 3255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
@@ -806,10 +812,12 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | schoolId   | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 4255901001 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
                   | 4255901002 | Unauthorized school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "4255901001, 4255901002"
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | StudentId                   | "41"            | Authorized student   | student-ln  | 2008-01-01 |
                   |                             | "42"            | Unauthorized student | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "4255901001, 4255901002"
               And the system has these "studentSchoolAssociations"
                   | _storeResultingIdInVariable | studentReference            | schoolReference            | entryGradeLevelDescriptor                            | entryDate  | exitGradeLevel                                       | exitWithdrawTypeDescriptor                                    |
                   | StudentSchoolAssociationId  | { "studentUniqueId": "41" } | { "schoolId": 4255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
@@ -1107,10 +1115,12 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the system has these "schools"
                   | schoolId   | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                   |
                   | 5255901001 | ACC-test          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "5255901001"
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "51"            | student-fn | student-ln  | 2008-01-01 |
                   | "52"            | student-fn | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "5255901001"
               And the system has these "courses"
                   | courseCode       | identificationCodes                                                                                                                                   | educationOrganizationReference           | courseTitle        | numberOfParts |
                   | ACC-test-Course1 | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#CSSC course code", "identificationCode": "Id-123"} ] | {"educationOrganizationId": 5255901001 } | "ACC-test-Course1" | 8             |
@@ -1361,9 +1371,11 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the system has these "schools"
                   | schoolId   | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference        |
                   | 6255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 6255901} |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "3, 6255901"
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "61"            | student-fn | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "3, 6255901"
               And the system has these "studentSchoolAssociations"
                   | studentReference            | schoolReference            | entryGradeLevelDescriptor                          | entryDate  | exitGradeLevel                                     | exitWithdrawTypeDescriptor                                    |
                   | { "studentUniqueId": "61" } | { "schoolId": 6255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
@@ -1772,9 +1784,11 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | 1155901001 | Test school 1     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 1155901} |
                   | 1155902001 | Test school 2     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 1155902} |
                   | 5          | Test school 5     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | null                                 |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "1155901001, 1155902001"
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "111"           | student-fn | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1155901001, 1155902001"
               And the system has these "studentSchoolAssociations"
                   | _storeResultingIdInVariable  | studentReference             | schoolReference            | entryGradeLevelDescriptor                          | entryDate  |
                   | StudentASchool1AssociationId | { "studentUniqueId": "111" } | { "schoolId": 1155901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
