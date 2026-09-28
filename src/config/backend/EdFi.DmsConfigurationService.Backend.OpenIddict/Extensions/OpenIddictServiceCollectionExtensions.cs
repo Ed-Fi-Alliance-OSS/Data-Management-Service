@@ -55,6 +55,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:KeyFormatCacheSize",
                     100
                 );
+                options.ClientSecretHashingIterations = configuration.GetValue<int>(
+                    "IdentitySettings:ClientSecretHashingIterations",
+                    210000
+                );
                 options.TokenCleanupEnabled = configuration.GetValue<bool>(
                     "IdentitySettings:TokenCleanupEnabled",
                     true
