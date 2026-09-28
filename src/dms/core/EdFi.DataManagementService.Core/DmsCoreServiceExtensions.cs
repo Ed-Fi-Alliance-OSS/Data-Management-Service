@@ -521,6 +521,15 @@ public static class DmsCoreServiceExtensions
                 );
             }
 
+            // Checked once here rather than per fetch: HttpDocumentRetriever fetches only from the
+            // MetadataAddress origin, scheme included, so every fetch shares this address's scheme.
+            if (options.RequireHttpsMetadata && metadataAddress.Scheme != Uri.UriSchemeHttps)
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:MetadataAddress must use https when JwtAuthentication:RequireHttpsMetadata is true"
+                );
+            }
+
             if (string.IsNullOrEmpty(options.Authority))
             {
                 throw new InvalidOperationException(
@@ -541,9 +550,6 @@ public static class DmsCoreServiceExtensions
                     metadataAddress,
                     serviceProvider.GetRequiredService<ILogger<Security.HttpDocumentRetriever>>()
                 )
-                {
-                    RequireHttps = options.RequireHttpsMetadata,
-                }
             )
             {
                 RefreshInterval = TimeSpan.FromMinutes(options.RefreshIntervalMinutes),

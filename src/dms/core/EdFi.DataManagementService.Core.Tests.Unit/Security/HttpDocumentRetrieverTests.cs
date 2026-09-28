@@ -71,10 +71,7 @@ public class HttpDocumentRetrieverTests
             new HttpClient(handler),
             _metadataAddress,
             logger ?? NullLogger<HttpDocumentRetriever>.Instance
-        )
-        {
-            RequireHttps = false,
-        };
+        );
 
         (string? document, Exception? exception) = await TryFetch(retriever, address);
         return (document, exception, handler);
@@ -276,10 +273,7 @@ public class HttpDocumentRetrieverTests
                 new HttpClient(_handler),
                 _metadataAddress,
                 NullLogger<HttpDocumentRetriever>.Instance
-            )
-            {
-                RequireHttps = false,
-            };
+            );
 
             try
             {
@@ -332,10 +326,7 @@ public class HttpDocumentRetrieverTests
                 new HttpClient(new RecordingHandler()),
                 _metadataAddress,
                 _logger
-            )
-            {
-                RequireHttps = false,
-            };
+            );
 
             // Two refresh attempts meeting the foreign jwks_uri, each preceded by a metadata GET.
             await TryFetch(retriever, _metadataAddress.ToString());
@@ -362,11 +353,12 @@ public class HttpDocumentRetrieverTests
 
     /// <summary>
     /// With an https MetadataAddress the scheme alone puts an http address off the origin, so the
-    /// origin check refuses and logs it rather than the HTTPS check refusing it silently.
+    /// origin check refuses and logs it.
     /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_RequireHttps_And_An_Http_Address_On_Another_Host : HttpDocumentRetrieverTests
+    public class Given_An_Https_Metadata_Address_And_An_Http_Address_On_Another_Host
+        : HttpDocumentRetrieverTests
     {
         private Exception? _exception;
         private RecordingHandler _handler = null!;
@@ -381,10 +373,7 @@ public class HttpDocumentRetrieverTests
                 new HttpClient(_handler),
                 new Uri("https://idp.example/realms/edfi/.well-known/openid-configuration"),
                 _logger
-            )
-            {
-                RequireHttps = true,
-            };
+            );
 
             (_, _exception) = await TryFetch(retriever, "http://evil.example/.well-known/jwks.json");
         }
@@ -413,12 +402,44 @@ public class HttpDocumentRetrieverTests
     }
 
     /// <summary>
-    /// Running the origin check first must not weaken the HTTPS requirement: an http MetadataAddress
-    /// is on its own origin, so the HTTPS check is what refuses it.
+    /// The metadata origin written as userinfo in front of another host. A string-prefix origin check
+    /// would accept it; the parsed host is evil.example.
     /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_RequireHttps_And_An_Http_Address_On_The_Metadata_Origin : HttpDocumentRetrieverTests
+    public class Given_A_Jwks_Uri_Carrying_The_Metadata_Origin_As_Userinfo : HttpDocumentRetrieverTests
+    {
+        private Exception? _exception;
+        private RecordingHandler _handler = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, _exception, _handler) = await Fetch(
+                "http://dms-keycloak:8080@evil.example/.well-known/jwks.json"
+            );
+        }
+
+        [Test]
+        public void It_rejects_the_address()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+        }
+
+        [Test]
+        public void It_sends_no_request()
+        {
+            _handler.Requests.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// A host that starts with the metadata host. With a default-port origin, a string-prefix origin
+    /// check would accept it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Jwks_Uri_On_A_Host_Extending_The_Metadata_Host : HttpDocumentRetrieverTests
     {
         private Exception? _exception;
         private RecordingHandler _handler = null!;
@@ -429,24 +450,17 @@ public class HttpDocumentRetrieverTests
             _handler = new RecordingHandler();
             var retriever = new HttpDocumentRetriever(
                 new HttpClient(_handler),
-                _metadataAddress,
+                new Uri("https://idp.example/realms/edfi/.well-known/openid-configuration"),
                 NullLogger<HttpDocumentRetriever>.Instance
-            )
-            {
-                RequireHttps = true,
-            };
+            );
 
-            (_, _exception) = await TryFetch(retriever, _metadataAddress.ToString());
+            (_, _exception) = await TryFetch(retriever, "https://idp.example.evil.test/jwks");
         }
 
         [Test]
-        public void It_rejects_the_address_as_not_https()
+        public void It_rejects_the_address()
         {
-            _exception
-                .Should()
-                .BeOfType<InvalidOperationException>()
-                .Which.Message.Should()
-                .Be($"HTTPS is required but the address is not HTTPS: {_metadataAddress}");
+            _exception.Should().BeOfType<InvalidOperationException>();
         }
 
         [Test]

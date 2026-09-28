@@ -248,8 +248,15 @@ The behaviors above are exercised by automated tests:
   **signing-key origin pin**: a document address on another host, port or scheme than
   `MetadataAddress` is refused before any request is sent, and a metadata document that asserts
   the right issuer but names a foreign `jwks_uri` fails retrieval without contacting that host.
-  With HTTPS required, an `http` address on another host is refused and logged by the same
-  origin check, and repeated refusals are logged as an error only once per episode.
+  The check compares parsed origins, so an address carrying the metadata origin as userinfo, or
+  on a host that merely starts with the metadata host, is refused too. With an `https`
+  `MetadataAddress`, an `http` address on another host is refused and logged by the same origin
+  check, and repeated refusals are logged as an error only once per episode.
+
+  `EdFi.DataManagementService.Core.Tests.Unit/Startup/AuthStartupTaskRegistrationTests.cs` covers
+  the **registered configuration manager** enforcing that pin (a foreign `jwks_uri` fails
+  retrieval without being contacted), and DMS refusing an `http` `MetadataAddress` when
+  `RequireHttpsMetadata` is true.
 
   `EdFi.DataManagementService.Core.Tests.Unit/Startup/WarmUpOidcMetadataTaskTests.cs` covers
   **DMS startup failing** on a metadata issuer mismatch, with both values named and sanitized

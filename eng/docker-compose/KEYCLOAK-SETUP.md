@@ -328,6 +328,7 @@ Please refer "Creating a Configuration Service Client" section above
         ```js
             "ClientRole": "dms-client",
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
+            "MetadataAddress": "http://your-keycloak-url:port/realms/<your-realm>/.well-known/openid-configuration",
             "Audience": "account",
             "RequireHttpsMetadata": false,
             "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"

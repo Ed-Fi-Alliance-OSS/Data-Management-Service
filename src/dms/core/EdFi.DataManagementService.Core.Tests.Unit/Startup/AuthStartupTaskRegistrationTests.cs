@@ -245,6 +245,71 @@ public class AuthStartupTaskRegistrationTests
         }
     }
 
+    private const string RecordedMetadataAddress =
+        "https://idp.test/realms/edfi/.well-known/openid-configuration";
+
+    /// <summary>
+    /// Replaces the named OIDC client's primary handler, serving a metadata document that names
+    /// <paramref name="jwksUri"/>, and records every request that reaches it.
+    /// </summary>
+    private sealed class RecordingHandler(List<Uri> requests, string jwksUri) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            requests.Add(request.RequestUri!);
+            string body =
+                request.RequestUri!.AbsoluteUri == RecordedMetadataAddress
+                    ? $$"""{"issuer":"https://idp.test/realms/edfi","jwks_uri":"{{jwksUri}}"}"""
+                    : """{"keys":[]}""";
+            return Task.FromResult(
+                new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(body) }
+            );
+        }
+    }
+
+    /// <summary>
+    /// Runs the registered configuration manager against the recorder and returns the recorded
+    /// requests and any failure.
+    /// </summary>
+    private static async Task<(List<Uri> Requests, Exception? Exception)> FetchThroughRegisteredManager(
+        string jwksUri
+    )
+    {
+        List<Uri> requests = [];
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["JwtAuthentication:Authority"] = "https://idp.test/realms/edfi",
+                    ["JwtAuthentication:MetadataAddress"] = RecordedMetadataAddress,
+                }
+            )
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddJwtAuthentication(configuration);
+        services
+            .AddHttpClient(Core.Security.HttpDocumentRetriever.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new RecordingHandler(requests, jwksUri));
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        try
+        {
+            await provider
+                .GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>()
+                .GetConfigurationAsync(CancellationToken.None);
+            return (requests, null);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return (requests, exception);
+        }
+    }
+
     /// <summary>
     /// The no-redirect registration above protects nothing unless the configuration manager fetches
     /// through it. The recorder replaces only that named client's primary handler, so a manager built
@@ -253,69 +318,114 @@ public class AuthStartupTaskRegistrationTests
     [TestFixture]
     public class Given_The_Configuration_Manager_Fetches_Metadata : AuthStartupTaskRegistrationTests
     {
-        private const string MetadataAddress =
-            "https://idp.test/realms/edfi/.well-known/openid-configuration";
-
-        private readonly List<Uri> _requests = [];
-
-        private sealed class RecordingHandler(List<Uri> requests) : HttpMessageHandler
-        {
-            protected override Task<HttpResponseMessage> SendAsync(
-                HttpRequestMessage request,
-                CancellationToken cancellationToken
-            )
-            {
-                requests.Add(request.RequestUri!);
-                string body =
-                    request.RequestUri!.AbsoluteUri == MetadataAddress
-                        ? """{"issuer":"https://idp.test/realms/edfi","jwks_uri":"https://idp.test/realms/edfi/certs"}"""
-                        : """{"keys":[]}""";
-                return Task.FromResult(
-                    new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(body),
-                    }
-                );
-            }
-        }
+        private List<Uri> _requests = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            var configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["JwtAuthentication:Authority"] = "https://idp.test/realms/edfi",
-                        ["JwtAuthentication:MetadataAddress"] = MetadataAddress,
-                    }
-                )
-                .Build();
-
-            var services = new ServiceCollection();
-            services.AddJwtAuthentication(configuration);
-            services
-                .AddHttpClient(Core.Security.HttpDocumentRetriever.HttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(() => new RecordingHandler(_requests));
-
-            using ServiceProvider provider = services.BuildServiceProvider();
-
-            try
-            {
-                await provider
-                    .GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>()
-                    .GetConfigurationAsync(CancellationToken.None);
-            }
-            catch (InvalidOperationException)
-            {
-                // Only the recorded requests matter; a manager on another client fails to connect.
-            }
+            // Only the recorded requests matter; a manager on another client fails to connect.
+            (_requests, _) = await FetchThroughRegisteredManager("https://idp.test/realms/edfi/certs");
         }
 
         [Test]
         public void It_fetches_the_metadata_address_through_the_named_client()
         {
-            _requests.Should().Contain(new Uri(MetadataAddress));
+            _requests.Should().Contain(new Uri(RecordedMetadataAddress));
+        }
+    }
+
+    /// <summary>
+    /// The origin pin protects nothing unless the registered manager fetches through the pinning
+    /// retriever with the MetadataAddress origin. A manager built on any other retriever would fetch
+    /// the foreign jwks_uri through the recorder.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Configuration_Manager_Meets_A_Foreign_Jwks_Uri : AuthStartupTaskRegistrationTests
+    {
+        private List<Uri> _requests = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_requests, _exception) = await FetchThroughRegisteredManager("https://evil.test/certs");
+        }
+
+        [Test]
+        public void It_fails_the_retrieval()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+        }
+
+        [Test]
+        public void It_contacts_only_the_metadata_address()
+        {
+            _requests.Should().Equal(new Uri(RecordedMetadataAddress));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Https_Metadata_Required_With_An_Http_Metadata_Address
+        : AuthStartupTaskRegistrationTests
+    {
+        private Action _resolve = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceProvider provider = BuildJwtAuthenticationProvider(
+                new Dictionary<string, string?>
+                {
+                    ["JwtAuthentication:Authority"] = "http://keycloak.example.com/realms/edfi",
+                    ["JwtAuthentication:MetadataAddress"] =
+                        "http://keycloak.example.com/realms/edfi/.well-known/openid-configuration",
+                    ["JwtAuthentication:RequireHttpsMetadata"] = "true",
+                }
+            );
+
+            _resolve = () => provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();
+        }
+
+        [Test]
+        public void It_throws_naming_both_settings()
+        {
+            _resolve
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage(
+                    "JwtAuthentication:MetadataAddress must use https when JwtAuthentication:RequireHttpsMetadata is true"
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Https_Metadata_Not_Required_With_An_Http_Metadata_Address
+        : AuthStartupTaskRegistrationTests
+    {
+        private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceProvider provider = BuildJwtAuthenticationProvider(
+                new Dictionary<string, string?>
+                {
+                    ["JwtAuthentication:Authority"] = "http://keycloak.example.com/realms/edfi",
+                    ["JwtAuthentication:MetadataAddress"] =
+                        "http://keycloak.example.com/realms/edfi/.well-known/openid-configuration",
+                    ["JwtAuthentication:RequireHttpsMetadata"] = "false",
+                }
+            );
+
+            _configurationManager = provider.GetRequiredService<
+                IConfigurationManager<OpenIdConnectConfiguration>
+            >();
+        }
+
+        [Test]
+        public void It_resolves_a_configuration_manager()
+        {
+            _configurationManager.Should().BeOfType<ConfigurationManager<OpenIdConnectConfiguration>>();
         }
     }
 }

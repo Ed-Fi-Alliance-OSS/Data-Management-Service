@@ -16,11 +16,13 @@ namespace EdFi.DataManagementService.Core.Security;
 /// The client used for every fetch. It must not follow redirects (see <see cref="HttpClientName"/>),
 /// or an on-origin address could hand the fetch to another origin after the check below.
 /// </param>
-/// <param name="allowedOrigin">
-/// The origin (scheme, host and port) of JwtAuthentication:MetadataAddress. The same retriever
-/// fetches the metadata document and then the jwks_uri that document names, so refusing any other
-/// origin stops a tampered document from pointing DMS at signing keys served elsewhere, even when
-/// its issuer is the configured one.
+/// <param name="metadataAddress">
+/// The full JwtAuthentication:MetadataAddress. Its origin (scheme, host and port) is the only one
+/// fetched from: the same retriever fetches the metadata document and then the jwks_uri that
+/// document names, so refusing any other origin stops a tampered document from pointing DMS at
+/// signing keys served elsewhere, even when its issuer is the configured one. A fetch of exactly
+/// this address is the metadata GET, which does not end a refusal episode (see the logger
+/// parameter), so pass the full address, not just its origin.
 /// </param>
 /// <param name="logger">
 /// Logs each origin refusal. A refusal during a background refresh is swallowed by the
@@ -30,7 +32,7 @@ namespace EdFi.DataManagementService.Core.Security;
 /// </param>
 internal class HttpDocumentRetriever(
     HttpClient httpClient,
-    Uri allowedOrigin,
+    Uri metadataAddress,
     ILogger<HttpDocumentRetriever> logger
 ) : IDocumentRetriever
 {
@@ -46,25 +48,20 @@ internal class HttpDocumentRetriever(
     private int _refusalLogged;
 
     /// <summary>
-    /// Whether to require HTTPS for metadata endpoints
-    /// </summary>
-    public bool RequireHttps { get; init; } = true;
-
-    /// <summary>
     /// Retrieves a document from the specified address
     /// </summary>
     public async Task<string> GetDocumentAsync(string address, CancellationToken cancel)
     {
         // SECURITY CRITICAL: checked before any request is sent, and the client does not follow
         // redirects, so a rejected address is never contacted and its document is never adopted.
-        // It runs before the HTTPS check so that every address a document names off the
-        // MetadataAddress origin is refused here, logged and sanitized. The scheme is part of the
-        // origin, so with an https MetadataAddress this also refuses every http address.
+        // The scheme is part of the origin, so with an https MetadataAddress this also refuses
+        // every http address; AddJwtAuthentication requires an https MetadataAddress when
+        // RequireHttpsMetadata is set.
         if (
             !Uri.TryCreate(address, UriKind.Absolute, out Uri? target)
             || Uri.Compare(
                 target,
-                allowedOrigin,
+                metadataAddress,
                 UriComponents.SchemeAndServer,
                 UriFormat.Unescaped,
                 StringComparison.OrdinalIgnoreCase
@@ -75,7 +72,7 @@ internal class HttpDocumentRetriever(
                 address,
                 MaxLoggedAddressLength
             );
-            string origin = allowedOrigin.GetLeftPart(UriPartial.Authority);
+            string origin = metadataAddress.GetLeftPart(UriPartial.Authority);
 
             LogLevel level =
                 Interlocked.Exchange(ref _refusalLogged, 1) == 0 ? LogLevel.Error : LogLevel.Debug;
@@ -92,22 +89,13 @@ internal class HttpDocumentRetriever(
             );
         }
 
-        // Only an address on the MetadataAddress origin gets here, so with an https MetadataAddress
-        // this check never fails; it guards an http MetadataAddress when HTTPS is required.
-        if (RequireHttps && target.Scheme != Uri.UriSchemeHttps)
-        {
-            throw new InvalidOperationException(
-                $"HTTPS is required but the address is not HTTPS: {LoggingSanitizer.SanitizeFreeTextForLogging(address, MaxLoggedAddressLength)}"
-            );
-        }
-
         var response = await httpClient.GetAsync(target, cancel);
         response.EnsureSuccessStatusCode();
 
-        // allowedOrigin is the full MetadataAddress, so this is a signing-key (jwks_uri) fetch. Its
+        // Any address other than the MetadataAddress is a signing-key (jwks_uri) fetch. Its
         // success ends a refusal episode; the metadata GET cannot, because it succeeds on every
         // attempt, including the ones whose jwks_uri is then refused.
-        if (target != allowedOrigin)
+        if (target != metadataAddress)
         {
             Interlocked.Exchange(ref _refusalLogged, 0);
         }
