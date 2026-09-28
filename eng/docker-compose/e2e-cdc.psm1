@@ -53,6 +53,9 @@ function New-E2ECdcHttpOverride {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates a unique private test override; never modifies retained admission inputs.')]
     param([Parameter(Mandatory)][string]$AdmittedComposePath)
     $ErrorActionPreference = 'Stop'
+    # Admission reloads this module in bootstrap-wrapper's scope. Reattach it here
+    # because that -Force import removes our earlier scoped module reference.
+    Import-Module (Join-Path $PSScriptRoot 'bootstrap-cdc.psm1')
     $AdmittedComposePath = [IO.Path]::GetFullPath($AdmittedComposePath)
     & (Get-Module cdc-lifecycle) { param($path) Assert-CdcPrivatePath $path } $AdmittedComposePath
     $document = Get-Content -LiteralPath $AdmittedComposePath -Raw | ConvertFrom-Json -AsHashtable

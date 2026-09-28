@@ -568,6 +568,14 @@ Describe 'Private API CDC attachment contract' {
         Initialize-AttachmentFixture -Provider $Provider -Project $Project -IdentityProvider $IdentityProvider
         Initialize-RolloutMock
         $handoffPath = & (Get-Module e2e-cdc) { param($state, $start, $project)
+            # The real admission wrapper reloads this dependency in its own scope,
+            # invalidating the E2E module's initial reference before HTTP rollout.
+            $dependency = (Get-Module bootstrap-cdc).Path
+            & (Get-Module bootstrap-wrapper) {
+                param($path)
+                Import-Module $path -Force -ErrorAction Stop
+            } $dependency
+            @(Get-Module bootstrap-cdc).Count | Should -Be 0
             Invoke-E2ECdcApiRollout -Project $project -StatePath $state -StartScript $start
         } $script:state (Join-Path $script:composeRoot "start-$($Project.Replace('dms-', ''))-dms.ps1") $Project
         $script:rolloutEvents.ToArray() | Should -Be @('admitted-host', 'config', 'stop-dms', 'verify-stopped', 'up-dms', 'health')
