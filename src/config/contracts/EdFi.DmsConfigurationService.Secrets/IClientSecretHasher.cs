@@ -3,23 +3,34 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+namespace EdFi.DmsConfigurationService.Secrets;
 
 /// <summary>
-/// Provides client secret hashing capabilities using OpenIddict's built-in security features.
-/// This interface abstracts OpenIddict's IOpenIddictApplicationManager for secure client secret handling.
+/// Hashes and verifies client secrets.
+/// <para>
+/// <b>Cardinality.</b> This is a replace contract with zero or one implementation replacing the
+/// host default, a PBKDF2-SHA256 hasher. Register an implementation with a plain <c>Add</c>, such
+/// as <c>services.AddSingleton&lt;IClientSecretHasher, MyHasher&gt;()</c>, and never with a
+/// <c>TryAdd</c>: the host default is always registered, so a <c>TryAdd</c> is always declined and
+/// the replacement silently never runs.
+/// </para>
+/// <para>
+/// <b>Lifetime and keying.</b> The implementation must be registered as a singleton and unkeyed.
+/// The host resolves this contract unkeyed from its root provider, so a keyed registration would
+/// replace nothing and a scoped or transient one does not match how the host consumes it.
+/// </para>
 /// </summary>
 public interface IClientSecretHasher
 {
     /// <summary>
-    /// Hashes a plain-text client secret using OpenIddict's secure hashing algorithm.
+    /// Hashes a plain-text client secret.
     /// </summary>
     /// <param name="plainTextSecret">The plain-text secret to hash</param>
     /// <returns>The hashed secret suitable for database storage</returns>
     Task<string> HashSecretAsync(string plainTextSecret);
 
     /// <summary>
-    /// Verifies a plain-text secret against a stored hash using OpenIddict's verification logic.
+    /// Verifies a plain-text secret against a stored hash.
     /// </summary>
     /// <param name="plainTextSecret">The plain-text secret to verify</param>
     /// <param name="hashedSecret">The stored hash to verify against</param>

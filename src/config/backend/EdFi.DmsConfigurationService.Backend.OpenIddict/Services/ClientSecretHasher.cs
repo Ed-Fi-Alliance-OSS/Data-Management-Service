@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

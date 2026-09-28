@@ -18,6 +18,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
+using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;

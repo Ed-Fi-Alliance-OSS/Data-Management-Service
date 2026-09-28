@@ -18,6 +18,7 @@ COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/*.csproj backend/Ed
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/*.csproj backend/EdFi.DmsConfigurationService.Backend.Mssql/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/*.csproj backend/EdFi.DmsConfigurationService.Backend.Postgresql/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/*.csproj datamodel/EdFi.DmsConfigurationService.DataModel/packages.lock.json ./datamodel/EdFi.DmsConfigurationService.DataModel/
+COPY contracts/EdFi.DmsConfigurationService.Secrets/*.csproj contracts/EdFi.DmsConfigurationService.Secrets/packages.lock.json ./contracts/EdFi.DmsConfigurationService.Secrets/
 
 RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj --locked-mode
 
@@ -28,6 +29,7 @@ COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/ ./backend/EdFi.Dms
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfigurationService.DataModel/
+COPY contracts/EdFi.DmsConfigurationService.Secrets/ ./contracts/EdFi.DmsConfigurationService.Secrets/
 
 ARG VERSION=""
 ARG ASSEMBLY_VERSION=""
