@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Tests.E2E.Cdc;
 using FluentAssertions;
@@ -67,6 +68,31 @@ public class Given_CdcCrudAssertions(bool descriptor)
         _consumer.Assign(
             Enumerable.Range(0, 3).Select(p => new MessageContractPartitionBounds(p, 0, 0)).ToArray()
         );
+    }
+
+    [TestCase("", "default")]
+    [TestCase("tenant-a", "tenant-a")]
+    [TestCase("Tenant-A", "tenant-a")]
+    public void It_matches_the_runtime_target_to_the_binding_tenant_representation(
+        string runtimeTenant,
+        string bindingTenant
+    )
+    {
+        var binding = _binding with { TenantKey = bindingTenant };
+        var target = DocumentCacheTargetKey.Create(runtimeTenant, 1);
+
+        CdcCrudAssertions.AssertRuntimeTarget(binding, target);
+    }
+
+    [TestCase("other", 1)]
+    [TestCase("", 2)]
+    public void It_rejects_a_different_runtime_tenant_or_datastore(string runtimeTenant, long dataStoreId)
+    {
+        var binding = _binding with { TenantKey = "default" };
+        var target = DocumentCacheTargetKey.Create(runtimeTenant, dataStoreId);
+        Action act = () => CdcCrudAssertions.AssertRuntimeTarget(binding, target);
+
+        act.Should().Throw<AssertionException>();
     }
 
     [Test]

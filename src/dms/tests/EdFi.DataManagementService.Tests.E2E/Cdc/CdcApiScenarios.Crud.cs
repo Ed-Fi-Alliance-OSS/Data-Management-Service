@@ -56,14 +56,7 @@ internal sealed partial class CdcApiScenarios
                     created.DocumentUuid.Should().Be(uuid);
                     created.EffectiveSchemaHash.Should().Be(_context.EffectiveSchemaHash);
                     var identity = await phase.Runtime.ObserveEstablishedDatabaseAsync(ct);
-                    identity
-                        .TargetKey.Should()
-                        .Be(
-                            DocumentCacheTargetKey.Create(
-                                binding.TenantKey,
-                                long.Parse(binding.DataStoreId, CultureInfo.InvariantCulture)
-                            )
-                        );
+                    CdcCrudAssertions.AssertRuntimeTarget(binding, identity.TargetKey);
                     identity.PhysicalSourceFingerprint.Should().Be(binding.PhysicalSourceFingerprint);
                     await AssertHeldAsync(created, held, ct);
                     (await _context.Documents.ReadCacheAsync(created.DocumentId, ct)).Should().BeEmpty();
@@ -249,6 +242,17 @@ internal sealed partial class CdcApiScenarios
 /// duplicate/stale deliveries; unrelated/work-table records cannot hide behind a UUID filter.</summary>
 internal static class CdcCrudAssertions
 {
+    public static void AssertRuntimeTarget(CdcBinding binding, DocumentCacheTargetKey target)
+    {
+        // E18 uses an empty default tenant; CDC bindings use the canonical "default" token.
+        // Match the production admission mapping instead of treating a binding token as an E18 key.
+        CdcTargetValidator
+            .MapE18TenantKeyToBindingTenantKey(target.TenantKey.ToLowerInvariant())
+            .Should()
+            .Be(binding.TenantKey);
+        target.DataStoreId.ToString(CultureInfo.InvariantCulture).Should().Be(binding.DataStoreId);
+    }
+
     public static void AssertApiBody(JsonObject actual, JsonObject body, Guid uuid)
     {
         actual["id"]!.GetValue<string>().Should().Be(uuid.ToString("D"));
