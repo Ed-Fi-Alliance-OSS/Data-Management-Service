@@ -1570,4 +1570,62 @@ public class JwtValidationServiceTests
             _sanitized.Should().Be(new string('a', 255));
         }
     }
+
+    /// <summary>
+    /// Pins sanitize-then-truncate: truncating first would keep only the padding, which the
+    /// sanitizer then removes, leaving an empty string.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Issuer_Padded_With_Control_Characters_Beyond_The_Log_Cap : JwtValidationServiceTests
+    {
+        private string _sanitized = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _sanitized = JwtValidationService.SanitizeIssuerForLogging(
+                new string('\u0001', 300) + "https://evil.example/realms/edfi"
+            );
+        }
+
+        [Test]
+        public void It_keeps_the_content_after_the_padding()
+        {
+            _sanitized.Should().Be("https://evil.example/realms/edfi");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Mismatched_Metadata_Issuer_Containing_Line_Breaks : JwtValidationServiceTests
+    {
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+            var (service, configurationManager, _, _, _, signingKey) = CreateService(logger: _logger);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(
+                    Task.FromResult(CreateMetadata("https://attacker.example\r\nforged-log-line", signingKey))
+                );
+
+            // The issuer check returns before the token is parsed, so any token will do.
+            await service.ValidateAndExtractClientAuthorizationsAsync("not-a-jwt", CancellationToken.None);
+        }
+
+        [Test]
+        public void It_logs_the_discovered_issuer_sanitized()
+        {
+            _logger
+                .Entries.Should()
+                .ContainSingle(entry => entry.Level == LogLevel.Error)
+                .Which.Properties["DiscoveredIssuer"]
+                .Should()
+                .Be("https://attacker.exampleforged-log-line");
+        }
+    }
 }
