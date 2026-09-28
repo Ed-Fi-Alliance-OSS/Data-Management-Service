@@ -1025,6 +1025,24 @@ Describe 'CDC API E2E accounting' {
     }
 }
 
+Describe 'CDC API E2E native process budgets' {
+    BeforeDiscovery { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+    }
+    InModuleScope cdc-qualification {
+        It 'accepts the actual <Seconds>-second stage budget through the real transport' -ForEach @(
+            @{ Seconds = 1800 }, @{ Seconds = 3000 }, @{ Seconds = 900 }
+        ) {
+            $result = Invoke-CdcApiProcess -FilePath pwsh -Arguments @('-NoProfile', '-Command', 'exit 0') `
+                -LogPath (Join-Path $TestDrive "budget-$Seconds") -TimeoutSeconds $Seconds
+            $result.FailureKind | Should -Be None
+            $result.ExitCode | Should -Be 0
+            $result.TimedOut | Should -BeFalse
+        }
+    }
+}
+
 Describe 'CDC API E2E runner stages' {
     BeforeDiscovery { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
     BeforeAll {
