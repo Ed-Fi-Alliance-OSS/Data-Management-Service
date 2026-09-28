@@ -1398,10 +1398,11 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     /// <summary>
-    /// This is the assertion that pins D1: a POST that resolves to a create is never denied by ownership.
-    /// The statement carries the carrier's row guard, so with no captured target it produces no rows and
-    /// none of its branches — the AUTH1 abort device included — evaluates. Asserted with the caller holding
-    /// zero ownership tokens, which is the configuration most likely to deny if the guard were missing.
+    /// The stored-token statement cannot deny a POST that resolves to a create: it carries the carrier's row
+    /// guard, so with no captured target it produces no rows and none of its branches — the AUTH1 abort device
+    /// included — evaluates. Asserted with the caller holding zero ownership tokens, which is the configuration
+    /// most likely to deny if the guard were missing. A create is decided instead by the create-side verdict,
+    /// which the second command returns in its ownership slot.
     /// </summary>
     [Test]
     public async Task It_keeps_the_ownership_statement_vacuous_for_a_create_with_no_tokens()
@@ -1473,8 +1474,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     /// <summary>
-    /// A create never sees the deferred failure: ownership never denies a create, and the over-limit list was
-    /// never parameterized for one, so the write proceeds with no ownership statement or parameter at all.
+    /// A create never sees the stored-side deferred failure, which is owed only to an existing target, and the
+    /// over-limit list is never parameterized, so the first phase proceeds with no ownership statement or
+    /// parameter at all. The cap reaches a create through its own create-side deferral instead.
     /// </summary>
     [Test]
     public async Task It_ignores_the_deferred_ownership_failure_for_a_post_create()

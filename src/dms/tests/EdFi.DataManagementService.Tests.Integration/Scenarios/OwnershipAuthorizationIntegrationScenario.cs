@@ -95,9 +95,9 @@ internal static class OwnershipAuthorizationIntegrationScenario
 
     /// <summary>
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
-    /// is stamped and never denied, every single-record read and write is enforced, GET-many is filtered, and
-    /// descriptor storage stays withheld. Seeding still works precisely because a create cannot be denied by
-    /// ownership.
+    /// is stamped or, for a caller that could not own the row, refused; every single-record read and write is
+    /// enforced; GET-many is filtered; and descriptor storage stays withheld. Seeding goes through the owner,
+    /// whose creates are authorized, and a NULL or foreign stamp is fabricated directly when a step needs one.
     /// </summary>
     public static IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new ConfigurableClaimSetProvider(
@@ -121,11 +121,13 @@ internal static class OwnershipAuthorizationIntegrationScenario
         };
 
     /// <summary>
-    /// A create is stamped from the caller's creator token and is never denied by ownership, even for a caller
-    /// holding no token that stamp would authorize. The no-creator-token client stamps NULL, which is the value
-    /// 2.14 is about, and it too is created rather than refused.
+    /// A create is stamped from the caller's creator token when the caller holds that token. A create that
+    /// would leave a row its own client could never reach is refused before any row is written, with the body
+    /// of the stored state it would have produced: no creator token is 2.14, a creator token outside the
+    /// caller's ownership tokens is 2.13. The absence of a row is proven by counting <c>dms.Document</c>, not
+    /// by the stamp reader, which requires the row to exist.
     /// </summary>
-    public static async Task It_stamps_the_creator_ownership_token_on_create_and_never_denies_it(
+    public static async Task It_stamps_the_creator_ownership_token_on_create_and_refuses_creates_the_caller_could_not_own(
         ApiIntegrationHarness harness
     )
     {
@@ -133,11 +135,33 @@ internal static class OwnershipAuthorizationIntegrationScenario
 
         (await ReadStoredOwnershipTokenAsync(harness, stampedId)).Should().Be(CreatorToken);
 
-        // Holds only the foreign token and carries no creator token, so nothing about this client could
-        // authorize the row it is about to create. It still creates it.
-        Guid unstampedId = await CreateAsync(harness, NoCreatorTokenTenant, 1002, "ownership-null-create");
+        long documentCount = await CountDocumentsAsync(harness);
 
-        (await ReadStoredOwnershipTokenAsync(harness, unstampedId)).Should().BeNull();
+        // Carries no creator token, so the row it would create is stamped NULL and unreachable by anyone.
+        using HttpResponseMessage uninitializedResponse = await PostAsync(
+            harness,
+            NoCreatorTokenTenant,
+            1002,
+            "ownership-null-create"
+        );
+        await AssertOwnershipDenialAsync(
+            uninitializedResponse,
+            StoredUninitializedType,
+            _storedUninitializedErrors
+        );
+        uninitializedResponse.Headers.Location.Should().BeNull();
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
+
+        // Its creator token is not among its own ownership tokens, so the row it would stamp is foreign to it.
+        using HttpResponseMessage mismatchResponse = await PostAsync(
+            harness,
+            ForeignTenant,
+            1003,
+            "ownership-foreign-create"
+        );
+        await AssertOwnershipDenialAsync(mismatchResponse, MismatchType, []);
+        mismatchResponse.Headers.Location.Should().BeNull();
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
     }
 
     /// <summary>
@@ -251,8 +275,7 @@ internal static class OwnershipAuthorizationIntegrationScenario
         await AssertOwnershipDenialAsync(putResponse, StoredUninitializedType, _storedUninitializedErrors);
 
         // The same identity, so this POST resolves to an upsert-as-update against the stored row rather than
-        // to a create - and only the update branch can produce 2.14 from a POST, because a create stamps NULL
-        // without ever being denied for it.
+        // to a create - the stored NULL is what denies it here, not the caller's own creator token.
         using HttpResponseMessage postAsUpdateResponse = await PostAsync(
             harness,
             ForeignTenant,
@@ -335,47 +358,64 @@ internal static class OwnershipAuthorizationIntegrationScenario
     }
 
     /// <summary>
-    /// The cap gates reads, updates and deletes, not creates: <c>OwnershipTokenIds</c> authorize a stored
-    /// token, and a create has none to authorize. So the over-cap tenant still creates, and its create is still
-    /// stamped from its creator token. The same tenant's POST of the same identity resolves to an
-    /// upsert-as-update, which the cap fails closed before any DML: the row keeps its token and its name.
+    /// The cap fails a POST whichever branch its target selects, before any DML. Over the cap, a create is
+    /// refused with the security-configuration 500 and no row is written, even though the over-cap tenant's
+    /// creator token is among its 2,000; and the same tenant's POST of an owner's identity, which resolves to an
+    /// upsert-as-update, is refused the same way, leaving the row's token and name alone. One token under the
+    /// cap, the create succeeds and is stamped.
     /// </summary>
-    public static async Task It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update(
+    public static async Task It_fails_closed_at_the_ownership_token_cap_for_a_post_create_and_a_post_as_update(
         ApiIntegrationHarness harness
     )
     {
-        Guid documentId = await CreateAsync(harness, TokenCapTenant, 1701, "ownership-over-cap-create");
+        long documentCount = await CountDocumentsAsync(harness);
 
-        (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().Be(CreatorToken);
+        using HttpResponseMessage overCapCreateResponse = await PostAsync(
+            harness,
+            TokenCapTenant,
+            1701,
+            "ownership-over-cap-create"
+        );
+        await AssertSecurityConfigurationFailureAsync(overCapCreateResponse);
+        overCapCreateResponse.Headers.Location.Should().BeNull();
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
+
+        Guid underCapId = await CreateAsync(harness, UnderTokenCapTenant, 1702, "ownership-under-cap-create");
+
+        (await ReadStoredOwnershipTokenAsync(harness, underCapId)).Should().Be(CreatorToken);
+
+        Guid documentId = await CreateAsync(harness, OwnerTenant, 1703, "ownership-over-cap-seed");
 
         using HttpResponseMessage postAsUpdateResponse = await PostAsync(
             harness,
             TokenCapTenant,
-            1701,
+            1703,
             "ownership-over-cap-post-as-update"
         );
-        string postAsUpdateBody = await postAsUpdateResponse.Content.ReadAsStringAsync();
-
-        postAsUpdateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError, postAsUpdateBody);
-        postAsUpdateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        JsonObject postAsUpdateProblem = JsonNode.Parse(postAsUpdateBody)!.AsObject();
-        postAsUpdateProblem["type"]!.GetValue<string>().Should().Be(SecurityConfigurationProblemDetails.Type);
-        postAsUpdateProblem["status"]!
-            .GetValue<int>()
-            .Should()
-            .Be(SecurityConfigurationProblemDetails.Status);
+        await AssertSecurityConfigurationFailureAsync(postAsUpdateResponse);
 
         (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().Be(CreatorToken);
 
-        // The owner still reads the created representation, so the refused upsert-as-update wrote nothing.
+        // The owner still reads the seeded representation, so the refused upsert-as-update wrote nothing.
         using HttpResponseMessage ownerGetResponse = await harness.HttpClient.GetAsync(
             ResourcePath(OwnerTenant, documentId)
         );
         string ownerGetBody = await ownerGetResponse.Content.ReadAsStringAsync();
         ownerGetResponse.StatusCode.Should().Be(HttpStatusCode.OK, ownerGetBody);
-        ownerGetBody.Should().Contain("ownership-over-cap-create");
+        ownerGetBody.Should().Contain("ownership-over-cap-seed");
         ownerGetBody.Should().NotContain("ownership-over-cap-post-as-update");
+    }
+
+    private static async Task AssertSecurityConfigurationFailureAsync(HttpResponseMessage response)
+    {
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        JsonObject problem = JsonNode.Parse(body)!.AsObject();
+        problem["type"]!.GetValue<string>().Should().Be(SecurityConfigurationProblemDetails.Type);
+        problem["status"]!.GetValue<int>().Should().Be(SecurityConfigurationProblemDetails.Status);
     }
 
     /// <summary>
@@ -784,6 +824,21 @@ internal static class OwnershipAuthorizationIntegrationScenario
             .GetValue<string>()
             .Should()
             .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    /// <summary>
+    /// Every <c>dms.Document</c> row, whatever its stamp. A refused create returns no location to look a row
+    /// up by, and the ownership-filtered GET-many cannot see a NULL-stamped row, so an unchanged count is the
+    /// proof that nothing was written.
+    /// </summary>
+    private static async Task<long> CountDocumentsAsync(ApiIntegrationHarness harness)
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = IsMssql(harness.DbConnection)
+            ? "SELECT COUNT_BIG(*) FROM [dms].[Document];"
+            : """SELECT COUNT(*) FROM "dms"."Document";""";
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     private static async Task<short?> ReadStoredOwnershipTokenAsync(

@@ -852,6 +852,173 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// The create-side ownership verdict is returned in the second command, ahead of the missing-reference
+    /// failure the executor holds back until after it: ownership is an authorization failure, and a caller
+    /// refused one is not told what else is wrong with the request. Nothing is persisted and the session is
+    /// rolled back.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_create_ownership_denial_before_a_deferred_missing_reference_failure()
+    {
+        var denial = CreateOwnershipDenial(
+            OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences:
+            [
+                RelationalAccessTestData.CreateDocumentReference(
+                    new ReferentialId(Guid.NewGuid()),
+                    "$.schoolReference"
+                ),
+            ]
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = denial,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.Should().BeSameAs(denial);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// With proposed authorization configured the If-Match precondition on a create is deferred until that
+    /// authorization has run, and the create-side ownership verdict is part of it: the 403 is returned, not
+    /// the 412, and the relationship check behind the ownership slot never runs.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_create_ownership_denial_before_a_deferred_if_match_precondition()
+    {
+        var denial = CreateOwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+                DeferredCreateOwnershipFailureResult = denial,
+            }
+        );
+
+        result.Should().BeSameAs(denial);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The pre-existing placement of an If-Match create with nothing proposed to authorize: the 412 is decided
+    /// before the second command, so it still precedes the create-side ownership verdict.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_if_match_create_precondition_ahead_of_the_create_ownership_denial_when_nothing_proposed_is_authorized()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.OwnershipTokenMismatch
+            ),
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .Be(
+                RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                    RelationalWriteOperationKind.Post,
+                    ETagPreconditionFailureReason.TargetDoesNotExist
+                )
+            );
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A token-cap failure owed to a create is a security-configuration failure the POST reaches after its
+    /// target selected the Create action, so it is attributed to Create at the executor boundary.
+    /// </summary>
+    [Test]
+    public async Task It_attributes_a_create_ownership_token_cap_failure_to_the_create_action()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post) with
+        {
+            DeferredCreateOwnershipFailureResult = new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureSecurityConfiguration(["ownership token cap"])
+            ),
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.TargetAction.Should()
+            .Be(UpsertTargetAction.Create);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A POST resolving to an existing target is an upsert-as-update, which the create-side verdict never
+    /// decides: the same client that could not create updates the row normally.
+    /// </summary>
+    [Test]
+    public async Task It_ignores_the_create_ownership_denial_for_a_post_resolving_to_an_existing_target()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+            ),
+        };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    private static RelationalWriteExecutorResult CreateOwnershipDenial(
+        OwnershipAuthorizationFailureKind failureKind
+    ) =>
+        new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(failureKind, 0, "OwnershipBased")
+            )
+        );
+
     [Test]
     public async Task It_returns_deferred_missing_document_reference_failures_before_guarded_no_op_success()
     {

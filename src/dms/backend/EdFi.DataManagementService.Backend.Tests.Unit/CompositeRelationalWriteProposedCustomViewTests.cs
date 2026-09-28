@@ -338,6 +338,87 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         session.Commands[0].CommandText.Should().Contain("pg_catalog");
     }
 
+    /// <summary>
+    /// Custom views AND-compose ahead of ownership, so a proposed view denial on a create outranks the
+    /// create's ownership failure.
+    /// </summary>
+    [Test]
+    public async Task It_returns_a_proposed_custom_view_denial_ahead_of_the_create_ownership_failure()
+    {
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)), resolveToCreate: true) with
+        {
+            DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(),
+        };
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+
+        var resolution = await CreateSut(CustomViewFailureExtractor(0))
+            .ResolveAsync(request, CreateMergeResult(request), RelationalWriteSecondCommandMode.Dml, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>();
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// A self-basis denial is a custom-view denial decided in process, and it too precedes the ownership slot.
+    /// </summary>
+    [Test]
+    public async Task It_returns_a_self_basis_denial_ahead_of_the_create_ownership_failure()
+    {
+        var request = CreateRequest(CreateSelfBasisPlan(("SchoolWithATag", 0)), resolveToCreate: true) with
+        {
+            DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(),
+        };
+        var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(request, CreateMergeResult(request), RelationalWriteSecondCommandMode.Dml, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>();
+    }
+
+    /// <summary>
+    /// Once the proposed view authorizes, the create's ownership failure is returned and nothing follows the
+    /// view's own command: no <c>dms.Document</c> row and no resource-table statement.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_create_ownership_failure_once_the_proposed_custom_view_authorizes()
+    {
+        var deferred = CreateOwnershipDenial();
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)), resolveToCreate: true) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(request, CreateMergeResult(request), RelationalWriteSecondCommandMode.Dml, session);
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        resolution.PersistResult.Should().BeNull();
+        var command = session.Commands.Should().ContainSingle().Subject;
+        command.CommandText.Should().NotContainEquivalentOf("insert into dms.\"Document\"");
+        command.CommandText.Should().NotContainEquivalentOf("insert into edfi.\"School\"");
+    }
+
+    private static RelationalWriteExecutorResult CreateOwnershipDenial() =>
+        new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    1,
+                    "OwnershipBased"
+                )
+            )
+        );
+
     [Test]
     public async Task It_reports_a_missing_view_rather_than_the_self_basis_denial()
     {

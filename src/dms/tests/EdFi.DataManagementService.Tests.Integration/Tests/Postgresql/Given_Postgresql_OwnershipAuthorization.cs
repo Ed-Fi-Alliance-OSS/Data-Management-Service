@@ -42,8 +42,8 @@ public sealed class Given_Postgresql_OwnershipAuthorization : PostgresqlApiInteg
         _applicationContextProvider;
 
     [Test]
-    public Task It_stamps_the_creator_ownership_token_on_create_and_never_denies_it() =>
-        OwnershipAuthorizationIntegrationScenario.It_stamps_the_creator_ownership_token_on_create_and_never_denies_it(
+    public Task It_stamps_the_creator_ownership_token_on_create_and_refuses_creates_the_caller_could_not_own() =>
+        OwnershipAuthorizationIntegrationScenario.It_stamps_the_creator_ownership_token_on_create_and_refuses_creates_the_caller_could_not_own(
             Harness
         );
 
@@ -76,8 +76,8 @@ public sealed class Given_Postgresql_OwnershipAuthorization : PostgresqlApiInteg
         );
 
     [Test]
-    public Task It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update() =>
-        OwnershipAuthorizationIntegrationScenario.It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update(
+    public Task It_fails_closed_at_the_ownership_token_cap_for_a_post_create_and_a_post_as_update() =>
+        OwnershipAuthorizationIntegrationScenario.It_fails_closed_at_the_ownership_token_cap_for_a_post_create_and_a_post_as_update(
             Harness
         );
 

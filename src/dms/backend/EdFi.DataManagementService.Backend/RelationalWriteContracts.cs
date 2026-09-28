@@ -837,9 +837,10 @@ public sealed record RelationalWriteExecutorRequest
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Not an authorization input. This value is only ever written; ownership authorization reads the client's
-    /// <c>OwnershipTokenIds</c> against the stored column instead. A create is therefore never denied by
-    /// ownership, whatever this value is.
+    /// The executor only stamps this value; it never authorizes with it. Where <c>OwnershipBased</c> is planned
+    /// for a create, preflight has already judged it against the client's <c>OwnershipTokenIds</c> and carried
+    /// any denial in <see cref="DeferredCreateOwnershipFailureResult"/>, so a create that reaches the insert
+    /// stamps a token the client can reach. Where it is not planned, the create stamps whatever this value is.
     /// </para>
     /// <para>
     /// Carried on every write regardless of configured strategies, because stamping is unconditional. It is
@@ -852,7 +853,8 @@ public sealed record RelationalWriteExecutorRequest
     /// <summary>
     /// The ownership check planned for this write, or <see langword="null"/> when <c>OwnershipBased</c> is
     /// not configured. It authorizes the stored token, so it decides an update and is vacuous for a create —
-    /// which is why one plan can serve a POST whose branch is not yet known.
+    /// which is why one plan can serve a POST whose branch is not yet known. A create is decided instead by
+    /// <see cref="DeferredCreateOwnershipFailureResult"/>.
     /// </summary>
     public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
 
@@ -860,8 +862,8 @@ public sealed record RelationalWriteExecutorRequest
     /// The result a POST owes if it resolves to an existing target while its stored ownership check could not
     /// be parameterized — today only the token cap — or <see langword="null"/>. Returned in the ownership
     /// slot, after the custom-view and namespace checks and before the relationship check, so no DML is
-    /// issued. A create never sees it: ownership never denies a create, and the over-limit list is never
-    /// parameterized for one. Set only by the POST preflight, and only with
+    /// issued. A create never sees it: the same cap reaches a create through
+    /// <see cref="DeferredCreateOwnershipFailureResult"/> instead. Set only by the POST preflight, and only with
     /// <see cref="StoredOwnershipAuthorization"/> null.
     /// </summary>
     public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
@@ -871,7 +873,9 @@ public sealed record RelationalWriteExecutorRequest
     /// action — an ownership 403 or the token-cap 500 decided from the application context by
     /// <see cref="CreateOwnershipAuthorization"/> — or <see langword="null"/>. The create-side counterpart of
     /// <see cref="DeferredStoredOwnershipFailureResult"/>, which it never replaces: each is owed only on its own
-    /// target kind. Never set for a PUT, which cannot create.
+    /// target kind. Returned by the second command in a create's ownership slot — after the proposed custom-view
+    /// and namespace checks, before the create-new relationship check — with no data-modifying statement and no
+    /// collection-key reservation. Never set for a PUT, which cannot create.
     /// </summary>
     public RelationalWriteExecutorResult? DeferredCreateOwnershipFailureResult { get; init; }
 }

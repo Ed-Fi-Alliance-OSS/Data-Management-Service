@@ -1187,8 +1187,8 @@ public class UpsertHandlerTests
     }
 
     /// <summary>
-    /// Only reachable for a POST that resolved to an upsert-as-update. A POST resolving to a create has no
-    /// stored ownership token to authorize against, so it is never denied by this strategy.
+    /// Reachable for a POST resolving to either branch: an upsert-as-update denied by its stored token, or a
+    /// create denied for the token it would stamp. Both map to the same §2.13/§2.14 response.
     /// </summary>
     [TestFixture]
     [Parallelizable]

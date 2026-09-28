@@ -10143,6 +10143,84 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var ownership = executorInput.StoredOwnershipAuthorization!;
         ownership.Check.RawConfiguredIndex.Should().Be(1);
         ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
+        // The caller has no creator token, so the create branch owes §2.14 at the same configured index.
+        executorInput
+            .DeferredCreateOwnershipFailureResult.Should()
+            .Be(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                        new OwnershipAuthorizationFailure(
+                            OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                            1,
+                            AuthorizationStrategyNameConstants.OwnershipBased
+                        )
+                    )
+                )
+            );
+    }
+
+    /// <summary>
+    /// A creator token the caller also holds stamps a row the caller can reach, so the create branch owes
+    /// nothing while the stored-token check for the update branch is still planned.
+    /// </summary>
+    [Test]
+    public async Task It_plans_no_create_ownership_failure_for_a_post_whose_creator_token_is_held()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post with a held creator token"));
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(
+                UpsertActionAuthorization.SamePolicyForCreateAndUpdate([
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ])
+            );
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 11, [7, 11]));
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        executorInput.DeferredCreateOwnershipFailureResult.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A PUT cannot create, so it never carries a create-side verdict — not even for the caller a POST create
+    /// would refuse. Its target is decided by the stored-token check alone.
+    /// </summary>
+    [Test]
+    public async Task It_never_plans_a_create_ownership_failure_for_a_put()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put without a creator token"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        executorInput.DeferredCreateOwnershipFailureResult.Should().BeNull();
     }
 
     /// <summary>
@@ -10188,10 +10266,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
-    /// A POST cannot know at preflight whether it will create or update, and a create never parameterizes the
-    /// ownership-token list, so an over-limit list must not stop it before the session opens. The planner's
-    /// cap is deferred: the executor receives no ownership parameterization at all, the creator token for the
-    /// create branch, and the security-configuration failure it owes only if the target proves to exist.
+    /// A POST cannot know at preflight whether it will create or update, so an over-limit list must not stop
+    /// it before the session opens. The planner's cap is deferred: the executor receives no ownership
+    /// parameterization at all, and the same security-configuration failure twice — once owed if the target
+    /// proves to exist, once owed if it resolves to a create — so the cap fails the POST whichever branch the
+    /// target selects.
     /// </summary>
     [Test]
     public async Task It_defers_a_post_ownership_token_cap_to_target_resolution()
@@ -10237,14 +10316,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .ContainSingle()
             .Which.ProviderOrPlannerFailureKind.Should()
             .Be(AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded);
+        // The creator token is among the 2,000, so only the cap stands between this create and its row.
+        executorInput
+            .DeferredCreateOwnershipFailureResult.Should()
+            .BeEquivalentTo(executorInput.DeferredStoredOwnershipFailureResult);
     }
 
     /// <summary>
     /// Intentional precedence for the one POST double failure the deferral changes. An unrecognized strategy
     /// is a relationship configuration failure the classifier reports at preflight; with the cap deferred the
     /// planner has no cap to rank ahead of it, so that 500 is reported before the target is resolved and the
-    /// executor is never reached. A create would never have reached the cap and the planner cannot know the
-    /// branch, so unlike GET-by-id, PUT and DELETE — where the cap terminal displaces this failure — a POST
+    /// executor is never reached. The cap is owed in each branch's ownership slot and the planner cannot know
+    /// the branch, so unlike GET-by-id, PUT and DELETE — where the cap terminal displaces this failure — a POST
     /// reports the configuration failure it can already prove.
     /// </summary>
     [Test]
@@ -12550,6 +12633,56 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ToPostBranchInputs(branched).Should().BeEquivalentTo(ToPostBranchInputs(updateAlone));
         updateAlone.StoredOwnershipAuthorization.Should().NotBeNull();
         createAlone.StoredOwnershipAuthorization.Should().BeNull();
+    }
+
+    /// <summary>
+    /// The create-side verdict comes from the Create action's own strategies. With <c>OwnershipBased</c>
+    /// configured only for Create, the create branch refuses a client with no creator token; configured only
+    /// for Update, the create branch owes nothing and that client still creates.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_plans_the_create_ownership_failure_from_the_create_actions_strategies(
+        bool ownershipConfiguredForCreate
+    )
+    {
+        var withOwnership = RelationshipAndOwnershipEvaluators();
+        var withoutOwnership = NoFurtherAuthorizationRequiredEvaluators();
+
+        await _sut.UpsertDocument(
+            CreateSchoolPostWithActionAuthorization(
+                new UpsertActionAuthorization(
+                    new UpsertActionPolicy.Permitted(
+                        ownershipConfiguredForCreate ? withOwnership : withoutOwnership
+                    ),
+                    new UpsertActionPolicy.Permitted(
+                        ownershipConfiguredForCreate ? withoutOwnership : withOwnership
+                    )
+                )
+            )
+        );
+
+        var createInputs = _capturedExecutorRequests
+            .Should()
+            .ContainSingle()
+            .Subject.PostTargetAuthorizationBundles!.CreateNew.Should()
+            .BeOfType<PostBranchAuthorization.Authorized>()
+            .Subject.Inputs;
+
+        if (ownershipConfiguredForCreate)
+        {
+            createInputs
+                .DeferredCreateOwnershipFailureResult.Should()
+                .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                .Which.Result.Should()
+                .BeOfType<UpsertResult.UpsertFailureOwnershipNotAuthorized>()
+                .Which.OwnershipFailure.FailureKind.Should()
+                .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        }
+        else
+        {
+            createInputs.DeferredCreateOwnershipFailureResult.Should().BeNull();
+        }
     }
 
     [Test]
