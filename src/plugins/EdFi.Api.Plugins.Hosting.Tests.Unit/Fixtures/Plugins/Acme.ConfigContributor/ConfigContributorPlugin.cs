@@ -23,6 +23,9 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
     /// <summary>The encryption key this plugin supplies, so a test can recognize the plugin's value.</summary>
     public const string EncryptionKeySuffix = "-encryption-key";
 
+    /// <summary>The file the base-path case reads, named relative to the base path it sets.</summary>
+    public const string JsonFileName = "plugin.json";
+
     /// <summary>A prefix no environment variable carries.</summary>
     public const string UnmatchedEnvironmentPrefix = "ACME_CONFIG_CONTRIBUTOR_UNMATCHED_";
 
@@ -70,6 +73,15 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
             case "appendFailing":
                 // A source that throws when it loads, standing in for a vault that is unreachable.
                 configurationBuilder.Add(new CountedSource($"{Name}:loads", fail: true));
+                break;
+
+            case "appendJsonFromBasePath":
+                // A file named relative to a base path the hook sets on its own builder, the way a
+                // plugin reads a file shipped beside its assembly. Not optional, so a file looked for
+                // anywhere else fails the load rather than reading nothing.
+                configurationBuilder
+                    .SetBasePath(bootstrapConfiguration[$"Fixture:{Name}:BasePath"]!)
+                    .AddJsonFile(JsonFileName, optional: false, reloadOnChange: false);
                 break;
 
             case "insert":

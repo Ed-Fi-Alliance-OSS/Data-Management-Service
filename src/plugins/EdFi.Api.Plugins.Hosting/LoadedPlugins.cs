@@ -72,8 +72,9 @@ public sealed class LoadedPlugins
     /// <para>
     /// Each hook is handed a staging builder as its builder and <paramref name="configuration"/> as its
     /// bootstrap configuration. The staging builder starts with the host's sources, by reference, and
-    /// the host's builder properties, so a relative file path resolves as it would against the host.
-    /// Adding to it loads nothing. The live manager is what lets a plugin read a value an earlier
+    /// a copy of the host's builder properties, so a relative file path resolves as it would against the
+    /// host unless the hook sets a base path of its own, which its sources are then built with. Adding
+    /// to it loads nothing. The live manager is what lets a plugin read a value an earlier
     /// plugin supplied.
     /// </para>
     /// <para>
@@ -101,8 +102,8 @@ public sealed class LoadedPlugins
     /// were never moved, and puts each later plugin's sources above an earlier one's. The chained
     /// source's own reload does not reload what it wraps, so a later plugin's insert does not call an
     /// earlier plugin's sources again. A host with no environment source at all gets the plugin's
-    /// source on top of its list, above a command-line source if it has one; neither host that runs
-    /// this phase is shaped that way. The loader adds no source of its own.
+    /// source on top of its list, above a command-line source if it has one; DMS, the one host that
+    /// runs this phase, is not shaped that way. The loader adds no source of its own.
     /// </para>
     /// </remarks>
     /// <exception cref="PluginCompositionException">
@@ -169,7 +170,7 @@ public sealed class LoadedPlugins
                 continue;
             }
 
-            IConfigurationRoot contributed = Build(plugin, host, staging.Sources, additions, diagnostics);
+            IConfigurationRoot contributed = Build(plugin, staging, additions, diagnostics);
 
             _configurationContributors.Add(plugin);
 
@@ -209,21 +210,24 @@ public sealed class LoadedPlugins
     /// <summary>
     /// Builds one hook's additions together, in list order, which is the only time they load here.
     /// </summary>
+    /// <remarks>
+    /// The properties come from the hook's staging builder, not the host's, so a base path or file
+    /// provider the hook set there is the one its relative paths resolve against.
+    /// </remarks>
     private static IConfigurationRoot Build(
         LoadedPlugin plugin,
-        IConfigurationBuilder host,
-        IList<IConfigurationSource> staged,
+        ConfigurationBuilder staging,
         List<int> additions,
         TextWriter diagnostics
     )
     {
         ConfigurationBuilder contributed = new();
 
-        CopyProperties(host, contributed);
+        CopyProperties(staging, contributed);
 
         foreach (int index in additions)
         {
-            contributed.Sources.Add(staged[index]);
+            contributed.Sources.Add(staging.Sources[index]);
         }
 
         try

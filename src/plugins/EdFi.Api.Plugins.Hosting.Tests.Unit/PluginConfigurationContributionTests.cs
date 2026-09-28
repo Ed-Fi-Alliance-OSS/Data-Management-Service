@@ -271,6 +271,153 @@ public class Given_a_plugin_that_inserts_a_source_below_the_host_sources
 }
 
 /// <summary>
+/// A plugin that sets a base path on its own builder and names a JSON file relative to it.
+/// </summary>
+/// <remarks>
+/// A file source takes its file provider from the builder it is built with, so the plugin's sources have
+/// to be built with the properties the hook left on its staging builder. Built with the host's, the file
+/// is looked for under the host's base path, where it is not.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_that_reads_a_file_relative_to_its_own_base_path
+{
+    private const string PluginValue = "from-the-plugins-own-directory";
+
+    private TemporaryPluginRoot _root = null!;
+    private DirectoryInfo _hostBasePath = null!;
+    private DirectoryInfo _pluginBasePath = null!;
+    private ConfigurationProbeHost _host = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        FixtureObservations.Clear();
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.ConfigContributor);
+
+        _hostBasePath = Directory.CreateTempSubdirectory("edfi-plugin-host-base-");
+        _pluginBasePath = Directory.CreateTempSubdirectory("edfi-plugin-own-base-");
+        File.WriteAllText(
+            Path.Combine(_pluginBasePath.FullName, "plugin.json"),
+            $$"""{ "Fixture": { "FromPluginFile": "{{PluginValue}}" } }"""
+        );
+
+        _host = new ConfigurationProbeHost(
+            new Dictionary<string, string?>
+            {
+                [$"Fixture:{PluginFixtures.ConfigContributor}:Configuration"] = "appendJsonFromBasePath",
+                [$"Fixture:{PluginFixtures.ConfigContributor}:BasePath"] = _pluginBasePath.FullName,
+            }
+        );
+
+        // A base path of the host's own, holding no plugin.json, so the file resolves only if the
+        // plugin's base path is the one used.
+        _host.Manager.SetBasePath(_hostBasePath.FullName);
+
+        plugins.ContributeConfiguration(_host.Manager, new StringWriter());
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _host.Manager.Dispose();
+        _pluginBasePath.Delete(recursive: true);
+        _hostBasePath.Delete(recursive: true);
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_reads_the_file_from_the_plugins_base_path()
+    {
+        _host.Manager["Fixture:FromPluginFile"].Should().Be(PluginValue);
+    }
+
+    [Test]
+    public void It_leaves_the_hosts_base_path_as_it_was()
+    {
+        ((IConfigurationBuilder)_host.Manager)
+            .GetFileProvider()
+            .Should()
+            .BeOfType<Microsoft.Extensions.FileProviders.PhysicalFileProvider>()
+            .Which.Root.Should()
+            .Be(_hostBasePath.FullName + Path.DirectorySeparatorChar);
+    }
+}
+
+/// <summary>
+/// A host with no environment source at all, so the placement anchor is missing.
+/// </summary>
+/// <remarks>
+/// DMS always has one, so this is the fallback rather than a shape a real host takes: the plugin's source
+/// goes on top of the list, above a command-line source.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_host_with_no_environment_source
+{
+    private TemporaryPluginRoot _root = null!;
+    private ConfigurationManager _manager = null!;
+    private IConfigurationSource _default = null!;
+    private MemoryConfigurationSource _json = null!;
+    private MemoryConfigurationSource _commandLine = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        FixtureObservations.Clear();
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.ConfigContributor);
+
+        _manager = new ConfigurationManager();
+        _default = _manager.Sources.Single();
+        _json = new MemoryConfigurationSource
+        {
+            InitialData = new Dictionary<string, string?>
+            {
+                [$"Fixture:{PluginFixtures.ConfigContributor}:Configuration"] = "append",
+            },
+        };
+        _commandLine = new MemoryConfigurationSource
+        {
+            InitialData = new Dictionary<string, string?>
+            {
+                ["Fixture:Precedence:CommandLine"] = "command-line",
+            },
+        };
+        _manager.Sources.Add(_json);
+        _manager.Sources.Add(_commandLine);
+
+        plugins.ContributeConfiguration(_manager, new StringWriter());
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _manager.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_puts_the_plugin_source_on_top_of_the_list()
+    {
+        IList<IConfigurationSource> sources = _manager.Sources;
+
+        sources.Should().HaveCount(4);
+        sources[0].Should().BeSameAs(_default);
+        sources[1].Should().BeSameAs(_json);
+        sources[2].Should().BeSameAs(_commandLine);
+        ConfigurationProbeHost.IsSuppliedBy(sources[3], PluginFixtures.ConfigContributor).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_lets_the_plugin_value_win_over_the_command_line_value()
+    {
+        _manager["Fixture:Precedence:CommandLine"].Should().Be(PluginFixtures.ConfigContributor);
+    }
+}
+
+/// <summary>
 /// Two plugins, allowlisted in the order opposite to their names, so allowlist order and name order
 /// cannot be mistaken for each other.
 /// </summary>
