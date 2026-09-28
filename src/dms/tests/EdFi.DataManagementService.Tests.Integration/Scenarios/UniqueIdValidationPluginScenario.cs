@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.Integration.Plugins;
 using FluentAssertions;
+using Serilog.Events;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
@@ -109,6 +110,12 @@ internal static class UniqueIdValidationPluginScenario
     /// pattern forbids, since only leading and trailing whitespace are refused.
     /// </summary>
     private const string SpecialCharactersUniqueId = "a/b c%d-001";
+
+    /// <summary>
+    /// The identity G1's logging-proof case knows and creates. Distinctive enough that it would not
+    /// appear in any log event this host writes for an unrelated reason.
+    /// </summary>
+    private const string LoggingProofStudentUniqueId = "uidv-log-proof-001";
 
     private const string DataValidationFailedType =
         "urn:ed-fi:api:bad-request:data-validation-failed";
@@ -585,6 +592,15 @@ internal static class UniqueIdValidationPluginScenario
                 TimeSpan.FromSeconds(3),
                 "the configured 1-second timeout, not the 5-second default, must be what cuts the wait short"
             );
+        stopwatch
+            .Elapsed.Should()
+            .BeGreaterThanOrEqualTo(
+                TimeSpan.FromMilliseconds(900),
+                "a wait far shorter than the configured 1-second timeout would mean the timeout never "
+                    + "actually applied"
+            );
+
+        stub.RequestPaths.Should().Equal($"/{StudentResourceName}/{SlowUpstreamStudentUniqueId}");
 
         JsonArray students = await GetStudentsByUniqueIdAsync(harness, SlowUpstreamStudentUniqueId);
         students
@@ -647,6 +663,61 @@ internal static class UniqueIdValidationPluginScenario
             );
         stub.RequestPaths.Should().BeEmpty("the plugin is never loaded when it is not allowlisted");
     }
+
+    // ---- G1: a validated write never puts the submitted UniqueId into the host's own logs ----
+
+    /// <summary>
+    /// Guards the plugin's own <c>RemoveAllLoggers()</c> call on its named <c>HttpClient</c>: without
+    /// it, the factory's default HttpClient logging would have written the lookup request's URI - which
+    /// carries the UniqueId in its path - to the host's own logs at Information level.
+    /// </summary>
+    /// <remarks>
+    /// Two things make this an honest proof rather than a vacuous one: <see cref="UniqueIdServiceStub.RequestPaths"/>
+    /// is asserted to hold exactly the lookup this case's write should have made, so the id really was
+    /// looked up over HTTP, and <paramref name="capture"/> is asserted to have captured at least one
+    /// event, so an empty capture - which would trivially contain nothing - cannot pass this case.
+    /// </remarks>
+    public static async Task It_does_not_log_the_submitted_unique_id(
+        ApiIntegrationHarness harness,
+        UniqueIdServiceStub stub,
+        PluginLogCapture capture
+    )
+    {
+        stub.Know(StudentResourceName, LoggingProofStudentUniqueId);
+
+        using HttpResponseMessage response = await PostStudentAsync(
+            harness,
+            LoggingProofStudentUniqueId,
+            "Uidv"
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+        stub.RequestPaths.Should().Equal($"/{StudentResourceName}/{LoggingProofStudentUniqueId}");
+
+        IReadOnlyList<LogEvent> events = capture.Events;
+        events
+            .Should()
+            .NotBeEmpty("the host must have logged something else while handling this request");
+        events
+            .Should()
+            .NotContain(
+                logEvent => LogEventMentions(logEvent, LoggingProofStudentUniqueId),
+                "the submitted UniqueId must never reach the host's logs"
+            );
+    }
+
+    /// <summary>Whether an event's rendered message, its exception, or any of its properties carry <paramref name="text"/>.</summary>
+    /// <remarks>
+    /// Properties are checked as well as the rendered message because a property can be attached to an
+    /// event by an enricher without appearing in that event's own message template, so a check of the
+    /// rendered message alone could miss a leak.
+    /// </remarks>
+    private static bool LogEventMentions(LogEvent logEvent, string text) =>
+        PluginLogCapture.TextOf(logEvent).Contains(text, StringComparison.Ordinal)
+        || logEvent.Properties.Values.Any(value =>
+            value.ToString().Contains(text, StringComparison.Ordinal)
+        );
 
     private static void AssertRejectedUniqueId(JsonElement root, string resourceName, string member)
     {

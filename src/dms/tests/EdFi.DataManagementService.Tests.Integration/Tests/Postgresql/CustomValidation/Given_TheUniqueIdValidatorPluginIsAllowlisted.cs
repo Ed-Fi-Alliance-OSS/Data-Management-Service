@@ -7,6 +7,11 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Plugins;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Core;
+using Serilog.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomValidation;
 
@@ -25,6 +30,7 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
 {
     private string _pluginRoot = string.Empty;
     private UniqueIdServiceStub _stub = null!;
+    private PluginLogCapture _logCapture = null!;
 
     protected override FixtureKey Fixture => FixtureKey.AuthoritativeDs52;
 
@@ -35,6 +41,34 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
             ["Plugins:Allowed"] = UniqueIdValidationPluginScenario.PluginName,
             ["UniqueIdValidation:BaseAddress"] = _stub.BaseAddress.ToString(),
         };
+
+    /// <summary>
+    /// A Serilog sink capturing everything the host logs, the same mechanism
+    /// <see cref="PluginHostProbe.CreateHost"/> uses for the no-database plugin cases.
+    /// </summary>
+    /// <remarks>
+    /// Added through this base-class hook rather than a logging builder for the same reason documented
+    /// on <see cref="PluginHostProbe.CreateHost"/>: the production host's own composition clears logging
+    /// providers while configuring Serilog from configuration, and
+    /// <see cref="ApiIntegrationTestBase.ConfigureAdditionalServices"/> runs inside the same
+    /// <c>ConfigureServices</c> callback, after that composition, so the provider registered here
+    /// survives. A fresh instance is created on every call, because the base class boots a new host -
+    /// and calls this hook again - once per test, and a capture reused across tests would let one
+    /// test's logging be attributed to another's assertions.
+    /// </remarks>
+    protected override void ConfigureAdditionalServices(IServiceCollection services)
+    {
+        _logCapture = new PluginLogCapture();
+
+        Logger captureLogger = new LoggerConfiguration()
+            .MinimumLevel.Verbose()
+            .WriteTo.Sink(_logCapture)
+            .CreateLogger();
+
+        services.AddSingleton<ILoggerProvider>(
+            new SerilogLoggerProvider(captureLogger, dispose: true)
+        );
+    }
 
     /// <summary>
     /// A plugin root of this class's own, copied from where the build staged the fixture, and the
@@ -147,4 +181,12 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
     [Test]
     public Task It_fails_the_write_when_the_stub_redirects() =>
         UniqueIdValidationPluginScenario.It_fails_the_write_when_the_stub_redirects(Harness, _stub);
+
+    [Test]
+    public Task It_does_not_log_the_submitted_unique_id() =>
+        UniqueIdValidationPluginScenario.It_does_not_log_the_submitted_unique_id(
+            Harness,
+            _stub,
+            _logCapture
+        );
 }

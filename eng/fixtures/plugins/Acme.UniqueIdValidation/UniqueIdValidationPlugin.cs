@@ -77,7 +77,12 @@ public sealed class UniqueIdValidationPlugin : EdFiApiPlugin
             // faults like any other.
             .ConfigurePrimaryHttpMessageHandler(() =>
                 new SocketsHttpHandler { AllowAutoRedirect = false }
-            );
+            )
+            // The factory's default logging writes each request URI at Information, and the
+            // UniqueId is in that URI's path, which its redaction leaves intact. A UniqueId is
+            // student or staff data taken from the request body, so it must not reach the host's
+            // logs; removing this client's loggers keeps it out while other clients keep theirs.
+            .RemoveAllLoggers();
 
         // The registration shape DMS's startup guard accepts: TryAddEnumerable, Transient,
         // unkeyed, and an implementation type. TryAddEnumerable is required because it adds to the

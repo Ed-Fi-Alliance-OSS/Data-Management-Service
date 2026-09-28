@@ -244,7 +244,12 @@ public sealed class UniqueIdValidationPlugin : EdFiApiPlugin
             // faults like any other.
             .ConfigurePrimaryHttpMessageHandler(() =>
                 new SocketsHttpHandler { AllowAutoRedirect = false }
-            );
+            )
+            // The factory's default logging writes each request URI at Information, and the
+            // UniqueId is in that URI's path, which its redaction leaves intact. A UniqueId is
+            // student or staff data taken from the request body, so it must not reach the host's
+            // logs; removing this client's loggers keeps it out while other clients keep theirs.
+            .RemoveAllLoggers();
 
         // The registration shape DMS's startup guard accepts: TryAddEnumerable, Transient,
         // unkeyed, and an implementation type. TryAddEnumerable is required because it adds to the
@@ -282,6 +287,8 @@ with the UniqueId URI-escaped into one path segment and `ResourceName` exactly `
 A `200` response means the UniqueId exists; a `404` means it does not.
 Any other response, including a different `2xx` or a redirect, or a transport failure, is treated as a fault rather than an answer: the validator throws, and the write answers a logged `500` and persists nothing.
 The plugin turns off redirect following on its client, so a redirect to a page that answers `200` is never read as "exists".
+It also removes the client's default request logging, which would otherwise write every request URI, and so every submitted UniqueId, to the host's log at `Information`.
+Keep that property in any adaptation: a UniqueId is personal data taken from the request body, and it belongs in neither a log line nor a failure message.
 
 This is this sample's own contract, not an Ed-Fi standard.
 Adapt it to what you actually operate:
@@ -314,7 +321,7 @@ UniqueIdValidation__BaseAddress=https://identity.example.org/uniqueids/
 UniqueIdValidation__Timeout=00:00:05
 ```
 
-The directory name, the published assembly name, and `UniqueIdValidationPlugin.Name` must all read `Acme.UniqueIdValidation`; the host treats a mismatch as fatal.
+The plugin directory name, the entry assembly's file name (`Acme.UniqueIdValidation.dll`), the loaded assembly's own `AssemblyName`, and `UniqueIdValidationPlugin.Name` must all read `Acme.UniqueIdValidation`; the host treats each mismatch as fatal.
 See PLUGINS.md's "Names: four of them, and they must all match".
 
 `UniqueIdValidation:BaseAddress` and `UniqueIdValidation:Timeout` bind from the `UniqueIdValidation` section, `appsettings.json` or environment alike.

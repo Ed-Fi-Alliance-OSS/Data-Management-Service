@@ -27,8 +27,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// plugin root at all. That is exactly how a deployment disables a plugin, and the directory is
 /// still staged and still present under the root either way, so the difference between the two
 /// classes remains the one setting. The stub is started even though nothing ever reaches it,
-/// because <c>UniqueIdValidation:BaseAddress</c> is read once, while the host boots, and this class
-/// needs to repeat that setting verbatim rather than leave it out.
+/// because <c>UniqueIdValidation:BaseAddress</c> comes from the host's configuration and is fixed
+/// for that host's lifetime, so this class needs to repeat that setting verbatim rather than leave
+/// it out.
 /// </para>
 /// </remarks>
 [Category("PluginIntegration")]

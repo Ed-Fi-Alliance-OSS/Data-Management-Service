@@ -16,8 +16,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// </summary>
 /// <remarks>
 /// A sibling fixture rather than another case in <see cref="Given_TheUniqueIdValidatorPluginIsAllowlisted"/>,
-/// for the same reason as the other siblings: <c>UniqueIdValidation:Timeout</c> is read once, while the
-/// host boots, and every other case in that fixture relies on the deployed default.
+/// for the same reason as the other siblings: <c>UniqueIdValidation:Timeout</c> comes from the host's
+/// configuration and is fixed for that host's lifetime, so a different value needs its own fixture
+/// class, and every other case in that fixture relies on the deployed default.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_TheUniqueIdValidatorPluginTimesOutASlowUpstream

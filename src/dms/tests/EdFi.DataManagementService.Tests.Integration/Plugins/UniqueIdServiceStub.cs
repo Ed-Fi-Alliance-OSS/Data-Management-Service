@@ -166,13 +166,22 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             int port = GetEphemeralPort();
+            string rootAddress = $"http://127.0.0.1:{port}/";
             Uri baseAddress = new(
-                normalizedPrefix is null
-                    ? $"http://127.0.0.1:{port}/"
-                    : $"http://127.0.0.1:{port}/{normalizedPrefix}/"
+                normalizedPrefix is null ? rootAddress : $"{rootAddress}{normalizedPrefix}/"
             );
             HttpListener listener = new();
             listener.Prefixes.Add(baseAddress.ToString());
+
+            if (normalizedPrefix is not null)
+            {
+                // HttpListener only routes a request to Handle when its path matches a registered
+                // prefix; with only the prefixed address registered, a request outside it never
+                // reaches this listener at all, so it could never appear in RequestPaths. Registering
+                // the root prefix too routes such a request here instead, where the path-prefix check
+                // below both answers it 404 and logs it.
+                listener.Prefixes.Add(rootAddress);
+            }
 
             try
             {
@@ -193,13 +202,6 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
         throw new InvalidOperationException(
             $"Could not start {nameof(UniqueIdServiceStub)} after {maxAttempts} attempts."
         );
-    }
-
-    /// <summary>A base address for a port nothing listens on, for tests of the unreachable case.</summary>
-    public static Uri UnreachableBaseAddress()
-    {
-        int port = GetEphemeralPort();
-        return new Uri($"http://127.0.0.1:{port}/");
     }
 
     /// <summary>Makes the stub answer 200 for <paramref name="resourceName"/> and <paramref name="uniqueId"/>.</summary>
@@ -354,6 +356,9 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
         {
             string prefixSegment = $"/{_pathPrefix}/";
 
+            // Reached for a request outside the prefix only because StartAsync also registered the
+            // root prefix with the listener; without that, HttpListener itself would have already
+            // rejected the request before Handle ever ran, and it would never have been logged above.
             if (!pathOnly.StartsWith(prefixSegment, StringComparison.Ordinal))
             {
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
@@ -393,5 +398,53 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
+    }
+}
+
+/// <summary>
+/// A loopback address nothing answers, for tests of the unreachable-upstream case.
+/// </summary>
+/// <remarks>
+/// A prior version of this address picked a free ephemeral port and immediately released it before
+/// handing the address back, racing every other process on the machine for that same port until the
+/// test finally dialed it - a real listener could win that race and turn an unreachable-upstream case
+/// into a reachable one. This holder instead binds a <see cref="Socket"/> to the address and never
+/// calls <see cref="Socket.Listen(int)"/> on it, which keeps the port reserved for as long as this
+/// instance lives - nothing else can bind it. What a connection attempt then meets depends on the
+/// operating system: macOS drops the handshake, so the caller's own request timeout ends it, while
+/// Linux refuses it at once. Either way the lookup fails, which is all the unreachable case needs.
+/// </remarks>
+public sealed class UnreachableAddressHolder : IDisposable
+{
+    private readonly Socket _socket;
+    private bool _disposed;
+
+    private UnreachableAddressHolder(Socket socket, Uri address)
+    {
+        _socket = socket;
+        Address = address;
+    }
+
+    /// <summary>The address of the bound-but-not-listening socket.</summary>
+    public Uri Address { get; }
+
+    /// <summary>Binds a socket to a loopback ephemeral port without listening on it.</summary>
+    public static UnreachableAddressHolder Create()
+    {
+        Socket socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        int port = ((IPEndPoint)socket.LocalEndPoint!).Port;
+        return new UnreachableAddressHolder(socket, new Uri($"http://127.0.0.1:{port}/"));
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _socket.Dispose();
     }
 }

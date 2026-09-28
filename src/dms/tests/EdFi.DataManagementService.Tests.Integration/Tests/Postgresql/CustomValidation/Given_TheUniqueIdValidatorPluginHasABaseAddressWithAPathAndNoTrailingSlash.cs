@@ -17,7 +17,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// <remarks>
 /// A sibling fixture rather than another case in <see cref="Given_TheUniqueIdValidatorPluginIsAllowlisted"/>,
 /// for the same reason as <see cref="Given_TheUniqueIdValidatorPluginCannotReachItsUpstream"/>:
-/// <c>UniqueIdValidation:BaseAddress</c> is read once, while the host boots. The stub here is started
+/// <c>UniqueIdValidation:BaseAddress</c> comes from the host's configuration and is fixed for that
+/// host's lifetime, so a different value needs its own fixture class. The stub here is started
 /// with the path prefix <c>uid</c>, so its own address already carries a path segment, and
 /// <see cref="UniqueIdServiceStub.BaseAddressWithoutTrailingSlash"/> is what is configured, the way an
 /// operator who forgot the trailing slash would write it.
