@@ -678,6 +678,7 @@
       "edfi.datamanagementservice.tests.e2e": {
         "type": "Project",
         "dependencies": {
+          "EdFi.DataManagementService.Backend.Cdc": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Tests.Integration.Common": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration": "[1.0.0, )",

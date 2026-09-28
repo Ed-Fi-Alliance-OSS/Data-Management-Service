@@ -47,6 +47,7 @@
         <PackageReference Include="Microsoft.CodeAnalysis" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
         <ProjectReference
             Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin\EdFi.DataManagementService.DocumentCacheAdmin.csproj"
