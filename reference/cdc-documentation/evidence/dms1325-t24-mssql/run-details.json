@@ -1,0 +1,54 @@
+{
+  "Story": "DMS-1325",
+  "Task": "T24",
+  "Status": "Passed",
+  "TestedRevision": "951e9a674ca539182466de8abc7369320d679519",
+  "InvocationId": "8f2f316d-dbcc-4bb4-b497-9b03844a0247",
+  "Command": "pwsh -NoProfile ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-mssql-t24",
+  "Environment": {
+    "CDC_RUNBOOK_OWNED_STACK": "1",
+    "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a"
+  },
+  "Host": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "DockerBuildx": "0.37.1"
+  },
+  "PullImages": false,
+  "TestProcessStartedAt": "2026-09-28T17:54:55.9934493-05:00",
+  "TestProcessFinishedAt": "2026-09-28T17:59:55.8165997-05:00",
+  "RequiredScenarios": 8,
+  "ExecutedScenarios": 8,
+  "PassedScenarios": 8,
+  "NotRunScenarios": 0,
+  "Observations": {
+    "AdmissionAndHttpOnlyHandoff": "Passed",
+    "FixtureAttachment": "Passed",
+    "FixtureDisposal": "Passed",
+    "GovernedTeardown": "Passed",
+    "Export": "Passed",
+    "IndependentDmsLocalResourceAbsence": "Verified",
+    "DiagnosticCheckpoints": 238
+  },
+  "Artifacts": [
+    {
+      "Path": "cdc-api-e2e.json",
+      "Sha256": "e9a375d53e15bd5a75e904260cf066c41a064b02ad5dbd1fa7382182f8cf1e2e"
+    },
+    {
+      "Path": "qualification.json",
+      "Sha256": "cc29635ed4a0523f22cabee8583d7e5378c4845c1227a2b1712024f621d9d4fb"
+    },
+    {
+      "Path": "qualified-image.json",
+      "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+    }
+  ],
+  "Limits": [
+    "One full SQL Server run on one admitted binding with no intermediate resets; terminal history loss last",
+    "Existing eight scenarios only; no additional resource, fault, concurrency, consumer or authentication matrix",
+    "Raw logs, settings, credentials and document bodies remain private; only existing sanitized exporter outputs retained",
+    "Pre-existing tasks.json wording edits do not change the tested executable revision"
+  ]
+}

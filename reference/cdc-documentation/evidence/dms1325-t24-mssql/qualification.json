@@ -1,0 +1,75 @@
+[
+  {
+    "Name": "Mssql-ApiE2E",
+    "InvocationId": "8f2f316d-dbcc-4bb4-b497-9b03844a0247",
+    "Provider": "Mssql",
+    "RequestedConnectDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Status": "Passed",
+    "Reason": "None",
+    "CleanupFailure": "None",
+    "ExportFailure": "None",
+    "ReportFailure": "None",
+    "Total": 8,
+    "Passed": 8,
+    "Failed": 0,
+    "Skipped": 0,
+    "Stages": {
+      "Setup": "Passed",
+      "Test": "Passed",
+      "Teardown": "Passed",
+      "Export": "Passed"
+    },
+    "ProcessResult": {
+      "Failed": 0,
+      "Passed": 1,
+      "Skipped": 0,
+      "Total": 1,
+      "Status": "Passed"
+    },
+    "ProcessExit": 0,
+    "BindingId": "6532c7ab6b43516be3b424a162e2ade090dac69715e10e436fa3d05789237ff7",
+    "Generation": 1,
+    "Cases": [
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-01",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-02",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-03",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-04",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-05",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-06",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-07",
+        "Failure": "None"
+      },
+      {
+        "Outcome": "Passed",
+        "Id": "CDC-E2E-08",
+        "Failure": "None"
+      }
+    ]
+  }
+]

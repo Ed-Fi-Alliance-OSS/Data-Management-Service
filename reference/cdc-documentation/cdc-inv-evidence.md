@@ -1253,8 +1253,29 @@ the change-version sequence read.
 
 Governed cleanup verified all five owned containers and three volumes absent.
 Independent Docker checks found no remaining `dms-local` containers, networks or
-volumes. This completes PostgreSQL qualification only; SQL Server remains pending
-T24. Earlier failed attempts below remain historical evidence.
+volumes. SQL Server qualification also passed T24, as recorded below. Earlier failed
+attempts remain historical evidence.
+
+SQL Server full qualification: **passed T24** at revision
+`951e9a674ca539182466de8abc7369320d679519`. The
+[runner report](evidence/dms1325-t24-mssql/qualification.json) records all eight
+required scenario IDs passed, zero failures/skips, and successful setup, test,
+governed teardown and export. The
+[fixture and runtime evidence](evidence/dms1325-t24-mssql/cdc-api-e2e.json)
+records successful attachment/disposal with matching invocation, provider, binding
+and generation. [Run details](evidence/dms1325-t24-mssql/run-details.json) retain
+the exact command, tested revision, immutable SQL Server 2025 and qualified Connect
+inputs, host versions and artifact hashes; the fixture evidence retains broker and
+application image identities. Raw diagnostics remain private.
+
+All eight phases exercised real API traffic, projection, capture and bounded Kafka
+consumption on one admitted binding without intermediate resets, with terminal
+history loss last. The exporter accepted 238 checkpoints without rejection or
+truncation. Restart drained work pages of 2, 2, 2 and 1 with zero baseline/inventory
+scans while API reads and writes succeeded. Governed cleanup verified all five
+owned containers and three volumes absent; independent Docker checks confirmed no
+remaining `dms-local` containers, networks or volumes. Together with T23, this
+supplies the required eight-scenario qualification on both providers.
 
 Historical PostgreSQL attempt before T37: Student CRUD passed,
 descriptor CRUD failed and six scenarios not run. The historical
@@ -1290,8 +1311,8 @@ and passed afterward. The diagnostic run completed fixture disposal, governed
 teardown and export; independent Docker checks confirmed no remaining `dms-local`
 containers, volumes or networks. Temporary instrumentation was removed, and raw
 diagnostics remain private. The correction alone supplied no full qualification.
-The fresh T23 run above now passes all eight scenarios and governed cleanup; T24
-remains pending.
+The fresh T23 and T24 runs above now pass all eight scenarios and governed cleanup
+on both providers.
 
 The earlier [post-T35 Student Error](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json)
 remains historical evidence. T36 diagnosed the mismatch between the CDC binding's
@@ -1317,8 +1338,8 @@ is historical evidence: T31 diagnosed the `PATH_BASE` normalization mismatch and
 corrected it in `b50ecaf7b`. Subsequent runs passed that handoff; the successful
 T23 run above now supplies PostgreSQL API-to-Kafka qualification. The earlier
 [admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json) also remains
-historical evidence of the Connect rebalance/read-back blocker. SQL Server full qualification:
-**pending T24**. T19's parser, privacy, interruption and delegation tests provide no
-live qualification claim. Detailed E18 paging/query-plan/repair matrices, sibling
+historical evidence of the Connect rebalance/read-back blocker. T19's parser, privacy,
+interruption and delegation tests alone provide no live qualification claim; the
+T23/T24 runs above supply that evidence. Detailed E18 paging/query-plan/repair matrices, sibling
 message/consumer conformance, strict native-recovery fencing and same-topic recovery
 after terminal loss remain outside this evidence.
