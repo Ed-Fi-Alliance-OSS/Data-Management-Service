@@ -6,7 +6,7 @@
 namespace EdFi.Api.Plugins.Hosting;
 
 /// <summary>
-/// The rule that refused a plugin's service contribution.
+/// The rule that refused a plugin's configuration or service contribution.
 /// </summary>
 /// <remarks>
 /// Separate from <see cref="PluginLoadFailure"/> because those rows are decided while a plugin is
@@ -46,13 +46,34 @@ public enum PluginCompositionFailure
     /// because it is the only thing that says what the plugin was doing.
     /// </summary>
     ContributeServicesThrew,
+
+    /// <summary>
+    /// The plugin removed a configuration source that was present before its configuration hook
+    /// began. Configuration contribution is additive only: dropping a source the host or an earlier
+    /// plugin installed changes how the whole host resolves configuration.
+    /// </summary>
+    ConfigurationSourceRemoved,
+
+    /// <summary>
+    /// The plugin moved a configuration source that was present before its configuration hook began,
+    /// relative to the other pre-existing sources. Source order is precedence, so moving one changes
+    /// which value wins for every key it supplies.
+    /// </summary>
+    ConfigurationSourceReordered,
+
+    /// <summary>
+    /// The plugin's configuration hook threw. The original exception travels as the inner exception.
+    /// </summary>
+    ContributeConfigurationThrew,
 }
 
 /// <summary>
-/// Thrown when a plugin's service contribution is refused. Every refusal is fatal.
+/// Thrown when a plugin's configuration or service contribution is refused. Every refusal is fatal.
 /// </summary>
 /// <remarks>
-/// The message is what an operator reads and always names the plugin and the service type involved.
+/// The message is what an operator reads and always names the plugin. A rule's refusal also names
+/// the service type or configuration source involved; a hook that threw carries its own exception as
+/// the inner exception instead.
 /// <see cref="Reason"/> is what code reads, so a caller does not have to match on message text.
 /// </remarks>
 public sealed class PluginCompositionException(

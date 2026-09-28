@@ -119,6 +119,12 @@
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.HookTouch/Acme.HookTouch.csproj">
             <StagedName>Acme.HookTouch</StagedName>
         </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.ConfigContributor/Acme.ConfigContributor.csproj">
+            <StagedName>Acme.ConfigContributor</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.SecondConfigContributor/Acme.SecondConfigContributor.csproj">
+            <StagedName>Acme.SecondConfigContributor</StagedName>
+        </PluginFixture>
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
             <StagedName>Acme.Native</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>

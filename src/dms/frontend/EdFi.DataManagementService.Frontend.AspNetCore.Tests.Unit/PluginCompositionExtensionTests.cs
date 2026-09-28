@@ -73,15 +73,7 @@ internal static class PluginCompositionProbe
     /// </summary>
     internal static LoadedPlugins Load(string pluginRoot, string fixtureName = DmsContributor)
     {
-        string source = Path.Combine(AppContext.BaseDirectory, "PluginFixtures", fixtureName);
-        string destination = Path.Combine(pluginRoot, fixtureName);
-
-        Directory.CreateDirectory(destination);
-
-        foreach (string file in Directory.EnumerateFiles(source))
-        {
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
-        }
+        Stage(pluginRoot, fixtureName);
 
         IConfiguration configuration = new ConfigurationBuilder()
             .AddJsonStream(
@@ -101,6 +93,20 @@ internal static class PluginCompositionProbe
             configuration,
             ["EdFi.Api.Plugins", "EdFi.DataManagementService.CustomValidation"]
         );
+    }
+
+    /// <summary>Copies a staged fixture plugin into a plugin root of the test's own.</summary>
+    internal static void Stage(string pluginRoot, string fixtureName)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "PluginFixtures", fixtureName);
+        string destination = Path.Combine(pluginRoot, fixtureName);
+
+        Directory.CreateDirectory(destination);
+
+        foreach (string file in Directory.EnumerateFiles(source))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+        }
     }
 
     internal static string CreatePluginRoot() =>

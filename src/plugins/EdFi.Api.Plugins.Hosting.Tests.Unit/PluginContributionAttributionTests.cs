@@ -171,7 +171,7 @@ public class Given_two_plugins_contributing_to_one_collection
 /// way out of a catch block: both leave the same line behind. Ordering the two channels against a
 /// shared counter can, because the plugin takes its own number at hook entry.
 /// </remarks>
-internal sealed class SequencedDiagnostics : StringWriter
+internal sealed class SequencedDiagnostics(string announcement = "invoking ContributeServices") : StringWriter
 {
     private bool _taken;
 
@@ -179,11 +179,7 @@ internal sealed class SequencedDiagnostics : StringWriter
 
     public override void WriteLine(string? value)
     {
-        if (
-            !_taken
-            && value is not null
-            && value.Contains("invoking ContributeServices", StringComparison.Ordinal)
-        )
+        if (!_taken && value is not null && value.Contains(announcement, StringComparison.Ordinal))
         {
             _taken = true;
             AnnouncedAt = FixtureObservations.Next();

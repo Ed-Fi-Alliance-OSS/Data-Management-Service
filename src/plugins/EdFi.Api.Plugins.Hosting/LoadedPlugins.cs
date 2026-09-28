@@ -5,6 +5,7 @@
 
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.Api.Plugins.Hosting;
@@ -13,9 +14,9 @@ namespace EdFi.Api.Plugins.Hosting;
 /// Every plugin the loader returned, in allowlist order.
 /// </summary>
 /// <remarks>
-/// An aggregate rather than a bare list because the composition phases are added to it later: the
-/// service contribution phase by the story that invokes hooks, and the configuration phase by the
-/// secrets foundation story. Both need somewhere to live that a caller already holds.
+/// An aggregate rather than a bare list because the two composition phases live on it: the
+/// configuration phase, which a host runs as soon as loading returns, and the service phase, which it
+/// runs while its container is still open. Both need somewhere to live that a caller already holds.
 /// </remarks>
 public sealed class LoadedPlugins
 {
@@ -49,6 +50,243 @@ public sealed class LoadedPlugins
     /// nothing written there, so these travel as data to the point where a logger exists.
     /// </remarks>
     public IReadOnlyList<PluginLoadWarning> Warnings { get; }
+
+    /// <summary>
+    /// Invokes every plugin's configuration contribution hook, in allowlist order, and places the
+    /// sources each one added below the operator's explicit sources.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="configuration"/> is passed to each hook as both its builder and its bootstrap
+    /// configuration. A <see cref="ConfigurationManager"/> is both, and handing over the same instance
+    /// is what lets a plugin read a value an earlier plugin supplied.
+    /// </para>
+    /// <para>
+    /// Contribution is additive only. The sources are snapshotted before each hook and compared by
+    /// reference after it, and a hook that removed a source present before it began, or changed the
+    /// relative order of those sources, fails the composition naming the plugin. What the comparison
+    /// cannot see is a change to a pre-existing source object's own properties, which is a trust
+    /// assumption rather than a control.
+    /// </para>
+    /// <para>
+    /// After a hook passes, the sources it added are moved to sit immediately below the last
+    /// <see cref="EnvironmentVariablesConfigurationSource"/> present when this phase began, in the
+    /// order the plugin added them. That keeps every plugin source above the JSON sources and below the
+    /// operator's environment and command-line sources, which were never moved, and puts each later
+    /// plugin's sources above an earlier one's. A host with no environment source at all has no
+    /// operator surface to protect, and the sources stay where the plugin put them. The loader adds no
+    /// source of its own.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="PluginCompositionException">
+    /// A hook removed or reordered a pre-existing source, or threw.
+    /// </exception>
+    public void ContributeConfiguration(ConfigurationManager configuration) =>
+        ContributeConfiguration(configuration, Console.Error);
+
+    /// <summary>
+    /// The overload the public one calls with <see cref="Console.Error"/>, so a test can read the
+    /// channel without redirecting the process's own.
+    /// </summary>
+    internal void ContributeConfiguration(ConfigurationManager configuration, TextWriter diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        IList<IConfigurationSource> sources = ((IConfigurationBuilder)configuration).Sources;
+
+        // Found once, before any hook runs, and held by reference. A plugin may add environment sources
+        // of its own, and those are plugin sources to be placed rather than the operator's surface to
+        // place them under.
+        IConfigurationSource? operatorEnvironment = sources.LastOrDefault(source =>
+            source is EnvironmentVariablesConfigurationSource
+        );
+
+        foreach (LoadedPlugin plugin in Plugins)
+        {
+            // Before the call, for the reason ContributeServices gives: a hook that never returns has to
+            // leave the plugin it entered as the last line on the channel.
+            diagnostics.WriteLine(
+                $"invoking ContributeConfiguration on {PluginDiagnosticText.Quote(plugin.Name)}"
+            );
+
+            List<IConfigurationSource> before = [.. sources];
+
+            try
+            {
+                plugin.Instance.ContributeConfiguration(configuration, configuration);
+            }
+            catch (Exception exception)
+            {
+                string message =
+                    $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' threw from ContributeConfiguration, "
+                    + "the configuration contribution phase: "
+                    + $"{PluginDiagnosticText.Quote(exception.GetType().FullName)}: "
+                    + PluginDiagnosticText.Quote(exception.Message);
+
+                throw Refuse(
+                    PluginCompositionFailure.ContributeConfigurationThrew,
+                    plugin,
+                    message,
+                    diagnostics,
+                    exception
+                );
+            }
+
+            List<int> additions = AdditionsOf(plugin, before, sources, diagnostics);
+
+            Place(sources, additions, operatorEnvironment);
+        }
+    }
+
+    /// <summary>
+    /// Compares the sources either side of one configuration hook and returns the positions of the
+    /// sources the hook added, in list order.
+    /// </summary>
+    /// <remarks>
+    /// The pre-existing sources are matched in order, by reference, as a subsequence of what is there
+    /// afterwards. Anything left unmatched is the plugin's own addition, wherever it put it: an insert
+    /// adds a source just as an append does, and placement moves it either way. If the subsequence does
+    /// not complete, a pre-existing source is either gone or out of order, and counting occurrences
+    /// tells the two apart.
+    /// </remarks>
+    private static List<int> AdditionsOf(
+        LoadedPlugin plugin,
+        List<IConfigurationSource> before,
+        IList<IConfigurationSource> after,
+        TextWriter diagnostics
+    )
+    {
+        List<int> additions = [];
+        int matched = 0;
+
+        for (int index = 0; index < after.Count; index++)
+        {
+            if (matched < before.Count && ReferenceEquals(after[index], before[matched]))
+            {
+                matched++;
+            }
+            else
+            {
+                additions.Add(index);
+            }
+        }
+
+        if (matched == before.Count)
+        {
+            return additions;
+        }
+
+        Dictionary<IConfigurationSource, int> remaining = new(ReferenceEqualityComparer.Instance);
+
+        foreach (IConfigurationSource source in after)
+        {
+            remaining[source] = remaining.TryGetValue(source, out int count) ? count + 1 : 1;
+        }
+
+        for (int position = 0; position < before.Count; position++)
+        {
+            IConfigurationSource source = before[position];
+
+            if (remaining.TryGetValue(source, out int count) && count > 0)
+            {
+                remaining[source] = count - 1;
+                continue;
+            }
+
+            throw Refuse(
+                PluginCompositionFailure.ConfigurationSourceRemoved,
+                plugin,
+                $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' removed configuration source "
+                    + $"{position} ({DescribeSource(source)}) from ContributeConfiguration. A plugin may "
+                    + "add configuration sources; it may not remove one that was present before its "
+                    + "hook ran.",
+                diagnostics
+            );
+        }
+
+        IConfigurationSource displaced = before[matched];
+
+        throw Refuse(
+            PluginCompositionFailure.ConfigurationSourceReordered,
+            plugin,
+            $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' moved configuration source {matched} "
+                + $"({DescribeSource(displaced)}) from ContributeConfiguration. A plugin may add "
+                + "configuration sources; it may not change the order of the ones present before its "
+                + "hook ran, because that order is the host's precedence.",
+            diagnostics
+        );
+    }
+
+    /// <summary>
+    /// Moves one hook's additions to sit immediately below the operator's environment source,
+    /// preserving their order.
+    /// </summary>
+    /// <remarks>
+    /// Removed from the highest position down, so the positions not yet removed stay valid, then
+    /// inserted in their original order. Each insert lands immediately below the environment source,
+    /// which is still where it was because only the plugin's own additions were moved.
+    /// </remarks>
+    private static void Place(
+        IList<IConfigurationSource> sources,
+        List<int> additions,
+        IConfigurationSource? operatorEnvironment
+    )
+    {
+        if (additions.Count == 0 || operatorEnvironment is null)
+        {
+            return;
+        }
+
+        List<IConfigurationSource> added = [.. additions.Select(index => sources[index])];
+
+        for (int position = additions.Count - 1; position >= 0; position--)
+        {
+            sources.RemoveAt(additions[position]);
+        }
+
+        int target = IndexOfReference(sources, operatorEnvironment);
+
+        foreach (IConfigurationSource source in added)
+        {
+            sources.Insert(target++, source);
+        }
+    }
+
+    private static int IndexOfReference(IList<IConfigurationSource> sources, IConfigurationSource source)
+    {
+        for (int index = 0; index < sources.Count; index++)
+        {
+            if (ReferenceEquals(sources[index], source))
+            {
+                return index;
+            }
+        }
+
+        // Unreachable while the guard holds: the environment source was present when the phase began,
+        // so every hook since has been refused if it removed it.
+        throw new InvalidOperationException("The operator's environment configuration source is gone.");
+    }
+
+    /// <summary>
+    /// The source's type name and nothing else. A source's own properties can carry a path or a
+    /// prefix, and its data is configuration values, none of which belongs on a diagnostic channel.
+    /// </summary>
+    private static string DescribeSource(IConfigurationSource source) =>
+        PluginDiagnosticText.Quote(source.GetType().FullName);
+
+    private static PluginCompositionException Refuse(
+        PluginCompositionFailure reason,
+        LoadedPlugin plugin,
+        string message,
+        TextWriter diagnostics,
+        Exception? innerException = null
+    )
+    {
+        diagnostics.WriteLine($"plugin configuration refused: {message}");
+
+        return new PluginCompositionException(reason, plugin.Name, message, innerException);
+    }
 
     /// <summary>
     /// Invokes every plugin's service contribution hook, in allowlist order, and returns what each one

@@ -121,6 +121,12 @@ internal static class PluginFixtures
     /// <summary>Resolves a private and a host-served assembly for the first time inside its hook.</summary>
     internal const string HookTouch = "Acme.HookTouch";
 
+    /// <summary>Contributes configuration sources, doing whatever its own Fixture key asks for.</summary>
+    internal const string ConfigContributor = "Acme.ConfigContributor";
+
+    /// <summary>The same configuration contributor under a second identity, for the ordering cases.</summary>
+    internal const string SecondConfigContributor = "Acme.SecondConfigContributor";
+
     /// <summary>Every fixture the staging target is expected to produce.</summary>
     internal static IReadOnlyList<string> All { get; } =
     [
@@ -157,6 +163,8 @@ internal static class PluginFixtures
         SecondContributor,
         HookThrows,
         HookTouch,
+        ConfigContributor,
+        SecondConfigContributor,
     ];
 
     /// <summary>
