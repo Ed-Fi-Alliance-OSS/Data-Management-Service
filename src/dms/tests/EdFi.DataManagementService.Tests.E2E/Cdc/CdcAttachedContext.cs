@@ -34,6 +34,8 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     private CdcManagedLifecycle _lifecycle = null!;
     private Func<CancellationToken, Task<CdcRebuildObservation>> _rebuildOnline = null!;
     private CdcRestartObservations _restartObservations = null!;
+    private CdcOffsetEvidenceTransport _offsetEvidence = null!;
+    private string _statePath = "";
     public CdcDeploymentRequest Request { get; private set; } = null!;
     public string EffectiveSchemaHash { get; private set; } = "";
     public CdcApiClient Api { get; private set; } = null!;
@@ -56,6 +58,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
         {
             string path = Environment.GetEnvironmentVariable("CDC_API_E2E_HANDOFF_PATH") ?? "";
             var handoff = CdcApiHandoff.Load(path);
+            context._statePath = handoff.StatePath;
             context._config = CdcCommandConfiguration.Load(handoff.SettingsPath);
             var config = context._config;
             context._resources.Add((IDisposable)config.Settings);
@@ -103,7 +106,8 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             context._resources.Add(connectClient);
             var metricsClient = CdcConnectorTelemetryAdapter.CreateHttpClient();
             context._resources.Add(metricsClient);
-            context.Connect = new CdcConnectRestAdapter(connectClient);
+            context._offsetEvidence = new(new CdcConnectRestAdapter(connectClient));
+            context.Connect = context._offsetEvidence;
             var worker = new CdcWorkerDeployment(config.Project, "kafka-cdc-worker");
             var metrics = new CdcConnectorTelemetryAdapter(metricsClient, context.Connect, worker);
             var sizes = new CdcComposeBrokerSizeDeployment(
@@ -320,6 +324,23 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
         }
         public CdcProjectionGate Gate => Current._owner.Gate;
         public ICdcProjectionRuntime Runtime => Current._owner.Runtime;
+
+        public int UnavailableOffsetReads => Current._offsetEvidence.UnavailableReads;
+
+        public Task RunWithUnavailableOffsetsAsync(
+            Func<CancellationToken, Task> action,
+            CancellationToken token
+        ) => Current._offsetEvidence.RunUnavailableAsync(action, TimeSpan.FromMinutes(3), token);
+
+        public async Task<CdcBindingLifecycleResult> ReadRetainedBindingAsync(CancellationToken token)
+        {
+            var services = new ServiceCollection().AddDmsCdcControlPlane();
+            services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = Current._statePath);
+            await using var provider = services.BuildServiceProvider();
+            return await provider
+                .GetRequiredService<ICdcBindingLifecycleService>()
+                .ExactMatchBindingAsync(Current.Request.Binding, token);
+        }
 
         public Task<CdcControllerStatusResult> StatusAsync(CancellationToken token) =>
             Current._status.StatusAsync([Current.CurrentTarget()], token, token);

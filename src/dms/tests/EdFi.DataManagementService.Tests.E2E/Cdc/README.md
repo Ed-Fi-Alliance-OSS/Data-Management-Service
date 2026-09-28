@@ -187,6 +187,32 @@ cancels and awaits in-flight provider calls. UTC interval checkpoints, page coun
 operation counts and Kafka boundaries contain no document payloads. T23/T24 retain
 responsibility for full live qualification on both providers.
 
+## Unavailable continuity evidence checkpoints
+
+CDC-E2E-07 publishes and consumes a Student and requires healthy readiness before
+one bounded fault interval. A test-only forwarding transport throws only from
+`ReadOffsetEvidenceAsync`; all other calls still reach the real attached transport.
+Production status must report Unknown continuity and NotReady, and both managed
+Restart and Resume must reject with Connect/Unavailable and the missing ConnectOffset
+fact. Each observation must actually hit the injected read. Other pre-start
+prerequisites remain satisfied. Missing source-partition/streaming proof also prevents
+configuration validation and snapshot-status resolution; independent real read-backs
+require unchanged connector configuration and RUNNING tasks so unrelated failures
+cannot satisfy these assertions. Connector configuration is never printed.
+
+During the same fault interval, API PUT/GET succeed while the designated runtime's
+gate holds matching durable work and the complete old cache envelope. Fresh reads
+through the production binding-state service require the original complete binding
+and no terminal incident. The transport restores delegation in finally, including on
+failure, deadline or cancellation; the gate also releases in finally. Managed Resume
+then uses that same runtime and must return fresh healthy readiness. Both the in-fault
+write and a subsequent API mutation must converge to independently expected cache and
+Kafka state on the same binding/generation/topic. Provider fences, retained consumer
+positions, full-record assertions and final API deletion reuse existing helpers.
+No absence-of-publication or strict native-recovery fencing guarantee is inferred.
+Focused helper tests cover the fault and evidence assertions; T23/T24 still own full
+live qualification for both providers.
+
 ## Development checkpoints
 
 Use the `ApiE2E` runner for development checkpoints and final provider qualifications,
