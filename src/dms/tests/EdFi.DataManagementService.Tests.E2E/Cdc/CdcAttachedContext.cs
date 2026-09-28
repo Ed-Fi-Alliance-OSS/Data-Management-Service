@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Cdc;
@@ -31,6 +32,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     private CdcRuntimeOwner _owner = null!;
     private CdcControllerStatus _status = null!;
     private CdcManagedLifecycle _lifecycle = null!;
+    private Func<CancellationToken, Task<CdcRebuildObservation>> _rebuildOnline = null!;
     public CdcDeploymentRequest Request { get; private set; } = null!;
     public string EffectiveSchemaHash { get; private set; } = "";
     public CdcApiClient Api { get; private set; } = null!;
@@ -154,17 +156,41 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             {
                 cancellation.ThrowIfCancellationRequested();
                 CdcProjectionGate gate = new(target, TimeSpan.FromMinutes(5));
+                CdcProjectionRuntime projection = null!;
+                CdcRebuildObservations rebuild = new(target);
+                context._rebuildOnline = ct =>
+                    rebuild.RunAsync(
+                        commandToken =>
+                            projection.RebuildOnlineAsync(
+                                new(
+                                    DocumentCacheAdministrativeTargetKey.FromTargetKey(target),
+                                    new(request.Binding.PhysicalSourceFingerprint),
+                                    DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+                                ),
+                                commandToken
+                            ),
+                        ct
+                    );
                 ICdcProjectionRuntime runtime = new CdcDeferredProjectionRuntime(async ct =>
                 {
                     // Status contains retained incidents before schema/runtime preparation.
                     _ = request.ProviderSetup;
-                    return await CdcProjectionRuntimeFactory.CreateAsync(
+                    var result = await CdcProjectionRuntimeFactory.CreateAsync(
                         config.Settings,
                         logger,
                         target,
-                        gate.ConfigureServices,
+                        services =>
+                        {
+                            gate.ConfigureServices(services);
+                            rebuild.ConfigureServices(services);
+                        },
                         ct
                     );
+                    if (result is CdcTransportResult<ICdcProjectionRuntime>.Observed observed)
+                    {
+                        projection = (CdcProjectionRuntime)observed.Value;
+                    }
+                    return result;
                 });
                 return Task.FromResult((runtime, gate));
             });
@@ -298,6 +324,13 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             CdcManagedLifecycleOperation operation,
             CancellationToken token
         ) => Current._lifecycle.ExecuteAsync(Current.CurrentTarget(), operation, token, token);
+
+        public async Task<CdcRebuildObservation> RebuildOnlineAsync(CancellationToken token)
+        {
+            // Resolve through this phase's current deferred runtime, including after replacement.
+            await Runtime.InitializeAsync(token);
+            return await Current._rebuildOnline(token);
+        }
 
         public Task StopRuntimeAsync() => Current._owner.StopAsync();
 

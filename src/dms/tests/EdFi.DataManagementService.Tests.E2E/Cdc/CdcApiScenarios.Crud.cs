@@ -304,7 +304,7 @@ internal sealed partial class CdcApiScenarios
         );
 }
 
-/// <summary>Assertions for the single-key CRUD scan. Every public record is classified, including
+/// <summary>Assertions shared by single-key CRUD and multi-key rebuild scans. Every public record is classified, including
 /// duplicate/stale deliveries; unrelated/work-table records cannot hide behind a UUID filter.</summary>
 internal static class CdcCrudAssertions
 {
@@ -347,18 +347,39 @@ internal static class CdcCrudAssertions
         bool allowTombstones
     )
     {
-        string key = uuid.ToString("D");
-        int partition = MessageContractPartition.ForUuid(
-            key,
-            binding.PartitionCount,
-            binding.PartitionerAlgorithm
+        ApplyPublicScan(
+            binding,
+            new Dictionary<Guid, IReadOnlyDictionary<long, JsonElement>> { [uuid] = expected },
+            scan,
+            consumer,
+            allowTombstones
         );
+    }
+
+    public static void ApplyPublicScan(
+        CdcBinding binding,
+        IReadOnlyDictionary<Guid, IReadOnlyDictionary<long, JsonElement>> expectedByKey,
+        MessageContractKafkaScan scan,
+        MessageContractConsumer consumer,
+        bool allowTombstones
+    )
+    {
         consumer.CaptureEndOffsets(scan.CompletedBoundaries.ToDictionary(b => b.Partition, b => b.EndOffset));
         foreach (var record in scan.Records)
         {
             record.Topic.Should().Be(binding.TopicName);
-            record.Partition.Should().Be(partition);
             record.Key.IsNull.Should().BeFalse();
+            string key = Encoding.UTF8.GetString(record.Key.Bytes);
+            Guid.TryParseExact(key, "D", out Guid uuid).Should().BeTrue();
+            key = uuid.ToString("D");
+            expectedByKey.Should().ContainKey(uuid);
+            var expected = expectedByKey[uuid];
+            int partition = MessageContractPartition.ForUuid(
+                key,
+                binding.PartitionCount,
+                binding.PartitionerAlgorithm
+            );
+            record.Partition.Should().Be(partition);
             record.Key.Bytes.Should().Equal(Encoding.UTF8.GetBytes(key));
             record.Headers.Should().BeEmpty();
             if (record.Value.IsNull)

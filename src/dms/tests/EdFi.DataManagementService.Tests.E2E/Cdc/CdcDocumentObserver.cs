@@ -87,6 +87,25 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, string connectio
             token
         );
 
+    // Rebuild may scan canonical rows but must not reset or allocate representation versions.
+    public async Task<long> ReadChangeVersionSequenceAsync(CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        await using DbConnection connection = CreateConnection();
+        await connection.OpenAsync(deadline.Token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandTimeout = 30;
+        command.CommandText =
+            provider == CdcProvider.Postgresql
+                ? "SELECT last_value FROM dms.\"ChangeVersionSequence\";"
+                : "SELECT CAST(current_value AS bigint) FROM sys.sequences WHERE object_id = OBJECT_ID(N'dms.ChangeVersionSequence');";
+        object value =
+            await command.ExecuteScalarAsync(deadline.Token)
+            ?? throw new InvalidOperationException("CDC_API_VERSION_SEQUENCE_MISSING");
+        return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+    }
+
     private async Task<IReadOnlyList<T>> ReadAsync<T>(
         string sql,
         object id,

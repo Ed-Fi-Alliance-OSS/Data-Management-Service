@@ -140,6 +140,25 @@ compacted gaps are allowed. An empty scan cannot satisfy initial deletion eviden
 The existing CDC-E2E-04 report entry records the result; full live provider evidence
 remains part of T23/T24 qualification.
 
+## Online rebuild checkpoints
+
+CDC-E2E-05 publishes and consumes three Students before invoking the supported online
+rebuild through the current fixture-owned runtime. The internal forwarding method
+uses that runtime's command provider; the public runtime interface is unchanged.
+Production preflight, mutex, baseline seeding and administrative drain own the rebuild.
+A local observation-sink decorator retains completed phases, including committed
+Resetting/Rebuilding transitions, verified cache clearing and the explicit baseline
+scan. It delegates ordinary observations to the production store and retains no payloads.
+
+After completion, read-back requires Tracking, a clear cache-ahead latch, empty work,
+unchanged canonical metadata and ChangeVersionSequence, and independently expected
+cache contents. The same multi-key consumer and partition positions span the operation:
+equal-version replay is permitted, every tombstone is rejected, and all live keys remain.
+Provider fences precede Kafka bounds; source continuity, binding/generation, capture
+inventory and advancing offsets are checked. Canonical API deletion and fenced
+consumption clean up only after the measured rebuild. Live evidence remains part of
+T23/T24; these focused helper tests do not claim provider qualification.
+
 ## Development checkpoints
 
 Use the `ApiE2E` runner for development checkpoints and final provider qualifications,

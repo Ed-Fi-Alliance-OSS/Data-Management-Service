@@ -142,6 +142,27 @@ internal sealed class CdcProjectionRuntime(
     private bool _started;
     private bool _disposed;
 
+    internal Task<DocumentCacheAdministrativeCommandResult> RebuildOnlineAsync(
+        DocumentCacheOnlineCacheRebuildRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!targetKey.Equals(request.TargetKey.TargetKey))
+        {
+            throw new ArgumentException(
+                "Rebuild request must identify the selected projection target.",
+                nameof(request)
+            );
+        }
+
+        return provider
+            .GetRequiredService<IDocumentCacheOnlineCacheRebuildCommand>()
+            .ExecuteAsync(request, cancellationToken);
+    }
+
     public async Task<DocumentCacheAdministrativeCommandResult> ActivateAsync(
         DocumentCacheGuardedNewEmptyActivationRequest request,
         CancellationToken cancellationToken

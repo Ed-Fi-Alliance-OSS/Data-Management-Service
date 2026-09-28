@@ -335,6 +335,7 @@ public class Given_CdcProjectionRuntimeLifetime
     private RecordingSupervisor _lifetime = null!;
     private IDocumentCacheProjectionSupervisor _supervisor = null!;
     private IDocumentCacheGuardedNewEmptyActivationCommand _activation = null!;
+    private IDocumentCacheOnlineCacheRebuildCommand _rebuild = null!;
     private IDocumentCacheStatusService _status = null!;
     private CdcProjectionRuntime _runtime = null!;
 
@@ -344,12 +345,14 @@ public class Given_CdcProjectionRuntimeLifetime
         _lifetime = new();
         _supervisor = A.Fake<IDocumentCacheProjectionSupervisor>();
         _activation = A.Fake<IDocumentCacheGuardedNewEmptyActivationCommand>();
+        _rebuild = A.Fake<IDocumentCacheOnlineCacheRebuildCommand>();
         _status = A.Fake<IDocumentCacheStatusService>();
         IServiceCollection services = new ServiceCollection();
         services.AddSingleton(_ => _lifetime);
         services.AddSingleton(_supervisor);
         services.AddSingleton(_activation);
         services.AddSingleton(_status);
+        services.AddSingleton(_rebuild);
         _provider = services.BuildServiceProvider();
         _ = _provider.GetRequiredService<RecordingSupervisor>();
         _runtime = new(_provider, _target, _lifetime);
@@ -417,6 +420,87 @@ public class Given_CdcProjectionRuntimeLifetime
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_forwards_the_exact_online_rebuild_request_token_and_result_without_starting_an_executor()
+    {
+        using CancellationTokenSource cancellation = new();
+        DocumentCacheOnlineCacheRebuildRequest request = new(
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(_target),
+            new("sha256:" + new string('a', 64)),
+            DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+        );
+        DocumentCacheAdministrativeCommandResult expected = new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            request.TargetKey,
+            DocumentCacheAdministrativeCommandStatus.Completed,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
+            true
+        );
+        A.CallTo(() => _rebuild.ExecuteAsync(request, cancellation.Token)).Returns(expected);
+        var actual = await _runtime.RebuildOnlineAsync(request, cancellation.Token);
+        actual.Should().BeSameAs(expected);
+        A.CallTo(() => _rebuild.ExecuteAsync(request, cancellation.Token)).MustHaveHappenedOnceExactly();
+        _lifetime.Events.Should().BeEmpty();
+    }
+
+    [TestCase("target")]
+    [TestCase("disposed")]
+    [TestCase("cancelled")]
+    [TestCase("null")]
+    public async Task It_guards_rebuild_before_command_dispatch(string guard)
+    {
+        using CancellationTokenSource cancellation = new();
+        DocumentCacheOnlineCacheRebuildRequest request = new(
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(_target)
+        );
+        if (guard == "target")
+        {
+            request = new(new("Other", 7));
+        }
+        if (guard == "disposed")
+        {
+            await _runtime.DisposeAsync();
+        }
+        if (guard == "cancelled")
+        {
+            await cancellation.CancelAsync();
+        }
+        Func<Task> action = () =>
+            _runtime.RebuildOnlineAsync(guard == "null" ? null! : request, cancellation.Token);
+        var failure = await action.Should().ThrowAsync<Exception>();
+        Type expected = guard switch
+        {
+            "target" => typeof(ArgumentException),
+            "disposed" => typeof(ObjectDisposedException),
+            "cancelled" => typeof(OperationCanceledException),
+            _ => typeof(ArgumentNullException),
+        };
+        failure.Which.Should().BeOfType(expected);
+        A.CallTo(() =>
+                _rebuild.ExecuteAsync(A<DocumentCacheOnlineCacheRebuildRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_preserves_rebuild_failures_and_the_running_executor()
+    {
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        InvalidOperationException failure = new("Rebuild failed");
+        A.CallTo(() =>
+                _rebuild.ExecuteAsync(A<DocumentCacheOnlineCacheRebuildRequest>._, A<CancellationToken>._)
+            )
+            .ThrowsAsync(failure);
+        Func<Task> action = () =>
+            _runtime.RebuildOnlineAsync(
+                new(DocumentCacheAdministrativeTargetKey.FromTargetKey(_target)),
+                CancellationToken.None
+            );
+        (await action.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        _lifetime.StartCount.Should().Be(1);
     }
 
     [Test]
