@@ -258,9 +258,13 @@ public sealed class PostgresqlJobFenceFactory(
                     cancellationToken
                 );
             }
-            catch (Exception) when (fenceDeadline.Expired && !cancellationToken.IsCancellationRequested)
+            catch (Exception)
+                when ((session.HandedOver || fenceDeadline.Expired)
+                    && !cancellationToken.IsCancellationRequested
+                )
             {
-                // The deadline ended the revalidation.
+                // The deadline ended the revalidation. The session's wait can time out a moment before the deadline
+                // reads as expired, so a hand-over counts too, as it does for the work.
                 throw LeaseLost();
             }
 
