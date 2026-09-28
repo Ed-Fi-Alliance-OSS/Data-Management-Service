@@ -65,6 +65,13 @@ public enum PluginCompositionFailure
     /// The plugin's configuration hook threw. The original exception travels as the inner exception.
     /// </summary>
     ContributeConfigurationThrew,
+
+    /// <summary>
+    /// A configuration source the plugin added threw when the host loaded it, which for a
+    /// vault-backed source is ordinarily the vault being unreachable. The original exception travels
+    /// as the inner exception.
+    /// </summary>
+    ConfigurationSourceLoadFailed,
 }
 
 /// <summary>

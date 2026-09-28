@@ -43,8 +43,8 @@ bool useReverseProxyHeaders = false;
 //
 // The configuration phase runs in the same bootstrap phase, as soon as loading returns, because
 // AddServices is the first reader of a value a plugin can supply: its first line configures logging
-// from the Serilog section. builder.Configuration is a ConfigurationManager, so it is each plugin's
-// configuration builder and its bootstrap configuration at once.
+// from the Serilog section. builder.Configuration is each plugin's bootstrap configuration, and the
+// loader inserts what each plugin added into it as one source.
 LoadedPlugins loadedPlugins = RunBootstrapPhaseWithResult(
     DmsStartupPhases.LoadPlugins,
     "Loading plugins named in Plugins:Allowed.",

@@ -70,29 +70,44 @@ public sealed class LoadedPlugins
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <paramref name="configuration"/> is passed to each hook as both its builder and its bootstrap
-    /// configuration. A <see cref="ConfigurationManager"/> is both, and handing over the same instance
-    /// is what lets a plugin read a value an earlier plugin supplied.
+    /// Each hook is handed a staging builder as its builder and <paramref name="configuration"/> as its
+    /// bootstrap configuration. The staging builder starts with the host's sources, by reference, and
+    /// the host's builder properties, so a relative file path resolves as it would against the host.
+    /// Adding to it loads nothing. The live manager is what lets a plugin read a value an earlier
+    /// plugin supplied.
     /// </para>
     /// <para>
-    /// Contribution is additive only. The sources are snapshotted before each hook and compared by
-    /// reference after it, and a hook that removed a source present before it began, or changed the
-    /// relative order of those sources, fails the composition naming the plugin. What the comparison
-    /// cannot see is a change to a pre-existing source object's own properties, which is a trust
-    /// assumption rather than a control.
+    /// The staging builder is what keeps each source loading once. A <see cref="ConfigurationManager"/>
+    /// rebuilds and reloads every source on every change to its source list, so adding a plugin's
+    /// sources to it one at a time, and then moving them, would reload the JSON files, every earlier
+    /// plugin's sources and the plugin's own once per change. A vault-backed source would be called
+    /// repeatedly on every startup, and a failure on a reload would escape without naming the plugin.
     /// </para>
     /// <para>
-    /// After a hook passes, the sources it added are moved to sit immediately below the last
-    /// <see cref="EnvironmentVariablesConfigurationSource"/> present when this phase began, in the
-    /// order the plugin added them. That keeps every plugin source above the JSON sources and below the
-    /// operator's environment and command-line sources, which were never moved, and puts each later
-    /// plugin's sources above an earlier one's. A host with no environment source at all has no
-    /// operator surface to protect, and the sources stay where the plugin put them. The loader adds no
-    /// source of its own.
+    /// Contribution is additive only. The staging builder's sources are compared by reference after
+    /// the hook against the host's, and a hook that removed a source present before it began, or
+    /// changed the relative order of those sources, fails the composition naming the plugin. What the
+    /// comparison cannot see is a change to a pre-existing source object's own properties, or a change
+    /// made to the host's own list by casting the bootstrap configuration back to a builder, both of
+    /// which are trust assumptions rather than controls.
+    /// </para>
+    /// <para>
+    /// After a hook passes, the sources it added are built together, once, in the order the plugin
+    /// added them, and a failure there fails the composition naming the plugin. The result goes into
+    /// the host as one <see cref="ChainedConfigurationSource"/>, immediately below the last
+    /// <see cref="EnvironmentVariablesConfigurationSource"/> present when this phase began, which is
+    /// the one change this makes to the host's list for that plugin. That keeps every plugin source
+    /// above the JSON sources and below the operator's environment and command-line sources, which
+    /// were never moved, and puts each later plugin's sources above an earlier one's. The chained
+    /// source's own reload does not reload what it wraps, so a later plugin's insert does not call an
+    /// earlier plugin's sources again. A host with no environment source at all gets the plugin's
+    /// source on top of its list, above a command-line source if it has one; neither host that runs
+    /// this phase is shaped that way. The loader adds no source of its own.
     /// </para>
     /// </remarks>
     /// <exception cref="PluginCompositionException">
-    /// A hook removed or reordered a pre-existing source, or threw.
+    /// A hook removed or reordered a pre-existing source, or threw, or a source it added failed to
+    /// load.
     /// </exception>
     public void ContributeConfiguration(ConfigurationManager configuration) =>
         ContributeConfiguration(configuration, Console.Error);
@@ -106,12 +121,12 @@ public sealed class LoadedPlugins
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
-        IList<IConfigurationSource> sources = ((IConfigurationBuilder)configuration).Sources;
+        IConfigurationBuilder host = configuration;
 
         // Found once, before any hook runs, and held by reference. A plugin may add environment sources
         // of its own, and those are plugin sources to be placed rather than the operator's surface to
         // place them under.
-        IConfigurationSource? operatorEnvironment = sources.LastOrDefault(source =>
+        IConfigurationSource? operatorEnvironment = host.Sources.LastOrDefault(source =>
             source is EnvironmentVariablesConfigurationSource
         );
 
@@ -123,11 +138,12 @@ public sealed class LoadedPlugins
                 $"invoking ContributeConfiguration on {PluginDiagnosticText.Quote(plugin.Name)}"
             );
 
-            List<IConfigurationSource> before = [.. sources];
+            ConfigurationBuilder staging = StagingBuilderFor(host);
+            List<IConfigurationSource> before = [.. host.Sources];
 
             try
             {
-                plugin.Instance.ContributeConfiguration(configuration, configuration);
+                plugin.Instance.ContributeConfiguration(staging, configuration);
             }
             catch (Exception exception)
             {
@@ -146,14 +162,89 @@ public sealed class LoadedPlugins
                 );
             }
 
-            List<int> additions = AdditionsOf(plugin, before, sources, diagnostics);
+            List<int> additions = AdditionsOf(plugin, before, staging.Sources, diagnostics);
 
-            if (additions.Count > 0)
+            if (additions.Count == 0)
             {
-                _configurationContributors.Add(plugin);
+                continue;
             }
 
-            Place(sources, additions, operatorEnvironment);
+            IConfigurationRoot contributed = Build(plugin, host, staging.Sources, additions, diagnostics);
+
+            _configurationContributors.Add(plugin);
+
+            Place(host.Sources, contributed, operatorEnvironment);
+        }
+    }
+
+    /// <summary>
+    /// A builder holding the host's sources and properties, for one hook to add to.
+    /// </summary>
+    /// <remarks>
+    /// The properties are copied rather than shared, so a hook that sets its own base path changes
+    /// where its own relative paths resolve and not where the host's do.
+    /// </remarks>
+    private static ConfigurationBuilder StagingBuilderFor(IConfigurationBuilder host)
+    {
+        ConfigurationBuilder staging = new();
+
+        CopyProperties(host, staging);
+
+        foreach (IConfigurationSource source in host.Sources)
+        {
+            staging.Sources.Add(source);
+        }
+
+        return staging;
+    }
+
+    private static void CopyProperties(IConfigurationBuilder from, ConfigurationBuilder to)
+    {
+        foreach ((string key, object value) in from.Properties)
+        {
+            to.Properties[key] = value;
+        }
+    }
+
+    /// <summary>
+    /// Builds one hook's additions together, in list order, which is the only time they load here.
+    /// </summary>
+    private static IConfigurationRoot Build(
+        LoadedPlugin plugin,
+        IConfigurationBuilder host,
+        IList<IConfigurationSource> staged,
+        List<int> additions,
+        TextWriter diagnostics
+    )
+    {
+        ConfigurationBuilder contributed = new();
+
+        CopyProperties(host, contributed);
+
+        foreach (int index in additions)
+        {
+            contributed.Sources.Add(staged[index]);
+        }
+
+        try
+        {
+            return contributed.Build();
+        }
+        catch (Exception exception)
+        {
+            string message =
+                $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' added a configuration source from "
+                + "ContributeConfiguration that failed to load: "
+                + $"{PluginDiagnosticText.Quote(exception.GetType().FullName)}: "
+                + PluginDiagnosticText.Quote(exception.Message);
+
+            throw Refuse(
+                PluginCompositionFailure.ConfigurationSourceLoadFailed,
+                plugin,
+                message,
+                diagnostics,
+                exception
+            );
         }
     }
 
@@ -237,38 +328,34 @@ public sealed class LoadedPlugins
     }
 
     /// <summary>
-    /// Moves one hook's additions to sit immediately below the operator's environment source,
-    /// preserving their order.
+    /// Inserts one hook's built additions immediately below the operator's environment source, as one
+    /// source.
     /// </summary>
     /// <remarks>
-    /// Removed from the highest position down, so the positions not yet removed stay valid, then
-    /// inserted in their original order. Each insert lands immediately below the environment source,
-    /// which is still where it was because only the plugin's own additions were moved.
+    /// The chained source does not dispose what it wraps. The manager disposes and rebuilds every
+    /// provider on each change to its list, and a later plugin's insert is one, so a chained source
+    /// that disposed its configuration would be rebuilt over a disposed one. What it wraps lives as
+    /// long as the process, as the host's own configuration does.
     /// </remarks>
     private static void Place(
         IList<IConfigurationSource> sources,
-        List<int> additions,
+        IConfigurationRoot contributed,
         IConfigurationSource? operatorEnvironment
     )
     {
-        if (additions.Count == 0 || operatorEnvironment is null)
+        ChainedConfigurationSource source = new()
         {
+            Configuration = contributed,
+            ShouldDisposeConfiguration = false,
+        };
+
+        if (operatorEnvironment is null)
+        {
+            sources.Add(source);
             return;
         }
 
-        List<IConfigurationSource> added = [.. additions.Select(index => sources[index])];
-
-        for (int position = additions.Count - 1; position >= 0; position--)
-        {
-            sources.RemoveAt(additions[position]);
-        }
-
-        int target = IndexOfReference(sources, operatorEnvironment);
-
-        foreach (IConfigurationSource source in added)
-        {
-            sources.Insert(target++, source);
-        }
+        sources.Insert(IndexOfReference(sources, operatorEnvironment), source);
     }
 
     private static int IndexOfReference(IList<IConfigurationSource> sources, IConfigurationSource source)
@@ -281,8 +368,9 @@ public sealed class LoadedPlugins
             }
         }
 
-        // Unreachable while the guard holds: the environment source was present when the phase began,
-        // so every hook since has been refused if it removed it.
+        // Unreachable unless a hook reached the host's own list by casting its bootstrap configuration
+        // back to a builder, which is outside the contract: hooks add to a staging builder, and nothing
+        // else in this phase removes a source.
         throw new InvalidOperationException("The operator's environment configuration source is gone.");
     }
 

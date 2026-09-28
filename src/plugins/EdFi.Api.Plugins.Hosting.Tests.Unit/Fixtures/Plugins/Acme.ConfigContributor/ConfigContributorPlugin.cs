@@ -37,9 +37,10 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
         // announcement and against the other plugin's hook.
         FixtureObservations.Record($"{Name}:enteredAt", FixtureObservations.Next().ToString());
         FixtureObservations.Record(
-            $"{Name}:sameInstance",
+            $"{Name}:builderIsBootstrap",
             ReferenceEquals(configurationBuilder, bootstrapConfiguration).ToString()
         );
+        FixtureObservations.Record($"{Name}:winnerOnEntry", bootstrapConfiguration["Fixture:Winner"] ?? "");
 
         IList<IConfigurationSource> sources = configurationBuilder.Sources;
 
@@ -60,6 +61,17 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
                 );
                 break;
 
+            case "appendCounted":
+                // A source that counts its own loads, standing in for one that calls a vault.
+                configurationBuilder.Add(Supplied());
+                configurationBuilder.Add(new CountedSource($"{Name}:loads", fail: false));
+                break;
+
+            case "appendFailing":
+                // A source that throws when it loads, standing in for a vault that is unreachable.
+                configurationBuilder.Add(new CountedSource($"{Name}:loads", fail: true));
+                break;
+
             case "insert":
                 // An addition made at the bottom of the list rather than appended at the top. Still an
                 // addition, and placed like one.
@@ -71,16 +83,9 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
                 break;
 
             case "removePluginSource":
-                // Takes out a source an earlier plugin in the allowlist added, which is still a
-                // pre-existing source as far as this hook is concerned.
-                sources.Remove(
-                    sources.First(source =>
-                        source is MemoryConfigurationSource { InitialData: { } data }
-                        && data.Any(pair =>
-                            pair.Key.StartsWith("Fixture:Supplied:", StringComparison.Ordinal)
-                        )
-                    )
-                );
+                // Takes out the source the host inserted for an earlier plugin in the allowlist, which is
+                // still a pre-existing source as far as this hook is concerned.
+                sources.Remove(sources.First(source => source is ChainedConfigurationSource));
                 break;
 
             case "reorder":
@@ -109,4 +114,25 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
 
     private static MemoryConfigurationSource Source(Dictionary<string, string?> data) =>
         new() { InitialData = data };
+
+    /// <summary>A source that counts each load under <paramref name="key"/>, and optionally fails it.</summary>
+    private sealed class CountedSource(string key, bool fail) : IConfigurationSource
+    {
+        public IConfigurationProvider Build(IConfigurationBuilder builder) => new Provider(key, fail);
+
+        private sealed class Provider(string key, bool fail) : ConfigurationProvider
+        {
+            public override void Load()
+            {
+                FixtureObservations.Count(key);
+
+                if (fail)
+                {
+                    throw new InvalidOperationException($"{key} could not reach its vault");
+                }
+
+                Data["Fixture:Counted"] = key;
+            }
+        }
+    }
 }

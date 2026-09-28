@@ -60,25 +60,28 @@ public abstract class EdFiApiPlugin
     /// <para>
     /// Contribution is additive only. Add sources; do not remove or reorder a source that was present
     /// when the hook began, which the host detects and treats as fatal. After the hook returns, the
-    /// host moves the sources it added to sit below the operator's environment variables and
-    /// command-line arguments and above every JSON source, preserving their relative order, so an
-    /// operator's explicit setting always outranks a plugin and a later plugin in the allowlist
-    /// outranks an earlier one.
+    /// host loads the sources it added, once and in the order they were added, and inserts them into
+    /// its own configuration as one source, below the operator's environment variables and
+    /// command-line arguments and above every JSON source. So an operator's explicit setting outranks
+    /// every source added here, and a later plugin in the allowlist outranks an earlier one. A source
+    /// that throws when the host loads it fails startup, naming this plugin.
     /// </para>
     /// </remarks>
     /// <param name="configurationBuilder">
-    /// The host's configuration builder, as it stands when the hook runs. Its sources are a mutable
-    /// list, so the host snapshots them either side of the call: a source that was present before the
-    /// hook and is absent or moved afterwards fails startup, naming this plugin. Changing a property of
-    /// a pre-existing source object, such as an environment variable source's prefix or a JSON source's
-    /// path, is not detectable at this seam and is a trust assumption the host does not enforce.
+    /// A builder for this hook alone, holding the host's sources as they stand when the hook runs and
+    /// the host's builder properties. Adding a source to it loads nothing. Its sources are a mutable
+    /// list, so the host compares them with its own after the call: a source that was present before
+    /// the hook and is absent or moved afterwards fails startup, naming this plugin. Changing a property
+    /// of a pre-existing source object, such as an environment variable source's prefix or a JSON
+    /// source's path, is not detectable at this seam and is a trust assumption the host does not
+    /// enforce.
     /// </param>
     /// <param name="bootstrapConfiguration">
     /// The configuration already layered when the hook runs, supplied so the plugin can read the
     /// settings it needs to build its sources, such as its own vault address. It is the host's live
     /// configuration rather than a copy or a read-only facade, so nothing stops a plugin writing
-    /// through it; not doing so is a trust assumption the host does not enforce, and the effect of a
-    /// write on the host is undefined.
+    /// through it or casting it back to a builder; not doing so is a trust assumption the host does
+    /// not enforce, and the effect on the host is undefined.
     /// </param>
     public virtual void ContributeConfiguration(
         IConfigurationBuilder configurationBuilder,

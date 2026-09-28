@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
-using Microsoft.Extensions.Configuration.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -87,12 +86,10 @@ internal sealed class PhaseAHostRun : IAsyncDisposable
         return new PhaseAHostRun(factory, pluginRoot, startupStatusFilePath, response.StatusCode);
     }
 
-    /// <summary>Whether a source is one of the two the fixture adds.</summary>
+    /// <summary>Whether a source is the one the loader inserted for the fixture's two.</summary>
     public static bool IsPluginSource(IConfigurationSource source) =>
-        source is MemoryConfigurationSource { InitialData: { } data }
-        && data.Any(pair =>
-            pair.Key == $"Fixture:Supplied:{ConfigContributor}" || pair.Key == "Fixture:WithinPlugin"
-        );
+        source is ChainedConfigurationSource { Configuration: { } configuration }
+        && configuration[$"Fixture:Supplied:{ConfigContributor}"] == ConfigContributor;
 
     /// <summary>
     /// What identifies a source across two boots: its type and the property that says what it reads.
@@ -112,14 +109,15 @@ internal sealed class PhaseAHostRun : IAsyncDisposable
             _ => source.GetType().Name,
         };
 
-    /// <summary>What <see cref="Describe"/> writes for either of the plugin's two sources.</summary>
+    /// <summary>What <see cref="Describe"/> writes for the source the loader inserted for the plugin.</summary>
     public const string PluginSourceDescription = "plugin source";
 
     /// <summary>
     /// The source list the host is expected to end with, built without the loader: the sources
     /// <c>WebApplication.CreateBuilder</c> installs for this application and environment, plus the one
-    /// environment source <c>AddServices</c> appends, with the plugin's two sources, when there are any,
-    /// immediately below the last environment source <c>CreateBuilder</c> installed.
+    /// environment source <c>AddServices</c> appends, with the one source the loader inserts for the
+    /// plugin's two, when there are any, immediately below the last environment source
+    /// <c>CreateBuilder</c> installed.
     /// </summary>
     /// <remarks>
     /// Built from a real builder rather than written down, so the runtime's own source list is what the
@@ -152,7 +150,7 @@ internal sealed class PhaseAHostRun : IAsyncDisposable
 
             if (withPluginSources)
             {
-                expected.InsertRange(lastEnvironment, [PluginSourceDescription, PluginSourceDescription]);
+                expected.Insert(lastEnvironment, PluginSourceDescription);
             }
 
             // AddServices' own AddEnvironmentVariables, which runs after the configuration phase.
@@ -181,7 +179,8 @@ internal sealed class PhaseAHostRun : IAsyncDisposable
 /// <remarks>
 /// Both source lists, and a baseline host's with nothing allowlisted, are compared against the list a
 /// bare <c>WebApplication.CreateBuilder</c> produces, which the loader has no part in: the only
-/// difference allowed is the plugin's two sources, in the one place placement puts them.
+/// difference allowed is the one source the loader inserts for the plugin's two, where placement puts
+/// it.
 /// </remarks>
 [Category("PluginIntegration")]
 [NonParallelizable]
@@ -247,8 +246,9 @@ public sealed class Given_APluginContributesTheEncryptionKey
     [Test]
     public void It_ends_with_exactly_the_expected_sources_and_no_source_of_the_loaders_own()
     {
-        // The plugin's two sources, immediately below the last environment source CreateBuilder
-        // installed and so below the command-line source above it, and nothing else added anywhere.
+        // The one source for the plugin's two, immediately below the last environment source
+        // CreateBuilder installed and so below the command-line source above it, and nothing else added
+        // anywhere.
         _run.Sources.Select(PhaseAHostRun.Describe)
             .Should()
             .Equal(PhaseAHostRun.ExpectedSources(withPluginSources: true));
@@ -313,6 +313,6 @@ public sealed class Given_APluginContributesAKeyTheEnvironmentAlsoSets
     {
         // So the case above is the environment winning over a plugin value that is present, rather
         // than a plugin that contributed nothing.
-        _run.Sources.Count(PhaseAHostRun.IsPluginSource).Should().Be(2);
+        _run.Sources.Count(PhaseAHostRun.IsPluginSource).Should().Be(1);
     }
 }

@@ -64,10 +64,19 @@ internal sealed class ConfigurationProbeHost
             )
         );
 
-    /// <summary>The sources the plugin with <paramref name="pluginName"/> supplied.</summary>
+    /// <summary>
+    /// Whether <paramref name="source"/> is the one source the loader inserted for the plugin with
+    /// <paramref name="pluginName"/>.
+    /// </summary>
     internal static bool IsSuppliedBy(IConfigurationSource source, string pluginName) =>
-        source is MemoryConfigurationSource { InitialData: { } data }
-        && data.Any(pair => pair.Key == $"Fixture:Supplied:{pluginName}");
+        source is ChainedConfigurationSource { Configuration: { } configuration }
+        && configuration[$"Fixture:Supplied:{pluginName}"] == pluginName;
+
+    /// <summary>The types of the providers inside the source the loader inserted for a plugin.</summary>
+    internal static IEnumerable<Type> ProviderTypesIn(IConfigurationSource source) =>
+        ((IConfigurationRoot)((ChainedConfigurationSource)source).Configuration!).Providers.Select(provider =>
+            provider.GetType()
+        );
 }
 
 [TestFixture]
@@ -110,34 +119,35 @@ public class Given_a_plugin_that_appends_configuration_sources
     }
 
     [Test]
-    public void It_passes_the_same_manager_as_the_builder_and_the_bootstrap_configuration()
+    public void It_hands_the_hook_a_builder_other_than_its_bootstrap_configuration()
     {
-        FixtureObservations.Read($"{PluginFixtures.ConfigContributor}:sameInstance").Should().Be("True");
+        FixtureObservations
+            .Read($"{PluginFixtures.ConfigContributor}:builderIsBootstrap")
+            .Should()
+            .Be("False");
     }
 
     [Test]
-    public void It_places_the_added_sources_immediately_below_the_environment_source_in_their_order()
+    public void It_inserts_one_source_immediately_below_the_environment_source()
     {
         IList<IConfigurationSource> sources = _host.Manager.Sources;
 
-        // Exactly six: the four the host had and the two the plugin added. A loader source of its own
-        // would make seven.
-        sources.Should().HaveCount(6);
+        // Exactly five: the four the host had and the one the loader inserted for the plugin's two.
+        sources.Should().HaveCount(5);
         sources[0].Should().BeSameAs(_host.Default);
         sources[1].Should().BeSameAs(_host.Json);
         ConfigurationProbeHost.IsSuppliedBy(sources[2], PluginFixtures.ConfigContributor).Should().BeTrue();
-        sources[3]
+        sources[3].Should().BeSameAs(_host.Environment);
+        sources[4].Should().BeSameAs(_host.CommandLine);
+    }
+
+    [Test]
+    public void It_carries_both_of_the_plugins_sources_in_the_inserted_one()
+    {
+        ConfigurationProbeHost
+            .ProviderTypesIn(_host.Manager.Sources[2])
             .Should()
-            .BeOfType<MemoryConfigurationSource>()
-            .Which.InitialData.Should()
-            .Equal(
-                new Dictionary<string, string?>
-                {
-                    ["Fixture:WithinPlugin"] = $"{PluginFixtures.ConfigContributor}:second",
-                }
-            );
-        sources[4].Should().BeSameAs(_host.Environment);
-        sources[5].Should().BeSameAs(_host.CommandLine);
+            .Equal(typeof(MemoryConfigurationProvider), typeof(MemoryConfigurationProvider));
     }
 
     [Test]
@@ -192,17 +202,16 @@ public class Given_a_plugin_that_adds_its_own_environment_source
     {
         IList<IConfigurationSource> sources = _host.Manager.Sources;
 
-        sources.Should().HaveCount(6);
+        sources.Should().HaveCount(5);
         sources[0].Should().BeSameAs(_host.Default);
         sources[1].Should().BeSameAs(_host.Json);
         ConfigurationProbeHost.IsSuppliedBy(sources[2], PluginFixtures.ConfigContributor).Should().BeTrue();
-        sources[3]
+        ConfigurationProbeHost
+            .ProviderTypesIn(sources[2])
             .Should()
-            .BeOfType<EnvironmentVariablesConfigurationSource>()
-            .Which.Prefix.Should()
-            .Be("ACME_CONFIG_CONTRIBUTOR_UNMATCHED_");
-        sources[4].Should().BeSameAs(_host.Environment);
-        sources[5].Should().BeSameAs(_host.CommandLine);
+            .Equal(typeof(MemoryConfigurationProvider), typeof(EnvironmentVariablesConfigurationProvider));
+        sources[3].Should().BeSameAs(_host.Environment);
+        sources[4].Should().BeSameAs(_host.CommandLine);
     }
 }
 
@@ -329,16 +338,26 @@ public class Given_two_plugins_that_append_configuration_sources
     {
         IList<IConfigurationSource> sources = _host.Manager.Sources;
 
-        sources.Should().HaveCount(8);
+        sources.Should().HaveCount(6);
         sources[0].Should().BeSameAs(_host.Default);
         sources[1].Should().BeSameAs(_host.Json);
         ConfigurationProbeHost
             .IsSuppliedBy(sources[2], PluginFixtures.SecondConfigContributor)
             .Should()
             .BeTrue();
-        ConfigurationProbeHost.IsSuppliedBy(sources[4], PluginFixtures.ConfigContributor).Should().BeTrue();
-        sources[6].Should().BeSameAs(_host.Environment);
-        sources[7].Should().BeSameAs(_host.CommandLine);
+        ConfigurationProbeHost.IsSuppliedBy(sources[3], PluginFixtures.ConfigContributor).Should().BeTrue();
+        sources[4].Should().BeSameAs(_host.Environment);
+        sources[5].Should().BeSameAs(_host.CommandLine);
+    }
+
+    [Test]
+    public void It_lets_the_later_plugin_read_the_earlier_plugins_value_through_its_bootstrap_configuration()
+    {
+        FixtureObservations.Read($"{PluginFixtures.SecondConfigContributor}:winnerOnEntry").Should().Be("");
+        FixtureObservations
+            .Read($"{PluginFixtures.ConfigContributor}:winnerOnEntry")
+            .Should()
+            .Be(PluginFixtures.SecondConfigContributor);
     }
 
     [Test]
@@ -453,6 +472,131 @@ public class Given_a_plugin_that_reorders_pre_existing_configuration_sources
 }
 
 /// <summary>
+/// Two plugins whose sources count their own loads, standing in for vault-backed sources.
+/// </summary>
+/// <remarks>
+/// A <see cref="ConfigurationManager"/> reloads every source on every change to its list. Adding each
+/// plugin's sources to it directly and then moving them loaded the first plugin's four times and the
+/// second's twice; building each plugin's additions once and inserting them as one source loads each
+/// once, however many plugins follow.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_two_plugins_whose_sources_count_their_loads
+{
+    private TemporaryPluginRoot _root = null!;
+    private ConfigurationProbeHost _host = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        FixtureObservations.Clear();
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(
+            _root,
+            PluginFixtures.ConfigContributor,
+            PluginFixtures.SecondConfigContributor
+        );
+
+        _host = ConfigurationProbeHost.Directing(
+            (PluginFixtures.ConfigContributor, "appendCounted"),
+            (PluginFixtures.SecondConfigContributor, "appendCounted")
+        );
+
+        plugins.ContributeConfiguration(_host.Manager, new StringWriter());
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_loads_the_earlier_plugins_source_once()
+    {
+        FixtureObservations.CountOf($"{PluginFixtures.ConfigContributor}:loads").Should().Be(1);
+    }
+
+    [Test]
+    public void It_loads_the_later_plugins_source_once()
+    {
+        FixtureObservations.CountOf($"{PluginFixtures.SecondConfigContributor}:loads").Should().Be(1);
+    }
+
+    [Test]
+    public void It_still_resolves_the_later_plugins_counted_value()
+    {
+        _host.Manager["Fixture:Counted"].Should().Be($"{PluginFixtures.SecondConfigContributor}:loads");
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_source_that_fails_to_load
+{
+    private TemporaryPluginRoot _root = null!;
+    private ConfigurationProbeHost _host = null!;
+    private StringWriter _diagnostics = null!;
+    private PluginCompositionException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        FixtureObservations.Clear();
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(_root, PluginFixtures.ConfigContributor);
+
+        _host = ConfigurationProbeHost.Directing((PluginFixtures.ConfigContributor, "appendFailing"));
+        _diagnostics = new StringWriter();
+
+        _failure = Assert.Throws<PluginCompositionException>(() =>
+            plugins.ContributeConfiguration(_host.Manager, _diagnostics)
+        )!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _diagnostics.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_fails_naming_the_plugin()
+    {
+        _failure.Reason.Should().Be(PluginCompositionFailure.ConfigurationSourceLoadFailed);
+        _failure.PluginName.Should().Be(PluginFixtures.ConfigContributor);
+        _failure
+            .Message.Should()
+            .StartWith(
+                $"plugin '{PluginFixtures.ConfigContributor}' added a configuration source from "
+                    + "ContributeConfiguration that failed to load"
+            );
+    }
+
+    [Test]
+    public void It_keeps_the_original_exception()
+    {
+        _failure
+            .InnerException.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be($"{PluginFixtures.ConfigContributor}:loads could not reach its vault");
+    }
+
+    [Test]
+    public void It_leaves_the_host_sources_unchanged()
+    {
+        _host.Manager.Sources.Should().HaveCount(4);
+        _host.Manager.Sources.Should().NotContain(source => source is ChainedConfigurationSource);
+    }
+
+    [Test]
+    public void It_reports_the_refusal_on_the_diagnostic_channel()
+    {
+        _diagnostics.ToString().Should().Contain($"plugin configuration refused: {_failure.Message}");
+    }
+}
+
+/// <summary>
 /// A later plugin removing a source an earlier plugin added. By the time the later hook runs that
 /// source is pre-existing, so the removal is refused like any other.
 /// </summary>
@@ -496,7 +640,7 @@ public class Given_a_later_plugin_that_removes_an_earlier_plugins_configuration_
             .Message.Should()
             .StartWith(
                 $"plugin '{PluginFixtures.SecondConfigContributor}' removed configuration source 2 "
-                    + $"({typeof(MemoryConfigurationSource).FullName})"
+                    + $"({typeof(ChainedConfigurationSource).FullName})"
             );
     }
 }
