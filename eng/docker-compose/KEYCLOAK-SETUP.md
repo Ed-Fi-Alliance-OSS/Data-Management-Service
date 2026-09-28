@@ -336,3 +336,10 @@ Please refer "Creating a Configuration Service Client" section above
        `Authority` must equal the realm's `issuer` exactly (`KC_HOSTNAME` +
        `/realms/<your-realm>`), even when DMS fetches metadata over an internal
        hostname; otherwise DMS will not start.
+
+       DMS also requires the metadata document's `jwks_uri` to be on the origin
+       (scheme, host and port) of `MetadataAddress`. If DMS fetches metadata over
+       an internal hostname, run Keycloak with
+       `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`. Keycloak's default, `false`, makes
+       `jwks_uri` name the public `KC_HOSTNAME`, and DMS will not start.
+       Otherwise, point `MetadataAddress` at the public URL.
