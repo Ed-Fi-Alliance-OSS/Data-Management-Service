@@ -6,6 +6,7 @@
 using Acme.FixtureContracts;
 using EdFi.DataManagementService.FixtureHost;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -527,6 +528,229 @@ public class Given_a_plugin_that_registered_only_its_own_types
     {
         _run.SingleFinding.Message.Should().Contain(nameof(IAcmeFirstService));
         _run.SingleFinding.Message.Should().Contain("wrong host");
+    }
+}
+
+/// <summary>
+/// Runs both composition phases over one fixture plugin, as a host does, then audits.
+/// </summary>
+/// <remarks>
+/// The configuration phase runs over a <see cref="ConfigurationProbeHost"/> directing the plugin's hook,
+/// and <paramref name="betweenPhases"/> lets a case change the builder before the service phase, which
+/// is how a removal made outside the loader is staged.
+/// </remarks>
+internal static class PhaseAAuditProbe
+{
+    internal static async Task<(AuditRun Run, ConfigurationProbeHost Host)> RunAsync(
+        TemporaryPluginRoot root,
+        string? configurationBehavior,
+        Action<ConfigurationProbeHost>? betweenPhases = null
+    )
+    {
+        FixtureObservations.Clear();
+
+        LoadedPlugins plugins = ContributionProbe.Load(root, PluginFixtures.ConfigContributor);
+
+        ConfigurationProbeHost host = configurationBehavior is null
+            ? new ConfigurationProbeHost(new Dictionary<string, string?>())
+            : ConfigurationProbeHost.Directing((PluginFixtures.ConfigContributor, configurationBehavior));
+
+        plugins.ContributeConfiguration(host.Manager, new StringWriter());
+        betweenPhases?.Invoke(host);
+
+        ServiceCollection services = AuditProbe.HostCollection();
+        PluginAuditInput input = plugins.ContributeServices(
+            services,
+            host.Manager,
+            AuditProbe.Registry,
+            new StringWriter()
+        );
+
+        ServiceProvider provider = services.BuildServiceProvider();
+        PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(input, provider);
+
+        return (new AuditRun(input, result, services, provider), host);
+    }
+}
+
+/// <summary>
+/// A plugin whose only contribution is a configuration source: the Contribute cardinality, with no
+/// service registered at all.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_that_contributed_only_configuration_sources
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        (_run, _) = await PhaseAAuditProbe.RunAsync(_root, "append");
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_registered_no_service_at_all()
+    {
+        _run.Input.Records.Should().ContainSingle().Which.Additions.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_records_the_configuration_contribution_against_the_plugin()
+    {
+        PluginContributionRecord record = _run.Input.Records.Should().ContainSingle().Subject;
+
+        record.PluginName.Should().Be(PluginFixtures.ConfigContributor);
+        record.ContributedConfiguration.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_passes_the_audit()
+    {
+        _run.Result.Findings.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// The same plugin with its configuration hook doing nothing: no source and no service, so the
+/// exemption does not apply and the rule fires as it always has.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_that_contributed_neither_a_configuration_source_nor_a_contract
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        (_run, _) = await PhaseAAuditProbe.RunAsync(_root, configurationBehavior: null);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_records_no_configuration_contribution()
+    {
+        PluginContributionRecord record = _run.Input.Records.Should().ContainSingle().Subject;
+
+        record.PluginName.Should().Be(PluginFixtures.ConfigContributor);
+        record.ContributedConfiguration.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_is_fatal_as_having_contributed_no_declared_contract()
+    {
+        PluginAuditFinding finding = _run.SingleFinding;
+
+        finding.Reason.Should().Be(PluginAuditFailure.NoDeclaredContractRegistered);
+        finding.PluginNames.Should().Equal(PluginFixtures.ConfigContributor);
+        finding
+            .Message.Should()
+            .StartWith(
+                $"plugin '{PluginFixtures.ConfigContributor}' registered no plugin contract this host "
+                    + "declares, so nothing it contributed will ever be called. It registered: nothing at all."
+            );
+    }
+}
+
+/// <summary>
+/// A plugin's configuration source taken out of the builder after the configuration phase, by
+/// something other than the loader, before the audit runs.
+/// </summary>
+/// <remarks>
+/// A later plugin removing it is refused during the configuration phase itself, which the
+/// configuration contribution cases assert, so this removal is staged directly between the two
+/// phases. The contribution is read from the record, which is historical, so the plugin still counts
+/// as having contributed.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_whose_configuration_source_was_removed_before_the_audit
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+    private ConfigurationProbeHost _host = null!;
+    private int _removedCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+
+        (_run, _host) = await PhaseAAuditProbe.RunAsync(
+            _root,
+            "append",
+            host =>
+            {
+                // Every source the host did not install, which is the plugin's two.
+                IConfigurationSource[] hostSources =
+                [
+                    host.Default,
+                    host.Json,
+                    host.Environment,
+                    host.CommandLine,
+                ];
+                List<IConfigurationSource> pluginSources =
+                [
+                    .. host.Manager.Sources.Where(source => !hostSources.Contains(source)),
+                ];
+
+                _removedCount = pluginSources.Count;
+
+                foreach (IConfigurationSource source in pluginSources)
+                {
+                    host.Manager.Sources.Remove(source);
+                }
+            }
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_really_removed_the_plugins_two_sources_from_the_builder()
+    {
+        _removedCount.Should().Be(2);
+        _host
+            .Manager.Sources.Should()
+            .Equal([_host.Default, _host.Json, _host.Environment, _host.CommandLine], ReferenceEquals);
+    }
+
+    [Test]
+    public void It_still_records_that_the_plugin_contributed_configuration()
+    {
+        PluginContributionRecord record = _run.Input.Records.Should().ContainSingle().Subject;
+
+        record.PluginName.Should().Be(PluginFixtures.ConfigContributor);
+        record.ContributedConfiguration.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_passes_the_audit()
+    {
+        _run.Result.Findings.Should().BeEmpty();
     }
 }
 

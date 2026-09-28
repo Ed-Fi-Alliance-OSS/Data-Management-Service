@@ -306,8 +306,8 @@ public static class PluginRegistrationAudit
     }
 
     /// <summary>
-    /// A plugin whose hook ran and left no surviving declared-contract registration contributed
-    /// nothing the host will call.
+    /// A plugin whose hooks ran, contributed no configuration source, and left no surviving
+    /// declared-contract registration contributed nothing the host will call.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -325,10 +325,13 @@ public static class PluginRegistrationAudit
     /// registered the wrong thing, or whether something else took its registration away.
     /// </para>
     /// <para>
-    /// The rule the design states is a conjunction over both composition phases: no declared contract
-    /// <em>and</em> no configuration source. Phase A does not exist yet, so only the first term is
-    /// live here; the second arrives with the story that adds that phase, and this check has to gain
-    /// it then rather than be read as already complete.
+    /// The rule is a conjunction over both composition phases: no declared contract <em>and</em> no
+    /// configuration source. A plugin whose configuration hook added a source contributed something
+    /// the host reads, which is the Contribute cardinality, and passes whatever it registered. That
+    /// term is read historically, from the record, and deliberately not by survival: a later plugin
+    /// removing the source is refused by the configuration phase itself, so the only removal the
+    /// audit could see is one made outside the loader, and it does not undo that the plugin
+    /// contributed.
     /// </para>
     /// </remarks>
     private static void AuditContractsRegistered(
@@ -344,6 +347,11 @@ public static class PluginRegistrationAudit
 
         foreach (PluginContributionRecord record in input.Records)
         {
+            if (record.ContributedConfiguration)
+            {
+                continue;
+            }
+
             List<ServiceDescriptor> declaredAdditions =
             [
                 .. record.Additions.Where(descriptor => declaredContracts.Contains(descriptor.ServiceType)),

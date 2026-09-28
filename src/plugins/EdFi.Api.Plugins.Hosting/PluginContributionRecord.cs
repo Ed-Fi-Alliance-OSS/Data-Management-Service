@@ -54,13 +54,15 @@ public sealed class PluginContributionRecord
         LoadedPlugin plugin,
         IReadOnlyList<ServiceDescriptor> additions,
         IReadOnlyList<PluginDescriptorDisplacement> removals,
-        IReadOnlyList<Type> replacedServiceTypes
+        IReadOnlyList<Type> replacedServiceTypes,
+        bool contributedConfiguration
     )
     {
         Plugin = plugin;
         Additions = new ReadOnlyCollection<ServiceDescriptor>([.. additions]);
         Removals = new ReadOnlyCollection<PluginDescriptorDisplacement>([.. removals]);
         ReplacedServiceTypes = new ReadOnlyCollection<Type>([.. replacedServiceTypes]);
+        ContributedConfiguration = contributedConfiguration;
     }
 
     /// <summary>The plugin this record belongs to, as the loader returned it.</summary>
@@ -105,6 +107,18 @@ public sealed class PluginContributionRecord
     /// this record exists to avoid.
     /// </remarks>
     public IReadOnlyList<Type> ReplacedServiceTypes { get; }
+
+    /// <summary>
+    /// Whether this plugin's configuration hook added at least one configuration source.
+    /// </summary>
+    /// <remarks>
+    /// Historical, like <see cref="Additions"/>: it stays true if the source was later removed from the
+    /// builder. What it answers is whether the plugin contributed configuration at all, which is what
+    /// the no-contract check reads, and that is a fact of the configuration phase rather than of
+    /// whatever the builder holds when the audit runs. False for a plugin that added none, and for
+    /// every plugin in a host that does not run the configuration phase.
+    /// </remarks>
+    public bool ContributedConfiguration { get; }
 
     /// <summary>The plugin's declared-file inventory, as it stands now.</summary>
     public IReadOnlyList<PluginInventoryRow> MaterializeInventory() => Plugin.MaterializeInventory();

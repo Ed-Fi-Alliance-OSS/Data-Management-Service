@@ -52,6 +52,19 @@ public sealed class LoadedPlugins
     public IReadOnlyList<PluginLoadWarning> Warnings { get; }
 
     /// <summary>
+    /// The plugins whose configuration hook added at least one source and passed the guard.
+    /// </summary>
+    /// <remarks>
+    /// Historical: a plugin stays here whatever happens to its sources afterwards. The service phase
+    /// copies the fact into each plugin's contribution record, which is how the audit learns that a
+    /// plugin contributed configuration. Only the fact is kept, not the sources, because nothing reads
+    /// more than that.
+    /// </remarks>
+    private readonly HashSet<LoadedPlugin> _configurationContributors = new(
+        ReferenceEqualityComparer.Instance
+    );
+
+    /// <summary>
     /// Invokes every plugin's configuration contribution hook, in allowlist order, and places the
     /// sources each one added below the operator's explicit sources.
     /// </summary>
@@ -134,6 +147,11 @@ public sealed class LoadedPlugins
             }
 
             List<int> additions = AdditionsOf(plugin, before, sources, diagnostics);
+
+            if (additions.Count > 0)
+            {
+                _configurationContributors.Add(plugin);
+            }
 
             Place(sources, additions, operatorEnvironment);
         }
@@ -357,7 +375,7 @@ public sealed class LoadedPlugins
 
             Invoke(plugin, services, configuration, diagnostics);
 
-            records.Add(RecordOf(plugin, before, services));
+            records.Add(RecordOf(plugin, before, services, _configurationContributors.Contains(plugin)));
         }
 
         return new PluginAuditInput(registry, records, [.. services], Warnings);
@@ -445,7 +463,8 @@ public sealed class LoadedPlugins
     private static PluginContributionRecord RecordOf(
         LoadedPlugin plugin,
         List<ServiceDescriptor> before,
-        IServiceCollection after
+        IServiceCollection after,
+        bool contributedConfiguration
     )
     {
         List<ServiceDescriptor> additions = [];
@@ -496,7 +515,7 @@ public sealed class LoadedPlugins
                 .Distinct(),
         ];
 
-        return new PluginContributionRecord(plugin, additions, removals, replaced);
+        return new PluginContributionRecord(plugin, additions, removals, replaced, contributedConfiguration);
     }
 
     private static Dictionary<ServiceDescriptor, int> OccurrencesOf(
