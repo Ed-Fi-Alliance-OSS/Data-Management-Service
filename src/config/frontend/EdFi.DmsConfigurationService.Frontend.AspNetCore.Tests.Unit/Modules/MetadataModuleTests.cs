@@ -372,9 +372,9 @@ public class MetadataModuleTests
         // Tenants are out of scope for DMS-1337 - no numeric tenant identifier exists anywhere else
         // in the Ed-Fi platform to align with - so TenantModule keeps a long id. Pinning it here is
         // what makes a careless sweep of the frontend handlers fail loudly.
-        // TenantModule is only registered when multi-tenancy is enabled, and with multi-tenancy on,
-        // TenantResolutionMiddleware requires a resolvable Tenant header on every request that is
-        // not tenant-agnostic, including /openapi/v1.json.
+        // TenantModule is only registered when multi-tenancy is enabled. /openapi/v1.json needs no
+        // Tenant header even then (see the service-description tests below); sending one keeps this
+        // case on the path an ordinary tenant-scoped client takes.
         var tenantRepository = A.Fake<ITenantRepository>();
         A.CallTo(() => tenantRepository.GetTenantByName("test-tenant"))
             .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = "test-tenant" }));
@@ -400,6 +400,46 @@ public class MetadataModuleTests
             .GetProperty("schema");
 
         schema.GetProperty("format").GetString().Should().Be("int64");
+    }
+
+    [TestCase("/")]
+    [TestCase("/metadata/specifications")]
+    [TestCase("/openapi/v1.json")]
+    public async Task Service_Description_Is_Served_Without_A_Tenant_Header_When_MultiTenancy_Is_Enabled(
+        string path
+    )
+    {
+        // Arrange
+        await using var factory = CreateFactory(multiTenancy: true);
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync(path);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public async Task Specifications_Are_Served_With_A_Tenant_Header_When_MultiTenancy_Is_Enabled()
+    {
+        // Arrange
+        // /metadata/specifications builds its document by requesting /openapi/v1.json from this same
+        // service, and that inner request carries no Tenant header whatever the caller sent. While
+        // the inner request needed one, this answered 500 even to a caller with a valid tenant.
+        var tenantRepository = A.Fake<ITenantRepository>();
+        A.CallTo(() => tenantRepository.GetTenantByName("test-tenant"))
+            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = "test-tenant" }));
+
+        await using var factory = CreateFactory(multiTenancy: true, tenantRepository: tenantRepository);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Tenant", "test-tenant");
+
+        // Act
+        var response = await client.GetAsync("/metadata/specifications");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static async Task<System.Text.Json.JsonDocument> FetchOpenApiDocumentAsync(HttpClient client)
