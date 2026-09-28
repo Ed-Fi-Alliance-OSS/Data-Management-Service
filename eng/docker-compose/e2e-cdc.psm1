@@ -201,6 +201,42 @@ function Invoke-E2ECdcHttpPreparation {
     return $configuration
 }
 
+function Assert-E2ECdcApiAttachment {
+    <#
+    .SYNOPSIS
+    Checks fixture attachment read-only, retaining the wrapper as inventory/hash authority.
+    #>
+    param([Parameter(Mandatory)][string]$HandoffPath)
+    $ErrorActionPreference = 'Stop'
+    $handoff = Get-Content -LiteralPath $HandoffPath -Raw | ConvertFrom-Json -AsHashtable
+    & (Get-Module cdc-lifecycle) { param($p) Assert-CdcPrivatePath $p } $HandoffPath
+    if ($handoff.version -ne 1) { throw 'Version' }
+    $settings = Get-Content -LiteralPath $handoff.settingsPath -Raw | ConvertFrom-Json -AsHashtable
+    $deployment = & (Get-Module cdc-lifecycle) { param($p) Read-CdcDeployment $p } $settings.Cdc.Compose.Project
+    $path = & (Get-Module cdc-lifecycle) { param($p) Get-CdcDeploymentPath $p } $deployment.Project
+    $entries = @($deployment.Entries | Where-Object { $_.SettingsPath -ceq $handoff.settingsPath -and $_.StatePath -ceq $handoff.statePath })
+    if ($deployment.Phase -cne 'Active' -or $path -cne $handoff.deploymentPath -or $entries.Count -ne 1 -or
+        $handoff.httpComposePath -cin @($deployment.Entries.DmsComposePath)) { throw 'Scope' }
+    & (Get-Module cdc-lifecycle) { param($p) Assert-CdcPrivatePath $p; } $handoff.httpComposePath
+    Assert-E2ECdcHttpConfiguration (Get-Content -LiteralPath $handoff.httpComposePath -Raw | ConvertFrom-Json -AsHashtable)
+    # Check the running host, not just the override on disk. No container or worker mutation.
+    $ids = @(& docker ps --filter "label=com.docker.compose.project=$($deployment.Project)" --filter 'label=com.docker.compose.service=dms' --format '{{.ID}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $ids.Count -ne 1) { throw 'HTTP host' }
+    $hostConfig = @(& docker inspect $ids[0] 2>$null | ConvertFrom-Json -AsHashtable)[0]
+    if ($LASTEXITCODE -ne 0 -or -not $hostConfig.State.Running) { throw 'HTTP host' }
+    $environment = @{}
+    foreach ($value in $hostConfig.Config.Env) {
+        $parts = $value.Split('=', 2)
+        $environment[$parts[0]] = $parts[1]
+    }
+    $ports = @($hostConfig.NetworkSettings.Ports.Values | ForEach-Object { $_ } | Where-Object { $_.HostIp -in @('127.0.0.1', '0.0.0.0') })
+    if ($ports.Count -ne 1) { throw 'HTTP port' }
+    $pathBase = [string]$environment['AppSettings__PathBase']
+    $expectedUrl = "http://127.0.0.1:$($ports[0].HostPort)$($pathBase.TrimEnd('/'))"
+    if ($handoff.dmsBaseUrl -cne $expectedUrl) { throw 'HTTP endpoint' }
+    Assert-E2ECdcHttpConfiguration @{ services = @{ dms = @{ environment = $environment } } }
+}
+
 function Invoke-E2ECdcApiRollout {
     param([string]$Project, [string]$StartScript, [string]$StatePath)
     $deployment = & (Get-Module cdc-lifecycle) { param($project) Read-CdcDeployment $project } $Project
@@ -351,4 +387,4 @@ function Invoke-E2ECdcSetup {
     }
 }
 
-Export-ModuleMember -Function Assert-E2ECdcWorkspaceAvailable, Invoke-E2ECdcSetup, New-E2ECdcHttpOverride, Assert-E2ECdcHttpConfiguration, Write-E2ECdcApiHandoff, Invoke-E2ECdcHttpPreparation, Resolve-E2ECdcHttpBaseUrl, Remove-E2ECdcApiFile
+Export-ModuleMember -Function Assert-E2ECdcApiAttachment, Assert-E2ECdcWorkspaceAvailable, Invoke-E2ECdcSetup, New-E2ECdcHttpOverride, Assert-E2ECdcHttpConfiguration, Write-E2ECdcApiHandoff, Invoke-E2ECdcHttpPreparation, Resolve-E2ECdcHttpBaseUrl, Remove-E2ECdcApiFile

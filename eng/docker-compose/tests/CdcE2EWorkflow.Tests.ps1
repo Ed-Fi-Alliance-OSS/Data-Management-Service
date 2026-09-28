@@ -733,4 +733,46 @@ Describe 'Private API CDC attachment contract' {
         { Assert-E2ECdcHttpConfiguration $configuration } | Should -Throw '*no projection targets*'
         Assert-AttachmentOriginal
     }
+    It 'attaches read-only to the actual HTTP host for <Provider> and rejects <Fault>' -ForEach @(
+        foreach ($provider in @('postgresql', 'mssql')) {
+            foreach ($fault in @('none', 'targets', 'acceleration', 'endpoint', 'stopped', 'settings', 'state')) {
+                @{ Provider = $provider; Fault = $fault }
+            }
+        }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        $handoffPath = Write-E2ECdcApiHandoff -Project dms-local -StatePath $script:state -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective
+        Mock Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle { throw "Attachment attempted lifecycle mutation" }
+        $script:runningHost = @{
+            State = @{ Running = $true }
+            Config = @{ Env = @('DataManagement__DocumentCache__ReadAcceleration__Enabled=false', 'AppSettings__PathBase=/api') }
+            NetworkSettings = @{ Ports = @{ '8080/tcp' = @(@{ HostIp = '127.0.0.1'; HostPort = '18080' }) } }
+        }
+        Mock docker -ModuleName e2e-cdc {
+            $global:LASTEXITCODE = 0
+            if ($args[0] -eq 'ps') { return 'selected-http-host' }
+            if ($args[0] -eq 'inspect') { return ConvertTo-Json -InputObject @($script:runningHost) -Depth 10 }
+            throw 'Attachment attempted an infrastructure mutation'
+        }
+        switch ($Fault) {
+            'targets' { $script:runningHost.Config.Env += 'DataManagement__DocumentCache__Targets__0__DataStoreId=42' }
+            'acceleration' { $script:runningHost.Config.Env = @('DataManagement__DocumentCache__ReadAcceleration__Enabled=true', 'AppSettings__PathBase=/api') }
+            'endpoint' { $script:runningHost.NetworkSettings.Ports['8080/tcp'][0].HostPort = '18089' }
+            'stopped' { $script:runningHost.State.Running = $false }
+            'settings' { Add-Content $script:settingsPath 'corruption' }
+            'state' {
+                $handoff = Get-Content $handoffPath -Raw | ConvertFrom-Json -AsHashtable
+                $handoff.statePath = Join-Path $script:attachmentRoot 'unrelated-state'
+                $handoff | ConvertTo-Json | Set-Content $handoffPath
+            }
+        }
+        if ($Fault -eq 'none') {
+            { Assert-E2ECdcApiAttachment $handoffPath } | Should -Not -Throw
+            Assert-AttachmentOriginal
+            Should -Invoke docker -ModuleName e2e-cdc -Times 2 -Exactly
+        }
+        else { { Assert-E2ECdcApiAttachment $handoffPath } | Should -Throw }
+        Should -Invoke Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle -Times 0 -Exactly
+    }
+
 }

@@ -67,6 +67,17 @@
             <_Parameter1>EdFi.DataManagementService.Tests.Unit</_Parameter1>
         </AssemblyAttribute>
     </ItemGroup>
+    <!-- Reuse production configuration/request construction without referencing the CLI executable. -->
+    <ItemGroup>
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Cdc/CdcCommandConfiguration.cs"
+            Link="Cdc/Shared/CdcCommandConfiguration.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Cdc/CdcCommandServices.cs"
+            Link="Cdc/Shared/CdcCommandServices.cs"
+        />
+    </ItemGroup>
     <!-- Test-only Kafka observations and reducer; no integration fixture assembly dependency. -->
     <ItemGroup>
         <Compile
