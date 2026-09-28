@@ -87,6 +87,24 @@ function Assert-E2ECdcHttpConfiguration {
     }
 }
 
+function Resolve-E2ECdcHttpBaseUrl {
+    <#
+    .SYNOPSIS
+    Resolves both health and fixture HTTP access from the effective Compose configuration.
+    #>
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Configuration)
+    $dms = $Configuration.services.dms
+    $ports = @($dms.ports | Where-Object { $_.protocol -eq 'tcp' -and $_.host_ip -in @('127.0.0.1', '0.0.0.0') })
+    if ($ports.Count -ne 1 -or [int]$ports[0].published -lt 1 -or [int]$ports[0].published -gt 65535) {
+        throw 'CDC API E2E requires one resolved host-reachable HTTP port.'
+    }
+    $pathBase = [string]$dms.environment['AppSettings__PathBase']
+    if ($pathBase -and ($pathBase -notmatch '^/[^?#\\]*$' -or $pathBase.StartsWith('//'))) {
+        throw 'CDC API E2E HTTP path base is invalid.'
+    }
+    return "http://127.0.0.1:$($ports[0].published)$($pathBase.TrimEnd('/'))"
+}
+
 function Write-E2ECdcApiHandoff {
     <#
     .SYNOPSIS
@@ -144,19 +162,11 @@ function Write-E2ECdcApiHandoff {
         $stream = [IO.File]::OpenRead($path)
         $stream.Dispose()
     }
-    $dms = $EffectiveConfiguration.services.dms
-    $ports = @($dms.ports | Where-Object { $_.protocol -eq 'tcp' -and $_.host_ip -in @('127.0.0.1', '0.0.0.0') })
-    if ($ports.Count -ne 1 -or [int]$ports[0].published -lt 1 -or [int]$ports[0].published -gt 65535) {
-        throw 'CDC API E2E requires one resolved host-reachable HTTP port.'
-    }
-    $pathBase = [string]$dms.environment['AppSettings__PathBase']
-    if ($pathBase -and ($pathBase -notmatch '^/[^?#\\]*$' -or $pathBase.StartsWith('//'))) {
-        throw 'CDC API E2E HTTP path base is invalid.'
-    }
+    $dmsBaseUrl = Resolve-E2ECdcHttpBaseUrl -Configuration $EffectiveConfiguration
     $handoff = @{
         version = 1; settingsPath = $entry.SettingsPath; statePath = $state
         deploymentPath = $deploymentPath; httpComposePath = $http
-        dmsBaseUrl = "http://127.0.0.1:$($ports[0].published)$($pathBase.TrimEnd('/'))"
+        dmsBaseUrl = $dmsBaseUrl
     }
     $path = $http.Replace('.http.json', '.handoff.json')
     $temporary = "$path.$([guid]::NewGuid().ToString('N')).tmp"
@@ -168,6 +178,77 @@ function Write-E2ECdcApiHandoff {
     return $path
 }
 
+function Invoke-E2ECdcHttpPreparation {
+    <#
+    .SYNOPSIS
+    Uses the launcher's exact file selection and retained process environment. No raw config output.
+    #>
+    param([string[]]$ComposeFiles, [string]$EnvironmentFile, [string]$Project)
+    $output = @(docker compose @ComposeFiles --env-file $EnvironmentFile -p $Project config --format json 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'CDC API E2E HTTP configuration resolution failed.' }
+    try { $configuration = ($output -join "`n") | ConvertFrom-Json -AsHashtable }
+    catch { throw 'CDC API E2E HTTP configuration is invalid.' }
+    Assert-E2ECdcHttpConfiguration $configuration
+    $null = Resolve-E2ECdcHttpBaseUrl -Configuration $configuration
+    # Compose waits for the old process to exit (including hosted executor shutdown) before
+    # returning. A timeout kills that process; no old executor can survive into attachment.
+    $null = docker compose @ComposeFiles --env-file $EnvironmentFile -p $Project stop --timeout 60 dms 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'CDC API E2E previous HTTP host shutdown failed.' }
+    $running = @(docker compose @ComposeFiles --env-file $EnvironmentFile -p $Project ps --status running -q dms 2>$null)
+    if ($LASTEXITCODE -ne 0 -or @($running | Where-Object { $_ }).Count -ne 0) {
+        throw 'CDC API E2E previous HTTP host is still running.'
+    }
+    return $configuration
+}
+
+function Invoke-E2ECdcApiRollout {
+    param([string]$Project, [string]$StartScript, [string]$StatePath)
+    $deployment = & (Get-Module cdc-lifecycle) { param($project) Read-CdcDeployment $project } $Project
+    $admitted = & (Get-Module cdc-lifecycle) { param($deployment) Get-CdcDmsComposeHandoff $deployment } $deployment
+    $http = New-E2ECdcHttpOverride -AdmittedComposePath $admitted
+    Invoke-CdcAdmittedHost -Project $Project -StartScript $StartScript -Parameters @{
+        EnvironmentFile = $deployment.EnvironmentFile; DatabaseEngine = $deployment.DatabaseEngine
+        IdentityProvider = $deployment.IdentityProvider; SeparateConfigDatabase = $true
+        DmsOnly = $true; CdcDmsComposeFile = $http; CdcApiE2E = $true; CdcBindingStatePath = $StatePath
+    } | Out-Host
+    $handoff = $http.Replace('.http.json', '.handoff.json')
+    if (-not (Test-Path -LiteralPath $handoff -PathType Leaf)) { throw 'CDC API E2E HTTP rollout did not publish a handoff.' }
+    return $handoff
+}
+
+function Remove-E2ECdcApiFile {
+    <#
+    .SYNOPSIS
+    Removes private API E2E files after both projects complete governed destructive teardown.
+    .DESCRIPTION
+    Failed rollout overrides have no handoff, so enumerate only our exact private filename pattern.
+    Files live beside the deployment inventories, never under a recursive cleanup root.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Bounded private-file cleanup after explicitly requested governed E2E teardown.')]
+    param([string]$ComposeRoot = $PSScriptRoot)
+    $root = Join-Path $ComposeRoot '.cdc-deployments'
+    if (-not (Test-Path -LiteralPath $root)) { return }
+    & (Get-Module cdc-lifecycle) { param($path) Assert-CdcPrivatePath $path -Directory } $root
+    foreach ($project in @('dms-local', 'dms-published')) {
+        $path = Join-Path $root "$project.json"
+        if (Test-Path -LiteralPath $path) {
+            # Nested source-state roots can retain an inventory after runtime cleanup.
+            $deployment = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
+            if ($deployment.Phase -cne 'RuntimeCleanup') { throw 'CDC API E2E cleanup requires completed governed teardown.' }
+            foreach ($entry in $deployment.Entries) {
+                $state = [IO.Path]::GetFullPath($entry.StatePath).TrimEnd('/')
+                if ($root -ceq $state -or $root.StartsWith("$state/", [StringComparison]::Ordinal)) {
+                    throw 'CDC API E2E cleanup cannot remove protected source state.'
+                }
+            }
+        }
+    }
+    foreach ($file in @(Get-ChildItem -LiteralPath $root -File | Where-Object { $_.Name -cmatch '^api-e2e-[a-f0-9]{32}\.(http|handoff)\.json$' })) {
+        & (Get-Module cdc-lifecycle) { param($path) Assert-CdcPrivatePath $path } $file.FullName
+        [IO.File]::Delete($file.FullName)
+    }
+}
+
 function Invoke-E2ECdcSetup {
     <#
     .SYNOPSIS
@@ -176,6 +257,9 @@ function Invoke-E2ECdcSetup {
     The primary is created through managed provisioning; it is never reset or replaced by the
     legacy E2E provisioner. Only the separate snapshot uses the E2E reset path. Failure retains
     configuration/provenance and attempts governed stop while infrastructure remains reachable.
+    With -CdcApiE2E, admission is followed by target-free HTTP rollout; the sole success output
+    is the private handoff path for CDC_API_E2E_HANDOFF_PATH. HTTP rollout failures retain the
+    worker untouched for explicit governed teardown.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Parameters are captured by the bootstrap and snapshot action scriptblocks.')]
     [CmdletBinding()]
@@ -188,6 +272,7 @@ function Invoke-E2ECdcSetup {
         [Parameter(Mandatory)][string]$CdcSettingsPath,
         [string]$CdcBindingStatePath,
         [switch]$UsePublishedImage,
+        [switch]$CdcApiE2E,
         [switch]$SkipDockerBuild,
         [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
         [switch]$UsePrebuiltTools,
@@ -223,6 +308,7 @@ function Invoke-E2ECdcSetup {
                 -DatabaseName $database -Configuration $buildConfiguration -UsePrebuiltTools:$prebuilt
         } $effectiveEnvironmentFile $DatabaseEngine $SnapshotDatabaseName $Configuration $UsePrebuiltTools
     }.GetNewClosure()
+    $httpRolloutStarted = $false
     try {
         # Bootstrap stages exactly the selected E2E packages and carries the same settings to DMS.
         Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
@@ -233,14 +319,20 @@ function Invoke-E2ECdcSetup {
                 -IdentityProvider $IdentityProvider -UseEnvironmentFileSchemaSettings -IncludeE2EClaimSets `
                 -RebuildLocalImages:(!$SkipDockerBuild -and !$UsePublishedImage) -BeforeCdcAdmission $snapshot
         } | Out-Host
+        if ($CdcApiE2E) {
+            $httpRolloutStarted = $true
+            return Invoke-E2ECdcApiRollout -Project $project -StartScript (Join-Path $PSScriptRoot $startScript) -StatePath $CdcBindingStatePath
+        }
     }
     catch {
         $cancelled = $_.Exception -is [OperationCanceledException]
         $failureCodes = @($_.Exception.Data['CdcFailureCodes'] | Where-Object {
             $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)$'
         })
-        $cleanup = 'NotStarted'
-        if (Test-CdcDeployment $project) {
+        # An HTTP-only rollout failure must not change the connector, offsets or worker.
+        # The caller retains the original inventory for explicit governed teardown.
+        $cleanup = if ($httpRolloutStarted) { 'RetainedForGovernedTeardown' } else { 'NotStarted' }
+        if (-not $httpRolloutStarted -and (Test-CdcDeployment $project)) {
             try {
                 $null = Invoke-CdcDeploymentLifecycle -Project $project -StartScript (Join-Path $PSScriptRoot $startScript) `
                     -Parameters @{ d = $true; EnvironmentFile = $OriginalEnvironmentFile; DatabaseEngine = $DatabaseEngine }
@@ -259,4 +351,4 @@ function Invoke-E2ECdcSetup {
     }
 }
 
-Export-ModuleMember -Function Assert-E2ECdcWorkspaceAvailable, Invoke-E2ECdcSetup, New-E2ECdcHttpOverride, Assert-E2ECdcHttpConfiguration, Write-E2ECdcApiHandoff
+Export-ModuleMember -Function Assert-E2ECdcWorkspaceAvailable, Invoke-E2ECdcSetup, New-E2ECdcHttpOverride, Assert-E2ECdcHttpConfiguration, Write-E2ECdcApiHandoff, Invoke-E2ECdcHttpPreparation, Resolve-E2ECdcHttpBaseUrl, Remove-E2ECdcApiFile

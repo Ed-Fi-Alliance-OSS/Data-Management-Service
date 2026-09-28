@@ -302,6 +302,33 @@ exit 0
             }
         }
 
+        It 'cleans private API CDC artifacts only after every down succeeds (failure=<FailDown>)' -ForEach @(
+            @{ FailDown = $false }, @{ FailDown = $true }
+        ) {
+            $root = Join-Path $script:composeRoot '.cdc-deployments'
+            $null = [IO.Directory]::CreateDirectory($root, [IO.UnixFileMode]448)
+            $id = [guid]::NewGuid().ToString('N')
+            $paths = @('http', 'handoff' | ForEach-Object { Join-Path $root "api-e2e-$id.$_.json" })
+            $unrelated = Join-Path $root 'retained-source.json'
+            foreach ($path in $paths + @($unrelated)) {
+                '{}' | Set-Content -LiteralPath $path
+                [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384)
+            }
+            if ($FailDown) {
+                Mock -ModuleName e2e-teardown Invoke-ComposeProjectTeardown {
+                    if ($StartScript -match 'start-published-dms\.ps1$') { throw 'Governed teardown incomplete' }
+                }
+            }
+            try {
+                $action = { Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile '.env.e2e' -ComposeRoot $script:composeRoot -SkipLocalImageRemoval }
+                if ($FailDown) { $action | Should -Throw '*Governed teardown incomplete*' }
+                else { & $action | Out-Null }
+                foreach ($path in $paths) { (Test-Path -LiteralPath $path) | Should -Be $FailDown }
+                Test-Path -LiteralPath $unrelated | Should -BeTrue
+            }
+            finally { Remove-Item -LiteralPath $root -Recurse -Force }
+        }
+
         It "never runs a machine-wide dangling-volume prune" {
             Invoke-E2EEngineAwareTeardown -DatabaseEngine postgresql -EnvironmentFile ".env.e2e" -ComposeRoot $script:composeRoot | Out-Null
 
