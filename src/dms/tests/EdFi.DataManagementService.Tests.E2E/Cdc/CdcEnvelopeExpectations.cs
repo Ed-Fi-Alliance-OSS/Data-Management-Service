@@ -6,8 +6,6 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.Cdc;
-using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Etag;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
@@ -58,28 +56,6 @@ internal static class CdcEnvelopeExpectations
                 ["lastModifiedAt"] = timestamp,
                 ["document"] = document,
             }
-        );
-    }
-
-    public static void AssertUpsert(
-        CdcConnectorTemplateRequest request,
-        MessageContractKafkaRecord record,
-        CdcApiResource resource,
-        JsonObject apiBody,
-        CdcSourceDocument source
-    )
-    {
-        string uuid = source.DocumentUuid.ToString("D");
-        MessageContractRecordAssertions.AssertUpsert(
-            request,
-            record,
-            uuid,
-            MessageContractPartition.ForUuid(
-                uuid,
-                request.Binding.PartitionCount,
-                request.PartitionerAlgorithm
-            ),
-            Create(resource, apiBody, source)
         );
     }
 }

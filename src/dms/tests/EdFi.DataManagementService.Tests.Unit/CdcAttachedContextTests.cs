@@ -290,26 +290,6 @@ public class Given_CdcAttachmentCleanup
         _disposed.Should().Equal(3, 2, 1);
     }
 
-    [Test]
-    public async Task It_preserves_the_original_failure_during_partial_attachment_cleanup()
-    {
-        var original = new InvalidOperationException("original");
-        Func<Task> attach = async () =>
-        {
-            try
-            {
-                throw original;
-            }
-            catch
-            {
-                await _resources.DisposeAfterFailureAsync();
-                throw;
-            }
-        };
-        (await attach.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(original);
-        _disposed.Should().Equal(3, 2, 1);
-    }
-
     private sealed class Cleanup(Action action) : IDisposable
     {
         public void Dispose() => action();

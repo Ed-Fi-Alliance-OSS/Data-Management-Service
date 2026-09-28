@@ -392,8 +392,6 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
 
         public Task StopRuntimeAsync() => Current._owner.StopAsync();
 
-        public Task OpenRuntimeAsync(CancellationToken token) => Current._owner.OpenAsync(token);
-
         public Task OpenRestartRuntimeAsync(CdcRestartObservations observations, CancellationToken token)
         {
             Current._restartObservations = observations;
@@ -460,8 +458,6 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => _resources.DisposeAsync();
-
-    public Task DisposeAfterFailureAsync() => _resources.DisposeAfterFailureAsync();
 }
 
 internal sealed record CdcApiHandoff(

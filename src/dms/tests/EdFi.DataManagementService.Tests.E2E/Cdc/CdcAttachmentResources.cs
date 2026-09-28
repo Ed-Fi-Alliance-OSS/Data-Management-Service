@@ -38,15 +38,4 @@ internal sealed class CdcAttachmentResources : IAsyncDisposable
             throw new InvalidOperationException("CDC_API_ATTACHMENT_DISPOSAL");
         }
     }
-
-    public async Task DisposeAfterFailureAsync()
-    {
-        try
-        {
-            await DisposeAsync();
-        }
-        catch
-        { /* Preserve the original failure; no raw disposal diagnostics. */
-        }
-    }
 }

@@ -871,7 +871,7 @@
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Unit/EdFi.DataManagementService.Tests.Unit.csproj -c Release --filter \"FullyQualifiedName~Given_CdcAttachmentCleanup|FullyQualifiedName~Given_CdcScenarioRunnerAccounting\" --nologo",
       "Run dotnet csharpier format on changed C# files and git diff --check."
     ],
-    "completed": false,
+    "completed": true,
     "deliverable": "Deletion of the four listed unused fixture members, their obsolete isolated test and now-unused imports, with existing cleanup/runner regression coverage. Keep this task in the backlog as non-blocking cleanup."
   },
   {
