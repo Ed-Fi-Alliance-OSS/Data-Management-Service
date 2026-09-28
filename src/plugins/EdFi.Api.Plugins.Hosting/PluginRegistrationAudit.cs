@@ -306,8 +306,8 @@ public static class PluginRegistrationAudit
     }
 
     /// <summary>
-    /// A plugin whose hooks ran, contributed no configuration source, and left no surviving
-    /// declared-contract registration contributed nothing the host will call.
+    /// A plugin whose hooks ran and left no surviving declared-contract registration contributed
+    /// nothing the host will call, unless it registered none and contributed a configuration source.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -325,9 +325,12 @@ public static class PluginRegistrationAudit
     /// registered the wrong thing, or whether something else took its registration away.
     /// </para>
     /// <para>
-    /// The rule is a conjunction over both composition phases: no declared contract <em>and</em> no
-    /// configuration source. A plugin whose configuration hook added a source contributed something
-    /// the host reads, which is the Contribute cardinality, and passes whatever it registered. That
+    /// For a plugin that registered no declared contract at all, the rule is a conjunction over both
+    /// composition phases: no declared contract <em>and</em> no configuration source. A plugin whose
+    /// configuration hook added a source contributed something the host reads, which is the
+    /// Contribute cardinality, and passes. A plugin that did register declared contracts and lost
+    /// every one of them fails whether or not it also added a source: the source is a contribution in
+    /// its own right, and does not stand in for the registrations the plugin meant to be called. That
     /// term is read historically, from the record, and deliberately not by survival: a later plugin
     /// removing the source is refused by the configuration phase itself, so the only removal the
     /// audit could see is one made outside the loader, and it does not undo that the plugin
@@ -347,17 +350,20 @@ public static class PluginRegistrationAudit
 
         foreach (PluginContributionRecord record in input.Records)
         {
-            if (record.ContributedConfiguration)
-            {
-                continue;
-            }
-
             List<ServiceDescriptor> declaredAdditions =
             [
                 .. record.Additions.Where(descriptor => declaredContracts.Contains(descriptor.ServiceType)),
             ];
 
             if (declaredAdditions.Exists(survivors.Contains))
+            {
+                continue;
+            }
+
+            // A configuration source answers "registered nothing", not "registered something that did
+            // not survive". A plugin that registered declared contracts meant them to be called, and
+            // losing every one of them is the same failure whatever else it contributed.
+            if (record.ContributedConfiguration && declaredAdditions.Count == 0)
             {
                 continue;
             }

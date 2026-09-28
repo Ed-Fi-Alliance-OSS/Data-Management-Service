@@ -699,7 +699,8 @@ public class Given_a_plugin_whose_configuration_source_was_removed_before_the_au
             "append",
             host =>
             {
-                // Every source the host did not install, which is the plugin's two.
+                // Every source the host did not install, which is the one the loader inserted for the
+                // plugin's two.
                 IConfigurationSource[] hostSources =
                 [
                     host.Default,
@@ -730,9 +731,9 @@ public class Given_a_plugin_whose_configuration_source_was_removed_before_the_au
     }
 
     [Test]
-    public void It_really_removed_the_plugins_two_sources_from_the_builder()
+    public void It_really_removed_the_plugins_source_from_the_builder()
     {
-        _removedCount.Should().Be(2);
+        _removedCount.Should().Be(1);
         _host
             .Manager.Sources.Should()
             .Equal([_host.Default, _host.Json, _host.Environment, _host.CommandLine], ReferenceEquals);
@@ -1882,6 +1883,71 @@ public class Given_a_later_plugin_removing_the_only_declared_contribution_of_an_
     public void It_does_not_name_the_plugin_that_removed_it()
     {
         _run.SingleFinding.PluginNames.Should().NotContain(PluginFixtures.SecondContributor);
+    }
+}
+
+/// <summary>
+/// The same removal, with the earlier plugin's record also saying it contributed a configuration
+/// source.
+/// </summary>
+/// <remarks>
+/// A configuration source answers the "registered nothing" message and not this one. The plugin
+/// registered a declared contract, so it meant it to be called, and a source it also added does not
+/// stand in for that. The record is rebuilt over the same composition with only that fact changed, so
+/// the case differs from the one above in nothing else.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_configuration_contributor_whose_declared_contributions_did_not_survive
+{
+    private TemporaryPluginRoot _root = null!;
+    private AuditRun _run = null!;
+    private PluginAuditResult _result = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _run = await AuditProbe.RunAsync(
+            _root,
+            "removableContract",
+            AuditProbe.RegistryWithRemovableContract,
+            PluginFixtures.Contributor,
+            PluginFixtures.SecondContributor
+        );
+
+        PluginAuditInput input = new(
+            _run.Input.Registry,
+            [
+                .. _run.Input.Records.Select(record => new PluginContributionRecord(
+                    record.Plugin,
+                    record.Additions,
+                    record.Removals,
+                    record.ReplacedServiceTypes,
+                    contributedConfiguration: record.PluginName == PluginFixtures.Contributor
+                )),
+            ],
+            _run.Input.DescriptorsAfterContribution
+        );
+
+        _result = await PluginRegistrationAudit.AuditAsync(input, _run.Provider);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _run.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_is_still_fatal_against_the_plugin_whose_contribution_did_not_survive()
+    {
+        PluginAuditFinding finding = _result.Findings.Should().ContainSingle().Subject;
+
+        finding.Reason.Should().Be(PluginAuditFailure.NoDeclaredContractRegistered);
+        finding.PluginNames.Should().Equal(PluginFixtures.Contributor);
+        finding.Message.Should().Contain("none of them survived service composition");
     }
 }
 
