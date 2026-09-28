@@ -1568,6 +1568,93 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     /// <summary>
+    /// The parameter budget alone decides whether a create's stored-token statement co-batches with the
+    /// capture, and the create-side deferral takes no part in it. At exact fit and one parameter over, on SQL
+    /// Server where each token binds its own parameter, a create sends the same commands, text and parameters
+    /// alike, whether or not the verdict is carried.
+    /// </summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    public async Task It_selects_the_same_budget_fallback_for_a_post_create_with_or_without_the_create_ownership_verdict(
+        int parametersOverBudget
+    )
+    {
+        var input = CreateInput(
+            RelationalWriteOperationKind.Post,
+            includeReadPlan: false,
+            dialect: SqlDialect.Mssql
+        ) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(
+                ownershipTokenIds: [11, 12, 13],
+                dialect: SqlDialect.Mssql
+            ),
+        };
+        var deferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    1,
+                    "OwnershipBased"
+                )
+            )
+        );
+
+        var probe = new ScriptedWriteSession(
+            CreateReader(CreateCaptureTable(target: null), CreateAuthorizationTable())
+        );
+        await CreateSut().ResolveAsync(input, probe);
+        var exactFit = probe.Commands.Should().ContainSingle().Subject.Parameters.Count;
+        var budget = new RelationalCommandBudget(exactFit - parametersOverBudget, MaxRowsPerStatement: 1000);
+
+        var withoutVerdict = await RecordFirstPhaseAsync(input);
+        var withVerdict = await RecordFirstPhaseAsync(
+            input with
+            {
+                DeferredCreateOwnershipFailureResult = deferred,
+            }
+        );
+
+        withVerdict.Should().BeEquivalentTo(withoutVerdict, options => options.WithStrictOrdering());
+        withVerdict
+            .Should()
+            .ContainSingle()
+            .Which.CommandText.Contains("CreatedByOwnershipTokenId", StringComparison.Ordinal)
+            .Should()
+            .Be(parametersOverBudget == 0, "only a fit co-batches the stored-token check with the capture");
+
+        async Task<
+            IReadOnlyList<(string CommandText, (string Name, object? Value)[] Parameters)>
+        > RecordFirstPhaseAsync(RelationalWriteExecutorInput recordedInput)
+        {
+            var session = new ScriptedWriteSession(
+                parametersOverBudget == 0
+                    ? CreateReader(CreateCaptureTable(target: null), CreateAuthorizationTable())
+                    : CreateCaptureReader(target: null)
+            );
+
+            var resolution = await CreateSut(commandBudget: budget).ResolveAsync(recordedInput, session);
+
+            resolution.ImmediateResult.Should().BeNull();
+            resolution
+                .Outcome!.ExecutionRequest.TargetContext.Should()
+                .BeOfType<RelationalWriteTargetContext.CreateNew>();
+
+            return
+            [
+                .. session.Commands.Select(static command =>
+                    (
+                        command.CommandText,
+                        command
+                            .Parameters.Select(static parameter => (parameter.Name, parameter.Value))
+                            .ToArray()
+                    )
+                ),
+            ];
+        }
+    }
+
+    /// <summary>
     /// With differing policies each branch plans its own create-side deferral, and the input arrives holding
     /// the ExistingDocument branch's. The capture's overlay through <c>WithPostBranchInputs</c> must replace it
     /// with the Create branch's for a create — a member the overlay dropped would leave the Update policy's
