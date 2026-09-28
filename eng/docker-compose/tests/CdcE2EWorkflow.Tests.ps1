@@ -352,3 +352,206 @@ Describe 'Ordinary E2E workspace guard after CDC runtime cleanup' {
         Get-Content (Join-Path $state 'history.json') | Should -Be 'historical'
     }
 }
+
+Describe 'Private API CDC attachment contract' {
+    BeforeAll {
+        # Prior sandbox fixtures import private copies under the same module names.
+        Get-Module -All | Where-Object { $_.Name -in @('e2e-cdc', 'bootstrap-cdc', 'cdc-lifecycle') } | Remove-Module -Force
+        $script:attachmentRoot = Join-Path $TestDrive 'attachment-compose'
+        $null = [IO.Directory]::CreateDirectory($script:attachmentRoot, [IO.UnixFileMode]448)
+        Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot '*.yml') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot '../schema-package-utility.psm1') $TestDrive
+        Import-Module (Join-Path $script:attachmentRoot 'e2e-cdc.psm1') -Force
+        Import-Module (Join-Path $script:attachmentRoot 'cdc-lifecycle.psm1') -Force
+        function Initialize-AttachmentFixture {
+            param([string]$Provider)
+            $script:state = Join-Path $script:attachmentRoot 'state'
+            $null = [IO.Directory]::CreateDirectory($script:state, [IO.UnixFileMode]448)
+            $script:settingsPath = Join-Path $script:attachmentRoot 'retained.settings.json'
+            $script:admittedPath = Join-Path $script:attachmentRoot 'retained.dms.json'
+            $schema = Join-Path $script:attachmentRoot 'schema.json'
+            if (Test-Path $schema) { Remove-Item $schema -Recurse -Force }
+            '{}' | Set-Content $schema
+            $environmentFile = Join-Path $script:attachmentRoot '.env.selected'
+            'DMS_HTTP_PORTS=18080' | Set-Content $environmentFile
+            $script:settings = @{
+                AppSettings = @{ Datastore = $Provider; ApiSchemaPath = $script:attachmentRoot }
+                ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:18081'; ClientSecret = 'private-sentinel' }
+                DataManagement = @{ DocumentCache = @{
+                    Targets = @(@{ Tenant = ''; DataStoreId = 42 }, @{ Tenant = ''; DataStoreId = 43 })
+                    ReadAcceleration = @{ Enabled = $true }
+                } }
+                Cdc = @{
+                    Provider = $Provider; DeploymentKey = 'deployment'; DataStoreId = '42'; InstanceKey = 'custom'; Generation = 9
+                    Schemas = @($schema); SetupConnectionString = 'host-side-private-connection'
+                    KafkaBootstrapServers = '127.0.0.1:19092'; ConnectEndpoint = 'http://localhost:18083'
+                    WorkerMetricsEndpoint = 'http://localhost:19404/metrics'
+                    ProviderConnectionProperties = @{ 'database.hostname' = 'container-database'; 'database.port' = '5432' }
+                    Worker = @{ Key = 'custom-worker'; OffsetStorageTopic = 'custom-offsets' }
+                    Compose = @{
+                        Project = 'dms-local'; EnvironmentFile = $environmentFile
+                        File = Join-Path $script:attachmentRoot 'kafka-cdc.yml'
+                        BrokerSizeOverrideFile = Join-Path $script:state 'broker-size.json'; DatabaseHostPort = 15432
+                    }
+                }
+            }
+            if ($Provider -eq 'mssql') {
+                $script:settings.Cdc.ProviderConnectionProperties['database.port'] = '1433'
+                $script:settings.Cdc.Compose.DatabaseHostPort = 11433
+            }
+            if (Test-Path $script:settingsPath) { Remove-Item $script:settingsPath -Force }
+            $script:settings | ConvertTo-Json -Depth 30 | Set-Content $script:settingsPath
+            $script:admitted = @{ services = @{ dms = @{ environment = @{
+                DataManagement__DocumentCache__Targets__0__DataStoreId = '42'
+                DataManagement__DocumentCache__Targets__0__Tenant = ''
+                DataManagement__DocumentCache__Targets__12__DataStoreId = '43'
+                DataManagement__DocumentCache__ReadAcceleration__Enabled = 'true'
+                DataManagement__DocumentCache__Projector__PageSize = '7'
+                ConfigurationServiceSettings__BaseUrl = 'http://ed-fi-api-config-service:18081'
+                ConfigurationServiceSettings__ClientSecret = 'private-$$sentinel'
+                AppSettings__Datastore = $Provider
+            } } } }
+            $script:admitted | ConvertTo-Json -Depth 20 | Set-Content $script:admittedPath
+            foreach ($path in @($script:settingsPath, $script:admittedPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
+            $inventory = Join-Path $script:attachmentRoot '.cdc-deployments/dms-local.json'
+            if (Test-Path $inventory) { Remove-Item $inventory }
+            Register-CdcDeploymentHandoff -StatePath $script:state -Handoff @{
+                IdentityProvider = 'self-contained'; Settings = $script:settings
+                SettingsPath = $script:settingsPath; DmsComposePath = $script:admittedPath
+            }
+            $script:originalHashes = @{}
+            foreach ($path in @($script:settingsPath, $script:admittedPath, $environmentFile, $inventory)) {
+                $script:originalHashes[$path] = (Get-FileHash $path).Hash
+            }
+            $script:httpPath = New-E2ECdcHttpOverride -AdmittedComposePath $script:admittedPath
+            $script:effective = Get-Content $script:httpPath -Raw | ConvertFrom-Json -AsHashtable
+            $script:effective.services.dms.ports = @(@{ host_ip = '127.0.0.1'; published = '18080'; target = 8080; protocol = 'tcp' })
+            $script:effective.services.dms.environment.AppSettings__PathBase = '/api'
+        }
+        function Assert-AttachmentOriginal {
+            foreach ($path in $script:originalHashes.Keys) { (Get-FileHash $path).Hash | Should -BeExactly $script:originalHashes[$path] }
+            $deployment = & (Get-Module cdc-lifecycle) { Read-CdcDeployment 'dms-local' }
+            $deployment.Entries[0].SettingsPath | Should -BeExactly $script:settingsPath
+            $deployment.Phase | Should -BeExactly 'Active'
+        }
+    }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:attachmentRoot) } | Remove-Module -Force
+    }
+
+    It 'preserves authoritative references and host/container separation for <Provider>' -ForEach @(
+        @{ Provider = 'postgresql' }, @{ Provider = 'mssql' }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        $handoffPath = Write-E2ECdcApiHandoff -Project dms-local -StatePath $script:state -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective
+        $handoff = Get-Content $handoffPath -Raw | ConvertFrom-Json -AsHashtable
+        @($handoff.Keys | Sort-Object) | Should -Be @('deploymentPath', 'dmsBaseUrl', 'httpComposePath', 'settingsPath', 'statePath', 'version')
+        $handoff.version | Should -Be 1
+        $handoff.settingsPath | Should -BeExactly $script:settingsPath
+        $handoff.statePath | Should -BeExactly $script:state
+        $handoff.httpComposePath | Should -BeExactly $script:httpPath
+        $handoff.deploymentPath | Should -BeExactly (Join-Path $script:attachmentRoot '.cdc-deployments/dms-local.json')
+        $handoff.dmsBaseUrl | Should -BeExactly 'http://127.0.0.1:18080/api'
+        $retained = Get-Content $handoff.settingsPath -Raw | ConvertFrom-Json -AsHashtable
+        $retained.AppSettings.Datastore | Should -BeExactly $Provider
+        $retained.Cdc.Generation | Should -Be 9
+        $retained.Cdc.InstanceKey | Should -BeExactly 'custom'
+        $retained.Cdc.Schemas | Should -Be $script:settings.Cdc.Schemas
+        $retained.Cdc.Worker.Key | Should -BeExactly 'custom-worker'
+        $retained.Cdc.KafkaBootstrapServers | Should -BeExactly '127.0.0.1:19092'
+        $retained.Cdc.ConnectEndpoint | Should -BeExactly 'http://localhost:18083'
+        $retained.Cdc.WorkerMetricsEndpoint | Should -BeExactly 'http://localhost:19404/metrics'
+        $retained.Cdc.SetupConnectionString | Should -BeExactly 'host-side-private-connection'
+        $retained.Cdc.Compose.DatabaseHostPort | Should -Be $script:settings.Cdc.Compose.DatabaseHostPort
+        $retained.Cdc.ProviderConnectionProperties['database.hostname'] | Should -BeExactly 'container-database'
+        $retained.ConfigurationServiceSettings.BaseUrl | Should -BeExactly 'http://localhost:18081'
+        $retained.DataManagement.DocumentCache.Targets.DataStoreId | Should -Be @(42, 43)
+        $environment = $script:effective.services.dms.environment
+        @($environment.Keys | Where-Object { $_ -like '*Targets*' }).Count | Should -Be 0
+        $environment.DataManagement__DocumentCache__ReadAcceleration__Enabled | Should -BeExactly 'false'
+        $environment.DataManagement__DocumentCache__Projector__PageSize | Should -BeExactly '7'
+        $environment.ConfigurationServiceSettings__BaseUrl | Should -BeExactly 'http://ed-fi-api-config-service:18081'
+        $environment.ConfigurationServiceSettings__ClientSecret | Should -BeExactly 'private-$$sentinel'
+        foreach ($path in @($handoffPath, $script:httpPath)) {
+            ([int][IO.File]::GetUnixFileMode($path) -band 511) | Should -Be 384
+        }
+        (Get-Content $handoffPath -Raw) | Should -Not -Match 'private-sentinel|container-database|custom-worker|19092'
+        Assert-AttachmentOriginal
+    }
+
+    It 'rejects an incomplete handoff for <Fault> without publishing it' -ForEach @(
+        @{ Fault = 'missing-settings' }, @{ Fault = 'unreadable-settings' }, @{ Fault = 'changed-settings' }, @{ Fault = 'missing-schema' },
+        @{ Fault = 'unreadable-schema' }, @{ Fault = 'missing-state' }, @{ Fault = 'unknown-state' },
+        @{ Fault = 'missing-override' }, @{ Fault = 'public-override' }, @{ Fault = 'missing-inventory' },
+        @{ Fault = 'inherited-target' }, @{ Fault = 'read-acceleration' }, @{ Fault = 'missing-port' }
+    ) {
+        Initialize-AttachmentFixture postgresql
+        $selectedState = $script:state
+        switch ($Fault) {
+            'missing-settings' { Remove-Item $script:settingsPath }
+            'unreadable-settings' { [IO.File]::SetUnixFileMode($script:settingsPath, [IO.UnixFileMode]0) }
+            'changed-settings' {
+                $script:settings.Cdc.Generation = 10
+                $script:settings | ConvertTo-Json -Depth 30 | Set-Content $script:settingsPath
+            }
+            'missing-schema' { Remove-Item $script:settings.Cdc.Schemas[0] }
+            'unreadable-schema' { Remove-Item $script:settings.Cdc.Schemas[0]; $null = New-Item -ItemType Directory $script:settings.Cdc.Schemas[0] }
+            'missing-state' { Remove-Item $script:state -Recurse }
+            'unknown-state' { $selectedState = Join-Path $script:attachmentRoot 'other-state' }
+            'missing-override' { Remove-Item $script:httpPath }
+            'public-override' { [IO.File]::SetUnixFileMode($script:httpPath, [IO.UnixFileMode]420) }
+            'missing-inventory' { Remove-Item (Join-Path $script:attachmentRoot '.cdc-deployments/dms-local.json') }
+            'inherited-target' { $script:effective.services.dms.environment.DataManagement__DocumentCache__Targets__5__DataStoreId = '99' }
+            'read-acceleration' { $script:effective.services.dms.environment.DataManagement__DocumentCache__ReadAcceleration__Enabled = 'true' }
+            'missing-port' { $script:effective.services.dms.ports = @() }
+        }
+        { Write-E2ECdcApiHandoff -Project dms-local -StatePath $selectedState -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective } | Should -Throw
+        Test-Path ($script:httpPath.Replace('.http.json', '.handoff.json')) | Should -BeFalse
+        @(Get-ChildItem $script:attachmentRoot -Filter '*.tmp').Count | Should -Be 0
+        if ($Fault -in @('inherited-target', 'read-acceleration', 'missing-port', 'missing-override', 'public-override', 'unknown-state')) {
+            Assert-AttachmentOriginal
+        }
+    }
+
+    It 'removes alternate configuration key spellings and rejects surviving aliases' {
+        Initialize-AttachmentFixture postgresql
+        $script:admitted.services.dms.environment['DataManagement:DocumentCache:Targets:23:DataStoreId'] = '44'
+        $script:admitted.services.dms.environment['DataManagement:DocumentCache:ReadAcceleration:Enabled'] = 'true'
+        $script:admitted | ConvertTo-Json -Depth 20 | Set-Content $script:admittedPath
+        $path = New-E2ECdcHttpOverride -AdmittedComposePath $script:admittedPath
+        $configuration = Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Not -Throw
+        $configuration.services.dms.environment['DataManagement:DocumentCache:ReadAcceleration:Enabled'] = 'true'
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Throw '*disabled read acceleration*'
+    }
+
+    It 'removes a partial temporary write without publishing or changing retained inputs' {
+        Initialize-AttachmentFixture postgresql
+        Mock Write-BootstrapCdcPrivateJson -ModuleName bootstrap-cdc {
+            [IO.File]::WriteAllText($Path, '{')
+            throw 'Simulated interrupted private write'
+        }
+        { Write-E2ECdcApiHandoff -Project dms-local -StatePath $script:state -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective } | Should -Throw '*interrupted*'
+        Test-Path ($script:httpPath.Replace('.http.json', '.handoff.json')) | Should -BeFalse
+        @(Get-ChildItem $script:attachmentRoot -Filter '*.tmp').Count | Should -Be 0
+        Assert-AttachmentOriginal
+    }
+
+    It 'rejects layering the replacement over target-bearing inputs with real Compose merging for <Provider>' -ForEach @(
+        @{ Provider = 'postgresql' }, @{ Provider = 'mssql' }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        $base = Join-Path $script:attachmentRoot 'base.json'
+        @{ services = @{ dms = @{ image = 'fixture'; ports = @('127.0.0.1:18080:8080') } } } | ConvertTo-Json -Depth 8 | Set-Content $base
+        $merged = & docker compose -p cdc-attachment-test -f $base -f $script:httpPath config --format json 2>$null
+        $LASTEXITCODE | Should -Be 0
+        $configuration = ($merged -join "`n") | ConvertFrom-Json -AsHashtable
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Not -Throw
+        $merged = & docker compose -p cdc-attachment-test -f $base -f $script:admittedPath -f $script:httpPath config --format json 2>$null
+        $LASTEXITCODE | Should -Be 0
+        $configuration = ($merged -join "`n") | ConvertFrom-Json -AsHashtable
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Throw '*no projection targets*'
+        Assert-AttachmentOriginal
+    }
+}

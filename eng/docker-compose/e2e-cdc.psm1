@@ -40,6 +40,134 @@ function Invoke-E2ECdcSnapshotPreparation {
     }
 }
 
+function New-E2ECdcHttpOverride {
+    <#
+    .SYNOPSIS
+    Creates a private HTTP-only replacement for the admitted DMS Compose override.
+    .DESCRIPTION
+    Pass the admitted (merged, for peers) override, then REPLACE that file in the HTTP
+    Compose invocation. Layering this file over the original retains indexed targets.
+    The caller must resolve the complete Compose configuration and check it with
+    Assert-E2ECdcHttpConfiguration before rollout and before publishing the handoff.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates a unique private test override; never modifies retained admission inputs.')]
+    param([Parameter(Mandatory)][string]$AdmittedComposePath)
+    $ErrorActionPreference = 'Stop'
+    $AdmittedComposePath = [IO.Path]::GetFullPath($AdmittedComposePath)
+    & (Get-Module cdc-lifecycle) { param($path) Assert-CdcPrivatePath $path } $AdmittedComposePath
+    $document = Get-Content -LiteralPath $AdmittedComposePath -Raw | ConvertFrom-Json -AsHashtable
+    $environment = $document.services.dms.environment
+    if ($environment -isnot [Collections.IDictionary]) { throw 'CDC HTTP override requires an admitted environment mapping.' }
+    foreach ($key in @($environment.Keys)) {
+        if ($key -match '^DataManagement(?:__|:)DocumentCache(?:__|:)Targets(?:(?:__|:)|$)' -or
+            $key -match '^DataManagement(?:__|:)DocumentCache(?:__|:)ReadAcceleration(?:__|:)Enabled$') {
+            $environment.Remove($key)
+        }
+    }
+    $environment['DataManagement__DocumentCache__ReadAcceleration__Enabled'] = 'false'
+    $path = Join-Path (Split-Path $AdmittedComposePath -Parent) "api-e2e-$([guid]::NewGuid().ToString('N')).http.json"
+    & (Get-Module bootstrap-cdc) { param($path, $value) Write-BootstrapCdcPrivateJson $path $value } $path $document
+    return $path
+}
+
+function Assert-E2ECdcHttpConfiguration {
+    <#
+    .SYNOPSIS
+    Checks docker compose config --format json output privately, without logging it.
+    #>
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Configuration)
+    $environment = $Configuration.services.dms.environment
+    if ($environment -isnot [Collections.IDictionary] -or
+        @($environment.Keys | Where-Object { $_ -match '^DataManagement(?:__|:)DocumentCache(?:__|:)Targets(?:(?:__|:)|$)' }).Count -ne 0 -or
+        $environment['DataManagement__DocumentCache__ReadAcceleration__Enabled'] -ine 'false' -or
+        @($environment.Keys | Where-Object {
+            $_ -match '^DataManagement(?:__|:)DocumentCache(?:__|:)ReadAcceleration(?:__|:)Enabled$' -and $environment[$_] -ine 'false'
+        }).Count -ne 0) {
+        throw 'CDC HTTP configuration must have no projection targets and disabled read acceleration.'
+    }
+}
+
+function Write-E2ECdcApiHandoff {
+    <#
+    .SYNOPSIS
+    Publishes the private fixture attachment only after the caller completes HTTP rollout.
+    .DESCRIPTION
+    Private v1 JSON contract, supplied to the fixture through CDC_API_E2E_HANDOFF_PATH:
+      version: 1
+      settingsPath: retained selected entry; load with CdcCommandConfiguration.Load.
+      statePath: original selected controller state root (never a copy or a new journal).
+      deploymentPath: original inventory; authority for Compose inputs and teardown.
+      httpComposePath: separate target-free override, retained for bounded cleanup.
+      dmsBaseUrl: host HTTP URL resolved from the effective Compose port and path base.
+
+    No provider, binding, generation, schema, credential, or worker inventory is copied.
+    The fixture loads runtime/controller configuration through CdcCommandConfiguration.Load
+    and resolves the retained binding through the production state store. That settings file
+    owns admitted targets, host CMS URL, provider setup connection, Kafka advertised endpoint,
+    Connect/metrics endpoints, Compose/worker identity and schema assets. Preserve connector
+    ProviderConnectionProperties (container endpoints); any fixture host adaptations belong
+    only in memory, using Cdc:Compose:DatabaseHostPort. Never fall back to static E2E settings.
+
+    Neither this file, the override nor raw settings belongs in public evidence. T04's caller
+    owns rollout/health ordering and removes these two private test files only after successful
+    governed teardown. A returned path is the only publication point; failures retain originals.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Project,
+        [Parameter(Mandatory)][string]$StatePath,
+        [Parameter(Mandatory)][string]$HttpComposePath,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$EffectiveConfiguration
+    )
+    $ErrorActionPreference = 'Stop'
+    Assert-E2ECdcHttpConfiguration $EffectiveConfiguration
+    $deployment = & (Get-Module cdc-lifecycle) { param($project) Read-CdcDeployment $project } $Project
+    if ($deployment.Phase -cne 'Active') { throw 'CDC API E2E handoff requires an active admitted deployment.' }
+    $state = [IO.Path]::GetFullPath($StatePath)
+    $entries = @($deployment.Entries | Where-Object { $_.StatePath -ceq $state })
+    if ($entries.Count -ne 1) { throw 'CDC API E2E handoff requires one retained entry at the selected state root.' }
+    $entry = $entries[0]
+    & (Get-Module cdc-lifecycle) { param($path) Assert-CdcPrivatePath $path -Directory } $state
+    $http = [IO.Path]::GetFullPath($HttpComposePath)
+    $deploymentPath = & (Get-Module cdc-lifecycle) { param($project) Get-CdcDeploymentPath $project } $Project
+    if ($http -cin @($deployment.Entries | ForEach-Object { $_.DmsComposePath }) -or
+        (Split-Path $http -Parent) -cnotin @((Split-Path $entry.DmsComposePath -Parent), (Split-Path $deploymentPath -Parent)) -or
+        [IO.Path]::GetFileName($http) -cnotmatch '^api-e2e-[a-f0-9]{32}\.http\.json$') {
+        throw 'CDC API E2E requires a separate private HTTP override beside the retained configuration.'
+    }
+    & (Get-Module cdc-lifecycle) { param($path) Assert-CdcPrivatePath $path } $http
+    Assert-E2ECdcHttpConfiguration (Get-Content -LiteralPath $http -Raw | ConvertFrom-Json -AsHashtable)
+    $settings = Get-Content -LiteralPath $entry.SettingsPath -Raw | ConvertFrom-Json -AsHashtable
+    if (@($settings.Cdc.Schemas).Count -eq 0) { throw 'CDC API E2E requires retained schema references.' }
+    foreach ($path in $settings.Cdc.Schemas) {
+        if (-not [IO.Path]::IsPathFullyQualified($path)) { throw 'CDC API E2E requires absolute schema references.' }
+        # Open each reference to reject missing/unreadable files, without emitting schema content.
+        $stream = [IO.File]::OpenRead($path)
+        $stream.Dispose()
+    }
+    $dms = $EffectiveConfiguration.services.dms
+    $ports = @($dms.ports | Where-Object { $_.protocol -eq 'tcp' -and $_.host_ip -in @('127.0.0.1', '0.0.0.0') })
+    if ($ports.Count -ne 1 -or [int]$ports[0].published -lt 1 -or [int]$ports[0].published -gt 65535) {
+        throw 'CDC API E2E requires one resolved host-reachable HTTP port.'
+    }
+    $pathBase = [string]$dms.environment['AppSettings__PathBase']
+    if ($pathBase -and ($pathBase -notmatch '^/[^?#\\]*$' -or $pathBase.StartsWith('//'))) {
+        throw 'CDC API E2E HTTP path base is invalid.'
+    }
+    $handoff = @{
+        version = 1; settingsPath = $entry.SettingsPath; statePath = $state
+        deploymentPath = $deploymentPath; httpComposePath = $http
+        dmsBaseUrl = "http://127.0.0.1:$($ports[0].published)$($pathBase.TrimEnd('/'))"
+    }
+    $path = $http.Replace('.http.json', '.handoff.json')
+    $temporary = "$path.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        & (Get-Module bootstrap-cdc) { param($path, $value) Write-BootstrapCdcPrivateJson $path $value } $temporary $handoff
+        [IO.File]::Move($temporary, $path, $false)
+    }
+    finally { if (Test-Path -LiteralPath $temporary) { [IO.File]::Delete($temporary) } }
+    return $path
+}
+
 function Invoke-E2ECdcSetup {
     <#
     .SYNOPSIS
@@ -131,4 +259,4 @@ function Invoke-E2ECdcSetup {
     }
 }
 
-Export-ModuleMember -Function Assert-E2ECdcWorkspaceAvailable, Invoke-E2ECdcSetup
+Export-ModuleMember -Function Assert-E2ECdcWorkspaceAvailable, Invoke-E2ECdcSetup, New-E2ECdcHttpOverride, Assert-E2ECdcHttpConfiguration, Write-E2ECdcApiHandoff
