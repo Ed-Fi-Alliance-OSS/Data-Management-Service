@@ -407,12 +407,12 @@ Describe 'CDC qualification CI scheduling' {
         $script:gate | Should -Match '(?m)^      - run-cdc-qualification$'
         $script:gate | Should -Not -Match 'nightly-cdc|run-cdc-heavy-qualification'
     }
-    It 'selects all fifteen live jobs by default without Contract or duplicates' {
+    It 'selects all seventeen live jobs by default without Contract or duplicates' {
         $matrix = & $script:matrixScript | ConvertFrom-Json
         $pairs = @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite })
         $expected = @('Kafka/All')
         foreach ($provider in @('Postgresql', 'Mssql')) {
-            foreach ($suite in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')) {
+            foreach ($suite in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E')) {
                 $expected += "$provider/$suite"
             }
         }
@@ -420,20 +420,22 @@ Describe 'CDC qualification CI scheduling' {
     }
     It 'selects <Lane>/<Suite> for a targeted manual run' -ForEach @(
         @{ Lane = 'Kafka'; Suite = 'All'; Count = 1 }
-        @{ Lane = 'Postgresql'; Suite = 'All'; Count = 7 }
-        @{ Lane = 'Mssql'; Suite = 'All'; Count = 7 }
+        @{ Lane = 'Postgresql'; Suite = 'All'; Count = 8 }
+        @{ Lane = 'Mssql'; Suite = 'All'; Count = 8 }
         @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'Admission'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'History'; Count = 1 }
         @{ Lane = 'Postgresql'; Suite = 'MessageContract'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'MessageContract'; Count = 1 }
+        @{ Lane = 'Postgresql'; Suite = 'ApiE2E'; Count = 1 }
+        @{ Lane = 'Mssql'; Suite = 'ApiE2E'; Count = 1 }
     ) {
         $matrix = & $script:matrixScript -Lane $Lane -Suite $Suite | ConvertFrom-Json
         $matrix.include.GetType().IsArray | Should -BeTrue
         $matrix.include.Count | Should -Be $Count
         @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite } | Select-Object -Unique).Count | Should -Be $Count
         if ($Suite -eq 'All' -and $Lane -ne 'Kafka') {
-            @($matrix.include.suite | Sort-Object) | Should -Be @('Admission', 'History', 'Lifecycle', 'MessageContract', 'RecordSize', 'Recovery', 'Telemetry')
+            @($matrix.include.suite | Sort-Object) | Should -Be @('Admission', 'ApiE2E', 'History', 'Lifecycle', 'MessageContract', 'RecordSize', 'Recovery', 'Telemetry')
         }
         @($matrix.include | Where-Object lane -ne $Lane).Count | Should -Be 0
         if ($Suite -ne 'All') { @($matrix.include | Where-Object suite -ne $Suite).Count | Should -Be 0 }
@@ -537,7 +539,7 @@ Describe 'Message contract qualification selection and attachments' {
     ) {
         $suites = Get-CdcQualificationProviderSuite -Provider $Provider
         $suites.MessageContract | Should -Be "(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=$($Provider)Integration"
-        $suites.Count | Should -Be 7
+        $suites.Count | Should -Be 8
     }
     It 'publishes contract attachments and their links while excluding document bodies and private logs' {
         $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'contract-raw')
@@ -616,7 +618,7 @@ Describe 'CDC documentation qualification boundary' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
         $runner | Should -Match "if \(\`$phase -eq 'Admission' -or"
         $runner | Should -Match 'New-PesterContainer.*RunbookSetup.Live.Tests.ps1.*Provider = \$selected'
-        $runner | Should -Match 'Mssql Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1'
+        $runner | Should -Match 'Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1'
         $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile "\$selected\$procedure"'
     }
     It 'requires the live <Provider> lifecycle case (<Fault>)' -ForEach @(
@@ -640,7 +642,7 @@ Describe 'CDC documentation qualification boundary' {
         $runner | Should -Match "if \(\`$phase -eq 'Lifecycle'\)"
         $runner | Should -Match 'Get-CdcRunbookLifecycleReport -Path'
         $runner | Should -Match 'New-PesterContainer.*Procedure = \$procedure'
-        $runner | Should -Match 'PostgreSQL Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1'
+        $runner | Should -Match 'PostgreSQL Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1'
         $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
         $workflow | Should -Match "matrix.suite == 'Admission' \|\| matrix.suite == 'Lifecycle'"
     }
@@ -907,5 +909,451 @@ Describe 'CDC documentation qualification boundary' {
         $source | Should -Match '\[Category\("CdcPublicationHistory"\)\]'
         $source | Should -Match '\[Category\("DatabaseIntegration"\)\]'
         $source | Should -Match 'CdcRunbookExamples.AssertExcerpt'
+    }
+}
+
+Describe 'CDC API E2E accounting' {
+    BeforeAll { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+    BeforeEach {
+        $runner = New-CdcApiRunnerReport Postgresql
+        $runner.BindingId = 'a' * 64; $runner.Generation = 7; $runner.ProcessExit = 0
+        foreach ($name in @($runner.Stages.Keys)) { $runner.Stages[$name] = 'Passed' }
+        $script:process = @{ Status = 'Passed'; Total = 1; Passed = 1; Failed = 0; Skipped = 0 }
+        $script:fixture = @{ Version = 1; InvocationId = $runner.InvocationId
+            Identity = @{ Provider = 'Postgresql'; BindingId = $runner.BindingId; Generation = 7 }
+            Attachment = @{ Id = 'Attachment'; Outcome = 'Passed'; Failure = 'None' }
+            Disposal = @{ Id = 'Disposal'; Outcome = 'Passed'; Failure = 'None' }
+            Scenarios = @(1..8 | ForEach-Object { @{ Id = ('CDC-E2E-{0:00}' -f $_); Outcome = 'Passed'; Failure = 'None' } }) }
+        $path = Join-Path $TestDrive 'scenario.json'
+        Remove-Item $path -ErrorAction SilentlyContinue
+    }
+    It 'accepts exactly eight matching phases with all independent outcomes' {
+        $script:fixture | ConvertTo-Json -Depth 8 | Set-Content $path
+        (Get-CdcApiScenarioReport $path $runner $script:process).Status | Should -Be Passed
+    }
+    It 'rejects <Fault> without accepting aggregate NUnit success' -ForEach @(
+        @{ Fault = 'Invocation' }; @{ Fault = 'Provider' }; @{ Fault = 'Binding' }; @{ Fault = 'Generation' }
+        @{ Fault = 'Missing' }; @{ Fault = 'Duplicate' }; @{ Fault = 'Substitute' }; @{ Fault = 'Order' }
+        @{ Fault = 'NotRun' }; @{ Fault = 'Running' }; @{ Fault = 'Failed' }; @{ Fault = 'Skipped' }; @{ Fault = 'Aborted' }
+        @{ Fault = 'Attachment' }; @{ Fault = 'Disposal' }; @{ Fault = 'TimedOut' }; @{ Fault = 'Cancelled' }
+        @{ Fault = 'Unimplemented' }; @{ Fault = 'ZeroTests' }; @{ Fault = 'Exit' }; @{ Fault = 'Trx' }
+        @{ Fault = 'Setup' }; @{ Fault = 'Test' }; @{ Fault = 'Teardown' }; @{ Fault = 'Export' }
+        @{ Fault = 'Malformed' }; @{ Fault = 'Absent' }; @{ Fault = 'Oversized' }
+    ) {
+        switch ($Fault) {
+            Invocation { $script:fixture.InvocationId = [guid]::NewGuid().ToString() }
+            Provider { $script:fixture.Identity.Provider = 'Mssql' }
+            Binding { $script:fixture.Identity.BindingId = 'b' * 64 }
+            Generation { $script:fixture.Identity.Generation++ }
+            Missing { $script:fixture.Scenarios = $script:fixture.Scenarios[0..6] }
+            Duplicate { $script:fixture.Scenarios[7].Id = 'CDC-E2E-01' }
+            Substitute { $script:fixture.Scenarios[7].Id = 'CdcSetupSmoke' }
+            Order { $script:fixture.Scenarios = $script:fixture.Scenarios[7..0] }
+            { $_ -in @('NotRun', 'Running', 'Failed', 'Skipped', 'Aborted') } { $script:fixture.Scenarios[2].Outcome = $Fault }
+            { $_ -in @('Attachment', 'Disposal') } { $script:fixture[$Fault].Outcome = 'Failed' }
+            { $_ -in @('TimedOut', 'Cancelled', 'Unimplemented') } { $script:fixture.Scenarios[2].Failure = $Fault }
+            ZeroTests { $script:process.Total = 0; $script:process.Passed = 0 }
+            Exit { $runner.ProcessExit = 1 }
+            Trx { $script:process.Status = 'ReportIncomplete' }
+            { $_ -in @('Setup', 'Test', 'Teardown', 'Export') } { $runner.Stages[$Fault] = 'Failed' }
+        }
+        $script:fixture | ConvertTo-Json -Depth 8 | Set-Content $path
+        if ($Fault -eq 'Malformed') { '{' | Set-Content $path }
+        if ($Fault -eq 'Absent') { Remove-Item $path }
+        if ($Fault -eq 'Oversized') { ('x' * 32769) | Set-Content $path }
+        (Get-CdcApiScenarioReport $path $runner $script:process).Status | Should -Be Failed
+    }
+    It 'exports bounded partial phases and stages without private inputs or changing the fixture report' {
+        $script:fixture.Scenarios[2].Outcome = 'Failed'; $script:fixture.Scenarios[2].Failure = 'Unimplemented'
+        $script:fixture.Scenarios[3..7] | ForEach-Object { $_.Outcome = 'NotRun' }
+        $script:fixture.Password = 'planted-private-value'; $script:fixture.Scenarios[0].Body = @{ firstName = 'private-student' }
+        $script:fixture | ConvertTo-Json -Depth 8 | Set-Content $path
+        $hash = (Get-FileHash $path).Hash
+        $out = Join-Path $TestDrive 'published'
+        Export-CdcQualificationEvidence -RawDirectory $TestDrive -Destination $out -ApiRunner $runner
+        $json = Get-Content (Join-Path $out 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'planted-private-value|private-student|Password|Body'
+        ($json | ConvertFrom-Json).Scenarios.Count | Should -Be 8
+        ($json | ConvertFrom-Json).Scenarios[2].Failure | Should -Be Unimplemented
+        (Get-FileHash $path).Hash | Should -Be $hash
+    }
+    It 'exports setup failure with no fixture report' {
+        $runner.Stages.Setup = 'Failed'; $runner.BindingId = ''; $runner.Generation = 0
+        Export-CdcQualificationEvidence -RawDirectory $TestDrive -Destination (Join-Path $TestDrive 'out') -ApiRunner $runner
+        $evidence = Get-Content (Join-Path $TestDrive 'out/cdc-api-e2e.json') -Raw | ConvertFrom-Json
+        $evidence.Stages.Setup | Should -Be Failed
+        $evidence.Scenarios.Count | Should -Be 0
+    }
+}
+
+Describe 'CDC API E2E runner stages' {
+    BeforeDiscovery { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '../../docker-compose/bootstrap-schema-tool.psm1')
+    }
+    InModuleScope cdc-qualification {
+        BeforeEach {
+            $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+            $script:events = [Collections.Generic.List[string]]::new()
+            $script:fault = ''
+            $script:runner = New-CdcApiRunnerReport Postgresql
+            $script:root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            $null = New-Item -ItemType Directory -Path $script:root
+            $script:destination = Join-Path $script:root 'out'
+            $null = New-Item -ItemType Directory -Path $script:destination
+            Mock Assert-CdcApiWorkspaceAbsent { if ($script:fault -eq 'Ownership') { throw 'Occupied' } }
+            Mock Resolve-DmsSchemaTool { $env:DMS_SCHEMA_TOOL_PATH }
+            Mock Invoke-CdcApiProcess {
+                $name = Split-Path $LogPath -Leaf
+                $script:events.Add($name)
+                if ($name -eq 'setup') {
+                    Test-Path (Join-Path $script:root "$($script:runner.Name)/ownership.json") | Should -BeTrue
+                    $private = Split-Path $LogPath -Parent
+                    'private-handoff' | Set-Content (Join-Path $private 'handoff-path.txt')
+                }
+                if ($name -eq 'inputs') {
+                    @{ Provider = $script:runner.Provider; BindingId = ('a' * 64); Generation = 3; Database = 'custom_e2e' } |
+                        ConvertTo-Json | Set-Content (Join-Path (Split-Path $LogPath -Parent) 'admitted.json')
+                }
+                if ($name -eq 'test') {
+                    $env:AppSettings__DataStoreDatabaseName | Should -Be custom_e2e
+                    $env:NODE_OPTIONS | Should -BeNullOrEmpty
+                    $Arguments | Should -Contain 'FullyQualifiedName~Given_CdcApiE2E'
+                    $env:CDC_API_E2E_INVOCATION_ID | Should -Be $script:runner.InvocationId
+                    @{ Version = 1; InvocationId = $script:runner.InvocationId
+                        Identity = @{ Provider = $script:runner.Provider; BindingId = ('a' * 64); Generation = 3 }
+                        Attachment = @{ Id = 'Attachment'; Outcome = 'Passed'; Failure = 'None' }
+                        Disposal = @{ Id = 'Disposal'; Outcome = 'Passed'; Failure = 'None' }
+                        Scenarios = @(1..8 | ForEach-Object { @{ Id = ('CDC-E2E-{0:00}' -f $_); Outcome = 'Passed'; Failure = 'None' } }) } |
+                        ConvertTo-Json -Depth 8 | Set-Content $env:CDC_API_E2E_REPORT_PATH
+                    $script:fixtureHash = (Get-FileHash $env:CDC_API_E2E_REPORT_PATH).Hash
+                }
+                $failed = $script:fault -ieq $name -or ($script:fault -eq 'TimeoutAndCleanup' -and $name -in @('test', 'cleanup'))
+                if ($name -eq 'cleanup') { $TimeoutSeconds | Should -Be 900 }
+                if ($name -eq 'export') { $TimeoutSeconds | Should -Be 120 }
+                @{ ExitCode = $(if ($failed) { 1 } else { 0 }); FailureKind = $(if ($failed) { 'TimedOut' } else { 'None' }) }
+            }
+            Mock Get-CdcQualificationReport { @{ Status = 'Passed'; Total = 1; Passed = 1; Failed = 0; Skipped = 0 } }
+
+        }
+        It 'builds current selected and Debug tools before one setup, eight phases and independent cleanup for <Provider>' -ForEach @(
+            @{ Provider = 'Postgresql' }; @{ Provider = 'Mssql' }
+        ) {
+            $script:runner.Provider = $Provider
+            Invoke-CdcApiQualification -Repo $script:repo -RawDirectory $script:root -Destination $script:destination -Configuration Release -Report $script:runner -Persist { }
+            $script:events | Should -Be @('build-Release', 'build-Debug', 'setup', 'inputs', 'test', 'cleanup', 'export')
+            $script:runner.Status | Should -Be Passed
+            (Get-FileHash (Join-Path $script:root "$($script:runner.Name)/scenario.json")).Hash | Should -Be $script:fixtureHash
+        }
+        It 'still tears down and exports when incremental summary persistence fails' {
+            Invoke-CdcApiQualification -Repo $script:repo -RawDirectory $script:root -Destination $script:destination -Configuration Release -Report $script:runner -Persist {
+                if ($script:runner.Stages.Teardown -ne 'NotRun' -and $script:runner.Status -eq 'Running') { throw 'summary write failed' }
+            }
+            $script:events | Should -Contain cleanup
+            $script:events | Should -Contain export
+            $script:runner.ReportFailure | Should -Be ReportPersistenceFailed
+            $script:runner.Status | Should -Be Failed
+        }
+        It 'refreshes a stale Debug tool before resolving either wrapper selection' {
+            $staleTool = Join-Path $script:root 'api-schema-tools'
+            'stale' | Set-Content $staleTool
+            Mock Invoke-CdcApiProcess { 'current' | Set-Content (Join-Path $script:root 'api-schema-tools'); @{ ExitCode = 0; FailureKind = 'None' } } -ParameterFilter { $LogPath -like '*build-Debug' }
+            Mock Resolve-DmsSchemaTool {
+                (Get-Content (Join-Path $script:root 'api-schema-tools') -Raw).Trim() | Should -Be current
+                $env:DMS_SCHEMA_TOOL_PATH | Should -Be (Join-Path $script:repo 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Debug/net10.0/api-schema-tools')
+                $env:DMS_SCHEMA_TOOL_PATH
+            }
+            Invoke-CdcApiQualification -Repo $script:repo -RawDirectory $script:root -Destination $script:destination -Configuration Release -Report $script:runner -Persist { }
+            $script:runner.Status | Should -Be Passed
+            Should -Invoke Resolve-DmsSchemaTool -Times 2 -Exactly
+        }
+        It 'retains the original failure and attempts only owned cleanup after <Fault>' -ForEach @(
+            @{ Fault = 'Ownership'; Cleanup = $false }; @{ Fault = 'build-Release'; Cleanup = $false }
+            @{ Fault = 'build-Debug'; Cleanup = $false }; @{ Fault = 'setup'; Cleanup = $true }
+            @{ Fault = 'inputs'; Cleanup = $true }; @{ Fault = 'test'; Cleanup = $true }
+            @{ Fault = 'cleanup'; Cleanup = $true }; @{ Fault = 'Export'; Cleanup = $true }
+            @{ Fault = 'TimeoutAndCleanup'; Cleanup = $true }
+        ) {
+            $script:fault = $Fault
+            Invoke-CdcApiQualification -Repo $script:repo -RawDirectory $script:root -Destination $script:destination -Configuration Release -Report $script:runner -Persist { }
+            $script:runner.Status | Should -Not -Be Passed
+            ($script:events -contains 'cleanup') | Should -Be $Cleanup
+            if ($Fault -eq 'TimeoutAndCleanup') {
+                $script:runner.Reason | Should -Be ScenarioExecutionFailed
+                $script:runner.CleanupFailure | Should -Be CleanupFailed
+            }
+            if ($Fault -eq 'Export') { $script:runner.ExportFailure | Should -Be ExportFailed }
+            if ($Fault -like 'build-*' -or $Fault -eq 'Ownership') { $script:events | Should -Not -Contain 'setup' }
+        }
+    }
+}
+
+Describe 'CDC API E2E private preparation and ownership' {
+    BeforeDiscovery { Import-Module (Join-Path $PSScriptRoot '../../docker-compose/tests/cdc-fixture-inputs.psm1') -Force }
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../../docker-compose/tests/cdc-fixture-inputs.psm1') -Force
+        $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+    }
+    It 'creates matching private <Provider> inputs without a database or final CDC settings' -ForEach @(
+        @{ Provider = 'Postgresql'; SqlServer = $false }; @{ Provider = 'Mssql'; SqlServer = $true }
+    ) {
+        $private = Join-Path $TestDrive $Provider
+        $inputs = New-CdcFixtureInput -Repo $script:repo -FixtureRoot $private -SqlServer $SqlServer -E2e $true -ProviderImage 'pinned-provider' -LargeWorker $true
+        Test-Path $inputs.SettingsPath | Should -BeFalse
+        Test-Path $inputs.StatePath | Should -BeFalse
+        $inputs.Values[$inputs.ImageVariable] | Should -Be pinned-provider
+        $inputs.Values.CDC_DATABASE_PASSWORD | Should -Be $inputs.ConnectorPassword
+        $inputs.Values.CDC_WORKER_HEAP_MIB | Should -Be 1024
+        $base = Get-Content (Join-Path $inputs.Local 'dms-base.json') -Raw | ConvertFrom-Json
+        $base.ConfigurationServiceSettings.ClientSecret | Should -Be $inputs.Values.CONFIG_SERVICE_CLIENT_SECRET
+        $connection = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $connection.set_ConnectionString((Get-Content $inputs.InputPath -Raw).Trim())
+        $connection['database'] | Should -Be $inputs.Database
+        $connection['password'] | Should -Be $inputs.Password
+        [int][IO.File]::GetUnixFileMode($inputs.EnvironmentFile) | Should -Be 384
+        [int][IO.File]::GetUnixFileMode($private) | Should -Be 448
+    }
+    InModuleScope cdc-fixture-inputs {
+        BeforeEach {
+            $script:sql = ''
+            Mock Invoke-NativeCommandWithInput {
+                $script:sql = $InputText
+                $ArgumentList | Should -Not -Contain 'private-password'
+                @{ ExitCode = 0; FailureKind = 'None' }
+            }
+            Mock docker { $global:LASTEXITCODE = 0; '[{"Config":{"Env":["MSSQL_SA_PASSWORD=admin-password"]}}]' }
+        }
+        It 'creates a restricted PostgreSQL role and checks absence before admission' {
+            Initialize-CdcFixturePrincipal -SqlServer $false -Inputs @{ Database = 'custom_e2e'; ConnectorPassword = 'private-password' }
+            $script:sql | Should -Match "pg_database WHERE datname = 'custom_e2e'"
+            $script:sql | Should -Match 'LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE'
+            $script:sql | Should -Not -Match 'CREATE DATABASE|CREATE PUBLICATION|GRANT'
+        }
+        It 'creates only the SQL Server login, using the container secret over stdin' {
+            Initialize-CdcFixturePrincipal -SqlServer $true -Inputs @{ Database = 'custom_e2e'; ConnectorPassword = 'private-password'; Password = 'admin-password' }
+            $script:sql | Should -Match "DB_ID\(N'custom_e2e'\)"
+            $script:sql | Should -Match 'CREATE LOGIN cdc_reader'
+            $script:sql | Should -Not -Match 'CREATE DATABASE|sp_cdc|GRANT'
+        }
+        It 'rejects a failed role or login operation for <SqlServer>' -ForEach @(@{ SqlServer = $false }; @{ SqlServer = $true }) {
+            Mock Invoke-NativeCommandWithInput { @{ ExitCode = 1; FailureKind = 'None' } }
+            { Initialize-CdcFixturePrincipal -SqlServer $SqlServer -Inputs @{ Database = 'custom_e2e'; ConnectorPassword = 'p'; Password = 'admin-password' } } | Should -Throw '*principal preparation failed*'
+        }
+    }
+    It 'preserves marked runbook infrastructure and settings while both callers share private preparation' {
+        $runbook = Get-Content (Join-Path $script:repo 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1') -Raw
+        $api = Get-Content (Join-Path $script:repo 'eng/ci/prepare-cdc-api-e2e.ps1') -Raw
+        foreach ($code in @($runbook, $api)) {
+            $code | Should -Match 'New-CdcFixtureInput'
+            $code | Should -Match 'Initialize-CdcFixturePrincipal'
+        }
+        $runbook | Should -Match 'Get-CdcRunbookCode "\$prefix-settings"'
+        $runbook | Should -Match 'Get-CdcRunbookCode "\$prefix-infrastructure"'
+        $api | Should -Not -Match 'cdc-runbook-snippets|Get-CdcRunbookCode'
+    }
+}
+
+Describe 'CDC API E2E absence gate' {
+    BeforeDiscovery { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+    InModuleScope cdc-qualification {
+        BeforeEach {
+            $script:owned = $env:CDC_RUNBOOK_OWNED_STACK
+            $env:CDC_RUNBOOK_OWNED_STACK = '1'
+            $script:resources = ''
+            Mock Invoke-CdcApiProcess { @{ ExitCode = 0; FailureKind = 'None'; StandardOutput = $script:resources } }
+        }
+        AfterEach { $env:CDC_RUNBOOK_OWNED_STACK = $script:owned }
+        It 'rejects absent opt-in before querying resources' {
+            $env:CDC_RUNBOOK_OWNED_STACK = ''
+            { Assert-CdcApiWorkspaceAbsent $TestDrive $TestDrive } | Should -Throw '*OWNERSHIP_REQUIRED*'
+            Should -Invoke Invoke-CdcApiProcess -Times 0
+        }
+        It 'rejects any existing project resource without authorizing cleanup' {
+            $script:resources = 'pre-existing'
+            { Assert-CdcApiWorkspaceAbsent $TestDrive $TestDrive } | Should -Throw '*WORKSPACE_OCCUPIED*'
+        }
+        It 'requires both projects containers volumes and networks to be absent' {
+            Assert-CdcApiWorkspaceAbsent $TestDrive $TestDrive
+            Should -Invoke Invoke-CdcApiProcess -Times 6 -Exactly
+        }
+    }
+}
+
+Describe 'CDC API E2E setup and governed cleanup adapters' {
+    BeforeAll {
+        $script:sourceRepo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        function Copy-FixtureFile([string] $Relative) {
+            $target = Join-Path $script:fakeRepo $Relative
+            $null = New-Item -ItemType Directory -Path (Split-Path $target) -Force
+            Copy-Item (Join-Path $script:sourceRepo $Relative) $target
+        }
+    }
+    BeforeEach {
+        $ErrorActionPreference = 'Stop'
+        $script:fakeRepo = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $script:private = Join-Path $script:fakeRepo 'private'
+        $null = New-Item -ItemType Directory -Path $script:private -Force
+        foreach ($file in @('eng/docker-compose/.env.e2e', 'eng/docker-compose/env-utility.psm1', 'eng/docker-compose/database-safety.psm1',
+            'eng/docker-compose/e2e-teardown.psm1', 'eng/docker-compose/tests/cdc-fixture-inputs.psm1',
+            'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json',
+            'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json')) { Copy-FixtureFile $file }
+        # Native/provider boundaries only are replaced. Actual private input/settings construction executes.
+        @'
+function Initialize-CdcFixturePrincipal {
+    param([bool] $SqlServer, [hashtable] $Inputs)
+    'principal' | Add-Content (Join-Path (Split-Path $Inputs.EnvironmentFile) 'calls.txt')
+    if ($env:TEST_API_FAILURE -eq 'principal') { throw 'injected principal failure' }
+}
+'@ | Add-Content (Join-Path $script:fakeRepo 'eng/docker-compose/tests/cdc-fixture-inputs.psm1')
+        @'
+param([switch] $InfraOnly, [switch] $EnableConfig, [switch] $SeparateConfigDatabase, [switch] $CdcDatabaseInfrastructure,
+    [string] $DatabaseEngine, [string] $IdentityProvider, [string] $EnvironmentFile,
+    [switch] $d, [switch] $v, [switch] $RemoveBootstrap)
+if ($d) { 'primitive' | Add-Content (Join-Path (Split-Path $EnvironmentFile) 'calls.txt'); $global:LASTEXITCODE = 0; return }
+if (-not ($InfraOnly -and $EnableConfig -and $SeparateConfigDatabase -and $CdcDatabaseInfrastructure -and $IdentityProvider -eq 'self-contained')) { throw 'Wrong infrastructure arguments' }
+'infrastructure' | Add-Content (Join-Path (Split-Path $EnvironmentFile) 'calls.txt')
+if ($env:TEST_API_FAILURE -eq 'infrastructure') { throw 'partial infrastructure startup' }
+$global:LASTEXITCODE = 0
+'@ | Set-Content (Join-Path $script:fakeRepo 'eng/docker-compose/start-local-dms.ps1')
+        $script:e2e = Join-Path $script:fakeRepo 'src/dms/tests/EdFi.DataManagementService.Tests.E2E'
+        $null = New-Item -ItemType Directory -Path $script:e2e -Force
+        @'
+param([string] $EnvironmentFile, [string] $DatabaseEngine, [string] $CdcSettingsPath, [string] $CdcBindingStatePath,
+    [switch] $EnableKafkaCdc, [switch] $CdcApiE2E)
+if (-not ($EnableKafkaCdc -and $CdcApiE2E -and $CdcSettingsPath -and $CdcBindingStatePath -and $EnvironmentFile)) { throw 'Missing explicit admission argument' }
+$private = Split-Path $EnvironmentFile
+'admission' | Add-Content (Join-Path $private 'calls.txt')
+$settings = Get-Content $CdcSettingsPath -Raw | ConvertFrom-Json
+$binding = @{ version = 1; deploymentKey = 'local'; tenantKey = 'default'; dataStoreId = '1'; instanceKey = 'datastore-1'; generation = 1
+    provider = $(if ($DatabaseEngine -eq 'mssql') { 'sqlServer' } else { 'postgresql' }); physicalSourceFingerprint = ('sha256:' + ('a' * 64)); connectorName = 'local-datastore-1-g1'
+    topicName = 'edfi.dms.instance.datastore-1-g1.documents.v1'; partitionCount = 3; partitionerAlgorithm = 'kafka-murmur2-v1'; contractVersion = 1 }
+$bindingDir = Join-Path $CdcBindingStatePath 'bindings/local/datastore-1'
+$null = New-Item -ItemType Directory -Path $bindingDir -Force
+Get-ChildItem $CdcBindingStatePath -Directory -Recurse | ForEach-Object { & chmod 700 $_.FullName }
+$binding | ConvertTo-Json | Set-Content (Join-Path $bindingDir '1.json')
+& chmod 600 (Join-Path $bindingDir '1.json')
+$handoff = Join-Path $private 'handoff.json'
+@{ version = 1; settingsPath = $CdcSettingsPath; statePath = $CdcBindingStatePath } | ConvertTo-Json | Set-Content $handoff
+$global:LASTEXITCODE = 0
+return $handoff
+'@ | Set-Content (Join-Path $script:e2e 'setup-local-dms.ps1')
+        @'
+param([string] $EnvironmentFile, [string] $DatabaseEngine)
+'governed' | Add-Content (Join-Path (Split-Path $EnvironmentFile) 'calls.txt')
+if ($env:TEST_API_FAILURE -eq 'cleanup') { throw 'injected cleanup failure' }
+Remove-Item (Join-Path $PSScriptRoot '../../../../eng/docker-compose/.cdc-deployments/dms-local.json')
+$global:LASTEXITCODE = 0
+'@ | Set-Content (Join-Path $script:e2e 'teardown-local-dms.ps1')
+        $script:savedImage = $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE
+        $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = (Get-Content (Join-Path $script:fakeRepo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json).image
+        $script:savedPg = $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE
+        $script:savedSql = $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE
+        $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'postgres:pinned'; $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE = 'sqlserver:pinned'
+        $script:savedFault = $env:TEST_API_FAILURE
+        $env:TEST_API_FAILURE = ''
+    }
+    AfterEach {
+        $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $script:savedImage
+        $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = $script:savedPg
+        $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE = $script:savedSql
+        $env:TEST_API_FAILURE = $script:savedFault
+    }
+    It 'dispatches one explicit <Provider> admission whose settings load through production configuration and retained state' -ForEach @(
+        @{ Provider = 'Postgresql'; SettingsName = 'postgresql' }; @{ Provider = 'Mssql'; SettingsName = 'sqlserver' }
+    ) {
+        $handoffOutput = Join-Path $script:private 'handoff-path.txt'
+        & pwsh -NoProfile -File (Join-Path $script:sourceRepo 'eng/ci/prepare-cdc-api-e2e.ps1') -Repo $script:fakeRepo -PrivateDirectory $script:private -Provider $Provider -HandoffOutput $handoffOutput *> (Join-Path $script:private 'prepare.log')
+        $LASTEXITCODE | Should -Be 0 -Because (Get-Content (Join-Path $script:private 'prepare.log') -Raw)
+        @(Get-Content (Join-Path $script:private 'calls.txt')) | Should -Be @('infrastructure', 'principal', 'admission')
+        $settingsPath = Join-Path $script:private ".local/cdc/$SettingsName-e2e.json"
+        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+        $settings.Cdc.Provider | Should -Be $SettingsName
+        $settings.Cdc.Worker.HeapBytes | Should -Be 1073741824
+        $resolved = Join-Path $script:private 'resolved.json'
+        $handoff = (Get-Content $handoffOutput -Raw).Trim()
+        & dotnet run --file (Join-Path $script:sourceRepo 'eng/ci/CdcApiInputs.cs') -- $handoff $resolved *> (Join-Path $script:private 'resolve.log')
+        $LASTEXITCODE | Should -Be 0 -Because (Get-Content (Join-Path $script:private 'resolve.log') -Raw)
+        $inputs = Get-Content $resolved -Raw | ConvertFrom-Json
+        $inputs.Provider | Should -Be $Provider
+        $inputs.Database | Should -Be edfi_datamanagementservice_e2e
+        $inputs.Generation | Should -Be 1
+        $inputs.BindingId | Should -Match '^[a-f0-9]{64}$'
+    }
+    It 'uses only owned project cleanup after <Fault> with no deployment inventory' -ForEach @(
+        @{ Fault = 'infrastructure' }; @{ Fault = 'principal' }
+    ) {
+        $env:TEST_API_FAILURE = $Fault
+        & pwsh -NoProfile -File (Join-Path $script:sourceRepo 'eng/ci/prepare-cdc-api-e2e.ps1') -Repo $script:fakeRepo -PrivateDirectory $script:private -Provider Postgresql -HandoffOutput (Join-Path $script:private 'handoff-path.txt') *> (Join-Path $script:private 'failure.log')
+        $LASTEXITCODE | Should -Not -Be 0
+        (Get-Content (Join-Path $script:private 'calls.txt')) | Should -Not -Contain admission
+        $id = [guid]::NewGuid().ToString()
+        @{ InvocationId = $id; Project = 'dms-local'; AbsentBeforeStart = $true } | ConvertTo-Json | Set-Content (Join-Path $script:private 'ownership.json')
+        $driver = Join-Path $script:private 'cleanup-driver.ps1'
+        @'
+param($Script, $Repo, $PrivateDirectory, $InvocationId)
+function global:docker { $global:LASTEXITCODE = 0 }
+& $Script -Repo $Repo -PrivateDirectory $PrivateDirectory -Provider Postgresql -InvocationId $InvocationId
+'@ | Set-Content $driver
+        & pwsh -NoProfile -File $driver (Join-Path $script:sourceRepo 'eng/ci/cleanup-cdc-api-e2e.ps1') $script:fakeRepo $script:private $id *> (Join-Path $script:private 'cleanup.log')
+        $LASTEXITCODE | Should -Be 0 -Because (Get-Content (Join-Path $script:private 'cleanup.log') -Raw)
+        (Get-Content (Join-Path $script:private 'calls.txt'))[-1] | Should -Be primitive
+        Test-Path (Join-Path $script:private 'owned-resources.json') | Should -BeTrue
+    }
+    It 'requires matching ownership and chooses governed teardown once inventory exists (<Fault>)' -ForEach @(
+        @{ Fault = 'None' }; @{ Fault = 'cleanup' }; @{ Fault = 'Ownership' }
+    ) {
+        $env:TEST_API_FAILURE = $Fault
+        $id = [guid]::NewGuid().ToString()
+        @{ InvocationId = $id; Project = 'dms-local'; AbsentBeforeStart = ($Fault -ne 'Ownership') } | ConvertTo-Json | Set-Content (Join-Path $script:private 'ownership.json')
+        Copy-Item (Join-Path $script:fakeRepo 'eng/docker-compose/.env.e2e') (Join-Path $script:private '.env.e2e')
+        $inventoryDir = Join-Path $script:fakeRepo 'eng/docker-compose/.cdc-deployments'
+        $null = New-Item -ItemType Directory -Path $inventoryDir
+        '{}' | Set-Content (Join-Path $inventoryDir 'dms-local.json')
+        $state = Join-Path $script:private '.local/cdc/state-pg-e2e'
+        $null = New-Item -ItemType Directory -Path $state -Force
+        'retain' | Set-Content (Join-Path $state 'provenance')
+        $driver = Join-Path $script:private 'cleanup-driver.ps1'
+        @'
+param($Script, $Repo, $PrivateDirectory, $InvocationId)
+function global:docker { $global:LASTEXITCODE = 0 }
+& $Script -Repo $Repo -PrivateDirectory $PrivateDirectory -Provider Postgresql -InvocationId $InvocationId
+'@ | Set-Content $driver
+        & pwsh -NoProfile -File $driver (Join-Path $script:sourceRepo 'eng/ci/cleanup-cdc-api-e2e.ps1') $script:fakeRepo $script:private $id *> (Join-Path $script:private 'cleanup.log')
+        if ($Fault -eq 'None') {
+            $LASTEXITCODE | Should -Be 0
+            Test-Path $state | Should -BeFalse
+        } else {
+            $LASTEXITCODE | Should -Not -Be 0
+            Test-Path (Join-Path $state 'provenance') | Should -BeTrue
+        }
+        if ($Fault -eq 'Ownership') { Test-Path (Join-Path $script:private 'calls.txt') | Should -BeFalse }
+        else { @(Get-Content (Join-Path $script:private 'calls.txt')) | Should -Be @('governed') }
+    }
+}
+
+Describe 'CDC API E2E prerequisite summary' {
+    It 'persists invocation and failed setup plus minimal evidence before a fixture can exist' {
+        $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
+        $destination = Join-Path $TestDrive 'prerequisite-result'
+        $driver = Join-Path $TestDrive 'missing-ownership.ps1'
+        @'
+param($Runner, $Destination)
+$env:CDC_RUNBOOK_OWNED_STACK = ''
+function global:docker { throw 'Prerequisite rejection must precede Docker.' }
+function global:dotnet { throw 'Prerequisite rejection must precede builds/tests.' }
+& $Runner -Lane Postgresql -Suite ApiE2E -ResultsDirectory $Destination
+exit $LASTEXITCODE
+'@ | Set-Content $driver
+        & pwsh -NoProfile -File $driver $runner $destination *> (Join-Path $TestDrive 'prerequisite.log')
+        $LASTEXITCODE | Should -Be 1
+        $report = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json | Where-Object Name -eq 'Postgresql-ApiE2E')[0]
+        $report.InvocationId | Should -Match '^[a-f0-9-]{36}$'
+        $report.Stages.Setup | Should -Be Failed
+        $report.Stages.Test | Should -Be NotRun
+        $report.Status | Should -Be EnvironmentUnavailable
+        $evidence = Get-Content (Join-Path $destination 'Postgresql-ApiE2E/cdc-api-e2e.json') -Raw | ConvertFrom-Json
+        $evidence.InvocationId | Should -Be $report.InvocationId
+        $evidence.Scenarios.Count | Should -Be 0
     }
 }

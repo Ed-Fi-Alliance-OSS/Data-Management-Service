@@ -81,7 +81,8 @@ failure also fails the test. A cleanup/report-write error does not replace the
 original scenario failure. Hard process termination cannot guarantee finalization;
 the runner must reject the resulting missing/incomplete evidence.
 
-T21's runner validation and T19's evidence export consume this same schema.
+The runner validator and minimal evidence exporter consume this same schema. T19 extends
+the same export path with detailed diagnostics.
 Qualification requires matching invocation/provider/binding identity, successful
 attachment and disposal, and exactly the eight distinct ordered IDs all `Passed`
 with `Failure: None`. Wrapper setup/teardown, process exit/TRX, and export outcomes
@@ -90,8 +91,8 @@ they are never fields in this fixture-owned report.
 
 ## Development checkpoints
 
-T21 adds the `ApiE2E` runner dispatch. Once available, use the same commands as the
-final provider qualifications, with a fresh results directory on each invocation:
+Use the `ApiE2E` runner for development checkpoints and final provider qualifications,
+with a fresh results directory on each invocation:
 
 ```powershell
 pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-postgresql-checkpoint-01
@@ -106,3 +107,43 @@ runner still performs governed teardown. Earlier passed phases are useful progre
 evidence, but every incomplete run fails qualification. There is no separate
 direct-development setup or reporting path. Detailed diagnostics arrive in T19;
 they do not block implementing Student CRUD in T11.
+
+## Runner preparation and failure handling
+
+Use Linux, .NET 10, PowerShell 7.5 or later, Docker/Compose, and
+`CDC_RUNBOOK_OWNED_STACK=1` on an exclusively owned disposable local workspace.
+Supply `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` matching the checked-in qualified
+image and the selected `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` or
+`CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. The wrapper uses the shipped pinned
+Apache Kafka broker. `-PullImages` pulls prerequisites before preparation.
+
+The runner verifies both Compose projects have no containers, volumes, networks,
+retained deployment inventories or bootstrap workspace. It refreshes selected and
+Debug SchemaTools builds and requires both implicit and explicit wrapper resolution
+to select the refreshed in-repo Debug executable. Private environment/credentials,
+base configuration and restricted role/login preparation use the shared runbook
+fixture helper. The shipped setup wrapper creates and admits the fresh target;
+the runner never provisions it separately. HTTP and runtime attachment use the
+returned handoff and retained settings. Host database name and complete binding
+identity are resolved with the production configuration loader and state store.
+
+`qualification.json` is the runner-owned atomic stage summary. Its invocation UUID
+is persisted before prerequisites and passed to the fixture. Setup has a shared
+30-minute budget, tests have 50 minutes (including the fixture's 45-minute deadline
+and finalization), governed teardown gets an independent 15 minutes, and export
+gets an independent 2 minutes. Reserve at least 100 minutes after workflow
+prerequisites. An OS kill can prevent finalization; incremental reports and the
+private ownership marker remain useful, but incomplete runs fail qualification.
+
+After partial infrastructure startup, cleanup requires the pre-start ownership
+marker and uses only the local project teardown primitive. Once deployment inventory
+exists, the standard governed teardown wrapper owns retirement. Cleanup verifies
+resources are gone before archiving retained bootstrap inputs and removing the
+fixture's binding state last. Incomplete cleanup preserves provenance for diagnosis.
+The original execution failure and cleanup/export failures have separate fields.
+
+Only allowlisted identity/stage/phase data and sanitized test results are exported.
+Private settings, credentials, handoff, ownership inventory and raw logs stay under
+the runner's private temporary directory; never upload that directory. The runner
+does not write the fixture's scenario report. Every phase, attachment, disposal,
+setup, teardown, process/TRX result and export must pass to return zero.

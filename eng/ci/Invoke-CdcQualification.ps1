@@ -9,7 +9,7 @@
 param(
     [ValidateSet('All', 'Contract', 'Postgresql', 'Mssql', 'Kafka')]
     [string] $Lane = 'All',
-    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')]
+    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E')]
     [string] $Suite = 'All',
     [string] $ResultsDirectory = 'TestResults/cdc-qualification',
     [ValidateSet('Debug', 'Release')]
@@ -29,6 +29,25 @@ $raw = Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewG
 New-Item -ItemType Directory -Path $raw | Out-Null
 if (-not $IsWindows) { & chmod 700 $raw }
 $reports = [System.Collections.Generic.List[object]]::new()
+# Persist invocation/stages before prerequisite checks or fixture preparation.
+$apiReports = @{}
+if ($Suite -in @('All', 'ApiE2E')) {
+    foreach ($provider in @('Postgresql', 'Mssql')) {
+        if ($Lane -in @('All', $provider)) {
+            $apiReports[$provider] = New-CdcApiRunnerReport -Provider $provider
+            $reports.Add($apiReports[$provider])
+        }
+    }
+}
+$persistReports = {
+    $path = Join-Path $destination 'qualification.json'
+    $temporary = "$path.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        ConvertTo-Json -InputObject @($reports.ToArray()) -Depth 10 | Set-Content -LiteralPath $temporary
+        [IO.File]::Move($temporary, $path, $true)
+    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
+}
+& $persistReports
 $script:qualificationConfiguration = $Configuration
 $oldLocation = Get-Location
 $savedEnvironment = @{}
@@ -79,19 +98,19 @@ try {
     $lanes = if ($Lane -eq 'All') { @('Contract', 'Postgresql', 'Mssql', 'Kafka') } else { @($Lane) }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
-        if ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
+        if ($Suite -ne 'ApiE2E' -and ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes)) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
         if ('Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE' }
         if ('Postgresql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
-            if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
-                throw 'EnvironmentUnavailable: PostgreSQL Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: PostgreSQL Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__DatabaseConnection' }
         }
         if ('Mssql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE'
-            if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
-                throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__MssqlAdmin' }
         }
@@ -179,6 +198,11 @@ try {
             $filters = Get-CdcQualificationProviderSuite -Provider $selected
             foreach ($phase in $filters.Keys) {
                 if ($Suite -ne 'All' -and $Suite -ne $phase) { continue }
+                if ($phase -eq 'ApiE2E') {
+                    Invoke-CdcApiQualification -Repo $repo -RawDirectory $raw -Destination $destination -Configuration $Configuration `
+                        -Report $apiReports[$selected] -Persist $persistReports
+                    continue
+                }
                 $project = $backend
                 $name = "$selected-$phase"
                 if ($phase -notin @('History', 'Telemetry', 'MessageContract')) {
@@ -251,7 +275,18 @@ catch {
     Write-Output "CDC qualification: $status. $reason"
 }
 finally {
-    $reports | ConvertTo-Json -Depth 10 -AsArray | Set-Content (Join-Path $destination 'qualification.json')
+    foreach ($api in $apiReports.Values) {
+        if ($api.Status -eq 'Running') {
+            $api.Status = 'EnvironmentUnavailable'; $api.Reason = 'PrerequisiteFailed'; $api.Stages.Setup = 'Failed'
+            try {
+                $api.Stages.Export = 'Passed'
+                $unstarted = Join-Path $raw $api.Name
+                $null = New-Item -ItemType Directory -Path $unstarted -Force
+                Export-CdcQualificationEvidence -RawDirectory $unstarted -Destination (Join-Path $destination $api.Name) -ApiRunner $api
+            } catch { $api.Stages.Export = 'Failed'; $api.ExportFailure = 'ExportFailed' }
+        }
+    }
+    & $persistReports
     foreach ($name in $savedEnvironment.Keys) {
         if ($null -eq $savedEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
         else { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
