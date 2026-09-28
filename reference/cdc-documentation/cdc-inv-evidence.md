@@ -1230,12 +1230,20 @@ Private settings, handoff, logs, auth headers, connection strings and document b
 are excluded. Original execution, cleanup and export failures remain separate.
 
 PostgreSQL full qualification: **blocked T23**, with zero scenarios executed.
-The [failed runner report](evidence/dms1325-t23-postgresql-blocked/qualification.json)
-and [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-blocked/cdc-api-e2e.json)
-record an admission-time Connect rebalance/read-back failure, followed by successful
-governed cleanup and export. See [blocker details](../../PROBLEMS.md) and
-[run inputs](evidence/dms1325-t23-postgresql-blocked/run-details.json). This is no
-API-to-Kafka qualification claim. SQL Server full qualification:
+The latest [runner report](evidence/dms1325-t23-postgresql-handoff-blocked/qualification.json)
+and [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-handoff-blocked/cdc-api-e2e.json)
+record successful admission and initial DMS health, followed by failure during
+HTTP-only rollout before handoff publication. The underlying exception was discarded;
+its exact cause remains unproven. Governed teardown and export passed, with five
+owned containers and three volumes verified absent. See the reproducible
+[run inputs and limits](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json).
+The recorded T31 follow-up owns the bounded rollout investigation and regression
+before another qualification attempt. T23 and T24 remain incomplete.
+
+The earlier [admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json)
+remains historical evidence of the Connect rebalance/read-back blocker; it is not
+the failure stage of this latest run. Neither run supplies API-to-Kafka qualification
+evidence. SQL Server full qualification:
 **pending T24**. T19's parser, privacy, interruption and delegation tests provide no
 live qualification claim. Detailed E18 paging/query-plan/repair matrices, sibling
 message/consumer conformance, strict native-recovery fencing and same-topic recovery
