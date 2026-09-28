@@ -497,15 +497,16 @@ public static class RelationalAuthorizationPlanner
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Returns <see langword="true"/> for every single-record operation, and never for
-    /// <see cref="NamespaceAuthorizationOperation.ReadMany"/> or descriptor storage. Each enforcement step
-    /// flipped exactly one operation on in the same commit that added its execution, so no commit existed in
-    /// which a planned ownership check had no executor.
+    /// Returns <see langword="true"/> for every single-record operation over relationally stored resources,
+    /// and never for <see cref="NamespaceAuthorizationOperation.ReadMany"/>. Each enforcement step flipped
+    /// exactly one operation on in the same commit that added its execution, so no commit existed in which a
+    /// planned ownership check had no executor.
     /// </para>
     /// <para>
-    /// <see cref="ResourceStorageKind.SharedDescriptorTable"/> is withheld permanently for this story.
-    /// Descriptor ownership enforcement is out of scope, and this named arm is what keeps that boundary
-    /// deliberate: before ownership had its own bucket, descriptors were protected only incidentally, by
+    /// <see cref="ResourceStorageKind.SharedDescriptorTable"/> is admitted only for the operations in
+    /// <c>_descriptorOwnershipEnforcedOperations</c>, which is empty until descriptor enforcement is wired
+    /// one operation at a time. This named arm is what keeps that boundary deliberate: before ownership had
+    /// its own bucket, descriptors were protected only incidentally, by
     /// <c>RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies</c> catching every
     /// non-namespace strategy. Splitting ownership out would have removed that protection silently.
     /// Descriptor <em>stamping</em> is unaffected — it never consults configured strategies.
@@ -526,8 +527,11 @@ public static class RelationalAuthorizationPlanner
         NamespaceAuthorizationOperation operation,
         ResourceStorageKind storageKind
     ) =>
-        storageKind is not ResourceStorageKind.SharedDescriptorTable
-        && _ownershipEnforcedOperations.Contains(operation);
+        _ownershipEnforcedOperations.Contains(operation)
+        && (
+            storageKind is not ResourceStorageKind.SharedDescriptorTable
+            || _descriptorOwnershipEnforcedOperations.Contains(operation)
+        );
 
     /// <summary>
     /// Whether the caller for this operation and storage kind applies the <c>OwnershipBased</c> page filter
@@ -598,6 +602,7 @@ public static class RelationalAuthorizationPlanner
 
         return storageKind is ResourceStorageKind.SharedDescriptorTable
             && _ownershipEnforcedOperations.Contains(operation)
+            && !_descriptorOwnershipEnforcedOperations.Contains(operation)
             && nonNamespaceConfiguredStrategies.Any(IsOwnershipBased);
     }
 
@@ -624,6 +629,22 @@ public static class RelationalAuthorizationPlanner
         NamespaceAuthorizationOperation.Update,
         NamespaceAuthorizationOperation.Delete,
     ];
+
+    /// <summary>
+    /// The single-record operations whose descriptor callers execute the ownership check. Transitional:
+    /// empty until descriptor enforcement lands, when each operation is added in the same commit that wires
+    /// its descriptor consumers, and removed with <see cref="DescriptorOwnershipUnsupported"/> once all three
+    /// are in.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="EnforcesOwnershipChecks"/> admits descriptor storage for an operation only when it is a
+    /// member here, and <see cref="DescriptorOwnershipUnsupported"/> keeps the 501 for exactly the
+    /// single-record operations that are not, so no descriptor operation can be planned a check nothing
+    /// executes. Only single-record operations belong here: descriptor <c>ReadMany</c> is withheld by
+    /// <see cref="EnforcesOwnershipPageFilter"/> on its own.
+    /// </remarks>
+    private static readonly HashSet<NamespaceAuthorizationOperation> _descriptorOwnershipEnforcedOperations =
+    [];
 
     /// <summary>
     /// Whether the ownership token-cap terminal may displace the relationship classifier's

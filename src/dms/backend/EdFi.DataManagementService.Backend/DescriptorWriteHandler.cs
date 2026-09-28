@@ -1434,6 +1434,25 @@ internal sealed class DescriptorWriteHandler(
                 noPrefixes.CustomViewStrategies,
                 noPrefixes.RawConfiguredIndex
             ),
+            // Returned only where descriptor DELETE's ownership gate is open, which it is not yet. Every
+            // resolved view runs before this terminal: OwnershipBased executes last among the AND strategies
+            // whatever position it is configured at.
+            RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded =>
+                DeleteTerminal(
+                    request,
+                    new DeleteResult.DeleteFailureSecurityConfiguration(
+                        [
+                            OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                                ownershipTokenCapExceeded.OwnershipTokenCount
+                            ),
+                        ],
+                        AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                            AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                        )
+                    ),
+                    ownershipTokenCapExceeded.CustomViewStrategies,
+                    int.MaxValue
+                ),
             RelationalAuthorizationPlanOutcome.Plan plan
                 when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
                     plan.NonNamespaceConfiguredStrategies
@@ -2046,6 +2065,25 @@ internal sealed class DescriptorWriteHandler(
                 noPrefixes.CustomViewStrategies,
                 noPrefixes.RawConfiguredIndex
             ),
+            // Returned only where the descriptor write's ownership gate is open, which it is not yet. Every
+            // resolved view runs before this terminal: OwnershipBased executes last among the AND strategies
+            // whatever position it is configured at.
+            RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded =>
+                WriteTerminal(
+                    request,
+                    new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                        [
+                            OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                                ownershipTokenCapExceeded.OwnershipTokenCount
+                            ),
+                        ],
+                        AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                            AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                        )
+                    ),
+                    ownershipTokenCapExceeded.CustomViewStrategies,
+                    int.MaxValue
+                ),
             RelationalAuthorizationPlanOutcome.Plan plan
                 when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
                     plan.NonNamespaceConfiguredStrategies

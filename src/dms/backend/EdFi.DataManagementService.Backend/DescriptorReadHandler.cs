@@ -2346,6 +2346,8 @@ internal sealed class DescriptorReadHandler(
                 BuildDescriptorNoUsableRootPreflight(mappingSet, resource, noUsableRoot),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
                 BuildDescriptorNoPrefixesPreflight(mappingSet, resource, noPrefixes),
+            RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded =>
+                BuildDescriptorOwnershipTokenCapPreflight(mappingSet, resource, ownershipTokenCapExceeded),
             // Both read paths route through the same builder, so this terminal carries the custom views
             // configured ahead of it and its message excludes them from the unsupported list. Gating this on
             // GET-many left GET-by-id with a bare 501 that skipped validating those views and named the
@@ -2458,6 +2460,45 @@ internal sealed class DescriptorReadHandler(
 
         return new DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized(
             namespaceFailure,
+            customViewChecks
+        );
+    }
+
+    /// <summary>
+    /// The ownership token cap, reported as the read paths' existing security-configuration 500. The planner
+    /// returns this terminal only where a descriptor read's ownership gate is open, and none is yet.
+    /// </summary>
+    private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorOwnershipTokenCapPreflight(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded
+    )
+    {
+        // A null terminal index: OwnershipBased executes last among the AND strategies whatever position it
+        // is configured at, so every resolved custom view runs ahead of this terminal and is validated first.
+        if (
+            TryResolveTerminalCustomViewChecks(
+                mappingSet,
+                resource,
+                ownershipTokenCapExceeded.CustomViewStrategies,
+                terminalRawConfiguredIndex: null,
+                out var customViewChecks
+            ) is
+            { } customViewFailure
+        )
+        {
+            return customViewFailure;
+        }
+
+        return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+            [
+                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                    ownershipTokenCapExceeded.OwnershipTokenCount
+                ),
+            ],
+            AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+            ),
             customViewChecks
         );
     }
