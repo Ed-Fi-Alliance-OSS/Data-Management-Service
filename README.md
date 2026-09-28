@@ -55,6 +55,8 @@ for detailed information on how to contribute source code.
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
 - [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
 - [School Year Loader](./docs/SCHOOL-YEAR-LOADER.md)
+- [UniqueId Validation](./docs/UNIQUEID-VALIDATION.md) - a reference custom validator and a migration
+  note from the ODS/API UniqueIdValidation feature
 
 ## Legal Information
 

@@ -673,6 +673,19 @@ version's contract**, and it needs two things this version lacks rather than one
 oversight. Store access alone would not close this gap: the rule also requires a reliable identifier
 for the persisted document.
 
+DMS enforces that behavior natively anyway. `Student`, `Staff`, and `Contact` do not allow identity
+updates, and a UniqueId is the whole of each one's identity, so a `PUT` that changes it is answered
+with a `400` of type `urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported`
+before any storage happens. The exception is a deployment that lists the resource in
+`AppSettings:AllowIdentityUpdateOverrides`, which permits identity updates for it. A deployment
+migrating from ODS/API that keeps those resources out of that setting therefore needs no validator
+for that rule.
+
+The other half of ODS/API's UniqueIdValidation feature, rejecting a UniqueId an external system does
+not know, **is** expressible under this contract. A worked reference plugin, with a migration note,
+is at
+[docs/UNIQUEID-VALIDATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/UNIQUEID-VALIDATION.md).
+
 ### Why the document body is not a substitute for identity
 
 The obvious move after reading the above is to reach for `$.id` in the document. It does not hold.

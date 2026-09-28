@@ -41,14 +41,14 @@ internal static class PluginHostProbe
     public static string StagedFixtureRoot => Path.Combine(AppContext.BaseDirectory, "PluginFixtures");
 
     /// <summary>
-    /// Where the build staged the custom validation proof plugin.
+    /// Where the build staged the custom-validation fixture plugins.
     /// </summary>
     /// <remarks>
     /// A second root rather than another directory under <see cref="StagedFixtureRoot"/>, because
-    /// that one is produced by the shared staging machinery and this fixture is produced by
+    /// that one is produced by the shared staging machinery and these fixtures are produced by
     /// CustomValidationFixturePlugin.targets, which packs its two contracts into a folder feed
-    /// first. Keeping the roots apart is what lets the shared prune remove its whole tree without
-    /// reaching this one.
+    /// once and publishes every fixture named there against it. Keeping the roots apart is what
+    /// lets the shared prune remove its whole tree without reaching this one.
     /// </remarks>
     public static string CustomValidationFixtureRoot =>
         Path.Combine(AppContext.BaseDirectory, "CustomValidationPluginFixture");
