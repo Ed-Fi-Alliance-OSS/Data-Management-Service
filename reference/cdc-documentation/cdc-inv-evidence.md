@@ -1229,26 +1229,35 @@ wrong-invocation and rejected data are identified, never copied as raw output.
 Private settings, handoff, logs, auth headers, connection strings and document bodies
 are excluded. Original execution, cleanup and export failures remain separate.
 
-PostgreSQL full qualification: **blocked T23**, with one timed-out scenario and
+PostgreSQL full qualification: **blocked T23**, with one failed scenario and
 seven scenarios not run. The latest
-[runner report](evidence/dms1325-t23-postgresql-crud-blocked/qualification.json) and
-[runtime/cleanup evidence](evidence/dms1325-t23-postgresql-crud-blocked/cdc-api-e2e.json)
-record successful setup, admission, HTTP-only handoff and fixture attachment at
-revision `586433c24dc5c70efe01505b3f2e679c69cebab1`. Student CRUD (`CDC-E2E-01`)
-then timed out before its first scenario checkpoint. The journal contains only
-the three attachment checkpoints. The runner discards the underlying exception,
-so the exact waiting operation and cause remain unproven; T35 owns the bounded
-diagnosis and regression before rerunning. T33 live evidence for fresh
-source/work/cache/sequence observer connections remains unestablished.
+[runner report](evidence/dms1325-t23-postgresql-after-t35-blocked/qualification.json) and
+[runtime/cleanup evidence](evidence/dms1325-t23-postgresql-after-t35-blocked/cdc-api-e2e.json)
+record successful setup, admission, HTTP-only handoff and attachment at revision
+`3493d720bc0555bb042adf0aaab5ddc930187f96`, including T35's fixture target-value
+comparison correction. Student CRUD (`CDC-E2E-01`) then failed with `Error`
+before its first checkpoint. The test process completed in about 23 seconds;
+this is distinct from the previous five-minute gate timeout. Only the three
+attachment checkpoints were recorded, and the scenario runner discarded the
+underlying exception. The failing operation and cause remain unproven; T36 owns
+the bounded diagnosis and regression before another qualification attempt.
 
 Fixture disposal, governed teardown and export passed, with five owned containers
-and three volumes verified absent; an independent Docker inventory also found no
-remaining `dms-local` resources. Scenario `CDC-E2E-01` is `Failed/TimedOut`, and
-`CDC-E2E-02` through `CDC-E2E-08` are `NotRun`. The runner's eight failed required
-outcomes count one executed failure and seven missing outcomes. Invocation,
-provider, binding and generation match across the reports. See the reproducible
-[run inputs and limits](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json).
-T23 and T24 remain incomplete.
+and three volumes verified absent. An independent Docker inventory also found no
+remaining `dms-local` containers, volumes or networks. Scenario `CDC-E2E-01` is
+`Failed/Error`; `CDC-E2E-02` through `CDC-E2E-08` are `NotRun`. The runner's eight
+failed required outcomes count one executed failure and seven missing outcomes.
+Invocation, provider, binding and generation match across the reports. See the
+reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json).
+T33 live source/work/cache/sequence authentication evidence and T35 live held-create,
+overlap and rebuild evidence remain unestablished. T23 and T24 remain incomplete;
+no unchanged retry or production change was attempted.
+
+The earlier [CRUD timeout](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json)
+remains historical evidence. T35 corrected three fixture target reference
+comparisons and verified independently constructed equivalent keys in focused
+regressions. The subsequent `Error` result does not establish live gate selection
+or identify a regression in that correction. Do not conflate the two failures.
 
 The earlier [attachment failure](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json)
 remains historical evidence. T34 diagnosed rejection of valid local

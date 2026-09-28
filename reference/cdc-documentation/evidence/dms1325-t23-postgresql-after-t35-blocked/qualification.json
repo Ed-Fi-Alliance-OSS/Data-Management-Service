@@ -1,0 +1,75 @@
+[
+  {
+    "Name": "Postgresql-ApiE2E",
+    "InvocationId": "c088e449-ca19-4ef4-9f91-79140dacd332",
+    "Provider": "Postgresql",
+    "RequestedConnectDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "Status": "Failed",
+    "Reason": "ScenarioExecutionFailed",
+    "CleanupFailure": "None",
+    "ExportFailure": "None",
+    "ReportFailure": "None",
+    "Total": 8,
+    "Passed": 0,
+    "Failed": 8,
+    "Skipped": 0,
+    "Stages": {
+      "Setup": "Passed",
+      "Test": "Failed",
+      "Teardown": "Passed",
+      "Export": "Passed"
+    },
+    "ProcessResult": {
+      "Passed": 0,
+      "Skipped": 0,
+      "Total": 1,
+      "Status": "Failed",
+      "Failed": 1
+    },
+    "ProcessExit": 1,
+    "BindingId": "8267888c0aeb81576c52a4477450a22b57c05fbf003c36b0ccc2c4dbab3b88ec",
+    "Generation": 1,
+    "Cases": [
+      {
+        "Failure": "Error",
+        "Id": "CDC-E2E-01",
+        "Outcome": "Failed"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-02",
+        "Outcome": "NotRun"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-03",
+        "Outcome": "NotRun"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-04",
+        "Outcome": "NotRun"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-05",
+        "Outcome": "NotRun"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-06",
+        "Outcome": "NotRun"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-07",
+        "Outcome": "NotRun"
+      },
+      {
+        "Failure": "None",
+        "Id": "CDC-E2E-08",
+        "Outcome": "NotRun"
+      }
+    ]
+  }
+]
