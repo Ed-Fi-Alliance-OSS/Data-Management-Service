@@ -26,20 +26,35 @@ internal sealed class CdcApiClient : IDisposable
     private readonly HttpClient _dms;
     private readonly HttpClient _cms;
     private readonly int _dataStoreId;
+    private readonly TimeProvider _timeProvider;
+    private string _applicationAuthorization = "";
+    private DateTimeOffset _renewAt = DateTimeOffset.MinValue;
 
     public CdcApiClient(Uri dmsBaseUrl, Uri cmsBaseUrl, int dataStoreId)
-        : this(dmsBaseUrl, cmsBaseUrl, dataStoreId, new HttpClientHandler(), new HttpClientHandler()) { }
+        : this(
+            dmsBaseUrl,
+            cmsBaseUrl,
+            dataStoreId,
+            new HttpClientHandler(),
+            new HttpClientHandler(),
+            TimeProvider.System
+        )
+    {
+        // The attached fixture uses wall-clock time; handler tests supply a controlled clock.
+    }
 
     internal CdcApiClient(
         Uri dmsBaseUrl,
         Uri cmsBaseUrl,
         int dataStoreId,
         HttpMessageHandler dmsHandler,
-        HttpMessageHandler cmsHandler
+        HttpMessageHandler cmsHandler,
+        TimeProvider timeProvider
     )
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dataStoreId);
         _dataStoreId = dataStoreId;
+        _timeProvider = timeProvider;
         _dms = new(dmsHandler) { BaseAddress = BaseUrl(dmsBaseUrl), Timeout = TimeSpan.FromSeconds(30) };
         _cms = new(cmsHandler) { BaseAddress = BaseUrl(cmsBaseUrl), Timeout = TimeSpan.FromSeconds(30) };
     }
@@ -98,26 +113,76 @@ internal sealed class CdcApiClient : IDisposable
         using JsonDocument credentials = JsonDocument.Parse(
             await application.Content.ReadAsStringAsync(token)
         );
-        using var request = new HttpRequestMessage(HttpMethod.Post, "oauth/token");
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic",
-            OAuthClientCredentialsEncoder.CreateBasicSchemeParameter(
-                credentials.RootElement.GetProperty("key").GetString()!,
-                credentials.RootElement.GetProperty("secret").GetString()!
+        _applicationAuthorization = OAuthClientCredentialsEncoder.CreateBasicSchemeParameter(
+            credentials.RootElement.GetProperty("key").GetString()!,
+            credentials.RootElement.GetProperty("secret").GetString()!
+        );
+        await AcquireTokenAsync(token);
+    }
+
+    private async Task EnsureTokenAsync(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (_applicationAuthorization.Length == 0)
+        {
+            throw new InvalidOperationException("DMS application authentication is required.");
+        }
+        if (_timeProvider.GetUtcNow() >= _renewAt)
+        {
+            await AcquireTokenAsync(token);
+        }
+    }
+
+    private async Task AcquireTokenAsync(CancellationToken token)
+    {
+        try
+        {
+            // Count request latency against the lifetime, and renew up to 30 seconds early.
+            // Short-lived tokens retain half their lifetime. Scenario requests are serialized.
+            DateTimeOffset requestedAt = _timeProvider.GetUtcNow();
+            using var request = new HttpRequestMessage(HttpMethod.Post, "oauth/token");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", _applicationAuthorization);
+            request.Content = new FormUrlEncodedContent([new("grant_type", "client_credentials")]);
+            using HttpResponseMessage response = await _dms.SendAsync(request, token);
+            RequireStatus(response, HttpStatusCode.OK, "DMS token acquisition");
+            using JsonDocument result = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+            JsonElement root = result.RootElement;
+            if (
+                root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("access_token", out JsonElement accessToken)
+                || accessToken.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(accessToken.GetString())
+                || !root.TryGetProperty("expires_in", out JsonElement expiration)
+                || expiration.ValueKind != JsonValueKind.Number
+                || !expiration.TryGetInt32(out int seconds)
+                || seconds <= 0
             )
-        );
-        request.Content = new FormUrlEncodedContent([new("grant_type", "client_credentials")]);
-        using HttpResponseMessage response = await _dms.SendAsync(request, token);
-        RequireStatus(response, HttpStatusCode.OK, "DMS token acquisition");
-        using JsonDocument result = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
-        _dms.DefaultRequestHeaders.Authorization = new(
-            "Bearer",
-            result.RootElement.GetProperty("access_token").GetString()!
-        );
+            {
+                throw new InvalidOperationException("Invalid DMS token metadata.");
+            }
+            DateTimeOffset renewAt = requestedAt.AddSeconds(seconds - Math.Min(30, seconds / 2.0));
+            token.ThrowIfCancellationRequested();
+            if (_timeProvider.GetUtcNow() >= renewAt)
+            {
+                throw new InvalidOperationException("DMS token lifetime elapsed during acquisition.");
+            }
+            _dms.DefaultRequestHeaders.Authorization = new("Bearer", accessToken.GetString()!);
+            _renewAt = renewAt;
+        }
+        catch (OperationCanceledException)
+        {
+            throw new OperationCanceledException("DMS token acquisition cancelled or timed out.", token);
+        }
+        catch (Exception)
+        {
+            // Token parsing/transport exceptions can contain credentials or response fragments.
+            throw new InvalidOperationException("DMS token acquisition failed.");
+        }
     }
 
     public async Task<Guid> PostAsync(CdcApiResource resource, JsonObject body, CancellationToken token)
     {
+        await EnsureTokenAsync(token);
         using StringContent content = JsonContent(body);
         using HttpResponseMessage response = await _dms.PostAsync(ResourcePath(resource), content, token);
         RequireStatus(response, HttpStatusCode.Created, "DMS create");
@@ -126,6 +191,7 @@ internal sealed class CdcApiClient : IDisposable
 
     public async Task PutAsync(CdcApiResource resource, Guid id, JsonObject body, CancellationToken token)
     {
+        await EnsureTokenAsync(token);
         JsonObject payload = (JsonObject)body.DeepClone();
         payload["id"] = id.ToString("D");
         using StringContent content = JsonContent(payload);
@@ -139,6 +205,7 @@ internal sealed class CdcApiClient : IDisposable
 
     public async Task<JsonObject> GetAsync(CdcApiResource resource, Guid id, CancellationToken token)
     {
+        await EnsureTokenAsync(token);
         using HttpResponseMessage response = await _dms.GetAsync($"{ResourcePath(resource)}/{id:D}", token);
         RequireStatus(response, HttpStatusCode.OK, "DMS read");
         return JsonNode.Parse(await response.Content.ReadAsStringAsync(token))!.AsObject();
@@ -146,6 +213,7 @@ internal sealed class CdcApiClient : IDisposable
 
     public async Task DeleteAsync(CdcApiResource resource, Guid id, CancellationToken token)
     {
+        await EnsureTokenAsync(token);
         using HttpResponseMessage response = await _dms.DeleteAsync(
             $"{ResourcePath(resource)}/{id:D}",
             token

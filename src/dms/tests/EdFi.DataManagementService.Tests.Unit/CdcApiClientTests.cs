@@ -21,11 +21,21 @@ public class Given_CdcApiClient
     private RecordingHandler _cms = null!;
     private RecordingHandler _dms = null!;
     private CdcApiClient _client = null!;
+    private ManualTimeProvider _time = null!;
+    private int _tokenRequests;
+    private Func<HttpResponseMessage> _tokenResponse = null!;
     private static readonly Guid Id = Guid.Parse("00000000-0000-0000-0000-000000000123");
 
     [SetUp]
     public async Task Setup()
     {
+        _time = new();
+        _tokenRequests = 0;
+        _tokenResponse = () =>
+            Response(
+                HttpStatusCode.OK,
+                $$"""{"access_token":"dms-token-{{++_tokenRequests}}","expires_in":1800}"""
+            );
         _cms = new(request =>
             request.RequestUri!.AbsolutePath switch
             {
@@ -48,7 +58,7 @@ public class Given_CdcApiClient
         {
             if (request.RequestUri!.AbsolutePath.EndsWith("oauth/token", StringComparison.Ordinal))
             {
-                return Response(HttpStatusCode.OK, """{"access_token":"dms-token"}""");
+                return _tokenResponse();
             }
             if (request.Method == HttpMethod.Post)
             {
@@ -63,7 +73,8 @@ public class Given_CdcApiClient
             new Uri("http://localhost:18094/"),
             73,
             _dms,
-            _cms
+            _cms,
+            _time
         );
         await _client.AuthenticateAsync(CancellationToken.None);
     }
@@ -130,7 +141,7 @@ public class Given_CdcApiClient
                 $"/context/data/ed-fi/{route}/{Id:D}",
                 $"/context/data/ed-fi/{route}/{Id:D}"
             );
-        requests.Select(r => r.Authorization).Should().OnlyContain(a => a == "Bearer dms-token");
+        requests.Select(r => r.Authorization).Should().OnlyContain(a => a == "Bearer dms-token-1");
         requests.Select(r => r.CanCancel).Should().OnlyContain(c => c);
         JsonNode.Parse(requests[1].Body)!["id"]!.GetValue<string>().Should().Be(Id.ToString("D"));
         body.ContainsKey("id").Should().BeFalse();
@@ -154,15 +165,9 @@ public class Given_CdcApiClient
     [Test]
     public async Task It_omits_server_payloads_from_http_failure_diagnostics()
     {
-        using var client = new CdcApiClient(
-            new("http://localhost:18093/"),
-            new("http://localhost:18094/"),
-            73,
-            new RecordingHandler(_ => Response(HttpStatusCode.BadRequest, "sensitive-body-and-credentials")),
-            new RecordingHandler(_ => Response(HttpStatusCode.OK, "{}"))
-        );
+        _dms.Respond = _ => Response(HttpStatusCode.BadRequest, "sensitive-body-and-credentials");
         Func<Task> act = () =>
-            client.PostAsync(
+            _client.PostAsync(
                 CdcApiResource.Student,
                 CdcApiClient.NewStudent("Sensitive name"),
                 CancellationToken.None
@@ -178,6 +183,181 @@ public class Given_CdcApiClient
         await cancellation.CancelAsync();
         Func<Task> act = () => _client.GetAsync(CdcApiResource.Student, Id, cancellation.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [TestCase("POST")]
+    [TestCase("PUT")]
+    [TestCase("GET")]
+    [TestCase("DELETE")]
+    public async Task It_renews_before_each_resource_method_after_expiration(string method)
+    {
+        _time.Advance(TimeSpan.FromMinutes(31));
+        await SendResourceAsync(method, CancellationToken.None);
+
+        _dms.Requests.Select(r => r.Uri.AbsolutePath)
+            .Take(2)
+            .Should()
+            .Equal("/context/oauth/token", "/context/oauth/token");
+        _dms.Requests[1].Authorization.Should().Be(_dms.Requests[0].Authorization);
+        _dms.Requests[1].Body.Should().Be("grant_type=client_credentials");
+        _dms.Requests[1].CanCancel.Should().BeTrue();
+        _dms.Requests[1].Uri.Should().Be(_dms.Requests[0].Uri);
+        _dms.Requests.Should().HaveCount(3);
+        _dms.Requests[^1].Method.Method.Should().Be(method);
+        _dms.Requests[^1].Authorization.Should().Be("Bearer dms-token-2");
+        _cms.Requests.Should().HaveCount(6);
+    }
+
+    [Test]
+    public async Task It_reuses_tokens_until_the_renewal_boundary_and_tracks_replacement_expiration()
+    {
+        _time.Advance(TimeSpan.FromSeconds(1769));
+        await SendResourceAsync("GET", CancellationToken.None);
+        _dms.Requests[^1].Authorization.Should().Be("Bearer dms-token-1");
+        _tokenRequests.Should().Be(1);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        await SendResourceAsync("POST", CancellationToken.None);
+        _dms.Requests[^1].Authorization.Should().Be("Bearer dms-token-2");
+        _tokenRequests.Should().Be(2);
+
+        _time.Advance(TimeSpan.FromSeconds(1769));
+        await SendResourceAsync("PUT", CancellationToken.None);
+        _dms.Requests[^1].Authorization.Should().Be("Bearer dms-token-2");
+        _tokenRequests.Should().Be(2);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        await SendResourceAsync("DELETE", CancellationToken.None);
+        _dms.Requests[^1].Authorization.Should().Be("Bearer dms-token-3");
+        _tokenRequests.Should().Be(3);
+    }
+
+    [TestCase("POST")]
+    [TestCase("PUT")]
+    [TestCase("GET")]
+    [TestCase("DELETE")]
+    public async Task It_does_not_send_the_pending_resource_request_when_renewal_fails(string method)
+    {
+        _time.Advance(TimeSpan.FromMinutes(31));
+        _tokenResponse = () => Response(HttpStatusCode.Unauthorized, "app-secret sensitive-token-body");
+        Func<Task> act = () => SendResourceAsync(method, CancellationToken.None);
+        var failure = await act.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.Message.Should().Be("DMS token acquisition failed.");
+        failure.Which.InnerException.Should().BeNull();
+        _dms.Requests.Should().HaveCount(2).And.OnlyContain(r => r.Uri.AbsolutePath.EndsWith("oauth/token"));
+        _cms.Requests.Should().HaveCount(6);
+    }
+
+    [TestCase("POST")]
+    [TestCase("PUT")]
+    [TestCase("GET")]
+    [TestCase("DELETE")]
+    public async Task It_does_not_send_the_pending_resource_request_when_renewal_is_cancelled(string method)
+    {
+        _time.Advance(TimeSpan.FromMinutes(31));
+        using var cancellation = new CancellationTokenSource();
+        _tokenResponse = () =>
+        {
+            cancellation.Cancel();
+            return Response(HttpStatusCode.OK, """{"access_token":"private-token","expires_in":1800}""");
+        };
+        Func<Task> act = () => SendResourceAsync(method, cancellation.Token);
+        var failure = await act.Should().ThrowAsync<OperationCanceledException>();
+        failure.Which.Message.Should().Be("DMS token acquisition cancelled or timed out.");
+        failure.Which.InnerException.Should().BeNull();
+        _dms.Requests.Should().HaveCount(2).And.OnlyContain(r => r.Uri.AbsolutePath.EndsWith("oauth/token"));
+    }
+
+    [TestCase("invalid-sensitive-token-body")]
+    [TestCase("[]")]
+    [TestCase("{}")]
+    [TestCase("{\"access_token\":\"private-token\"}")]
+    [TestCase("{\"access_token\":\"private-token\",\"expires_in\":0}")]
+    [TestCase("{\"access_token\":\"private-token\",\"expires_in\":-1}")]
+    [TestCase("{\"access_token\":\"private-token\",\"expires_in\":\"private-value\"}")]
+    [TestCase("{\"access_token\":\"private-token\",\"expires_in\":1.5}")]
+    [TestCase("{\"access_token\":\"private-token\",\"expires_in\":999999999999}")]
+    [TestCase("{\"access_token\":null,\"expires_in\":1800}")]
+    [TestCase("{\"access_token\":42,\"expires_in\":1800}")]
+    [TestCase("{\"access_token\":\" \",\"expires_in\":1800}")]
+    public async Task It_rejects_invalid_token_metadata_without_exposing_the_response(string body)
+    {
+        _time.Advance(TimeSpan.FromMinutes(31));
+        _tokenResponse = () => Response(HttpStatusCode.OK, body);
+        Func<Task> act = () => SendResourceAsync("POST", CancellationToken.None);
+        var failure = await act.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.Message.Should().Be("DMS token acquisition failed.");
+        failure.Which.InnerException.Should().BeNull();
+        _dms.Requests.Should().HaveCount(2);
+    }
+
+    [Test]
+    public async Task It_sanitizes_token_transport_failures()
+    {
+        _time.Advance(TimeSpan.FromMinutes(31));
+        _tokenResponse = () => throw new HttpRequestException("private-token app-secret");
+        Func<Task> act = () => SendResourceAsync("POST", CancellationToken.None);
+        var failure = await act.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.Message.Should().Be("DMS token acquisition failed.");
+        failure.Which.InnerException.Should().BeNull();
+        _dms.Requests.Should().HaveCount(2);
+    }
+
+    [Test]
+    public async Task It_counts_token_request_latency_against_expiration()
+    {
+        _time.Advance(TimeSpan.FromMinutes(31));
+        _tokenResponse = () =>
+        {
+            _time.Advance(TimeSpan.FromSeconds(6));
+            return Response(HttpStatusCode.OK, """{"access_token":"private-token","expires_in":10}""");
+        };
+        Func<Task> act = () => SendResourceAsync("POST", CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _dms.Requests.Should().HaveCount(2);
+    }
+
+    [TestCase("POST")]
+    [TestCase("PUT")]
+    [TestCase("GET")]
+    [TestCase("DELETE")]
+    public async Task It_does_not_retry_a_transmitted_domain_request_after_unauthorized(string method)
+    {
+        _dms.Respond = _ => Response(HttpStatusCode.Unauthorized, "private-response");
+        Func<Task> act = () => SendResourceAsync(method, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _dms.Requests.Should().HaveCount(2);
+        _dms.Requests[^1].Method.Method.Should().Be(method);
+    }
+
+    private async Task SendResourceAsync(string method, CancellationToken token)
+    {
+        switch (method)
+        {
+            case "POST":
+                await _client.PostAsync(CdcApiResource.Student, CdcApiClient.NewStudent("Created"), token);
+                break;
+            case "PUT":
+                await _client.PutAsync(CdcApiResource.Student, Id, CdcApiClient.NewStudent("Updated"), token);
+                break;
+            case "GET":
+                await _client.GetAsync(CdcApiResource.Student, Id, token);
+                break;
+            case "DELETE":
+                await _client.DeleteAsync(CdcApiResource.Student, Id, token);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(method));
+        }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan duration) => _now += duration;
     }
 
     private static HttpResponseMessage Response(HttpStatusCode status, string body) =>
@@ -202,6 +382,7 @@ public class Given_CdcApiClient
         : HttpMessageHandler
     {
         public List<Request> Requests { get; } = [];
+        public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } = respond;
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -220,7 +401,7 @@ public class Given_CdcApiClient
                     cancellationToken.CanBeCanceled
                 )
             );
-            return respond(request);
+            return Respond(request);
         }
     }
 }
