@@ -52,7 +52,13 @@ internal sealed partial class CdcApiScenarios
                 phase.Gate.Pause();
                 try
                 {
-                    await phase.Runtime.StartProcessingAsync(ct);
+                    await CdcAttachmentReadiness.StartAndWaitAsync(
+                        phase.Runtime,
+                        phase.StatusAsync,
+                        _context.Request.Timing.WaitTimeout,
+                        _context.Request.Timing.PollInterval,
+                        ct
+                    );
                     Guid uuid = await _context.Api.PostAsync(resource, body, ct);
                     var held = await phase.Gate.WaitUntilPausedAsync(ct);
                     var created = (await _context.Documents.ReadSourceAsync(uuid, ct))

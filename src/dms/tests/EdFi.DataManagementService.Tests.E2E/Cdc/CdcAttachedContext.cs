@@ -254,10 +254,20 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
                         cancellation,
                         cancellation
                     );
-                    if (status.Aggregate.Readiness != CdcReadiness.Ready)
-                    {
-                        throw new InvalidOperationException();
-                    }
+                    // The designated executor stays unstarted until CRUD has armed its gate.
+                    // Use the production mapper to retain identity, Tracking and cache-ahead checks.
+                    var started = DateTimeOffset.UtcNow;
+                    var projection = await context._owner.Runtime.ObserveAsync(cancellation);
+                    CdcAttachmentReadiness.RequireUnstarted(
+                        status,
+                        CdcControllerObservations.Projection(
+                            request,
+                            projection,
+                            Guid.NewGuid().ToString("D"),
+                            started,
+                            DateTimeOffset.UtcNow
+                        )
+                    );
 
                     var observed = await context._owner.Runtime.ObserveEstablishedDatabaseAsync(cancellation);
                     if (
