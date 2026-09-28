@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Net;
@@ -221,16 +222,19 @@ internal static class OwnershipAuthorizationIntegrationScenario
     }
 
     /// <summary>
-    /// 2.14 on every enforced operation against a row created without a token: a distinct <c>type</c> and an
+    /// 2.14 on every enforced operation against a row whose stored token is NULL: a distinct <c>type</c> and an
     /// <c>errors</c> entry naming the strategy, over the same shared detail sentence 2.13 uses.
     /// </summary>
     public static async Task It_returns_stored_uninitialized_problem_details_for_reads_and_writes(
         ApiIntegrationHarness harness
     )
     {
-        Guid documentId = await CreateAsync(harness, NoCreatorTokenTenant, 1301, "ownership-uninitialized");
-
-        (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().BeNull();
+        Guid documentId = await SeedWithStoredOwnershipTokenAsync(
+            harness,
+            1301,
+            "ownership-uninitialized",
+            storedOwnershipTokenId: null
+        );
 
         using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(
             ResourcePath(ForeignTenant, documentId)
@@ -279,11 +283,11 @@ internal static class OwnershipAuthorizationIntegrationScenario
     public static async Task It_never_discloses_an_ownership_token_value(ApiIntegrationHarness harness)
     {
         Guid mismatchId = await CreateAsync(harness, OwnerTenant, 1401, "ownership-no-disclosure-mismatch");
-        Guid uninitializedId = await CreateAsync(
+        Guid uninitializedId = await SeedWithStoredOwnershipTokenAsync(
             harness,
-            NoCreatorTokenTenant,
             1402,
-            "ownership-no-disclosure-uninitialized"
+            "ownership-no-disclosure-uninitialized",
+            storedOwnershipTokenId: null
         );
 
         using HttpResponseMessage mismatchResponse = await harness.HttpClient.GetAsync(
@@ -386,11 +390,11 @@ internal static class OwnershipAuthorizationIntegrationScenario
     )
     {
         Guid ownedId = await CreateAsync(harness, OwnerTenant, 1601, "ownership-get-many-owned");
-        Guid unstampedId = await CreateAsync(
+        Guid unstampedId = await SeedWithStoredOwnershipTokenAsync(
             harness,
-            NoCreatorTokenTenant,
             1602,
-            "ownership-get-many-unstamped"
+            "ownership-get-many-unstamped",
+            storedOwnershipTokenId: null
         );
 
         using HttpResponseMessage ownerResponse = await harness.HttpClient.GetAsync(
@@ -538,6 +542,56 @@ internal static class OwnershipAuthorizationIntegrationScenario
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
 
         return Guid.Parse(GetLocationPath(response).Split('/', StringSplitOptions.RemoveEmptyEntries)[^1]);
+    }
+
+    /// <summary>
+    /// Seeds a row carrying a chosen stored ownership token without relying on how a create is authorized: the
+    /// owner creates it, then the stamp is overwritten directly. Product code never updates the stamp, so this
+    /// fabricates exactly the state a legacy or misconfigured create leaves behind, and reading it back proves
+    /// the seed holds the value the caller's assertions are about.
+    /// </summary>
+    private static async Task<Guid> SeedWithStoredOwnershipTokenAsync(
+        ApiIntegrationHarness harness,
+        int authorizationNullableId,
+        string name,
+        short? storedOwnershipTokenId
+    )
+    {
+        Guid documentId = await CreateAsync(harness, OwnerTenant, authorizationNullableId, name);
+
+        string sql = IsMssql(harness.DbConnection)
+            ? """
+                UPDATE [dms].[Document]
+                SET [CreatedByOwnershipTokenId] = @storedOwnershipTokenId
+                WHERE [DocumentUuid] = @documentUuid;
+                """
+            : """
+                UPDATE "dms"."Document"
+                SET "CreatedByOwnershipTokenId" = @storedOwnershipTokenId
+                WHERE "DocumentUuid" = @documentUuid;
+                """;
+
+        await using (DbCommand command = harness.DbConnection.CreateCommand())
+        {
+            command.CommandText = sql;
+
+            DbParameter tokenParameter = command.CreateParameter();
+            tokenParameter.ParameterName = "@storedOwnershipTokenId";
+            tokenParameter.DbType = DbType.Int16;
+            tokenParameter.Value = (object?)storedOwnershipTokenId ?? DBNull.Value;
+            command.Parameters.Add(tokenParameter);
+
+            DbParameter uuidParameter = command.CreateParameter();
+            uuidParameter.ParameterName = "@documentUuid";
+            uuidParameter.Value = documentId;
+            command.Parameters.Add(uuidParameter);
+
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().Be(storedOwnershipTokenId);
+
+        return documentId;
     }
 
     private static async Task<HttpResponseMessage> PostAsync(
