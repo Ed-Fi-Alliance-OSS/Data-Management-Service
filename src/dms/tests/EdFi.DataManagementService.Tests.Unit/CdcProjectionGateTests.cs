@@ -105,6 +105,44 @@ public class Given_CdcProjectionGate
     }
 
     [Test]
+    public async Task It_waits_for_the_processor_to_return_before_rearming()
+    {
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _writer.BeforeWriteAsync = async _ =>
+        {
+            entered.TrySetResult();
+            await finish.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        };
+        _gate.Release();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task idle = _gate.WaitUntilIdleAsync(CancellationToken.None);
+        try
+        {
+            idle.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            finish.TrySetResult();
+        }
+        await idle;
+        await _processing;
+        _gate.Pause(102);
+        await _gate.WaitUntilIdleAsync(CancellationToken.None);
+    }
+
+    [Test]
+    public async Task It_cancels_an_idle_wait_without_releasing_held_processing()
+    {
+        using var cancellation = new CancellationTokenSource();
+        Task idle = _gate.WaitUntilIdleAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        Func<Task> act = () => idle;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _processing.IsCompleted.Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_can_pause_all_target_work_again_for_a_new_document()
     {
         _gate.Release();

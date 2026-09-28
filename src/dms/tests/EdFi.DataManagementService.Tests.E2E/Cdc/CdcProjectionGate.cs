@@ -93,6 +93,15 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         }
     }
 
+    public Task WaitUntilIdleAsync(CancellationToken token)
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return (_active == 0 ? Task.CompletedTask : _drained.Task).WaitAsync(_timeout, token);
+        }
+    }
+
     internal async Task<DocumentCacheProjectionItemProcessResult> ProcessAsync(
         IDocumentCacheProjectionItemProcessor inner,
         DocumentCacheProjectionItemProcessRequest request,

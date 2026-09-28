@@ -102,7 +102,7 @@ public class Given_CdcScenarioAccounting
     [Test]
     public async Task It_fails_unimplemented_work_through_normal_phase_accounting()
     {
-        _scenarios.OnPhase = (_, _) => new CdcApiScenarios().StudentCrudAsync(CancellationToken.None);
+        _scenarios.OnPhase = (_, _) => throw new NotImplementedException();
         await ExpectFailure("CDC_API_CDC-E2E-01_Unimplemented");
         Read()["Scenarios"]![0]!["Failure"]!.GetValue<string>().Should().Be("Unimplemented");
         Outcomes(Read()).Should().Equal(new[] { "Failed" }.Concat(Enumerable.Repeat("NotRun", 7)));

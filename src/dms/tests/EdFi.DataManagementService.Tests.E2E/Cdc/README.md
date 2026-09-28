@@ -89,6 +89,25 @@ with `Failure: None`. Wrapper setup/teardown, process exit/TRX, and export outco
 belong in the existing runner qualification summary and must independently pass;
 they are never fields in this fixture-owned report.
 
+## Student CRUD checkpoints
+
+CDC-E2E-01 holds the designated projector during POST and PUT. The create checkpoint
+compares the admitted target/source and configured schema, reads the Student over
+HTTP, and requires matching durable work with no cache row. The update checkpoint
+requires newer source/work versions while the complete old cache row remains.
+After each release, cache publication and work acknowledgement precede consumption;
+created state is consumed before PUT and updated state before DELETE. Deletion
+requires absent source/cache/work rows and a keyed, record-level null tombstone.
+
+One consumer retains state and all partition scan positions across these steps.
+Every public record must match a known independent envelope or the allowed delete;
+duplicates and older replay are reduced by the shared consumer. Held-work scans
+reject premature publication. Each scan completes a provider fence before capturing
+Kafka ends, classifies progress records as heartbeats, and separately checks broker
+metadata for forbidden raw topics. Capture inventory and connector include lists
+exclude projection work. Payload-free checkpoint output includes versions and
+partition boundaries; the existing scenario report records the phase result.
+
 ## Development checkpoints
 
 Use the `ApiE2E` runner for development checkpoints and final provider qualifications,

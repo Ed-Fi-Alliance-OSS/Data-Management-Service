@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Cdc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Serilog;
@@ -31,6 +32,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     private CdcControllerStatus _status = null!;
     private CdcManagedLifecycle _lifecycle = null!;
     public CdcDeploymentRequest Request { get; private set; } = null!;
+    public string EffectiveSchemaHash { get; private set; } = "";
     public CdcApiClient Api { get; private set; } = null!;
     public CdcDocumentObserver Documents { get; private set; } = null!;
     public MessageContractKafkaObserver Kafka { get; private set; } = null!;
@@ -226,6 +228,15 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
                 },
                 ct
             );
+            var schemaPaths = config.Settings.GetSection("Cdc:Schemas").Get<string[]>()!;
+            var loaded = loader.Load(schemaPaths[0], schemaPaths.Skip(1).ToList());
+            if (loaded is not ApiSchemaFileLoadResult.SuccessResult success)
+            {
+                throw new InvalidOperationException();
+            }
+            context.EffectiveSchemaHash = builder
+                .Build(success.NormalizedNodes)
+                .EffectiveSchema.EffectiveSchemaHash;
             boundary = "API_AUTHENTICATION";
             context.Api = new(
                 handoff.DmsBaseUrl,
@@ -246,6 +257,13 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             throw new InvalidOperationException($"CDC_API_ATTACHMENT_{boundary}");
         }
     }
+
+    public Task AssertTopicInventoryAsync(CancellationToken token) =>
+        MessageContractRecordAssertions.AssertTopicInventoryAsync(
+            _config.Required("Cdc:KafkaAdminBootstrapServers"),
+            Request.Binding,
+            token
+        );
 
     private CdcControllerStatusTarget CurrentTarget() => new(Request, _owner.Runtime, _config.LagThreshold);
 

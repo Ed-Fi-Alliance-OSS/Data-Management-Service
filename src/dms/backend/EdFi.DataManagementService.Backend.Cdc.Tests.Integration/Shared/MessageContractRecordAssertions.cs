@@ -8,24 +8,34 @@ using System.Text.Json;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal static class MessageContractRecordAssertions
 {
-    public static async Task AssertTopicInventoryAsync(
+    public static Task AssertTopicInventoryAsync(
         string bootstrapServers,
         CdcConnectorTemplateRequest request,
         CancellationToken token
+    ) => AssertTopicInventoryAsync(bootstrapServers, request.Binding, token);
+
+    public static async Task AssertTopicInventoryAsync(
+        string bootstrapServers,
+        CdcBinding binding,
+        CancellationToken token
     )
     {
+        string progressTopic = CdcArtifactNameGenerator
+            .RecoverFromBinding(binding)
+            .Inventory!.ProgressTopicName;
         using IAdminClient admin = new AdminClientBuilder(
             new AdminClientConfig { BootstrapServers = bootstrapServers }
         )
             .SetLogHandler((_, _) => { })
             .Build();
-        foreach (string topic in new[] { request.PublicTopicName, request.ProgressTopicName })
+        foreach (string topic in new[] { binding.TopicName, progressTopic })
         {
             var config = await admin
                 .DescribeConfigsAsync(
@@ -41,10 +51,10 @@ internal static class MessageContractRecordAssertions
                 topic,
                 token
             );
-            bounds.Should().HaveCount(topic == request.PublicTopicName ? request.Binding.PartitionCount : 1);
+            bounds.Should().HaveCount(topic == binding.TopicName ? binding.PartitionCount : 1);
         }
         token.ThrowIfCancellationRequested();
-        AssertNoRawTopics(admin.GetMetadata(TimeSpan.FromSeconds(10)), request.ConnectorName.Value);
+        AssertNoRawTopics(admin.GetMetadata(TimeSpan.FromSeconds(10)), binding.ConnectorName);
     }
 
     // Inspect the complete broker inventory after a provider fence; public/progress scans alone
@@ -65,6 +75,14 @@ internal static class MessageContractRecordAssertions
         string expectedUuid,
         int expectedPartition,
         JsonElement expectedEnvelope
+    ) => AssertUpsert(request.Binding, record, expectedUuid, expectedPartition, expectedEnvelope);
+
+    public static void AssertUpsert(
+        CdcBinding binding,
+        MessageContractKafkaRecord record,
+        string expectedUuid,
+        int expectedPartition,
+        JsonElement expectedEnvelope
     )
     {
         expectedPartition
@@ -72,11 +90,11 @@ internal static class MessageContractRecordAssertions
             .Be(
                 MessageContractPartition.ForUuid(
                     expectedUuid,
-                    request.Binding.PartitionCount,
-                    request.PartitionerAlgorithm
+                    binding.PartitionCount,
+                    binding.PartitionerAlgorithm
                 )
             );
-        record.Topic.Should().Be(request.PublicTopicName);
+        record.Topic.Should().Be(binding.TopicName);
         record.Partition.Should().Be(expectedPartition);
         record.Key.IsNull.Should().BeFalse();
         record.Key.Bytes.Should().Equal(Encoding.UTF8.GetBytes(expectedUuid));
