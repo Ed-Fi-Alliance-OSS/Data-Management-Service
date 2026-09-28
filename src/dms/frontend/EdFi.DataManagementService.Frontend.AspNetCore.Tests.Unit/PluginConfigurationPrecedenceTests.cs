@@ -123,13 +123,18 @@ public class Given_a_plugin_configuration_source_over_the_hosts_real_source_list
             source is EnvironmentVariablesConfigurationSource
         );
 
-        // The loader added no source of its own: the host's sources, in their order, with exactly the
-        // plugin's two inserted where the last environment source was, and nothing else.
-        after.Should().HaveCount(_before.Count + 2);
+        // The loader added no source of its own: the host's sources, in their order, with exactly one
+        // inserted where the last environment source was, carrying the plugin's two, and nothing else.
+        after.Should().HaveCount(_before.Count + 1);
         after.Take(lastEnvironment).Should().Equal(_before.Take(lastEnvironment), ReferenceEquals);
-        after.Skip(lastEnvironment + 2).Should().Equal(_before.Skip(lastEnvironment), ReferenceEquals);
-        after[lastEnvironment].Should().NotBeSameAs(after[lastEnvironment + 1]);
+        after.Skip(lastEnvironment + 1).Should().Equal(_before.Skip(lastEnvironment), ReferenceEquals);
         _before.Should().NotContain(after[lastEnvironment]);
-        _before.Should().NotContain(after[lastEnvironment + 1]);
+        after[lastEnvironment]
+            .Should()
+            .BeOfType<ChainedConfigurationSource>()
+            .Which.Configuration.Should()
+            .BeAssignableTo<IConfigurationRoot>()
+            .Which.Providers.Should()
+            .HaveCount(2);
     }
 }
