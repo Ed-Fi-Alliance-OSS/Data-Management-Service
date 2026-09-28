@@ -388,15 +388,18 @@ keys for token validation.
 
 **Warm-up:** Loaded on startup by `WarmUpOidcMetadataTask` (Order 400), run by
 `DmsStartupOrchestrator` during the `InitializeAuthMetadata` phase. The startup
-will fail if OIDC metadata cannot be retrieved from the identity provider,
-ensuring DMS doesn't accept requests until JWT authentication is fully
+will fail if OIDC metadata cannot be retrieved from the identity provider, or if
+the retrieved document's `issuer` does not equal `JwtAuthentication:Authority`
+exactly, ensuring DMS doesn't accept requests until JWT authentication is fully
 functional. When `BypassAuthorization` is enabled, the warm-up is skipped.
 
 **Invalidation Strategy:**
 
-- Automatic refresh after RefreshInterval (60 minutes)
-- Background refresh after AutomaticRefreshInterval (24 hours)
-- Handled internally by Microsoft.IdentityModel.Protocols library
+- Background refresh after AutomaticRefreshInterval (24 hours), handled
+  internally by Microsoft.IdentityModel.Protocols library
+- An issuer mismatch at request time rejects the token and triggers
+  `RequestRefresh()`, at most once per RefreshInterval (60 minutes); later
+  requests succeed once a matching document is adopted
 
 ---
 

@@ -332,3 +332,7 @@ Please refer "Creating a Configuration Service Client" section above
             "RequireHttpsMetadata": false,
             "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
         ```
+
+       `Authority` must equal the realm's `issuer` exactly (`KC_HOSTNAME` +
+       `/realms/<your-realm>`), even when DMS fetches metadata over an internal
+       hostname; otherwise DMS will not start.
