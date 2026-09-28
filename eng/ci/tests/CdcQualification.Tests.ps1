@@ -458,6 +458,45 @@ Describe 'CDC qualification CI scheduling' {
         $weekend = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/dms-weekend-build.yml') -Raw
         $weekend | Should -Not -Match 'Invoke-CdcQualification|run-cdc-heavy-qualification|nightly-cdc-qualification'
     }
+    It 'offers every provider suite in manual dispatch and reports the selected matrix count' {
+        $options = [regex]::Match($script:scheduledWorkflow, '(?s)      suite:.*?options: \[([^\]]+)\]').Groups[1].Value.Split(',').Trim()
+        $options | Should -Be (@('All') + @(Get-CdcQualificationProviderSuite -Provider Postgresql).Keys)
+        $script:scheduledWorkflow | Should -Match 'suite-count: \$\{\{ steps.select.outputs.suite-count \}\}'
+        $selection = [regex]::Match($script:scheduledWorkflow, '(?ms)^      - name: Select suites\r?\n.*?        run: \|\r?\n(?<run>(?:          [^\r\n]*\r?\n)+)').Groups['run'].Value
+        $selection | Should -Not -BeNullOrEmpty
+        $saved = @{}
+        foreach ($name in @('GITHUB_OUTPUT', 'SELECTED_LANE', 'SELECTED_SUITE')) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+        Push-Location (Join-Path $PSScriptRoot '../../..')
+        try {
+            foreach ($lane in @('All', 'Postgresql', 'Mssql')) {
+                $env:SELECTED_LANE = $lane
+                $env:SELECTED_SUITE = if ($lane -eq 'All') { 'All' } else { 'ApiE2E' }
+                $env:GITHUB_OUTPUT = Join-Path $TestDrive "selection-$lane"
+                & ([scriptblock]::Create($selection))
+                $output = Get-Content $env:GITHUB_OUTPUT
+                $selected = $output[0].Substring('matrix='.Length) | ConvertFrom-Json
+                $selected.include.Count | Should -Be $(if ($lane -eq 'All') { 17 } else { 1 })
+                $output[1] | Should -Be "suite-count=$($selected.include.Count)"
+            }
+        } finally {
+            Pop-Location
+            foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+        }
+    }
+    It 'supplies ApiE2E build prerequisites and delegates auth and schema preparation to the runner' {
+        $script:scheduledJob | Should -Match 'uses: actions/setup-dotnet@[^\r\n]+\r?\n        with:\r?\n          dotnet-version: "10.0.x"'
+        $script:scheduledJob | Should -Match "name: Set up Docker Buildx\r?\n        if: matrix.suite == 'ApiE2E'\r?\n        uses: docker/setup-buildx-action@"
+        $script:scheduledJob | Should -Match "CDC_RUNBOOK_OWNED_STACK: '1'"
+        $script:scheduledJob | Should -Not -Match 'run:.*(?:prepare-cdc-api-e2e|setup-local-dms|Initialize-CdcFixturePrincipal|dotnet build)'
+        $budget = [int][regex]::Match($script:scheduledJob, 'timeout-minutes: (\d+)').Groups[1].Value * 60
+        $runner = Get-Content (Join-Path $PSScriptRoot '../cdc-api-e2e.ps1') -Raw
+        $setupSeconds = [int][regex]::Match($runner, '\$deadline = \[DateTimeOffset\]::UtcNow.AddMinutes\((\d+)\)').Groups[1].Value * 60
+        $phaseSeconds = @([regex]::Matches($runner, '-LogPath \(Join-Path \$private ''(test|cleanup|export)''\) -TimeoutSeconds (\d+)') | ForEach-Object { [int]$_.Groups[2].Value })
+        $setupSeconds | Should -BeGreaterThan 0
+        $phaseSeconds.Count | Should -Be 3
+        # Preserve at least twenty minutes outside all bounded runner phases.
+        $budget | Should -BeGreaterOrEqual ($setupSeconds + ($phaseSeconds | Measure-Object -Sum).Sum + 1200)
+    }
     It 'retains fail-closed prerequisites and sanitized artifacts in the nightly jobs' {
         $script:scheduledJob | Should -Match 'runs-on: ubuntu-latest'
         $script:scheduledJob | Should -Match 'timeout-minutes: 120'
@@ -513,7 +552,7 @@ Describe 'CDC qualification CI scheduling' {
             ($_.Groups[1].Value | ConvertFrom-Json).text
         })
         $messages.Count | Should -Be 2
-        $messages[0] | Should -Be ':heavy_check_mark: DMS CI nightly CDC qualification passed, all 15 live suites verified'
+        $messages[0] | Should -Be ':heavy_check_mark: DMS CI nightly CDC qualification passed, all ${{ needs.select-suites.outputs.suite-count }} live suites verified'
         $messages[1] | Should -Be ':x: DMS CI nightly CDC qualification failed (selection: ${{ needs.select-suites.result }}, qualification: ${{ needs.run-cdc-qualification.result }})'
         foreach ($message in $messages) {
             $message | Should -Not -Match '[\r\n]'
@@ -1347,26 +1386,48 @@ function global:docker { $global:LASTEXITCODE = 0 }
 }
 
 Describe 'CDC API E2E prerequisite summary' {
-    It 'persists invocation and failed setup plus minimal evidence before a fixture can exist' {
+    It 'retains sanitized evidence for always-upload after the workflow runner fails for <Provider>' -ForEach @(
+        @{ Provider = 'Postgresql' }; @{ Provider = 'Mssql' }
+    ) {
         $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
-        $destination = Join-Path $TestDrive 'prerequisite-result'
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
+        $job = [regex]::Match($workflow, '(?ms)^  run-cdc-qualification:.*?(?=^  [a-z][a-z0-9-]+:|\z)').Value
+        $command = [regex]::Match($job, '(?m)^        run: (\./eng/ci/Invoke-CdcQualification.ps1[^\r\n]+)').Groups[1].Value
+        $command | Should -Not -BeNullOrEmpty
+        $command = $command.Replace('./eng/ci/Invoke-CdcQualification.ps1', '& $Runner').Replace('${{ matrix.lane }}', $Provider).Replace('${{ matrix.suite }}', 'ApiE2E')
+        $fallback = [regex]::Match($job, '(?ms)^      - name: Record unavailable qualification environment\r?\n        if: failure\(\)\r?\n        run: \|\r?\n(?<run>(?:          [^\r\n]*\r?\n)+)').Groups['run'].Value
+        $fallback | Should -Not -BeNullOrEmpty
+        $upload = [regex]::Match($job, '(?ms)^      - name: Upload structured CDC qualification evidence\r?\n.*?(?=^      - name:|\z)').Value
+        $upload | Should -Match 'if: always\(\)\r?\n        uses: actions/upload-artifact@'
+        $upload | Should -Match 'path: TestResults/cdc-qualification/\*\*'
+        $upload | Should -Not -Match 'private|RUNNER_TEMP|\.log|\.trx|\.env|handoff'
+        $workspace = Join-Path $TestDrive $Provider
+        $null = New-Item -ItemType Directory -Path $workspace
+        $destination = Join-Path $workspace 'TestResults/cdc-qualification'
         $driver = Join-Path $TestDrive 'missing-ownership.ps1'
         @'
-param($Runner, $Destination)
+param($Runner, $Workspace, $Command)
+Set-Location $Workspace
+[Environment]::CurrentDirectory = $Workspace
 $env:CDC_RUNBOOK_OWNED_STACK = ''
 function global:docker { throw 'Prerequisite rejection must precede Docker.' }
 function global:dotnet { throw 'Prerequisite rejection must precede builds/tests.' }
-& $Runner -Lane Postgresql -Suite ApiE2E -ResultsDirectory $Destination
+& ([scriptblock]::Create($Command))
 exit $LASTEXITCODE
 '@ | Set-Content $driver
-        & pwsh -NoProfile -File $driver $runner $destination *> (Join-Path $TestDrive 'prerequisite.log')
+        & pwsh -NoProfile -File $driver $runner $workspace $command *> (Join-Path $TestDrive 'prerequisite.log')
         $LASTEXITCODE | Should -Be 1
-        $report = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json | Where-Object Name -eq 'Postgresql-ApiE2E')[0]
+        Test-Path (Join-Path $destination 'qualification.json') | Should -BeTrue
+        $summaryHash = (Get-FileHash (Join-Path $destination 'qualification.json')).Hash
+        Push-Location $workspace
+        try { & ([scriptblock]::Create($fallback)) } finally { Pop-Location }
+        (Get-FileHash (Join-Path $destination 'qualification.json')).Hash | Should -Be $summaryHash
+        $report = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json | Where-Object Name -eq "$Provider-ApiE2E")[0]
         $report.InvocationId | Should -Match '^[a-f0-9-]{36}$'
         $report.Stages.Setup | Should -Be Failed
         $report.Stages.Test | Should -Be NotRun
         $report.Status | Should -Be EnvironmentUnavailable
-        $evidence = Get-Content (Join-Path $destination 'Postgresql-ApiE2E/cdc-api-e2e.json') -Raw | ConvertFrom-Json
+        $evidence = Get-Content (Join-Path $destination "$Provider-ApiE2E/cdc-api-e2e.json") -Raw | ConvertFrom-Json
         $evidence.InvocationId | Should -Be $report.InvocationId
         $evidence.Scenarios.Count | Should -Be 0
     }
