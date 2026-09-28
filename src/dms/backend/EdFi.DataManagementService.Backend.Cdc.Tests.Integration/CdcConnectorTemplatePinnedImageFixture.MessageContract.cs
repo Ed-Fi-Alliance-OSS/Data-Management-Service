@@ -150,14 +150,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             token
         );
 
-    public Task AdvanceHeartbeatAsync(CancellationToken token) =>
-        ExecuteProviderMutationAsync(
-            $"UPDATE {Quote("dms")}.{Quote("CdcHeartbeat")} SET "
-                + $"{Quote("HeartbeatSequence")} = {Quote("HeartbeatSequence")} + 1, {Quote("HeartbeatAt")} = {CurrentTimestamp} "
-                + $"WHERE {Quote("HeartbeatId")} = 1",
-            0,
-            token
-        );
+    public async Task AdvanceHeartbeatAsync(CancellationToken token) =>
+        await (await CreateProviderObserverAsync(token)).AdvanceHeartbeatAsync(token);
 
     private string CurrentTimestamp =>
         Provider == CdcProvider.Postgresql ? "clock_timestamp()" : "SYSUTCDATETIME()";

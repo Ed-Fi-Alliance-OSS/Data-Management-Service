@@ -70,6 +70,18 @@
     <!-- Test-only Kafka observations and reducer; no integration fixture assembly dependency. -->
     <ItemGroup>
         <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractProgressAssertions.cs"
+            Link="Cdc/Shared/MessageContractProgressAssertions.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractProviderFences.cs"
+            Link="Cdc/Shared/MessageContractProviderFences.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractProviderObserver.cs"
+            Link="Cdc/Shared/MessageContractProviderObserver.cs"
+        />
+        <Compile
             Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractPartition.cs"
             Link="Cdc/Shared/MessageContractPartition.cs"
         />

@@ -63,6 +63,7 @@ public sealed class Given_MessageContractSqlServer
         );
         await fixture.AssertRegisteredConnectorReachesRunningStateAsync(_request, token);
         await fixture.AssertObservedConnectorConfigAsync(rendered, token);
+        await fixture.AssertConnectorIncludeListAsync(_request, token);
         await CapturePhaseAsync(fixture, "SNAPSHOT", token);
 
         foreach (MessageContractProviderRow row in _rows.Skip(1))
@@ -243,28 +244,19 @@ public sealed class Given_MessageContractSqlServer
         int native = 0;
         foreach (MessageContractKafkaRecord record in records)
         {
-            record.Topic.Should().Be(_request.ProgressTopicName);
-            record.Partition.Should().Be(0);
-            record.Key.IsNull.Should().BeFalse();
-            record.Key.Bytes.Should().Equal(Convert.FromHexString("6364632D70726F6772657373"));
-            record.Value.IsNull.Should().BeFalse();
-            JsonElement value = JsonSerializer.Deserialize<JsonElement>(record.Value.Bytes);
-            value.TryGetProperty("schema", out _).Should().BeFalse();
-            value.TryGetProperty("payload", out _).Should().BeFalse();
-            if (value.TryGetProperty("source", out JsonElement source))
+            if (
+                MessageContractProgressAssertions.AssertHeartbeat(_request.Binding, record)
+                == MessageContractProgressKind.RelationalHeartbeat
+            )
             {
-                source.GetProperty("schema").GetString().Should().Be("dms");
-                source.GetProperty("table").GetString().Should().Be("CdcHeartbeat");
-                (source.GetProperty("name").GetString() == _request.ConnectorName.Value).Should().BeTrue();
                 relational++;
             }
             else
             {
-                value.EnumerateObject().Select(p => p.Name).Should().Equal("ts_ms");
-                value.GetProperty("ts_ms").GetInt64().Should().BeGreaterThan(0);
                 native++;
             }
         }
+
         relational.Should().BeGreaterThan(0);
         native.Should().BeGreaterThan(0);
         _source
@@ -311,15 +303,7 @@ public sealed class Given_MessageContractSqlServer
         // All progress records, including the work window, are classified by source metadata in the progress test.
         foreach (var record in _progress["WORK"].Records)
         {
-            JsonElement value = JsonSerializer.Deserialize<JsonElement>(record.Value.Bytes);
-            if (value.TryGetProperty("source", out var source))
-            {
-                source.GetProperty("table").GetString().Should().Be("CdcHeartbeat");
-            }
-            else
-            {
-                value.EnumerateObject().Select(p => p.Name).Should().Equal("ts_ms");
-            }
+            MessageContractProgressAssertions.AssertHeartbeat(_request.Binding, record);
         }
     }
 
