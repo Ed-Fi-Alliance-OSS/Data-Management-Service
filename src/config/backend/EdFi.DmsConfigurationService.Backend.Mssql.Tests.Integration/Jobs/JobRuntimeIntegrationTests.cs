@@ -889,7 +889,7 @@ public class JobRuntimeIntegrationTests
         [SetUp]
         public async Task Setup()
         {
-            // The lease stays live for 60 s: only the 1 s fence deadline ends the consumer's work.
+            // The lease stays live for 60 s: only the configured 1 s FenceTimeout ends the consumer's work.
             JobOptions settings = WithoutRenewals();
             settings.FenceTimeout = TimeSpan.FromSeconds(1);
             _harness = new RuntimeHarness(
@@ -955,7 +955,7 @@ public class JobRuntimeIntegrationTests
         {
             _result
                 .Should()
-                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "FenceLeaseLost"));
+                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "FenceTimeout"));
             _harness.Leases.OutcomeWrites.Should().Be(0);
         }
 

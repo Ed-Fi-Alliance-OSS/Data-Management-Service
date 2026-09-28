@@ -127,12 +127,11 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             TimeSpan remainingLease = await AcquireAsync(state, cancellationToken);
 
             // (4) One deadline, taken from fresh database time after the lock is held, covers the work, the
-            // checks, the revalidation, the commit, and the session cleanup. It is never raised.
-            TimeSpan fenceTimeout = Min(
-                timings.FenceTimeout,
-                remainingLease - JobLeaseTimings.FenceLeaseReserve
-            );
-            state.Deadline = JobDeadline.Start(fenceTimeout);
+            // checks, the revalidation, the commit, and the session cleanup. It is never raised. The limit that set
+            // it is the uncertainty reason when it ends the work or the revalidation.
+            TimeSpan leaseLimit = remainingLease - JobLeaseTimings.FenceLeaseReserve;
+            state.DeadlineReason = timings.FenceTimeout <= leaseLimit ? "FenceTimeout" : "FenceLeaseLost";
+            state.Deadline = JobDeadline.Start(Min(timings.FenceTimeout, leaseLimit));
 
             // The work is waited for like every other operation under the gate: no longer than the deadline. When the
             // deadline ends the wait first, cleanup owns the pending work, the transaction, and the connection; it
@@ -150,12 +149,17 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             }
             catch (TimeoutException) when (session.HandedOver || state.Deadline.Expired)
             {
-                throw LeaseLost();
+                throw LeaseLost(state.DeadlineReason);
             }
 
             // (5) The work returned: ownership must still be certain and the deadline not reached.
             cancellationToken.ThrowIfCancellationRequested();
-            if (state.Deadline.Expired || ownership.State != JobOwnershipState.Owned)
+            if (state.Deadline.Expired)
+            {
+                throw LeaseLost(state.DeadlineReason);
+            }
+
+            if (ownership.State != JobOwnershipState.Owned)
             {
                 throw LeaseLost();
             }
@@ -265,7 +269,7 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             {
                 // The deadline ended the revalidation. The session's wait can time out a moment before the deadline
                 // reads as expired, so a hand-over counts too, as it does for the work.
-                throw LeaseLost();
+                throw LeaseLost(state.DeadlineReason);
             }
 
             if (lease is null)
@@ -283,24 +287,31 @@ public sealed class MssqlJobFenceFactory(IOptions<DatabaseOptions> databaseOptio
             };
 
         /// <summary>
-        /// A refusal because ownership is lost, expired, too short, or no longer verifiable. The execution becomes
-        /// uncertain here, under the gate, so it issues no outcome write and every later fence refuses, even when the
-        /// handler catches the exception. An execution that is already uncertain keeps its first reason.
+        /// A refusal because ownership is lost, expired, too short, or no longer verifiable, or because the fence
+        /// deadline ended the work or the revalidation (<paramref name="reason"/> then names the limit that set the
+        /// deadline). The execution becomes uncertain here, under the gate, so it issues no outcome write and every
+        /// later fence refuses, even when the handler catches the exception. An execution that is already uncertain
+        /// keeps its first reason.
         /// </summary>
-        private JobLeaseLostException LeaseLost()
+        private JobLeaseLostException LeaseLost(string reason = "FenceLeaseLost")
         {
-            ownership.TryMarkUncertain("FenceLeaseLost");
+            ownership.TryMarkUncertain(reason);
             return new JobLeaseLostException();
         }
 
         private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
 
-        /// <summary>The fence's session and the deadline that bounds its current step and its cleanup.</summary>
+        /// <summary>
+        /// The fence's session, the deadline that bounds its current step and its cleanup, and the uncertainty
+        /// reason for a reached fence deadline.
+        /// </summary>
         private sealed class FenceState(JobDatabaseSession session, JobDeadline deadline)
         {
             public JobDatabaseSession Session { get; } = session;
 
             public JobDeadline Deadline { get; set; } = deadline;
+
+            public string DeadlineReason { get; set; } = "FenceLeaseLost";
         }
 
         private sealed record LeaseRow(DateTime LeaseExpiresAt, DateTime DatabaseUtcNow)

@@ -21,8 +21,10 @@ public interface IJobHandler<in TPayload>
     /// <remarks>
     /// Returning normally reports the work as completed. A handler stopping before its work is done must propagate
     /// the cancellation, or call <see cref="CancellationToken.ThrowIfCancellationRequested"/>, rather than return.
-    /// When the host has already signaled shutdown, the executor conservatively releases the job even after a
-    /// normal return, so the job may run again; handlers are idempotent.
+    /// The executor cannot tell whether a normal return concealed unfinished work. When the host has already
+    /// signaled shutdown and attempts remain, it conservatively releases the job even after a normal return, so the
+    /// job may run again; handlers are idempotent. On the final attempt a release would end in exhaustion, so there
+    /// a normal return completes the job.
     /// </remarks>
     Task ExecuteAsync(JobExecutionContext context, TPayload payload, CancellationToken cancellationToken);
 }

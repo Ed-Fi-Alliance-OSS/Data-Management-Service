@@ -274,10 +274,13 @@ public class JobLeaseRepositoryTests
         /// A fence's lease-loss refusal leaves the execution uncertain, so no outcome write follows even when the
         /// handler catches the exception (D-5).
         /// </summary>
-        protected static void ShouldBeInvalidatedByTheFence(JobExecutionOwnership ownership)
+        protected static void ShouldBeInvalidatedByTheFence(
+            JobExecutionOwnership ownership,
+            string reason = "FenceLeaseLost"
+        )
         {
             ownership.State.Should().Be(JobOwnershipState.Uncertain);
-            ownership.Reason.Should().Be("FenceLeaseLost");
+            ownership.Reason.Should().Be(reason);
         }
     }
 
@@ -1097,8 +1100,10 @@ public class JobLeaseRepositoryTests
             _fencedWrites.Should().Be(0);
         }
 
+        // The 4 s lease, not the 10 s FenceTimeout, set the deadline that ended the work.
         [Test]
-        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
+        public void It_invalidates_the_execution() =>
+            ShouldBeInvalidatedByTheFence(_ownership, "FenceLeaseLost");
     }
 
     [TestFixture]
@@ -1248,7 +1253,9 @@ public class JobLeaseRepositoryTests
         {
             _fencedWrites.Should().Be(0);
             _rowLockable.Should().BeTrue();
-            ShouldBeInvalidatedByTheFence(_ownership);
+
+            // The 2 s FenceTimeout, not the 300 s lease, set the deadline that ended the work.
+            ShouldBeInvalidatedByTheFence(_ownership, "FenceTimeout");
         }
     }
 
@@ -1607,8 +1614,10 @@ public class JobLeaseRepositoryTests
             _fencedWrites.Should().Be(0);
         }
 
+        // The 2 s FenceTimeout, not the 300 s lease, set the deadline that ended the revalidation.
         [Test]
-        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
+        public void It_invalidates_the_execution() =>
+            ShouldBeInvalidatedByTheFence(_ownership, "FenceTimeout");
     }
 
     [TestFixture]

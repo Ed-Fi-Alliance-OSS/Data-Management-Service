@@ -218,10 +218,12 @@ public sealed class JobExecutor(
         {
             await run.Registration.Execute(services, context, run.Payload, executionToken);
 
-            // A return after the host's stop signal is not taken as success: the handler may have swallowed the
-            // cancellation of unfinished work. Finalization releases the job while ownership is certain, and
-            // writes nothing otherwise.
-            if (stoppingToken.IsCancellationRequested)
+            // A return after the host's stop signal is not taken as success while attempts remain: the handler may
+            // have swallowed the cancellation of unfinished work. Finalization releases the job while ownership is
+            // certain, and writes nothing otherwise. On the final attempt a release would leave no attempt, so the
+            // next sweep would record the returned work as exhausted: there the return is taken as the completion
+            // the handler contract says it is. The executor cannot tell a return that concealed unfinished work.
+            if (stoppingToken.IsCancellationRequested && job.AttemptCount < Settings.MaxAttempts)
             {
                 return new Decision.Release(
                     JobDiagnostics.From(new OperationCanceledException(stoppingToken), "Handler")

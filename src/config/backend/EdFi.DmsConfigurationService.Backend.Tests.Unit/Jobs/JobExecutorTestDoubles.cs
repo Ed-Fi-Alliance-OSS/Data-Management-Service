@@ -246,6 +246,9 @@ public sealed class RecordingFenceFactory : IJobFenceFactory
 
     public bool LeaseLost { get; set; }
 
+    /// <summary>The uncertainty reason a refusal records: a real fence records its deadline's limit.</summary>
+    public string LeaseLostReason { get; set; } = "FenceLeaseLost";
+
     public IJobFence Create(ClaimedJob job, JobExecutionOwnership ownership) => new Fence(this, ownership);
 
     private sealed class Fence(RecordingFenceFactory factory, JobExecutionOwnership ownership) : IJobFence
@@ -265,7 +268,7 @@ public sealed class RecordingFenceFactory : IJobFenceFactory
             if (factory.LeaseLost)
             {
                 // As the real fences do: the refusal makes the execution uncertain, under the gate.
-                ownership.TryMarkUncertain("FenceLeaseLost");
+                ownership.TryMarkUncertain(factory.LeaseLostReason);
                 throw new JobLeaseLostException();
             }
 

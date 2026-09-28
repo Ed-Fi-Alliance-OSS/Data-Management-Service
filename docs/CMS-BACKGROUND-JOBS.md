@@ -57,7 +57,9 @@ Completed / Error ─retention──────► deleted
 - A transient failure retries after `RetryBackoffBase × 2^(attempt − 1)`, capped at
   `RetryBackoffMaximum`, while attempts remain; otherwise the job fails with `AttemptsExhausted`.
 - A job released during shutdown keeps the attempt it used. A job released on its final attempt
-  fails with `AttemptsExhausted` on the next worker sweep, without running again.
+  fails with `AttemptsExhausted` on the next worker sweep, without running again. A handler that
+  returns normally on its final attempt is not released; its job completes (see the handler
+  contract).
 - Lowering `MaxAttempts` fails every waiting job already at or over the new limit on the next sweep.
 - A job can therefore end in `Error` with `AttemptsExhausted` without a final handler execution:
   after a crash, lost ownership certainty, or a shutdown release during its final attempt, or after
@@ -180,9 +182,12 @@ resolved from), the attempt number and maximum, and a fence.
   loses certainty that it still owns the job.
 - A normal return means the work is complete. A handler that stops before its work is done must
   let the `OperationCanceledException` propagate, or call `ThrowIfCancellationRequested`, rather
-  than return. The executor also refuses to count a return after the instance's stop signal as
-  success: it releases the job to `Pending` while it still certainly owns the job, and writes
-  nothing otherwise. A handler that finished just as shutdown began may therefore run again.
+  than return. The executor cannot tell whether a normal return concealed unfinished work, so
+  while attempts remain it does not count a return after the instance's stop signal as success:
+  it releases the job to `Pending` while it still certainly owns the job, and writes nothing
+  otherwise. A handler that finished just as shutdown began may therefore run again. On the final
+  attempt a release would end in `AttemptsExhausted`, so there a normal return completes the job,
+  and a handler that returns without finishing its work would be recorded as `Completed`.
 - Assume at-least-once execution. A job may run again after a crash, a lost lease, a shutdown, or
   an ambiguous database result, so every handler must be idempotent: reconcile what an earlier
   attempt already did before acting.
@@ -204,10 +209,18 @@ that holds the job's row lock, and commits only if the execution still owns the 
   and the execution still owns the job.
 - A `JobLeaseLostException` ends the execution's certainty before it reaches the handler, even if
   the handler catches it. No outcome is written afterwards, and every later fence of the execution
-  is refused. The handler must stop. The job is reclaimed after its lease expires, or fails with
-  `AttemptsExhausted` when its attempts are spent.
-- A fence commit whose outcome is unknown ends the execution's certainty the same way. The next
-  attempt must reconcile the fenced changes that may already be committed.
+  is refused. The handler must stop. Recovery follows the persisted state: the job stays
+  `InProgress` and is reclaimed after its lease expires only if attempts remain; otherwise the
+  worker sweep fails it with `AttemptsExhausted`.
+- The uncertainty reason (in `OwnershipUncertainExit` and the `ownership_uncertain` metric) says
+  why. `FenceTimeout`: the shared deadline ended the work, the post-work check, or the final
+  ownership check, and the configured `FenceTimeout` set that deadline, so lease time may remain.
+  `FenceLeaseLost`: the lease was missing, expired, mismatched, or too short, or the deadline set
+  by the remaining lease ended the work or the check. The first reason an execution records is
+  kept.
+- A fence commit whose outcome is unknown, including one the deadline ended, ends the execution's
+  certainty the same way, with reason `FenceCommitUnknown`. The next attempt, if one remains, must
+  reconcile the fenced changes that may already be committed.
 - The fence's 5 s lock timeout also applies to the work's own statements: PostgreSQL
   `lock_timeout` is set for the fence transaction, and SQL Server `LOCK_TIMEOUT` for its session.
   A statement in the work that waits longer for a lock fails with the provider's own error
@@ -267,7 +280,7 @@ or serialize that work itself.
   | ----------------------------- | -------------------------------------------------------------------------- |
   | Completion or failure committed | The job is finished; retention removes it later                          |
   | Retry or release committed    | The job is `Pending` and runs again when eligible                          |
-  | Outcome rolled back           | The job stays `InProgress` until its lease expires, then is reclaimed      |
+  | Outcome rolled back           | The job stays `InProgress` until its lease expires, then is reclaimed if attempts remain, or fails with `AttemptsExhausted` |
   | Fence committed, no completion | Fenced changes persist; the next attempt must reconcile them               |
 
 - **Database unavailable:** each hosted service logs the failure and tries again on its next

@@ -443,8 +443,9 @@ public class JobExecutorTests
         }
     }
 
-    [TestFixture]
-    public class Given_the_host_stopping_while_the_execution_owns_the_job
+    [TestFixture(1)]
+    [TestFixture(ExecutorHarness.MaxAttempts)]
+    public class Given_the_host_stopping_while_the_execution_owns_the_job(int attempt)
     {
         private ExecutorHarness _harness = null!;
         private JobExecutionResult _result = null!;
@@ -457,7 +458,7 @@ public class JobExecutorTests
             using CancellationTokenSource stopping = new();
 
             Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(
-                ExecutorHarness.Job(),
+                ExecutorHarness.Job(attempt, attempt),
                 stopping.Token
             );
             await _harness.Script.Started.Task.WaitAsync(_wait);
@@ -523,6 +524,62 @@ public class JobExecutorTests
         {
             _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.ReleasedOnShutdown));
             _harness.Leases.OutcomeWrites.Should().Equal("ReleaseToPending");
+        }
+    }
+
+    [TestFixture(1, 1)]
+    [TestFixture(ExecutorHarness.MaxAttempts, ExecutorHarness.MaxAttempts)]
+    public class Given_a_handler_that_returns_after_the_stop_signal_on_its_final_attempt(
+        int maxAttempts,
+        int attempt
+    )
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private bool _handlerObservedCancellation;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness();
+            _harness.Settings.MaxAttempts = maxAttempts;
+
+            // The handler reports its work complete by returning. A release would leave no attempt, so the next
+            // sweep would record the completed work as exhausted.
+            _harness.Script.Run = async (_, _, token) =>
+            {
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    _handlerObservedCancellation = true;
+                }
+            };
+            using CancellationTokenSource stopping = new();
+
+            Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(attempt, attempt),
+                stopping.Token
+            );
+            await _harness.Script.Started.Task.WaitAsync(_wait);
+            await stopping.CancelAsync();
+            _result = await running.WaitAsync(_wait);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_returns_from_the_handler_after_observing_the_cancellation() =>
+            _handlerObservedCancellation.Should().BeTrue();
+
+        [Test]
+        public void It_completes_the_job_with_one_completion_write()
+        {
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.Completed));
+            _harness.Leases.OutcomeWrites.Should().Equal("Complete");
         }
     }
 
@@ -1106,33 +1163,51 @@ public class JobExecutorTests
                 .Be(Enum.Parse<JobExecutionOutcome>(expectedOutcome));
     }
 
-    [TestFixture]
-    public class Given_a_fence_that_finds_the_lease_lost
+    [TestFixture("FenceLeaseLost")]
+    [TestFixture("FenceTimeout")]
+    public class Given_a_fence_that_finds_the_lease_lost(string reason)
     {
+        private JobMetricsTests.Recorder _recorder = null!;
         private ExecutorHarness _harness = null!;
         private JobExecutionResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
+            _recorder = new JobMetricsTests.Recorder();
             _harness = new ExecutorHarness();
             _harness.Fences.LeaseLost = true;
+            _harness.Fences.LeaseLostReason = reason;
             _harness.Script.Run = (context, _, token) =>
                 context.Fence.ExecuteAsync((_, _) => Task.CompletedTask, token);
             _result = await _harness.Executor.ExecuteAsync(ExecutorHarness.Job(), CancellationToken.None);
         }
 
         [TearDown]
-        public void TearDown() => _harness.Dispose();
+        public void TearDown()
+        {
+            _harness.Dispose();
+            _recorder.Dispose();
+        }
 
         [Test]
         public void It_ends_uncertain_without_an_outcome_write()
         {
-            _result
-                .Should()
-                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "FenceLeaseLost"));
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, reason));
             _harness.Leases.OutcomeWrites.Should().BeEmpty();
         }
+
+        [Test]
+        public void It_logs_the_fences_reason() =>
+            _harness
+                .Logger.Entries.Single(entry => entry.EventId.Name == "OwnershipUncertainExit")
+                .Field("Reason")
+                .Should()
+                .Be(reason);
+
+        [Test]
+        public void It_counts_the_uncertainty_by_the_fences_reason() =>
+            _recorder.Single("dmscs.jobs.ownership_uncertain").Tags["reason"].Should().Be(reason);
     }
 
     [TestFixture]
