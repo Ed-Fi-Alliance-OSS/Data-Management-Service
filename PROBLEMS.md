@@ -1,4 +1,35 @@
-# T23 blocked: transient Connect rebalance aborts initial admission
+# T23 blocked: HTTP-only rollout after successful admission
+
+## Latest follow-up: 2026-09-28
+
+The registration-read repair is implemented in the working tree. The controller
+retries only transient Connect configuration-read unavailability and timeouts,
+using the existing poll interval, per-call timeout, and original registration
+deadline. It preserves configuration validation and durable registration intent
+and never repeats connector creation. Focused registration tests: **244 passed**,
+zero skipped, including transient reads after a lost creation response, call
+timeout, persistent failure, cancellation, and configuration drift.
+
+One subsequent PostgreSQL qualification used the same pinned inputs below and
+`-ResultsDirectory TestResults/cdc-api-e2e-postgresql-registration-retry`.
+Invocation `feee8b1f-4d31-4721-8ad9-e678a35d8b1c` passed admission, reached a healthy
+DMS host, then failed in `Invoke-E2ECdcApiRollout` before handoff publication.
+The setup diagnostic reports `RetainedForGovernedTeardown` with no typed failure
+codes; that value is set only after the admitted bootstrap returns successfully.
+The precise rollout failure is not preserved by the wrapper's generic exception.
+This is a separate blocker requiring investigation; no rollout changes were made.
+
+The rebalance race did not recur in the inspected live worker logs, so this run
+does not independently exercise the new retry. The regression tests do.
+Setup **Failed**, tests **NotRun**, teardown **Passed**, export **Passed**; all
+five owned containers and three volumes were removed. T23 remains incomplete and
+T24 remains unattempted. Sanitized reports are in the results directory above.
+Private diagnostics are at
+`/tmp/cdc-qualification-3be5a9ebb2d943a8b8532058e321a1c6`; do not upload them.
+
+## Previous blocker: transient Connect rebalance aborts initial admission
+
+The following records the earlier failure, before the registration-read repair.
 
 Story: `reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md`
 (DMS-1325). T23 remains **incomplete**; T24 was not attempted.
