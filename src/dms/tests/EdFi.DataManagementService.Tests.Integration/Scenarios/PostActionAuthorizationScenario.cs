@@ -540,7 +540,10 @@ internal static class PostActionAuthorizationScenario
             _update = update;
         }
 
-        public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null) => _inner.GetAllClaimSets(tenant);
+        public Task<IList<ClaimSet>> GetAllClaimSets(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        ) => _inner.GetAllClaimSets(tenant, cancellationToken);
 
         private IReadOnlyList<string>? Resolve(QualifiedResourceName resource, string action) =>
             IsWrittenResource(resource)

@@ -49,7 +49,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 : expectedAuthStrategies;
 
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     Name: "SIS-Vendor",
@@ -73,7 +73,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep MiddlewareCoreReadChanges(string action, params string[] strategies)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     Name: "SIS-Vendor",
@@ -198,14 +198,15 @@ public class ResourceActionAuthorizationMiddlewareTests
     private static IPipelineStep MiddlewareWithClaimSetsCore(params ClaimSet[] claimSets)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored)).Returns(claimSets.ToList());
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+            .Returns(claimSets.ToList());
         return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create", ILogger? logger = null)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     Name: "SIS-Vendor",
@@ -528,7 +529,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
                 .Returns([
                     new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])]),
                 ]);
@@ -698,7 +699,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
 
-            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
                 .Throws(new InvalidOperationException("simulated failure"));
 
             var middleware = new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
@@ -727,6 +728,78 @@ public class ResourceActionAuthorizationMiddlewareTests
         public void It_returns_the_expected_500_body()
         {
             AssertExpectedServerErrorResponse(_response, "Error while authorizing the request.", "traceId");
+        }
+    }
+
+    /// <summary>
+    /// The request's own cancellation token must reach the claim set provider, and a cancellation
+    /// that the provider observes must propagate as OperationCanceledException rather than being
+    /// caught by the middleware's catch-all and turned into a 500.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Requests_Token_Is_Cancelled_During_Claim_Set_Retrieval
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private IClaimSetProvider _claimSetProvider = null!;
+        private CancellationTokenSource _cts = null!;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _cts = new CancellationTokenSource();
+            _cts.Cancel();
+            _claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+                .Throws(() => new OperationCanceledException(_cts.Token));
+
+            var middleware = new ResourceActionAuthorizationMiddleware(
+                _claimSetProvider,
+                NullLogger.Instance
+            );
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(
+                frontEndRequest,
+                RequestMethod.POST,
+                No.ServiceProvider,
+                _cts.Token
+            )
+            {
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+            };
+
+            _act = () => middleware.Execute(_requestInfo, NullNext);
+        }
+
+        [TearDown]
+        public void TearDown() => _cts.Dispose();
+
+        [Test]
+        public async Task It_passes_the_requests_cancellation_token_to_the_claim_set_provider()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>.Ignored, _cts.Token))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_propagates_operation_canceled_instead_of_a_response()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 

@@ -10,5 +10,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
 internal sealed class StaticClaimSetProvider(IList<ClaimSet> claimSets) : IClaimSetProvider
 {
-    public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null) => Task.FromResult(claimSets);
+    public Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    ) => Task.FromResult(claimSets);
 }

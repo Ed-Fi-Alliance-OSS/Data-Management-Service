@@ -15,14 +15,24 @@ public interface IApplicationContextProvider
     /// </summary>
     /// <param name="clientId">The client identifier from the JWT token</param>
     /// <param name="tenant">The optional tenant context for the request</param>
+    /// <param name="cancellationToken">Cancellation token for the lookup operation.</param>
     /// <returns>The typed application-context lookup outcome</returns>
-    Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant);
+    Task<ApplicationContextResult> GetApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Forces a reload of application data from CMS, bypassing cache
     /// </summary>
     /// <param name="clientId">The client identifier to reload</param>
     /// <param name="tenant">The optional tenant context for the request</param>
+    /// <param name="cancellationToken">Cancellation token for the reload operation.</param>
     /// <returns>The typed application-context reload outcome</returns>
-    Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(string clientId, string? tenant);
+    Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    );
 }

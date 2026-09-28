@@ -175,6 +175,34 @@ public class Given_ConfigurationServiceApplicationProvider
     }
 
     [Test]
+    public async Task It_Should_Sanitize_A_ClientId_Containing_Control_Characters_Before_Logging()
+    {
+        RecordingLogger<ConfigurationServiceApplicationProvider> logger = new();
+        const string maliciousClientId = "client\r\nid";
+        using var fixture = new ProviderFixture(
+            HttpStatusCode.OK,
+            ValidApplicationContextJson(clientId: "other-client"),
+            logger: logger
+        );
+
+        await fixture.Provider.GetApplicationByClientIdAsync(maliciousClientId, tenant: null);
+
+        logger.Records.Should().NotBeEmpty();
+        logger
+            .Records.Should()
+            .AllSatisfy(record =>
+            {
+                record.Message.Should().NotContain("\r");
+                record.Message.Should().NotContain("\n");
+            });
+        LogRecord rejection = logger
+            .Records.Should()
+            .ContainSingle(record => record.Level == LogLevel.Error)
+            .Subject;
+        rejection.Properties.Should().Contain("RequestedClientId", "clientid");
+    }
+
+    [Test]
     public async Task It_Should_Return_Unavailable_When_Response_Client_Uuid_Is_Empty()
     {
         using var fixture = new ProviderFixture(

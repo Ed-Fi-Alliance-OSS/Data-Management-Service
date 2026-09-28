@@ -1074,7 +1074,7 @@ public class MetadataModuleTests
             );
             A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored, A<CancellationToken>._))
                 .Returns([tenantADataStore, tenantBDataStore]);
-            A.CallTo(() => dataStoreProvider.LoadTenants())
+            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .Returns(new List<string> { "tenantA", "tenantB" });
             A.CallTo(() => dataStoreProvider.GetById(A<long>.Ignored, A<string?>.Ignored))
                 .Returns(tenantADataStore);

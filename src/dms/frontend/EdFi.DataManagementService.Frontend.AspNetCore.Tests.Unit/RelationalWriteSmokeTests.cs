@@ -425,11 +425,19 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                 );
                 A.CallTo(() =>
-                        applicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+                        applicationContextProvider.GetApplicationByClientIdAsync(
+                            A<string>._,
+                            tenant: null,
+                            A<CancellationToken>._
+                        )
                     )
                     .Returns(applicationContextResult);
                 A.CallTo(() =>
-                        applicationContextProvider.ReloadApplicationByClientIdAsync(A<string>._, tenant: null)
+                        applicationContextProvider.ReloadApplicationByClientIdAsync(
+                            A<string>._,
+                            tenant: null,
+                            A<CancellationToken>._
+                        )
                     )
                     .Returns(applicationContextResult);
 
@@ -656,7 +664,10 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class AllowAllWidgetClaimSetProvider : IClaimSetProvider
     {
-        public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+        public Task<IList<ClaimSet>> GetAllClaimSets(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             return Task.FromResult<IList<ClaimSet>>([
                 new ClaimSet(

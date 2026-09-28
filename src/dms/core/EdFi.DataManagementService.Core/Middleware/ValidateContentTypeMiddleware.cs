@@ -7,19 +7,45 @@ using System.Net.Http.Headers;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Validates the request Content-Type for baseline data resource write requests (POST/PUT).
-/// An explicit, unsupported media type is rejected with 415 before the body is parsed, matching
-/// ODS/API behavior. Baseline JSON (application/json, text/json) is accepted, and Ed-Fi profile
-/// media types (application/vnd.ed-fi.*) are deferred to ProfileResolutionMiddleware. A missing
-/// Content-Type is not rejected here.
+/// The set of Content-Type values a <see cref="ValidateContentTypeMiddleware"/> instance accepts.
 /// </summary>
-internal class ValidateContentTypeMiddleware(ILogger _logger) : IPipelineStep
+internal enum ContentTypePolicy
+{
+    /// <summary>
+    /// The current baseline data resource write behavior: a missing header, standard JSON
+    /// (application/json, text/json), or an Ed-Fi profile media type (application/vnd.ed-fi.*),
+    /// with profile validation deferred to ProfileResolutionMiddleware.
+    /// </summary>
+    ResourceWrite,
+
+    /// <summary>
+    /// A missing header or standard JSON (application/json, text/json) only. Every other value,
+    /// including Ed-Fi profile media types, is rejected with 415.
+    /// </summary>
+    BaselineJsonOnly,
+}
+
+/// <summary>
+/// Validates the request Content-Type for an incoming request before its body is parsed,
+/// rejecting an explicit, unsupported media type with 415, matching ODS/API behavior. A missing
+/// Content-Type is never rejected here. Which media types beyond baseline JSON (application/json,
+/// text/json) are supported depends on the configured <see cref="ContentTypePolicy"/>: under
+/// <see cref="ContentTypePolicy.ResourceWrite"/>, used for data resource POST/PUT, an Ed-Fi profile
+/// media type (application/vnd.ed-fi.*) is also accepted, with profile validation itself deferred
+/// to ProfileResolutionMiddleware; under <see cref="ContentTypePolicy.BaselineJsonOnly"/>, every
+/// other value - profile media types included - is rejected.
+/// </summary>
+internal class ValidateContentTypeMiddleware(
+    ILogger _logger,
+    ContentTypePolicy _policy = ContentTypePolicy.ResourceWrite
+) : IPipelineStep
 {
     private const string UnsupportedMediaTypeMessage =
         "The value specified in the 'Content-Type' header is not supported by this host.";
@@ -28,18 +54,19 @@ internal class ValidateContentTypeMiddleware(ILogger _logger) : IPipelineStep
     {
         _logger.LogDebug(
             "Entering ValidateContentTypeMiddleware - {TraceId}",
-            requestInfo.FrontendRequest.TraceId.Value
+            LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
         );
 
-        if (IsSupportedWriteContentType(GetContentType(requestInfo.FrontendRequest)))
+        if (IsSupportedContentType(GetContentType(requestInfo.FrontendRequest)))
         {
             await next();
             return;
         }
 
         _logger.LogDebug(
-            "Rejecting unsupported write Content-Type - {TraceId}",
-            requestInfo.FrontendRequest.TraceId.Value
+            "Rejecting unsupported Content-Type under policy {ContentTypePolicy} - {TraceId}",
+            _policy,
+            LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
         );
 
         requestInfo.FrontendResponse = new FrontendResponse(
@@ -58,12 +85,14 @@ internal class ValidateContentTypeMiddleware(ILogger _logger) : IPipelineStep
         frontendRequest.Headers.TryGetValue("Content-Type", out string? value) ? value : null;
 
     /// <summary>
-    /// A baseline write Content-Type is supported when the header is absent (null),
-    /// standard JSON, or an Ed-Fi profile media type (validated later by ProfileResolutionMiddleware).
-    /// Only a missing header is exempt; an explicit empty or whitespace value is malformed and,
-    /// like any value that cannot be parsed or resolves to another media type, is unsupported.
+    /// A Content-Type is supported when the header is absent (null) or standard JSON. Under
+    /// <see cref="ContentTypePolicy.ResourceWrite"/> an Ed-Fi profile media type is also supported
+    /// (validated later by ProfileResolutionMiddleware); under
+    /// <see cref="ContentTypePolicy.BaselineJsonOnly"/> it is not. Only a missing header is exempt;
+    /// an explicit empty or whitespace value is malformed and, like any value that cannot be parsed
+    /// or resolves to another media type, is unsupported.
     /// </summary>
-    private static bool IsSupportedWriteContentType(string? contentType)
+    private bool IsSupportedContentType(string? contentType)
     {
         // Only a missing header is exempt. An explicit empty or whitespace value is malformed and
         // falls through to the parse check below, which rejects it before any body parsing.
@@ -80,7 +109,12 @@ internal class ValidateContentTypeMiddleware(ILogger _logger) : IPipelineStep
             return false;
         }
 
-        return IsBaselineJson(mediaType.MediaType) || IsEdFiProfileMediaType(mediaType.MediaType);
+        if (IsBaselineJson(mediaType.MediaType))
+        {
+            return true;
+        }
+
+        return _policy == ContentTypePolicy.ResourceWrite && IsEdFiProfileMediaType(mediaType.MediaType);
     }
 
     private static bool IsBaselineJson(string mediaType) =>
