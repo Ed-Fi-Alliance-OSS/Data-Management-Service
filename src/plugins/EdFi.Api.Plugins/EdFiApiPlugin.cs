@@ -15,7 +15,7 @@ namespace EdFi.Api.Plugins;
 /// <para>
 /// A plugin is published as a directory of assemblies, dropped into a host's plugin root, and named
 /// in the host's allowlist. The host loads the directory's entry assembly into an isolated load
-/// context and invokes the contribution hook below on the single instance it finds there. The entry
+/// context and invokes the contribution hooks below on the single instance it finds there. The entry
 /// assembly must expose exactly one public, non-abstract subclass of this type with a public
 /// parameterless constructor: zero is fatal, because the operator allowlisted a directory that
 /// contributes nothing, and more than one is fatal, because choosing between them would be
@@ -45,6 +45,50 @@ public abstract class EdFiApiPlugin
     /// the same string.
     /// </remarks>
     public abstract string Name { get; }
+
+    /// <summary>
+    /// Contributes configuration sources to the host after plugins load and before the host registers
+    /// its services, which is where it first reads configuration a plugin can supply.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Override to add the plugin's own configuration sources, such as one that reads values from a
+    /// secrets vault. The host calls this hook on every loaded plugin unconditionally, in allowlist
+    /// order, before it calls <see cref="ContributeServices"/> on any of them. The base implementation
+    /// is a no-op, so a plugin that contributes no configuration simply does not override it.
+    /// </para>
+    /// <para>
+    /// Contribution is additive only. Add sources; do not remove or reorder a source that was present
+    /// when the hook began, which the host detects and treats as fatal. After the hook returns, the
+    /// host moves the sources it added to sit below the operator's environment variables and
+    /// command-line arguments and above every JSON source, preserving their relative order, so an
+    /// operator's explicit setting always outranks a plugin and a later plugin in the allowlist
+    /// outranks an earlier one.
+    /// </para>
+    /// </remarks>
+    /// <param name="configurationBuilder">
+    /// The host's configuration builder, as it stands when the hook runs. Its sources are a mutable
+    /// list, so the host snapshots them either side of the call: a source that was present before the
+    /// hook and is absent or moved afterwards fails startup, naming this plugin. Changing a property of
+    /// a pre-existing source object, such as an environment variable source's prefix or a JSON source's
+    /// path, is not detectable at this seam and is a trust assumption the host does not enforce.
+    /// </param>
+    /// <param name="bootstrapConfiguration">
+    /// The configuration already layered when the hook runs, supplied so the plugin can read the
+    /// settings it needs to build its sources, such as its own vault address. It is the host's live
+    /// configuration rather than a copy or a read-only facade, so nothing stops a plugin writing
+    /// through it; not doing so is a trust assumption the host does not enforce, and the effect of a
+    /// write on the host is undefined.
+    /// </param>
+    public virtual void ContributeConfiguration(
+        IConfigurationBuilder configurationBuilder,
+        IConfiguration bootstrapConfiguration
+    )
+    {
+        // Intentionally does nothing, for the reason ContributeServices gives. This member is the
+        // contract's first additive evolution: a plugin compiled against 1.0.0 cannot know of it, so it
+        // runs unchanged on a host carrying this version.
+    }
 
     /// <summary>
     /// Contributes service registrations to the host's container before it is built.
