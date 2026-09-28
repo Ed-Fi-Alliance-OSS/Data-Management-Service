@@ -444,15 +444,21 @@ follows, highest first:
 **Plugin sources land at rank 3 once the loader has placed them.** A plugin contributes
 configuration sources from its `ContributeConfiguration` hook, which DMS runs for
 each allowlisted plugin, in `Allowed` order, as soon as the plugins have loaded. After
-each hook the loader moves the sources that plugin added to sit immediately below the
-unprefixed environment source, keeping their order. The effects:
+each hook the loader loads the sources that plugin added, once, and inserts them into
+the host's configuration as a single source immediately below the unprefixed
+environment source, keeping their order within it. The effects:
 
 - A plugin value outranks every JSON source, including an empty string that
   `appsettings.json` ships for the same key, such as
   `ConfigurationServiceSettings:EncryptionKey`.
 - A value the operator sets in the environment or on the command line outranks every
-  plugin. An operator who wants a plugin to supply a value does not also set it
-  there.
+  plugin source added through `ContributeConfiguration`. An operator who wants a
+  plugin to supply a value does not also set it there. This rests on the plugin
+  keeping to its contract: a plugin's `ContributeServices` hook, like the rest of its
+  code, receives the live configuration, and one that adds a source there skips
+  placement and can outrank the operator. DMS does not detect that; it is part of
+  the full process trust a loaded plugin runs with (see
+  [Trust](./OPERATIONS.md#trust)).
 - Among plugins, the later one in `Allowed` wins, so the order of `Allowed` is part of
   the configuration and not only a list of what may run.
 
@@ -491,7 +497,7 @@ Only a deployment that starts the host with arguments of its own is affected by 
 qualifier above.
 
 > [!IMPORTANT]
-> **Three values cannot come from a plugin source**, because each is read before any
+> **Some values cannot come from a plugin source**, because each is read before any
 > plugin's `ContributeConfiguration` hook has run:
 >
 > - `AppSettings:StartupStatusFilePath`, read immediately after the builder is
@@ -500,14 +506,23 @@ qualifier above.
 >   supplied.
 > - The `Plugins` section, `Allowed` and `Directory` alike, which decides which
 >   plugins load at all.
-> - `DATABASE_CONNECTION_STRING_ADMIN`, which `src/dms/run.sh` reads for its
->   PostgreSQL readiness check before the .NET process starts.
+> - The values `src/dms/run.sh`, the container entry point, reads from the
+>   environment before the .NET process starts:
+>   - `AppSettings__Datastore`, which decides whether it waits for PostgreSQL. It
+>     defaults to `postgresql` when unset, so a plugin that supplies `mssql` while
+>     the environment leaves it unset still gets the PostgreSQL wait, which does not
+>     end.
+>   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
+>   - `AppSettings__UseApiSchemaPath` and `AppSettings__ApiSchemaPath`, which decide
+>     whether and where it downloads the schema packages. A plugin that supplies
+>     either sends .NET to read a directory the script did not fill.
 >
 > The first two are bootstrap exceptions and **not** exceptions to the
 > environment-versus-command-line rule above: the environment and command-line sources
 > both exist when they are read, so for them the command line wins when a deployment
-> supplies one. The third is not .NET configuration at all and is only ever read from
-> the container's environment.
+> supplies one. The `run.sh` values are not read as .NET configuration there at all,
+> only from the container's environment, so a deployment on the stock image sets
+> them in the environment even when a plugin also supplies them.
 
 ## RateLimit
 

@@ -124,21 +124,25 @@ That snippet is an illustration and is not mirrored into the consumer fixture.
 
 **The two parameters.**
 
-- `configurationBuilder` is the host's configuration builder as it stands when your hook runs. Add
-  your sources to it.
+- `configurationBuilder` is a builder the host hands your hook alone. It starts with the host's sources
+  as they stand when your hook runs, and the host's builder properties, so a relative file path
+  resolves as it would against the host. Add your sources to it. Adding a source loads nothing; the
+  host loads what you added, once, after your hook returns.
 - `bootstrapConfiguration` is the configuration already layered at that moment, so you can read the
   settings you need to build your sources, your own vault address being the usual case. It includes
   what plugins earlier in the allowlist contributed. It is the host's live configuration, not a copy
-  or a read-only view, so nothing stops you writing through it; do not. A write is outside what the
-  contract supports and its effect on the host is undefined.
+  or a read-only view, so nothing stops you writing through it, or casting it back to a builder and
+  adding a source there; do not. Either is outside what the contract supports and its effect on the
+  host is undefined. A source you add that way skips placement, so it can outrank the operator.
 
 **Contribution is additive only.** Add sources; never remove or reorder a source that was present
-when your hook began, including one an earlier plugin added. The host snapshots the builder's source
-list before your hook and compares it by reference afterwards:
+when your hook began, including the one the host inserted for an earlier plugin. The host compares
+your builder's source list with its own by reference after your hook:
 
 - **What it rejects.** A pre-existing source that is gone, or that is no longer in the same order
   relative to the others, fails startup, naming your plugin. So does an exception thrown out of the
-  hook.
+  hook, and so does an exception thrown when the host loads a source you added, such as a vault that
+  is unreachable.
 - **What it cannot see.** A change to a pre-existing source object's own properties, such as an
   environment source's prefix or a JSON source's path, leaves the list looking unchanged, and so does
   a write through `bootstrapConfiguration`. Neither is detected; both are trust assumptions the host
@@ -146,12 +150,15 @@ list before your hook and compares it by reference afterwards:
   either.
 
 **Where your sources end up is decided by the host, not by where you add them.** After your hook
-passes that check, the host moves the sources you added to sit immediately below the operator's
-environment variables, keeping their order. So:
+passes that check, the host builds the sources you added, once and in the order you added them, and
+inserts the result into its own configuration as one source, immediately below the operator's
+environment variables. Each of your sources loads once per startup, however many plugins follow
+yours. So:
 
 - every plugin source outranks the host's JSON files, including an empty value `appsettings.json`
   ships for the same key;
-- the operator's environment variables and command-line arguments outrank every plugin source;
+- the operator's environment variables and command-line arguments outrank every plugin source added
+  through `ContributeConfiguration`;
 - among plugins, **allowlist order is contractual**: a plugin later in `Plugins:Allowed` outranks an
   earlier one for any key both supply.
 
@@ -162,10 +169,14 @@ path. The operator configuration guide lists them for each host.
 **A configuration source counts as a contribution.** A plugin that adds at least one configuration
 source satisfies the host's "contributed nothing" check even if it registers no service at all, which
 is the whole of what a pure configuration plugin does. A plugin that adds no source and registers no
-declared plugin contract still fails startup.
+declared plugin contract still fails startup. So does a plugin that registered declared plugin
+contracts and had every one of them removed by a later plugin, whether or not it also added a
+source: the source does not stand in for registrations the plugin meant the host to call.
 
 `ContributeConfiguration` reaches configuration and nothing else. Anything you want to register
-belongs in `ContributeServices`, where the host can see it.
+belongs in `ContributeServices`, where the host can see it. `ContributeServices` receives the host's
+live configuration too, for reading; adding a source to it from there is the same unsupported
+bypass as adding one through `bootstrapConfiguration`.
 
 ## Names: four of them, and they must all match
 
@@ -476,9 +487,9 @@ so their numbers move independently of each other and of the Data Management Ser
 
 Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
 the host assembly manifest attached to the Data Management Service release you are targeting states
-which contract versions that release carries. 1.1.0 is the version that adds
-`ContributeConfiguration`; a plugin that overrides only `ContributeServices` can build against
-1.0.0 instead, and then runs on a host carrying either.
+which contract versions that release carries. Build against 1.1.0. It is the version that adds
+`ContributeConfiguration`, and the first the release pipeline promotes: 1.0.0 appeared only in
+pre-release builds, so no released host carries it for a plugin to target.
 
 ## License
 
