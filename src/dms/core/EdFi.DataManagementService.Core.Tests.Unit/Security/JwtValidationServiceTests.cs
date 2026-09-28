@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -1543,56 +1544,9 @@ public class JwtValidationServiceTests
         }
 
         [Test]
-        public void It_caps_the_value_at_256_code_units()
+        public void It_caps_the_value_at_256_code_units_and_marks_the_cut()
         {
-            _sanitized.Should().Be(new string('a', 256));
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_An_Issuer_Whose_Cap_Would_Split_A_Surrogate_Pair : JwtValidationServiceTests
-    {
-        private string _sanitized = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            // 255 ASCII characters put the emoji's high surrogate at index 255, the last kept unit.
-            _sanitized = JwtValidationService.SanitizeIssuerForLogging(
-                new string('a', 255) + "\U0001F600" + "bbb"
-            );
-        }
-
-        [Test]
-        public void It_drops_the_whole_pair()
-        {
-            _sanitized.Should().Be(new string('a', 255));
-        }
-    }
-
-    /// <summary>
-    /// Pins sanitize-then-truncate: truncating first would keep only the padding, which the
-    /// sanitizer then removes, leaving an empty string.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_An_Issuer_Padded_With_Control_Characters_Beyond_The_Log_Cap : JwtValidationServiceTests
-    {
-        private string _sanitized = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            _sanitized = JwtValidationService.SanitizeIssuerForLogging(
-                new string('\u0001', 300) + "https://evil.example/realms/edfi"
-            );
-        }
-
-        [Test]
-        public void It_keeps_the_content_after_the_padding()
-        {
-            _sanitized.Should().Be("https://evil.example/realms/edfi");
+            _sanitized.Should().Be(new string('a', 256) + LoggingSanitizer.TruncationSuffix);
         }
     }
 

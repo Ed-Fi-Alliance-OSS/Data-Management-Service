@@ -505,6 +505,13 @@ public static class DmsCoreServiceExtensions
                 );
             }
 
+            if (!Uri.TryCreate(options.MetadataAddress, UriKind.Absolute, out Uri? metadataAddress))
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:MetadataAddress must be an absolute URL for JWT authentication"
+                );
+            }
+
             if (string.IsNullOrEmpty(options.Authority))
             {
                 throw new InvalidOperationException(
@@ -518,7 +525,10 @@ public static class DmsCoreServiceExtensions
             ConfigurationManager<OpenIdConnectConfiguration> configManager = new(
                 options.MetadataAddress,
                 new OpenIdConnectConfigurationRetriever(),
-                new Security.HttpDocumentRetriever(httpClient) { RequireHttps = options.RequireHttpsMetadata }
+                new Security.HttpDocumentRetriever(httpClient, metadataAddress)
+                {
+                    RequireHttps = options.RequireHttpsMetadata,
+                }
             )
             {
                 RefreshInterval = TimeSpan.FromMinutes(options.RefreshIntervalMinutes),

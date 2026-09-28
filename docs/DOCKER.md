@@ -133,6 +133,6 @@ while a refreshed token overlaps the one it replaces.
 | Parameter                  | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
 |---------------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `Authority`               | URL of the identity provider's authority (issuer). It must equal the metadata document's `issuer` exactly | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
-| `MetadataAddress`         | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `MetadataAddress`         | OpenID Connect metadata endpoint. The document's `jwks_uri` must share this address's origin | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.

@@ -5016,6 +5016,11 @@ Describe "CMS database creation ownership (DMS-1270)" {
         # The names whose global definitions the harness must be able to shadow deterministically.
         $script:ownershipInterceptedCommand = @('docker', 'Start-Sleep')
 
+        # The two Keycloak authorities a cell's env file carries: DMS's issuer and the in-network URL
+        # the Configuration Service calls.
+        $script:ownershipKeycloakIssuer = 'http://issuer.ownership.test/realms/edfi'
+        $script:ownershipKeycloakBackchannel = 'http://backchannel.ownership.test:8080/realms/edfi'
+
         # The staged sibling stub, as a single definition so the binding tests exercise the SAME text the
         # cells run rather than a copy that could drift from it. '__SCRIPT__' is replaced per stub.
         #
@@ -5294,7 +5299,12 @@ foreach ($name in $InterceptedCommand) {
                 [switch]$FailStaging,
                 # Seeds an unparsable line into the real observation file, so the actual read/parse path
                 # fails and restoration can be proven unconditional.
-                [switch]$CorruptObservation
+                [switch]$CorruptObservation,
+                # Writes the env file a pre-DMS-1489 .env.example seeded: no
+                # KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY.
+                [switch]$OmitConfigIdentityAuthority,
+                # Runs the script's teardown shape (-d) instead of a bring-up.
+                [switch]$Teardown
             )
 
             # Preconditions FIRST: before the snapshot, before the staging directory exists, before any
@@ -5306,6 +5316,9 @@ foreach ($name in $InterceptedCommand) {
             $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-ownership-" + [Guid]::NewGuid().ToString('N'))
 
             $recorded = [System.Collections.Generic.List[string]]::new()
+            # DMS_CONFIG_IDENTITY_AUTHORITY as each compose bring-up saw it: the value the
+            # Configuration Service container receives.
+            $configAuthorityAtUp = [System.Collections.Generic.List[string]]::new()
             $caught = $null
             $restore = $null
             $observationFailure = $null
@@ -5330,13 +5343,19 @@ foreach ($name in $InterceptedCommand) {
                 }
 
                 $envFile = Join-Path $stage '.env.ownership'
-                Set-Content -LiteralPath $envFile -NoNewline -Value (@(
+                $envLines = @(
                     'POSTGRES_PASSWORD=abcdefgh1!',
                     'POSTGRES_DB_NAME=edfi_datamanagementservice',
                     "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider",
+                    # Distinct from the backchannel value below, so a mapping that reads the wrong key
+                    # is observable.
+                    "KEYCLOAK_DMS_JWT_AUTHORITY=$script:ownershipKeycloakIssuer"
+                )
+                if (-not $OmitConfigIdentityAuthority) {
                     # Keycloak starts refuse an env file without it.
-                    'KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
-                ) -join "`n")
+                    $envLines += "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=$script:ownershipKeycloakBackchannel"
+                }
+                Set-Content -LiteralPath $envFile -NoNewline -Value ($envLines -join "`n")
 
                 # Succeed for the database and Keycloak bring-ups, fail at the next compose up - the
                 # Configuration Service under -InfraOnly, the full stack otherwise. That is a
@@ -5347,6 +5366,9 @@ foreach ($name in $InterceptedCommand) {
                 Set-OwnershipStandIn -Name 'docker' -State $state -Body {
                     $flattened = @($args | ForEach-Object { $_ })
                     $recorded.Add(($flattened -join ' '))
+                    if ($flattened -contains 'up') {
+                        $configAuthorityAtUp.Add([string]$env:DMS_CONFIG_IDENTITY_AUTHORITY)
+                    }
                     if ($flattened -contains 'up' -and -not ($flattened -contains 'db' -or $flattened -contains 'keycloak')) {
                         $global:LASTEXITCODE = 1
                     }
@@ -5364,6 +5386,7 @@ foreach ($name in $InterceptedCommand) {
                 }
                 if ($InfraOnly) { $scriptArgs['InfraOnly'] = $true }
                 if ($SeparateConfigDatabase) { $scriptArgs['SeparateConfigDatabase'] = $true }
+                if ($Teardown) { $scriptArgs['d'] = $true }
 
                 if ($CorruptObservation) {
                     # Seeded before the run, so the very first line the real reader meets is unparsable.
@@ -5411,6 +5434,7 @@ foreach ($name in $InterceptedCommand) {
                 KeycloakCount      = @($observation | Where-Object { $_.Script -eq 'setup-keycloak.ps1' }).Count
                 Observation        = $observation
                 DockerCommand      = @($recorded)
+                ConfigAuthorityAtUp = @($configAuthorityAtUp)
                 # The execution failure is preserved as-is; an observation failure is reported alongside it
                 # rather than replacing it, so a malformed file cannot hide why the run actually stopped.
                 ErrorMessage       = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
@@ -5544,6 +5568,40 @@ foreach ($name in $InterceptedCommand) {
             $cell.InitDbCount | Should -Be 0 -Because "under Keycloak, CMS owns creation through its own startup deploy, in $Shape/$Topology"
             $cell.KeycloakCount | Should -BeGreaterThan 0 -Because "the cell must have reached the Keycloak identity branch, or its zero -InitDb count proves nothing"
         }
+    }
+
+    It "hands the Configuration Service KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY, not DMS's issuer: <_>" -ForEach @(
+        'start-local-dms.ps1', 'start-published-dms.ps1'
+    ) {
+        $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak'
+
+        $cell.RestoreFailure | Should -BeNullOrEmpty -Because "every process-global resource must be restored"
+        $cell.Imbalance | Should -BeNullOrEmpty -Because "the location stack must come back balanced"
+        $cell.ConfigAuthorityAtUp.Count | Should -BeGreaterThan 0 -Because "the cell must have reached a compose bring-up"
+        $cell.ConfigAuthorityAtUp | Should -Be (@($script:ownershipKeycloakBackchannel) * $cell.ConfigAuthorityAtUp.Count) -Because "the Configuration Service calls Keycloak in-network; DMS's public issuer does not resolve inside its container"
+    }
+
+    It "refuses a keycloak start whose env file lacks KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY, before any docker call: <_>" -ForEach @(
+        'start-local-dms.ps1', 'start-published-dms.ps1'
+    ) {
+        $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak' -OmitConfigIdentityAuthority
+
+        $cell.RestoreFailure | Should -BeNullOrEmpty -Because "every process-global resource must be restored"
+        $cell.Imbalance | Should -BeNullOrEmpty -Because "the location stack must come back balanced"
+        $cell.ErrorMessage | Should -BeLike "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY is missing in *"
+        $cell.DockerCommand | Should -BeNullOrEmpty -Because "a stale env file must be refused before anything starts"
+    }
+
+    It "still tears down a keycloak stack whose env file lacks KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY: <_>" -ForEach @(
+        'start-local-dms.ps1', 'start-published-dms.ps1'
+    ) {
+        $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak' -OmitConfigIdentityAuthority -Teardown
+
+        $cell.RestoreFailure | Should -BeNullOrEmpty -Because "every process-global resource must be restored"
+        $cell.Imbalance | Should -BeNullOrEmpty -Because "the location stack must come back balanced"
+        $cell.ErrorMessage | Should -BeNullOrEmpty -Because "teardown starts no Configuration Service, so it has no use for the key"
+        @($cell.DockerCommand | Where-Object { $_ -like 'compose * down*' }).Count |
+            Should -BeGreaterThan 0 -Because "the teardown must reach docker compose down"
     }
 
     # The harness that produces the matrix above is itself a process-global mutation, so its contract is

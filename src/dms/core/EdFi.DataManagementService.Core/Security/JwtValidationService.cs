@@ -178,30 +178,10 @@ internal class JwtValidationService(
 
     /// <summary>
     /// Sanitizes an issuer value for logging and bounds its length. The discovered issuer comes
-    /// from a metadata document an attacker may influence, and the free-text sanitizer leaves
-    /// bounding the length to the caller.
+    /// from a metadata document an attacker may influence.
     /// </summary>
-    internal static string SanitizeIssuerForLogging(string? issuer)
-    {
-        // Sanitize first and truncate second, so control characters the sanitizer removes do not
-        // spend the length budget.
-        string sanitized = LoggingSanitizer.SanitizeFreeTextForLogging(issuer);
-
-        if (sanitized.Length <= MaxLoggedIssuerLength)
-        {
-            return sanitized;
-        }
-
-        // Sanitization drops unpaired surrogates, so a high surrogate at the cut is paired; drop it
-        // whole rather than leave a lone half.
-        int retained = MaxLoggedIssuerLength;
-        if (char.IsHighSurrogate(sanitized[retained - 1]))
-        {
-            retained--;
-        }
-
-        return sanitized[..retained];
-    }
+    internal static string SanitizeIssuerForLogging(string? issuer) =>
+        LoggingSanitizer.SanitizeFreeTextForLogging(issuer, MaxLoggedIssuerLength);
 
     private TokenValidationParameters GetValidationParameters(
         string validationFingerprint,

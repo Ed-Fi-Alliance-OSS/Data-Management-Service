@@ -261,7 +261,8 @@ if (-not $databaseOnlyStartup) {
     {
         # A .env seeded before this key existed would otherwise hand the Configuration Service
         # DMS's public issuer through the env file's DMS_CONFIG_IDENTITY_AUTHORITY fallback.
-        if ([string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY)) {
+        # Teardown starts no Configuration Service, so it must not be blocked on the key.
+        if (-not $d -and [string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY)) {
             throw "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY is missing in '$EnvironmentFile'. Add KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi and set KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi (see .env.example)."
         }
         $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT

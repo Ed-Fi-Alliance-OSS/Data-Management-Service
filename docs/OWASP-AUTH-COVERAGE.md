@@ -244,6 +244,11 @@ The behaviors above are exercised by automated tests:
     case, is rejected;
   - a token whose `iss` differs from the configured authority is rejected.
 
+  `EdFi.DataManagementService.Core.Tests.Unit/Security/HttpDocumentRetrieverTests.cs` covers the
+  **signing-key origin pin**: a document address on another host, port or scheme than
+  `MetadataAddress` is refused before any request is sent, and a metadata document that asserts
+  the right issuer but names a foreign `jwks_uri` fails retrieval without contacting that host.
+
   `EdFi.DataManagementService.Core.Tests.Unit/Startup/WarmUpOidcMetadataTaskTests.cs` covers
   **DMS startup failing** on a metadata issuer mismatch, with both values named and sanitized
   in the error. These fixtures cover DMS only; the CMS's own issuer validation is not
