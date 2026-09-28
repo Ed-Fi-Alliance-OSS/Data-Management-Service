@@ -42,7 +42,8 @@ public sealed record JobExecutionResult(
 /// exactly one outcome write while ownership is still certain.
 /// </summary>
 /// <remarks>
-/// Any unsuccessful renewal makes the execution <see cref="JobOwnershipState.Uncertain"/> and cancels it; from then on
+/// Any unsuccessful renewal, and any fence that finds the lease lost or cannot confirm its commit, makes the execution
+/// <see cref="JobOwnershipState.Uncertain"/> and cancels the handler's token; from then on
 /// nothing is written, the row is left to lease expiry, and recovery follows what the database actually holds (§4.4).
 /// An outcome write whose result is unknown is never retried and never followed by a re-read. Logs carry identifiers
 /// made safe for logging, database times, the exception type chain, and provider error codes; never a payload, an
@@ -281,12 +282,14 @@ public sealed class JobExecutor(
                 LogOutcome(written, job, ifWritten, started, decision.Diagnostic);
                 return ifWritten;
             case JobWriteResult.OwnershipLost:
+                // The rejected write is the outcome: it is what the result, the log, and the metric report.
                 ownership.TryMarkUncertain(nameof(LateWriteRejected));
-                LogOutcome(LateWriteRejected, job, ifWritten, started, decision.Diagnostic);
-                return new JobExecutionResult(
+                JobExecutionResult rejected = new(
                     JobExecutionOutcome.LateWriteRejected,
                     nameof(LateWriteRejected)
                 );
+                LogOutcome(LateWriteRejected, job, rejected, started, decision.Diagnostic);
+                return rejected;
             case JobWriteResult.ResultUnknown unknown:
                 ownership.TryMarkUncertain(nameof(WriteOutcomeUnknown));
                 LogWriteUnknown(job, nameof(WriteOutcomeUnknown), started, unknown.Diagnostic);
@@ -471,8 +474,9 @@ public sealed class JobExecutor(
 
     /// <summary>
     /// The D-7a renewal loop: every <see cref="JobOptions.RenewalInterval"/> it enters the gate ahead of fences and
-    /// renews the lease; any unsuccessful renewal makes the execution uncertain and cancels it. Stopping it lets an
-    /// in-flight renewal finish, and only a failed renewal changes the state.
+    /// renews the lease; any unsuccessful renewal makes the execution uncertain. Whenever the execution becomes
+    /// uncertain, whether through a renewal or a fence, the loop cancels it and ends. Stopping it lets an in-flight
+    /// renewal finish, and only a failed renewal changes the state.
     /// </summary>
     private sealed class RenewalLoop(
         JobExecutor executor,
@@ -498,44 +502,28 @@ public sealed class JobExecutor(
             JobOptions settings = executor.Settings;
             while (true)
             {
-                try
-                {
-                    await Task.Delay(settings.RenewalInterval, executor.Clock, _stop.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-
-                IDisposable gate;
-                try
-                {
-                    gate = await ownership.EnterForRenewalAsync(_stop.Token);
-                }
-                catch (OperationCanceledException)
+                // A fence that makes the execution uncertain wakes the loop at once, so the handler's token is
+                // cancelled then rather than at the next interval.
+                Task interval = Task.Delay(settings.RenewalInterval, executor.Clock, _stop.Token);
+                await Task.WhenAny(interval, ownership.WhenUncertain);
+                if (_stop.IsCancellationRequested)
                 {
                     return;
                 }
 
-                using (gate)
+                if (ownership.State == JobOwnershipState.Owned && !await RenewUnderGateAsync(settings))
                 {
-                    if (ownership.State != JobOwnershipState.Owned)
-                    {
-                        return;
-                    }
-
-                    if (await RenewOnceAsync(settings) is not { } failure)
-                    {
-                        continue;
-                    }
-
-                    // Under the gate, so no fence can start or commit between the failure and the state change.
-                    ownership.TryMarkUncertain(failure);
+                    return;
                 }
 
-                // The gate is released before the consumer's cancellation callbacks run: a callback may wait for a
-                // fence, which needs the gate. The state is already uncertain, so such a fence is rejected before it
-                // reaches the database.
+                if (ownership.State == JobOwnershipState.Owned)
+                {
+                    continue;
+                }
+
+                // Uncertain, whether this renewal, a fence, or a write recorded it. The gate is released before the
+                // consumer's cancellation callbacks run: a callback may wait for a fence, which needs the gate. The
+                // state is already uncertain, so such a fence is rejected before it reaches the database.
                 try
                 {
                     await execution.CancelAsync();
@@ -547,6 +535,37 @@ public sealed class JobExecutor(
 
                 return;
             }
+        }
+
+        /// <summary>
+        /// Enters the gate ahead of fences and renews once, unless a fence made the execution uncertain meanwhile.
+        /// Returns false when the loop was stopped while waiting for the gate.
+        /// </summary>
+        private async Task<bool> RenewUnderGateAsync(JobOptions settings)
+        {
+            IDisposable gate;
+            try
+            {
+                gate = await ownership.EnterForRenewalAsync(_stop.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+
+            using (gate)
+            {
+                if (
+                    ownership.State == JobOwnershipState.Owned
+                    && await RenewOnceAsync(settings) is { } failure
+                )
+                {
+                    // Under the gate, so no fence can start or commit between the failure and the state change.
+                    ownership.TryMarkUncertain(failure);
+                }
+            }
+
+            return true;
         }
 
         /// <summary>One renewal, bounded by <see cref="JobOptions.RenewalTimeout"/>. Returns the failure reason, or null.</summary>

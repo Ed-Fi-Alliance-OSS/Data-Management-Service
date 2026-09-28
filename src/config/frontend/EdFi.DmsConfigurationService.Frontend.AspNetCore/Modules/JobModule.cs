@@ -25,6 +25,8 @@ public class JobModule : IEndpointModule
             .WithSummary("Get job status")
             .WithDescription("Get the status of a job by its ID")
             .Produces<JobStatusResponse>(200)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
             .ProducesProblem(404)
             .ProducesProblem(500);
     }

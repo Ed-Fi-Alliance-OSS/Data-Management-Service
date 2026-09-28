@@ -42,7 +42,9 @@ public sealed class JobMetrics : IDisposable
         _queueDelay = _meter.CreateHistogram<double>(
             "dmscs.jobs.queue_delay",
             unit: "ms",
-            description: "Database time from a job becoming eligible to its claim."
+            description: "Database time from a job's NextAttemptAt to its claim. A reclaim keeps the earlier "
+                + "NextAttemptAt, so reclaimed=true samples include the abandoned attempt and its lease; "
+                + "reclaimed=false measures the normal eligible-queue delay."
         );
         _duration = _meter.CreateHistogram<double>(
             "dmscs.jobs.duration",
@@ -61,8 +63,8 @@ public sealed class JobMetrics : IDisposable
 
     public void JobClaimed(string jobType, bool reclaimed, double queueDelayMilliseconds)
     {
-        _claimed.Add(1, JobType(jobType), new KeyValuePair<string, object?>("reclaimed", reclaimed));
-        _queueDelay.Record(queueDelayMilliseconds, JobType(jobType));
+        _claimed.Add(1, JobType(jobType), Reclaimed(reclaimed));
+        _queueDelay.Record(queueDelayMilliseconds, JobType(jobType), Reclaimed(reclaimed));
     }
 
     public void JobFinished(string jobType, JobExecutionOutcome outcome, double durationMilliseconds)
@@ -90,4 +92,6 @@ public sealed class JobMetrics : IDisposable
 
     private static KeyValuePair<string, object?> JobType(string jobType) =>
         new("job_type", JobDiagnostics.SafeIdentifier(jobType));
+
+    private static KeyValuePair<string, object?> Reclaimed(bool reclaimed) => new("reclaimed", reclaimed);
 }

@@ -171,7 +171,7 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 | RetentionInterval    | How often the retention sweep runs.                                                                                                                      | `01:00:00`   | 1 min – 24 h                     |
 | RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
 
-The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 5 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`, where the two 5 s terms are the fixed lock waits and `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 5 + 10 + 5 + 30 + 50 = 160 s, within 300 s. When it fails, the startup message lists each term's value.
+The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
 
 ## Reverse Proxy and Forwarded Headers
 

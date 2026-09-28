@@ -237,7 +237,8 @@ public sealed class SimulatedRow
 
 /// <summary>
 /// A fence that enters the execution gate as the real one does and checks the execution state before and after the
-/// work; <see cref="DatabaseCalls"/> counts the fences that reached the database.
+/// work; <see cref="LeaseLost"/> refuses and makes the execution uncertain, and <see cref="DatabaseCalls"/> counts the
+/// fences that reached the database.
 /// </summary>
 public sealed class RecordingFenceFactory : IJobFenceFactory
 {
@@ -263,6 +264,8 @@ public sealed class RecordingFenceFactory : IJobFenceFactory
             Interlocked.Increment(ref factory.DatabaseCalls);
             if (factory.LeaseLost)
             {
+                // As the real fences do: the refusal makes the execution uncertain, under the gate.
+                ownership.TryMarkUncertain("FenceLeaseLost");
                 throw new JobLeaseLostException();
             }
 

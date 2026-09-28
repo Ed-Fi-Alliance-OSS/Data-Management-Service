@@ -59,6 +59,25 @@ Completed / Error ─retention──────► deleted
 - A job released during shutdown keeps the attempt it used. A job released on its final attempt
   fails with `AttemptsExhausted` on the next worker sweep, without running again.
 - Lowering `MaxAttempts` fails every waiting job already at or over the new limit on the next sweep.
+- A job can therefore end in `Error` with `AttemptsExhausted` without a final handler execution:
+  after a crash, lost ownership certainty, or a shutdown release during its final attempt, or after
+  `MaxAttempts` is lowered, the worker sweep writes that outcome and no handler code runs.
+
+### What consumers must provide
+
+The infrastructure leaves two obligations to the features that register job types. The managed
+data-store lifecycle (DMS-1439) must meet both:
+
+- **Converge on exhaustion.** A consumer whose own records must reflect a failed job (for example
+  `CreateError` or `DeleteError`) cannot rely on its handler seeing the final failure, because of
+  the exhaustion paths above. It must reconcile from the job's persisted terminal state, and it
+  must allow for `FinishedJobRetention`. That setting is configurable, so a finished job may be
+  deleted sooner than the default seven days.
+- **Suppress its own job types when its feature is off.** Claims take any eligible job, whatever
+  its type. `WorkerEnabled=false` stops every job type, and a job type with no registered handler
+  is still claimed and fails with `UnsupportedJobType`. Neither of these leaves managed jobs
+  unclaimed and unscheduled while refresh jobs and polling keep running. The lifecycle feature
+  must design that suppression itself.
 
 ### Failure classification and public error text
 
@@ -111,7 +130,8 @@ present:
 
 The contract was compared with the Admin API v3 document generated from ODS-Admin-API commit
 `ed115fd8` (`reference/design/jobs-DMS-1437/admin-api-v3-ed115fd8.yaml`). The CMS document matches
-it on the path parameter, the property names, types, and formats, and the nullability of
+it on the path parameter, the declared responses (200, 401, 403, 404, and 500, each error as
+`application/problem+json`), the property names, types, and formats, and the nullability of
 `createdAt`, `finishedAt`, and `errorMessage`. It differs as follows:
 
 - `jobId` and `status` are non-nullable. Upstream marks them nullable only as a generator artifact;
@@ -175,10 +195,20 @@ that holds the job's row lock, and commits only if the execution still owns the 
   lease remains, both judged by database time after the lock is held.
 - The work, the final ownership check, and the commit share one deadline: the smaller of
   `FenceTimeout` and the remaining lease less 1 s.
-- `JobFenceUnavailableException` means the row lock was not acquired within 5 s; it is transient.
-- A fence commit whose outcome is unknown ends the execution's certainty. No completion is written
-  afterwards, and the job is reclaimed after its lease expires, so the next attempt must reconcile
-  the fenced changes that may already be committed.
+- `JobFenceUnavailableException` means the row lock was not acquired within 5 s; it is transient,
+  and the execution still owns the job.
+- A `JobLeaseLostException` ends the execution's certainty before it reaches the handler, even if
+  the handler catches it. No outcome is written afterwards, and every later fence of the execution
+  is refused. The handler must stop. The job is reclaimed after its lease expires, or fails with
+  `AttemptsExhausted` when its attempts are spent.
+- A fence commit whose outcome is unknown ends the execution's certainty the same way. The next
+  attempt must reconcile the fenced changes that may already be committed.
+- The fence's 5 s lock timeout also applies to the work's own statements: PostgreSQL
+  `lock_timeout` is set for the fence transaction, and SQL Server `LOCK_TIMEOUT` for its session.
+  A statement in the work that waits longer for a lock fails with the provider's own error
+  (PostgreSQL `55P03`, SQL Server `1222`), not `JobFenceUnavailableException`, which describes
+  only the fence's own row lock. Like any other exception from the work, it rolls the fenced
+  changes back and propagates to the handler.
 
 Write the database changes that must happen only while the job is owned through the fence, using
 the supplied transaction.
@@ -271,10 +301,15 @@ the service):
 | `dmscs.jobs.claimed`                    | Counter             | `job_type`, `reclaimed`  |
 | `dmscs.jobs.finished`                   | Counter             | `job_type`, `outcome`    |
 | `dmscs.jobs.ownership_uncertain`        | Counter             | `job_type`, `reason`     |
-| `dmscs.jobs.queue_delay`                | Histogram (ms)      | `job_type`               |
+| `dmscs.jobs.queue_delay`                | Histogram (ms)      | `job_type`, `reclaimed`  |
 | `dmscs.jobs.duration`                   | Histogram (ms)      | `job_type`               |
 | `dmscs.schedules.occurrences_enqueued`  | Counter             | `schedule_type`          |
 | `dmscs.jobs.retention_deleted`          | Counter             | —                        |
+
+`dmscs.jobs.queue_delay` measures database time from a job's `NextAttemptAt` to its claim. A
+reclaim keeps the earlier `NextAttemptAt`, so `reclaimed=true` samples also include the abandoned
+attempt and its lease, which inflates apparent queue latency. Filter on `reclaimed=false` to
+measure normal queue delay.
 
 ## Deployment
 

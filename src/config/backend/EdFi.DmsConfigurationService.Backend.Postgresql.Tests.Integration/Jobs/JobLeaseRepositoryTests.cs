@@ -269,6 +269,16 @@ public class JobLeaseRepositoryTests
                 return exception;
             }
         }
+
+        /// <summary>
+        /// A fence's lease-loss refusal leaves the execution uncertain, so no outcome write follows even when the
+        /// handler catches the exception (D-5).
+        /// </summary>
+        protected static void ShouldBeInvalidatedByTheFence(JobExecutionOwnership ownership)
+        {
+            ownership.State.Should().Be(JobOwnershipState.Uncertain);
+            ownership.Reason.Should().Be("FenceLeaseLost");
+        }
     }
 
     /// <summary>Another transaction holding <c>FOR UPDATE</c> on one job row until it is released.</summary>
@@ -1005,6 +1015,7 @@ public class JobLeaseRepositoryTests
     [TestFixture]
     public class Given_a_fence_after_the_job_was_reclaimed : JobLeaseTestBase
     {
+        private JobExecutionOwnership _ownership = null!;
         private Exception? _thrown;
         private bool _workRan;
         private long _fencedWrites;
@@ -1016,7 +1027,8 @@ public class JobLeaseRepositoryTests
             ClaimedJob first = await ClaimAsync(OwnerA);
             await ExpireLeaseAsync(first.Id);
             await ClaimAsync(OwnerB);
-            IJobFence fence = FenceFactory().Create(first, new JobExecutionOwnership());
+            _ownership = new JobExecutionOwnership();
+            IJobFence fence = FenceFactory().Create(first, _ownership);
 
             _thrown = await ThrownByAsync(() =>
                 fence.ExecuteAsync(
@@ -1040,11 +1052,15 @@ public class JobLeaseRepositoryTests
 
         [Test]
         public void It_never_runs_the_work() => _workRan.Should().BeFalse();
+
+        [Test]
+        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
     }
 
     [TestFixture]
     public class Given_a_fence_whose_lease_expires_during_work : JobLeaseTestBase
     {
+        private JobExecutionOwnership _ownership = null!;
         private Exception? _thrown;
         private bool _workWrote;
         private long _fencedWrites;
@@ -1054,7 +1070,8 @@ public class JobLeaseRepositoryTests
         {
             await SeedJobAsync();
             ClaimedJob claimed = await ClaimAsync(leaseSeconds: 4);
-            IJobFence fence = FenceFactory().Create(claimed, new JobExecutionOwnership());
+            _ownership = new JobExecutionOwnership();
+            IJobFence fence = FenceFactory().Create(claimed, _ownership);
 
             _thrown = await ThrownByAsync(() =>
                 fence.ExecuteAsync(
@@ -1079,6 +1096,9 @@ public class JobLeaseRepositoryTests
             _thrown.Should().BeOfType<JobLeaseLostException>();
             _fencedWrites.Should().Be(0);
         }
+
+        [Test]
+        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
     }
 
     [TestFixture]
@@ -1228,9 +1248,7 @@ public class JobLeaseRepositoryTests
         {
             _fencedWrites.Should().Be(0);
             _rowLockable.Should().BeTrue();
-            _ownership
-                .State.Should()
-                .Be(JobOwnershipState.Owned, "only the executor decides on the lost lease");
+            ShouldBeInvalidatedByTheFence(_ownership);
         }
     }
 
@@ -1350,6 +1368,7 @@ public class JobLeaseRepositoryTests
     [TestFixture]
     public class Given_a_fence_whose_lock_wait_outlasts_the_lease : JobLeaseTestBase
     {
+        private JobExecutionOwnership _ownership = null!;
         private Exception? _thrown;
         private bool _workRan;
         private TimeSpan _elapsed;
@@ -1359,7 +1378,8 @@ public class JobLeaseRepositoryTests
         {
             await SeedJobAsync();
             ClaimedJob claimed = await ClaimAsync(leaseSeconds: 3);
-            IJobFence fence = FenceFactory().Create(claimed, new JobExecutionOwnership());
+            _ownership = new JobExecutionOwnership();
+            IJobFence fence = FenceFactory().Create(claimed, _ownership);
             await using RowLock rowLock = await RowLock.AcquireAsync(claimed.Id);
             Task released = rowLock.ReleaseAfterAsync(TimeSpan.FromSeconds(4));
 
@@ -1388,11 +1408,15 @@ public class JobLeaseRepositoryTests
         [Test]
         public void It_validates_with_time_read_after_the_lock_so_the_work_never_runs() =>
             _workRan.Should().BeFalse();
+
+        [Test]
+        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
     }
 
     [TestFixture]
     public class Given_a_fence_that_cannot_get_the_row_lock : JobLeaseTestBase
     {
+        private JobExecutionOwnership _ownership = null!;
         private Exception? _thrown;
         private bool _workRan;
         private TimeSpan _elapsed;
@@ -1402,7 +1426,8 @@ public class JobLeaseRepositoryTests
         {
             await SeedJobAsync();
             ClaimedJob claimed = await ClaimAsync();
-            IJobFence fence = FenceFactory().Create(claimed, new JobExecutionOwnership());
+            _ownership = new JobExecutionOwnership();
+            IJobFence fence = FenceFactory().Create(claimed, _ownership);
             await using RowLock rowLock = await RowLock.AcquireAsync(claimed.Id);
             Task released = rowLock.ReleaseAfterAsync(TimeSpan.FromSeconds(7));
 
@@ -1431,11 +1456,16 @@ public class JobLeaseRepositoryTests
             _thrown.Should().BeOfType<JobFenceUnavailableException>();
             _workRan.Should().BeFalse();
         }
+
+        [Test]
+        public void It_leaves_the_execution_owned() => _ownership.State.Should().Be(JobOwnershipState.Owned);
     }
 
     [TestFixture]
     public class Given_fences_that_must_not_start : JobLeaseTestBase
     {
+        private JobExecutionOwnership _uncertainOwnership = null!;
+        private JobExecutionOwnership _nearlyExpiredOwnership = null!;
         private Exception? _uncertain;
         private Exception? _nearlyExpired;
         private bool _workRan;
@@ -1448,14 +1478,15 @@ public class JobLeaseRepositoryTests
             ClaimedJob owned = await ClaimAsync();
             ClaimedJob nearlyExpired = await ClaimAsync(leaseSeconds: 1);
 
-            JobExecutionOwnership uncertainOwnership = new();
-            uncertainOwnership.TryMarkUncertain("RenewalFailed");
+            _uncertainOwnership = new JobExecutionOwnership();
+            _uncertainOwnership.TryMarkUncertain("RenewalFailed");
             _uncertain = await ThrownByAsync(() =>
-                FenceFactory().Create(owned, uncertainOwnership).ExecuteAsync(Work, CancellationToken.None)
+                FenceFactory().Create(owned, _uncertainOwnership).ExecuteAsync(Work, CancellationToken.None)
             );
+            _nearlyExpiredOwnership = new JobExecutionOwnership();
             _nearlyExpired = await ThrownByAsync(() =>
                 FenceFactory()
-                    .Create(nearlyExpired, new JobExecutionOwnership())
+                    .Create(nearlyExpired, _nearlyExpiredOwnership)
                     .ExecuteAsync(Work, CancellationToken.None)
             );
 
@@ -1476,6 +1507,108 @@ public class JobLeaseRepositoryTests
 
         [Test]
         public void It_never_runs_the_work() => _workRan.Should().BeFalse();
+
+        [Test]
+        public void It_keeps_the_first_reason_of_an_uncertain_execution()
+        {
+            _uncertainOwnership.State.Should().Be(JobOwnershipState.Uncertain);
+            _uncertainOwnership.Reason.Should().Be("RenewalFailed");
+        }
+
+        [Test]
+        public void It_invalidates_an_execution_with_too_little_lease_left() =>
+            ShouldBeInvalidatedByTheFence(_nearlyExpiredOwnership);
+    }
+
+    [TestFixture]
+    public class Given_fenced_work_that_leaves_no_matching_lease_for_revalidation : JobLeaseTestBase
+    {
+        private JobExecutionOwnership _ownership = null!;
+        private Exception? _thrown;
+        private long _fencedWrites;
+        private long _claimedToken;
+        private LeaseRow _row = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            long id = await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            _claimedToken = claimed.FencingToken;
+            _ownership = new JobExecutionOwnership();
+            IJobFence fence = FenceFactory().Create(claimed, _ownership);
+
+            _thrown = await ThrownByAsync(() =>
+                fence.ExecuteAsync(
+                    async (transaction, token) =>
+                    {
+                        await FencedWriteAsync(transaction, token);
+
+                        // In the fence's own transaction, so the revalidation before the commit finds no lease.
+                        await transaction.Connection!.ExecuteAsync(
+                            new CommandDefinition(
+                                """UPDATE "dmscs"."Job" SET "FencingToken" = "FencingToken" + 1 WHERE "Id" = @Id;""",
+                                new { Id = id },
+                                transaction,
+                                cancellationToken: token
+                            )
+                        );
+                    },
+                    CancellationToken.None
+                )
+            );
+            _fencedWrites = await FencedWriteCountAsync();
+            _row = await RowAsync(id);
+        }
+
+        [Test]
+        public void It_refuses_the_commit_and_rolls_back()
+        {
+            _thrown.Should().BeOfType<JobLeaseLostException>();
+            _fencedWrites.Should().Be(0);
+            _row.FencingToken.Should().Be(_claimedToken);
+        }
+
+        [Test]
+        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
+    }
+
+    [TestFixture]
+    public class Given_a_fence_whose_revalidation_is_ended_by_the_deadline : JobLeaseTestBase
+    {
+        private JobExecutionOwnership _ownership = null!;
+        private Exception? _thrown;
+        private long _fencedWrites;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedJobAsync();
+            ClaimedJob claimed = await ClaimAsync();
+            _ownership = new JobExecutionOwnership();
+            PendingOperation revalidation = new("RevalidateLease", TimeSpan.FromSeconds(3));
+            IJobFence fence = new PostgresqlJobFenceFactory(
+                Configuration.DatabaseOptions,
+                _twoSecondDeadlines
+            )
+            {
+                SessionHooks = revalidation.Hooks,
+            }.Create(claimed, _ownership);
+
+            _thrown = await ThrownByAsync(() => fence.ExecuteAsync(FencedWriteAsync, CancellationToken.None));
+            await revalidation.CleanupAsync();
+            _fencedWrites = await FencedWriteCountAsync();
+        }
+
+        [Test]
+        public void It_reports_the_lease_lost_and_commits_nothing()
+        {
+            _thrown.Should().BeOfType<JobLeaseLostException>();
+            _fencedWrites.Should().Be(0);
+        }
+
+        [Test]
+        public void It_invalidates_the_execution() => ShouldBeInvalidatedByTheFence(_ownership);
     }
 
     [TestFixture]

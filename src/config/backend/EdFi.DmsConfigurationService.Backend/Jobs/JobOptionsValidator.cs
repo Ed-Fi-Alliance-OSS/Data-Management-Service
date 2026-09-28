@@ -99,13 +99,16 @@ public sealed class JobOptionsValidator : IValidateOptions<JobOptions>
         }
 
         // Renewal lateness (§6.3): a renewal scheduled late by a fence holding the gate, then waiting for the row lock
-        // and taking its whole timeout, must still land before the lease expires, with a positive safety margin. The
-        // sum is taken in decimal ticks, so settings far outside their bounds, which already failed above, cannot
-        // overflow it and hide those failures.
+        // and taking its whole timeout, must still land before the lease expires, with a positive safety margin. A
+        // fence holds the gate for up to one FenceAcquisitionTimeout to open and begin, a second to set its lock wait,
+        // lock, and validate, and then FenceTimeout. WriteLockWait lies within RenewalTimeout; it is kept as extra
+        // allowance, not as a separate phase. The sum is taken in decimal ticks, so settings far outside their bounds,
+        // which already failed above, cannot overflow it and hide those failures.
         TimeSpan safetyMargin = SafetyMargin(options.LeaseDuration);
+        decimal fenceAcquisitionTicks = 2m * JobLeaseTimings.FenceAcquisitionTimeout.Ticks;
         decimal worstRenewalTicks =
             (decimal)options.RenewalInterval.Ticks
-            + JobLeaseTimings.FenceLockWait.Ticks
+            + fenceAcquisitionTicks
             + options.FenceTimeout.Ticks
             + JobLeaseTimings.WriteLockWait.Ticks
             + options.RenewalTimeout.Ticks
@@ -114,8 +117,8 @@ public sealed class JobOptionsValidator : IValidateOptions<JobOptions>
         {
             failures.Add(
                 $"{Section}:{nameof(JobOptions.LeaseDuration)} ({Format(options.LeaseDuration)}) must be at least "
-                    + $"RenewalInterval ({Format(options.RenewalInterval)}) + FenceLockWait ({Format(JobLeaseTimings.FenceLockWait)}) "
-                    + $"+ FenceTimeout ({Format(options.FenceTimeout)}) + WriteLockWait ({Format(JobLeaseTimings.WriteLockWait)}) "
+                    + $"RenewalInterval ({Format(options.RenewalInterval)}) + 2 x FenceAcquisitionTimeout ({Format(fenceAcquisitionTicks)}) "
+                    + $"+ FenceTimeout ({Format(options.FenceTimeout)}) + WriteLockWait allowance ({Format(JobLeaseTimings.WriteLockWait)}) "
                     + $"+ RenewalTimeout ({Format(options.RenewalTimeout)}) + SafetyMargin ({Format(safetyMargin)}, the larger of 10 s "
                     + $"and LeaseDuration / 6) = {Format(worstRenewalTicks)}, so that a renewal can never be scheduled to land at "
                     + "expiry. Lengthen JobSettings:LeaseDuration, or shorten JobSettings:RenewalInterval or JobSettings:FenceTimeout."

@@ -102,6 +102,19 @@ public class JobMetricsTests
             _recorder.Single("dmscs.jobs.queue_delay").Value.Should().Be(2_000);
 
         [Test]
+        public void It_tags_the_queue_delay_by_job_type_and_reclaim() =>
+            _recorder
+                .Single("dmscs.jobs.queue_delay")
+                .Tags.Should()
+                .BeEquivalentTo(
+                    new Dictionary<string, object?>
+                    {
+                        ["job_type"] = ExecutorHarness.JobType,
+                        ["reclaimed"] = false,
+                    }
+                );
+
+        [Test]
         public void It_counts_the_finish_by_job_type_and_outcome() =>
             _recorder
                 .Single("dmscs.jobs.finished")
@@ -171,6 +184,19 @@ public class JobMetricsTests
         [Test]
         public void It_tags_the_reclaim() =>
             _recorder.Single("dmscs.jobs.claimed").Tags["reclaimed"].Should().Be(true);
+
+        [Test]
+        public void It_tags_the_queue_delay_of_a_reclaim() =>
+            _recorder
+                .Single("dmscs.jobs.queue_delay")
+                .Tags.Should()
+                .BeEquivalentTo(
+                    new Dictionary<string, object?>
+                    {
+                        ["job_type"] = ExecutorHarness.JobType,
+                        ["reclaimed"] = true,
+                    }
+                );
 
         [Test]
         public void It_counts_the_finish_as_uncertain() =>

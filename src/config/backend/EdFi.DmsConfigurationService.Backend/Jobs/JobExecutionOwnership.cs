@@ -48,6 +48,9 @@ public sealed class JobExecutionOwnership
     private readonly object _sync = new();
     private readonly LinkedList<GateWaiter> _renewalWaiters = new();
     private readonly LinkedList<GateWaiter> _otherWaiters = new();
+    private readonly TaskCompletionSource _uncertain = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private JobOwnershipState _state = JobOwnershipState.Owned;
     private string? _reason;
     private bool _gateHeld;
@@ -76,6 +79,12 @@ public sealed class JobExecutionOwnership
     }
 
     /// <summary>
+    /// Completes when the state becomes <see cref="JobOwnershipState.Uncertain"/>, whoever recorded it. Its
+    /// continuations never run on the thread that recorded it, which usually holds the gate.
+    /// </summary>
+    public Task WhenUncertain => _uncertain.Task;
+
+    /// <summary>
     /// Moves <see cref="JobOwnershipState.Owned"/> or <see cref="JobOwnershipState.Finalizing"/> to
     /// <see cref="JobOwnershipState.Uncertain"/> with <paramref name="reason"/>. Returns false, changing
     /// nothing, when the state is already uncertain or finalized.
@@ -91,8 +100,10 @@ public sealed class JobExecutionOwnership
 
             _state = JobOwnershipState.Uncertain;
             _reason = reason;
-            return true;
         }
+
+        _uncertain.TrySetResult();
+        return true;
     }
 
     /// <summary>

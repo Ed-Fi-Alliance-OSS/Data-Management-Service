@@ -144,4 +144,9 @@ public class Given_the_served_openapi_document_for_jobs
     [Test]
     public void It_declares_not_found_as_problem_json() =>
         Response("404")["content"]!["application/problem+json"].Should().NotBeNull();
+
+    [TestCase("401")]
+    [TestCase("403")]
+    public void It_declares_the_authorization_failures_as_problem_json(string status) =>
+        Response(status)["content"]!["application/problem+json"].Should().NotBeNull();
 }

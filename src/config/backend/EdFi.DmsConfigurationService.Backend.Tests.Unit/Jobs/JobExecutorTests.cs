@@ -746,12 +746,12 @@ public class JobExecutorTests
     }
 
     /// <summary>
-    /// Settings that pass startup validation with no slack (12 + 5 + 1 + 5 + 6 + 10 = 39 s), and a lease the scripted
+    /// Settings that pass startup validation with no slack (12 + 12 + 1 + 5 + 6 + 10 = 46 s), and a lease the scripted
     /// repository models by time: a renewal succeeds only before the current expiry and then extends it.
     /// </summary>
     private static void UseTightLease(ExecutorHarness harness, Action onRenewalRejected)
     {
-        harness.Settings.LeaseDuration = TimeSpan.FromSeconds(39);
+        harness.Settings.LeaseDuration = TimeSpan.FromSeconds(46);
         harness.Settings.RenewalInterval = TimeSpan.FromSeconds(12);
         harness.Settings.FenceTimeout = TimeSpan.FromSeconds(1);
         DateTimeOffset leaseExpiresAt = harness.Time.GetUtcNow() + harness.Settings.LeaseDuration;
@@ -811,12 +811,12 @@ public class JobExecutorTests
             );
             await lookupStarted.Task.WaitAsync(_wait);
 
-            // The lookup takes 28 s; the handler then runs until 45 s, past the claim's 39 s lease.
+            // The lookup takes 28 s; the handler then runs until 47 s, past the claim's 46 s lease.
             await AdvanceSecondsAsync(_harness, 28);
             _renewalsDuringLookup = _harness.Leases.Calls.Count(call => call == "Renew");
             lookup.SetResult();
             await _harness.Script.Started.Task.WaitAsync(_wait);
-            await AdvanceSecondsAsync(_harness, 17);
+            await AdvanceSecondsAsync(_harness, 19);
             finish.TrySetResult();
             _result = await running.WaitAsync(_wait);
         }
@@ -1046,6 +1046,14 @@ public class JobExecutorTests
                 .Be(new JobExecutionResult(Enum.Parse<JobExecutionOutcome>(expectedOutcome), reason));
             _harness.Leases.OutcomeWrites.Should().Equal("Complete");
         }
+
+        [Test]
+        public void It_logs_the_recorded_outcome_rather_than_the_intended_one() =>
+            _harness
+                .Logger.Entries.Last()
+                .Field("Outcome")
+                .Should()
+                .Be(Enum.Parse<JobExecutionOutcome>(expectedOutcome));
     }
 
     [TestFixture]
@@ -1074,6 +1082,64 @@ public class JobExecutorTests
                 .Should()
                 .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "FenceLeaseLost"));
             _harness.Leases.OutcomeWrites.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_fence_that_finds_the_lease_lost_beside_work_awaiting_cancellation
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private bool _workCanceled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workCanceled = false;
+            _harness = new ExecutorHarness();
+            _harness.Fences.LeaseLost = true;
+            _harness.Script.Run = async (context, _, token) =>
+            {
+                // The handler observes the fence's exception only once the concurrent work ends, and that work ends
+                // only when the handler's token is cancelled.
+                async Task ExternalWork()
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _workCanceled = true;
+                        throw;
+                    }
+                }
+
+                await Task.WhenAll(
+                    context.Fence.ExecuteAsync((_, _) => Task.CompletedTask, CancellationToken.None),
+                    ExternalWork()
+                );
+            };
+
+            // No renewal interval elapses: only the fence's uncertainty can cancel the work.
+            _result = await _harness
+                .Executor.ExecuteAsync(ExecutorHarness.Job(), CancellationToken.None)
+                .WaitAsync(_wait);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_cancels_the_concurrent_work() => _workCanceled.Should().BeTrue();
+
+        [Test]
+        public void It_ends_uncertain_without_a_renewal_or_an_outcome_write()
+        {
+            _result
+                .Should()
+                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "FenceLeaseLost"));
+            _harness.Leases.Calls.Should().BeEmpty();
         }
     }
 

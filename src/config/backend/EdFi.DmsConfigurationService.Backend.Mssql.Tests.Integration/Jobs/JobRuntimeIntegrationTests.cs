@@ -875,6 +875,104 @@ public class JobRuntimeIntegrationTests
     }
 
     [TestFixture]
+    public class Given_a_handler_that_swallows_a_fence_lease_loss : RuntimeTestBase
+    {
+        private RuntimeHarness _harness = null!;
+        private ClaimedJob _claimed = null!;
+        private Exception? _seenByHandler;
+        private Exception? _secondFence;
+        private bool _secondWorkRan;
+        private JobExecutionResult _result = null!;
+        private long _fencedWrites;
+        private LeaseRow _row = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The lease stays live for 60 s: only the 1 s fence deadline ends the consumer's work.
+            JobOptions settings = WithoutRenewals();
+            settings.FenceTimeout = TimeSpan.FromSeconds(1);
+            _harness = new RuntimeHarness(
+                settings,
+                Repository(settings.LeaseTimings),
+                FenceFactory(settings.LeaseTimings)
+            );
+            long id = await SeedRuntimeJobAsync();
+            _claimed = await ClaimAsync(settings, OwnerA);
+            _harness.Script.Run = async (context, cancellationToken) =>
+            {
+                try
+                {
+                    await context.Fence.ExecuteAsync(
+                        async (transaction, token) =>
+                        {
+                            await FencedWriteAsync(transaction, token);
+                            await Task.Delay(TimeSpan.FromSeconds(5), token);
+                        },
+                        cancellationToken
+                    );
+                }
+                catch (JobLeaseLostException lost)
+                {
+                    // Against the handler contract: the handler keeps going and returns normally.
+                    _seenByHandler = lost;
+                }
+
+                // Without the handler's token, which the uncertainty cancels: the refusal comes from the state.
+                _secondFence = await ThrownByAsync(() =>
+                    context.Fence.ExecuteAsync(
+                        (_, _) =>
+                        {
+                            _secondWorkRan = true;
+                            return Task.CompletedTask;
+                        },
+                        CancellationToken.None
+                    )
+                );
+            };
+
+            _result = await _harness.ExecuteAsync(_claimed);
+            _fencedWrites = await FencedWriteCountAsync();
+            _row = await RowAsync(id);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_hands_the_lease_loss_to_the_handler() =>
+            _seenByHandler.Should().BeOfType<JobLeaseLostException>();
+
+        [Test]
+        public void It_refuses_every_later_fence_of_the_execution()
+        {
+            _secondFence.Should().BeOfType<JobLeaseLostException>();
+            _secondWorkRan.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_ends_the_execution_uncertain_without_an_outcome_write()
+        {
+            _result
+                .Should()
+                .Be(new JobExecutionResult(JobExecutionOutcome.OwnershipUncertain, "FenceLeaseLost"));
+            _harness.Leases.OutcomeWrites.Should().Be(0);
+        }
+
+        [Test]
+        public void It_commits_none_of_the_consumer_work() => _fencedWrites.Should().Be(0);
+
+        [Test]
+        public void It_leaves_the_row_in_progress_for_lease_expiry()
+        {
+            _row.Status.Should().Be(JobStatuses.InProgress);
+            _row.LeaseOwner.Should().Be(OwnerA);
+            _row.FencingToken.Should().Be(_claimed.FencingToken);
+            _row.FinishedAt.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
     public class Given_a_renewal_waiting_behind_a_fence_commit : RuntimeTestBase
     {
         private long _commitRequested;

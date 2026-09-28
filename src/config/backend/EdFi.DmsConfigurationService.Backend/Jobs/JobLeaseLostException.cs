@@ -7,9 +7,10 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 
 /// <summary>
 /// Thrown by a fence when this execution no longer owns its job, or its ownership is uncertain (spec D-5).
-/// The handler must stop. The fenced work was rolled back, except when the fence's commit itself had an
-/// unknown outcome: then the work may or may not have committed, the execution is uncertain, and later
-/// executions must reconcile it idempotently.
+/// The handler must stop. The fence has already made the execution uncertain, so catching this cannot turn the
+/// execution into a completion: no outcome write follows, and every later fence refuses. The fenced work was
+/// rolled back, except when the fence's commit itself had an unknown outcome: then the work may or may not have
+/// committed, and later executions must reconcile it idempotently.
 /// </summary>
 public sealed class JobLeaseLostException()
     : Exception("The job lease was lost or its ownership is uncertain.");

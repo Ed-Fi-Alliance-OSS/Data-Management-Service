@@ -46,7 +46,7 @@ public sealed class PostgresqlJobFenceFactory(
     /// revalidation, the commit, and the rollback of a transaction left open under the fence deadline, which the
     /// fence therefore never outlasts. Work the deadline abandons is a lost lease; it can never commit, because the
     /// fence commits only after the work returns. A commit whose wait the deadline ends has an unknown outcome and
-    /// makes the execution uncertain.
+    /// makes the execution uncertain. Every other lease-loss refusal makes it uncertain too, before it throws.
     /// </para>
     /// </remarks>
     private sealed class PostgresqlJobFence(
@@ -80,7 +80,7 @@ public sealed class PostgresqlJobFenceFactory(
             using IDisposable gate = await ownership.EnterAsync(cancellationToken);
             if (ownership.State != JobOwnershipState.Owned)
             {
-                throw new JobLeaseLostException();
+                throw LeaseLost();
             }
 
             FenceState state = new(
@@ -148,14 +148,14 @@ public sealed class PostgresqlJobFenceFactory(
             }
             catch (TimeoutException) when (session.HandedOver || state.Deadline.Expired)
             {
-                throw new JobLeaseLostException();
+                throw LeaseLost();
             }
 
             // (5) The work returned: ownership must still be certain and the deadline not reached.
             cancellationToken.ThrowIfCancellationRequested();
             if (state.Deadline.Expired || ownership.State != JobOwnershipState.Owned)
             {
-                throw new JobLeaseLostException();
+                throw LeaseLost();
             }
 
             // (6) Revalidation with fresh time, within the deadline.
@@ -232,7 +232,7 @@ public sealed class PostgresqlJobFenceFactory(
 
             return remaining is { } lease && lease >= JobLeaseTimings.FenceMinimumRemainingLease
                 ? lease
-                : throw new JobLeaseLostException();
+                : throw LeaseLost();
         }
 
         private async Task RevalidateAsync(FenceState state, CancellationToken cancellationToken)
@@ -261,12 +261,12 @@ public sealed class PostgresqlJobFenceFactory(
             catch (Exception) when (fenceDeadline.Expired && !cancellationToken.IsCancellationRequested)
             {
                 // The deadline ended the revalidation.
-                throw new JobLeaseLostException();
+                throw LeaseLost();
             }
 
             if (remaining is null)
             {
-                throw new JobLeaseLostException();
+                throw LeaseLost();
             }
         }
 
@@ -277,6 +277,17 @@ public sealed class PostgresqlJobFenceFactory(
                 Owner = job.LeaseOwner,
                 Token = job.FencingToken,
             };
+
+        /// <summary>
+        /// A refusal because ownership is lost, expired, too short, or no longer verifiable. The execution becomes
+        /// uncertain here, under the gate, so it issues no outcome write and every later fence refuses, even when the
+        /// handler catches the exception. An execution that is already uncertain keeps its first reason.
+        /// </summary>
+        private JobLeaseLostException LeaseLost()
+        {
+            ownership.TryMarkUncertain("FenceLeaseLost");
+            return new JobLeaseLostException();
+        }
 
         private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
 

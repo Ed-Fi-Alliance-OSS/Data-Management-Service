@@ -259,12 +259,12 @@ public class JobOptionsValidatorTests
                 .Failures!.Single()
                 .Should()
                 .Contain("RenewalInterval (00:00:20)")
-                .And.Contain("FenceLockWait (00:00:05)")
+                .And.Contain("2 x FenceAcquisitionTimeout (00:00:12)")
                 .And.Contain("FenceTimeout (00:00:30)")
-                .And.Contain("WriteLockWait (00:00:05)")
+                .And.Contain("WriteLockWait allowance (00:00:05)")
                 .And.Contain("RenewalTimeout (00:00:10)")
                 .And.Contain("SafetyMargin (00:00:10")
-                .And.Contain("= 00:01:20");
+                .And.Contain("= 00:01:27");
     }
 
     [TestFixture]
@@ -274,13 +274,63 @@ public class JobOptionsValidatorTests
 
         [SetUp]
         public void Setup() =>
-            // 20 + 5 + 10 + 5 + 10 + 10 = 60 s: equal to the lease, which the inequality allows.
+            // 20 + 12 + 3 + 5 + 10 + 10 = 60 s: equal to the lease, which the inequality allows.
             _result = Validate(
                 new JobOptions
                 {
                     LeaseDuration = TimeSpan.FromMinutes(1),
                     RenewalInterval = TimeSpan.FromSeconds(20),
-                    FenceTimeout = TimeSpan.FromSeconds(10),
+                    FenceTimeout = TimeSpan.FromSeconds(3),
+                }
+            );
+
+        [Test]
+        public void It_accepts_the_options() => _result.Succeeded.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_a_lease_that_budgets_one_fence_lock_wait_instead_of_two_acquisition_timeouts
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            // 12 + 5 + 7 + 5 + 6 + 10 = 45 s fitted the lease with the fence lock wait alone; the fence holds the gate
+            // for two acquisition timeouts, so 12 + 12 + 7 + 5 + 6 + 10 = 52 s does not.
+            _result = Validate(
+                new JobOptions
+                {
+                    LeaseDuration = TimeSpan.FromSeconds(45),
+                    RenewalInterval = TimeSpan.FromSeconds(12),
+                    FenceTimeout = TimeSpan.FromSeconds(7),
+                }
+            );
+
+        [Test]
+        public void It_rejects_only_the_lateness_inequality() =>
+            _result
+                .Failures.Should()
+                .ContainSingle()
+                .Which.Should()
+                .StartWith("JobSettings:LeaseDuration (00:00:45) must be at least")
+                .And.Contain("2 x FenceAcquisitionTimeout (00:00:12)")
+                .And.Contain("= 00:00:52");
+    }
+
+    [TestFixture]
+    public class Given_a_lease_that_exactly_fits_two_fence_acquisition_timeouts
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            // 12 + 12 + 7 + 5 + 6 + 10 = 52 s: equal to the lease.
+            _result = Validate(
+                new JobOptions
+                {
+                    LeaseDuration = TimeSpan.FromSeconds(52),
+                    RenewalInterval = TimeSpan.FromSeconds(12),
+                    FenceTimeout = TimeSpan.FromSeconds(7),
                 }
             );
 
