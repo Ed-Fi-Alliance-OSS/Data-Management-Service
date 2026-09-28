@@ -51,10 +51,19 @@ public sealed class UniqueIdValidationPlugin : EdFiApiPlugin
                     // address answers each matching write with a logged 500 naming the setting,
                     // and every other write keeps working. A deployment that would rather refuse
                     // to start can validate the options at startup instead.
-                    if (options.BaseAddress is not { IsAbsoluteUri: true } baseAddress)
+                    if (
+                        options.BaseAddress
+                        is not {
+                            IsAbsoluteUri: true,
+                            Scheme: "http" or "https",
+                            Query: "",
+                            Fragment: "",
+                        } baseAddress
+                    )
                     {
                         throw new InvalidOperationException(
-                            "UniqueIdValidation:BaseAddress must be configured as an absolute URI."
+                            "UniqueIdValidation:BaseAddress must be configured as an absolute http "
+                                + "or https URI with no query or fragment."
                         );
                     }
 
@@ -63,11 +72,12 @@ public sealed class UniqueIdValidationPlugin : EdFiApiPlugin
                     // for combining a base URI with a relative one. Normalizing here, rather than
                     // asking every deployment to remember the trailing slash, is what makes both
                     // forms of a configured address work.
-                    string raw = baseAddress.OriginalString;
-                    client.BaseAddress = new Uri(
-                        raw.EndsWith('/') ? raw : raw + "/",
-                        UriKind.Absolute
-                    );
+                    UriBuilder normalized = new(baseAddress);
+                    if (!normalized.Path.EndsWith('/'))
+                    {
+                        normalized.Path += "/";
+                    }
+                    client.BaseAddress = normalized.Uri;
                     client.Timeout = options.Timeout;
                 }
             )

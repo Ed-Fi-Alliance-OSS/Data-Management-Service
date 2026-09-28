@@ -59,7 +59,9 @@ The rule is a small one on purpose: a student's unique id must carry a district-
 Nothing in it reaches outside the process, which is what lets it be a sample that actually runs.
 What it does not show is a validator doing real I/O, because a faked call is the one thing a
 compiling sample cannot prove. [The cost of I/O on the write path](#the-cost-of-io-on-the-write-path)
-states those rules instead.
+states those rules instead, and a reference plugin that does call an external system, proven over
+real HTTP, is
+[docs/UNIQUEID-VALIDATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/UNIQUEID-VALIDATION.md).
 
 ### The options type
 

@@ -120,11 +120,23 @@ public sealed class UniqueIdValidator : ICustomResourceValidator
             return NoFailures;
         }
 
+        // "." and ".." cannot be sent as one path segment: EscapeDataString leaves dots alone, and
+        // URI resolution removes dot segments even when they are percent-encoded, so the lookup
+        // would land on the upstream's collection or root instead. No upstream can hold such an
+        // id under this contract, so it is answered as not found without a call.
+        if (uniqueId is "." or "..")
+        {
+            return NotFound(resource.ResourceName, member);
+        }
+
         HttpClient httpClient = _httpClientFactory.CreateClient(HttpClientName);
         string requestUri = $"{resource.ResourceName}/{Uri.EscapeDataString(uniqueId)}";
 
+        // Only the status code is read, so the call completes once the headers arrive rather than
+        // after buffering a body this validator never looks at.
         using HttpResponseMessage response = await httpClient.GetAsync(
             requestUri,
+            HttpCompletionOption.ResponseHeadersRead,
             cancellationToken
         );
 
@@ -135,16 +147,7 @@ public sealed class UniqueIdValidator : ICustomResourceValidator
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            // The submitted value is deliberately not quoted back: a failure message reaches the
-            // 400 body, and keeping submitted data out of it is what lets a deployment log these
-            // messages if it chooses to.
-            return
-            [
-                new CustomValidationFailure.OnPath(
-                    $"$.{member}",
-                    $"The {resource.ResourceName} unique id was not found in the external unique id system."
-                ),
-            ];
+            return NotFound(resource.ResourceName, member);
         }
 
         // Any other answer, a different 2xx included, is outside the contract this validator
@@ -159,6 +162,20 @@ public sealed class UniqueIdValidator : ICustomResourceValidator
             statusCode: response.StatusCode
         );
     }
+
+    // The submitted value is deliberately not quoted back: a failure message reaches the 400
+    // body, and keeping submitted data out of it is what lets a deployment log these messages if
+    // it chooses to.
+    private static IReadOnlyList<CustomValidationFailure> NotFound(
+        string resourceName,
+        string member
+    ) =>
+        [
+            new CustomValidationFailure.OnPath(
+                $"$.{member}",
+                $"The {resourceName} unique id was not found in the external unique id system."
+            ),
+        ];
 
     private static string MemberFor(string resourceName) =>
         $"{char.ToLowerInvariant(resourceName[0])}{resourceName[1..]}UniqueId";
@@ -218,10 +235,19 @@ public sealed class UniqueIdValidationPlugin : EdFiApiPlugin
                     // address answers each matching write with a logged 500 naming the setting,
                     // and every other write keeps working. A deployment that would rather refuse
                     // to start can validate the options at startup instead.
-                    if (options.BaseAddress is not { IsAbsoluteUri: true } baseAddress)
+                    if (
+                        options.BaseAddress
+                        is not {
+                            IsAbsoluteUri: true,
+                            Scheme: "http" or "https",
+                            Query: "",
+                            Fragment: "",
+                        } baseAddress
+                    )
                     {
                         throw new InvalidOperationException(
-                            "UniqueIdValidation:BaseAddress must be configured as an absolute URI."
+                            "UniqueIdValidation:BaseAddress must be configured as an absolute http "
+                                + "or https URI with no query or fragment."
                         );
                     }
 
@@ -230,11 +256,12 @@ public sealed class UniqueIdValidationPlugin : EdFiApiPlugin
                     // for combining a base URI with a relative one. Normalizing here, rather than
                     // asking every deployment to remember the trailing slash, is what makes both
                     // forms of a configured address work.
-                    string raw = baseAddress.OriginalString;
-                    client.BaseAddress = new Uri(
-                        raw.EndsWith('/') ? raw : raw + "/",
-                        UriKind.Absolute
-                    );
+                    UriBuilder normalized = new(baseAddress);
+                    if (!normalized.Path.EndsWith('/'))
+                    {
+                        normalized.Path += "/";
+                    }
+                    client.BaseAddress = normalized.Uri;
                     client.Timeout = options.Timeout;
                 }
             )
@@ -284,11 +311,14 @@ GET {BaseAddress}/{ResourceName}/{uniqueId}
 ```
 
 with the UniqueId URI-escaped into one path segment and `ResourceName` exactly `Student`, `Staff`, or `Contact`.
+A UniqueId of `.` or `..` cannot be sent as one path segment, because URI resolution removes dot segments even when they are percent-encoded, so the validator answers it as not found without calling the upstream.
 A `200` response means the UniqueId exists; a `404` means it does not.
 Any other response, including a different `2xx` or a redirect, or a transport failure, is treated as a fault rather than an answer: the validator throws, and the write answers a logged `500` and persists nothing.
 The plugin turns off redirect following on its client, so a redirect to a page that answers `200` is never read as "exists".
 It also removes the client's default request logging, which would otherwise write every request URI, and so every submitted UniqueId, to the host's log at `Information`.
-Keep that property in any adaptation: a UniqueId is personal data taken from the request body, and it belongs in neither a log line nor a failure message.
+Keep that property in any adaptation: a UniqueId is personal data taken from the request body, and it belongs in neither a DMS log line nor a failure message.
+Because this contract carries the UniqueId in the URL path, the upstream's own access logs, and any proxy or monitoring tool between the two, can still record it.
+If that matters for your deployment, adapt the lookup to send the UniqueId in a `POST` body instead.
 
 This is this sample's own contract, not an Ed-Fi standard.
 Adapt it to what you actually operate:
@@ -325,7 +355,7 @@ The plugin directory name, the entry assembly's file name (`Acme.UniqueIdValidat
 See PLUGINS.md's "Names: four of them, and they must all match".
 
 `UniqueIdValidation:BaseAddress` and `UniqueIdValidation:Timeout` bind from the `UniqueIdValidation` section, `appsettings.json` or environment alike.
-A deployment that does not set `BaseAddress` gets a validator whose `HttpClient` cannot be created, answered as a logged `500` on every matching write, because `BaseAddress` deliberately has no default.
+A deployment that does not set `BaseAddress`, or sets one that is not an absolute `http` or `https` URI without a query or fragment, gets a validator whose `HttpClient` cannot be created, answered as a logged `500` on every matching write, because `BaseAddress` deliberately has no default.
 
 ## What a client sees
 

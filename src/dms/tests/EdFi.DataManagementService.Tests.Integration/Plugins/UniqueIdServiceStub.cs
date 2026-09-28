@@ -36,6 +36,7 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
     private readonly List<string> _requestPaths = [];
     private bool _answerServerError;
     private bool _redirectMode;
+    private bool _answerOkForCollectionAndRoot;
     private TimeSpan _responseDelay = TimeSpan.Zero;
     private bool _disposed;
 
@@ -119,6 +120,36 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
             lock (_sync)
             {
                 _redirectMode = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// When set, a request whose path (after any configured prefix is stripped) ends with a slash -
+    /// the root <c>/</c> or a resource collection such as <c>/Student/</c> - answers 200 instead of
+    /// the ordinary known/unknown lookup below.
+    /// </summary>
+    /// <remarks>
+    /// This exists to prove that a UniqueId of <c>"."</c> or <c>".."</c> is rejected without ever
+    /// dialing the upstream: URI dot-segment resolution turns a lookup for either value into a
+    /// request for the collection or the root, so a validator that skipped that special case would
+    /// be answered 200 here and would incorrectly accept the write. Off by default, so no other case
+    /// in this stub's ordinary known/unknown contract changes behavior.
+    /// </remarks>
+    public bool AnswerOkForCollectionAndRoot
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _answerOkForCollectionAndRoot;
+            }
+        }
+        set
+        {
+            lock (_sync)
+            {
+                _answerOkForCollectionAndRoot = value;
             }
         }
     }
@@ -235,6 +266,7 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
             _requestPaths.Clear();
             _answerServerError = false;
             _redirectMode = false;
+            _answerOkForCollectionAndRoot = false;
             _responseDelay = TimeSpan.Zero;
         }
     }
@@ -306,11 +338,13 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
         TimeSpan responseDelay;
         bool answerServerError;
         bool redirectMode;
+        bool answerOkForCollectionAndRoot;
         lock (_sync)
         {
             responseDelay = _responseDelay;
             answerServerError = _answerServerError;
             redirectMode = _redirectMode;
+            answerOkForCollectionAndRoot = _answerOkForCollectionAndRoot;
         }
 
         if (responseDelay > TimeSpan.Zero)
@@ -367,6 +401,19 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
             }
 
             pathOnly = pathOnly[(prefixSegment.Length - 1)..];
+        }
+
+        // Checked ahead of the known/unknown lookup below rather than folded into it: a trailing
+        // slash means the request landed on a collection or the root rather than on one document, a
+        // shape the ordinary lookup below never answers 200 for, since that lookup needs both a
+        // resource segment and a document segment to find anything known. Reachable only while a
+        // case has opted in, so no other case's request to a genuine resource-and-document path,
+        // which never ends in a slash, changes behavior.
+        if (answerOkForCollectionAndRoot && pathOnly.EndsWith('/'))
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.OK;
+            context.Response.Close();
+            return;
         }
 
         // The uniqueId can itself contain an escaped '/', so segments are split on the raw, still

@@ -80,11 +80,23 @@ public sealed class UniqueIdValidator : ICustomResourceValidator
             return NoFailures;
         }
 
+        // "." and ".." cannot be sent as one path segment: EscapeDataString leaves dots alone, and
+        // URI resolution removes dot segments even when they are percent-encoded, so the lookup
+        // would land on the upstream's collection or root instead. No upstream can hold such an
+        // id under this contract, so it is answered as not found without a call.
+        if (uniqueId is "." or "..")
+        {
+            return NotFound(resource.ResourceName, member);
+        }
+
         HttpClient httpClient = _httpClientFactory.CreateClient(HttpClientName);
         string requestUri = $"{resource.ResourceName}/{Uri.EscapeDataString(uniqueId)}";
 
+        // Only the status code is read, so the call completes once the headers arrive rather than
+        // after buffering a body this validator never looks at.
         using HttpResponseMessage response = await httpClient.GetAsync(
             requestUri,
+            HttpCompletionOption.ResponseHeadersRead,
             cancellationToken
         );
 
@@ -95,16 +107,7 @@ public sealed class UniqueIdValidator : ICustomResourceValidator
 
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            // The submitted value is deliberately not quoted back: a failure message reaches the
-            // 400 body, and keeping submitted data out of it is what lets a deployment log these
-            // messages if it chooses to.
-            return
-            [
-                new CustomValidationFailure.OnPath(
-                    $"$.{member}",
-                    $"The {resource.ResourceName} unique id was not found in the external unique id system."
-                ),
-            ];
+            return NotFound(resource.ResourceName, member);
         }
 
         // Any other answer, a different 2xx included, is outside the contract this validator
@@ -119,6 +122,20 @@ public sealed class UniqueIdValidator : ICustomResourceValidator
             statusCode: response.StatusCode
         );
     }
+
+    // The submitted value is deliberately not quoted back: a failure message reaches the 400
+    // body, and keeping submitted data out of it is what lets a deployment log these messages if
+    // it chooses to.
+    private static IReadOnlyList<CustomValidationFailure> NotFound(
+        string resourceName,
+        string member
+    ) =>
+        [
+            new CustomValidationFailure.OnPath(
+                $"$.{member}",
+                $"The {resourceName} unique id was not found in the external unique id system."
+            ),
+        ];
 
     private static string MemberFor(string resourceName) =>
         $"{char.ToLowerInvariant(resourceName[0])}{resourceName[1..]}UniqueId";

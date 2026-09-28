@@ -102,6 +102,9 @@ internal static class UniqueIdValidationPluginScenario
     /// <summary>The identity F6's missing-BaseAddress case sends; the stub never sees it.</summary>
     private const string MissingBaseAddressStudentUniqueId = "uidv-no-baseaddress-001";
 
+    /// <summary>The identity H4's query-bearing-BaseAddress case sends; the stub never sees it.</summary>
+    private const string BaseAddressQueryStudentUniqueId = "uidv-base-query-001";
+
     /// <summary>The identity F7's slow-upstream case knows, so only the timeout explains the failure.</summary>
     private const string SlowUpstreamStudentUniqueId = "uidv-slow-upstream-001";
 
@@ -520,8 +523,16 @@ internal static class UniqueIdValidationPluginScenario
     /// callback throws on every matching write, which the host answers as a logged 500 and persists
     /// nothing, the same shape as the stub's own 500 and the unreachable-upstream cases.
     /// </summary>
+    /// <remarks>
+    /// The captured host log is asserted to name the setting itself
+    /// (<c>UniqueIdValidation:BaseAddress</c>), not merely to exist, so a regression that kept the
+    /// 500 but lost the operator-facing detail on the way to the log would still fail this case. The
+    /// capture mechanism is the same <see cref="PluginLogCapture"/> Serilog sink G1's
+    /// <c>It_does_not_log_the_submitted_unique_id</c> uses, wired in the same way.
+    /// </remarks>
     public static async Task It_fails_the_write_when_no_base_address_is_configured(
-        ApiIntegrationHarness harness
+        ApiIntegrationHarness harness,
+        PluginLogCapture capture
     )
     {
         using HttpResponseMessage response = await PostStudentAsync(
@@ -532,6 +543,8 @@ internal static class UniqueIdValidationPluginScenario
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
+
+        AssertBaseAddressSettingIsNamedInTheLogs(capture);
 
         JsonArray students = await GetStudentsByUniqueIdAsync(
             harness,
@@ -628,6 +641,145 @@ internal static class UniqueIdValidationPluginScenario
         stub.RequestPaths.Should()
             .Equal($"/{StudentResourceName}/{Uri.EscapeDataString(SpecialCharactersUniqueId)}");
         stub.RequestPaths[0].Should().Contain("%2F").And.Contain("%20").And.Contain("%25");
+    }
+
+    // ---- H1: "." and ".." are rejected without ever dialing the upstream ----
+
+    /// <summary>
+    /// A UniqueId of a single dot is rejected on the plain validation-errors arm, and the stub -
+    /// deliberately configured to answer 200 for the collection a regressed validator's lookup would
+    /// resolve to - never sees a request at all.
+    /// </summary>
+    /// <remarks>
+    /// <c>Uri.EscapeDataString(".")</c> leaves the dot alone, and ordinary URI combination then
+    /// removes that dot segment, so an unguarded lookup for this value would land on
+    /// <c>/Student/</c>, the collection, rather than on any one document. Turning on
+    /// <see cref="UniqueIdServiceStub.AnswerOkForCollectionAndRoot"/> makes that path answer 200, so
+    /// this case is honest evidence of the validator's own dot-segment guard rather than of a lookup
+    /// that merely never happened to reach an id the stub would have refused anyway.
+    /// </remarks>
+    public static async Task It_rejects_a_student_whose_unique_id_is_a_single_dot(
+        ApiIntegrationHarness harness,
+        UniqueIdServiceStub stub
+    )
+    {
+        stub.AnswerOkForCollectionAndRoot = true;
+
+        using HttpResponseMessage response = await PostStudentAsync(harness, ".", "Uidv");
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+
+        using JsonDocument document = JsonDocument.Parse(body);
+        AssertRejectedUniqueId(document.RootElement, StudentResourceName, "studentUniqueId");
+
+        stub.RequestPaths.Should()
+            .BeEmpty(
+                "a UniqueId of \".\" must be rejected without ever calling the upstream, even "
+                    + "though the stub would answer 200 for the collection an unguarded lookup would "
+                    + "resolve to"
+            );
+
+        JsonArray students = await GetStudentsByUniqueIdAsync(harness, ".");
+        students.Should().BeEmpty("a rejected write must persist nothing");
+    }
+
+    /// <summary>The same for a UniqueId of two dots, which an unguarded lookup would resolve to the root.</summary>
+    public static async Task It_rejects_a_student_whose_unique_id_is_two_dots(
+        ApiIntegrationHarness harness,
+        UniqueIdServiceStub stub
+    )
+    {
+        stub.AnswerOkForCollectionAndRoot = true;
+
+        using HttpResponseMessage response = await PostStudentAsync(harness, "..", "Uidv");
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+
+        using JsonDocument document = JsonDocument.Parse(body);
+        AssertRejectedUniqueId(document.RootElement, StudentResourceName, "studentUniqueId");
+
+        stub.RequestPaths.Should()
+            .BeEmpty(
+                "a UniqueId of \"..\" must be rejected without ever calling the upstream, even "
+                    + "though the stub would answer 200 at its root, which an unguarded lookup would "
+                    + "resolve to"
+            );
+
+        JsonArray students = await GetStudentsByUniqueIdAsync(harness, "..");
+        students.Should().BeEmpty("a rejected write must persist nothing");
+    }
+
+    // ---- H4: BaseAddress carries a query; the plugin's guard refuses it and names the setting ----
+
+    /// <summary>
+    /// With <c>UniqueIdValidation:BaseAddress</c> configured to an address that otherwise matches a
+    /// running stub but carries a query string, the plugin's <c>ConfigureHttpClient</c> guard refuses
+    /// it before any client is built, so the write fails the same way F6's missing-address case does,
+    /// and the stub - reachable, but never actually dialed - sees nothing.
+    /// </summary>
+    public static async Task It_fails_the_write_when_the_base_address_has_a_query(
+        ApiIntegrationHarness harness,
+        UniqueIdServiceStub stub,
+        PluginLogCapture capture
+    )
+    {
+        using HttpResponseMessage response = await PostStudentAsync(
+            harness,
+            BaseAddressQueryStudentUniqueId,
+            "Uidv"
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
+
+        stub.RequestPaths.Should()
+            .BeEmpty(
+                "the guard must refuse a query-bearing BaseAddress before any HTTP call is made"
+            );
+
+        AssertBaseAddressSettingIsNamedInTheLogs(capture);
+
+        JsonArray students = await GetStudentsByUniqueIdAsync(
+            harness,
+            BaseAddressQueryStudentUniqueId
+        );
+        students
+            .Should()
+            .BeEmpty("a write with a misconfigured upstream address must persist nothing");
+    }
+
+    /// <summary>
+    /// A non-person resource is untouched by the validator even when its configured BaseAddress would
+    /// fail the guard, because <c>AppliesTo</c> filters it out before any client is ever asked for.
+    /// </summary>
+    /// <remarks>
+    /// Delegates to F6's own case rather than repeating its body: the assertion neither reads nor
+    /// depends on what makes the configured <c>BaseAddress</c> unusable - absent, as F6 has it, or
+    /// present but query-bearing, as this fixture has it - only that the validator never reaches a
+    /// client for a resource its own <c>AppliesTo</c> excludes.
+    /// </remarks>
+    public static Task It_creates_a_non_person_resource_when_the_base_address_has_a_query(
+        ApiIntegrationHarness harness
+    ) => It_creates_a_non_person_resource_without_a_configured_base_address(harness);
+
+    /// <summary>
+    /// Asserts a captured event names the misconfigured setting, shared by the missing-address (F6/H5)
+    /// and query-bearing-address (H4) cases, both of which the plugin refuses from the same guard.
+    /// </summary>
+    private static void AssertBaseAddressSettingIsNamedInTheLogs(PluginLogCapture capture)
+    {
+        capture
+            .Events.Should()
+            .NotBeEmpty("the host must have logged something else while handling this request");
+
+        capture
+            .FirstEventContaining("UniqueIdValidation:BaseAddress")
+            .Should()
+            .NotBeNull(
+                "a captured error event's exception or message must name the misconfigured setting"
+            );
     }
 
     // ---- B10: the negative control - the plugin is not allowlisted, so B2's request succeeds ----

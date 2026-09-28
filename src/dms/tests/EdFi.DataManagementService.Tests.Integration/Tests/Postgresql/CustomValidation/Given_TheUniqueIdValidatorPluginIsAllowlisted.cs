@@ -189,4 +189,18 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
             _stub,
             _logCapture
         );
+
+    [Test]
+    public Task It_rejects_a_student_whose_unique_id_is_a_single_dot() =>
+        UniqueIdValidationPluginScenario.It_rejects_a_student_whose_unique_id_is_a_single_dot(
+            Harness,
+            _stub
+        );
+
+    [Test]
+    public Task It_rejects_a_student_whose_unique_id_is_two_dots() =>
+        UniqueIdValidationPluginScenario.It_rejects_a_student_whose_unique_id_is_two_dots(
+            Harness,
+            _stub
+        );
 }

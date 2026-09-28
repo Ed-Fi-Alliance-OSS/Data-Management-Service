@@ -16,19 +16,23 @@ using Serilog.Extensions.Logging;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomValidation;
 
 /// <summary>
-/// The same allowlisted plugin, staged the same way, but with no <c>UniqueIdValidation:BaseAddress</c>
-/// setting at all.
+/// The same allowlisted plugin, staged the same way, but configured with a <c>BaseAddress</c> that
+/// otherwise names a running stub and carries a query string.
 /// </summary>
 /// <remarks>
-/// No stub is started here: with the setting entirely absent, the plugin's client factory callback
-/// throws on every matching write before it ever reaches a client, so nothing this fixture's cases do
-/// could reach a stub even if one were listening.
+/// A sibling fixture rather than another case in <see cref="Given_TheUniqueIdValidatorPluginIsAllowlisted"/>,
+/// for the same reason as every other <c>BaseAddress</c>-variant sibling in this directory:
+/// <c>UniqueIdValidation:BaseAddress</c> comes from the host's configuration and is fixed for that
+/// host's lifetime, so a different value needs its own fixture class. The stub is started so the
+/// address is otherwise a real, reachable one; the plugin's <c>ConfigureHttpClient</c> guard refuses
+/// it for its query string before any client is ever built, so the stub is never actually dialed.
 /// </remarks>
 [Category("PluginIntegration")]
-public sealed class Given_TheUniqueIdValidatorPluginHasNoBaseAddress
+public sealed class Given_TheUniqueIdValidatorPluginHasABaseAddressWithAQuery
     : PostgresqlApiIntegrationTestBase
 {
     private string _pluginRoot = string.Empty;
+    private UniqueIdServiceStub _stub = null!;
     private PluginLogCapture _logCapture = null!;
 
     protected override FixtureKey Fixture => FixtureKey.AuthoritativeDs52;
@@ -38,6 +42,7 @@ public sealed class Given_TheUniqueIdValidatorPluginHasNoBaseAddress
         {
             ["Plugins:Directory"] = _pluginRoot,
             ["Plugins:Allowed"] = UniqueIdValidationPluginScenario.PluginName,
+            ["UniqueIdValidation:BaseAddress"] = $"{_stub.BaseAddress}?tenant=a",
         };
 
     /// <summary>
@@ -60,26 +65,42 @@ public sealed class Given_TheUniqueIdValidatorPluginHasNoBaseAddress
         );
     }
 
+    /// <summary>
+    /// OneTimeSetUp rather than SetUp, for the same reason every other sibling fixture in this
+    /// directory uses it: the base class reads <see cref="AdditionalHostSettings"/> while booting the
+    /// host in its own per-test SetUp, and a derived SetUp runs after that one.
+    /// </summary>
     [OneTimeSetUp]
-    public void StageThePlugin() =>
+    public async Task StageThePluginAndStartTheStub()
+    {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
             PluginHostProbe.CustomValidationFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
+        _stub = await UniqueIdServiceStub.StartAsync();
+    }
 
     [OneTimeTearDown]
-    public void RemoveThePlugin() => PluginHostProbe.DeleteIfPresent(_pluginRoot);
+    public async Task RemoveThePluginAndStopTheStub()
+    {
+        PluginHostProbe.DeleteIfPresent(_pluginRoot);
+        await _stub.DisposeAsync();
+    }
+
+    [SetUp]
+    public void ResetTheStub() => _stub.Reset();
 
     [Test]
-    public Task It_fails_the_write_when_no_base_address_is_configured() =>
-        UniqueIdValidationPluginScenario.It_fails_the_write_when_no_base_address_is_configured(
+    public Task It_fails_the_write_when_the_base_address_has_a_query() =>
+        UniqueIdValidationPluginScenario.It_fails_the_write_when_the_base_address_has_a_query(
             Harness,
+            _stub,
             _logCapture
         );
 
     [Test]
-    public Task It_creates_a_non_person_resource_without_a_configured_base_address() =>
-        UniqueIdValidationPluginScenario.It_creates_a_non_person_resource_without_a_configured_base_address(
+    public Task It_creates_a_non_person_resource_when_the_base_address_has_a_query() =>
+        UniqueIdValidationPluginScenario.It_creates_a_non_person_resource_when_the_base_address_has_a_query(
             Harness
         );
 }
