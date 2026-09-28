@@ -29,8 +29,6 @@ internal sealed partial class CdcApiScenarios : ICdcApiScenarios
     }
 
     // Each later story task replaces its method with the real scenario. Never report placeholders as passed.
-    public Task ExecutorRestartAsync(CancellationToken token) => throw new NotImplementedException();
-
     public Task UnavailableEvidenceAsync(CancellationToken token) => throw new NotImplementedException();
 
     public Task TerminalLossAsync(CancellationToken token) => throw new NotImplementedException();

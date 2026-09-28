@@ -33,6 +33,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     private CdcControllerStatus _status = null!;
     private CdcManagedLifecycle _lifecycle = null!;
     private Func<CancellationToken, Task<CdcRebuildObservation>> _rebuildOnline = null!;
+    private CdcRestartObservations _restartObservations = null!;
     public CdcDeploymentRequest Request { get; private set; } = null!;
     public string EffectiveSchemaHash { get; private set; } = "";
     public CdcApiClient Api { get; private set; } = null!;
@@ -158,6 +159,8 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
                 CdcProjectionGate gate = new(target, TimeSpan.FromMinutes(5));
                 CdcProjectionRuntime projection = null!;
                 CdcRebuildObservations rebuild = new(target);
+                var restart = context._restartObservations;
+                context._restartObservations = null!;
                 context._rebuildOnline = ct =>
                     rebuild.RunAsync(
                         commandToken =>
@@ -183,6 +186,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
                         {
                             gate.ConfigureServices(services);
                             rebuild.ConfigureServices(services);
+                            restart?.ConfigureServices(services);
                         },
                         ct
                     );
@@ -335,6 +339,13 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
         public Task StopRuntimeAsync() => Current._owner.StopAsync();
 
         public Task OpenRuntimeAsync(CancellationToken token) => Current._owner.OpenAsync(token);
+
+        public Task OpenRestartRuntimeAsync(CdcRestartObservations observations, CancellationToken token)
+        {
+            Current._restartObservations = observations;
+            Current._resources.Add(observations);
+            return Current._owner.OpenAsync(token);
+        }
 
         public void Dispose() => _ended = true;
     }

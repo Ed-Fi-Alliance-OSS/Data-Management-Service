@@ -159,6 +159,34 @@ inventory and advancing offsets are checked. Canonical API deletion and fenced
 consumption clean up only after the measured rebuild. Live evidence remains part of
 T23/T24; these focused helper tests do not claim provider qualification.
 
+## Executor restart checkpoints
+
+CDC-E2E-06 publishes/consumes a Student and completes API reads/writes before fully
+stopping the designated runtime. With disposal complete and HTTP DMS still running,
+it creates five distinct Students, updates one, and verifies successful GETs leave
+matching durable work and absent cache rows. A provider-fenced scan excludes public
+publication during this outage. No HTTP restart, capture reset or re-admission occurs.
+
+The replacement uses the same production factory with page size two. Observations
+are installed before initialization and belong only to this runtime, excluding the
+earlier explicit rebuild. A provider-pager decorator records actual returned work
+pages and holds the second nonempty page. The first page must already be published
+and acknowledged. While this second page is held, API PUT/POST/GET succeed and leave
+stale/absent cache plus new durable work. The hold must still be active when those
+requests complete. Release delegates the unchanged page to production processing.
+
+All seven keys must converge in cache and the retained Kafka consumer, including the
+outage update and drain mutations. At least four actual pages must cover every key.
+The bounded recorder counts baseline-boundary, baseline-seeding and inventory-scrub
+primitive invocations, including failed calls; all must remain zero through recovery.
+Bounded status existence probes are not canonical/cache inventory scans. Earlier
+rebuild observations cannot satisfy or contaminate this evidence. Controller status
+resolves the replacement, checks healthy same-binding continuity, and API deletes
+clean up after convergence. Page holds honor finite deadlines/cancellation; disposal
+cancels and awaits in-flight provider calls. UTC interval checkpoints, page counts,
+operation counts and Kafka boundaries contain no document payloads. T23/T24 retain
+responsibility for full live qualification on both providers.
+
 ## Development checkpoints
 
 Use the `ApiE2E` runner for development checkpoints and final provider qualifications,
