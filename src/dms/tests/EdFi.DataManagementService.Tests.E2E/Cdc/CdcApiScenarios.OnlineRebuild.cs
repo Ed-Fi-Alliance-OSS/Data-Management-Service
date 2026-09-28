@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
@@ -81,13 +80,13 @@ internal sealed partial class CdcApiScenarios
                 // The command owns the provider mutex and production drain. No held item, second
                 // supervisor, HTTP mutation or test gate participates in the administrative workflow.
                 var rebuild = await phase.RebuildOnlineAsync(ct);
-                CdcRebuildAssertions.AssertCompleted(rebuild);
                 foreach (var completed in rebuild.Phases)
                 {
-                    await TestContext.Out.WriteLineAsync(
+                    await WriteDiagnosticAsync(
                         $"{scenarioId}:administration: completed={completed.Phase} lifecycle={completed.Lifecycle} cacheAhead={completed.CacheAheadRecoveryRequired}"
                     );
                 }
+                CdcRebuildAssertions.AssertCompleted(rebuild);
                 (await _context.Documents.ReadChangeVersionSequenceAsync(ct)).Should().Be(versionSequence);
                 var after = await phase.Runtime.ObserveEstablishedDatabaseAsync(ct);
                 CdcRebuildAssertions.AssertTracking(after, binding);
@@ -126,7 +125,7 @@ internal sealed partial class CdcApiScenarios
                 CdcRebuildAssertions.AssertOffsets(binding.Provider, offsetsBefore, await ReadOffsetsAsync());
                 await _context.Provider.AssertCaptureInventoryAsync(ct);
                 await _context.Fences.AssertConnectorIncludeListAsync(ct);
-                await TestContext.Out.WriteLineAsync(
+                await WriteDiagnosticAsync(
                     $"{scenarioId}:rebuild-complete: liveKeys={expected.Count} consumerKeys={consumer.Documents.Count} explicitBaseline=true"
                 );
 
@@ -181,6 +180,7 @@ internal sealed partial class CdcApiScenarios
                 async Task ScanAsync(string checkpoint, bool allowTombstones, CancellationToken cancellation)
                 {
                     string label = scenarioId + ":" + checkpoint;
+                    await WriteDiagnosticAsync($"{label}:provider-fence-started");
                     if (binding.Provider == CdcProvider.Postgresql)
                     {
                         await _context.Fences.FencePostgresqlSourceAsync(label, cancellation);
@@ -189,6 +189,7 @@ internal sealed partial class CdcApiScenarios
                     {
                         await _context.Fences.FenceSqlServerSourceAsync(label, cancellation);
                     }
+                    await WriteDiagnosticAsync($"{label}:provider-fence-completed");
                     var ends = await CaptureAsync(cancellation);
                     var bounds = ends.Select(end =>
                             end with
@@ -218,7 +219,7 @@ internal sealed partial class CdcApiScenarios
                     positions = scan.CompletedBoundaries;
                     foreach (var bound in positions)
                     {
-                        await TestContext.Out.WriteLineAsync(
+                        await WriteDiagnosticAsync(
                             $"{label}: {(bound.Topic == binding.TopicName ? "public" : "progress")} partition={bound.Partition} start={bound.StartOffset} end={bound.EndOffset}"
                         );
                     }

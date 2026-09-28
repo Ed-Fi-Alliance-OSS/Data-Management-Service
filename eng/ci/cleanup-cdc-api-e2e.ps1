@@ -30,6 +30,13 @@ foreach ($kind in @('container', 'volume', 'network')) {
 @{ InvocationId = $InvocationId; Project = 'dms-local'; Resources = $resources } |
     ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $PrivateDirectory 'owned-resources.json')
 $inventory = Join-Path $root '.cdc-deployments/dms-local.json'
+$runtimePath = Join-Path $PrivateDirectory 'runtime-inputs.json'
+. (Join-Path $PSScriptRoot 'cdc-api-diagnostics.ps1')
+try {
+    Write-CdcApiRuntimeInput -Path $runtimePath -InvocationId $InvocationId -Resources $resources -Governed (Test-Path -LiteralPath $inventory)
+} catch { # Evidence collection must not prevent retirement.
+    Write-Warning 'CDC_API_RUNTIME_DIAGNOSTICS_UNAVAILABLE'
+}
 if (Test-Path -LiteralPath $inventory) {
     # Infrastructure remains reachable for controller retirement; never delete inventory as cleanup.
     & (Join-Path $Repo 'src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1') `
@@ -45,6 +52,13 @@ if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $inventory)) { throw 'Govern
 foreach ($prefix in @(@('ps', '-aq'), @('volume', 'ls', '-q'), @('network', 'ls', '-q'))) {
     $remaining = @(& docker @prefix --filter label=com.docker.compose.project=dms-local)
     if ($LASTEXITCODE -ne 0 -or $remaining.Count) { throw 'Owned resources remain.' }
+}
+try {
+    $runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json -AsHashtable
+    $runtime.ResourcesAbsent = $true
+    $runtime | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runtimePath
+} catch { # Continue final state cleanup even if evidence storage failed.
+    Write-Warning 'CDC_API_CLEANUP_DIAGNOSTICS_UNAVAILABLE'
 }
 $workspace = Join-Path $root '.bootstrap'
 if (Test-Path -LiteralPath $workspace) { Move-Item -LiteralPath $workspace -Destination (Join-Path $PrivateDirectory 'retired-bootstrap') }

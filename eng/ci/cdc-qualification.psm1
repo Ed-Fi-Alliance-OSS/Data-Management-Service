@@ -5,6 +5,7 @@
 
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'cdc-api-e2e.ps1')
+. (Join-Path $PSScriptRoot 'cdc-api-diagnostics.ps1')
 
 function Invoke-CdcQualificationImagePull {
     <# .SYNOPSIS
@@ -168,6 +169,7 @@ function Export-CdcQualificationEvidence {
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     if ($null -ne $ApiRunner) {
         Export-CdcApiEvidence -Path (Join-Path $RawDirectory 'scenario.json') -Destination $Destination -Runner $ApiRunner
+        return # ApiE2E uses only the bounded allowlist; never recurse into private inputs or raw TRX.
     }
     $attachmentPattern = '^(?:cdc-runbook-|cdc-message-contract-|admission-evidence-|cdc-controller-|managed-lifecycle-|native-recovery-|cdc-history-|record-size-|\d+-)[a-zA-Z0-9_.-]+\.json$'
     foreach ($file in Get-ChildItem -LiteralPath $RawDirectory -Filter '*.trx' -Recurse) {

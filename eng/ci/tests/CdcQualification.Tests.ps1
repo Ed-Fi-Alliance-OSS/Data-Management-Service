@@ -1029,9 +1029,15 @@ Describe 'CDC API E2E runner stages' {
                         ConvertTo-Json -Depth 8 | Set-Content $env:CDC_API_E2E_REPORT_PATH
                     $script:fixtureHash = (Get-FileHash $env:CDC_API_E2E_REPORT_PATH).Hash
                 }
-                $failed = $script:fault -ieq $name -or ($script:fault -eq 'TimeoutAndCleanup' -and $name -in @('test', 'cleanup'))
+                $failed = $script:fault -ieq $name -or ($script:fault -in @('TimeoutAndCleanup', 'TimeoutAndCleanupAndExport') -and $name -in @('test', 'cleanup')) -or ($script:fault -eq 'TimeoutAndCleanupAndExport' -and $name -eq 'export')
                 if ($name -eq 'cleanup') { $TimeoutSeconds | Should -Be 900 }
-                if ($name -eq 'export') { $TimeoutSeconds | Should -Be 120 }
+                if ($name -eq 'export') {
+                    $TimeoutSeconds | Should -Be 120
+                    if (-not $failed) {
+                        & pwsh @Arguments *> (Join-Path (Split-Path $LogPath -Parent) 'export-test.log')
+                        $LASTEXITCODE | Should -Be 0
+                    }
+                }
                 @{ ExitCode = $(if ($failed) { 1 } else { 0 }); FailureKind = $(if ($failed) { 'TimedOut' } else { 'None' }) }
             }
             Mock Get-CdcQualificationReport { @{ Status = 'Passed'; Total = 1; Passed = 1; Failed = 0; Skipped = 0 } }
@@ -1073,17 +1079,25 @@ Describe 'CDC API E2E runner stages' {
             @{ Fault = 'build-Debug'; Cleanup = $false }; @{ Fault = 'setup'; Cleanup = $true }
             @{ Fault = 'inputs'; Cleanup = $true }; @{ Fault = 'test'; Cleanup = $true }
             @{ Fault = 'cleanup'; Cleanup = $true }; @{ Fault = 'Export'; Cleanup = $true }
-            @{ Fault = 'TimeoutAndCleanup'; Cleanup = $true }
+            @{ Fault = 'TimeoutAndCleanup'; Cleanup = $true }; @{ Fault = 'TimeoutAndCleanupAndExport'; Cleanup = $true }
         ) {
             $script:fault = $Fault
             Invoke-CdcApiQualification -Repo $script:repo -RawDirectory $script:root -Destination $script:destination -Configuration Release -Report $script:runner -Persist { }
             $script:runner.Status | Should -Not -Be Passed
             ($script:events -contains 'cleanup') | Should -Be $Cleanup
-            if ($Fault -eq 'TimeoutAndCleanup') {
+            if ($Fault -in @('TimeoutAndCleanup', 'TimeoutAndCleanupAndExport')) {
                 $script:runner.Reason | Should -Be ScenarioExecutionFailed
                 $script:runner.CleanupFailure | Should -Be CleanupFailed
             }
-            if ($Fault -eq 'Export') { $script:runner.ExportFailure | Should -Be ExportFailed }
+            if ($Fault -in @('Export', 'TimeoutAndCleanupAndExport')) { $script:runner.ExportFailure | Should -Be ExportFailed }
+            if ($Fault -notin @('Export', 'TimeoutAndCleanupAndExport')) {
+                $evidence = Get-Content (Join-Path $script:destination "$($script:runner.Name)/cdc-api-e2e.json") -Raw | ConvertFrom-Json
+                $evidence.InvocationId | Should -Be $script:runner.InvocationId
+                $evidence.Stages.Teardown | Should -Be $script:runner.Stages.Teardown
+                $evidence.Failures.Reason | Should -Be $(if ($Fault -eq 'cleanup') { 'None' } else { $script:runner.Reason })
+                if ($Fault -eq 'cleanup') { $evidence.ReportValidation | Should -Be RunnerStageFailed }
+                $evidence.Failures.CleanupFailure | Should -Be $script:runner.CleanupFailure
+            }
             if ($Fault -like 'build-*' -or $Fault -eq 'Ownership') { $script:events | Should -Not -Contain 'setup' }
         }
     }
@@ -1355,5 +1369,166 @@ exit $LASTEXITCODE
         $evidence = Get-Content (Join-Path $destination 'Postgresql-ApiE2E/cdc-api-e2e.json') -Raw | ConvertFrom-Json
         $evidence.InvocationId | Should -Be $report.InvocationId
         $evidence.Scenarios.Count | Should -Be 0
+    }
+}
+
+Describe 'CDC API E2E bounded diagnostics export' {
+    BeforeAll { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+    BeforeEach {
+        $raw = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid().ToString('N')))
+        $script:diagnosticOut = Join-Path $raw 'out'
+        $runner = New-CdcApiRunnerReport Postgresql
+        $runner.BindingId = 'a' * 64; $runner.Generation = 1
+        $runner.ProcessResult = @{ Status = 'Passed'; Total = 1; Passed = 1; Failed = 0; Skipped = 0 }
+        $runner.ProcessExit = 0
+        foreach ($name in @('Setup', 'Test', 'Teardown', 'Export')) { $runner.Stages[$name] = 'Passed' }
+        $fixture = @{ Version = 1; InvocationId = $runner.InvocationId
+            Identity = @{ Provider = 'Postgresql'; BindingId = $runner.BindingId; Generation = 1 }
+            Attachment = @{ Id = 'Attachment'; Outcome = 'Passed'; Failure = 'None' }
+            Disposal = @{ Id = 'Disposal'; Outcome = 'Passed'; Failure = 'None' }
+            Scenarios = @(1..8 | ForEach-Object { @{ Id = ('CDC-E2E-{0:00}' -f $_); Outcome = 'Passed'; Failure = 'None' } }) }
+        $checkpointPath = Join-Path $raw 'scenario.json.checkpoints'
+        $lines = @(
+            'Attachment:effectiveSchema=' + ('b' * 64)
+            'Attachment:runtime=10.0.5'
+            'Attachment:pageSize=100'
+            'CDC-E2E-01:admitted-identity-held-create: sourceVersion=2 cacheVersion=0 workVersion=2'
+            'CDC-E2E-02:create-consumed: public partition=1 start=2 end=3'
+            'CDC-E2E-03:N-completed: candidateVersion=2 outcome=StaleCandidateSuppressed'
+            'CDC-E2E-04:tombstone-consumed-while-held: partition=2 offset=17'
+            'CDC-E2E-05:administration: completed=SeedBaseline lifecycle=Rebuilding cacheAhead=False'
+            'CDC-E2E-06:old-runtime-disposed: utc=2026-09-28T12:00:00.1234567+00:00'
+            'CDC-E2E-06:work-page: size=2 selected=2'
+            'CDC-E2E-06:replacement-operations: baselineBoundaries=0 baselinePages=0 inventoryPages=0 dropped=0'
+            'CDC-E2E-07:healthy-publication:provider-fence-completed'
+            'CDC-E2E-07:rejected-Resume-Connect-Unavailable: utc=2026-09-28T12:00:00.1234567+00:00'
+            'CDC-E2E-08:healthy-publication:progress:partition=0:start=5:end=6'
+            'CDC-E2E-08:lost-NotReady-ConnectOffsetMissing-persisted-contained'
+            'CDC-E2E-08:fresh-controller-retained-incident:healthy-offset-reads=0'
+        )
+        $fixture | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $raw 'scenario.json')
+        @($runner.InvocationId) + $lines | Set-Content $checkpointPath
+    }
+    It 'retains exact boundary, work, recovery and invariant evidence for <Outcome> without recomputing outcomes' -ForEach @(
+        @{ Outcome = 'Passed' }; @{ Outcome = 'Failed' }; @{ Outcome = 'Running' }
+    ) {
+        $fixture.Scenarios[5].Outcome = $Outcome
+        if ($Outcome -ne 'Passed') {
+            $fixture.Scenarios[6..7] | ForEach-Object { $_.Outcome = 'NotRun' }
+            $runner.Stages.Test = 'Failed'; $runner.Reason = 'ScenarioExecutionFailed'
+            $runner.CleanupFailure = 'CleanupFailed'; $runner.Stages.Teardown = 'Failed'
+        }
+        $fixture | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $raw 'scenario.json')
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $safe = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw | ConvertFrom-Json
+        $safe.InvocationId | Should -Be $runner.InvocationId
+        $safe.Diagnostics.Checkpoints | Should -Be $lines
+        $safe.Diagnostics.Rejected | Should -Be 0
+        $safe.Scenarios[5].Outcome | Should -Be $Outcome
+        $safe.Traceability.Count | Should -Be 8
+        $safe.Traceability[5].Invariants | Should -Contain 'CDC-INV-03'
+        $safe.Traceability[7].Invariants | Should -Contain 'CDC-INV-11'
+        $safe.Failures.CleanupFailure | Should -Be $runner.CleanupFailure
+        $safe.Failures.Reason | Should -Be $runner.Reason
+    }
+    It 'rejects planted bodies, credentials, unknown fields and arbitrary checkpoint names' {
+        @('CDC-E2E-01:private-student', 'CDC-E2E-01:create-consumed: sourceVersion=1 cacheVersion=1 workVersion=1 password=opaque',
+            'CDC-E2E-01:create-consumed: public partition=0 start=0 end=1 secret', 'Authorization: Bearer opaque',
+            '{"firstName":"private-student"}', ('x' * 513)) | Add-Content $checkpointPath
+        $runner.Stages.Secret = 'opaque'
+        $runner.BindingId = 'Server=private;Password=opaque'
+        $runner.Reason = 'private-student'; $runner.RequestedConnectDigest = 'opaque'
+        '{"private-student":"opaque"}' | Set-Content (Join-Path $raw 'settings.json')
+        # ApiE2E never scans sibling attachments or raw TRX, even allowlisted basenames.
+        '{"Unlabelled":"opaque"}' | Set-Content (Join-Path $raw 'native-recovery-secret.json')
+        'private-student opaque' | Set-Content (Join-Path $raw 'api.trx')
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $json = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'opaque|private-student|Password|Authorization|Server='
+        ($json | ConvertFrom-Json).Diagnostics.Checkpoints | Should -Be $lines
+        ($json | ConvertFrom-Json).Diagnostics.Rejected | Should -Be 6
+        @(Get-ChildItem $script:diagnosticOut).Count | Should -Be 1
+    }
+    It 'bounds or rejects <Fault> diagnostic input explicitly' -ForEach @(
+        @{ Fault = 'Oversized'; Availability = 'Oversized' }; @{ Fault = 'Count'; Availability = 'Available' }
+        @{ Fault = 'Identity'; Availability = 'IdentityMismatch' }; @{ Fault = 'Missing'; Availability = 'Missing' }
+    ) {
+        switch ($Fault) {
+            Oversized { ('x' * 1050662) | Set-Content $checkpointPath }
+            Count { @($runner.InvocationId) + @('CDC-E2E-04:projector-released-and-drained') * 2050 | Set-Content $checkpointPath }
+            Identity { @([guid]::NewGuid().ToString()) + $lines | Set-Content $checkpointPath }
+            Missing { Remove-Item $checkpointPath }
+        }
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $safe = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw | ConvertFrom-Json
+        $safe.Diagnostics.Availability | Should -Be $Availability
+        $safe.Diagnostics.Checkpoints.Count | Should -Be $(if ($Fault -eq 'Count') { 2048 } else { 0 })
+        $safe.Diagnostics.Truncated | Should -Be ($Fault -eq 'Count')
+        (Get-Item (Join-Path $script:diagnosticOut 'cdc-api-e2e.json')).Length | Should -BeLessThan 1100000
+    }
+    It 'exports actual image digests and verified cleanup counts, omitting names and configuration' {
+        @{ InvocationId = $runner.InvocationId; Availability = 'Available'; CleanupMode = 'Governed'; ResourcesAbsent = $true
+            OwnedCounts = @{ container = 5; volume = 3; network = 1 }; Secret = 'opaque'
+            Images = @(@{ Service = 'kafka-cdc-worker'; ImageId = ('sha256:' + ('c' * 64)); ManifestDigest = ('sha256:' + ('d' * 64)); Config = 'opaque' }
+                @{ Service = 'db'; ImageId = ('sha256:' + ('e' * 64)); ManifestDigest = ''; Database = 'private-student' }
+                @{ Service = 'private-student'; ImageId = 'opaque' }) } |
+            ConvertTo-Json -Depth 8 | Set-Content (Join-Path $raw 'runtime-inputs.json')
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $json = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'opaque|private-student|Secret|Database|Config'
+        $safe = $json | ConvertFrom-Json
+        $safe.RuntimeInputs.Images.Count | Should -Be 2
+        $safe.RuntimeInputs.Images[0].ManifestDigest | Should -Be ('sha256:' + ('d' * 64))
+        $safe.RuntimeInputs.OwnedCounts.container | Should -Be 5
+        $safe.RuntimeInputs.ResourcesAbsent | Should -BeTrue
+    }
+    It 'rejects a fixture from another invocation without attributing its phases' {
+        $fixture.InvocationId = [guid]::NewGuid().ToString()
+        $fixture | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $raw 'scenario.json')
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $safe = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw | ConvertFrom-Json
+        $safe.ReportValidation | Should -Be ScenarioIdentityMismatch
+        $safe.Scenarios.Count | Should -Be 0
+    }
+    It 'rejects <Fault> runtime data without leaking identifiers or nested content' -ForEach @(
+        @{ Fault = 'Oversized'; Availability = 'Oversized' }; @{ Fault = 'Identity'; Availability = 'IdentityMismatch' }
+        @{ Fault = 'Malformed'; Availability = 'Invalid' }; @{ Fault = 'Nested'; Availability = 'Available' }
+    ) {
+        $path = Join-Path $raw 'runtime-inputs.json'
+        $inputData = @{ InvocationId = $runner.InvocationId; Availability = 'Available'; CleanupMode = 'OwnedPartial'; ResourcesAbsent = $false
+            OwnedCounts = @{ container = 2; volume = 0; network = 0 }
+            Images = @(@{ Service = 'db'; ImageId = @('sha256:' + ('a' * 64), 'opaque'); ManifestDigest = 'opaque' }) }
+        if ($Fault -eq 'Identity') { $inputData.InvocationId = [guid]::NewGuid().ToString() }
+        $inputData | ConvertTo-Json -Depth 8 | Set-Content $path
+        if ($Fault -eq 'Oversized') { ('opaque' * 3000) | Set-Content $path }
+        if ($Fault -eq 'Malformed') { '{opaque' | Set-Content $path }
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $json = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'opaque'
+        $safe = $json | ConvertFrom-Json
+        $safe.RuntimeInputs.Availability | Should -Be $Availability
+        $safe.RuntimeInputs.Images.Count | Should -Be 0
+    }
+    InModuleScope cdc-qualification {
+        It 'collects only image fields before cleanup and keeps inspecting after one failure' {
+            Import-Module (Join-Path $PSScriptRoot '../../docker-compose/env-utility.psm1') -DisableNameChecking
+            $script:inspect = 0
+            Mock Invoke-NativeCommandWithInput {
+                $script:inspect++
+                $ArgumentList[2] | Should -Not -Match 'Env|Connection|Password'
+                $TimeoutSeconds | Should -Be 10
+                if ($script:inspect -eq 1) { return @{ ExitCode = 1; FailureKind = 'TimedOut' } }
+                @{ ExitCode = 0; FailureKind = 'None'; StandardOutput = (@{ Service = 'kafka'; ImageId = ('sha256:' + ('a' * 64)); Reference = ('apache/kafka@sha256:' + ('b' * 64)) } | ConvertTo-Json) }
+            }
+            $path = Join-Path $TestDrive 'actual.json'; $id = [guid]::NewGuid().ToString()
+            Write-CdcApiRuntimeInput $path $id @{ container = @('first', 'second'); volume = @('private-volume'); network = @('private-network') } $true
+            $safe = Get-CdcApiRuntimeInput $path $id
+            $safe.Availability | Should -Be Partial
+            $safe.Images.Count | Should -Be 1
+            $safe.Images[0].ImageId | Should -Be ('sha256:' + ('a' * 64))
+            $safe.ResourcesAbsent | Should -BeFalse
+            $safe.OwnedCounts.container | Should -Be 2
+            Should -Invoke Invoke-NativeCommandWithInput -Times 2 -Exactly
+        }
     }
 }

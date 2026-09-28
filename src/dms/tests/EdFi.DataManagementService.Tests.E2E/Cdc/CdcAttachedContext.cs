@@ -39,6 +39,11 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     private string _statePath = "";
     public CdcDeploymentRequest Request { get; private set; } = null!;
     public string EffectiveSchemaHash { get; private set; } = "";
+    public int ConfiguredPageSize =>
+        _config.Settings.GetValue(
+            DocumentCacheOptions.SectionName + ":Projector:PageSize",
+            DocumentCacheProjectorOptions.DefaultPageSize
+        );
     public CdcApiClient Api { get; private set; } = null!;
     public CdcDocumentObserver Documents { get; private set; } = null!;
     public MessageContractKafkaObserver Kafka { get; private set; } = null!;

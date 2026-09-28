@@ -81,8 +81,8 @@ failure also fails the test. A cleanup/report-write error does not replace the
 original scenario failure. Hard process termination cannot guarantee finalization;
 the runner must reject the resulting missing/incomplete evidence.
 
-The runner validator and minimal evidence exporter consume this same schema. T19 extends
-the same export path with detailed diagnostics.
+The runner validator and evidence exporter consume this same schema. The same export
+path adds bounded checkpoint diagnostics without changing outcome ownership.
 Qualification requires matching invocation/provider/binding identity, successful
 attachment and disposal, and exactly the eight distinct ordered IDs all `Passed`
 with `Failure: None`. Wrapper setup/teardown, process exit/TRX, and export outcomes
@@ -247,7 +247,7 @@ risk; it is not required after every scenario. Every run starts at CDC-E2E-01.
 The first unfinished scenario fails normally, later phases stay `NotRun`, and the
 runner still performs governed teardown. Earlier passed phases are useful progress
 evidence, but every incomplete run fails qualification. There is no separate
-direct-development setup or reporting path. Detailed diagnostics arrive in T19;
+direct-development setup or reporting path. Bounded diagnostics use the same export path;
 they do not block implementing Student CRUD in T11.
 
 ## Runner preparation and failure handling
@@ -289,3 +289,25 @@ Private settings, credentials, handoff, ownership inventory and raw logs stay un
 the runner's private temporary directory; never upload that directory. The runner
 does not write the fixture's scenario report. Every phase, attachment, disposal,
 setup, teardown, process/TRX result and export must pass to return zero.
+
+### Bounded diagnostic export
+
+`scenario.json.checkpoints` is a private, fixture-owned journal whose first line is
+its invocation UUID. Completed checkpoints are flushed individually; process death
+may leave a partial final line, which the exporter rejects. The journal is limited
+to 2,048 lines of 512 characters; exceeding either limit fails the emitting scenario.
+It contains no outcomes and does not replace `scenario.json`. The exporter selects
+fixed checkpoint names and strictly typed values, preserves their order, and records
+missing, oversized, rejected or wrong-invocation evidence explicitly.
+
+Before retiring owned containers, cleanup captures only Compose service roles,
+actual image IDs and configured manifest digests. Collection uses ten-second calls,
+at most eight containers, and cannot prevent governed teardown. Private resource
+names, environment variables and complete image configuration are never exported.
+Resource counts and verified absence supplement the runner's teardown outcome.
+
+ApiE2E publishes only `cdc-api-e2e.json`; it does not recursively export arbitrary
+attachments or TRX output from the private directory. This includes bounded copies
+of existing stage/process/scenario results, separate failure categories, traceability,
+runtime inputs and checkpoint data. See the [evidence index](../../../../../reference/cdc-documentation/cdc-inv-evidence.md#api-to-kafka-scenario-traceability-dms-1325-t19)
+for precise invariant scope. Diagnostic entries never establish qualification alone.

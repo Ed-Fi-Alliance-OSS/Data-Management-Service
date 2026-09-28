@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
@@ -199,6 +198,7 @@ internal sealed partial class CdcApiScenarios
                 )
                 {
                     string label = scenarioId + ":" + checkpoint;
+                    await WriteDiagnosticAsync($"{label}:provider-fence-started");
                     if (binding.Provider == CdcProvider.Postgresql)
                     {
                         await _context.Fences.FencePostgresqlSourceAsync(label, cancellation);
@@ -207,6 +207,7 @@ internal sealed partial class CdcApiScenarios
                     {
                         await _context.Fences.FenceSqlServerSourceAsync(label, cancellation);
                     }
+                    await WriteDiagnosticAsync($"{label}:provider-fence-completed");
                     // Provider commit fence precedes end capture. Preserve scan positions across phases,
                     // including compacted gaps; a quiet timeout or heartbeat receipt is never a fence.
                     var ends = await CaptureAsync(cancellation);
@@ -240,7 +241,7 @@ internal sealed partial class CdcApiScenarios
                     positions = scan.CompletedBoundaries;
                     foreach (var bound in positions)
                     {
-                        await TestContext.Out.WriteLineAsync(
+                        await WriteDiagnosticAsync(
                             $"{label}: {(bound.Topic == binding.TopicName ? "public" : "progress")} partition={bound.Partition} start={bound.StartOffset} end={bound.EndOffset}"
                         );
                     }
@@ -292,14 +293,14 @@ internal sealed partial class CdcApiScenarios
         }
     }
 
-    private static Task CheckpointAsync(
+    private Task CheckpointAsync(
         string scenarioId,
         string checkpoint,
         CdcSourceDocument source,
         long cacheVersion,
         long workVersion = 0
     ) =>
-        TestContext.Out.WriteLineAsync(
+        WriteDiagnosticAsync(
             $"{scenarioId}:{checkpoint}: sourceVersion={source.ContentVersion} cacheVersion={cacheVersion} workVersion={workVersion}"
         );
 }

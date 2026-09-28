@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
@@ -116,18 +115,18 @@ internal sealed partial class CdcApiScenarios
                 }
                 await phase.Gate.WaitUntilIdleAsync(ct);
                 var execution = observations.Snapshot();
-                CdcRestartAssertions.AssertRecovery(
-                    execution,
-                    students.Values.Select(s => s.Source.DocumentId).ToArray()
-                );
                 foreach (var page in execution.Pages)
                 {
-                    await TestContext.Out.WriteLineAsync(
+                    await WriteDiagnosticAsync(
                         $"{scenarioId}:work-page: size={page.PageSize} selected={page.Items.Count}"
                     );
                 }
-                await TestContext.Out.WriteLineAsync(
+                await WriteDiagnosticAsync(
                     $"{scenarioId}:replacement-operations: baselineBoundaries={execution.BaselineBoundaries} baselinePages={execution.BaselinePages} inventoryPages={execution.InventoryPages} dropped={execution.DroppedPages}"
+                );
+                CdcRestartAssertions.AssertRecovery(
+                    execution,
+                    students.Values.Select(s => s.Source.DocumentId).ToArray()
                 );
                 await ScanAsync("recovery-consumed", false, ct);
                 CdcRebuildAssertions.AssertConsumer(
@@ -236,7 +235,7 @@ internal sealed partial class CdcApiScenarios
                 }
 
                 Task EventAsync(string name) =>
-                    TestContext.Out.WriteLineAsync($"{scenarioId}:{name}: utc={DateTimeOffset.UtcNow:O}");
+                    WriteDiagnosticAsync($"{scenarioId}:{name}: utc={DateTimeOffset.UtcNow:O}");
 
                 async Task<IReadOnlyList<MessageContractKafkaBoundary>> CaptureAsync(
                     CancellationToken cancellation
@@ -256,6 +255,7 @@ internal sealed partial class CdcApiScenarios
                 async Task ScanAsync(string checkpoint, bool allowTombstones, CancellationToken cancellation)
                 {
                     string label = scenarioId + ":" + checkpoint;
+                    await WriteDiagnosticAsync($"{label}:provider-fence-started");
                     if (binding.Provider == CdcProvider.Postgresql)
                     {
                         await _context.Fences.FencePostgresqlSourceAsync(label, cancellation);
@@ -264,6 +264,7 @@ internal sealed partial class CdcApiScenarios
                     {
                         await _context.Fences.FenceSqlServerSourceAsync(label, cancellation);
                     }
+                    await WriteDiagnosticAsync($"{label}:provider-fence-completed");
                     var ends = await CaptureAsync(cancellation);
                     var bounds = ends.Select(end =>
                             end with
@@ -293,7 +294,7 @@ internal sealed partial class CdcApiScenarios
                     positions = scan.CompletedBoundaries;
                     foreach (var bound in positions)
                     {
-                        await TestContext.Out.WriteLineAsync(
+                        await WriteDiagnosticAsync(
                             $"{label}: {(bound.Topic == binding.TopicName ? "public" : "progress")} partition={bound.Partition} start={bound.StartOffset} end={bound.EndOffset}"
                         );
                     }

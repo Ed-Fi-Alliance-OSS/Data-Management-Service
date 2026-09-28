@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
@@ -63,6 +62,7 @@ internal sealed partial class CdcApiScenarios
                 {
                     await _context.Fences.FenceSqlServerSourceAsync(scenarioId + ":healthy-publication", ct);
                 }
+                await WriteDiagnosticAsync($"{scenarioId}:healthy-publication:provider-fence-completed");
                 var ends = await CaptureAsync(ct);
                 var scan = await _context.Kafka.ConsumeThroughAsync(
                     ends.Select(end =>
@@ -271,7 +271,7 @@ internal sealed partial class CdcApiScenarios
                         .. await _context.Kafka.CaptureKafkaBoundariesAsync(progressTopic, cancellation),
                     ];
 
-                Task EventAsync(string name) => TestContext.Out.WriteLineAsync($"{scenarioId}:{name}");
+                Task EventAsync(string name) => WriteDiagnosticAsync($"{scenarioId}:{name}");
             },
             token
         );

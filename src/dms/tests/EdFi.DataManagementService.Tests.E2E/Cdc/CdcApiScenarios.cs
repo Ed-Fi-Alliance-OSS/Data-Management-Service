@@ -21,10 +21,20 @@ internal interface ICdcApiScenarios : IAsyncDisposable
 internal sealed partial class CdcApiScenarios : ICdcApiScenarios
 {
     private readonly CdcAttachedContext _context = new();
+    private CdcScenarioDiagnostics _diagnostics = null!;
+
+    private Task WriteDiagnosticAsync(string checkpoint) => _diagnostics.WriteAsync(checkpoint);
 
     public async Task<CdcScenarioIdentity> AttachAsync(CancellationToken token)
     {
+        _diagnostics = new(
+            Environment.GetEnvironmentVariable("CDC_API_E2E_REPORT_PATH") ?? "",
+            Environment.GetEnvironmentVariable("CDC_API_E2E_INVOCATION_ID") ?? ""
+        );
         await _context.InitializeAsync(token);
+        await WriteDiagnosticAsync($"Attachment:effectiveSchema={_context.EffectiveSchemaHash}");
+        await WriteDiagnosticAsync($"Attachment:runtime={Environment.Version}");
+        await WriteDiagnosticAsync($"Attachment:pageSize={_context.ConfiguredPageSize}");
         return CdcScenarioIdentity.FromBinding(_context.Request.Binding);
     }
 

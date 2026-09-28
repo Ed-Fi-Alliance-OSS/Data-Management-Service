@@ -1192,3 +1192,45 @@ recovery cannot certify its unobserved interval. Controller-only results supply 
 DMS-1325 API evidence. Retirement, topic cleanup, tombstones and cleaner observations
 supply no platform purge proof. Production performance, cloud installation and
 independent consumer products/certification remain outside this qualification.
+
+## API-to-Kafka scenario traceability (DMS-1325, T19)
+
+The single `Given_CdcApiE2E` fixture runs these phases in order on one admitted
+binding. The [ApiE2E runner](../../eng/ci/Invoke-CdcQualification.ps1) exports
+`<Provider>-ApiE2E/cdc-api-e2e.json`, correlated with `qualification.json` by
+`InvocationId`, provider, opaque complete-binding hash and generation. The scenario
+report owns phase outcomes; the runner owns setup, test-process, teardown and export
+outcomes. Diagnostic checkpoints do not determine pass/fail.
+
+| Scenario | Applicable invariant portions | Bounded evidence |
+| --- | --- | --- |
+| CDC-E2E-01 Student CRUD | CDC-INV-03 durable work/publication; CDC-INV-06 capture exclusion; CDC-INV-07 complete records/deletion | Held work/cache versions, provider fence completion, per-partition consumer boundaries and phase result |
+| CDC-E2E-02 descriptor CRUD | CDC-INV-03 durable work/publication; CDC-INV-06 capture exclusion; CDC-INV-07 descriptor records/deletion | Same observations through descriptor API and independent descriptor envelope assertions |
+| CDC-E2E-03 overlap | CDC-INV-03 stale candidate cannot acknowledge newer work; CDC-INV-07 convergence | Materialized N, API N+1, actual stale writer outcome, next-attempt hold, cache/work versions and consumer boundaries |
+| CDC-E2E-04 delete before projection | CDC-INV-03 held work deletion; CDC-INV-07 no resurrection | Tombstone partition/offset before projector release, subsequent fence and consumer boundaries |
+| CDC-E2E-05 online rebuild | CDC-INV-03 supported rebuild; CDC-INV-06 capture exclusion; CDC-INV-07 retained consumer state; CDC-INV-11 preserved continuity | Completed administrative phases, repopulated/drained versions, explicit baseline, fenced boundaries and phase result |
+| CDC-E2E-06 executor restart | CDC-INV-03 retained work/multiple pages/no startup inventory; CDC-INV-07 convergence | Disposal/replacement and API interval timestamps, actual page size/counts, baseline/inventory operation counts and fenced boundaries |
+| CDC-E2E-07 evidence unavailable | CDC-INV-06 unchanged capture; CDC-INV-07 subsequent publication; CDC-INV-11 unknown/rejection/recovery | Unavailable-offset rejection markers, API held work, restoration and fresh publication checkpoints |
+| CDC-E2E-08 history loss (last) | CDC-INV-06 capture inventory before loss; CDC-INV-07 pre-loss publication; CDC-INV-11 durable loss/containment | Verified stop/offset deletion, concrete loss reason/persistence, fresh-controller rejection, actual replay-read count, post-containment API work |
+
+The same artifact contains the requested qualified Connect manifest digest, actual
+running provider/broker/Connect/HTTP-host image IDs and available manifest digests,
+fixture .NET version, effective schema hash, configured projector page size and
+observed replacement pages. Image IDs are Docker content hashes; manifest digests
+identify the configured immutable reference, and remain distinct. Cleanup records
+owned resource counts, governed versus partial-start cleanup, and verified resource
+absence without exporting resource names. Missing/partial collection is explicit.
+
+Checkpoint journals persist after each observation, so interrupted processes retain
+a prefix even without a TRX. Export accepts only fixed checkpoint names and numeric,
+enum, timestamp or hash fields; it bounds journals to 2,048 checkpoints of 512
+characters, runtime input files to 16 KiB and image arrays to eight entries. Oversize,
+wrong-invocation and rejected data are identified, never copied as raw output.
+Private settings, handoff, logs, auth headers, connection strings and document bodies
+are excluded. Original execution, cleanup and export failures remain separate.
+
+PostgreSQL full qualification: **pending T23**. SQL Server full qualification:
+**pending T24**. T19's parser, privacy, interruption and delegation tests provide no
+live qualification claim. Detailed E18 paging/query-plan/repair matrices, sibling
+message/consumer conformance, strict native-recovery fencing and same-topic recovery
+after terminal loss remain outside this evidence.

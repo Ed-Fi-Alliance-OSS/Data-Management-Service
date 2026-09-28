@@ -13,6 +13,7 @@ function New-CdcApiRunnerReport {
     [OutputType([Collections.Specialized.OrderedDictionary])]
     param([string] $Provider)
     [ordered]@{ Name = "$Provider-ApiE2E"; InvocationId = [guid]::NewGuid().ToString('D'); Provider = $Provider
+        RequestedConnectDigest = $(if ($env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE -cmatch '@(sha256:[a-f0-9]{64})\z') { $Matches[1] } else { '' })
         Status = 'Running'; Reason = 'None'; CleanupFailure = 'None'; ExportFailure = 'None'; ReportFailure = 'None'
         Total = 8; Passed = 0; Failed = 0; Skipped = 0
         Stages = [ordered]@{ Setup = 'NotRun'; Test = 'NotRun'; Teardown = 'NotRun'; Export = 'NotRun' }
@@ -37,6 +38,7 @@ function Get-CdcApiScenarioReport {
         }
         if ($report.Attachment.Id -cne 'Attachment' -or $report.Disposal.Id -cne 'Disposal') { return $result }
         for ($i = 0; $i -lt 8; $i++) { if ($report.Scenarios[$i].Id -cne $expected[$i]) { return $result } }
+        if ($report.InvocationId -cne $Runner.InvocationId) { $result.Reason = 'ScenarioIdentityMismatch'; return $result }
         $result.Cases = @($report.Scenarios | ForEach-Object { @{ Id = $_.Id; Outcome = $_.Outcome; Failure = $_.Failure } })
         $result.Attachment = $report.Attachment.Outcome; $result.Disposal = $report.Disposal.Outcome
         $result.Reason = 'ScenarioIdentityMismatch'
@@ -63,10 +65,34 @@ function Export-CdcApiEvidence {
     param([string] $Path, [string] $Destination, [Collections.IDictionary] $Runner)
     # Construct every published field, including partial reports, from bounded enums/identities.
     $validated = Get-CdcApiScenarioReport -Path $Path -Runner $Runner -Process $Runner.ProcessResult
-    $safe = [ordered]@{ Version = 1; InvocationId = $Runner.InvocationId; Provider = $Runner.Provider
-        BindingId = $Runner.BindingId; Generation = $Runner.Generation
-        ReportValidation = $validated.Reason; Stages = $Runner.Stages; Attachment = $validated.Attachment; Disposal = $validated.Disposal; Scenarios = $validated.Cases }
-    $safe | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $Destination 'cdc-api-e2e.json')
+    $invocation = if ($Runner.InvocationId -is [string] -and $Runner.InvocationId -cmatch '\A[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\z') { $Runner.InvocationId } else { '' }
+    $provider = ConvertTo-CdcApiEnum $Runner.Provider @('Postgresql', 'Mssql')
+    $binding = if ($Runner.BindingId -is [string] -and $Runner.BindingId -cmatch '\A[a-f0-9]{64}\z') { $Runner.BindingId } else { '' }
+    $generation = if ($Runner.Generation -is [long] -or $Runner.Generation -is [int]) { [Math]::Max(0, $Runner.Generation) } else { 0 }
+    $stages = [ordered]@{}
+    foreach ($name in @('Setup', 'Test', 'Teardown', 'Export')) {
+        $stages[$name] = ConvertTo-CdcApiEnum $Runner.Stages[$name] @('NotRun', 'Running', 'Passed', 'Failed')
+    }
+    $failures = [ordered]@{}
+    foreach ($name in @('Reason', 'CleanupFailure', 'ExportFailure', 'ReportFailure')) {
+        $failures[$name] = ConvertTo-CdcApiEnum $Runner[$name] @('None', 'PrerequisiteFailed', 'ScenarioExecutionFailed',
+            'AttachmentFailed', 'CleanupFailed', 'ExportFailed', 'ReportPersistenceFailed', 'ScenarioReportMissing',
+            'ScenarioReportInvalid', 'ScenarioIdentityMismatch', 'ScenarioIncomplete', 'RunnerStageFailed', 'TestProcessFailed')
+    }
+    $process = [ordered]@{ Status = ConvertTo-CdcApiEnum $Runner.ProcessResult.Status @('Passed', 'Failed', 'ReportUnavailable', 'ReportIncomplete') }
+    foreach ($name in @('Total', 'Passed', 'Failed', 'Skipped')) {
+        $value = $Runner.ProcessResult[$name]
+        $process[$name] = if (($value -is [int] -or $value -is [long]) -and $value -ge 0 -and $value -le 100000) { $value } else { 0 }
+    }
+    $safe = [ordered]@{ Version = 1; InvocationId = $invocation; Provider = $provider
+        BindingId = $binding; Generation = $generation
+        RequestedConnectDigest = $(if ($Runner.RequestedConnectDigest -is [string] -and $Runner.RequestedConnectDigest -cmatch '\Asha256:[a-f0-9]{64}\z') { $Runner.RequestedConnectDigest } else { '' })
+        ReportValidation = $validated.Reason; Stages = $stages; Failures = $failures; Process = $process
+        Attachment = $validated.Attachment; Disposal = $validated.Disposal; Scenarios = $validated.Cases
+        Traceability = @(Get-CdcApiTraceability)
+        Diagnostics = Get-CdcApiDiagnostic -Path "$Path.checkpoints" -InvocationId $invocation
+        RuntimeInputs = Get-CdcApiRuntimeInput -Path (Join-Path (Split-Path $Path -Parent) 'runtime-inputs.json') -InvocationId $invocation }
+    $safe | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $Destination 'cdc-api-e2e.json')
 }
 
 function Invoke-CdcApiProcess {
