@@ -89,7 +89,7 @@ with `Failure: None`. Wrapper setup/teardown, process exit/TRX, and export outco
 belong in the existing runner qualification summary and must independently pass;
 they are never fields in this fixture-owned report.
 
-## CRUD and overlap checkpoints
+## CRUD, overlap and delete-before-projection checkpoints
 
 CDC-E2E-01 (Student) and CDC-E2E-02 (SchoolTypeDescriptor) share the same private CRUD
 sequence and hold the designated projector during POST and PUT. The create checkpoint
@@ -126,6 +126,19 @@ fences and every Kafka partition boundary. N need not appear in Kafka. An API de
 and fenced consumption clean up the scenario resource. Payload-free checkpoints
 appear in materialized-N, API-N+1, N-completed, next-blocked, converged order. The
 fixed runner accounts for this phase using the existing CDC-E2E-03 report entry.
+
+CDC-E2E-04 creates a Student with its first work item held before the production
+processor. It observes matching durable work, no cache row and the current HTTP
+body, then deletes through HTTP and verifies canonical/cache/work absence. A
+provider-fenced scan must consume the keyed record-level null tombstone before
+releasing the gate. Its partition/offset checkpoint precedes the executor release
+and drain checkpoint. After the held production call drains, a second provider
+fence and bounded scan verify no resurrection, followed by fresh database absence
+checks. Both scans retain one consumer and all partition positions; every upsert
+is rejected, including transient upsert-then-delete pairs. Replayed tombstones and
+compacted gaps are allowed. An empty scan cannot satisfy initial deletion evidence.
+The existing CDC-E2E-04 report entry records the result; full live provider evidence
+remains part of T23/T24 qualification.
 
 ## Development checkpoints
 

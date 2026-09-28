@@ -35,6 +35,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
     private int _active;
     private long _documentId;
     private bool _paused;
+    private bool _heldProcessingFailed;
     private bool _disposed;
     private bool _overlap;
     private bool _overlapStarted;
@@ -81,6 +82,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             _released = NewSignal();
             _arrived = NewArrival();
             _paused = true;
+            _heldProcessingFailed = false;
         }
     }
 
@@ -166,6 +168,31 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         }
     }
 
+    /// <summary>Resume an arrived pause and require the held real processor call to finish normally.
+    /// An expired/cancelled hold or a provider backoff cannot count as a successful resumed drain.</summary>
+    public async Task ResumeHeldProcessingAsync(CancellationToken token)
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_paused || !_arrived.Task.IsCompletedSuccessfully || _active == 0 || _heldProcessingFailed)
+            {
+                throw new InvalidOperationException(
+                    "A live held processor call is required before resuming."
+                );
+            }
+            Release();
+        }
+        await WaitUntilIdleAsync(token).ConfigureAwait(false);
+        lock (_sync)
+        {
+            if (_heldProcessingFailed)
+            {
+                throw new InvalidOperationException("The held processor call did not complete normally.");
+            }
+        }
+    }
+
     public Task WaitUntilIdleAsync(CancellationToken token)
     {
         lock (_sync)
@@ -182,6 +209,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
     )
     {
         Task release;
+        bool hold;
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -192,7 +220,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             bool selected =
                 request.TargetContext.TargetKey == _targetKey
                 && (_documentId == 0 || request.WorkItem.DocumentId == _documentId);
-            bool hold = selected && (_paused || (_overlap && _overlapStarted));
+            hold = selected && (_paused || (_overlap && _overlapStarted));
             if (selected && _overlap && !_overlapStarted)
             {
                 _documentId = request.WorkItem.DocumentId;
@@ -215,7 +243,26 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             );
             await release.WaitAsync(_timeout, linked.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
-            return await inner.ProcessItemAsync(request, linked.Token).ConfigureAwait(false);
+            var result = await inner.ProcessItemAsync(request, linked.Token).ConfigureAwait(false);
+            if (hold && result.Outcome != DocumentCacheProjectionItemProcessOutcome.Continue)
+            {
+                lock (_sync)
+                {
+                    _heldProcessingFailed = true;
+                }
+            }
+            return result;
+        }
+        catch
+        {
+            if (hold)
+            {
+                lock (_sync)
+                {
+                    _heldProcessingFailed = true;
+                }
+            }
+            throw;
         }
         finally
         {
