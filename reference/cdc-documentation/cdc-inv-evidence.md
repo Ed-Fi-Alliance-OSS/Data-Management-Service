@@ -1230,20 +1230,31 @@ Private settings, handoff, logs, auth headers, connection strings and document b
 are excluded. Original execution, cleanup and export failures remain separate.
 
 PostgreSQL full qualification: **blocked T23**, with zero scenarios executed.
-The latest [runner report](evidence/dms1325-t23-postgresql-handoff-blocked/qualification.json)
-and [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-handoff-blocked/cdc-api-e2e.json)
-record successful admission and initial DMS health, followed by failure during
-HTTP-only rollout before handoff publication. The underlying exception was discarded;
-its exact cause remains unproven. Governed teardown and export passed, with five
-owned containers and three volumes verified absent. See the reproducible
-[run inputs and limits](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json).
-The recorded T31 follow-up owns the bounded rollout investigation and regression
-before another qualification attempt. T23 and T24 remain incomplete.
+The latest [runner report](evidence/dms1325-t23-postgresql-attachment-blocked/qualification.json)
+and [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-attachment-blocked/cdc-api-e2e.json)
+record successful setup, including admission and HTTP-only handoff, at revision
+`95ef6dd94fa1395142c6b8a48fe0ee417f638c1c`. Fixture attachment then failed at
+`RuntimeIdentitySchema` with category `Error`. The preceding provider connection,
+Kafka endpoint, Connect status and metrics checks completed. The fixture discards
+the underlying exception, so the exact operation and cause within this boundary
+remain unproven; T34 owns that bounded diagnosis and regression before rerunning.
+Source/work/cache/sequence observations required for T33 live evidence were not reached.
 
-The earlier [admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json)
-remains historical evidence of the Connect rebalance/read-back blocker; it is not
-the failure stage of this latest run. Neither run supplies API-to-Kafka qualification
-evidence. SQL Server full qualification:
+Fixture disposal, governed teardown and export passed, with five owned containers
+and three volumes verified absent; an independent Docker inventory also found no
+remaining `dms-local` resources. All eight scenario outcomes are `NotRun`.
+The runner's eight failed required outcomes are not eight executed scenario failures.
+The exported `ScenarioIdentityMismatch` follows from attachment failing before the
+fixture populated its identity; the attachment failure remains separately recorded.
+See the reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json).
+T23 and T24 remain incomplete.
+
+The earlier [HTTP-only rollout failure](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json)
+is historical evidence: T31 diagnosed the `PATH_BASE` normalization mismatch and
+corrected it in `b50ecaf7b`. This latest run passed that handoff, but does not supply
+passing API-to-Kafka qualification. The earlier
+[admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json) also remains
+historical evidence of the Connect rebalance/read-back blocker. SQL Server full qualification:
 **pending T24**. T19's parser, privacy, interruption and delegation tests provide no
 live qualification claim. Detailed E18 paging/query-plan/repair matrices, sibling
 message/consumer conformance, strict native-recovery fencing and same-topic recovery

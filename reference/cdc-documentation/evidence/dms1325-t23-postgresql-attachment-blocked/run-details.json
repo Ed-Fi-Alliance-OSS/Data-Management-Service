@@ -1,0 +1,80 @@
+{
+  "Story": "DMS-1325",
+  "Task": "T23",
+  "Status": "Blocked",
+  "TestedRevision": "95ef6dd94fa1395142c6b8a48fe0ee417f638c1c",
+  "InvocationId": "232baa9e-a44a-4749-b0f6-9b87ae0b4349",
+  "Command": "pwsh -NoProfile ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-postgresql-t23-after-t33",
+  "Environment": {
+    "CDC_RUNBOOK_OWNED_STACK": "1",
+    "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0"
+  },
+  "Host": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "DockerBuildx": "0.37.1"
+  },
+  "PullImages": false,
+  "TestProcessStartedAt": "2026-09-28T14:09:48.0476419-05:00",
+  "TestProcessFinishedAt": "2026-09-28T14:09:59.2455665-05:00",
+  "RequiredScenarios": 8,
+  "ExecutedScenarios": 0,
+  "PassedScenarios": 0,
+  "FailureStage": "Attachment",
+  "AttachmentBoundary": "RuntimeIdentitySchema",
+  "FailureCode": "Error",
+  "Observations": {
+    "SchemaToolsReleaseBuild": "Passed",
+    "SchemaToolsDebugBuild": "Passed",
+    "AdmissionAndHttpOnlyHandoff": "Passed",
+    "ProviderAttachmentProbe": "Passed",
+    "KafkaAdvertisedEndpoints": "Passed",
+    "ConnectStatusRead": "Passed",
+    "MetricsEndpoint": "Passed",
+    "FixtureAttachment": "Failed",
+    "FixtureDisposal": "Passed",
+    "GovernedTeardown": "Passed",
+    "Export": "Passed",
+    "IndependentDmsLocalResourceAbsence": "Verified",
+    "T33SourceWorkCacheSequenceLiveEvidence": "NotReached"
+  },
+  "ResolvedPriorBlocker": {
+    "Task": "T31",
+    "CorrectionRevision": "b50ecaf7b",
+    "Cause": "PATH_BASE normalization",
+    "LiveHttpOnlyHandoff": "Passed"
+  },
+  "Artifacts": [
+    {
+      "Path": "cdc-api-e2e.json",
+      "Sha256": "9613654b3398117599789ce21ee966b42443f92b5621006786b0e98860b63d6f"
+    },
+    {
+      "Path": "qualification.json",
+      "Sha256": "a074d3bf4f977516027586b05ee327fe55261768836684bc8ceb31498b3ed70b"
+    },
+    {
+      "Path": "qualified-image.json",
+      "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+    }
+  ],
+  "Limits": [
+    "Attachment discards the original exception; the exact operation and cause inside RuntimeIdentitySchema remain unproven",
+    "Provider, Kafka, Connect and metrics attachment boundaries completed; document observer reads and all eight scenarios were not reached",
+    "Scenario identity remains empty because attachment failed; exported ScenarioIdentityMismatch is secondary to the preserved attachment failure",
+    "Runner Failed=8 counts missing required outcomes, not eight executed scenario failures; the single NUnit orchestrator failed",
+    "Fixture runtime version and effective schema hash are unavailable because attachment did not finish",
+    "No rerun, prerequisite relaxation or production fix attempted; T23 remains incomplete and T24 was not attempted"
+  ],
+  "FollowUp": {
+    "Task": "T34",
+    "Scope": "Diagnose and repair the runtime identity/schema attachment failure after successful HTTP-only handoff",
+    "RequiredEvidence": [
+      "Identify the exact operation and cause with private diagnostics or a faithful isolated reproduction; do not infer a cause from the coarse boundary",
+      "Add focused regression coverage for the confirmed defect while preserving all unstarted-runtime readiness prerequisites",
+      "Keep raw exceptions, credentials, configuration and response bodies private; shared diagnostics accept only bounded allowlisted codes",
+      "Use the existing T23/T24 runner for full provider qualification after the bounded correction; no blind retry or separate live matrix"
+    ]
+  }
+}
