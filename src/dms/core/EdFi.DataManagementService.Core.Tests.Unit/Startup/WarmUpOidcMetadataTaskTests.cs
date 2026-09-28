@@ -201,6 +201,46 @@ public class WarmUpOidcMetadataTaskTests
         }
     }
 
+    /// <summary>
+    /// Pins the startup comparison as exact: a trimmed or case-insensitive comparison would let DMS
+    /// start against an issuer the request path then rejects on every call.
+    /// </summary>
+    [TestFixture]
+    public class Given_Metadata_Issuer_Differs_Only_By_A_Trailing_Slash : WarmUpOidcMetadataTaskTests
+    {
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exception = await ExecuteWithMetadataIssuer(Issuer + "/");
+        }
+
+        [Test]
+        public void It_throws_an_InvalidOperationException()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Metadata_Issuer_Differs_Only_By_Letter_Case : WarmUpOidcMetadataTaskTests
+    {
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exception = await ExecuteWithMetadataIssuer(Issuer.ToUpperInvariant());
+        }
+
+        [Test]
+        public void It_throws_an_InvalidOperationException()
+        {
+            _exception.Should().BeOfType<InvalidOperationException>();
+        }
+    }
+
     [TestFixture]
     public class Given_Metadata_Issuer_Containing_Line_Breaks : WarmUpOidcMetadataTaskTests
     {

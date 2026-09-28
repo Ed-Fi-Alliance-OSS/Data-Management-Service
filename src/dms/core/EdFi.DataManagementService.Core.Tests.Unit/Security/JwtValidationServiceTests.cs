@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Utilities;
 using FakeItEasy;
 using FluentAssertions;
@@ -1261,30 +1262,6 @@ public class JwtValidationServiceTests
         return principal;
     }
 
-    private sealed class CapturingLogger : ILogger<JwtValidationService>
-    {
-        public List<(LogLevel Level, IReadOnlyDictionary<string, object?> Properties)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Dictionary<string, object?> properties = state is IEnumerable<KeyValuePair<string, object?>> pairs
-                ? pairs.ToDictionary(pair => pair.Key, pair => pair.Value)
-                : [];
-            Entries.Add((logLevel, properties));
-        }
-    }
-
     [TestFixture]
     [Parallelizable]
     public class Given_Metadata_Issuer_Differs_From_Configured_Authority : JwtValidationServiceTests
@@ -1292,12 +1269,12 @@ public class JwtValidationServiceTests
         private ClaimsPrincipal? _principal = null;
         private ClientAuthorizations? _clientAuthorizations = null;
         private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager = null!;
-        private CapturingLogger _logger = null!;
+        private RecordingLogger<JwtValidationService> _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _logger = new CapturingLogger();
+            _logger = new RecordingLogger<JwtValidationService>();
             var (service, configurationManager, options, _, tokenHandler, _) = CreateService(logger: _logger);
             _configurationManager = configurationManager;
 
@@ -1337,7 +1314,7 @@ public class JwtValidationServiceTests
         public void It_logs_an_error_naming_the_discovered_issuer()
         {
             _logger
-                .Entries.Should()
+                .Records.Should()
                 .ContainSingle(entry => entry.Level == LogLevel.Error)
                 .Which.Properties["DiscoveredIssuer"]
                 .Should()
@@ -1348,7 +1325,7 @@ public class JwtValidationServiceTests
         public void It_logs_an_error_naming_the_configured_authority()
         {
             _logger
-                .Entries.Should()
+                .Records.Should()
                 .ContainSingle(entry => entry.Level == LogLevel.Error)
                 .Which.Properties["ConfiguredAuthority"]
                 .Should()
@@ -1554,12 +1531,12 @@ public class JwtValidationServiceTests
     [Parallelizable]
     public class Given_A_Mismatched_Metadata_Issuer_Containing_Line_Breaks : JwtValidationServiceTests
     {
-        private CapturingLogger _logger = null!;
+        private RecordingLogger<JwtValidationService> _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _logger = new CapturingLogger();
+            _logger = new RecordingLogger<JwtValidationService>();
             var (service, configurationManager, _, _, _, signingKey) = CreateService(logger: _logger);
 
             A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
@@ -1575,7 +1552,7 @@ public class JwtValidationServiceTests
         public void It_logs_the_discovered_issuer_sanitized()
         {
             _logger
-                .Entries.Should()
+                .Records.Should()
                 .ContainSingle(entry => entry.Level == LogLevel.Error)
                 .Which.Properties["DiscoveredIssuer"]
                 .Should()

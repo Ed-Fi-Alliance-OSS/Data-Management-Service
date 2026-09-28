@@ -5,6 +5,7 @@
 
 using System.Net;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,30 +35,6 @@ public class HttpDocumentRetrieverTests
             return Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) }
             );
-        }
-    }
-
-    private sealed class CapturingLogger : ILogger<HttpDocumentRetriever>
-    {
-        public List<(LogLevel Level, IReadOnlyDictionary<string, object?> Properties)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Dictionary<string, object?> properties = state is IEnumerable<KeyValuePair<string, object?>> pairs
-                ? pairs.ToDictionary(pair => pair.Key, pair => pair.Value)
-                : [];
-            Entries.Add((logLevel, properties));
         }
     }
 
@@ -153,12 +130,12 @@ public class HttpDocumentRetrieverTests
     [Parallelizable]
     public class Given_A_Foreign_Address_Refused_With_A_Logger : HttpDocumentRetrieverTests
     {
-        private CapturingLogger _logger = null!;
+        private RecordingLogger<HttpDocumentRetriever> _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _logger = new CapturingLogger();
+            _logger = new RecordingLogger<HttpDocumentRetriever>();
             await Fetch("http://evil.example/\r\n.well-known/jwks.json", _logger);
         }
 
@@ -166,7 +143,7 @@ public class HttpDocumentRetrieverTests
         public void It_logs_an_error_naming_the_sanitized_address()
         {
             _logger
-                .Entries.Should()
+                .Records.Should()
                 .ContainSingle(entry => entry.Level == LogLevel.Error)
                 .Which.Properties["DocumentAddress"]
                 .Should()
@@ -177,7 +154,7 @@ public class HttpDocumentRetrieverTests
         public void It_logs_an_error_naming_the_allowed_origin()
         {
             _logger
-                .Entries.Should()
+                .Records.Should()
                 .ContainSingle(entry => entry.Level == LogLevel.Error)
                 .Which.Properties["AllowedOrigin"]
                 .Should()
@@ -316,12 +293,12 @@ public class HttpDocumentRetrieverTests
         private const string OnOriginJwksUri =
             "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/certs";
 
-        private CapturingLogger _logger = null!;
+        private RecordingLogger<HttpDocumentRetriever> _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _logger = new CapturingLogger();
+            _logger = new RecordingLogger<HttpDocumentRetriever>();
             var retriever = new HttpDocumentRetriever(
                 new HttpClient(new RecordingHandler()),
                 _metadataAddress,
@@ -345,7 +322,7 @@ public class HttpDocumentRetrieverTests
         public void It_logs_the_first_refusal_of_each_episode_at_error_and_repeats_at_debug()
         {
             _logger
-                .Entries.Select(entry => entry.Level)
+                .Records.Select(entry => entry.Level)
                 .Should()
                 .Equal(LogLevel.Error, LogLevel.Debug, LogLevel.Error);
         }
@@ -362,13 +339,13 @@ public class HttpDocumentRetrieverTests
     {
         private Exception? _exception;
         private RecordingHandler _handler = null!;
-        private CapturingLogger _logger = null!;
+        private RecordingLogger<HttpDocumentRetriever> _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
             _handler = new RecordingHandler();
-            _logger = new CapturingLogger();
+            _logger = new RecordingLogger<HttpDocumentRetriever>();
             var retriever = new HttpDocumentRetriever(
                 new HttpClient(_handler),
                 new Uri("https://idp.example/realms/edfi/.well-known/openid-configuration"),
@@ -391,7 +368,7 @@ public class HttpDocumentRetrieverTests
         [Test]
         public void It_logs_the_refusal_at_error()
         {
-            _logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error);
+            _logger.Records.Should().ContainSingle(entry => entry.Level == LogLevel.Error);
         }
 
         [Test]
