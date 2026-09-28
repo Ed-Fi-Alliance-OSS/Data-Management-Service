@@ -943,22 +943,14 @@ public class CachedApplicationContextProviderTests
             _reloadResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_reloadedContext));
         }
 
-        /// <summary>
-        /// Documents rather than guesses the actual guaranteed behavior: the Get's HybridCache factory
-        /// was already in flight when the reload wrote its own result, and HybridCache commits a
-        /// factory's result when that factory finishes regardless of an intervening direct write for
-        /// the same key. So the fetch that was already running when the reload happened is the one
-        /// whose result the cache holds afterwards - the Get's context, not the reload's. This is a
-        /// pre-existing, inherent property of layering a request-scoped reload on top of a shared,
-        /// factory-based cache; it is not a regression this change introduces, and callers only reach
-        /// it if a Get for the same key was already mid-flight at the moment a reload for that exact
-        /// key ran.
-        /// </summary>
         [Test]
-        public void It_Reflects_Whichever_Fetch_Completes_Last_Rather_Than_The_Reload()
+        public void It_Serves_A_Later_Request_The_Reloaded_Context_Not_The_Older_Fetch()
         {
-            var success = _freshScopeResult.Should().BeOfType<ApplicationContextResult.Success>().Subject;
-            success.ApplicationContext.Id.Should().Be(_getContext.Id);
+            // The Get's fetch started before the reload and finished after it; its older result must
+            // not replace what the reload wrote.
+            _freshScopeResult
+                .Should()
+                .BeEquivalentTo(new ApplicationContextResult.Success(_reloadedContext));
         }
     }
 

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,29 @@ public sealed class CachedApplicationContextProvider(
     // dictionary is touched, so one caller cancelling never poisons what a later caller in the same
     // scope sees.
     private readonly ConcurrentDictionary<RequestLookupKey, ApplicationContextResult> _requestResults = [];
+
+    // Reload generation per cache key, shared by every provider instance over the same HybridCache.
+    // A reload advances the generation and writes under the new key, so a fetch that was already in
+    // flight when the reload began finishes into the previous generation's key, which no later
+    // lookup reads, instead of overwriting the reload's result. Generation 0 is the plain key.
+    private static readonly ConditionalWeakTable<
+        HybridCache,
+        ConcurrentDictionary<string, long>
+    > _reloadGenerationsByCache = [];
+
+    private ConcurrentDictionary<string, long> ReloadGenerations =>
+        _reloadGenerationsByCache.GetValue(hybridCache, static _ => new ConcurrentDictionary<string, long>());
+
+    private string GetCurrentCacheKey(string clientId, string? tenant)
+    {
+        string baseKey = GetCacheKey(clientId, tenant);
+        return ReloadGenerations.TryGetValue(baseKey, out long generation)
+            ? GetGenerationCacheKey(baseKey, generation)
+            : baseKey;
+    }
+
+    private static string GetGenerationCacheKey(string baseKey, long generation) =>
+        generation == 0 ? baseKey : $"{baseKey}:reload:{generation}";
 
     /// <summary>
     /// Gets the request-scoped memoization key for a client ID and tenant.
@@ -71,7 +95,7 @@ public sealed class CachedApplicationContextProvider(
             return memoized;
         }
 
-        string cacheKey = GetCacheKey(clientId, tenant);
+        string cacheKey = GetCurrentCacheKey(clientId, tenant);
         ApplicationContextResult result = await GetOrCreateResultAsync(
             cacheKey,
             clientId,
@@ -110,13 +134,16 @@ public sealed class CachedApplicationContextProvider(
         // result once the reload has started.
         _requestResults.TryRemove(key, out _);
 
-        string cacheKey = GetCacheKey(clientId, tenant);
+        string baseKey = GetCacheKey(clientId, tenant);
+        string previousCacheKey = GetCurrentCacheKey(clientId, tenant);
+        long generation = ReloadGenerations.AddOrUpdate(baseKey, 1, static (_, current) => current + 1);
+        string cacheKey = GetGenerationCacheKey(baseKey, generation);
 
         // The pre-reload entry is removed before the Configuration Service is asked, and neither
         // cache write takes the caller's token: a reload that has started must never leave the old
         // entry behind, and one the Configuration Service has answered must record that answer even
         // if its caller has since gone.
-        await hybridCache.RemoveAsync(cacheKey, CancellationToken.None);
+        await hybridCache.RemoveAsync(previousCacheKey, CancellationToken.None);
 
         // The provider is called directly rather than through HybridCache.GetOrCreateAsync: joining
         // an in-flight Get's factory here could hand the reload back pre-reload data instead of
