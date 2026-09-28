@@ -1242,9 +1242,8 @@ source/work/cache observation paths and T35's held Student create/update behavio
 The change-version sequence read, overlap and rebuild were not reached.
 
 Descriptor CRUD (`CDC-E2E-02`) failed with `Error` before its first checkpoint.
-The scenario runner discarded the underlying exception; the failing operation and
-cause remain unproven. T37 owns bounded diagnosis and regression before another
-qualification attempt. Fixture disposal, governed teardown and export passed,
+The scenario runner discarded the underlying exception; that run did not establish
+the failing operation or cause. Fixture disposal, governed teardown and export passed,
 with five owned containers and three volumes verified absent. Independent Docker
 inventory also found no remaining `dms-local` containers, volumes or networks.
 Invocation, provider, binding and generation match across the reports. See the
@@ -1252,6 +1251,19 @@ reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-descriptor-
 The runner's seven failed required outcomes count one executed failure and six
 missing outcomes. T23 and T24 remain incomplete; no unchanged retry or production
 change was attempted.
+
+T37 subsequently reproduced the failure through the existing PostgreSQL runner
+with temporary private diagnostics (invocation `b781de5b-693a-4f6b-8fcd-9605883776b0`).
+Student CRUD passed; the descriptor POST returned HTTP 403 before gate arrival or
+source/work/cache reads. The selected `E2E-NoFurtherAuthRequiredClaimSet` lacked
+the SchoolTypeDescriptor grant. The test-owned fragment now grants its four CRUD
+actions with `NoFurtherAuthorizationRequired`. A regression using the existing
+fragment composer and authorization metadata factory failed before the correction
+and passed afterward. The diagnostic run completed fixture disposal, governed
+teardown and export; independent Docker checks confirmed no remaining `dms-local`
+containers, volumes or networks. Temporary instrumentation was removed, and raw
+diagnostics remain private. This correction is not full qualification: fresh T23
+and T24 runs still must pass all eight scenarios and governed cleanup.
 
 The earlier [post-T35 Student Error](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json)
 remains historical evidence. T36 diagnosed the mismatch between the CDC binding's
