@@ -23,21 +23,9 @@ internal sealed partial class CdcApiScenarios
                 var request = _context.Request;
                 var binding = request.Binding;
                 var runtime = phase.Runtime;
-                string progressTopic = CdcArtifactNameGenerator
-                    .RecoverFromBinding(binding)
-                    .Inventory!.ProgressTopicName;
-                var starts = await CaptureAsync(ct);
+                var scanner = new ScenarioScan(this, scenarioId);
                 var consumer = new MessageContractConsumer(DateTimeOffset.UtcNow);
-                consumer.Assign(
-                    starts
-                        .Where(b => b.Topic == binding.TopicName)
-                        .Select(b => new MessageContractPartitionBounds(
-                            b.Partition,
-                            b.EndOffset,
-                            b.EndOffset
-                        ))
-                        .ToArray()
-                );
+                consumer.Assign(await scanner.InitializeAsync(ct));
                 await phase.Gate.WaitUntilIdleAsync(ct);
                 await runtime.StartProcessingAsync(ct);
                 var body = CdcApiClient.NewStudent("BeforeTerminalLoss");
@@ -54,53 +42,18 @@ internal sealed partial class CdcApiScenarios
                 );
                 var envelope = CdcEnvelopeExpectations.Create(CdcApiResource.Student, body, source);
                 await AwaitPublicationAsync(CdcApiResource.Student, source, body, ct);
-                if (binding.Provider == CdcProvider.Postgresql)
-                {
-                    await _context.Fences.FencePostgresqlSourceAsync(scenarioId + ":healthy-publication", ct);
-                }
-                else
-                {
-                    await _context.Fences.FenceSqlServerSourceAsync(scenarioId + ":healthy-publication", ct);
-                }
-                await WriteDiagnosticAsync($"{scenarioId}:healthy-publication:provider-fence-completed");
-                var ends = await CaptureAsync(ct);
-                var scan = await _context.Kafka.ConsumeThroughAsync(
-                    ends.Select(end =>
-                            end with
-                            {
-                                StartOffset = starts
-                                    .Single(b => b.Topic == end.Topic && b.Partition == end.Partition)
-                                    .EndOffset,
-                            }
-                        )
-                        .ToArray(),
-                    ct
-                );
+                var scan = await scanner.ScanAsync("healthy-publication", ct);
                 CdcCrudAssertions.ApplyPublicScan(
                     binding,
                     uuid,
                     new Dictionary<long, JsonElement> { [source.ContentVersion] = envelope },
-                    new(
-                        scan.Records.Where(r => r.Topic == binding.TopicName).ToArray(),
-                        scan.CompletedBoundaries.Where(b => b.Topic == binding.TopicName).ToArray()
-                    ),
+                    scan,
                     consumer,
                     false
                 );
                 consumer.Documents.Keys.Should().Equal(uuid.ToString("D"));
                 consumer.Documents[uuid.ToString("D")].ContentVersion.Should().Be(source.ContentVersion);
                 MessageContractJson.ShouldEqual(consumer.Documents[uuid.ToString("D")].Envelope, envelope);
-                foreach (var record in scan.Records.Where(r => r.Topic == progressTopic))
-                {
-                    MessageContractProgressAssertions.AssertHeartbeat(binding, record);
-                }
-                foreach (var bound in scan.CompletedBoundaries)
-                {
-                    await EventAsync(
-                        $"healthy-publication:{(bound.Topic == binding.TopicName ? "public" : "progress")}:partition={bound.Partition}:start={bound.StartOffset}:end={bound.EndOffset}"
-                    );
-                }
-                await _context.AssertTopicInventoryAsync(ct);
                 await _context.Provider.AssertCaptureInventoryAsync(ct);
                 await _context.Fences.AssertConnectorIncludeListAsync(ct);
                 using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
@@ -262,14 +215,6 @@ internal sealed partial class CdcApiScenarios
                     await phase.StopRuntimeAsync();
                 }
                 return true;
-
-                async Task<IReadOnlyList<MessageContractKafkaBoundary>> CaptureAsync(
-                    CancellationToken cancellation
-                ) =>
-                    [
-                        .. await _context.Kafka.CaptureKafkaBoundariesAsync(binding.TopicName, cancellation),
-                        .. await _context.Kafka.CaptureKafkaBoundariesAsync(progressTopic, cancellation),
-                    ];
 
                 Task EventAsync(string name) => WriteDiagnosticAsync($"{scenarioId}:{name}");
             },

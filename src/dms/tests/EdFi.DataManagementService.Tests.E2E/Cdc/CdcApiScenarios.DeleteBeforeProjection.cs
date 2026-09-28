@@ -19,21 +19,9 @@ internal sealed partial class CdcApiScenarios
             {
                 const string scenarioId = "CDC-E2E-04";
                 var binding = _context.Request.Binding;
-                string progressTopic = CdcArtifactNameGenerator
-                    .RecoverFromBinding(binding)
-                    .Inventory!.ProgressTopicName;
-                var positions = await CaptureAsync(ct);
+                var scanner = new ScenarioScan(this, scenarioId);
                 var consumer = new MessageContractConsumer(DateTimeOffset.UtcNow);
-                consumer.Assign(
-                    positions
-                        .Where(b => b.Topic == binding.TopicName)
-                        .Select(b => new MessageContractPartitionBounds(
-                            b.Partition,
-                            b.EndOffset,
-                            b.EndOffset
-                        ))
-                        .ToArray()
-                );
+                consumer.Assign(await scanner.InitializeAsync(ct));
                 await phase.Gate.WaitUntilIdleAsync(ct);
                 phase.Gate.Pause();
                 try
@@ -65,7 +53,10 @@ internal sealed partial class CdcApiScenarios
                         phase.Gate,
                         async cancellation =>
                         {
-                            var deleted = await ScanAsync("tombstone-consumed-while-held", cancellation);
+                            var deleted = await scanner.ScanAsync(
+                                "tombstone-consumed-while-held",
+                                cancellation
+                            );
                             CdcDeleteBeforeProjectionAssertions.ApplyScan(
                                 binding,
                                 uuid,
@@ -84,7 +75,7 @@ internal sealed partial class CdcApiScenarios
 
                     // Drain the held production call before fencing source progress and Kafka ends.
                     // This detects transient resurrection as well as a cache row left behind.
-                    var resumed = await ScanAsync("after-projector-drain", ct);
+                    var resumed = await scanner.ScanAsync("after-projector-drain", ct);
                     CdcDeleteBeforeProjectionAssertions.ApplyScan(
                         binding,
                         uuid,
@@ -107,66 +98,6 @@ internal sealed partial class CdcApiScenarios
                     phase.Gate.Release();
                 }
                 return true;
-
-                async Task<IReadOnlyList<MessageContractKafkaBoundary>> CaptureAsync(
-                    CancellationToken cancellation
-                )
-                {
-                    var publicBounds = await _context.Kafka.CaptureKafkaBoundariesAsync(
-                        binding.TopicName,
-                        cancellation
-                    );
-                    var progressBounds = await _context.Kafka.CaptureKafkaBoundariesAsync(
-                        progressTopic,
-                        cancellation
-                    );
-                    return [.. publicBounds, .. progressBounds];
-                }
-
-                async Task<MessageContractKafkaScan> ScanAsync(
-                    string checkpoint,
-                    CancellationToken cancellation
-                )
-                {
-                    string label = scenarioId + ":" + checkpoint;
-                    await WriteDiagnosticAsync($"{label}:provider-fence-started");
-                    if (binding.Provider == CdcProvider.Postgresql)
-                    {
-                        await _context.Fences.FencePostgresqlSourceAsync(label, cancellation);
-                    }
-                    else
-                    {
-                        await _context.Fences.FenceSqlServerSourceAsync(label, cancellation);
-                    }
-                    await WriteDiagnosticAsync($"{label}:provider-fence-completed");
-                    var ends = await CaptureAsync(cancellation);
-                    var bounds = ends.Select(end =>
-                            end with
-                            {
-                                StartOffset = positions
-                                    .Single(p => p.Topic == end.Topic && p.Partition == end.Partition)
-                                    .EndOffset,
-                            }
-                        )
-                        .ToArray();
-                    var scan = await _context.Kafka.ConsumeThroughAsync(bounds, cancellation);
-                    foreach (var record in scan.Records.Where(r => r.Topic == progressTopic))
-                    {
-                        MessageContractProgressAssertions.AssertHeartbeat(binding, record);
-                    }
-                    await _context.AssertTopicInventoryAsync(cancellation);
-                    positions = scan.CompletedBoundaries;
-                    foreach (var bound in positions)
-                    {
-                        await WriteDiagnosticAsync(
-                            $"{label}: {(bound.Topic == binding.TopicName ? "public" : "progress")} partition={bound.Partition} start={bound.StartOffset} end={bound.EndOffset}"
-                        );
-                    }
-                    return new(
-                        scan.Records.Where(r => r.Topic == binding.TopicName).ToArray(),
-                        scan.CompletedBoundaries.Where(b => b.Topic == binding.TopicName).ToArray()
-                    );
-                }
             },
             token
         );

@@ -29,21 +29,9 @@ internal sealed partial class CdcApiScenarios
             async (phase, ct) =>
             {
                 var binding = _context.Request.Binding;
-                string progressTopic = CdcArtifactNameGenerator
-                    .RecoverFromBinding(binding)
-                    .Inventory!.ProgressTopicName;
-                var positions = await CaptureAsync(ct);
+                var scanner = new ScenarioScan(this, scenarioId);
                 var consumer = new MessageContractConsumer(DateTimeOffset.UtcNow);
-                consumer.Assign(
-                    positions
-                        .Where(b => b.Topic == binding.TopicName)
-                        .Select(b => new MessageContractPartitionBounds(
-                            b.Partition,
-                            b.EndOffset,
-                            b.EndOffset
-                        ))
-                        .ToArray()
-                );
+                consumer.Assign(await scanner.InitializeAsync(ct));
                 Dictionary<long, JsonElement> expected = [];
 
                 await _context.Provider.AssertCaptureInventoryAsync(ct);
@@ -181,21 +169,6 @@ internal sealed partial class CdcApiScenarios
                     );
                 }
 
-                async Task<IReadOnlyList<MessageContractKafkaBoundary>> CaptureAsync(
-                    CancellationToken cancellation
-                )
-                {
-                    var publicBounds = await _context.Kafka.CaptureKafkaBoundariesAsync(
-                        binding.TopicName,
-                        cancellation
-                    );
-                    var progressBounds = await _context.Kafka.CaptureKafkaBoundariesAsync(
-                        progressTopic,
-                        cancellation
-                    );
-                    return [.. publicBounds, .. progressBounds];
-                }
-
                 async Task<MessageContractKafkaScan> ScanAsync(
                     string checkpoint,
                     Guid uuid,
@@ -203,34 +176,7 @@ internal sealed partial class CdcApiScenarios
                     CancellationToken cancellation
                 )
                 {
-                    string label = scenarioId + ":" + checkpoint;
-                    await WriteDiagnosticAsync($"{label}:provider-fence-started");
-                    if (binding.Provider == CdcProvider.Postgresql)
-                    {
-                        await _context.Fences.FencePostgresqlSourceAsync(label, cancellation);
-                    }
-                    else
-                    {
-                        await _context.Fences.FenceSqlServerSourceAsync(label, cancellation);
-                    }
-                    await WriteDiagnosticAsync($"{label}:provider-fence-completed");
-                    // Provider commit fence precedes end capture. Preserve scan positions across phases,
-                    // including compacted gaps; a quiet timeout or heartbeat receipt is never a fence.
-                    var ends = await CaptureAsync(cancellation);
-                    var bounds = ends.Select(end =>
-                            end with
-                            {
-                                StartOffset = positions
-                                    .Single(p => p.Topic == end.Topic && p.Partition == end.Partition)
-                                    .EndOffset,
-                            }
-                        )
-                        .ToArray();
-                    var scan = await _context.Kafka.ConsumeThroughAsync(bounds, cancellation);
-                    var publicScan = new MessageContractKafkaScan(
-                        scan.Records.Where(r => r.Topic == binding.TopicName).ToArray(),
-                        scan.CompletedBoundaries.Where(b => b.Topic == binding.TopicName).ToArray()
-                    );
+                    var publicScan = await scanner.ScanAsync(checkpoint, cancellation);
                     CdcCrudAssertions.ApplyPublicScan(
                         binding,
                         uuid,
@@ -239,18 +185,6 @@ internal sealed partial class CdcApiScenarios
                         consumer,
                         allowTombstones
                     );
-                    foreach (var record in scan.Records.Where(r => r.Topic == progressTopic))
-                    {
-                        MessageContractProgressAssertions.AssertHeartbeat(binding, record);
-                    }
-                    await _context.AssertTopicInventoryAsync(cancellation);
-                    positions = scan.CompletedBoundaries;
-                    foreach (var bound in positions)
-                    {
-                        await WriteDiagnosticAsync(
-                            $"{label}: {(bound.Topic == binding.TopicName ? "public" : "progress")} partition={bound.Partition} start={bound.StartOffset} end={bound.EndOffset}"
-                        );
-                    }
                     return publicScan;
                 }
             },
