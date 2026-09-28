@@ -1,0 +1,56 @@
+{
+  "Story": "DMS-1325",
+  "Task": "T23",
+  "Status": "Passed",
+  "TestedRevision": "94c3df5c7f69e62d33045de5bb5173dff5b366a6",
+  "InvocationId": "bcaf3bb3-7212-42d2-87af-ba61a22b6a26",
+  "Command": "pwsh -NoProfile ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-postgresql-t23-after-t37",
+  "Environment": {
+    "CDC_RUNBOOK_OWNED_STACK": "1",
+    "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0"
+  },
+  "Host": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "DockerBuildx": "0.37.1"
+  },
+  "PullImages": false,
+  "TestProcessStartedAt": "2026-09-28T17:37:57.6522548-05:00",
+  "TestProcessFinishedAt": "2026-09-28T17:41:40.6631736-05:00",
+  "RequiredScenarios": 8,
+  "ExecutedScenarios": 8,
+  "PassedScenarios": 8,
+  "NotRunScenarios": 0,
+  "Observations": {
+    "AdmissionAndHttpOnlyHandoff": "Passed",
+    "FixtureAttachment": "Passed",
+    "FixtureDisposal": "Passed",
+    "GovernedTeardown": "Passed",
+    "Export": "Passed",
+    "IndependentDmsLocalResourceAbsence": "Verified",
+    "T33SourceWorkCacheAndSequenceLiveEvidence": "EstablishedByCrudAndRebuild",
+    "DiagnosticCheckpoints": 238
+  },
+  "Artifacts": [
+    {
+      "Path": "cdc-api-e2e.json",
+      "Sha256": "c904ccb4f2a3857eb3291aab971c0bee35d60da936f4970dc4954e99fae0112d"
+    },
+    {
+      "Path": "qualification.json",
+      "Sha256": "1038f820d0b2453ddee337b5f3a5990c886454fc868066d10d3fdd1804c93b62"
+    },
+    {
+      "Path": "qualified-image.json",
+      "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+    }
+  ],
+  "Limits": [
+    "One full PostgreSQL run on one admitted binding with no intermediate resets; terminal history loss last",
+    "Existing eight scenarios only; no additional resource, fault, concurrency, consumer or authentication matrix",
+    "SQL Server qualification remains pending T24",
+    "Raw logs, settings, credentials and document bodies remain private; only existing sanitized exporter outputs retained",
+    "Pre-existing tasks.json wording edits do not change the tested executable revision"
+  ]
+}

@@ -1229,8 +1229,35 @@ wrong-invocation and rejected data are identified, never copied as raw output.
 Private settings, handoff, logs, auth headers, connection strings and document bodies
 are excluded. Original execution, cleanup and export failures remain separate.
 
-PostgreSQL full qualification: **blocked T23**, with Student CRUD passed,
-descriptor CRUD failed and six scenarios not run. The latest
+PostgreSQL full qualification: **passed T23** at revision
+`94c3df5c7f69e62d33045de5bb5173dff5b366a6`. The
+[runner report](evidence/dms1325-t23-postgresql/qualification.json) records all eight
+required scenario IDs passed, zero failures/skips, and successful setup, test,
+governed teardown and export. The
+[fixture and runtime evidence](evidence/dms1325-t23-postgresql/cdc-api-e2e.json)
+records successful attachment/disposal on the same invocation, provider, binding
+and generation. [Run details](evidence/dms1325-t23-postgresql/run-details.json)
+retain the exact command, tested revision, qualified image inputs, runtime versions
+and artifact hashes; raw diagnostics remain private.
+
+The run exercised real API mutations, production projection/capture and bounded
+Kafka consumption across all eight phases without intermediate resets. Descriptor
+CRUD passed after T37. Overlap suppressed the stale candidate while retaining newer
+work; rebuild repopulated the cache without changing canonical versions or losing
+consumer state. Restart drained four work pages (2, 2, 2, 1) with no baseline or
+inventory scans while API traffic succeeded. Unavailable continuity evidence
+rejected restart/resume and recovered on the same binding. The final history-loss
+phase persisted containment and rejection despite later healthy-looking evidence.
+CRUD and rebuild also exercised all four T33 database observation paths, including
+the change-version sequence read.
+
+Governed cleanup verified all five owned containers and three volumes absent.
+Independent Docker checks found no remaining `dms-local` containers, networks or
+volumes. This completes PostgreSQL qualification only; SQL Server remains pending
+T24. Earlier failed attempts below remain historical evidence.
+
+Historical PostgreSQL attempt before T37: Student CRUD passed,
+descriptor CRUD failed and six scenarios not run. The historical
 [runner report](evidence/dms1325-t23-postgresql-descriptor-blocked/qualification.json) and
 [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-descriptor-blocked/cdc-api-e2e.json)
 record successful setup, admission, HTTP-only handoff and attachment at revision
@@ -1249,8 +1276,8 @@ inventory also found no remaining `dms-local` containers, volumes or networks.
 Invocation, provider, binding and generation match across the reports. See the
 reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-descriptor-blocked/run-details.json).
 The runner's seven failed required outcomes count one executed failure and six
-missing outcomes. T23 and T24 remain incomplete; no unchanged retry or production
-change was attempted.
+missing outcomes. At that point T23 and T24 remained incomplete; no unchanged retry
+or production change was attempted.
 
 T37 subsequently reproduced the failure through the existing PostgreSQL runner
 with temporary private diagnostics (invocation `b781de5b-693a-4f6b-8fcd-9605883776b0`).
@@ -1262,14 +1289,15 @@ fragment composer and authorization metadata factory failed before the correctio
 and passed afterward. The diagnostic run completed fixture disposal, governed
 teardown and export; independent Docker checks confirmed no remaining `dms-local`
 containers, volumes or networks. Temporary instrumentation was removed, and raw
-diagnostics remain private. This correction is not full qualification: fresh T23
-and T24 runs still must pass all eight scenarios and governed cleanup.
+diagnostics remain private. The correction alone supplied no full qualification.
+The fresh T23 run above now passes all eight scenarios and governed cleanup; T24
+remains pending.
 
 The earlier [post-T35 Student Error](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json)
 remains historical evidence. T36 diagnosed the mismatch between the CDC binding's
 `default` tenant token and E18's empty default tenant, then applied the production
-tenant mapping in the fixture assertion. The latest run passed that assertion and
-the complete Student CRUD phase. The new descriptor failure does not identify a
+tenant mapping in the fixture assertion. The pre-T37 run passed that assertion and
+the complete Student CRUD phase. That descriptor failure did not identify a
 regression in T36 or supply full provider qualification.
 
 The earlier [CRUD timeout](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json)
@@ -1281,13 +1309,13 @@ or identify a regression in that correction. Do not conflate the two failures.
 The earlier [attachment failure](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json)
 remains historical evidence. T34 diagnosed rejection of valid local
 authorization-disabled informational notices and corrected the attachment
-predicate in `586433c24`; attachment passed in the latest run. That correction
+predicate in `586433c24`; attachment passed in subsequent runs. That correction
 does not establish passing CRUD or full qualification.
 
 The earlier [HTTP-only rollout failure](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json)
 is historical evidence: T31 diagnosed the `PATH_BASE` normalization mismatch and
-corrected it in `b50ecaf7b`. This latest run passed that handoff, but does not supply
-passing API-to-Kafka qualification. The earlier
+corrected it in `b50ecaf7b`. Subsequent runs passed that handoff; the successful
+T23 run above now supplies PostgreSQL API-to-Kafka qualification. The earlier
 [admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json) also remains
 historical evidence of the Connect rebalance/read-back blocker. SQL Server full qualification:
 **pending T24**. T19's parser, privacy, interruption and delegation tests provide no
