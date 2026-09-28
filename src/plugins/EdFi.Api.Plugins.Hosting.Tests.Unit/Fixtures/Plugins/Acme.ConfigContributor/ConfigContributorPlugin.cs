@@ -118,6 +118,7 @@ public sealed class ConfigContributorPlugin : EdFiApiPlugin
                 ["Fixture:WithinPlugin"] = $"{Name}:first",
                 ["Fixture:Precedence:Json"] = Name,
                 ["Fixture:Precedence:Environment"] = Name,
+                ["Fixture:Precedence:PrefixedEnvironment"] = Name,
                 ["Fixture:Precedence:CommandLine"] = Name,
                 ["ConfigurationServiceSettings:EncryptionKey"] = Name + EncryptionKeySuffix,
                 ["Plugins:Allowed"] = "Acme.NotAllowlisted",

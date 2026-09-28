@@ -47,9 +47,9 @@ bool useReverseProxyHeaders = false;
 // loader inserts what each plugin added into it as one source.
 LoadedPlugins loadedPlugins = RunBootstrapPhaseWithResult(
     DmsStartupPhases.LoadPlugins,
-    "Loading plugins named in Plugins:Allowed.",
-    "Loaded plugins named in Plugins:Allowed.",
-    "Loading plugins failed before DMS services were configured.",
+    "Loading plugins named in Plugins:Allowed and running their configuration hooks.",
+    "Loaded plugins named in Plugins:Allowed and ran their configuration hooks.",
+    "Loading plugins or running their configuration hooks failed before DMS services were configured.",
     () =>
     {
         LoadedPlugins loaded = PluginLoader.Load(

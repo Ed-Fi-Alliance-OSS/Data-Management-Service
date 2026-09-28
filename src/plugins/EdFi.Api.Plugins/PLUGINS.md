@@ -130,6 +130,14 @@ That snippet is an illustration and is not mirrored into the consumer fixture.
   file shipped beside its assembly does, and that base path is where your relative paths resolve; the
   host's own is left as it was. Add your sources to it. Adding a source loads nothing; the
   host loads what you added, once, after your hook returns.
+
+  **The builder your sources are built with is not this one.** This builder starts with the host's
+  sources, but the host builds your additions with a separate builder holding only the sources your
+  hook added, in the order you added them, and a copy of this builder's properties. The host's
+  sources and every earlier plugin's are not in it. So a source you write yourself must not read
+  host or earlier-plugin settings from the builder passed to its `Build()` method: they are not
+  there. If it needs such a setting, read it from `bootstrapConfiguration` in your hook and pass it
+  to the source when you construct it, as the vault address above is.
 - `bootstrapConfiguration` is the configuration already layered at that moment, so you can read the
   settings you need to build your sources, your own vault address being the usual case. It includes
   what plugins earlier in the allowlist contributed. It is the host's live configuration, not a copy
@@ -153,14 +161,17 @@ your builder's source list with its own by reference after your hook:
 
 **Where your sources end up is decided by the host, not by where you add them.** After your hook
 passes that check, the host builds the sources you added, once and in the order you added them, and
-inserts the result into its own configuration as one source, immediately below the operator's
-environment variables. Each of your sources loads once per startup, however many plugins follow
-yours. So:
+inserts the result into its own configuration as one source, immediately below the unprefixed
+environment source ASP.NET Core's builder installs. Each of your sources loads once per startup,
+however many plugins follow yours. So:
 
 - every plugin source outranks the host's JSON files, including an empty value `appsettings.json`
   ships for the same key;
-- the operator's environment variables and command-line arguments outrank every plugin source added
-  through `ContributeConfiguration`;
+- every plugin source also outranks the `ASPNETCORE_` and `DOTNET_` prefixed environment sources,
+  which ASP.NET Core's builder installs below the JSON files, so an operator's prefixed variable
+  does not override a value your plugin supplies;
+- the operator override is the unprefixed environment source DMS appends and the command-line
+  arguments: those outrank every plugin source added through `ContributeConfiguration`;
 - among plugins, **allowlist order is contractual**: a plugin later in `Plugins:Allowed` outranks an
   earlier one for any key both supply.
 

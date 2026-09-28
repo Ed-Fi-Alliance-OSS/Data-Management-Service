@@ -436,24 +436,30 @@ follows, highest first:
 
 | Rank | Source | Notes |
 | ---- | ------ | ----- |
-| 1 | Environment variables | The unprefixed environment source DMS appends itself. See below for why this outranks the command line. |
+| 1 | Unprefixed environment variables | The unprefixed environment source DMS appends itself, above the one ASP.NET Core's builder installs. See below for why this outranks the command line. |
 | 2 | Command-line arguments | Installed only when the host is started with arguments, which the stock container is not. |
 | 3 | Plugin-contributed configuration sources, in `Allowed` order | A later plugin in `Allowed` outranks an earlier one. |
 | 4 | `appsettings.json` and the other JSON sources | Including `appsettings.{Environment}.json`. |
+| 5 | `ASPNETCORE_` and `DOTNET_` prefixed environment variables | Installed by ASP.NET Core's builder below the JSON sources, and read with the prefix removed, so `ASPNETCORE_AppSettings__MaximumPageSize` supplies `AppSettings:MaximumPageSize`. These are not the operator override that ranks 1 and 2 describe. |
 
 **Plugin sources land at rank 3 once the loader has placed them.** A plugin contributes
 configuration sources from its `ContributeConfiguration` hook, which DMS runs for
 each allowlisted plugin, in `Allowed` order, as soon as the plugins have loaded. After
 each hook the loader loads the sources that plugin added, once, and inserts them into
 the host's configuration as a single source immediately below the unprefixed
-environment source, keeping their order within it. The effects:
+environment source ASP.NET Core's builder installs, keeping their order within it.
+The effects:
 
 - A plugin value outranks every JSON source, including an empty string that
   `appsettings.json` ships for the same key, such as
   `ConfigurationServiceSettings:EncryptionKey`.
-- A value the operator sets in the environment or on the command line outranks every
-  plugin source added through `ContributeConfiguration`. An operator who wants a
-  plugin to supply a value does not also set it there. This rests on the plugin
+- A plugin value also outranks the `ASPNETCORE_` and `DOTNET_` prefixed environment
+  sources, which sit below the JSON sources. An operator who sets
+  `ASPNETCORE_AppSettings__MaximumPageSize` does not override a plugin that supplies
+  `AppSettings:MaximumPageSize`; the unprefixed `AppSettings__MaximumPageSize` does.
+- A value the operator sets as an unprefixed environment variable or on the command
+  line outranks every plugin source added through `ContributeConfiguration`. An
+  operator who wants a plugin to supply a value does not also set it there. This rests on the plugin
   keeping to its contract: a plugin's `ContributeServices` hook, like the rest of its
   code, receives the live configuration, and one that adds a source there skips
   placement and can outrank the operator. DMS does not detect that; it is part of
@@ -462,7 +468,7 @@ environment source, keeping their order within it. The effects:
 - Among plugins, the later one in `Allowed` wins, so the order of `Allowed` is part of
   the configuration and not only a list of what may run.
 
-**Why the environment outranks the command line.** ASP.NET Core's own builder
+**Why unprefixed environment variables outrank the command line.** ASP.NET Core's own builder
 installs the command-line source above the unprefixed environment source, so on its
 own the command line would win. DMS then appends one more environment source of its
 own, with the `AddEnvironmentVariables()` call in `AddServices`
@@ -477,7 +483,7 @@ call.** Two reads happen before it, and for those two the command line wins:
   `webAppBuilder.Configuration`, before it calls `AddEnvironmentVariables()`, so the
   `Serilog` section is resolved without the appended source. Plugin sources are
   already in place by then, so for this section the order is command line,
-  environment, plugins, then JSON.
+  unprefixed environment, plugins, JSON, then the prefixed environment sources.
 - **The whole `Plugins` section, not just `Allowed`.** The plugin-loading bootstrap
   phase binds the section in one go, `Allowed` and `Directory` alike, and it runs
   before the phase that calls `AddServices` at all. That ordering is deliberate for
@@ -518,8 +524,8 @@ qualifier above.
 >     either sends .NET to read a directory the script did not fill.
 >
 > The first two are bootstrap exceptions and **not** exceptions to the
-> environment-versus-command-line rule above: the environment and command-line sources
-> both exist when they are read, so for them the command line wins when a deployment
+> unprefixed-environment-versus-command-line rule above: the builder's unprefixed
+> environment source and the command-line source both exist when they are read, so for them the command line wins when a deployment
 > supplies one. The `run.sh` values are not read as .NET configuration there at all,
 > only from the container's environment, so a deployment on the stock image sets
 > them in the environment even when a plugin also supplies them.

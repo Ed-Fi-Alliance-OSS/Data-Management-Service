@@ -463,8 +463,9 @@ as the plugins have loaded. Two rows above are specific to it:
 
 - **A configuration hook that removes or reorders a source it did not add is
   fatal**, naming the plugin. Adding is the only permitted operation. The loader then
-  places what the plugin added below the operator's environment and command-line
-  sources; see
+  places what the plugin added below the operator's unprefixed environment and
+  command-line sources, and above the JSON files and the `ASPNETCORE_` and `DOTNET_`
+  prefixed environment sources; see
   [Configuration precedence](./CONFIGURATION.md#configuration-precedence).
 - **The "contributed nothing" row has a second half.** A plugin satisfies that row by
   registering a declared contract, or by contributing at least one configuration

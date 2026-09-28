@@ -61,16 +61,23 @@ public abstract class EdFiApiPlugin
     /// Contribution is additive only. Add sources; do not remove or reorder a source that was present
     /// when the hook began, which the host detects and treats as fatal. After the hook returns, the
     /// host loads the sources it added, once and in the order they were added, and inserts them into
-    /// its own configuration as one source, below the operator's environment variables and
-    /// command-line arguments and above every JSON source. So an operator's explicit setting outranks
-    /// every source added here, and a later plugin in the allowlist outranks an earlier one. A source
-    /// that throws when the host loads it fails startup, naming this plugin.
+    /// its own configuration as one source, below the operator's unprefixed environment variables and
+    /// command-line arguments, and above every JSON source and the <c>ASPNETCORE_</c> and
+    /// <c>DOTNET_</c> prefixed environment sources ASP.NET Core installs below them. So an operator's
+    /// unprefixed environment variable or command-line argument outranks every source added here, a
+    /// source added here outranks a prefixed environment variable, and a later plugin in the allowlist
+    /// outranks an earlier one. A source that throws when the host loads it fails startup, naming this
+    /// plugin.
     /// </para>
     /// </remarks>
     /// <param name="configurationBuilder">
     /// A builder for this hook alone, holding the host's sources as they stand when the hook runs and
-    /// the host's builder properties. Adding a source to it loads nothing. Its sources are a mutable
-    /// list, so the host compares them with its own after the call: a source that was present before
+    /// the host's builder properties. Adding a source to it loads nothing. The host builds the sources
+    /// added here with a separate builder holding only those additions and a copy of this builder's
+    /// properties, so a source must not expect the host's or an earlier plugin's sources in the builder
+    /// passed to its <see cref="IConfigurationSource.Build"/>; one that needs such a setting reads it
+    /// from <paramref name="bootstrapConfiguration"/> when the hook constructs it. Its sources are a
+    /// mutable list, so the host compares them with its own after the call: a source that was present before
     /// the hook and is absent or moved afterwards fails startup, naming this plugin. Changing a property
     /// of a pre-existing source object, such as an environment variable source's prefix or a JSON
     /// source's path, is not detectable at this seam and is a trust assumption the host does not

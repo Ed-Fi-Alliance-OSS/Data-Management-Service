@@ -15,13 +15,15 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
 /// The configuration phase over the source list <see cref="WebApplication.CreateBuilder(WebApplicationOptions)"/>
-/// really installs, with the host's own <c>appsettings.json</c>, a real environment variable, and a
-/// real command-line argument, driven the way <c>Program.cs</c> drives it.
+/// really installs, with the host's own <c>appsettings.json</c>, a real unprefixed environment variable,
+/// a real <c>ASPNETCORE_</c> prefixed environment variable, and a real command-line argument, driven the
+/// way <c>Program.cs</c> drives it.
 /// </summary>
 /// <remarks>
 /// A plugin that appends a source would land above both of the operator's explicit surfaces if its
 /// sources were left where it put them. These are the three outcomes the placement exists for, read
-/// through the configuration a host would read them from.
+/// through the configuration a host would read them from, plus the prefixed environment source the
+/// builder installs below the JSON files, which a plugin source outranks.
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
@@ -31,13 +33,17 @@ public class Given_a_plugin_configuration_source_over_the_hosts_real_source_list
     private const string EncryptionKey = "ConfigurationServiceSettings:EncryptionKey";
     private const string EnvironmentKey = "Fixture:Precedence:Environment";
     private const string EnvironmentVariable = "Fixture__Precedence__Environment";
+    private const string PrefixedEnvironmentKey = "Fixture:Precedence:PrefixedEnvironment";
+    private const string PrefixedEnvironmentVariable = "ASPNETCORE_Fixture__Precedence__PrefixedEnvironment";
     private const string CommandLineKey = "Fixture:Precedence:CommandLine";
 
     private string _pluginRoot = null!;
     private string? _priorEnvironmentValue;
+    private string? _priorPrefixedEnvironmentValue;
     private WebApplicationBuilder _builder = null!;
     private List<IConfigurationSource> _before = null!;
     private string? _encryptionKeyBefore;
+    private string? _prefixedEnvironmentValueBefore;
 
     [SetUp]
     public void Setup()
@@ -47,6 +53,8 @@ public class Given_a_plugin_configuration_source_over_the_hosts_real_source_list
 
         _priorEnvironmentValue = Environment.GetEnvironmentVariable(EnvironmentVariable);
         Environment.SetEnvironmentVariable(EnvironmentVariable, "environment");
+        _priorPrefixedEnvironmentValue = Environment.GetEnvironmentVariable(PrefixedEnvironmentVariable);
+        Environment.SetEnvironmentVariable(PrefixedEnvironmentVariable, "prefixed-environment");
 
         _builder = WebApplication.CreateBuilder(
             new WebApplicationOptions
@@ -72,6 +80,7 @@ public class Given_a_plugin_configuration_source_over_the_hosts_real_source_list
 
         _before = [.. ((IConfigurationBuilder)_builder.Configuration).Sources];
         _encryptionKeyBefore = _builder.Configuration[EncryptionKey];
+        _prefixedEnvironmentValueBefore = _builder.Configuration[PrefixedEnvironmentKey];
 
         // The two calls Program.cs makes inside its LoadPlugins phase, in its order.
         LoadedPlugins plugins = PluginLoader.Load(
@@ -85,6 +94,7 @@ public class Given_a_plugin_configuration_source_over_the_hosts_real_source_list
     public void TearDown()
     {
         Environment.SetEnvironmentVariable(EnvironmentVariable, _priorEnvironmentValue);
+        Environment.SetEnvironmentVariable(PrefixedEnvironmentVariable, _priorPrefixedEnvironmentValue);
         _builder.Configuration.Dispose();
         PluginCompositionProbe.DeletePluginRoot(_pluginRoot);
     }
@@ -107,6 +117,22 @@ public class Given_a_plugin_configuration_source_over_the_hosts_real_source_list
     public void It_resolves_an_environment_value_over_the_plugin_value()
     {
         _builder.Configuration[EnvironmentKey].Should().Be("environment");
+    }
+
+    [Test]
+    public void It_starts_from_the_prefixed_environment_value()
+    {
+        // The premise of the next case: the builder's ASPNETCORE_ source really carries the key, so
+        // that case cannot pass merely because the prefixed variable was never read.
+        _prefixedEnvironmentValueBefore.Should().Be("prefixed-environment");
+    }
+
+    [Test]
+    public void It_resolves_the_plugin_value_over_an_aspnetcore_prefixed_environment_value()
+    {
+        // The ASPNETCORE_ and DOTNET_ sources sit below the JSON files, so they are not the operator
+        // override the plugin sources are placed under.
+        _builder.Configuration[PrefixedEnvironmentKey].Should().Be(ConfigContributor);
     }
 
     [Test]

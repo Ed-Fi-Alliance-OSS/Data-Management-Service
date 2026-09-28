@@ -66,7 +66,7 @@ public sealed class LoadedPlugins
 
     /// <summary>
     /// Invokes every plugin's configuration contribution hook, in allowlist order, and places the
-    /// sources each one added below the operator's explicit sources.
+    /// sources each one added below the operator's unprefixed environment and command-line sources.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -98,8 +98,9 @@ public sealed class LoadedPlugins
     /// the host as one <see cref="ChainedConfigurationSource"/>, immediately below the last
     /// <see cref="EnvironmentVariablesConfigurationSource"/> present when this phase began, which is
     /// the one change this makes to the host's list for that plugin. That keeps every plugin source
-    /// above the JSON sources and below the operator's environment and command-line sources, which
-    /// were never moved, and puts each later plugin's sources above an earlier one's. The chained
+    /// above the JSON sources and the <c>ASPNETCORE_</c> and <c>DOTNET_</c> prefixed environment
+    /// sources below them, keeps it below the operator's unprefixed environment and command-line
+    /// sources, which were never moved, and puts each later plugin's sources above an earlier one's. The chained
     /// source's own reload does not reload what it wraps, so a later plugin's insert does not call an
     /// earlier plugin's sources again. A host with no environment source at all gets the plugin's
     /// source on top of its list, above a command-line source if it has one; DMS, the one host that
@@ -332,8 +333,8 @@ public sealed class LoadedPlugins
     }
 
     /// <summary>
-    /// Inserts one hook's built additions immediately below the operator's environment source, as one
-    /// source.
+    /// Inserts one hook's built additions immediately below the operator's unprefixed environment
+    /// source, as one source.
     /// </summary>
     /// <remarks>
     /// The chained source does not dispose what it wraps. The manager disposes and rebuilds every
