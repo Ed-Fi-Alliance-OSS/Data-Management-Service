@@ -40,12 +40,25 @@ bool useReverseProxyHeaders = false;
 // returns, and after the status signal above, so a loader fatal has somewhere to record itself. A
 // deployment that allowlisted nothing gets LoadedPlugins.Empty without the loader touching the
 // filesystem, which is what keeps a plugin-free boot on exactly the path it took before.
+//
+// The configuration phase runs in the same bootstrap phase, as soon as loading returns, because
+// AddServices is the first reader of a value a plugin can supply: its first line configures logging
+// from the Serilog section. builder.Configuration is each plugin's bootstrap configuration, and the
+// loader inserts what each plugin added into it as one source.
 LoadedPlugins loadedPlugins = RunBootstrapPhaseWithResult(
     DmsStartupPhases.LoadPlugins,
-    "Loading plugins named in Plugins:Allowed.",
-    "Loaded plugins named in Plugins:Allowed.",
-    "Loading plugins failed before DMS services were configured.",
-    () => PluginLoader.Load(builder.Configuration, DmsPluginContracts.Registry.ContractAssemblyNames)
+    "Loading plugins named in Plugins:Allowed and running their configuration hooks.",
+    "Loaded plugins named in Plugins:Allowed and ran their configuration hooks.",
+    "Loading plugins or running their configuration hooks failed before DMS services were configured.",
+    () =>
+    {
+        LoadedPlugins loaded = PluginLoader.Load(
+            builder.Configuration,
+            DmsPluginContracts.Registry.ContractAssemblyNames
+        );
+        loaded.ContributeConfiguration(builder.Configuration);
+        return loaded;
+    }
 );
 
 RunBootstrapPhase(

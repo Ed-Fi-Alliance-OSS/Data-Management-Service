@@ -22,6 +22,14 @@
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
         <!--
+            The configuration phase takes the host's ConfigurationManager, which is declared in the
+            configuration package rather than the abstractions, and places plugin sources relative to
+            the host's EnvironmentVariablesConfigurationSource, which is the only reason for the second
+            reference. Both are host dependencies and place no obligation on a plugin author.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+        <!--
             Only for the four service type names in the logging carve-out, which are all declared
             here. The carve-out is written as names rather than as an assembly or namespace rule, so
             naming the types is the whole of what this reference buys, and the abstractions package

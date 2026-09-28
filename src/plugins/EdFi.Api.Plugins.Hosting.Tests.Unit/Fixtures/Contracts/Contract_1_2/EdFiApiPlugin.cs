@@ -9,8 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EdFi.Api.Plugins;
 
 /// <summary>
-/// The production contract's 1.0.0 public surface, plus the one added no-op virtual that makes this
-/// 1.1.0.
+/// The production contract's 1.1.0 public surface, plus the one added no-op virtual that makes this
+/// 1.2.0.
 /// </summary>
 /// <remarks>
 /// Every member below other than <see cref="DescribeCapabilities"/> is the production declaration, and
@@ -26,27 +26,41 @@ public abstract class EdFiApiPlugin
     public abstract string Name { get; }
 
     /// <summary>
+    /// Contributes configuration sources to the host after plugins load and before the host registers
+    /// its services, which is where it first reads configuration a plugin can supply.
+    /// </summary>
+    /// <param name="configurationBuilder">The host's configuration builder, as it stands when the hook runs.</param>
+    /// <param name="bootstrapConfiguration">The configuration already layered when the hook runs.</param>
+    public virtual void ContributeConfiguration(
+        IConfigurationBuilder configurationBuilder,
+        IConfiguration bootstrapConfiguration
+    )
+    {
+        // Intentionally does nothing, exactly as the production 1.1.0 body does.
+    }
+
+    /// <summary>
     /// Contributes service registrations to the host's container before it is built.
     /// </summary>
     /// <param name="services">The host's service collection, as it stands before the container is built.</param>
     /// <param name="configuration">The host's own configuration, fully layered.</param>
     public virtual void ContributeServices(IServiceCollection services, IConfiguration configuration)
     {
-        // Intentionally does nothing, exactly as the production 1.0.0 body does.
+        // Intentionally does nothing, exactly as the production 1.1.0 body does.
     }
 
     /// <summary>
-    /// The 1.1.0 addition: a new virtual with a no-op body, which is the only evolution the contract's
+    /// The 1.2.0 addition: a new virtual with a no-op body, which is the only evolution the contract's
     /// additive-only policy permits.
     /// </summary>
     /// <remarks>
-    /// A plugin compiled against 1.0.0 has never heard of it and does not override it, so it runs
-    /// unchanged on a 1.1.0 host. Its presence on the type the host loaded is what a test reads to show
+    /// A plugin compiled against 1.1.0 has never heard of it and does not override it, so it runs
+    /// unchanged on a 1.2.0 host. Its presence on the type the host loaded is what a test reads to show
     /// the plugin really was served the newer contract rather than its own copy.
     /// </remarks>
     public virtual void DescribeCapabilities()
     {
         // Intentionally does nothing. A new virtual with a no-op body is binary-compatible with every
-        // plugin already published against 1.0.0, which is the whole reason the policy allows it.
+        // plugin already published against 1.1.0, which is the whole reason the policy allows it.
     }
 }
