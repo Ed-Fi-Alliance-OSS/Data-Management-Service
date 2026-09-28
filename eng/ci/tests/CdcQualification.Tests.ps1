@@ -1278,11 +1278,11 @@ function Initialize-CdcFixturePrincipal {
 }
 '@ | Add-Content (Join-Path $script:fakeRepo 'eng/docker-compose/tests/cdc-fixture-inputs.psm1')
         @'
-param([switch] $InfraOnly, [switch] $EnableConfig, [switch] $SeparateConfigDatabase, [switch] $CdcDatabaseInfrastructure,
+param([switch] $DbOnly, [switch] $InfraOnly, [switch] $EnableConfig, [switch] $SeparateConfigDatabase, [switch] $CdcDatabaseInfrastructure,
     [string] $DatabaseEngine, [string] $IdentityProvider, [string] $EnvironmentFile,
     [switch] $d, [switch] $v, [switch] $RemoveBootstrap)
 if ($d) { 'primitive' | Add-Content (Join-Path (Split-Path $EnvironmentFile) 'calls.txt'); $global:LASTEXITCODE = 0; return }
-if (-not ($InfraOnly -and $EnableConfig -and $SeparateConfigDatabase -and $CdcDatabaseInfrastructure -and $IdentityProvider -eq 'self-contained')) { throw 'Wrong infrastructure arguments' }
+if (-not $DbOnly -or $InfraOnly -or $EnableConfig -or $SeparateConfigDatabase -or $CdcDatabaseInfrastructure) { throw 'Principal preparation must not start CMS before claims staging' }
 'infrastructure' | Add-Content (Join-Path (Split-Path $EnvironmentFile) 'calls.txt')
 if ($env:TEST_API_FAILURE -eq 'infrastructure') { throw 'partial infrastructure startup' }
 $global:LASTEXITCODE = 0

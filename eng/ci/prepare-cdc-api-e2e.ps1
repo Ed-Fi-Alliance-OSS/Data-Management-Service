@@ -20,8 +20,10 @@ $inputs = New-CdcFixtureInput -Repo $Repo -FixtureRoot $PrivateDirectory -SqlSer
 # File settings own Compose interpolation, even when invoked from a developer shell.
 foreach ($name in $inputs.Values.Keys) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
 foreach ($item in @(Get-ChildItem Env: | Where-Object Name -like 'DMS_CDC__*')) { Remove-Item "Env:$($item.Name)" }
-& (Join-Path $Repo 'eng/docker-compose/start-local-dms.ps1') -InfraOnly -EnableConfig -SeparateConfigDatabase `
-    -CdcDatabaseInfrastructure -DatabaseEngine $engine -IdentityProvider self-contained -EnvironmentFile $inputs.EnvironmentFile
+# Principal preparation needs only the provider. Starting CMS here would seed claims
+# before the wrapper stages E2E fragments; CMS correctly preserves those initial rows.
+& (Join-Path $Repo 'eng/docker-compose/start-local-dms.ps1') -DbOnly `
+    -DatabaseEngine $engine -EnvironmentFile $inputs.EnvironmentFile
 if ($LASTEXITCODE -ne 0) { throw 'Infrastructure failed.' }
 Initialize-CdcFixturePrincipal -SqlServer $sqlServer -Inputs $inputs
 # This small fixture input is consumed and completed by the shipped managed wrapper.
