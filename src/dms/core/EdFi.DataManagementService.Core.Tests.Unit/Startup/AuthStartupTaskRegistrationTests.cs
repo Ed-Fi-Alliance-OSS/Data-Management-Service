@@ -244,4 +244,78 @@ public class AuthStartupTaskRegistrationTests
                 .BeFalse();
         }
     }
+
+    /// <summary>
+    /// The no-redirect registration above protects nothing unless the configuration manager fetches
+    /// through it. The recorder replaces only that named client's primary handler, so a manager built
+    /// on any other client never reaches it (and cannot reach the .test host either).
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Configuration_Manager_Fetches_Metadata : AuthStartupTaskRegistrationTests
+    {
+        private const string MetadataAddress =
+            "https://idp.test/realms/edfi/.well-known/openid-configuration";
+
+        private readonly List<Uri> _requests = [];
+
+        private sealed class RecordingHandler(List<Uri> requests) : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken
+            )
+            {
+                requests.Add(request.RequestUri!);
+                string body =
+                    request.RequestUri!.AbsoluteUri == MetadataAddress
+                        ? """{"issuer":"https://idp.test/realms/edfi","jwks_uri":"https://idp.test/realms/edfi/certs"}"""
+                        : """{"keys":[]}""";
+                return Task.FromResult(
+                    new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(body),
+                    }
+                );
+            }
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["JwtAuthentication:Authority"] = "https://idp.test/realms/edfi",
+                        ["JwtAuthentication:MetadataAddress"] = MetadataAddress,
+                    }
+                )
+                .Build();
+
+            var services = new ServiceCollection();
+            services.AddJwtAuthentication(configuration);
+            services
+                .AddHttpClient(Core.Security.HttpDocumentRetriever.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new RecordingHandler(_requests));
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            try
+            {
+                await provider
+                    .GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>()
+                    .GetConfigurationAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                // Only the recorded requests matter; a manager on another client fails to connect.
+            }
+        }
+
+        [Test]
+        public void It_fetches_the_metadata_address_through_the_named_client()
+        {
+            _requests.Should().Contain(new Uri(MetadataAddress));
+        }
+    }
 }

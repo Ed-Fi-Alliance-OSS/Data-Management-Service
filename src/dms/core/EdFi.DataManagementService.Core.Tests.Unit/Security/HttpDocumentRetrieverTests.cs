@@ -76,13 +76,22 @@ public class HttpDocumentRetrieverTests
             RequireHttps = false,
         };
 
+        (string? document, Exception? exception) = await TryFetch(retriever, address);
+        return (document, exception, handler);
+    }
+
+    private static async Task<(string? Document, Exception? Exception)> TryFetch(
+        HttpDocumentRetriever retriever,
+        string address
+    )
+    {
         try
         {
-            return (await retriever.GetDocumentAsync(address, CancellationToken.None), null, handler);
+            return (await retriever.GetDocumentAsync(address, CancellationToken.None), null);
         }
         catch (Exception exception)
         {
-            return (null, exception, handler);
+            return (null, exception);
         }
     }
 
@@ -296,6 +305,154 @@ public class HttpDocumentRetrieverTests
         public void It_contacts_only_the_metadata_address()
         {
             _handler.Requests.Should().Equal(_metadataAddress);
+        }
+    }
+
+    /// <summary>
+    /// Once the automatic refresh is due, the configuration manager retries a failed refresh on every
+    /// request, so one misconfigured jwks_uri would otherwise log an Error per request. Each attempt
+    /// fetches the metadata document successfully first, which must not end the episode; only a
+    /// successful signing-key fetch does.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Repeated_Refusals_Before_A_Signing_Key_Fetch_Succeeds : HttpDocumentRetrieverTests
+    {
+        private const string ForeignJwksUri = "http://evil.example/.well-known/jwks.json";
+        private const string OnOriginJwksUri =
+            "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/certs";
+
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+            var retriever = new HttpDocumentRetriever(
+                new HttpClient(new RecordingHandler()),
+                _metadataAddress,
+                _logger
+            )
+            {
+                RequireHttps = false,
+            };
+
+            // Two refresh attempts meeting the foreign jwks_uri, each preceded by a metadata GET.
+            await TryFetch(retriever, _metadataAddress.ToString());
+            await TryFetch(retriever, ForeignJwksUri);
+            await TryFetch(retriever, _metadataAddress.ToString());
+            await TryFetch(retriever, ForeignJwksUri);
+
+            // The IdP is fixed, then breaks again.
+            await TryFetch(retriever, _metadataAddress.ToString());
+            await TryFetch(retriever, OnOriginJwksUri);
+            await TryFetch(retriever, _metadataAddress.ToString());
+            await TryFetch(retriever, ForeignJwksUri);
+        }
+
+        [Test]
+        public void It_logs_the_first_refusal_of_each_episode_at_error_and_repeats_at_debug()
+        {
+            _logger
+                .Entries.Select(entry => entry.Level)
+                .Should()
+                .Equal(LogLevel.Error, LogLevel.Debug, LogLevel.Error);
+        }
+    }
+
+    /// <summary>
+    /// With an https MetadataAddress the scheme alone puts an http address off the origin, so the
+    /// origin check refuses and logs it rather than the HTTPS check refusing it silently.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_RequireHttps_And_An_Http_Address_On_Another_Host : HttpDocumentRetrieverTests
+    {
+        private Exception? _exception;
+        private RecordingHandler _handler = null!;
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _handler = new RecordingHandler();
+            _logger = new CapturingLogger();
+            var retriever = new HttpDocumentRetriever(
+                new HttpClient(_handler),
+                new Uri("https://idp.example/realms/edfi/.well-known/openid-configuration"),
+                _logger
+            )
+            {
+                RequireHttps = true,
+            };
+
+            (_, _exception) = await TryFetch(retriever, "http://evil.example/.well-known/jwks.json");
+        }
+
+        [Test]
+        public void It_rejects_the_address_as_off_origin()
+        {
+            _exception
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .StartWith("OIDC document address 'http://evil.example/.well-known/jwks.json' is not on");
+        }
+
+        [Test]
+        public void It_logs_the_refusal_at_error()
+        {
+            _logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error);
+        }
+
+        [Test]
+        public void It_sends_no_request()
+        {
+            _handler.Requests.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// Running the origin check first must not weaken the HTTPS requirement: an http MetadataAddress
+    /// is on its own origin, so the HTTPS check is what refuses it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_RequireHttps_And_An_Http_Address_On_The_Metadata_Origin : HttpDocumentRetrieverTests
+    {
+        private Exception? _exception;
+        private RecordingHandler _handler = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _handler = new RecordingHandler();
+            var retriever = new HttpDocumentRetriever(
+                new HttpClient(_handler),
+                _metadataAddress,
+                NullLogger<HttpDocumentRetriever>.Instance
+            )
+            {
+                RequireHttps = true,
+            };
+
+            (_, _exception) = await TryFetch(retriever, _metadataAddress.ToString());
+        }
+
+        [Test]
+        public void It_rejects_the_address_as_not_https()
+        {
+            _exception
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Be($"HTTPS is required but the address is not HTTPS: {_metadataAddress}");
+        }
+
+        [Test]
+        public void It_sends_no_request()
+        {
+            _handler.Requests.Should().BeEmpty();
         }
     }
 }

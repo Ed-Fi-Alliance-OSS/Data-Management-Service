@@ -391,7 +391,9 @@ keys for token validation.
 will fail if OIDC metadata cannot be retrieved from the identity provider, or if
 the retrieved document's `issuer` does not equal `JwtAuthentication:Authority`
 exactly, or if its `jwks_uri` is not on the `JwtAuthentication:MetadataAddress` origin
-(a refresh that meets such a document keeps the last good metadata), ensuring DMS
+(a refresh that meets such a `jwks_uri` keeps the last good metadata and is retried until a
+fetch succeeds; once AutomaticRefreshInterval is due the library retries on every request, so
+only the first refusal is logged as an error and repeats at debug level), ensuring DMS
 doesn't accept requests until JWT authentication is fully functional. When `BypassAuthorization` is enabled, the warm-up is skipped.
 
 **Invalidation Strategy:**
