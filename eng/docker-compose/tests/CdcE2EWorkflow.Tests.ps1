@@ -416,11 +416,13 @@ Describe 'Private API CDC attachment contract' {
         $null = [IO.Directory]::CreateDirectory($script:attachmentRoot, [IO.UnixFileMode]448)
         Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:attachmentRoot
         Copy-Item (Join-Path $script:composeRoot '*.yml') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot 'start-*-dms.ps1') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot '.env.mssql') $script:attachmentRoot
         Copy-Item (Join-Path $script:composeRoot '../schema-package-utility.psm1') $TestDrive
         Import-Module (Join-Path $script:attachmentRoot 'e2e-cdc.psm1') -Force
         Import-Module (Join-Path $script:attachmentRoot 'cdc-lifecycle.psm1')
         function Initialize-AttachmentFixture {
-            param([string]$Provider, [string]$Project = 'dms-local', [string]$IdentityProvider = 'self-contained')
+            param([string]$Provider, [string]$Project = 'dms-local', [string]$IdentityProvider = 'self-contained', [switch]$FullLauncher)
             $script:rolloutProject = $Project
             $script:rolloutIdentityProvider = $IdentityProvider
             $script:state = Join-Path $script:attachmentRoot 'state'
@@ -432,6 +434,22 @@ Describe 'Private API CDC attachment contract' {
             '{}' | Set-Content $schema
             $environmentFile = Join-Path $script:attachmentRoot '.env.selected'
             'DMS_HTTP_PORTS=18080' | Set-Content $environmentFile
+            if ($FullLauncher) {
+                Copy-Item (Join-Path $script:composeRoot '.env.example') $environmentFile -Force
+                Add-Content $environmentFile @('DMS_HTTP_PORTS=18080', 'PATH_BASE=api', "DMS_DATASTORE=$Provider")
+                if ($Provider -eq 'mssql') {
+                    Get-Content (Join-Path $script:composeRoot '.env.mssql') | Add-Content $environmentFile
+                }
+                $bootstrap = Join-Path $script:attachmentRoot '.bootstrap'
+                $null = New-Item -ItemType Directory -Force (Join-Path $bootstrap 'ApiSchema'), (Join-Path $bootstrap 'claims')
+                '{}' | Set-Content (Join-Path $bootstrap 'ApiSchema/manifest.json')
+                @{
+                    version = 1
+                    schema = @{ selectionMode = 'ApiSchemaPath'; apiSchemaManifestPath = 'ApiSchema/manifest.json' }
+                    claims = @{ mode = 'Hybrid'; directory = 'claims' }
+                    seed = @{ extensionNamespacePrefixes = @() }
+                } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $bootstrap 'bootstrap-manifest.json')
+            }
             $script:settings = @{
                 AppSettings = @{ Datastore = $Provider; ApiSchemaPath = $script:attachmentRoot }
                 ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:18081'; ClientSecret = 'private-sentinel' }
@@ -554,6 +572,75 @@ Describe 'Private API CDC attachment contract' {
     }
     AfterAll {
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:attachmentRoot) } | Remove-Module -Force
+    }
+
+    It 'runs the complete <Project> launcher and real Compose resolution for <Provider>, <IdentityProvider>, rejection <Reject>' -Tag 'CompleteLauncher' -ForEach @(
+        foreach ($provider in @('postgresql', 'mssql')) {
+            foreach ($project in @('dms-local', 'dms-published')) {
+                foreach ($identity in @('self-contained', 'keycloak')) {
+                    foreach ($reject in @($false, $true)) {
+                        @{ Provider = $provider; Project = $project; IdentityProvider = $identity; Reject = $reject }
+                    }
+                }
+            }
+        }
+    ) {
+        Initialize-AttachmentFixture -Provider $Provider -Project $Project -IdentityProvider $IdentityProvider -FullLauncher
+        $resultPath = Join-Path $TestDrive 'launcher-result.json'
+        $probe = Join-Path $PSScriptRoot 'cdc-e2e-launcher-probe.ps1'
+        $output = & (Join-Path $PSHOME 'pwsh') -NoProfile -File $probe -ComposeRoot $script:attachmentRoot `
+            -Project $Project -Provider $Provider -IdentityProvider $IdentityProvider -StatePath $script:state `
+            -ResultPath $resultPath -RejectConfiguration:$Reject 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+        $result = Get-Content $resultPath -Raw | ConvertFrom-Json -AsHashtable
+        $result.Succeeded | Should -Be (-not $Reject) -Because $result.Failure
+        Assert-AttachmentOriginal
+        if ($Reject) {
+            $result.Events | Should -Be @('config')
+            $result.Failure | Should -Be 'CDC HTTP configuration must have no projection targets and disabled read acceleration.'
+            $result.Handoff | Should -BeNullOrEmpty
+            @(Get-ChildItem (Join-Path $script:attachmentRoot '.cdc-deployments') -Filter '*.handoff.json').Count | Should -Be 0
+        }
+        else {
+            $result.Events | Should -Be @('config', 'stop-dms', 'verify-stopped', 'up-dms', 'health')
+            $handoff = Get-Content $result.Handoff -Raw | ConvertFrom-Json -AsHashtable
+            $handoff.dmsBaseUrl | Should -BeExactly 'http://127.0.0.1:18080/api'
+            $handoff.settingsPath | Should -BeExactly $script:settingsPath
+        }
+        # Isolate subsequent cases without invoking any infrastructure mutation.
+        Get-ChildItem (Join-Path $script:attachmentRoot '.cdc-deployments') -Filter 'api-e2e-*' | Remove-Item
+        Remove-Item (Join-Path $script:attachmentRoot ".cdc-deployments/$Project.json")
+        Remove-Item (Join-Path $script:attachmentRoot '.bootstrap') -Recurse -Force
+    }
+
+    It 'normalizes HTTP path base <PathBase> like the DMS host' -ForEach @(
+        @{ PathBase = ''; Suffix = '' }
+        @{ PathBase = '/'; Suffix = '' }
+        @{ PathBase = 'api'; Suffix = '/api' }
+        @{ PathBase = '/api'; Suffix = '/api' }
+        @{ PathBase = 'api/'; Suffix = '/api' }
+        @{ PathBase = '/api/'; Suffix = '/api' }
+        @{ PathBase = 'custom/api'; Suffix = '/custom/api' }
+    ) {
+        $configuration = @{ services = @{ dms = @{
+            environment = @{ AppSettings__PathBase = $PathBase }
+            ports = @(@{ host_ip = '127.0.0.1'; published = '18080'; protocol = 'tcp' })
+        } } }
+        Resolve-E2ECdcHttpBaseUrl $configuration | Should -BeExactly "http://127.0.0.1:18080$Suffix"
+    }
+
+    It 'rejects path base containing URL authority, query, fragment or backslash syntax: <PathBase>' -ForEach @(
+        @{ PathBase = '//unrelated-host' }
+        @{ PathBase = 'https://unrelated-host' }
+        @{ PathBase = 'api?query=value' }
+        @{ PathBase = '/api#fragment' }
+        @{ PathBase = 'api\path' }
+    ) {
+        $configuration = @{ services = @{ dms = @{
+            environment = @{ AppSettings__PathBase = $PathBase }
+            ports = @(@{ host_ip = '127.0.0.1'; published = '18080'; protocol = 'tcp' })
+        } } }
+        { Resolve-E2ECdcHttpBaseUrl $configuration } | Should -Throw 'CDC API E2E HTTP path base is invalid.'
     }
 
     It 'rolls out HTTP then publishes attachment with original teardown authority for <Provider>, <Project>, <IdentityProvider>' -ForEach @(

@@ -102,10 +102,14 @@ function Resolve-E2ECdcHttpBaseUrl {
         throw 'CDC API E2E requires one resolved host-reachable HTTP port.'
     }
     $pathBase = [string]$dms.environment['AppSettings__PathBase']
-    if ($pathBase -and ($pathBase -notmatch '^/[^?#\\]*$' -or $pathBase.StartsWith('//'))) {
+    if ($pathBase -and ($pathBase -match '[:?#\\]' -or $pathBase.StartsWith('//'))) {
         throw 'CDC API E2E HTTP path base is invalid.'
     }
-    return "http://127.0.0.1:$($ports[0].published)$($pathBase.TrimEnd('/'))"
+    # Program.cs passes /{pathBase.Trim('/')} to UsePathBase. The shipped environment
+    # uses "api", so normalize both unprefixed and prefixed values as the host does.
+    $pathBase = $pathBase.Trim('/')
+    $suffix = if ($pathBase) { "/$pathBase" } else { '' }
+    return "http://127.0.0.1:$($ports[0].published)$suffix"
 }
 
 function Write-E2ECdcApiHandoff {
@@ -234,8 +238,10 @@ function Assert-E2ECdcApiAttachment {
     }
     $ports = @($hostConfig.NetworkSettings.Ports.Values | ForEach-Object { $_ } | Where-Object { $_.HostIp -in @('127.0.0.1', '0.0.0.0') })
     if ($ports.Count -ne 1) { throw 'HTTP port' }
-    $pathBase = [string]$environment['AppSettings__PathBase']
-    $expectedUrl = "http://127.0.0.1:$($ports[0].HostPort)$($pathBase.TrimEnd('/'))"
+    $expectedUrl = Resolve-E2ECdcHttpBaseUrl -Configuration @{ services = @{ dms = @{
+        environment = $environment
+        ports = @(@{ host_ip = $ports[0].HostIp; published = $ports[0].HostPort; protocol = 'tcp' })
+    } } }
     if ($handoff.dmsBaseUrl -cne $expectedUrl) { throw 'HTTP endpoint' }
     Assert-E2ECdcHttpConfiguration @{ services = @{ dms = @{ environment = $environment } } }
 }
