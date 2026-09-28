@@ -37,6 +37,10 @@ public sealed class JobScheduleDispatcherService(
         1437_22,
         nameof(ScheduleMaterializationFailed)
     );
+    internal static readonly EventId ScheduleOccurrenceSkippedActiveJob = new(
+        1437_23,
+        nameof(ScheduleOccurrenceSkippedActiveJob)
+    );
 
     /// <summary>
     /// The lease a materialization takes on its schedule. The lease is never persisted: the materialization commits
@@ -126,6 +130,19 @@ public sealed class JobScheduleDispatcherService(
                         JobDiagnostics.SafeIdentifier(already.ScheduleType),
                         already.Occurrence,
                         already.NewNextRunAt
+                    );
+                    break;
+                case JobScheduleMaterializeResult.SkippedActiveJob skipped:
+                    // Normal operation (D-8): the previous job is still active, so this occurrence is discarded. It
+                    // is not an enqueue, so the occurrences metric is not incremented.
+                    logger.LogInformation(
+                        ScheduleOccurrenceSkippedActiveJob,
+                        "{Event} ScheduleId={ScheduleId} ScheduleType={ScheduleType} Occurrence={Occurrence} NextRunAt={NextRunAt}",
+                        nameof(ScheduleOccurrenceSkippedActiveJob),
+                        skipped.ScheduleId,
+                        JobDiagnostics.SafeIdentifier(skipped.ScheduleType),
+                        skipped.Occurrence,
+                        skipped.NewNextRunAt
                     );
                     break;
                 case JobScheduleMaterializeResult.NoneDue:

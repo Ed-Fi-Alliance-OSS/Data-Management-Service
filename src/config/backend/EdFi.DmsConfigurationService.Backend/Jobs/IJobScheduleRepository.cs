@@ -26,7 +26,8 @@ public interface IJobScheduleRepository
 
     /// <summary>
     /// Materializes the next due occurrence of one schedule in a single bounded transaction: it leases the
-    /// schedule, inserts the occurrence as job <paramref name="newJobId"/>, and advances the schedule.
+    /// schedule, inserts the occurrence as job <paramref name="newJobId"/> unless the schedule's previous job is
+    /// still active, and advances the schedule.
     /// </summary>
     Task<JobScheduleMaterializeResult> MaterializeNextDue(
         string owner,
@@ -85,10 +86,23 @@ public record JobScheduleMaterializeResult
     ) : JobScheduleMaterializeResult;
 
     /// <summary>
-    /// A job for this occurrence already existed; the schedule still advanced, as for
-    /// <see cref="Materialized"/>.
+    /// A job for this occurrence already existed (defensive recovery); the schedule still advanced, as for
+    /// <see cref="Materialized"/>, and now records this occurrence as its last enqueued one.
     /// </summary>
     public record AlreadyEnqueued(
+        long ScheduleId,
+        string ScheduleType,
+        DateTime Occurrence,
+        DateTime NewNextRunAt,
+        DateTime DatabaseUtcNow
+    ) : JobScheduleMaterializeResult;
+
+    /// <summary>
+    /// The schedule's last enqueued job is still <c>Pending</c> or <c>InProgress</c>, so <paramref name="Occurrence"/>
+    /// was discarded without a job (D-8). The schedule advanced as for <see cref="Materialized"/> and still records
+    /// that earlier job as its last enqueued one.
+    /// </summary>
+    public record SkippedActiveJob(
         long ScheduleId,
         string ScheduleType,
         DateTime Occurrence,

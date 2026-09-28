@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -179,6 +180,73 @@ public class JobScheduleDispatcherServiceTests
                 .Select(measurement => measurement.Tags["schedule_type"])
                 .Should()
                 .Equal("Nightly.Refresh", "Hourly.Check");
+    }
+
+    [TestFixture]
+    public class Given_a_schedule_whose_previous_job_is_still_active
+    {
+        private DispatcherHarness _harness = null!;
+        private JobMetricsTests.Recorder _recorder = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _recorder = new JobMetricsTests.Recorder();
+            _harness = new DispatcherHarness();
+            _harness.Repository.Returns(
+                new JobScheduleMaterializeResult.SkippedActiveJob(
+                    1,
+                    "Nightly\nRefresh",
+                    new DateTime(2026, 9, 24, 12, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 9, 25, 12, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 9, 24, 12, 0, 1, DateTimeKind.Utc)
+                ),
+                DispatcherHarness.Materialized(2, "Hourly.Check")
+            );
+
+            await _harness.Dispatcher.StartAsync(CancellationToken.None);
+            await HostedServiceProbe.Until(
+                () => _harness.CallCount == 3,
+                "the first poll found nothing more due"
+            );
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            await HostedServiceProbe.StopAsync(_harness.Dispatcher);
+            _harness.Dispose();
+            _recorder.Dispose();
+        }
+
+        [Test]
+        public void It_continues_the_poll_after_the_skip() => _harness.CallCount.Should().Be(3);
+
+        [Test]
+        public void It_logs_the_skip_as_normal_operation_with_safe_fields()
+        {
+            _harness
+                .Logger.Entries.Select(entry => (entry.EventId.Name, entry.Level))
+                .Should()
+                .Equal(
+                    ("ScheduleOccurrenceSkippedActiveJob", LogLevel.Information),
+                    ("ScheduleOccurrenceEnqueued", LogLevel.Information)
+                );
+            LogEntry skipped = _harness.Logger.Entries.First();
+            skipped.Field("ScheduleId").Should().Be(1L);
+            skipped.Field("ScheduleType").Should().Be(JobDiagnostics.SafeIdentifier("Nightly\nRefresh"));
+            skipped.Message.Should().NotContain("\n");
+        }
+
+        [Test]
+        public void It_counts_only_the_enqueued_occurrence() =>
+            _recorder
+                .Measurements.Where(measurement =>
+                    measurement.Instrument == "dmscs.schedules.occurrences_enqueued"
+                )
+                .Select(measurement => measurement.Tags["schedule_type"])
+                .Should()
+                .Equal("Hourly.Check");
     }
 
     [TestFixture("ownership lost")]

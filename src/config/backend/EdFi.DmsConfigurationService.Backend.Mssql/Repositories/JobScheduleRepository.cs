@@ -23,8 +23,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 /// SQL Server reads <c>SYSUTCDATETIME()</c> once, when a statement starts, so every write that may follow a lock
 /// wait takes its time from a statement issued after the lock is held. A materialization is one API transaction
 /// under one <see cref="JobScheduleTimings.MaterializationTimeout"/> deadline: it locks one due schedule, skipping
-/// row-locked schedules, leases it, inserts the occurrence as a job unless one already exists, and advances the
-/// schedule with a statement whose one time sample is read after the insert. Upsert and disable are short
+/// row-locked schedules, leases it, inserts the occurrence as a job unless one already exists or the schedule's
+/// previous job is still active, and advances the schedule with a statement whose one time sample is read after the
+/// insert. Upsert and disable are short
 /// transactions that lock the schedule's key and then write with time read after the lock; list is one statement.
 /// Each is bounded by <see cref="JobScheduleTimings.CommandTimeout"/>. Every wait runs through a
 /// <see cref="JobDatabaseSession"/>, commits are T-SQL statements bounded by the same deadline, and cleanup uses only
@@ -137,6 +138,34 @@ public sealed class JobScheduleRepository(
         WHERE Id = @Id;
         """;
 
+    // D-8 (3a): the occurrence is suppressed while the schedule's last enqueued job is still Pending (a retry
+    // waiting for a future NextAttemptAt included) or InProgress (an expired lease included: that job awaits
+    // recovery). Only a materialization inserts jobs of this schedule, and it holds the schedule's row lock, so the
+    // pointer names the only job of the schedule that can be active. An occurrence that already exists is not
+    // suppressed: it takes the defensive recovery path, which points the schedule at it. The status read waits
+    // behind a job row's exclusive lock, never guesses past it; a fence's update lock does not block it. The
+    // repeated IS NOT NULL conjuncts restate the filter of UX_Job_SourceScheduleId_ScheduledOccurrence, so both
+    // probes' predicates allow use of that filtered index.
+    private const string SuppressSql = """
+        SELECT CAST(IIF(
+            EXISTS (
+                SELECT 1
+                FROM dmscs.Job AS j
+                WHERE j.SourceScheduleId = s.Id
+                  AND j.ScheduledOccurrence = s.LastEnqueuedOccurrence
+                  AND j.SourceScheduleId IS NOT NULL AND j.ScheduledOccurrence IS NOT NULL
+                  AND j.Status IN (N'Pending', N'InProgress'))
+            AND NOT EXISTS (
+                SELECT 1
+                FROM dmscs.Job AS j
+                WHERE j.SourceScheduleId = s.Id
+                  AND j.ScheduledOccurrence = s.NextRunAt
+                  AND j.SourceScheduleId IS NOT NULL AND j.ScheduledOccurrence IS NOT NULL),
+            1, 0) AS BIT)
+        FROM dmscs.JobSchedule AS s
+        WHERE s.Id = @Id;
+        """;
+
     // D-8 (3): the occurrence's values are copied from the locked schedule row, CreatedAt and NextAttemptAt share
     // one sample (A1), and an occurrence that already exists is skipped. The locks on the occurrence probe make a
     // concurrent insert of the same occurrence wait and then be seen, as PostgreSQL's ON CONFLICT does. Any other
@@ -164,11 +193,12 @@ public sealed class JobScheduleRepository(
         "DATEADD(minute, CAST(IIF(DATEDIFF_BIG(second, s.NextRunAt, @Now) < 0, 0, DATEDIFF_BIG(second, s.NextRunAt, @Now) / (s.IntervalMinutes * 60)) AS INT) * s.IntervalMinutes, s.NextRunAt)";
 
     // D-8 (4), the coalescing decision point, with one time sample read after the insert: the lease must still be
-    // this call's, live by that time.
+    // this call's, live by that time. A suppressed occurrence advances the same way but keeps the pointer on the
+    // still-active job.
     private const string AdvanceSql = $"""
         DECLARE @Now DATETIME2 = SYSUTCDATETIME();
         UPDATE s
-        SET LastEnqueuedOccurrence = s.NextRunAt,
+        SET LastEnqueuedOccurrence = IIF(@Suppressed = 1, s.LastEnqueuedOccurrence, s.NextRunAt),
             NextRunAt = IIF(b.Boundary > @Now, b.Boundary, DATEADD(minute, s.IntervalMinutes, b.Boundary)),
             LeaseOwner = NULL,
             LeaseExpiresAt = NULL
@@ -188,8 +218,8 @@ public sealed class JobScheduleRepository(
         TenantContext is TenantContext.Multitenant multitenant ? multitenant.TenantId : null;
 
     /// <summary>
-    /// Test seam: runs on the materialization's transaction after the occurrence insert and before the
-    /// advancing <c>UPDATE</c>.
+    /// Test seam: runs on the materialization's transaction after the occurrence insert, or its suppression, and
+    /// before the advancing <c>UPDATE</c>.
     /// </summary>
     internal Func<DbTransaction, Task>? AfterInsertHook { get; init; }
 
@@ -432,21 +462,33 @@ public sealed class JobScheduleRepository(
                 cancellationToken
             );
 
-            int inserted = await session.RunAsync(
-                "InsertOccurrence",
+            bool suppressed = await session.RunAsync(
+                "CheckPreviousJob",
                 token =>
-                    session.Connection.ExecuteScalarAsync<int>(
-                        MssqlJobSession.Command(
-                            session,
-                            InsertOccurrenceSql,
-                            new { JobId = newJobId, due.Id },
-                            budget,
-                            token
-                        )
+                    session.Connection.ExecuteScalarAsync<bool>(
+                        MssqlJobSession.Command(session, SuppressSql, new { due.Id }, budget, token)
                     ),
                 budget,
                 cancellationToken
             );
+
+            int inserted = suppressed
+                ? 0
+                : await session.RunAsync(
+                    "InsertOccurrence",
+                    token =>
+                        session.Connection.ExecuteScalarAsync<int>(
+                            MssqlJobSession.Command(
+                                session,
+                                InsertOccurrenceSql,
+                                new { JobId = newJobId, due.Id },
+                                budget,
+                                token
+                            )
+                        ),
+                    budget,
+                    cancellationToken
+                );
 
             if (AfterInsertHook is { } afterInsert)
             {
@@ -465,6 +507,7 @@ public sealed class JobScheduleRepository(
                                 due.Id,
                                 Owner = owner,
                                 Token = fencingToken,
+                                Suppressed = suppressed,
                             },
                             budget,
                             token
@@ -485,22 +528,31 @@ public sealed class JobScheduleRepository(
             DateTime occurrence = AsUtc(due.NextRunAt);
             DateTime newNextRunAt = AsUtc(advanced.NewNextRunAt);
             DateTime databaseUtcNow = AsUtc(advanced.DatabaseUtcNow);
-            return inserted == 0
-                ? new JobScheduleMaterializeResult.AlreadyEnqueued(
+            return (suppressed, inserted) switch
+            {
+                (true, _) => new JobScheduleMaterializeResult.SkippedActiveJob(
                     due.Id,
                     due.ScheduleType,
                     occurrence,
                     newNextRunAt,
                     databaseUtcNow
-                )
-                : new JobScheduleMaterializeResult.Materialized(
+                ),
+                (false, 0) => new JobScheduleMaterializeResult.AlreadyEnqueued(
+                    due.Id,
+                    due.ScheduleType,
+                    occurrence,
+                    newNextRunAt,
+                    databaseUtcNow
+                ),
+                _ => new JobScheduleMaterializeResult.Materialized(
                     due.Id,
                     due.ScheduleType,
                     newJobId,
                     occurrence,
                     newNextRunAt,
                     databaseUtcNow
-                );
+                ),
+            };
         }
         catch (Exception exception)
         {

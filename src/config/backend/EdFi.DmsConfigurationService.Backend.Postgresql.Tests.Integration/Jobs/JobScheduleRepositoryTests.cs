@@ -196,6 +196,56 @@ public class JobScheduleRepositoryTests
 
         protected async Task<long> JobCountAsync() =>
             await Connection!.ExecuteScalarAsync<long>("""SELECT count(*) FROM "dmscs"."Job";""");
+
+        /// <summary>Makes a schedule due 5 s ago, later than any occurrence it already has; returns the occurrence.</summary>
+        protected async Task<DateTime> MakeDueAsync(long scheduleId) =>
+            Utc(
+                await Connection!.ExecuteScalarAsync<DateTime>(
+                    """
+                    UPDATE "dmscs"."JobSchedule"
+                    SET "NextRunAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '5 seconds'
+                    WHERE "Id" = @Id
+                    RETURNING "NextRunAt";
+                    """,
+                    new { Id = scheduleId }
+                )
+            );
+
+        /// <summary>Puts the schedule's latest job into <paramref name="state"/>, as a worker would have left it.</summary>
+        protected async Task SetLatestJobStateAsync(long scheduleId, string state)
+        {
+            string set = state switch
+            {
+                "InProgress" => """
+                    "Status" = 'InProgress', "AttemptCount" = 1, "LeaseOwner" = 'worker-a',
+                        "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') + interval '300 seconds',
+                        "FencingToken" = "FencingToken" + 1
+                    """,
+                "InProgress with an expired lease" => """
+                    "Status" = 'InProgress', "AttemptCount" = 1, "LeaseOwner" = 'worker-a',
+                        "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '5 seconds',
+                        "FencingToken" = "FencingToken" + 1
+                    """,
+                "Pending retry" => """
+                    "Status" = 'Pending', "AttemptCount" = 1, "LeaseOwner" = NULL, "LeaseExpiresAt" = NULL,
+                        "NextAttemptAt" = (clock_timestamp() AT TIME ZONE 'UTC') + interval '1 hour'
+                    """,
+                "Completed" or "Error" => $"""
+                    "Status" = '{state}', "LeaseOwner" = NULL, "LeaseExpiresAt" = NULL,
+                        "FinishedAt" = (clock_timestamp() AT TIME ZONE 'UTC')
+                    """,
+                _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+            };
+            int rows = await Connection!.ExecuteAsync(
+                $"""
+                UPDATE "dmscs"."Job"
+                SET {set}
+                WHERE "Id" = (SELECT max("Id") FROM "dmscs"."Job" WHERE "SourceScheduleId" = @Id);
+                """,
+                new { Id = scheduleId }
+            );
+            rows.Should().Be(1);
+        }
     }
 
     [TestFixture]
@@ -953,11 +1003,14 @@ public class JobScheduleRepositoryTests
         private JobScheduleMaterializeResult _third = null!;
         private StoredSchedule _enqueued = null!;
         private List<JobRepositoryTests.StoredJob> _enqueuedJobs = [];
+        private JobScheduleMaterializeResult _nextInterval = null!;
+        private List<JobRepositoryTests.StoredJob> _enqueuedJobsAfterNextInterval = [];
 
         [SetUp]
         public async Task Setup()
         {
-            // Left by a code path that persisted a lease and its occurrence, then crashed before advancing.
+            // Left by a code path that persisted a lease and its occurrence, then crashed before advancing. The
+            // schedule has no LastEnqueuedOccurrence, so only the recovery can point it at the existing job.
             _enqueuedId = await SeedScheduleAsync(
                 nextRunOffset: -20,
                 leaseOwner: "crashed-dispatcher",
@@ -988,6 +1041,26 @@ public class JobScheduleRepositoryTests
             _third = await MaterializeAsync();
             _enqueued = await ReadScheduleAsync(_enqueuedId);
             _enqueuedJobs = await JobsOfAsync(_enqueuedId);
+
+            // The recovered job is still Pending when the next interval falls due.
+            await MakeDueAsync(_enqueuedId);
+            _nextInterval = await MaterializeAsync();
+            _enqueuedJobsAfterNextInterval = await JobsOfAsync(_enqueuedId);
+        }
+
+        [Test]
+        public void It_points_the_schedule_at_the_recovered_occurrence() =>
+            _enqueued.LastEnqueuedOccurrence.Should().Be(_enqueuedOccurrence);
+
+        [Test]
+        public void It_suppresses_a_sibling_while_the_recovered_job_is_active()
+        {
+            _nextInterval
+                .Should()
+                .BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>()
+                .Which.ScheduleId.Should()
+                .Be(_enqueuedId);
+            _enqueuedJobsAfterNextInterval.Should().ContainSingle();
         }
 
         [Test]
@@ -1019,6 +1092,136 @@ public class JobScheduleRepositoryTests
 
         [Test]
         public void It_is_not_due_again() => _third.Should().BeOfType<JobScheduleMaterializeResult.NoneDue>();
+    }
+
+    [TestFixture("InProgress with an expired lease")]
+    [TestFixture("Pending retry")]
+    public class Given_a_due_schedule_whose_previous_job_is_active(string state) : JobScheduleTestBase
+    {
+        private long _scheduleId;
+        private DateTime _previousOccurrence;
+        private DateTime _skippedOccurrence;
+        private JobRepositoryTests.StoredJob _previousJob = null!;
+        private JobScheduleMaterializeResult _result = null!;
+        private JobScheduleMaterializeResult _again = null!;
+        private StoredSchedule _schedule = null!;
+        private List<JobRepositoryTests.StoredJob> _jobs = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _scheduleId = await SeedScheduleAsync(nextRunOffset: -10, intervalMinutes: 60);
+            _previousOccurrence = MaterializedOf(await MaterializeAsync()).Occurrence;
+            await SetLatestJobStateAsync(_scheduleId, state);
+            _previousJob = (await JobsOfAsync(_scheduleId)).Single();
+            _skippedOccurrence = await MakeDueAsync(_scheduleId);
+
+            _result = await MaterializeAsync();
+            _again = await MaterializeAsync();
+            _schedule = await ReadScheduleAsync(_scheduleId);
+            _jobs = await JobsOfAsync(_scheduleId);
+        }
+
+        [Test]
+        public void It_skips_the_occurrence_with_a_distinct_result()
+        {
+            JobScheduleMaterializeResult.SkippedActiveJob skipped = _result
+                .Should()
+                .BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>()
+                .Subject;
+            skipped.ScheduleId.Should().Be(_scheduleId);
+            skipped.Occurrence.Should().Be(_skippedOccurrence);
+            skipped.NewNextRunAt.Should().Be(_skippedOccurrence.AddMinutes(60));
+        }
+
+        [Test]
+        public void It_enqueues_nothing_and_leaves_the_previous_job_untouched() =>
+            _jobs.Should().ContainSingle().Which.Should().BeEquivalentTo(_previousJob);
+
+        [Test]
+        public void It_keeps_the_occurrence_pointer_on_the_previous_job() =>
+            _schedule.LastEnqueuedOccurrence.Should().Be(_previousOccurrence);
+
+        [Test]
+        public void It_advances_to_the_first_future_interval_and_clears_its_lease()
+        {
+            _schedule.NextRunAt.Should().Be(_skippedOccurrence.AddMinutes(60));
+            _schedule.LeaseOwner.Should().BeNull();
+            _schedule.LeaseExpiresAt.Should().BeNull();
+            _schedule.FencingToken.Should().Be(2);
+        }
+
+        [Test]
+        public void It_is_not_due_again() => _again.Should().BeOfType<JobScheduleMaterializeResult.NoneDue>();
+    }
+
+    [TestFixture("Completed")]
+    [TestFixture("Error")]
+    public class Given_a_previous_job_active_across_two_due_intervals(string terminalStatus)
+        : JobScheduleTestBase
+    {
+        private long _scheduleId;
+        private DateTime _firstOccurrence;
+        private DateTime _eligibleOccurrence;
+        private string _newJobId = "";
+        private JobScheduleMaterializeResult _secondInterval = null!;
+        private JobScheduleMaterializeResult _thirdInterval = null!;
+        private DateTime? _pointerWhileActive;
+        private JobScheduleMaterializeResult _afterTerminal = null!;
+        private List<JobRepositoryTests.StoredJob> _jobs = [];
+        private DateTime? _pointerAfterTerminal;
+        private JobScheduleMaterializeResult _behindTheNewJob = null!;
+        private long _jobCountAtEnd;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _scheduleId = await SeedScheduleAsync(nextRunOffset: -10, intervalMinutes: 60);
+            _firstOccurrence = MaterializedOf(await MaterializeAsync()).Occurrence;
+            await SetLatestJobStateAsync(_scheduleId, "InProgress");
+
+            await MakeDueAsync(_scheduleId);
+            _secondInterval = await MaterializeAsync();
+            await MakeDueAsync(_scheduleId);
+            _thirdInterval = await MaterializeAsync();
+            _pointerWhileActive = (await ReadScheduleAsync(_scheduleId)).LastEnqueuedOccurrence;
+
+            await SetLatestJobStateAsync(_scheduleId, terminalStatus);
+            _eligibleOccurrence = await MakeDueAsync(_scheduleId);
+            _newJobId = NewJobId();
+            _afterTerminal = await MaterializeAsync(jobId: _newJobId);
+            _jobs = await JobsOfAsync(_scheduleId);
+            _pointerAfterTerminal = (await ReadScheduleAsync(_scheduleId)).LastEnqueuedOccurrence;
+
+            await MakeDueAsync(_scheduleId);
+            _behindTheNewJob = await MaterializeAsync();
+            _jobCountAtEnd = await JobCountAsync();
+        }
+
+        [Test]
+        public void It_skips_every_interval_while_the_job_is_active()
+        {
+            _secondInterval.Should().BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>();
+            _thirdInterval.Should().BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>();
+            _pointerWhileActive.Should().Be(_firstOccurrence);
+        }
+
+        [Test]
+        public void It_enqueues_exactly_one_job_once_the_previous_job_is_terminal()
+        {
+            JobScheduleMaterializeResult.Materialized materialized = MaterializedOf(_afterTerminal);
+            materialized.JobId.Should().Be(_newJobId);
+            materialized.Occurrence.Should().Be(_eligibleOccurrence);
+            _jobs.Select(job => job.JobId).Should().HaveCount(2).And.EndWith(_newJobId);
+            _pointerAfterTerminal.Should().Be(_eligibleOccurrence);
+        }
+
+        [Test]
+        public void It_suppresses_the_next_interval_behind_the_new_job()
+        {
+            _behindTheNewJob.Should().BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>();
+            _jobCountAtEnd.Should().Be(2);
+        }
     }
 
     [TestFixture("owner")]

@@ -232,9 +232,19 @@ in a single transaction that also advances the schedule:
   first interval boundary after the current database time (coalescing); missed occurrences are not
   replayed.
 - An occurrence is enqueued at most once, including when two instances dispatch at the same time.
+- While the schedule's previous job is still `Pending` (including a retry waiting for its next
+  attempt) or `InProgress` (including one whose lease expired and awaits recovery), a due
+  occurrence is skipped: no job is enqueued, the schedule still advances to the first future
+  interval, and `ScheduleOccurrenceSkippedActiveJob` is logged. Skipped intervals are discarded,
+  not queued. The next occurrence that falls due after the previous job ends in `Completed` or
+  `Error` is enqueued normally.
 - A disabled schedule enqueues nothing more; its past jobs are kept.
 
-Scheduled jobs run through the same worker and the same lifecycle as any other job.
+Scheduled jobs run through the same worker and the same lifecycle as any other job. The skip rule
+only keeps one schedule's own jobs from overlapping. It does not coordinate a scheduled job with
+manually enqueued jobs or with jobs from other schedules that touch the same tenant or target. A
+consumer that needs that, such as the education-organization refresh (DMS-1441), must deduplicate
+or serialize that work itself.
 
 ## Recovery
 
@@ -288,6 +298,7 @@ Identifiers are sanitized before logging.
 | `WorkerPollFailed`                  | Warning / Error | A worker poll failed (Warning for a database failure result, Error for an exception); retried next poll |
 | `ScheduleOccurrenceEnqueued`        | Info     | A schedule occurrence became a job                        |
 | `ScheduleOccurrenceAlreadyEnqueued` | Warning  | The occurrence already existed (defensive recovery)       |
+| `ScheduleOccurrenceSkippedActiveJob` | Info    | Skipped because the schedule's previous job is active     |
 | `ScheduleMaterializationFailed`     | Warning  | A dispatch rolled back; retried next poll                 |
 | `RetentionDeleted`                  | Info     | Finished jobs deleted by one sweep                        |
 | `RetentionFailed`                   | Warning  | A retention sweep stopped early; retried next interval    |
