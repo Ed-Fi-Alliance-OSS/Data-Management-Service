@@ -1229,7 +1229,13 @@ wrong-invocation and rejected data are identified, never copied as raw output.
 Private settings, handoff, logs, auth headers, connection strings and document bodies
 are excluded. Original execution, cleanup and export failures remain separate.
 
-PostgreSQL full qualification: **pending T23**. SQL Server full qualification:
+PostgreSQL full qualification: **blocked T23**, with zero scenarios executed.
+The [failed runner report](evidence/dms1325-t23-postgresql-blocked/qualification.json)
+and [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-blocked/cdc-api-e2e.json)
+record an admission-time Connect rebalance/read-back failure, followed by successful
+governed cleanup and export. See [blocker details](../../PROBLEMS.md) and
+[run inputs](evidence/dms1325-t23-postgresql-blocked/run-details.json). This is no
+API-to-Kafka qualification claim. SQL Server full qualification:
 **pending T24**. T19's parser, privacy, interruption and delegation tests provide no
 live qualification claim. Detailed E18 paging/query-plan/repair matrices, sibling
 message/consumer conformance, strict native-recovery fencing and same-topic recovery

@@ -1,0 +1,133 @@
+{
+  "Version": 1,
+  "InvocationId": "badb5f80-7515-4fe8-ae4c-cfefb2d9c1ff",
+  "Provider": "Postgresql",
+  "BindingId": "",
+  "Generation": 0,
+  "RequestedConnectDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+  "ReportValidation": "ScenarioReportMissing",
+  "Stages": {
+    "Setup": "Failed",
+    "Test": "NotRun",
+    "Teardown": "Passed",
+    "Export": "Passed"
+  },
+  "Failures": {
+    "Reason": "PrerequisiteFailed",
+    "CleanupFailure": "None",
+    "ExportFailure": "None",
+    "ReportFailure": "None"
+  },
+  "Process": {
+    "Status": "ReportUnavailable",
+    "Total": 0,
+    "Passed": 0,
+    "Failed": 0,
+    "Skipped": 0
+  },
+  "Attachment": "NotRun",
+  "Disposal": "NotRun",
+  "Scenarios": [],
+  "Traceability": [
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03",
+        "CDC-INV-06"
+      ],
+      "Id": "CDC-E2E-01"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03",
+        "CDC-INV-06"
+      ],
+      "Id": "CDC-E2E-02"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03"
+      ],
+      "Id": "CDC-E2E-03"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03"
+      ],
+      "Id": "CDC-E2E-04"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03",
+        "CDC-INV-06",
+        "CDC-INV-11"
+      ],
+      "Id": "CDC-E2E-05"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03"
+      ],
+      "Id": "CDC-E2E-06"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-06",
+        "CDC-INV-11"
+      ],
+      "Id": "CDC-E2E-07"
+    },
+    {
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-06",
+        "CDC-INV-11"
+      ],
+      "Id": "CDC-E2E-08"
+    }
+  ],
+  "Diagnostics": {
+    "Availability": "Missing",
+    "Truncated": false,
+    "Rejected": 0,
+    "Checkpoints": []
+  },
+  "RuntimeInputs": {
+    "Availability": "Available",
+    "Images": [
+      {
+        "ManifestDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+        "Service": "kafka-cdc-worker",
+        "ImageId": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d"
+      },
+      {
+        "ManifestDigest": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+        "Service": "kafka",
+        "ImageId": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f"
+      },
+      {
+        "ManifestDigest": "",
+        "Service": "config",
+        "ImageId": "sha256:814539283cdc5951db693ca79fbadd48237fe52b0f3382ffc55e8f4f6962d342"
+      },
+      {
+        "ManifestDigest": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+        "Service": "db",
+        "ImageId": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0"
+      }
+    ],
+    "CleanupMode": "Governed",
+    "ResourcesAbsent": true,
+    "OwnedCounts": {
+      "container": 4,
+      "volume": 3,
+      "network": 0
+    }
+  }
+}
