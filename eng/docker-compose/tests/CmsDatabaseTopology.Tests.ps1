@@ -4291,7 +4291,9 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $lines = @(
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 "POSTGRES_DB_NAME=$PostgresDbName",
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
+                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained',
+                # Keycloak starts refuse an env file without it.
+                'KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
             ) + $AdditionalLines
             Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
             return $path
@@ -5331,7 +5333,9 @@ foreach ($name in $InterceptedCommand) {
                 Set-Content -LiteralPath $envFile -NoNewline -Value (@(
                     'POSTGRES_PASSWORD=abcdefgh1!',
                     'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                    "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider"
+                    "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider",
+                    # Keycloak starts refuse an env file without it.
+                    'KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
                 ) -join "`n")
 
                 # Succeed for the database and Keycloak bring-ups, fail at the next compose up - the
