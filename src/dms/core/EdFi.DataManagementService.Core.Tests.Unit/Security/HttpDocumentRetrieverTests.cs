@@ -6,6 +6,8 @@
 using System.Net;
 using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using NUnit.Framework;
 
@@ -35,12 +37,41 @@ public class HttpDocumentRetrieverTests
         }
     }
 
+    private sealed class CapturingLogger : ILogger<HttpDocumentRetriever>
+    {
+        public List<(LogLevel Level, IReadOnlyDictionary<string, object?> Properties)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Dictionary<string, object?> properties = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                ? pairs.ToDictionary(pair => pair.Key, pair => pair.Value)
+                : [];
+            Entries.Add((logLevel, properties));
+        }
+    }
+
     private static async Task<(string? Document, Exception? Exception, RecordingHandler Handler)> Fetch(
-        string address
+        string address,
+        ILogger<HttpDocumentRetriever>? logger = null
     )
     {
         var handler = new RecordingHandler();
-        var retriever = new HttpDocumentRetriever(new HttpClient(handler), _metadataAddress)
+        var retriever = new HttpDocumentRetriever(
+            new HttpClient(handler),
+            _metadataAddress,
+            logger ?? NullLogger<HttpDocumentRetriever>.Instance
+        )
         {
             RequireHttps = false,
         };
@@ -105,6 +136,46 @@ public class HttpDocumentRetrieverTests
         public void It_sends_no_request()
         {
             _handler.Requests.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// A refusal during a background refresh never reaches DMS code, because the configuration
+    /// manager swallows it, so the retriever's own log entry is its only trace.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Foreign_Address_Refused_With_A_Logger : HttpDocumentRetrieverTests
+    {
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+            await Fetch("http://evil.example/\r\n.well-known/jwks.json", _logger);
+        }
+
+        [Test]
+        public void It_logs_an_error_naming_the_sanitized_address()
+        {
+            _logger
+                .Entries.Should()
+                .ContainSingle(entry => entry.Level == LogLevel.Error)
+                .Which.Properties["DocumentAddress"]
+                .Should()
+                .Be("http://evil.example/.well-known/jwks.json");
+        }
+
+        [Test]
+        public void It_logs_an_error_naming_the_allowed_origin()
+        {
+            _logger
+                .Entries.Should()
+                .ContainSingle(entry => entry.Level == LogLevel.Error)
+                .Which.Properties["AllowedOrigin"]
+                .Should()
+                .Be("http://dms-keycloak:8080");
         }
     }
 
@@ -192,7 +263,11 @@ public class HttpDocumentRetrieverTests
                 }
                 """
             );
-            var retriever = new HttpDocumentRetriever(new HttpClient(_handler), _metadataAddress)
+            var retriever = new HttpDocumentRetriever(
+                new HttpClient(_handler),
+                _metadataAddress,
+                NullLogger<HttpDocumentRetriever>.Instance
+            )
             {
                 RequireHttps = false,
             };

@@ -174,4 +174,74 @@ public class AuthStartupTaskRegistrationTests
             _configurationManager.Should().BeOfType<ConfigurationManager<OpenIdConnectConfiguration>>();
         }
     }
+
+    [TestFixture]
+    public class Given_Jwt_Authentication_With_A_Scheme_Less_Metadata_Address
+        : AuthStartupTaskRegistrationTests
+    {
+        private Action _resolve = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Uri.TryCreate accepts this as absolute, with "localhost" as its scheme.
+            ServiceProvider provider = BuildJwtAuthenticationProvider(
+                new Dictionary<string, string?>
+                {
+                    ["JwtAuthentication:Authority"] = "http://localhost:8081",
+                    ["JwtAuthentication:MetadataAddress"] = "localhost:8081/.well-known/openid-configuration",
+                }
+            );
+
+            _resolve = () => provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();
+        }
+
+        [Test]
+        public void It_throws_naming_the_metadata_address_setting()
+        {
+            _resolve
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage(
+                    "JwtAuthentication:MetadataAddress must be an absolute http(s) URL for JWT authentication"
+                );
+        }
+    }
+
+    /// <summary>
+    /// HttpDocumentRetriever checks only the address it is handed, so the client it fetches with
+    /// must not follow a redirect to another origin.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Oidc_Metadata_Http_Client : AuthStartupTaskRegistrationTests
+    {
+        private HttpMessageHandler _primaryHandler = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceProvider provider = BuildJwtAuthenticationProvider([]);
+
+            HttpMessageHandler handler = provider
+                .GetRequiredService<IHttpMessageHandlerFactory>()
+                .CreateHandler(Core.Security.HttpDocumentRetriever.HttpClientName);
+
+            while (handler is DelegatingHandler delegating)
+            {
+                handler = delegating.InnerHandler!;
+            }
+
+            _primaryHandler = handler;
+        }
+
+        [Test]
+        public void It_does_not_follow_redirects()
+        {
+            _primaryHandler
+                .Should()
+                .BeOfType<SocketsHttpHandler>()
+                .Which.AllowAutoRedirect.Should()
+                .BeFalse();
+        }
+    }
 }
