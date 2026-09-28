@@ -225,7 +225,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             }
             boundary = CdcAttachmentBoundary.Provider;
             await connection.OpenAsync(ct);
-            context.Documents = new(request.Binding.Provider, connection.ConnectionString);
+            context.Documents = new(request.Binding.Provider, config.CreateConnection);
             context.Provider = new(request.Binding, config.CreateConnection);
             context.Fences = new(context.Provider, request, context.Connect);
             boundary = CdcAttachmentBoundary.KafkaAdvertisedEndpoints;

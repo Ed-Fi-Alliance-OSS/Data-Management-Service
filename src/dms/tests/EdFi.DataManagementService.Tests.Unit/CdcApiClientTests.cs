@@ -3,11 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
+using EdFi.DataManagementService.SchemaTools.Cdc;
 using EdFi.DataManagementService.Tests.E2E;
 using EdFi.DataManagementService.Tests.E2E.Cdc;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -409,31 +412,105 @@ public class Given_CdcApiClient
 [TestFixture]
 public class Given_CdcDocumentObserver
 {
-    [Test]
-    public void It_selects_the_handoff_mssql_database_despite_postgresql_defaults()
+    private CdcDocumentObserver _observer = null!;
+    private readonly List<DbConnection> _connections = [];
+    private readonly InvalidOperationException _openFailure = new("Observation open boundary");
+
+    [SetUp]
+    public void Setup() => _connections.Clear();
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_retains_the_admitted_provider_and_database_on_fresh_connections(CdcProvider provider)
     {
         AppSettings.Create(new ConfigurationBuilder().Build()).DatabaseEngine.Should().Be("postgresql");
-        var observer = new CdcDocumentObserver(
-            CdcProvider.SqlServer,
-            "Server=localhost,18433;Database=admitted_mssql;User Id=sa;Password=private;"
-        );
-        using var connection = observer.CreateConnection();
-        connection.Should().BeOfType<SqlConnection>();
-        connection.Database.Should().Be("admitted_mssql");
-        connection.DataSource.Should().Be("localhost,18433");
+        var settings = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var settingsOwner = (IDisposable)settings;
+        settings["Cdc:Provider"] = provider == CdcProvider.Postgresql ? "postgresql" : "sqlserver";
+        settings["Cdc:SetupConnectionString"] =
+            provider == CdcProvider.Postgresql
+                ? "Host=localhost;Port=18543;Database=admitted_pg;Username=postgres;Password=private;"
+                : "Server=localhost,18433;Database=admitted_mssql;User Id=sa;Password=private;";
+        var config = new CdcCommandConfiguration(settings);
+        _observer = new(provider, config.CreateConnection);
+        using var first = _observer.CreateConnection();
+        using var second = _observer.CreateConnection();
+        second.Should().NotBeSameAs(first);
+        foreach (var connection in new[] { first, second })
+        {
+            if (provider == CdcProvider.Postgresql)
+            {
+                connection.Should().BeOfType<NpgsqlConnection>();
+                connection.Database.Should().Be("admitted_pg");
+                var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
+                builder.Port.Should().Be(18543);
+                builder.PersistSecurityInfo.Should().BeFalse();
+                (builder.Password == "private").Should().BeTrue();
+            }
+            else
+            {
+                connection.Should().BeOfType<SqlConnection>();
+                connection.Database.Should().Be("admitted_mssql");
+                connection.DataSource.Should().Be("localhost,18433");
+                var builder = new SqlConnectionStringBuilder(connection.ConnectionString);
+                builder.PersistSecurityInfo.Should().BeFalse();
+                (builder.Password == "private").Should().BeTrue();
+            }
+        }
     }
 
-    [Test]
-    public void It_selects_the_explicit_postgresql_database()
+    [TestCase(CdcProvider.Postgresql, "source")]
+    [TestCase(CdcProvider.Postgresql, "work")]
+    [TestCase(CdcProvider.Postgresql, "cache")]
+    [TestCase(CdcProvider.Postgresql, "sequence")]
+    [TestCase(CdcProvider.SqlServer, "source")]
+    [TestCase(CdcProvider.SqlServer, "work")]
+    [TestCase(CdcProvider.SqlServer, "cache")]
+    [TestCase(CdcProvider.SqlServer, "sequence")]
+    public async Task It_opens_and_disposes_a_fresh_factory_connection_for_each_observation(
+        CdcProvider provider,
+        string observation
+    )
     {
-        var observer = new CdcDocumentObserver(
-            CdcProvider.Postgresql,
-            "Host=localhost;Port=18543;Database=admitted_pg;Username=postgres;Password=private;"
+        // Stop at OpenAsync: exercise the observer handoff without a live driver/authentication harness.
+        _observer = new(
+            provider,
+            () =>
+            {
+                var connection = A.Fake<DbConnection>();
+                A.CallTo(() => connection.ConnectionString)
+                    .Throws(new InvalidOperationException("Do not copy connection strings"));
+                A.CallTo(() => connection.OpenAsync(A<CancellationToken>._)).ThrowsAsync(_openFailure);
+                _connections.Add(connection);
+                return connection;
+            }
         );
-        using var connection = observer.CreateConnection();
-        connection.Should().BeOfType<NpgsqlConnection>();
-        connection.Database.Should().Be("admitted_pg");
-        new NpgsqlConnectionStringBuilder(connection.ConnectionString).Port.Should().Be(18543);
+        using var cancellation = new CancellationTokenSource();
+        Func<Task> read = observation switch
+        {
+            "source" => () => _observer.ReadSourceAsync(Guid.NewGuid(), cancellation.Token),
+            "work" => () => _observer.ReadWorkAsync(73, cancellation.Token),
+            "cache" => () => _observer.ReadCacheAsync(73, cancellation.Token),
+            "sequence" => () => _observer.ReadChangeVersionSequenceAsync(cancellation.Token),
+            _ => throw new ArgumentOutOfRangeException(nameof(observation)),
+        };
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            (await read.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(_openFailure);
+        }
+        _connections.Should().HaveCount(2);
+        _connections[1].Should().NotBeSameAs(_connections[0]);
+        foreach (var connection in _connections)
+        {
+            A.CallTo(() =>
+                    connection.OpenAsync(A<CancellationToken>.That.Matches(token => token.CanBeCanceled))
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => connection.DisposeAsync()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => connection.ConnectionString).MustNotHaveHappened();
+        }
     }
 
     [Test]

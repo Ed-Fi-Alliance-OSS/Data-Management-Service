@@ -7,22 +7,14 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
-using Microsoft.Data.SqlClient;
-using Npgsql;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
-/// <summary>Read-only, single-document observations. Supply the resolved host connection string for
+/// <summary>Read-only, single-document observations. Supply the retained host connection factory for
 /// the admitted database, never the static E2E admin/reset database. No domain writes are exposed.</summary>
-internal sealed class CdcDocumentObserver(CdcProvider provider, string connectionString)
+internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnection> createConnection)
 {
-    internal DbConnection CreateConnection() =>
-        provider switch
-        {
-            CdcProvider.Postgresql => new NpgsqlConnection(connectionString),
-            CdcProvider.SqlServer => new SqlConnection(connectionString),
-            _ => throw new ArgumentOutOfRangeException(nameof(provider)),
-        };
+    internal DbConnection CreateConnection() => createConnection();
 
     public Task<IReadOnlyList<CdcSourceDocument>> ReadSourceAsync(Guid uuid, CancellationToken token) =>
         ReadAsync(
