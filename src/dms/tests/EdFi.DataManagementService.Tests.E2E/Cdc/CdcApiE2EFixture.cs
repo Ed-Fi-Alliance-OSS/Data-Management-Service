@@ -5,32 +5,23 @@
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
-/// <summary>Base for the single eight-phase scenario test; intentionally has no attachment-only test.
-/// Does not participate in Reqnroll reset hooks. Original wrapper retains infrastructure ownership.</summary>
-[Explicit("Requires -EnableKafkaCdc -CdcApiE2E and CDC_API_E2E_HANDOFF_PATH.")]
+/// <summary>One invocation, one admitted binding, no Reqnroll reset hooks or ordered NUnit tests.</summary>
+[TestFixture]
+[Explicit("Requires the CDC ApiE2E qualification runner and its private handoff.")]
 [NonParallelizable]
-public abstract class CdcApiE2EFixture
+[Category("CdcApiE2E")]
+public sealed class Given_CdcApiE2E
 {
-    private protected CdcAttachedContext Context { get; private set; } = null!;
-
-    [OneTimeSetUp]
-    public async Task AttachAsync() => Context = await CdcAttachedContext.AttachAsync(CancellationToken.None);
-
-    [OneTimeTearDown]
-    public async Task DetachAsync()
-    {
-        if (Context is null)
-        {
-            return;
-        }
-
-        if (TestContext.CurrentContext.Result.Outcome.Status == NUnit.Framework.Interfaces.TestStatus.Failed)
-        {
-            await Context.DisposeAfterFailureAsync();
-        }
-        else
-        {
-            await Context.DisposeAsync();
-        }
-    }
+    [Test]
+    public async Task It_completes_all_eight_scenarios_on_the_admitted_binding() =>
+        await Assert.ThatAsync(
+            () =>
+                new CdcScenarioRunner().RunAsync(
+                    Environment.GetEnvironmentVariable("CDC_API_E2E_REPORT_PATH") ?? "",
+                    Environment.GetEnvironmentVariable("CDC_API_E2E_INVOCATION_ID") ?? "",
+                    new CdcApiScenarios(),
+                    TestContext.CurrentContext.CancellationToken
+                ),
+            Throws.Nothing
+        );
 }

@@ -43,9 +43,9 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
         "S1854",
         Justification = "Catch uses the current attachment boundary for sanitized diagnostics."
     )]
-    public static async Task<CdcAttachedContext> AttachAsync(CancellationToken token)
+    public async Task InitializeAsync(CancellationToken token)
     {
-        CdcAttachedContext context = new();
+        CdcAttachedContext context = this;
         string boundary = "HANDOFF";
         try
         {
@@ -234,11 +234,14 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             );
             context._resources.Add(context.Api);
             await context.Api.AuthenticateAsync(ct);
-            return context;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch
         {
-            await context._resources.DisposeAfterFailureAsync();
+            // The scenario owner accounts for partial-attachment disposal in its finalization path.
             // Do not retain raw transport exceptions as inner exceptions (NUnit prints them).
             throw new InvalidOperationException($"CDC_API_ATTACHMENT_{boundary}");
         }

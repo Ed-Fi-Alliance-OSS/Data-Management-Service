@@ -333,7 +333,8 @@ public class Given_CdcAttachmentWithoutHandoff
         );
         try
         {
-            await CdcAttachedContext.AttachAsync(CancellationToken.None);
+            await using CdcAttachedContext context = new();
+            await context.InitializeAsync(CancellationToken.None);
         }
         catch (Exception exception)
         {
