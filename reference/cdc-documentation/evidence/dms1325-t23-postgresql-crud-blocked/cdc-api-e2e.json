@@ -1,0 +1,185 @@
+{
+  "Version": 1,
+  "InvocationId": "d0c9922d-9cdc-45cb-98a6-cce3948248c6",
+  "Provider": "Postgresql",
+  "BindingId": "6394cbc4c67584b65dcc783cd2b249dc3373629eb1e683f564afb1f9bcb35ba7",
+  "Generation": 1,
+  "RequestedConnectDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+  "ReportValidation": "ScenarioIncomplete",
+  "Stages": {
+    "Setup": "Passed",
+    "Test": "Failed",
+    "Teardown": "Passed",
+    "Export": "Passed"
+  },
+  "Failures": {
+    "Reason": "ScenarioExecutionFailed",
+    "CleanupFailure": "None",
+    "ExportFailure": "None",
+    "ReportFailure": "None"
+  },
+  "Process": {
+    "Status": "Failed",
+    "Total": 1,
+    "Passed": 0,
+    "Failed": 1,
+    "Skipped": 0
+  },
+  "Attachment": "Passed",
+  "AttachmentFailure": "None",
+  "AttachmentBoundary": "None",
+  "Disposal": "Passed",
+  "Scenarios": [
+    {
+      "Outcome": "Failed",
+      "Id": "CDC-E2E-01",
+      "Failure": "TimedOut"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-02",
+      "Failure": "None"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-03",
+      "Failure": "None"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-04",
+      "Failure": "None"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-05",
+      "Failure": "None"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-06",
+      "Failure": "None"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-07",
+      "Failure": "None"
+    },
+    {
+      "Outcome": "NotRun",
+      "Id": "CDC-E2E-08",
+      "Failure": "None"
+    }
+  ],
+  "Traceability": [
+    {
+      "Id": "CDC-E2E-01",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03",
+        "CDC-INV-06"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-02",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03",
+        "CDC-INV-06"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-03",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-04",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-05",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03",
+        "CDC-INV-06",
+        "CDC-INV-11"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-06",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-03"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-07",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-06",
+        "CDC-INV-11"
+      ]
+    },
+    {
+      "Id": "CDC-E2E-08",
+      "Invariants": [
+        "CDC-INV-07",
+        "CDC-INV-06",
+        "CDC-INV-11"
+      ]
+    }
+  ],
+  "Diagnostics": {
+    "Availability": "Available",
+    "Truncated": false,
+    "Rejected": 0,
+    "Checkpoints": [
+      "Attachment:effectiveSchema=fd0c20a48db4f695dcb40d9fa67bdfc6fb87a2ec8ac6cbaf3ded20fa038751f1",
+      "Attachment:runtime=10.0.2",
+      "Attachment:pageSize=100"
+    ]
+  },
+  "RuntimeInputs": {
+    "Availability": "Available",
+    "Images": [
+      {
+        "ImageId": "sha256:9b52b10dac97d10beb932ea7e2f7a5268548dc02e0d88b5eae57a48245f70d93",
+        "ManifestDigest": "",
+        "Service": "dms"
+      },
+      {
+        "ImageId": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+        "ManifestDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+        "Service": "kafka-cdc-worker"
+      },
+      {
+        "ImageId": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+        "ManifestDigest": "sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f",
+        "Service": "kafka"
+      },
+      {
+        "ImageId": "sha256:077a778c693096492c6324831434d4c61bdfd44b6ac2ba3e49193c41c63cd12f",
+        "ManifestDigest": "",
+        "Service": "config"
+      },
+      {
+        "ImageId": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+        "ManifestDigest": "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+        "Service": "db"
+      }
+    ],
+    "CleanupMode": "Governed",
+    "ResourcesAbsent": true,
+    "OwnedCounts": {
+      "container": 5,
+      "volume": 3,
+      "network": 0
+    }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "Story": "DMS-1325",
+  "Task": "T23",
+  "Status": "Blocked",
+  "TestedRevision": "586433c24dc5c70efe01505b3f2e679c69cebab1",
+  "InvocationId": "d0c9922d-9cdc-45cb-98a6-cce3948248c6",
+  "Command": "pwsh -NoProfile ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-postgresql-t23-after-t34",
+  "Environment": {
+    "CDC_RUNBOOK_OWNED_STACK": "1",
+    "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
+    "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0"
+  },
+  "Host": {
+    "DotnetSdk": "10.0.102",
+    "PowerShell": "7.6.6",
+    "DockerBuildx": "0.37.1"
+  },
+  "PullImages": false,
+  "TestProcessStartedAt": "2026-09-28T14:47:10.1588160-05:00",
+  "TestProcessFinishedAt": "2026-09-28T14:52:28.5688307-05:00",
+  "RequiredScenarios": 8,
+  "ExecutedScenarios": 1,
+  "PassedScenarios": 0,
+  "NotRunScenarios": 7,
+  "FailureStage": "CDC-E2E-01",
+  "FailureCode": "TimedOut",
+  "Observations": {
+    "SchemaToolsReleaseBuild": "Passed",
+    "SchemaToolsDebugBuild": "Passed",
+    "AdmissionAndHttpOnlyHandoff": "Passed",
+    "FixtureAttachment": "Passed",
+    "FixtureDisposal": "Passed",
+    "GovernedTeardown": "Passed",
+    "Export": "Passed",
+    "IndependentDmsLocalResourceAbsence": "Verified",
+    "ScenarioCheckpoints": 0,
+    "T33SourceWorkCacheSequenceLiveEvidence": "NotEstablished",
+    "ReadOnlyAdministrativeSnapshotDuringWait": {
+      "StudentDocuments": 1,
+      "ProjectionWorkRows": 0,
+      "CacheRows": 1,
+      "Scope": "Administrative diagnostic only; does not verify fixture observer connections or establish the waiting operation"
+    }
+  },
+  "ResolvedPriorBlockers": [
+    {
+      "Task": "T31",
+      "CorrectionRevision": "b50ecaf7b",
+      "Cause": "PATH_BASE normalization",
+      "LiveHttpOnlyHandoff": "Passed"
+    },
+    {
+      "Task": "T34",
+      "CorrectionRevision": "586433c24",
+      "Cause": "Attachment rejected valid local authorization-disabled informational notices",
+      "LiveFixtureAttachment": "Passed"
+    }
+  ],
+  "Artifacts": [
+    {
+      "Path": "cdc-api-e2e.json",
+      "Sha256": "63d3eb86b34521b12d14ec0b0fcdec9fd12b2496c9bc1978d494eb985e5b04eb"
+    },
+    {
+      "Path": "qualification.json",
+      "Sha256": "5230dd4d62c722334724c6e8d406819f26714dbf949a8b9c86ac9e472bdc8bbb"
+    },
+    {
+      "Path": "qualified-image.json",
+      "Sha256": "45d39060b3eb17459716035b959584d4996d959c7dd2b0ee4a7dab3d5a695af9"
+    }
+  ],
+  "Limits": [
+    "Only three attachment checkpoints were recorded; no first held-create or provider-fence checkpoint was reached",
+    "The scenario runner discards the original exception; the exact timed-out operation and cause are unproven",
+    "The five-minute gate deadline is a diagnostic lead, not proof of the cause; do not bypass the gate or extend deadlines without evidence",
+    "Runner Failed=8 counts one timed-out scenario and seven missing required outcomes, not eight executed failures; the single NUnit orchestrator failed",
+    "Administrative database counts do not prove T33 fresh observer connection authentication; sequence observations were not reached",
+    "No rerun, prerequisite relaxation or production fix attempted; T23 remains incomplete and T24 was not attempted"
+  ],
+  "FollowUp": {
+    "Task": "T35",
+    "Scope": "Diagnose and correct Student CRUD timeout before its first held-create checkpoint after successful attachment",
+    "RequiredEvidence": [
+      "Identify the exact waiting operation and cause using private diagnostics or a faithful isolated reproduction",
+      "Inspect runtime/gate composition and ownership alongside effective HTTP targets and read acceleration only as justified by evidence",
+      "Add focused regression coverage for the confirmed defect while preserving real projection, finite deadlines and all publication assertions",
+      "Keep raw exceptions, credentials, configuration, identifiers and document bodies private; do not broaden shared diagnostic contracts",
+      "Use existing T23/T24 runner for full qualification after correction; no blind retry or separate live matrix"
+    ]
+  }
+}

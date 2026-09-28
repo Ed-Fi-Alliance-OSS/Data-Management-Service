@@ -1229,25 +1229,32 @@ wrong-invocation and rejected data are identified, never copied as raw output.
 Private settings, handoff, logs, auth headers, connection strings and document bodies
 are excluded. Original execution, cleanup and export failures remain separate.
 
-PostgreSQL full qualification: **blocked T23**, with zero scenarios executed.
-The latest [runner report](evidence/dms1325-t23-postgresql-attachment-blocked/qualification.json)
-and [runtime/cleanup evidence](evidence/dms1325-t23-postgresql-attachment-blocked/cdc-api-e2e.json)
-record successful setup, including admission and HTTP-only handoff, at revision
-`95ef6dd94fa1395142c6b8a48fe0ee417f638c1c`. Fixture attachment then failed at
-`RuntimeIdentitySchema` with category `Error`. The preceding provider connection,
-Kafka endpoint, Connect status and metrics checks completed. The fixture discards
-the underlying exception, so the exact operation and cause within this boundary
-remain unproven; T34 owns that bounded diagnosis and regression before rerunning.
-Source/work/cache/sequence observations required for T33 live evidence were not reached.
+PostgreSQL full qualification: **blocked T23**, with one timed-out scenario and
+seven scenarios not run. The latest
+[runner report](evidence/dms1325-t23-postgresql-crud-blocked/qualification.json) and
+[runtime/cleanup evidence](evidence/dms1325-t23-postgresql-crud-blocked/cdc-api-e2e.json)
+record successful setup, admission, HTTP-only handoff and fixture attachment at
+revision `586433c24dc5c70efe01505b3f2e679c69cebab1`. Student CRUD (`CDC-E2E-01`)
+then timed out before its first scenario checkpoint. The journal contains only
+the three attachment checkpoints. The runner discards the underlying exception,
+so the exact waiting operation and cause remain unproven; T35 owns the bounded
+diagnosis and regression before rerunning. T33 live evidence for fresh
+source/work/cache/sequence observer connections remains unestablished.
 
 Fixture disposal, governed teardown and export passed, with five owned containers
 and three volumes verified absent; an independent Docker inventory also found no
-remaining `dms-local` resources. All eight scenario outcomes are `NotRun`.
-The runner's eight failed required outcomes are not eight executed scenario failures.
-The exported `ScenarioIdentityMismatch` follows from attachment failing before the
-fixture populated its identity; the attachment failure remains separately recorded.
-See the reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json).
+remaining `dms-local` resources. Scenario `CDC-E2E-01` is `Failed/TimedOut`, and
+`CDC-E2E-02` through `CDC-E2E-08` are `NotRun`. The runner's eight failed required
+outcomes count one executed failure and seven missing outcomes. Invocation,
+provider, binding and generation match across the reports. See the reproducible
+[run inputs and limits](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json).
 T23 and T24 remain incomplete.
+
+The earlier [attachment failure](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json)
+remains historical evidence. T34 diagnosed rejection of valid local
+authorization-disabled informational notices and corrected the attachment
+predicate in `586433c24`; attachment passed in the latest run. That correction
+does not establish passing CRUD or full qualification.
 
 The earlier [HTTP-only rollout failure](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json)
 is historical evidence: T31 diagnosed the `PATH_BASE` normalization mismatch and
