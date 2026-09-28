@@ -514,6 +514,121 @@ public class CachedApplicationContextProviderTests
     }
 
     [TestFixture]
+    public class Given_A_Reload_Whose_Request_Is_Cancelled_After_The_Cms_Answers
+        : CachedApplicationContextProviderTests
+    {
+        private ApplicationContextResult _laterLookup = null!;
+        private ApplicationContext _refreshedContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = new TokenHonoringHybridCache(CreateHybridCache());
+            var staleContext = CreateApplicationContext(ClientId, 1);
+            _refreshedContext = CreateApplicationContext(ClientId, 2);
+            using var reloadCts = new CancellationTokenSource();
+
+            A.CallTo(() => cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .ReturnsNextFromSequence(
+                    new ApplicationContextResult.Success(staleContext),
+                    new ApplicationContextResult.Success(_refreshedContext)
+                );
+            A.CallTo(() =>
+                    cmsProvider.ReloadApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._)
+                )
+                .ReturnsLazily(async _ =>
+                {
+                    await reloadCts.CancelAsync();
+                    return new ApplicationContextResult.Success(_refreshedContext);
+                });
+
+            await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+
+            try
+            {
+                await CreateProvider(cmsProvider, hybridCache)
+                    .ReloadApplicationByClientIdAsync(ClientId, tenant: null, reloadCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Whether the cancelled caller sees the result is not what this fixture asserts.
+            }
+
+            _laterLookup = await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Does_Not_Leave_The_Pre_Reload_Entry_In_The_Shared_Cache()
+        {
+            _laterLookup.Should().BeEquivalentTo(new ApplicationContextResult.Success(_refreshedContext));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Reload_Whose_Cms_Call_Is_Cancelled : CachedApplicationContextProviderTests
+    {
+        private Exception? _reloadException;
+        private ApplicationContextResult _laterLookup = null!;
+        private ApplicationContext _refreshedContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            var staleContext = CreateApplicationContext(ClientId, 1);
+            _refreshedContext = CreateApplicationContext(ClientId, 2);
+            using var reloadCts = new CancellationTokenSource();
+
+            A.CallTo(() => cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .ReturnsNextFromSequence(
+                    new ApplicationContextResult.Success(staleContext),
+                    new ApplicationContextResult.Success(_refreshedContext)
+                );
+            A.CallTo(() =>
+                    cmsProvider.ReloadApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._)
+                )
+                .ReturnsLazily(async _ =>
+                {
+                    await reloadCts.CancelAsync();
+                    reloadCts.Token.ThrowIfCancellationRequested();
+                    return new ApplicationContextResult.Success(_refreshedContext);
+                });
+
+            await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+
+            try
+            {
+                await CreateProvider(cmsProvider, hybridCache)
+                    .ReloadApplicationByClientIdAsync(ClientId, tenant: null, reloadCts.Token);
+            }
+            catch (Exception ex)
+            {
+                _reloadException = ex;
+            }
+
+            _laterLookup = await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Throws_Operation_Canceled_For_The_Reload()
+        {
+            _reloadException.Should().BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_Has_Already_Removed_The_Pre_Reload_Entry_From_The_Shared_Cache()
+        {
+            _laterLookup.Should().BeEquivalentTo(new ApplicationContextResult.Success(_refreshedContext));
+        }
+    }
+
+    [TestFixture]
     public class Given_Ownership_Tokens_Round_Tripped_Through_The_Cache
         : CachedApplicationContextProviderTests
     {
@@ -932,6 +1047,47 @@ public class CachedApplicationContextProviderTests
                     )
                 )
                 .MustNotHaveHappened();
+        }
+    }
+
+    /// <summary>
+    /// Wraps a real HybridCache so its writes observe their cancellation token, as a distributed
+    /// second-level cache does. The in-memory cache alone ignores the token on SetAsync and
+    /// RemoveAsync, which would hide a write skipped because the caller was cancelled.
+    /// </summary>
+    private sealed class TokenHonoringHybridCache(HybridCache inner) : HybridCache
+    {
+        public override ValueTask<T> GetOrCreateAsync<TState, T>(
+            string key,
+            TState state,
+            Func<TState, CancellationToken, ValueTask<T>> factory,
+            HybridCacheEntryOptions? options = null,
+            IEnumerable<string>? tags = null,
+            CancellationToken cancellationToken = default
+        ) => inner.GetOrCreateAsync(key, state, factory, options, tags, cancellationToken);
+
+        public override ValueTask SetAsync<T>(
+            string key,
+            T value,
+            HybridCacheEntryOptions? options = null,
+            IEnumerable<string>? tags = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return inner.SetAsync(key, value, options, tags, cancellationToken);
+        }
+
+        public override ValueTask RemoveAsync(string key, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return inner.RemoveAsync(key, cancellationToken);
+        }
+
+        public override ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return inner.RemoveByTagAsync(tag, cancellationToken);
         }
     }
 }

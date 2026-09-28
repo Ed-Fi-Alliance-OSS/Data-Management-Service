@@ -112,6 +112,12 @@ public sealed class CachedApplicationContextProvider(
 
         string cacheKey = GetCacheKey(clientId, tenant);
 
+        // The pre-reload entry is removed before the Configuration Service is asked, and neither
+        // cache write takes the caller's token: a reload that has started must never leave the old
+        // entry behind, and one the Configuration Service has answered must record that answer even
+        // if its caller has since gone.
+        await hybridCache.RemoveAsync(cacheKey, CancellationToken.None);
+
         // The provider is called directly rather than through HybridCache.GetOrCreateAsync: joining
         // an in-flight Get's factory here could hand the reload back pre-reload data instead of
         // actually reloading it.
@@ -122,28 +128,21 @@ public sealed class CachedApplicationContextProvider(
                 cancellationToken
             );
 
-        switch (result)
+        if (result is ApplicationContextResult.Success success)
         {
-            case ApplicationContextResult.Success success:
-                await hybridCache.SetAsync(
-                    cacheKey,
-                    success.ApplicationContext,
-                    _cacheEntryOptions,
-                    cancellationToken: cancellationToken
-                );
-                break;
-            case ApplicationContextResult.NotFound:
-                logger.LogWarning(
-                    "Application context not found for clientId: {ClientId}",
-                    LoggingSanitizer.SanitizeInternalValueForLogging(clientId)
-                );
-                await hybridCache.RemoveAsync(cacheKey, cancellationToken);
-                break;
-            default:
-                // A reload that finds nothing usable leaves nothing cached, the same as NotFound: a
-                // stale success from before the reload must not survive it.
-                await hybridCache.RemoveAsync(cacheKey, cancellationToken);
-                break;
+            await hybridCache.SetAsync(
+                cacheKey,
+                success.ApplicationContext,
+                _cacheEntryOptions,
+                cancellationToken: CancellationToken.None
+            );
+        }
+        else if (result is ApplicationContextResult.NotFound)
+        {
+            logger.LogWarning(
+                "Application context not found for clientId: {ClientId}",
+                LoggingSanitizer.SanitizeInternalValueForLogging(clientId)
+            );
         }
 
         _requestResults[key] = result;
