@@ -80,7 +80,26 @@ public class ConfigurationServiceClaimSetProvider(
         );
 
         string claimSetMetadataJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        return JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(claimSetMetadataJson, _jsonOptions) ?? [];
+        IList<ClaimSetMetadata>? claimSetMetadataList = JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(
+            claimSetMetadataJson,
+            _jsonOptions
+        );
+
+        if (claimSetMetadataList is null)
+        {
+            throw new JsonException(
+                $"Configuration Service {authorizationMetadataEndpoint} response deserialized to null."
+            );
+        }
+
+        if (claimSetMetadataList.Any(claimSetMetadata => claimSetMetadata is null))
+        {
+            throw new JsonException(
+                $"Configuration Service {authorizationMetadataEndpoint} response contained a null entry."
+            );
+        }
+
+        return claimSetMetadataList;
     }
 
     /// <summary>

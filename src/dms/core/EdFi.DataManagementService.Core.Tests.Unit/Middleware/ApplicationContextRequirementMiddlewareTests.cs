@@ -55,7 +55,7 @@ public class ApplicationContextRequirementMiddlewareTests
 
         nextCalled.Should().BeTrue();
         requestInfo.ApplicationContext.Should().BeSameAs(_applicationContext);
-        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant))
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
 
@@ -82,7 +82,7 @@ public class ApplicationContextRequirementMiddlewareTests
 
         nextCalled.Should().BeTrue();
         requestInfo.ApplicationContext.Should().BeSameAs(_applicationContext);
-        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant))
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
 
@@ -109,7 +109,9 @@ public class ApplicationContextRequirementMiddlewareTests
 
         nextCalled.Should().BeTrue();
         requestInfo.ApplicationContext.Should().BeNull();
-        A.CallTo(() => provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._))
+        A.CallTo(() =>
+                provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._, A<CancellationToken>._)
+            )
             .MustNotHaveHappened();
     }
 
@@ -126,7 +128,9 @@ public class ApplicationContextRequirementMiddlewareTests
         await CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
 
         requestInfo.ApplicationContext.Should().BeNull();
-        A.CallTo(() => provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._))
+        A.CallTo(() =>
+                provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._, A<CancellationToken>._)
+            )
             .MustNotHaveHappened();
     }
 
@@ -269,6 +273,37 @@ public class ApplicationContextRequirementMiddlewareTests
             .MustHaveHappenedOnceExactly();
     }
 
+    [Test]
+    public async Task It_passes_the_requests_cancellation_token_to_the_application_context_provider()
+    {
+        var provider = A.Fake<IApplicationContextProvider>();
+        using var cts = new CancellationTokenSource();
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant, cts.Token))
+            .Returns(new ApplicationContextResult.Success(_applicationContext));
+        RequestInfo requestInfo = CreateRequestInfo(RequestMethod.POST, provider, cts.Token);
+
+        await CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
+
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant, cts.Token))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_propagates_operation_canceled_instead_of_a_response()
+    {
+        var provider = A.Fake<IApplicationContextProvider>();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant, cts.Token))
+            .Throws(() => new OperationCanceledException(cts.Token));
+        RequestInfo requestInfo = CreateRequestInfo(RequestMethod.POST, provider, cts.Token);
+
+        Func<Task> act = () => CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+    }
+
     private static ApplicationContextRequirementMiddleware CreateMiddleware() =>
         new(NullLogger<ApplicationContextRequirementMiddleware>.Instance);
 
@@ -311,11 +346,16 @@ public class ApplicationContextRequirementMiddlewareTests
     private static IApplicationContextProvider CreateProvider(ApplicationContextResult result)
     {
         var provider = A.Fake<IApplicationContextProvider>();
-        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant)).Returns(result);
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(ClientId, Tenant, A<CancellationToken>._))
+            .Returns(result);
         return provider;
     }
 
-    private static RequestInfo CreateRequestInfo(RequestMethod method, IApplicationContextProvider provider)
+    private static RequestInfo CreateRequestInfo(
+        RequestMethod method,
+        IApplicationContextProvider provider,
+        CancellationToken cancellationToken = default
+    )
     {
         IServiceProvider scopedServiceProvider = new ServiceCollection()
             .AddSingleton(provider)
@@ -331,7 +371,7 @@ public class ApplicationContextRequirementMiddlewareTests
             Tenant: Tenant
         );
 
-        return new RequestInfo(frontendRequest, method, scopedServiceProvider)
+        return new RequestInfo(frontendRequest, method, scopedServiceProvider, cancellationToken)
         {
             ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token-id",

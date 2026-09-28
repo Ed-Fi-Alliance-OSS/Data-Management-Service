@@ -819,10 +819,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for all API DELETE requests, which are "by id"
     /// </summary>
-    public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> DeleteById(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.DELETE,
+            scope.ServiceProvider,
+            cancellationToken
+        );
         await _deleteByIdSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -830,10 +838,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for the token introspection request
     /// </summary>
-    public async Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> GetTokenInfo(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.POST,
+            scope.ServiceProvider,
+            cancellationToken
+        );
         await _getTokenInfoSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -841,10 +857,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for the Change Queries availableChangeVersions request
     /// </summary>
-    public async Task<IFrontendResponse> GetAvailableChangeVersions(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> GetAvailableChangeVersions(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            scope.ServiceProvider,
+            cancellationToken
+        );
         await _getAvailableChangeVersionsSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -852,10 +876,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for resource-scoped Change Query tracked changes requests
     /// </summary>
-    public async Task<IFrontendResponse> GetTrackedChanges(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> GetTrackedChanges(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            scope.ServiceProvider,
+            cancellationToken
+        );
         await _getTrackedChangesSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }

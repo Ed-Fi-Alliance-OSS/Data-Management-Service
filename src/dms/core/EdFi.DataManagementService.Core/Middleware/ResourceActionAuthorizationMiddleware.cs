@@ -86,6 +86,10 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 return;
             }
         }
+        catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
@@ -135,7 +139,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
 
         _logger.LogInformation("Retrieving claim set list");
         IList<ClaimSet> claimsList = await _claimSetProvider.GetAllClaimSets(
-            requestInfo.FrontendRequest.Tenant
+            requestInfo.FrontendRequest.Tenant,
+            requestInfo.RequestCancellationToken
         );
 
         ClaimSet? claimSet = claimsList.FindClaimSetByName(claimSetName);

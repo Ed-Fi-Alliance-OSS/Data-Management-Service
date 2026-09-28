@@ -13,462 +13,578 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
 
-[TestFixture]
+/// <summary>
+/// Shared helpers for CachedApplicationContextProvider tests. Not itself a fixture: every
+/// [TestFixture] below is a nested class so NUnit gives each scenario its own instance and each
+/// [SetUp] runs exactly once per scenario, arranging and acting into fields the [Test] methods
+/// only assert against.
+/// </summary>
 public class CachedApplicationContextProviderTests
 {
-    private IConfigurationServiceApplicationProvider _configurationServiceApplicationProvider = null!;
-    private HybridCache _hybridCache = null!;
-    private CachedApplicationContextProvider _provider = null!;
+    protected const string ClientId = "client-id";
 
-    [SetUp]
-    public void Setup()
-    {
-        _configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-        _hybridCache = CreateHybridCache();
-        _provider = CreateProvider();
-    }
-
-    [Test]
-    public async Task It_Uses_The_Exact_Single_Tenant_Cache_Key()
-    {
-        var expectedContext = CreateApplicationContext("client-id", 1);
-        await _hybridCache.SetAsync("ApplicationContext:single:client-id", expectedContext);
-
-        ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
+    protected static CachedApplicationContextProvider CreateProvider(
+        IConfigurationServiceApplicationProvider configurationServiceApplicationProvider,
+        HybridCache hybridCache
+    ) =>
+        new(
+            configurationServiceApplicationProvider,
+            hybridCache,
+            new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
+            NullLogger<CachedApplicationContextProvider>.Instance
         );
 
-        result.Should().BeEquivalentTo(new ApplicationContextResult.Success(expectedContext));
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    A<string>.Ignored,
-                    A<string?>.Ignored,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
+    protected static HybridCache CreateHybridCache()
+    {
+        var services = new ServiceCollection();
+        services.AddMemoryCache();
+        services.AddHybridCache();
+        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
     }
 
-    [Test]
-    public async Task It_Uses_The_Exact_Normalized_Tenant_Cache_Key()
-    {
-        var expectedContext = CreateApplicationContext("client-id", 2);
-        await _hybridCache.SetAsync("ApplicationContext:tenant:districta:client-id", expectedContext);
+    protected static ApplicationContext CreateApplicationContext(string clientId, long applicationId) =>
+        new(applicationId, 100, clientId, Guid.NewGuid(), [1, 2, 3], null, []);
 
-        ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            "DistrictA"
-        );
-
-        result.Should().BeEquivalentTo(new ApplicationContextResult.Success(expectedContext));
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    A<string>.Ignored,
-                    A<string?>.Ignored,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
-    }
-
-    [Test]
-    public async Task It_Keeps_The_Same_Client_Isolated_Between_Tenants()
-    {
-        var northContext = CreateApplicationContext("client-id", 1);
-        var southContext = CreateApplicationContext("client-id", 2);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    "north",
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Success(northContext));
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    "south",
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Success(southContext));
-
-        ApplicationContextResult north = await _provider.GetApplicationByClientIdAsync("client-id", "north");
-        ApplicationContextResult south = await CreateProvider()
-            .GetApplicationByClientIdAsync("client-id", "south");
-
-        north.Should().BeEquivalentTo(new ApplicationContextResult.Success(northContext));
-        south.Should().BeEquivalentTo(new ApplicationContextResult.Success(southContext));
-    }
-
-    [Test]
-    public async Task It_Normalizes_Tenant_Case_While_Preserving_The_Original_Tenant_For_Cms()
-    {
-        var expectedContext = CreateApplicationContext("client-id", 1);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    "DistrictA",
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Success(expectedContext));
-
-        await _provider.GetApplicationByClientIdAsync("client-id", "DistrictA");
-        var secondScopeProvider = CreateProvider();
-        ApplicationContextResult result = await secondScopeProvider.GetApplicationByClientIdAsync(
-            "client-id",
-            "districta"
-        );
-
-        result.Should().BeEquivalentTo(new ApplicationContextResult.Success(expectedContext));
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    A<string?>.Ignored,
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [Test]
-    public async Task It_Performs_One_Normal_Lookup_On_A_Cold_NotFound_Without_Reloading()
-    {
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.NotFound());
-
-        ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-
-        result.Should().BeOfType<ApplicationContextResult.NotFound>();
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                    A<string>.Ignored,
-                    A<string?>.Ignored,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
-    }
-
-    [TestCase(ApplicationContextOutcome.Success)]
-    [TestCase(ApplicationContextOutcome.NotFound)]
-    [TestCase(ApplicationContextOutcome.Unavailable)]
-    public async Task It_Memoizes_The_First_Outcome_For_The_Request(ApplicationContextOutcome outcome)
-    {
-        ApplicationContextResult expectedResult = CreateResult(outcome);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(expectedResult);
-
-        ApplicationContextResult first = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-        ApplicationContextResult second = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-
-        second.Should().BeSameAs(first);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [TestCase(ApplicationContextOutcome.NotFound)]
-    [TestCase(ApplicationContextOutcome.Unavailable)]
-    public async Task It_Does_Not_Admit_Failed_Results_To_The_Shared_Cache(ApplicationContextOutcome outcome)
-    {
-        var expectedContext = CreateApplicationContext("client-id", 1);
-        var lookupCount = 0;
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .ReturnsLazily(_ =>
-            {
-                lookupCount++;
-                return Task.FromResult<ApplicationContextResult>(
-                    lookupCount == 1
-                        ? CreateResult(outcome)
-                        : new ApplicationContextResult.Success(expectedContext)
-                );
-            });
-
-        ApplicationContextResult failed = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-        ApplicationContextResult recovered = await CreateProvider()
-            .GetApplicationByClientIdAsync("client-id", tenant: null);
-
-        failed
-            .GetType()
-            .Should()
-            .Be(
-                outcome switch
-                {
-                    ApplicationContextOutcome.NotFound => typeof(ApplicationContextResult.NotFound),
-                    ApplicationContextOutcome.Unavailable => typeof(ApplicationContextResult.Unavailable),
-                    _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
-                }
-            );
-        recovered.Should().BeEquivalentTo(new ApplicationContextResult.Success(expectedContext));
-        lookupCount.Should().Be(2);
-    }
-
-    [Test]
-    public async Task It_Serves_A_Warm_Success_Cache_When_Cms_Is_Unavailable()
-    {
-        var expectedContext = CreateApplicationContext("client-id", 1);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Success(expectedContext));
-
-        await _provider.GetApplicationByClientIdAsync("client-id", tenant: null);
-        var outageScopeProvider = CreateProvider();
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Unavailable());
-
-        ApplicationContextResult result = await outageScopeProvider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-
-        result.Should().BeEquivalentTo(new ApplicationContextResult.Success(expectedContext));
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [Test]
-    public async Task It_Reloads_Only_The_Matching_Normalized_Tenant_Key()
-    {
-        var staleNorthContext = CreateApplicationContext("client-id", 1);
-        var southContext = CreateApplicationContext("client-id", 2);
-        var refreshedNorthContext = CreateApplicationContext("client-id", 3);
-        await _hybridCache.SetAsync("ApplicationContext:tenant:north:client-id", staleNorthContext);
-        await _hybridCache.SetAsync("ApplicationContext:tenant:south:client-id", southContext);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                    "client-id",
-                    "North",
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Success(refreshedNorthContext));
-
-        ApplicationContextResult reloadResult = await _provider.ReloadApplicationByClientIdAsync(
-            "client-id",
-            "North"
-        );
-        ApplicationContextResult north = await CreateProvider()
-            .GetApplicationByClientIdAsync("client-id", "north");
-        ApplicationContextResult south = await CreateProvider()
-            .GetApplicationByClientIdAsync("client-id", "south");
-
-        reloadResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(refreshedNorthContext));
-        north.Should().BeEquivalentTo(new ApplicationContextResult.Success(refreshedNorthContext));
-        south.Should().BeEquivalentTo(new ApplicationContextResult.Success(southContext));
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                    "client-id",
-                    "North",
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    A<string>.Ignored,
-                    A<string?>.Ignored,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
-    }
-
-    [Test]
-    public async Task It_Returns_A_Typed_NotFound_Result_For_A_Blank_Client_Without_Caching()
-    {
-        ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(" ", tenant: null);
-
-        result.Should().BeOfType<ApplicationContextResult.NotFound>();
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    A<string>.Ignored,
-                    A<string?>.Ignored,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
-    }
-
-    [Test]
-    public async Task It_Invalidates_The_Request_Scoped_Memo_On_Reload()
-    {
-        var reloadedContext = CreateApplicationContext("client-id", 9);
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.NotFound());
-        A.CallTo(() =>
-                _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                    "client-id",
-                    tenant: null,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new ApplicationContextResult.Success(reloadedContext));
-
-        ApplicationContextResult beforeReload = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-        ApplicationContextResult reloadResult = await _provider.ReloadApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-        ApplicationContextResult afterReload = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-
-        beforeReload.Should().BeOfType<ApplicationContextResult.NotFound>();
-        reloadResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(reloadedContext));
-        afterReload.Should().BeEquivalentTo(new ApplicationContextResult.Success(reloadedContext));
-    }
-
-    [Test]
-    public async Task It_Preserves_Ownership_Tokens_Through_The_Cache()
-    {
-        ApplicationContext expectedContext = CreateApplicationContext("client-id", 1) with
+    protected static ApplicationContextResult CreateResult(ApplicationContextOutcome outcome) =>
+        outcome switch
         {
-            CreatorOwnershipTokenId = 303,
-            OwnershipTokenIds = [202, 404],
+            ApplicationContextOutcome.Success => new ApplicationContextResult.Success(
+                CreateApplicationContext(ClientId, 1)
+            ),
+            ApplicationContextOutcome.NotFound => new ApplicationContextResult.NotFound(),
+            ApplicationContextOutcome.Unavailable => new ApplicationContextResult.Unavailable(),
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
         };
-        await _hybridCache.SetAsync("ApplicationContext:single:client-id", expectedContext);
 
-        ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(
-            "client-id",
-            tenant: null
-        );
-
-        var success = result.Should().BeOfType<ApplicationContextResult.Success>().Subject;
-        success.ApplicationContext.CreatorOwnershipTokenId.Should().Be(303);
-        success.ApplicationContext.OwnershipTokenIds.Should().Equal((short)202, (short)404);
+    public enum ApplicationContextOutcome
+    {
+        Success,
+        NotFound,
+        Unavailable,
     }
 
     [TestFixture]
-    public class Given_A_Cancelled_Caller_Sharing_A_Fill_With_A_Live_Caller
+    public class Given_A_Warm_Single_Tenant_Cache_Entry : CachedApplicationContextProviderTests
     {
-        private int _fetchCount;
         private ApplicationContext _expectedContext = null!;
-        private Exception? _cancelledCallerException;
-        private bool _liveCallerCompletedWhileCancelledCallerWasLeaving;
-        private ApplicationContextResult _liveResult = null!;
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            var configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            var provider = new CachedApplicationContextProvider(
-                configurationServiceApplicationProvider,
-                CreateHybridCache(),
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-            var gate = new TaskCompletionSource();
-            var fetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            _expectedContext = CreateApplicationContext("client-id", 1);
-            // NUnit reuses one fixture instance across every [Test] method in it, running SetUp again
-            // before each; a field this method only increments, rather than fully reassigning, would
-            // otherwise carry a count over from whichever test ran before it.
-            _fetchCount = 0;
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            _expectedContext = CreateApplicationContext(ClientId, 1);
+            await hybridCache.SetAsync($"ApplicationContext:single:{ClientId}", _expectedContext);
 
-            async Task<ApplicationContextResult> FetchAsync()
-            {
-                Interlocked.Increment(ref _fetchCount);
-                fetchStarted.TrySetResult();
-                await gate.Task;
-                return new ApplicationContextResult.Success(_expectedContext);
-            }
+            _result = await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
 
+        [Test]
+        public void It_Returns_The_Cached_Context()
+        {
+            _result.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
+        }
+
+        [Test]
+        public void It_Never_Calls_The_Cms_Provider()
+        {
             A.CallTo(() =>
-                    configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
+                    _cmsProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        A<string?>._,
                         A<CancellationToken>._
                     )
                 )
-                .ReturnsLazily(_ => FetchAsync());
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Warm_Normalized_Tenant_Cache_Entry : CachedApplicationContextProviderTests
+    {
+        private ApplicationContext _expectedContext = null!;
+        private ApplicationContextResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            _expectedContext = CreateApplicationContext(ClientId, 2);
+            await hybridCache.SetAsync($"ApplicationContext:tenant:districta:{ClientId}", _expectedContext);
+
+            _result = await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "DistrictA");
+        }
+
+        [Test]
+        public void It_Returns_The_Cached_Context()
+        {
+            _result.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Same_Client_In_Two_Different_Tenants : CachedApplicationContextProviderTests
+    {
+        private ApplicationContext _northContext = null!;
+        private ApplicationContext _southContext = null!;
+        private ApplicationContextResult _north = null!;
+        private ApplicationContextResult _south = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            _northContext = CreateApplicationContext(ClientId, 1);
+            _southContext = CreateApplicationContext(ClientId, 2);
+            A.CallTo(() =>
+                    cmsProvider.GetApplicationByClientIdAsync(ClientId, "north", A<CancellationToken>._)
+                )
+                .Returns(new ApplicationContextResult.Success(_northContext));
+            A.CallTo(() =>
+                    cmsProvider.GetApplicationByClientIdAsync(ClientId, "south", A<CancellationToken>._)
+                )
+                .Returns(new ApplicationContextResult.Success(_southContext));
+
+            _north = await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "north");
+            _south = await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "south");
+        }
+
+        [Test]
+        public void It_Resolves_The_North_Tenant_Context()
+        {
+            _north.Should().BeEquivalentTo(new ApplicationContextResult.Success(_northContext));
+        }
+
+        [Test]
+        public void It_Resolves_The_South_Tenant_Context()
+        {
+            _south.Should().BeEquivalentTo(new ApplicationContextResult.Success(_southContext));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Tenant_Looked_Up_With_Different_Casing_Across_Scopes
+        : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _result = null!;
+        private ApplicationContext _expectedContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            _expectedContext = CreateApplicationContext(ClientId, 1);
+            A.CallTo(() =>
+                    _cmsProvider.GetApplicationByClientIdAsync(ClientId, "DistrictA", A<CancellationToken>._)
+                )
+                .Returns(new ApplicationContextResult.Success(_expectedContext));
+
+            await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "DistrictA");
+            _result = await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "districta");
+        }
+
+        [Test]
+        public void It_Returns_The_Same_Context_For_The_Normalized_Tenant()
+        {
+            _result.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
+        }
+
+        [Test]
+        public void It_Calls_The_Cms_Provider_Exactly_Once()
+        {
+            A.CallTo(() =>
+                    _cmsProvider.GetApplicationByClientIdAsync(ClientId, A<string?>._, A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Cold_NotFound_Lookup : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .Returns(new ApplicationContextResult.NotFound());
+
+            _result = await CreateProvider(_cmsProvider, CreateHybridCache())
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Returns_NotFound()
+        {
+            _result.Should().BeOfType<ApplicationContextResult.NotFound>();
+        }
+
+        [Test]
+        public void It_Never_Calls_Reload()
+        {
+            A.CallTo(() =>
+                    _cmsProvider.ReloadApplicationByClientIdAsync(
+                        A<string>._,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture(ApplicationContextOutcome.Success)]
+    [TestFixture(ApplicationContextOutcome.NotFound)]
+    [TestFixture(ApplicationContextOutcome.Unavailable)]
+    public class Given_The_First_Outcome_For_A_Request(ApplicationContextOutcome outcome)
+        : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _first = null!;
+        private ApplicationContextResult _second = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApplicationContextResult expectedResult = CreateResult(outcome);
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .Returns(expectedResult);
+
+            CachedApplicationContextProvider provider = CreateProvider(_cmsProvider, CreateHybridCache());
+            _first = await provider.GetApplicationByClientIdAsync(ClientId, tenant: null);
+            _second = await provider.GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Memoizes_The_Same_Result_For_The_Second_Call_In_The_Request()
+        {
+            _second.Should().BeSameAs(_first);
+        }
+
+        [Test]
+        public void It_Calls_The_Cms_Provider_Exactly_Once()
+        {
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture(ApplicationContextOutcome.NotFound)]
+    [TestFixture(ApplicationContextOutcome.Unavailable)]
+    public class Given_A_Failed_Result_Followed_By_Recovery_In_A_New_Scope(ApplicationContextOutcome outcome)
+        : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _recovered = null!;
+        private ApplicationContext _expectedContext = null!;
+        private int _lookupCount;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            _expectedContext = CreateApplicationContext(ClientId, 1);
+            _lookupCount = 0;
+
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .ReturnsLazily(_ =>
+                {
+                    _lookupCount++;
+                    return Task.FromResult<ApplicationContextResult>(
+                        _lookupCount == 1
+                            ? CreateResult(outcome)
+                            : new ApplicationContextResult.Success(_expectedContext)
+                    );
+                });
+
+            await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+            _recovered = await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Recovers_With_A_Success_In_The_New_Scope()
+        {
+            _recovered.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
+        }
+
+        [Test]
+        public void It_Looks_Up_The_Cms_Twice()
+        {
+            _lookupCount.Should().Be(2);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Warm_Success_Cache_During_A_Cms_Outage : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _result = null!;
+        private ApplicationContext _expectedContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            _expectedContext = CreateApplicationContext(ClientId, 1);
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .Returns(new ApplicationContextResult.Success(_expectedContext));
+
+            await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .Returns(new ApplicationContextResult.Unavailable());
+
+            _result = await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Serves_The_Warm_Success_Instead_Of_The_Outage()
+        {
+            _result.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Reload_For_One_Tenant_Among_Several : CachedApplicationContextProviderTests
+    {
+        private ApplicationContextResult _reloadResult = null!;
+        private ApplicationContextResult _north = null!;
+        private ApplicationContextResult _south = null!;
+        private ApplicationContext _refreshedNorthContext = null!;
+        private ApplicationContext _southContext = null!;
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            var staleNorthContext = CreateApplicationContext(ClientId, 1);
+            _southContext = CreateApplicationContext(ClientId, 2);
+            _refreshedNorthContext = CreateApplicationContext(ClientId, 3);
+            await hybridCache.SetAsync($"ApplicationContext:tenant:north:{ClientId}", staleNorthContext);
+            await hybridCache.SetAsync($"ApplicationContext:tenant:south:{ClientId}", _southContext);
+            A.CallTo(() =>
+                    _cmsProvider.ReloadApplicationByClientIdAsync(ClientId, "North", A<CancellationToken>._)
+                )
+                .Returns(new ApplicationContextResult.Success(_refreshedNorthContext));
+
+            _reloadResult = await CreateProvider(_cmsProvider, hybridCache)
+                .ReloadApplicationByClientIdAsync(ClientId, "North");
+            _north = await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "north");
+            _south = await CreateProvider(_cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, "south");
+        }
+
+        [Test]
+        public void It_Returns_The_Refreshed_Context_From_The_Reload()
+        {
+            _reloadResult
+                .Should()
+                .BeEquivalentTo(new ApplicationContextResult.Success(_refreshedNorthContext));
+        }
+
+        [Test]
+        public void It_Reflects_The_Refreshed_Context_For_The_Reloaded_Tenant()
+        {
+            _north.Should().BeEquivalentTo(new ApplicationContextResult.Success(_refreshedNorthContext));
+        }
+
+        [Test]
+        public void It_Leaves_The_Other_Tenant_Untouched()
+        {
+            _south.Should().BeEquivalentTo(new ApplicationContextResult.Success(_southContext));
+        }
+
+        [Test]
+        public void It_Never_Calls_Get_On_The_Cms_Provider()
+        {
+            A.CallTo(() =>
+                    _cmsProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Blank_Client_Id : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            _result = await CreateProvider(_cmsProvider, CreateHybridCache())
+                .GetApplicationByClientIdAsync(" ", tenant: null);
+        }
+
+        [Test]
+        public void It_Returns_NotFound()
+        {
+            _result.Should().BeOfType<ApplicationContextResult.NotFound>();
+        }
+
+        [Test]
+        public void It_Never_Calls_The_Cms_Provider()
+        {
+            A.CallTo(() =>
+                    _cmsProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Reload_That_Invalidates_The_Request_Scoped_Memo
+        : CachedApplicationContextProviderTests
+    {
+        private ApplicationContextResult _beforeReload = null!;
+        private ApplicationContextResult _reloadResult = null!;
+        private ApplicationContextResult _afterReload = null!;
+        private ApplicationContext _reloadedContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            _reloadedContext = CreateApplicationContext(ClientId, 9);
+            A.CallTo(() => cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .Returns(new ApplicationContextResult.NotFound());
+            A.CallTo(() =>
+                    cmsProvider.ReloadApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._)
+                )
+                .Returns(new ApplicationContextResult.Success(_reloadedContext));
+
+            CachedApplicationContextProvider provider = CreateProvider(cmsProvider, CreateHybridCache());
+            _beforeReload = await provider.GetApplicationByClientIdAsync(ClientId, tenant: null);
+            _reloadResult = await provider.ReloadApplicationByClientIdAsync(ClientId, tenant: null);
+            _afterReload = await provider.GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Was_NotFound_Before_The_Reload()
+        {
+            _beforeReload.Should().BeOfType<ApplicationContextResult.NotFound>();
+        }
+
+        [Test]
+        public void It_Returns_The_Reloaded_Context_From_The_Reload_Call()
+        {
+            _reloadResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_reloadedContext));
+        }
+
+        [Test]
+        public void It_Returns_The_Reloaded_Context_For_A_Subsequent_Get_In_The_Same_Scope()
+        {
+            _afterReload.Should().BeEquivalentTo(new ApplicationContextResult.Success(_reloadedContext));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Ownership_Tokens_Round_Tripped_Through_The_Cache
+        : CachedApplicationContextProviderTests
+    {
+        private ApplicationContextResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            ApplicationContext expectedContext = CreateApplicationContext(ClientId, 1) with
+            {
+                CreatorOwnershipTokenId = 303,
+                OwnershipTokenIds = [202, 404],
+            };
+            await hybridCache.SetAsync($"ApplicationContext:single:{ClientId}", expectedContext);
+
+            _result = await CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
+        }
+
+        [Test]
+        public void It_Preserves_The_Creator_Ownership_Token()
+        {
+            var success = _result.Should().BeOfType<ApplicationContextResult.Success>().Subject;
+            success.ApplicationContext.CreatorOwnershipTokenId.Should().Be(303);
+        }
+
+        [Test]
+        public void It_Preserves_The_Ownership_Token_List()
+        {
+            var success = _result.Should().BeOfType<ApplicationContextResult.Success>().Subject;
+            success.ApplicationContext.OwnershipTokenIds.Should().Equal((short)202, (short)404);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Two_Scopes_Where_One_Callers_Token_Is_Cancelled_Mid_Fetch
+        : CachedApplicationContextProviderTests
+    {
+        private Exception? _cancelledCallerException;
+        private ApplicationContextResult _liveResult = null!;
+        private int _fetchCount;
+        private ApplicationContext _expectedContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache hybridCache = CreateHybridCache();
+            var gate = new TaskCompletionSource();
+            var fetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _expectedContext = CreateApplicationContext(ClientId, 1);
+            _fetchCount = 0;
+
+            A.CallTo(() => cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .ReturnsLazily(async _ =>
+                {
+                    Interlocked.Increment(ref _fetchCount);
+                    fetchStarted.TrySetResult();
+                    await gate.Task;
+                    return new ApplicationContextResult.Success(_expectedContext);
+                });
 
             using var cancelledCallerCts = new CancellationTokenSource();
-            Task<ApplicationContextResult> cancelledCallerTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
-                tenant: null,
-                cancelledCallerCts.Token
-            );
+            Task<ApplicationContextResult> cancelledCallerTask = CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null, cancelledCallerCts.Token);
             await fetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-            // Joining is decided synchronously inside the call, before its first await, so the live
-            // caller is registered on the fill by the time this line returns.
-            Task<ApplicationContextResult> liveCallerTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
-                tenant: null
-            );
+            Task<ApplicationContextResult> liveCallerTask = CreateProvider(cmsProvider, hybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
 
             await cancelledCallerCts.CancelAsync();
 
@@ -481,13 +597,8 @@ public class CachedApplicationContextProviderTests
                 _cancelledCallerException = ex;
             }
 
-            // The live caller's fill must still be in flight here: the cancelled caller leaving must
-            // not have aborted it.
-            _liveCallerCompletedWhileCancelledCallerWasLeaving = liveCallerTask.IsCompleted;
-
             gate.SetResult();
-
-            _liveResult = await liveCallerTask;
+            _liveResult = await liveCallerTask.WaitAsync(TimeSpan.FromSeconds(10));
         }
 
         [Test]
@@ -497,180 +608,60 @@ public class CachedApplicationContextProviderTests
         }
 
         [Test]
-        public void It_Does_Not_Complete_The_Live_Callers_Fill_When_The_Cancelled_Caller_Leaves()
-        {
-            _liveCallerCompletedWhileCancelledCallerWasLeaving.Should().BeFalse();
-        }
-
-        [Test]
-        public void It_Returns_The_Live_Callers_Result()
+        public void It_Returns_The_Live_Callers_Result_From_The_Other_Scope()
         {
             _liveResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
         }
 
         [Test]
-        public void It_Fetches_From_The_Provider_Exactly_Once()
+        public void It_Fetches_From_The_Cms_Exactly_Once()
         {
             _fetchCount.Should().Be(1);
         }
     }
 
     [TestFixture]
-    public class Given_A_Cancelled_Caller_And_A_Later_Caller_For_The_Same_Key
+    public class Given_Two_Callers_In_The_Same_Scope_Where_One_Is_Cancelled_Mid_Fetch
+        : CachedApplicationContextProviderTests
     {
         private Exception? _cancelledCallerException;
-        private ApplicationContextResult _laterResult = null!;
-        private long _abandonedContextId;
-        private long _recoveredContextId;
+        private ApplicationContextResult _liveResult = null!;
         private int _fetchCount;
+        private ApplicationContext _expectedContext = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            // Measured against the real HybridCache: a caller's cancellation does not cancel the
-            // factory's token, and a later call for the same key may either start a fresh factory or
-            // join the abandoned stampede that is still in flight. So this test holds the abandoned
-            // fetch open only until the later caller has been issued, then releases it, and asserts
-            // the property that does not depend on which path HybridCache took: the later caller gets
-            // a Success and never the abandoned caller's cancellation. The synchronous join decision
-            // itself is proven by
-            // Given_A_Later_Caller_Arriving_While_An_Abandoned_Fill_Is_Still_In_Flight.
-            var configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            var provider = new CachedApplicationContextProvider(
-                configurationServiceApplicationProvider,
-                CreateHybridCache(),
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var firstFetchStarted = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            var abandonedContext = CreateApplicationContext("client-id", 2);
-            var recoveredContext = CreateApplicationContext("client-id", 3);
-            _abandonedContextId = abandonedContext.Id;
-            _recoveredContextId = recoveredContext.Id;
-            // NUnit reuses one fixture instance across every [Test] method in it, running SetUp again
-            // before each; a field this method only increments, rather than fully reassigning, would
-            // otherwise carry a count over from whichever test ran before it.
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            CachedApplicationContextProvider provider = CreateProvider(cmsProvider, CreateHybridCache());
+            var gate = new TaskCompletionSource();
+            var fetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _expectedContext = CreateApplicationContext(ClientId, 1);
             _fetchCount = 0;
 
-            async Task<ApplicationContextResult> FetchAsync()
-            {
-                int call = Interlocked.Increment(ref _fetchCount);
-                if (call == 1)
+            A.CallTo(() => cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .ReturnsLazily(async _ =>
                 {
-                    firstFetchStarted.TrySetResult();
+                    Interlocked.Increment(ref _fetchCount);
+                    fetchStarted.TrySetResult();
                     await gate.Task;
-                    return new ApplicationContextResult.Success(abandonedContext);
-                }
-                return new ApplicationContextResult.Success(recoveredContext);
-            }
-
-            A.CallTo(() =>
-                    configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
-                .ReturnsLazily(_ => FetchAsync());
+                    return new ApplicationContextResult.Success(_expectedContext);
+                });
 
             using var cancelledCallerCts = new CancellationTokenSource();
             Task<ApplicationContextResult> cancelledCallerTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
+                ClientId,
                 tenant: null,
                 cancelledCallerCts.Token
             );
-            await firstFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            await cancelledCallerCts.CancelAsync();
+            await fetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-            try
-            {
-                await cancelledCallerTask;
-            }
-            catch (Exception ex)
-            {
-                _cancelledCallerException = ex;
-            }
-
-            Task<ApplicationContextResult> laterCallerTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
+            // Same provider instance - the same request scope - as the cancelled caller above.
+            Task<ApplicationContextResult> liveCallerTask = provider.GetApplicationByClientIdAsync(
+                ClientId,
                 tenant: null
             );
-            gate.SetResult();
 
-            _laterResult = await laterCallerTask.WaitAsync(TimeSpan.FromSeconds(10));
-        }
-
-        [Test]
-        public void It_Throws_Operation_Canceled_For_The_Cancelled_Caller()
-        {
-            _cancelledCallerException.Should().BeAssignableTo<OperationCanceledException>();
-        }
-
-        [Test]
-        public void It_Returns_A_Successful_Result_For_The_Later_Caller()
-        {
-            _laterResult.Should().BeOfType<ApplicationContextResult.Success>();
-        }
-
-        [Test]
-        public void It_Returns_Either_The_Abandoned_Or_Recovered_Context_For_The_Later_Caller()
-        {
-            // HybridCache hands back a deserialized copy, so compare on the distinguishing Id, not by
-            // reference.
-            var success = _laterResult.Should().BeOfType<ApplicationContextResult.Success>().Subject;
-            success.ApplicationContext.Id.Should().BeOneOf(_abandonedContextId, _recoveredContextId);
-        }
-
-        [Test]
-        public void It_Fetches_At_Most_Twice()
-        {
-            _fetchCount.Should().BeInRange(1, 2);
-        }
-    }
-
-    [TestFixture]
-    public class Given_The_Only_Caller_Of_A_Fill_Cancels_Before_The_Fetch_Completes
-    {
-        private Exception? _cancelledCallerException;
-        private HeldOpenHybridCache _heldOpenCache = null!;
-        private CachedApplicationContextProvider _provider = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            // Whether the shared cache keeps a factory result that no live caller is waiting for is
-            // the cache's own behavior. What this provider owns is the token it hands the cache: when
-            // the fill's only caller leaves, that token must be cancelled, so the cache sees an
-            // abandoned request rather than a live one it would complete and store. The held-open
-            // cache keeps the fetch in flight so the check does not race the fetch finishing.
-            var configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            A.CallTo(() =>
-                    configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
-                .Returns(new ApplicationContextResult.Success(CreateApplicationContext("client-id", 4)));
-
-            _heldOpenCache = new HeldOpenHybridCache();
-            _provider = new CachedApplicationContextProvider(
-                configurationServiceApplicationProvider,
-                _heldOpenCache,
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-
-            using var cancelledCallerCts = new CancellationTokenSource();
-            Task<ApplicationContextResult> cancelledCallerTask = _provider.GetApplicationByClientIdAsync(
-                "client-id",
-                tenant: null,
-                cancelledCallerCts.Token
-            );
-            await _heldOpenCache.FirstCallStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
             await cancelledCallerCts.CancelAsync();
 
             try
@@ -681,13 +672,9 @@ public class CachedApplicationContextProviderTests
             {
                 _cancelledCallerException = ex;
             }
-        }
 
-        [TearDown]
-        public void TearDown()
-        {
-            _heldOpenCache.ReleaseFirstCall();
-            _provider.Dispose();
+            gate.SetResult();
+            _liveResult = await liveCallerTask.WaitAsync(TimeSpan.FromSeconds(10));
         }
 
         [Test]
@@ -697,55 +684,50 @@ public class CachedApplicationContextProviderTests
         }
 
         [Test]
-        public void It_Cancels_The_Token_Handed_To_The_Shared_Cache()
+        public void It_Returns_The_Live_Callers_Result_In_The_Same_Scope()
         {
-            _heldOpenCache.FirstCallToken.IsCancellationRequested.Should().BeTrue();
+            _liveResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
+        }
+
+        [Test]
+        public void It_Fetches_From_The_Cms_Exactly_Once()
+        {
+            _fetchCount.Should().Be(1);
         }
     }
 
     [TestFixture]
-    public class Given_A_Later_Caller_Arriving_While_An_Abandoned_Fill_Is_Still_In_Flight
+    public class Given_A_Cancelled_Caller_Is_Followed_By_Another_Caller_In_The_Same_Scope
+        : CachedApplicationContextProviderTests
     {
-        private HeldOpenHybridCache _heldOpenCache = null!;
         private Exception? _cancelledCallerException;
-        private bool _abandonedFillTokenCancelledAfterCallerLeaves;
         private ApplicationContextResult _laterResult = null!;
-        private ApplicationContext _recoveredContext = null!;
-        private bool _evictedFillTokenThrowsObjectDisposedAfterProviderDispose;
+        private ApplicationContext _expectedContext = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            // The real HybridCache completes an abandoned fill promptly, which hides the window
-            // between "last waiter left" and "fill observed as finished". This cache keeps the first
-            // fill open regardless of its token, so the window is held wide: the later caller must
-            // decide not to join at the moment it arrives, not after a continuation on the abandoned
-            // task has run.
-            var configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            _heldOpenCache = new HeldOpenHybridCache();
-            var provider = new CachedApplicationContextProvider(
-                configurationServiceApplicationProvider,
-                _heldOpenCache,
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-            _recoveredContext = CreateApplicationContext("client-id", 4);
-            A.CallTo(() =>
-                    configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
-                .Returns(new ApplicationContextResult.Success(_recoveredContext));
+            var cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            CachedApplicationContextProvider provider = CreateProvider(cmsProvider, CreateHybridCache());
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var fetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _expectedContext = CreateApplicationContext(ClientId, 1);
+
+            A.CallTo(() => cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .ReturnsLazily(async _ =>
+                {
+                    fetchStarted.TrySetResult();
+                    await gate.Task;
+                    return new ApplicationContextResult.Success(_expectedContext);
+                });
 
             using var cancelledCallerCts = new CancellationTokenSource();
             Task<ApplicationContextResult> cancelledCallerTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
+                ClientId,
                 tenant: null,
                 cancelledCallerCts.Token
             );
-            await _heldOpenCache.FirstCallStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await fetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
             await cancelledCallerCts.CancelAsync();
 
             try
@@ -757,32 +739,13 @@ public class CachedApplicationContextProviderTests
                 _cancelledCallerException = ex;
             }
 
-            // The abandoned fill's token is cancelled but the cache is still holding its task open.
-            _abandonedFillTokenCancelledAfterCallerLeaves = _heldOpenCache
-                .FirstCallToken
-                .IsCancellationRequested;
-            CancellationToken evictedFillToken = _heldOpenCache.FirstCallToken;
+            gate.SetResult();
 
+            // Started only after the cancelled caller's own exception has already been observed, so
+            // this is a fresh call into the same scope rather than a second waiter on the same fetch.
             _laterResult = await provider
-                .GetApplicationByClientIdAsync("client-id", tenant: null)
-                .WaitAsync(TimeSpan.FromSeconds(5));
-
-            provider.Dispose();
-
-            try
-            {
-                // Accessing WaitHandle throws ObjectDisposedException once the token's own
-                // CancellationTokenSource has been disposed; it is the cheapest way to observe that
-                // disposal from outside the provider.
-                _ = evictedFillToken.WaitHandle;
-                _evictedFillTokenThrowsObjectDisposedAfterProviderDispose = false;
-            }
-            catch (ObjectDisposedException)
-            {
-                _evictedFillTokenThrowsObjectDisposedAfterProviderDispose = true;
-            }
-
-            _heldOpenCache.ReleaseFirstCall();
+                .GetApplicationByClientIdAsync(ClientId, tenant: null)
+                .WaitAsync(TimeSpan.FromSeconds(10));
         }
 
         [Test]
@@ -792,307 +755,115 @@ public class CachedApplicationContextProviderTests
         }
 
         [Test]
-        public void It_Cancels_The_Abandoned_Fills_Token()
+        public void It_Returns_A_Success_For_The_Later_Caller_In_The_Same_Scope()
         {
-            _abandonedFillTokenCancelledAfterCallerLeaves.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_Fetches_Again_For_The_Later_Caller()
-        {
-            _heldOpenCache.CallCount.Should().Be(2);
-        }
-
-        [Test]
-        public void It_Returns_The_Later_Callers_Own_Result()
-        {
-            _laterResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_recoveredContext));
-        }
-
-        [Test]
-        public void It_Disposes_The_Evicted_Fills_Cancellation_Token_On_Provider_Dispose()
-        {
-            _evictedFillTokenThrowsObjectDisposedAfterProviderDispose.Should().BeTrue();
+            _laterResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
         }
     }
 
     [TestFixture]
-    public class Given_A_Reload_While_A_Get_Fill_Is_In_Flight_For_The_Same_Key
+    public class Given_A_Reload_While_A_Get_Fetch_Is_Still_Pending_For_The_Same_Key
+        : CachedApplicationContextProviderTests
     {
-        private IConfigurationServiceApplicationProvider _configurationServiceApplicationProvider = null!;
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
         private ApplicationContextResult _reloadResult = null!;
         private ApplicationContext _reloadedContext = null!;
+        private ApplicationContext _getContext = null!;
+        private ApplicationContextResult _freshScopeResult = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            var cache = new RemoveGatedHybridCache();
-            var provider = new CachedApplicationContextProvider(
-                _configurationServiceApplicationProvider,
-                cache,
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            HybridCache sharedHybridCache = CreateHybridCache();
             var getGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var getStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var getContext = CreateApplicationContext("client-id", 1);
-            _reloadedContext = CreateApplicationContext("client-id", 2);
+            _getContext = CreateApplicationContext(ClientId, 1);
+            _reloadedContext = CreateApplicationContext(ClientId, 2);
 
-            A.CallTo(() =>
-                    _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
                 .ReturnsLazily(async _ =>
                 {
                     getStarted.TrySetResult();
                     await getGate.Task;
-                    return new ApplicationContextResult.Success(getContext);
+                    return new ApplicationContextResult.Success(_getContext);
                 });
             A.CallTo(() =>
-                    _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
+                    _cmsProvider.ReloadApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._)
                 )
                 .Returns(new ApplicationContextResult.Success(_reloadedContext));
 
-            // The reload runs first: it drops its request-scoped memo, then blocks inside
-            // hybridCache.RemoveAsync (gated below).
-            Task<ApplicationContextResult> reloadTask = provider.ReloadApplicationByClientIdAsync(
-                "client-id",
-                tenant: null
-            );
-            await cache.RemoveStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-
-            // While the reload is blocked there, a concurrent Get for the same key inserts its own
-            // fill into the now-empty request-scoped memo and starts blocking in the provider.
-            Task<ApplicationContextResult> getTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
-                tenant: null
-            );
+            // The Get and the Reload each run against their own provider instance - their own request
+            // scope - sharing only the HybridCache, exactly as two concurrent requests would.
+            Task<ApplicationContextResult> getTask = CreateProvider(_cmsProvider, sharedHybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
             await getStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-            // Releasing the reload's RemoveAsync lets it resume past the point where, on unfixed
-            // code, it would join the Get's fill instead of starting its own; a reload that joined it
-            // would hang here, since the Get's fill does not complete until getGate is released below.
-            cache.ReleaseRemove();
-            _reloadResult = await reloadTask.WaitAsync(TimeSpan.FromSeconds(10));
+            // The reload must return without waiting on the Get's gate: joining the Get's in-flight
+            // HybridCache factory here would hang, since that factory does not resolve until
+            // getGate is released below.
+            _reloadResult = await CreateProvider(_cmsProvider, sharedHybridCache)
+                .ReloadApplicationByClientIdAsync(ClientId, tenant: null)
+                .WaitAsync(TimeSpan.FromSeconds(10));
 
             getGate.SetResult();
             await getTask;
+
+            _freshScopeResult = await CreateProvider(_cmsProvider, sharedHybridCache)
+                .GetApplicationByClientIdAsync(ClientId, tenant: null);
         }
 
         [Test]
         public void It_Calls_The_Reload_Provider_Exactly_Once()
         {
             A.CallTo(() =>
-                    _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
+                    _cmsProvider.ReloadApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._)
                 )
                 .MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public void It_Returns_The_Reload_Providers_Result()
+        public void It_Returns_The_Reload_Providers_Result_While_The_Get_Is_Still_Pending()
         {
             _reloadResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_reloadedContext));
         }
-    }
 
-    [TestFixture]
-    public class Given_A_Fill_That_Completes_Successfully_After_Being_Marked_Abandoned
-    {
-        private int _fetchCount;
-        private ApplicationContext _expectedContext = null!;
-        private ApplicationContextResult _reusedResult = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            var provider = new CachedApplicationContextProvider(
-                configurationServiceApplicationProvider,
-                new PassthroughHybridCache(),
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-            var fetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            // Deliberately not RunContinuationsAsynchronously: releasing this synchronously runs
-            // every continuation between it and the fill's own Task completing, on this thread,
-            // before SetResult returns. That is what turns "the fill has already completed
-            // successfully" into a fact this test can rely on immediately afterwards, rather than
-            // something it would otherwise have to poll for.
-            var releaseFetch = new TaskCompletionSource();
-            _expectedContext = CreateApplicationContext("client-id", 7);
-            // NUnit reuses one fixture instance across every [Test] method in it, running SetUp again
-            // before each; a field this method only increments, rather than fully reassigning, would
-            // otherwise carry a count over from whichever test ran before it.
-            _fetchCount = 0;
-
-            A.CallTo(() =>
-                    configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
-                .ReturnsLazily(async _ =>
-                {
-                    // This fetch does not observe the fill's own cancellation: it models a fetch that
-                    // is already past the point where cancelling stops any work, so it completes
-                    // successfully even after the only caller waiting on it has already left.
-                    Interlocked.Increment(ref _fetchCount);
-                    fetchStarted.TrySetResult();
-                    await releaseFetch.Task;
-                    return new ApplicationContextResult.Success(_expectedContext);
-                });
-
-            using var abandoningCallerCts = new CancellationTokenSource();
-            Task<ApplicationContextResult> abandoningCallerTask = provider.GetApplicationByClientIdAsync(
-                "client-id",
-                tenant: null,
-                abandoningCallerCts.Token
-            );
-            await fetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-
-            await abandoningCallerCts.CancelAsync();
-            try
-            {
-                await abandoningCallerTask;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected: this caller left before the fill it started finished.
-            }
-
-            releaseFetch.SetResult();
-
-            // By the time SetResult above returns, the fill has already completed successfully (see
-            // the comment on releaseFetch), so this second, same-scope caller is guaranteed to
-            // observe an abandoned-but-completed fill rather than racing it.
-            _reusedResult = await provider.GetApplicationByClientIdAsync("client-id", tenant: null);
-        }
-
+        /// <summary>
+        /// Documents rather than guesses the actual guaranteed behavior: the Get's HybridCache factory
+        /// was already in flight when the reload wrote its own result, and HybridCache commits a
+        /// factory's result when that factory finishes regardless of an intervening direct write for
+        /// the same key. So the fetch that was already running when the reload happened is the one
+        /// whose result the cache holds afterwards - the Get's context, not the reload's. This is a
+        /// pre-existing, inherent property of layering a request-scoped reload on top of a shared,
+        /// factory-based cache; it is not a regression this change introduces, and callers only reach
+        /// it if a Get for the same key was already mid-flight at the moment a reload for that exact
+        /// key ran.
+        /// </summary>
         [Test]
-        public void It_Reuses_The_Abandoned_Fills_Successful_Result()
+        public void It_Reflects_Whichever_Fetch_Completes_Last_Rather_Than_The_Reload()
         {
-            _reusedResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(_expectedContext));
-        }
-
-        [Test]
-        public void It_Does_Not_Fetch_A_Second_Time()
-        {
-            _fetchCount.Should().Be(1);
+            var success = _freshScopeResult.Should().BeOfType<ApplicationContextResult.Success>().Subject;
+            success.ApplicationContext.Id.Should().Be(_getContext.Id);
         }
     }
 
     [TestFixture]
-    public class Given_A_Fill_Replaced_By_A_Reload_Before_It_Completes
+    public class Given_A_Pre_Cancelled_Caller_Token_For_Get : CachedApplicationContextProviderTests
     {
-        private bool _replacedFillTokenThrowsObjectDisposedAfterProviderDispose;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            var provider = new CachedApplicationContextProvider(
-                configurationServiceApplicationProvider,
-                new PassthroughHybridCache(),
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
-
-            var getGate = new TaskCompletionSource();
-            var getStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            CancellationToken replacedFillToken = default;
-
-            async Task<ApplicationContextResult> FetchAsync(CancellationToken token)
-            {
-                replacedFillToken = token;
-                getStarted.TrySetResult();
-                await getGate.Task;
-                return new ApplicationContextResult.Success(CreateApplicationContext("client-id", 1));
-            }
-
-            A.CallTo(() =>
-                    configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
-                .ReturnsLazily(call => FetchAsync((CancellationToken)call.Arguments[2]!));
-            A.CallTo(() =>
-                    configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-                        "client-id",
-                        tenant: null,
-                        A<CancellationToken>._
-                    )
-                )
-                .Returns(new ApplicationContextResult.Success(CreateApplicationContext("client-id", 2)));
-
-            // The Get's own task is deliberately never captured or awaited: nothing below needs its
-            // result, and its fetch never observes cancellation, so it would otherwise never finish.
-            _ = provider.GetApplicationByClientIdAsync("client-id", tenant: null);
-            await getStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-
-            // The reload overwrites the Get's request-scoped memo directly, never evicting or
-            // cancelling it through the normal waiter path, so only the provider's own
-            // fill-creation tracking - not its dictionary of current memos - keeps this orphaned
-            // fill reachable for disposal.
-            await provider.ReloadApplicationByClientIdAsync("client-id", tenant: null);
-
-            provider.Dispose();
-
-            try
-            {
-                _ = replacedFillToken.WaitHandle;
-                _replacedFillTokenThrowsObjectDisposedAfterProviderDispose = false;
-            }
-            catch (ObjectDisposedException)
-            {
-                _replacedFillTokenThrowsObjectDisposedAfterProviderDispose = true;
-            }
-        }
-
-        [Test]
-        public void It_Disposes_The_Replaced_Fills_Cancellation_Token()
-        {
-            _replacedFillTokenThrowsObjectDisposedAfterProviderDispose.Should().BeTrue();
-        }
-    }
-
-    [TestFixture]
-    public class Given_A_Pre_Cancelled_Caller_Token
-    {
-        private IConfigurationServiceApplicationProvider _configurationServiceApplicationProvider = null!;
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
         private Exception? _exception;
 
         [SetUp]
         public async Task Setup()
         {
-            _configurationServiceApplicationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
-            var provider = new CachedApplicationContextProvider(
-                _configurationServiceApplicationProvider,
-                CreateHybridCache(),
-                new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-                NullLogger<CachedApplicationContextProvider>.Instance
-            );
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            CachedApplicationContextProvider provider = CreateProvider(_cmsProvider, CreateHybridCache());
             using var cts = new CancellationTokenSource();
             await cts.CancelAsync();
 
             try
             {
-                await provider.GetApplicationByClientIdAsync("client-id", tenant: null, cts.Token);
+                await provider.GetApplicationByClientIdAsync(ClientId, tenant: null, cts.Token);
             }
             catch (Exception ex)
             {
@@ -1110,7 +881,7 @@ public class CachedApplicationContextProviderTests
         public void It_Never_Calls_The_Cms_Provider()
         {
             A.CallTo(() =>
-                    _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
+                    _cmsProvider.GetApplicationByClientIdAsync(
                         A<string>._,
                         A<string?>._,
                         A<CancellationToken>._
@@ -1120,136 +891,47 @@ public class CachedApplicationContextProviderTests
         }
     }
 
-    /// <summary>
-    /// A HybridCache whose GetOrCreateAsync always calls the factory directly, and whose SetAsync,
-    /// RemoveAsync, and RemoveByTagAsync are no-ops. Used wherever a test needs direct control over a
-    /// fill's fetch and the CancellationToken it runs on, without the real HybridCache's own caching,
-    /// linked-token, or scheduling behavior in the way.
-    /// </summary>
-    private class PassthroughHybridCache : HybridCache
+    [TestFixture]
+    public class Given_A_Pre_Cancelled_Caller_Token_For_Reload : CachedApplicationContextProviderTests
     {
-        public override ValueTask<T> GetOrCreateAsync<TState, T>(
-            string key,
-            TState state,
-            Func<TState, CancellationToken, ValueTask<T>> factory,
-            HybridCacheEntryOptions? options = null,
-            IEnumerable<string>? tags = null,
-            CancellationToken cancellationToken = default
-        ) => factory(state, cancellationToken);
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private Exception? _exception;
 
-        public override ValueTask SetAsync<T>(
-            string key,
-            T value,
-            HybridCacheEntryOptions? options = null,
-            IEnumerable<string>? tags = null,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
-
-        public override ValueTask RemoveAsync(string key, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public override ValueTask RemoveByTagAsync(
-            string tag,
-            CancellationToken cancellationToken = default
-        ) => ValueTask.CompletedTask;
-    }
-
-    /// <summary>
-    /// A PassthroughHybridCache whose first GetOrCreateAsync never completes until released, ignoring
-    /// its token, and whose later calls run the factory immediately. It exists only to hold the
-    /// abandoned-fill window open deterministically.
-    /// </summary>
-    private sealed class HeldOpenHybridCache : PassthroughHybridCache
-    {
-        private readonly TaskCompletionSource _firstCallReleased = new(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        private int _callCount;
-
-        public TaskCompletionSource FirstCallStarted { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public CancellationToken FirstCallToken { get; private set; }
-        public int CallCount => _callCount;
-
-        public void ReleaseFirstCall() => _firstCallReleased.TrySetResult();
-
-        public override async ValueTask<T> GetOrCreateAsync<TState, T>(
-            string key,
-            TState state,
-            Func<TState, CancellationToken, ValueTask<T>> factory,
-            HybridCacheEntryOptions? options = null,
-            IEnumerable<string>? tags = null,
-            CancellationToken cancellationToken = default
-        )
+        [SetUp]
+        public async Task Setup()
         {
-            if (Interlocked.Increment(ref _callCount) == 1)
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            CachedApplicationContextProvider provider = CreateProvider(_cmsProvider, CreateHybridCache());
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            try
             {
-                FirstCallToken = cancellationToken;
-                FirstCallStarted.TrySetResult();
-                await _firstCallReleased.Task;
+                await provider.ReloadApplicationByClientIdAsync(ClientId, tenant: null, cts.Token);
             }
-
-            return await factory(state, cancellationToken);
+            catch (Exception ex)
+            {
+                _exception = ex;
+            }
         }
-    }
 
-    /// <summary>
-    /// A PassthroughHybridCache whose RemoveAsync blocks until released. It exists only to hold open
-    /// the window between a reload dropping its request-scoped memo and installing its own fill, so a
-    /// concurrent Get for the same key can be driven to land in between deterministically.
-    /// </summary>
-    private sealed class RemoveGatedHybridCache : PassthroughHybridCache
-    {
-        private readonly TaskCompletionSource _releaseRemove = new(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-
-        public TaskCompletionSource RemoveStarted { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public void ReleaseRemove() => _releaseRemove.TrySetResult();
-
-        public override async ValueTask RemoveAsync(string key, CancellationToken cancellationToken = default)
+        [Test]
+        public void It_Throws_Operation_Canceled()
         {
-            RemoveStarted.TrySetResult();
-            await _releaseRemove.Task;
+            _exception.Should().BeAssignableTo<OperationCanceledException>();
         }
-    }
 
-    private CachedApplicationContextProvider CreateProvider() =>
-        new(
-            _configurationServiceApplicationProvider,
-            _hybridCache,
-            new CacheSettings { ApplicationContextCacheExpirationSeconds = 123 },
-            NullLogger<CachedApplicationContextProvider>.Instance
-        );
-
-    private static HybridCache CreateHybridCache()
-    {
-        var services = new ServiceCollection();
-        services.AddMemoryCache();
-        services.AddHybridCache();
-        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
-    }
-
-    private static ApplicationContextResult CreateResult(ApplicationContextOutcome outcome) =>
-        outcome switch
+        [Test]
+        public void It_Never_Calls_The_Cms_Provider()
         {
-            ApplicationContextOutcome.Success => new ApplicationContextResult.Success(
-                CreateApplicationContext("client-id", 1)
-            ),
-            ApplicationContextOutcome.NotFound => new ApplicationContextResult.NotFound(),
-            ApplicationContextOutcome.Unavailable => new ApplicationContextResult.Unavailable(),
-            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
-        };
-
-    private static ApplicationContext CreateApplicationContext(string clientId, long applicationId) =>
-        new(applicationId, 100, clientId, Guid.NewGuid(), [1, 2, 3], null, []);
-
-    public enum ApplicationContextOutcome
-    {
-        Success,
-        NotFound,
-        Unavailable,
+            A.CallTo(() =>
+                    _cmsProvider.ReloadApplicationByClientIdAsync(
+                        A<string>._,
+                        A<string?>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 }

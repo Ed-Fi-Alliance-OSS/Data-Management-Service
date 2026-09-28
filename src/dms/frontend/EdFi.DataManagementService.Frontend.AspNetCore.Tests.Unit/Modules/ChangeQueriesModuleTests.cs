@@ -41,7 +41,7 @@ public class ChangeQueriesModuleTests
     public async Task It_routes_available_change_versions_and_returns_the_core_response()
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeResponse(123L)));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -66,7 +66,7 @@ public class ChangeQueriesModuleTests
         body!["oldestChangeVersion"]!.GetValue<long>().Should().Be(0L);
         body!["newestChangeVersion"]!.GetValue<long>().Should().Be(123L);
 
-        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
 
@@ -74,7 +74,7 @@ public class ChangeQueriesModuleTests
     public async Task It_routes_under_a_tenant_prefix_when_multitenancy_is_enabled()
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeResponse(7L)));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -101,7 +101,7 @@ public class ChangeQueriesModuleTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetAvailableChangeVersions(A<FrontendRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
 }
