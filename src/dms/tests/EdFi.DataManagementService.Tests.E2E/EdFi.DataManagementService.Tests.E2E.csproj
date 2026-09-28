@@ -17,6 +17,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
+        <PackageReference Include="Confluent.Kafka" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="JsonSchema.Net" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
@@ -65,5 +66,32 @@
         <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
             <_Parameter1>EdFi.DataManagementService.Tests.Unit</_Parameter1>
         </AssemblyAttribute>
+    </ItemGroup>
+    <!-- Test-only Kafka observations and reducer; no integration fixture assembly dependency. -->
+    <ItemGroup>
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractPartition.cs"
+            Link="Cdc/Shared/MessageContractPartition.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractKafkaObserver.cs"
+            Link="Cdc/Shared/MessageContractKafkaObserver.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractKafkaRecords.cs"
+            Link="Cdc/Shared/MessageContractKafkaRecords.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Shared/MessageContractRecordAssertions.cs"
+            Link="Cdc/Shared/MessageContractRecordAssertions.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumer.cs"
+            Link="Cdc/Shared/MessageContractConsumer.cs"
+        />
+        <Compile
+            Include="../../backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
+            Link="Cdc/Shared/MessageContractJson.cs"
+        />
     </ItemGroup>
 </Project>
