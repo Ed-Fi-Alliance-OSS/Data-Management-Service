@@ -46,10 +46,19 @@ public interface ICdcProjectionRuntime : IAsyncDisposable
 
 public static class CdcProjectionRuntimeFactory
 {
-    public static async Task<CdcTransportResult<ICdcProjectionRuntime>> CreateAsync(
+    public static Task<CdcTransportResult<ICdcProjectionRuntime>> CreateAsync(
         IConfiguration configuration,
         ILogger logger,
         DocumentCacheTargetKey targetKey,
+        CancellationToken cancellationToken
+    ) => CreateAsync(configuration, logger, targetKey, static _ => { }, cancellationToken);
+
+    /// <summary>Customize completed registrations before building the owned runtime provider.</summary>
+    internal static async Task<CdcTransportResult<ICdcProjectionRuntime>> CreateAsync(
+        IConfiguration configuration,
+        ILogger logger,
+        DocumentCacheTargetKey targetKey,
+        Action<IServiceCollection> configureServices,
         CancellationToken cancellationToken
     )
     {
@@ -66,6 +75,7 @@ public static class CdcProjectionRuntimeFactory
             );
             services.AddCdcDownstreamPublicationHistory(configuration);
             CdcComposeDataStoreProvider.Register(services, configuration, targetKey);
+            configureServices(services);
             ServiceProvider provider = services.BuildServiceProvider();
             return await OpenAsync(provider, targetKey, cancellationToken).ConfigureAwait(false);
         }

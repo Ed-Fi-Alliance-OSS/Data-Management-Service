@@ -106,9 +106,8 @@ public class Given_CdcProjectionRuntimeComposition
     }
 
     [Test]
-    public async Task It_initializes_schema_before_resolving_the_selected_target_and_does_not_start_processing()
+    public async Task It_applies_registration_callback_before_initializing_schema_and_resolving_target_without_processing()
     {
-        IServiceCollection services = Services(Configuration("postgresql", "tenanta"));
         List<string> order = [];
         IEffectiveSchemaBootstrapper bootstrapper = A.Fake<IEffectiveSchemaBootstrapper>();
         A.CallTo(() => bootstrapper.InitializeAsync(A<CancellationToken>._))
@@ -138,23 +137,73 @@ public class Given_CdcProjectionRuntimeComposition
             .Returns(snapshot);
         A.CallTo(() => registry.CurrentRuntimeSnapshot)
             .Returns(new DocumentCacheTargetRuntimeSnapshot([context], DateTimeOffset.UtcNow));
-        services.Replace(ServiceDescriptor.Singleton(bootstrapper));
-        services.Replace(ServiceDescriptor.Singleton(registry));
-        ServiceProvider provider = services.BuildServiceProvider();
-        var result = await CdcProjectionRuntimeFactory.OpenAsync(provider, Target, CancellationToken.None);
+        IServiceProvider provider = null!;
+        int callbackCount = 0;
+        var configuration = Configuration("postgresql", "tenanta");
+        configuration["Cdc:Compose:DatabaseHostPort"] = "54320";
+        var result = await CdcProjectionRuntimeFactory.CreateAsync(
+            configuration,
+            new LoggerConfiguration().CreateLogger(),
+            Target,
+            registeredServices =>
+            {
+                callbackCount++;
+                registeredServices.Replace(ServiceDescriptor.Singleton(registry));
+                registeredServices.Replace(
+                    ServiceDescriptor.Singleton<IEffectiveSchemaBootstrapper>(sp =>
+                    {
+                        provider = sp;
+                        return bootstrapper;
+                    })
+                );
+            },
+            CancellationToken.None
+        );
         var runtime = result
             .Should()
             .BeOfType<CdcTransportResult<ICdcProjectionRuntime>.Observed>()
             .Subject.Value;
         await using (runtime)
         {
+            callbackCount.Should().Be(1);
             order.Should().Equal("schema", "target");
+            provider.GetRequiredService<IDocumentCacheTargetRegistry>().Should().BeSameAs(registry);
             provider.GetRequiredService<DocumentCacheProjectionSupervisor>().ExecuteTask.Should().BeNull();
             provider
                 .GetRequiredService<DocumentCacheProjectionSupervisor>()
                 .CurrentTargetContexts.Should()
                 .BeEmpty();
         }
+        Action resolve = () => provider.GetRequiredService<IDocumentCacheTargetRegistry>();
+        resolve.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task It_sanitizes_registration_callback_failures_before_initialization()
+    {
+        IEffectiveSchemaBootstrapper bootstrapper = A.Fake<IEffectiveSchemaBootstrapper>();
+        int callbackCount = 0;
+        var result = await CdcProjectionRuntimeFactory.CreateAsync(
+            Configuration("postgresql"),
+            new LoggerConfiguration().CreateLogger(),
+            Target,
+            services =>
+            {
+                callbackCount++;
+                services.Replace(ServiceDescriptor.Singleton(bootstrapper));
+                throw new InvalidOperationException("Host=private;Password=secret");
+            },
+            CancellationToken.None
+        );
+
+        callbackCount.Should().Be(1);
+        result
+            .Should()
+            .BeOfType<CdcTransportResult<ICdcProjectionRuntime>.Unavailable>()
+            .Which.Diagnostic.Component.Should()
+            .Be(CdcDeploymentComponent.Projection);
+        JsonSerializer.Serialize(result).Should().NotContain("private").And.NotContain("secret");
+        A.CallTo(() => bootstrapper.InitializeAsync(A<CancellationToken>._)).MustNotHaveHappened();
     }
 
     [TestCase(false)]
