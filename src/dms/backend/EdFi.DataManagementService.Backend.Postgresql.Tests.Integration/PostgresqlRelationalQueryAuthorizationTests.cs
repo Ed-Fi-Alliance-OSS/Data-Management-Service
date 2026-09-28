@@ -1831,6 +1831,63 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
 
     /// <summary>
+    /// Issues a PUT under the given strategies with the caller's full ownership context, which the
+    /// resource-specific update helpers do not carry.
+    /// </summary>
+    public async Task<UpdateResult> UpdateWithAuthorizationAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        short? creatorOwnershipTokenId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        string? ifMatch = null
+    )
+    {
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new UpdateRequest(
+            ResourceInfo: resourceHandle.ResourceInfo,
+            DocumentInfo: RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+                requestBody,
+                resourceHandle.ResourceInfo,
+                resourceHandle.ResourceSchema,
+                MappingSet
+            ),
+            MappingSet: MappingSet,
+            EdfiDoc: requestBody,
+            Headers: CreateHeaders(ifMatch),
+            TraceId: new TraceId($"put-with-authorization-{resourceName}"),
+            DocumentUuid: documentUuid
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId,
+                ownershipTokenIds ?? []
+            ),
+            AuthorizationStrategyEvaluators =
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpdateDocumentById(request);
+    }
+
+    /// <summary>
     /// Returns once a backend in this database waits on a lock another backend holds, which is how a test knows a write it started is waiting on the
     /// uncommitted work of a held session rather than guessing with a delay.
     /// </summary>

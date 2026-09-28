@@ -22,8 +22,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// <summary>
 /// Public-boundary coverage for OwnershipBased authorization: the exact ProblemDetails wire contracts from
 /// <c>auth.md</c> 2.13 and 2.14, stamping on create, the authorized round trip, the GET-many page filter, the
-/// provider-independent token cap, descriptor GET-by-id, and the descriptor operations that stay withheld with a
-/// 501. The provider matrix
+/// provider-independent token cap, descriptor GET-by-id and writes, and descriptor DELETE, which stays withheld
+/// with a 501. The provider matrix
 /// lives in the backend suites; this scenario owns only what those cannot observe - the served response body
 /// and the real application-context plumbing that carries the caller's ownership tokens.
 /// </summary>
@@ -100,14 +100,14 @@ internal static class OwnershipAuthorizationIntegrationScenario
     /// <summary>
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
     /// is stamped or, for a caller that could not own the row, refused; every single-record read and write is
-    /// enforced; GET-many is filtered; descriptor GET-by-id is enforced and the other descriptor operations
-    /// stay withheld. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp
-    /// is fabricated directly when a step needs one.
+    /// enforced; GET-many is filtered; descriptor GET-by-id and writes are enforced and descriptor DELETE stays
+    /// withheld. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp is
+    /// fabricated directly when a step needs one.
     /// </summary>
     /// <remarks>
     /// One exception: <c>AcademicSubjectDescriptor</c> creates and updates under
-    /// <c>NoFurtherAuthorizationRequired</c>, so its rows can be seeded through the API while descriptor writes
-    /// under <c>OwnershipBased</c> still answer 501. Its reads and deletes keep <c>OwnershipBased</c>.
+    /// <c>NoFurtherAuthorizationRequired</c>, so a descriptor stamped NULL can be seeded through the API by a
+    /// client with no creator token. Its reads and deletes keep <c>OwnershipBased</c>.
     /// </remarks>
     public static IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new ConfigurableClaimSetProvider(
@@ -520,13 +520,13 @@ internal static class OwnershipAuthorizationIntegrationScenario
         int.Parse(response.Headers.GetValues("Total-Count").Single(), CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Descriptor GET-by-id is enforced with the same bodies as a regular resource: the owner is served, a
-    /// holder of other tokens gets 2.13, a descriptor never stamped gets 2.14, an unknown id is a 404 rather than
-    /// a 403, and the token cap is the security-configuration 500 with 1,999 still served. The other descriptor
-    /// operations stay withheld with a 501; they are given a document id nothing was created with, so a 501
-    /// there also proves the gate precedes target lookup rather than depending on a row being present.
+    /// Descriptor GET-by-id, POST and PUT are enforced with the same bodies as a regular resource: the owner is
+    /// served and may create and update, a holder of other tokens gets 2.13, a descriptor never stamped gets
+    /// 2.14, a create the caller could not own is refused with no row, an unknown id is a 404 rather than a
+    /// 403, and the token cap is the security-configuration 500 with 1,999 still served. DELETE stays withheld
+    /// with a 501.
     /// </summary>
-    public static async Task It_enforces_descriptor_get_by_id_ownership_and_withholds_the_other_descriptor_operations_with_a_501(
+    public static async Task It_enforces_descriptor_ownership_on_reads_and_writes_and_withholds_delete_with_a_501(
         ApiIntegrationHarness harness
     )
     {
@@ -580,33 +580,111 @@ internal static class OwnershipAuthorizationIntegrationScenario
         string underCapBody = await underCapResponse.Content.ReadAsStringAsync();
         underCapResponse.StatusCode.Should().Be(HttpStatusCode.OK, underCapBody);
 
-        string descriptorsEndpoint = string.Format(GradeLevelDescriptorsEndpointFormat, OwnerTenant);
-        string unknownId = Guid.NewGuid().ToString();
-        string descriptorPath = $"{descriptorsEndpoint}/{unknownId}";
+        // GradeLevelDescriptor carries OwnershipBased on every action, so its writes are enforced too. A client
+        // with no creator token, or with a creator token outside its own list, could never reach the descriptor
+        // it would create: 2.14 and 2.13, and no row is written.
+        long documentCount = await CountDocumentsAsync(harness);
 
-        using HttpResponseMessage postResponse = await SendJsonAsync(
+        using HttpResponseMessage uninitializedCreate = await PostGradeLevelDescriptorAsync(
             harness,
-            HttpMethod.Post,
-            descriptorsEndpoint,
-            CreateDescriptorBody(resourceId: null)
+            NoCreatorTokenTenant,
+            "Tenth grade"
         );
-        await AssertNotImplementedAsync(postResponse);
+        await AssertOwnershipDenialAsync(
+            uninitializedCreate,
+            StoredUninitializedType,
+            _storedUninitializedErrors
+        );
 
-        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(descriptorPath);
-        string getBody = await getResponse.Content.ReadAsStringAsync();
-        getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound, getBody);
+        using HttpResponseMessage mismatchCreate = await PostGradeLevelDescriptorAsync(
+            harness,
+            ForeignTenant,
+            "Tenth grade"
+        );
+        await AssertOwnershipDenialAsync(mismatchCreate, MismatchType, []);
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
 
-        using HttpResponseMessage putResponse = await SendJsonAsync(
+        using HttpResponseMessage ownerCreate = await PostGradeLevelDescriptorAsync(
+            harness,
+            OwnerTenant,
+            "Tenth grade"
+        );
+        string ownerCreateBody = await ownerCreate.Content.ReadAsStringAsync();
+        ownerCreate.StatusCode.Should().Be(HttpStatusCode.Created, ownerCreateBody);
+        Guid gradeLevelId = Guid.Parse(
+            GetLocationPath(ownerCreate).Split('/', StringSplitOptions.RemoveEmptyEntries)[^1]
+        );
+        (await ReadStoredOwnershipTokenAsync(harness, gradeLevelId)).Should().Be(CreatorToken);
+
+        // The same identity, so a POST resolves to an upsert-as-update decided by the stored stamp.
+        using HttpResponseMessage foreignPostAsUpdate = await PostGradeLevelDescriptorAsync(
+            harness,
+            ForeignTenant,
+            "Tenth grade, foreign"
+        );
+        await AssertOwnershipDenialAsync(foreignPostAsUpdate, MismatchType, []);
+
+        using HttpResponseMessage foreignPut = await SendJsonAsync(
             harness,
             HttpMethod.Put,
-            descriptorPath,
+            GradeLevelDescriptorPath(ForeignTenant, gradeLevelId),
+            CreateDescriptorBody(gradeLevelId.ToString(), "Tenth grade, foreign")
+        );
+        await AssertOwnershipDenialAsync(foreignPut, MismatchType, []);
+
+        using HttpResponseMessage ownerPut = await SendJsonAsync(
+            harness,
+            HttpMethod.Put,
+            GradeLevelDescriptorPath(OwnerTenant, gradeLevelId),
+            CreateDescriptorBody(gradeLevelId.ToString(), "Tenth grade, revised")
+        );
+        string ownerPutBody = await ownerPut.Content.ReadAsStringAsync();
+        ownerPut.StatusCode.Should().Be(HttpStatusCode.NoContent, ownerPutBody);
+        (await ReadStoredOwnershipTokenAsync(harness, gradeLevelId)).Should().Be(CreatorToken);
+
+        using HttpResponseMessage ownerGet = await harness.HttpClient.GetAsync(
+            GradeLevelDescriptorPath(OwnerTenant, gradeLevelId)
+        );
+        string ownerGetBody = await ownerGet.Content.ReadAsStringAsync();
+        ownerGet.StatusCode.Should().Be(HttpStatusCode.OK, ownerGetBody);
+        ownerGetBody.Should().Contain("Tenth grade, revised").And.NotContain("foreign");
+
+        string unknownId = Guid.NewGuid().ToString();
+        string unknownPath = $"{string.Format(GradeLevelDescriptorsEndpointFormat, OwnerTenant)}/{unknownId}";
+
+        using HttpResponseMessage unknownGet = await harness.HttpClient.GetAsync(unknownPath);
+        string unknownGetBody = await unknownGet.Content.ReadAsStringAsync();
+        unknownGet.StatusCode.Should().Be(HttpStatusCode.NotFound, unknownGetBody);
+
+        using HttpResponseMessage unknownPut = await SendJsonAsync(
+            harness,
+            HttpMethod.Put,
+            unknownPath,
             CreateDescriptorBody(unknownId)
         );
-        await AssertNotImplementedAsync(putResponse);
+        string unknownPutBody = await unknownPut.Content.ReadAsStringAsync();
+        unknownPut.StatusCode.Should().Be(HttpStatusCode.NotFound, unknownPutBody);
 
-        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(descriptorPath);
+        // DELETE is the one descriptor operation still withheld; an unknown id also proves the gate precedes
+        // target lookup.
+        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(unknownPath);
         await AssertNotImplementedAsync(deleteResponse);
     }
+
+    private static string GradeLevelDescriptorPath(string tenant, Guid documentId) =>
+        $"{string.Format(GradeLevelDescriptorsEndpointFormat, tenant)}/{documentId}";
+
+    private static Task<HttpResponseMessage> PostGradeLevelDescriptorAsync(
+        ApiIntegrationHarness harness,
+        string tenant,
+        string description
+    ) =>
+        SendJsonAsync(
+            harness,
+            HttpMethod.Post,
+            string.Format(GradeLevelDescriptorsEndpointFormat, tenant),
+            CreateDescriptorBody(resourceId: null, description)
+        );
 
     private static ApplicationContextResult Success(
         long applicationId,
@@ -770,12 +848,12 @@ internal static class OwnershipAuthorizationIntegrationScenario
         return Guid.Parse(GetLocationPath(response).Split('/', StringSplitOptions.RemoveEmptyEntries)[^1]);
     }
 
-    private static JsonObject CreateDescriptorBody(string? resourceId)
+    private static JsonObject CreateDescriptorBody(string? resourceId, string description = "Tenth grade")
     {
         JsonObject body = new()
         {
             ["codeValue"] = "Tenth grade",
-            ["description"] = "Tenth grade",
+            ["description"] = description,
             ["namespace"] = "uri://ed-fi.org/GradeLevelDescriptor",
             ["shortDescription"] = "Tenth grade",
         };

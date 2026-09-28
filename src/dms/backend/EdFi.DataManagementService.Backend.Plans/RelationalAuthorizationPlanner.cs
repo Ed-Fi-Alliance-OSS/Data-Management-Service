@@ -211,8 +211,8 @@ public enum OwnershipTokenCapHandling
 /// known-but-not-enabled and the request keeps its fail-closed 501 — which is what stops an unenforced
 /// ownership strategy from being silently dropped. Each gate was flipped on in the same commit that wired its
 /// executor. Descriptor storage is withheld by both gates except for the single-record operations whose
-/// descriptor executors are wired so far. A custom view configured ahead of any of these terminals is still validated first, so an earlier
-/// custom-view configuration failure keeps its own response.
+/// descriptor executors are wired so far. A custom view configured ahead of any of these terminals is still
+/// validated first, so an earlier custom-view configuration failure keeps its own response.
 /// </para>
 /// </remarks>
 public static class RelationalAuthorizationPlanner
@@ -342,8 +342,8 @@ public static class RelationalAuthorizationPlanner
         }
 
         // A descriptor configured with OwnershipBased must fail closed as known-but-not-enabled (501) on every
-        // single-record operation whose descriptor executor is not yet wired, which is the write verbs and
-        // DELETE now that GET-by-id is enforced. Ranked ahead of the namespace no-prefixes terminal on
+        // single-record operation whose descriptor executor is not yet wired, which is DELETE now that
+        // GET-by-id and the write verbs are enforced. Ranked ahead of the namespace no-prefixes terminal on
         // purpose, and it is the one place where an unimplemented strategy outranks a namespace terminal:
         // that 403 is a runtime authorization answer for a strategy the caller does execute, so letting it
         // win reports "your namespace prefixes refused this" for a descriptor whose ownership strategy was
@@ -633,8 +633,8 @@ public static class RelationalAuthorizationPlanner
     /// <summary>
     /// The single-record operations whose descriptor callers execute the ownership check. Transitional: each
     /// operation is added in the same commit that wires its descriptor consumers, and the set is removed
-    /// with <see cref="DescriptorOwnershipUnsupported"/> once all three are in. GET-by-id is wired; the write
-    /// verbs and DELETE are not yet.
+    /// with <see cref="DescriptorOwnershipUnsupported"/> once all three are in. GET-by-id and the write verbs
+    /// are wired, and DELETE is not yet.
     /// </summary>
     /// <remarks>
     /// <see cref="EnforcesOwnershipChecks"/> admits descriptor storage for an operation only when it is a
@@ -647,6 +647,9 @@ public static class RelationalAuthorizationPlanner
     [
         // Descriptor GET-by-id runs the stored-stamp check after its custom-view and namespace checks.
         NamespaceAuthorizationOperation.ReadSingle,
+        // Descriptor PUT and POST-as-update run it in the stored sequence of the locked target, and a POST
+        // that creates is decided by the create-side verdict.
+        NamespaceAuthorizationOperation.Update,
     ];
 
     /// <summary>

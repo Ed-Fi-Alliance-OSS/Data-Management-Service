@@ -94,8 +94,8 @@ public sealed class Given_Mssql_OwnershipAuthorization : MssqlApiIntegrationTest
         );
 
     [Test]
-    public Task It_enforces_descriptor_get_by_id_ownership_and_withholds_the_other_descriptor_operations_with_a_501() =>
-        OwnershipAuthorizationIntegrationScenario.It_enforces_descriptor_get_by_id_ownership_and_withholds_the_other_descriptor_operations_with_a_501(
+    public Task It_enforces_descriptor_ownership_on_reads_and_writes_and_withholds_delete_with_a_501() =>
+        OwnershipAuthorizationIntegrationScenario.It_enforces_descriptor_ownership_on_reads_and_writes_and_withholds_delete_with_a_501(
             Harness
         );
 }
