@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Authorizes an identity request against the token's claim set and the CMS-seeded
-/// <c>http://ed-fi.org/identity/claims/services/identity</c> service claim (design.md:433-468).
+/// <c>http://ed-fi.org/identity/claims/services/identity</c> service claim.
 /// The required CMS action is <c>Create</c> for <see cref="IdentityOperation.Create" /> and
 /// <c>Read</c> for every other identity operation - <c>Update</c> is never consulted, so a claim set
 /// granting only <c>Update</c> on the identity claim is forbidden on every operation.

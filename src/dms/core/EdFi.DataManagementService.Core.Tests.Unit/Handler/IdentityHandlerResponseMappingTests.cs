@@ -18,7 +18,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 /// <summary>
-/// Pins every row of the result-mapping table (design.md:825-871, story B4): status code, problem
+/// Pins every row of the result-mapping table: status code, problem
 /// <c>type</c>, body presence, and <c>Location</c> for each combination of
 /// <see cref="Identity.IdentityOperation" /> and <see cref="IdentityResultStatus" /> - including every
 /// provider-contract-violation row a synchronous find/search or a misused results status can produce.
@@ -970,7 +970,7 @@ public class IdentityHandlerResponseMappingTests
     /// <summary>
     /// Pins the null-provider-result path for every one of the five identity operations: a provider
     /// that breaks the non-nullable <see cref="IIdentityService" /> contract and returns null from an
-    /// operation is distinguished from a boundary failure (design.md D9) and mapped to the existing
+    /// operation is distinguished from a boundary failure and mapped to the existing
     /// provider-contract-violation 502 - never the default bodyless 503 that a missed null check would
     /// leave in place.
     /// </summary>

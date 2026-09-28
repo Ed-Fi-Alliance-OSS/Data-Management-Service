@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Identity-pipeline-only step that confirms the request's tenant is known before any client-to-tenant
-/// binding or claim-set lookup runs (design.md D4). Pass-through when <paramref name="multiTenancyEnabled" />
+/// binding or claim-set lookup runs. Pass-through when <paramref name="multiTenancyEnabled" />
 /// is false, matching <see cref="TenantValidationMiddleware" />'s constructor shape. Otherwise asks the
 /// shared <see cref="IdentityTenantSnapshot" /> whether the request's tenant exists and maps
 /// <see cref="TenantExistenceOutcome.Absent" /> to a tenant <c>404</c> and

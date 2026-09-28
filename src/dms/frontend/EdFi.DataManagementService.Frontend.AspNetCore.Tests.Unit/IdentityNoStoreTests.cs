@@ -20,7 +20,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
-/// C4: every host-generated identity operation response carries exactly one
+/// Every host-generated identity operation response carries exactly one
 /// <c>Cache-Control: no-store</c> - the success shapes (200, 202) that
 /// <see cref="Infrastructure.SecurityHeadersMiddleware"/> deliberately leaves alone, the failure
 /// shapes it already covered (400, 401, 403, 404, 415, 500, 502), and the real global rate

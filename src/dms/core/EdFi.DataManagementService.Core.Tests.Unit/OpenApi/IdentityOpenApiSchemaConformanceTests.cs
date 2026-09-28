@@ -15,7 +15,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
-/// Story D4/D14: payload-versus-served-schema assertions, evaluated with <c>JsonSchema.Net</c> after
+/// Payload-versus-served-schema assertions, evaluated with <c>JsonSchema.Net</c> after
 /// <see cref="OpenApiSchemaNormalizer" /> rewrites the OpenAPI 3.0 component schemas into a JSON Schema
 /// draft the evaluator accepts.
 /// </summary>
@@ -210,7 +210,7 @@ public class IdentityOpenApiSchemaConformanceTests
     }
 
     /// <summary>
-    /// Story D14's negative control: a <c>nullable</c> string schema rejects a JSON <c>null</c> before
+    /// Negative control: a <c>nullable</c> string schema rejects a JSON <c>null</c> before
     /// <see cref="OpenApiSchemaNormalizer" /> runs (OpenAPI's <c>nullable</c> keyword is meaningless to
     /// a JSON Schema evaluator) and accepts it after normalization converts <c>type</c> into an array
     /// that includes <c>"null"</c>.

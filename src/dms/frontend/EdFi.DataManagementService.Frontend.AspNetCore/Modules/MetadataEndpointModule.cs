@@ -578,7 +578,7 @@ public partial class MetadataEndpointModule(
     }
 
     /// <summary>
-    /// Serves the fixed identity OpenAPI document (design.md D2). Unlike Change-Queries, the identity
+    /// Serves the fixed identity OpenAPI document. Unlike Change-Queries, the identity
     /// document is always present once mapped - the route itself is mapped only when
     /// AppSettings:EnableIdentityManagement is true - so there is no missing-document 404 branch here.
     /// </summary>

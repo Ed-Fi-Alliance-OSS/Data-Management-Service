@@ -151,8 +151,8 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             },
         };
 
-        // The identity URL is listed only when AppSettings:EnableIdentityManagement is true
-        // (design.md, Feature Toggle: "the Discovery response has no identity URL" when disabled).
+        // The identity URL is listed only when AppSettings:EnableIdentityManagement is true.
+        // The Discovery response has no identity URL when disabled.
         if (coreOptions.Value.EnableIdentityManagement)
         {
             response["urls"]!["identity"] = $"{rootUrl}{routeQualifierPrefix}/identity/v2/";

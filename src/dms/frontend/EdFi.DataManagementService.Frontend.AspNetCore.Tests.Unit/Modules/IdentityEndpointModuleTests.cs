@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
 /// IdentityEndpointModule route mapping, tenant/qualifier prefixing, body parsing, Content-Type
-/// handling, and the D15 qualifier-collision fail-closed guard (C2, C3, B9 frontend half).
+/// handling, and the qualifier-collision fail-closed guard.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -595,7 +595,7 @@ public class IdentityEndpointModuleTests
     }
 
     /// <summary>
-    /// D15's fail-closed qualifier-name collision guard is a module-mapping-time concern shared by
+    /// The fail-closed qualifier-name collision guard is a module-mapping-time concern shared by
     /// every fixed-route module built from the same configured RouteQualifierSegments, not an
     /// identity-only one: booting the full host with a colliding configuration would fail every
     /// module's own MapEndpoints (ASP.NET Core's route pattern parser itself rejects a route

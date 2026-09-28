@@ -19,7 +19,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
-/// C5: with the toggle on, a request carrying <c>Origin: &lt;Cors:SwaggerUIOrigin&gt;</c> receives
+/// With the toggle on, a request carrying <c>Origin: &lt;Cors:SwaggerUIOrigin&gt;</c> receives
 /// <c>Access-Control-Expose-Headers</c> including <c>Location</c> on the async 202 and on the
 /// incomplete results 200, exercised through the real <c>UseCors</c> pipeline rather than the
 /// policy object directly. A request without an <c>Origin</c> header carries no CORS headers.

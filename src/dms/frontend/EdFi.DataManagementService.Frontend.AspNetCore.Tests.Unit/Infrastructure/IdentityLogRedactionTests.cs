@@ -32,17 +32,17 @@ using Serilog.Extensions.Logging;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
 /// <summary>
-/// D11/C6/C7: no identity operation identifier ever reaches a log, at either DMS layer or in the
+/// No identity operation identifier ever reaches a log, at either DMS layer or in the
 /// framework's own hosting-diagnostics events, while a resource route (the negative control) and the
 /// other four identity routes are unaffected.
 /// </summary>
 /// <remarks>
 /// Two independent proofs, because they need two different harnesses:
 /// <para>
-/// <b>Redaction and C7</b> (<see cref="Given_The_Toggle_Is_On_With_Single_Tenancy"/>,
+/// <b>Redaction and sanitized failure logging</b> (<see cref="Given_The_Toggle_Is_On_With_Single_Tenancy"/>,
 /// <see cref="Given_Multi_Tenancy_Is_Enabled"/>) drive the real <c>IApiService</c> and Core identity
 /// pipelines through a booted host, with only the plugin boundary (<c>IIdentityService</c>) and the
-/// CMS providers faked - the same shape <c>IdentityLocationRoundTripTests</c> uses for B6 - and
+/// CMS providers faked - the same shape <c>IdentityLocationRoundTripTests</c> uses - and
 /// capture through a second Serilog provider registered via <c>ConfigureServices</c>
 /// (<c>PluginHostProbe.cs:152-183</c>'s pattern). This proves <c>LoggingMiddleware</c> and
 /// <c>RequestResponseLoggingMiddleware</c> log the redacted template, never the raw identifier, and
@@ -57,8 +57,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructu
 /// per-test Serilog sink or File-sink path configured through the test host's
 /// <c>ConfigureAppConfiguration</c> is never visible to that call. Instead this calls the exact same
 /// production <c>LoggingConfigurator.ConfigureLogging</c> directly, over a configuration this test
-/// fully controls (no hosting timing involved), and drives synthetic events shaped exactly like Task
-/// 4's probe (Contract round, Probe (a)): <c>Microsoft.AspNetCore.Hosting.Diagnostics</c>
+/// fully controls (no hosting timing involved), and drives synthetic events shaped exactly like the
+/// framework's own hosting-diagnostics events: <c>Microsoft.AspNetCore.Hosting.Diagnostics</c>
 /// request-starting/request-finished carrying both <c>Path</c> and <c>RequestPath</c>, and an
 /// unrelated <c>HostingStartupAssemblyLoaded</c>-shaped event carrying neither, so a presence-check
 /// bug in the filter would surface as a thrown exception here.
@@ -264,9 +264,9 @@ public class IdentityLogRedactionTests
         public void It_never_logs_the_unique_id_in_the_path_or_rendered_message_of_any_completion_event()
         {
             // Scoped to the Path property and the rendered message on the frontend and Core
-            // completion events (C6's literal wording), not every property a Verbose capture
+            // completion events, not every property a Verbose capture
             // happens to see: unrelated framework internals (routing candidate matching, endpoint
-            // selection) legitimately carry the raw path and are out of D11's scope, and this
+            // selection) legitimately carry the raw path and are out of scope for this test, and this
             // capture bypasses the production Filter.ByExcluding entirely (see the class remarks),
             // so it cannot speak to Microsoft.AspNetCore.Hosting.Diagnostics either way - that is
             // proven separately by Given_The_Production_Logging_Pipeline.
@@ -286,7 +286,7 @@ public class IdentityLogRedactionTests
         {
             // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
             // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from every value
-            // it sanitizes, redacted or not - unchanged by D11, whose only promise is that the
+            // it sanitizes, redacted or not - the redaction guarantee here is only that the
             // identifier segment itself never reaches the log.
             LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
             ScalarProperty(frontendCompleted, "Path").Should().Be("/identity/v2/identities/id");
@@ -303,7 +303,7 @@ public class IdentityLogRedactionTests
     [TestFixture]
     public class Given_A_Results_Poll_Failure_With_Single_Tenancy
     {
-        // Used only by the C7 assertion below, which must inspect every property value on every
+        // Used only by the assertion below, which must inspect every property value on every
         // other captured event (not just Path) to prove the provider's message appears nowhere
         // above Debug.
         private static string PropertyText(LogEventPropertyValue value) =>
@@ -388,7 +388,7 @@ public class IdentityLogRedactionTests
                 .Be("/identity/v2/identities/results/token");
         }
 
-        // C7: the provider boundary's sanitized failure-level log carries the exception type, the
+        // The provider boundary's sanitized failure-level log carries the exception type, the
         // stage and operation, and the trace id, plus stack frames, but never the provider's own
         // message. The full exception (with the message) is logged only at Debug.
         [Test]
@@ -442,7 +442,7 @@ public class IdentityLogRedactionTests
     }
 
     /// <summary>
-    /// Negative control (Disciplines: "verify the verifier" / C6): a resource route still logs its
+    /// Negative control (Disciplines: "verify the verifier"): a resource route still logs its
     /// resolved path at both DMS layers. The complementary half of the negative control - a resource
     /// route still produces a Microsoft.AspNetCore.Hosting.Diagnostics event while an identity
     /// id/token route does not - is proven by <see cref="Given_The_Production_Logging_Pipeline"/>,
@@ -559,7 +559,7 @@ public class IdentityLogRedactionTests
             // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
             // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from any value,
             // including this one, same as it always has for a non-identity path - only the
-            // identifier segment itself is what D11 promises never reaches the log.
+            // identifier segment itself is what the redaction guarantee promises never reaches the log.
             const string expectedPath = "/tenant-a/255901/2026/identity/v2/identities/id";
 
             LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
@@ -759,7 +759,7 @@ public class IdentityLogRedactionTests
         }
 
         /// <summary>
-        /// Shaped exactly like Task 4's Probe (a): both request-starting (Information) and
+        /// Shaped exactly like a real hosting-diagnostics event pair: both request-starting (Information) and
         /// request-finished (Information) carry both Path and RequestPath, holding the identical
         /// value.
         /// </summary>
@@ -797,7 +797,7 @@ public class IdentityLogRedactionTests
         }
 
         /// <summary>
-        /// Shaped exactly like Task 4's Probe (a) third event: same SourceContext, Debug, and
+        /// Shaped exactly like a third, unrelated hosting-diagnostics event: same SourceContext, Debug, and
         /// carries neither Path nor RequestPath. A filter that indexes those properties without a
         /// presence check throws or misfires on an event like this one.
         /// </summary>
@@ -933,7 +933,7 @@ public class IdentityLogRedactionTests
     /// <summary>
     /// The plugin boundary double: GetByIdAsync answers a fixed success payload; ResultsAsync always
     /// throws, so the request drives both the redaction path (the token must never reach a log) and
-    /// the C7 provider-exception logging contract in the same call.
+    /// the provider-exception logging contract in the same call.
     /// </summary>
     private sealed class FakeIdentityService : IIdentityService
     {

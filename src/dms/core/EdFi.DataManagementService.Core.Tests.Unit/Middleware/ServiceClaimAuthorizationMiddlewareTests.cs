@@ -22,7 +22,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 /// <summary>
-/// D7/A12: ServiceClaimAuthorizationMiddleware maps the identity operation to the required CMS action
+/// ServiceClaimAuthorizationMiddleware maps the identity operation to the required CMS action
 /// (Create for IdentityOperation.Create, Read for every other operation - Update is never consulted),
 /// loads the token's claim set, matches the seeded
 /// http://ed-fi.org/identity/claims/services/identity claim, and enforces that a matched action's

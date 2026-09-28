@@ -27,10 +27,10 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
-/// Proves A16 at the HTTP boundary: the request must run inside the real identity pipeline, blocked at
+/// Proves at the HTTP boundary that the request must run inside the real identity pipeline, blocked at
 /// a real CMS call, so abort propagation through DMS's own code is what gets exercised - not merely
 /// that <c>TestServer</c> links client cancellation to <see cref="Microsoft.AspNetCore.Http.HttpContext.RequestAborted" />
-/// (already established by the Contract round's probe (b), and reused here only as this fixture's
+/// (already established elsewhere, and reused here only as this fixture's
 /// precondition: <c>cts.Token</c> is passed directly into <c>client.GetAsync</c>, with no fallback
 /// middleware driving <see cref="Microsoft.AspNetCore.Http.HttpContext.Abort" />).
 /// <para>
@@ -40,7 +40,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// the production <c>ValidateClientTenantBindingMiddleware</c> and the real <c>CachedApplicationContextProvider</c>
 /// / <c>ConfigurationServiceApplicationProvider</c> chain, is untouched. The CMS transport is a
 /// <see cref="GatedCmsHandler" /> (the same shape <see cref="Identity.IdentityCmsCancellationTests" />
-/// uses for A15) gated on the application-lookup URL (<c>v3/apiClients/</c>), so an identity GET genuinely
+/// uses) gated on the application-lookup URL (<c>v3/apiClients/</c>), so an identity GET genuinely
 /// reaches that real CMS call and blocks there before the identity service is ever resolved.
 /// </para>
 /// </summary>

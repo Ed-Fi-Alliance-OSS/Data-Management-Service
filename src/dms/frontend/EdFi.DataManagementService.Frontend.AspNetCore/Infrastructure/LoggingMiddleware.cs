@@ -30,7 +30,7 @@ public class LoggingMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
         var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
-        // Redact an identity get-by-id or results-poll identifier (D11) before sanitizing, so the
+        // Redact an identity get-by-id or results-poll identifier before sanitizing, so the
         // scope Path property and every rendered message template below carry the redacted value,
         // never the real identifier. Every other path - including the other four identity routes,
         // which carry no identifier - passes through unchanged.
@@ -252,7 +252,7 @@ public class LoggingMiddleware
         context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;
 
     /// <summary>
-    /// Redacts an identity get-by-id or results-poll identifier from <paramref name="path"/> (D11).
+    /// Redacts an identity get-by-id or results-poll identifier from <paramref name="path"/>.
     /// </summary>
     /// <remarks>
     /// Reads <see cref="AppSettings.MultiTenancy"/> and the configured route-qualifier segments to

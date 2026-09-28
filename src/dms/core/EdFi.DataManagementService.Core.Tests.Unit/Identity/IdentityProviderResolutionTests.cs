@@ -17,7 +17,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins provider lifetime and resolution (design.md "Provider Lifetime and Resolution", story B2): a
+/// Pins provider lifetime and resolution: a
 /// provider registered scoped, whose own dependency is also scoped, resolves once per request scope,
 /// and the same instance serves both the capability gate
 /// (<see cref="IdentityOperationCapabilityMiddleware" />) and whatever later reads

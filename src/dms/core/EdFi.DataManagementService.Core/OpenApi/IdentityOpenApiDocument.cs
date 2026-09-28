@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Identity;
 namespace EdFi.DataManagementService.Core.OpenApi;
 
 /// <summary>
-/// Loads the fixed identity OpenAPI document (design.md D2) once from the embedded resource
+/// Loads the fixed identity OpenAPI document once from the embedded resource
 /// <c>OpenApi/identity-v2-openapi.json</c> and stamps it with <c>x-edfi-identity-contract-version</c>,
 /// read from the identity contract assembly's <see cref="AssemblyInformationalVersionAttribute" /> and
 /// stripped of any trailing <c>+commit</c> suffix. The loader owns the single process-wide

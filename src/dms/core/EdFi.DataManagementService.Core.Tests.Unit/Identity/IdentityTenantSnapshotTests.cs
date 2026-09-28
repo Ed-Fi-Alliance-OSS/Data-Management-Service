@@ -16,9 +16,9 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins <see cref="IdentityTenantSnapshot.CheckAsync" /> (design.md D4, design.md:565-583, story
-/// acceptance A4-A7 and A9): the 60-second freshness window, the single shared refresh for cold or
-/// expired callers, the 5-second failure cooldown, the 30-second refresh budget linked to
+/// Pins <see cref="IdentityTenantSnapshot.CheckAsync" />: the 60-second freshness window, the single
+/// shared refresh for cold or expired callers, the 5-second failure cooldown, the 30-second refresh
+/// budget linked to
 /// <see cref="TimeProvider.CreateTimer" /> and <see cref="IHostApplicationLifetime.ApplicationStopping" />,
 /// and the datastore independence of the tenant lookup. Every scenario runs on a
 /// <see cref="FakeTimeProvider" /> so no test sleeps for the windows themselves; the handful of

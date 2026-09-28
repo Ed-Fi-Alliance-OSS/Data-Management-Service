@@ -17,11 +17,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 /// <summary>
-/// Pins <see cref="IdentityHandler" />'s inbound protocol checks (design.md "Pipeline", "The four
-/// inbound protocol checks", D9, story B3): the four checks the JSON-body identity pipeline performs
-/// before <see cref="IdentityHandler" /> runs (media type, well-formed JSON, no duplicate property,
-/// expected top-level shape), plus the two the handler performs itself (top-level shape and a
-/// present-but-blank route value). No provider method is ever called for a rejected request.
+/// Pins <see cref="IdentityHandler" />'s inbound protocol checks: the four checks the JSON-body
+/// identity pipeline performs before <see cref="IdentityHandler" /> runs (media type, well-formed
+/// JSON, no duplicate property, expected top-level shape), plus the two the handler performs itself
+/// (top-level shape and a present-but-blank route value). No provider method is ever called for a
+/// rejected request.
 /// The JSON-body cases are driven through the real tail of the JSON-body pipeline -
 /// <see cref="ValidateContentTypeMiddleware" />, <see cref="ParseBodyMiddleware" />,
 /// <see cref="DuplicatePropertiesMiddleware" />, then <see cref="IdentityHandler" /> - so this fixture

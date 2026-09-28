@@ -14,7 +14,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins <see cref="IdentityErrorProjection.Project" /> (design.md:896-927, story B7): a path is used
+/// Pins <see cref="IdentityErrorProjection.Project" />: a path is used
 /// verbatim as a <c>validationErrors</c> key, a blank or null path routes to <c>errors</c>, two
 /// messages at one path are grouped in provider order, and the 400 selects between
 /// <see cref="FailureResponse.ForBadRequest" /> and <see cref="FailureResponse.ForDataValidation" />

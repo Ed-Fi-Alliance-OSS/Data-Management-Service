@@ -34,7 +34,7 @@ using Polly;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Proves A15: cancelling an identity request while it is blocked inside one of the four CMS lookups
+/// Proves that cancelling an identity request while it is blocked inside one of the four CMS lookups
 /// (token acquisition, tenant retrieval, application lookup, claim retrieval) propagates
 /// <see cref="OperationCanceledException" /> out of the <see cref="ApiService" /> facade, never invokes
 /// the request-scoped <see cref="IIdentityService" />, and never lets a concurrent live caller of the

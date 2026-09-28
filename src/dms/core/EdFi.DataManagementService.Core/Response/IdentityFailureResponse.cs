@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.Response;
 
 /// <summary>
-/// JSON error-body factory for the identity API surface (design.md D9). Reuses
+/// JSON error-body factory for the identity API surface. Reuses
 /// <see cref="FailureResponse.CreateBaseJsonObject" /> so the envelope
 /// (detail/type/title/status/correlationId/validationErrors/errors) matches every other DMS problem
 /// response byte for byte, but lives in its own type because the identity problem-detail namespace
@@ -91,7 +91,7 @@ public static class IdentityFailureResponse
     /// <summary>
     /// An identity operation invocation threw while the request was live. The title names Identity
     /// Management as the failing subsystem; the raw provider exception is sanitized before this method
-    /// is ever called (D9), so the detail carries no provider-specific text.
+    /// is ever called, so the detail carries no provider-specific text.
     /// </summary>
     public static JsonNode ForIdentityUpstreamFailure(TraceId traceId) =>
         FailureResponse.CreateBaseJsonObject(

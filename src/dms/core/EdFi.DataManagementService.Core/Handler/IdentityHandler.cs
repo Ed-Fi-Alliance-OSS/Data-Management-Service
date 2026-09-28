@@ -17,12 +17,12 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Handler;
 
 /// <summary>
-/// The terminal step of both identity pipelines (design.md "Pipeline" and "Async Token Rule", D9).
+/// The terminal step of both identity pipelines.
 /// Runs only once <see cref="Middleware.IdentityOperationCapabilityMiddleware" /> has gated the
 /// requested operation and populated <see cref="RequestInfo.IdentityProvider" />: rejects a
 /// present-but-blank route value, validates the parsed body's top-level shape for the three JSON-body
 /// operations, builds <see cref="IdentityRequestContext" />, invokes the operation through
-/// <see cref="IdentityProviderBoundary" />, and maps the result per design.md:825-871.
+/// <see cref="IdentityProviderBoundary" />, and maps the result.
 /// </summary>
 /// <param name="_boundary">
 /// The sanitized provider-execution boundary. Shared with
@@ -243,7 +243,7 @@ internal sealed class IdentityHandler(
     }
 
     /// <summary>
-    /// Maps a provider outcome to an HTTP response per design.md:825-871. <paramref name="requestToken" />
+    /// Maps a provider outcome to an HTTP response. <paramref name="requestToken" />
     /// is always null for create, get-by-id, and results, which never carry one on the wire.
     /// </summary>
     private FrontendResponse MapResult(
@@ -450,8 +450,8 @@ internal sealed class IdentityHandler(
         );
 
     /// <summary>
-    /// Validates the parsed body's top-level shape for the three JSON-body operations
-    /// (design.md "The four inbound protocol checks"): create needs a JSON object, find needs a JSON
+    /// Validates the parsed body's top-level shape for the three JSON-body operations:
+    /// create needs a JSON object, find needs a JSON
     /// array of strings, and search needs a JSON array of objects. Get-by-id and results carry no
     /// body and are not checked here. Malformed JSON, an empty body, and a duplicate property are
     /// already rejected upstream by ParseBodyMiddleware/DuplicatePropertiesMiddleware before this

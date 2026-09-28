@@ -16,7 +16,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 /// <summary>
-/// Real-HTTP-pipeline coverage for A10: request-time datastore independence of the identity pipeline on
+/// Real-HTTP-pipeline coverage for request-time datastore independence of the identity pipeline on
 /// an initialized host. Hard-coded for the ProfileRootOnlyMerge fixture's Student shape, matching
 /// <see cref="CrudRoundTripScenario" /> and <see cref="ApplicationContextIntegrationScenario" />.
 /// </summary>
@@ -71,7 +71,7 @@ internal static class IdentityDatastoreIndependenceScenario
 
         // The poisoned LoadDataStores was never reached by the identity request: the identity pipeline
         // maps no ResolveDataStoreMiddleware step and resolves tenant existence through LoadTenants
-        // alone (design.md D4, D9).
+        // alone.
         dataStoreProvider
             .LoadDataStoresCallCount.Should()
             .Be(

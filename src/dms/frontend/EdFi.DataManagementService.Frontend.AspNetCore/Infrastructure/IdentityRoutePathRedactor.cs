@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
-/// Redacts the identifier segment from an identity route path before it reaches a log (D11).
+/// Redacts the identifier segment from an identity route path before it reaches a log.
 /// A get-by-id path (for example .../identity/v2/identities/605943412) becomes
 /// .../identity/v2/identities/{id}, and a results-poll path (for example
 /// .../identity/v2/identities/results/SECRET-TOKEN-XYZ) becomes

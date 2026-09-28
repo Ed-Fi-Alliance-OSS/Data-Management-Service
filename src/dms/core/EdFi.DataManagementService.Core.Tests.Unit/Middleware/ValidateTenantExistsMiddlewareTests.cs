@@ -22,8 +22,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 /// <summary>
-/// Pins <see cref="ValidateTenantExistsMiddleware" /> (design.md D4, story acceptance A4-A5):
-/// pass-through when multitenancy is off, the 404/503 outcome mapping, and that a short-circuited
+/// Pins <see cref="ValidateTenantExistsMiddleware" />: pass-through when multitenancy is off, the
+/// 404/503 outcome mapping, and that a short-circuited
 /// request never reaches a downstream step that would consult claim sets or the identity provider.
 /// The backing <see cref="IdentityTenantSnapshot" /> is real, driven through a faked
 /// <see cref="IDataStoreProvider" />, since the snapshot itself is <c>internal sealed</c> and cannot

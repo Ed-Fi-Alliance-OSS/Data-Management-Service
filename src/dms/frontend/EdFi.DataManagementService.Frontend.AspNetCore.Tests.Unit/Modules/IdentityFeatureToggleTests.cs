@@ -18,9 +18,9 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
-/// AppSettings:EnableIdentityManagement gates the identity route surface at mapping time (D1, D10).
+/// AppSettings:EnableIdentityManagement gates the identity route surface at mapping time.
 /// With the toggle off (the default), every identity route falls through to the same MapFallback
-/// 404 every other unmapped route reaches (C1 routes half).
+/// 404 every other unmapped route reaches.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -361,7 +361,7 @@ public class IdentityFeatureToggleTests
     }
 
     /// <summary>
-    /// The metadata/discovery half of C1: the toggle also gates
+    /// The metadata/discovery half: the toggle also gates
     /// <c>/metadata/identity/v2/swagger.json</c>, the "Identity" entry in
     /// <c>/metadata/specifications</c>, and the <c>identity</c> URL in Discovery's <c>urls</c>.
     /// </summary>

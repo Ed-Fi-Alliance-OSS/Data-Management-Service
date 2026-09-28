@@ -61,7 +61,7 @@ internal readonly record struct IdentityRequestTokenEvaluation(
 
 /// <summary>
 /// Decides whether a provider-supplied request token can be safely round-tripped through a
-/// <c>Location</c> poll path (design.md:722-768). The token is opaque to DMS: no provider structure or
+/// <c>Location</c> poll path. The token is opaque to DMS: no provider structure or
 /// meaning is assumed, so the rule only rejects shapes that would break path parsing, path traversal
 /// safety, unescaping fidelity, or the server's own request-line budget.
 /// </summary>

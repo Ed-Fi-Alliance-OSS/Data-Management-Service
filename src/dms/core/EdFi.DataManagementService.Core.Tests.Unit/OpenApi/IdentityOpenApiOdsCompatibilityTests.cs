@@ -12,16 +12,16 @@ using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpe
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
-/// Story D3/D5: walks the pinned ODS reference fixture (<c>Fixtures/ods-7.3.2-identity-openapi.json</c>,
+/// Walks the pinned ODS reference fixture (<c>Fixtures/ods-7.3.2-identity-openapi.json</c>,
 /// see <c>Fixtures/PROVENANCE.md</c>) against the served identity OpenAPI document.
 /// For each of the six ODS component names, every ODS property must exist in the DMS component with
 /// an equal <c>type</c> and <c>format</c> (and, for a <c>$ref</c>, the same target name). Every other
 /// difference between the two documents - scoped to paths, operations, response codes, headers, media
 /// types, <c>required</c>, <c>nullable</c>, <c>additionalProperties</c>, extra components, and
-/// <c>x-edfi-*</c> extensions, exactly the dimensions design.md's divergence ledger names - must be
-/// explained by an entry in <see cref="AllowedDifferenceCategories" />. An unexplained difference fails
-/// the test, which is what a negative control (recorded in the story's Contract round) proves by adding
-/// an undeclared difference to a scratch copy of the served document and watching this test fail.
+/// <c>x-edfi-*</c> extensions - must be explained by an entry in
+/// <see cref="AllowedDifferenceCategories" />. An unexplained difference fails
+/// the test, which is what a negative control proves by adding an undeclared difference to a scratch
+/// copy of the served document and watching this test fail.
 /// </summary>
 public class IdentityOpenApiOdsCompatibilityTests
 {
@@ -256,7 +256,7 @@ public class IdentityOpenApiOdsCompatibilityTests
         }
 
         /// <summary>
-        /// Computes every difference between the two documents across the story's named dimensions: paths,
+        /// Computes every difference between the two documents across the dimensions above: paths,
         /// operations, response codes, headers, media types, <c>required</c>, <c>nullable</c>,
         /// <c>additionalProperties</c>, extra components, and root <c>x-*</c> extensions. Each entry is a
         /// terse, stable descriptor string the allow-list matches by prefix/suffix.

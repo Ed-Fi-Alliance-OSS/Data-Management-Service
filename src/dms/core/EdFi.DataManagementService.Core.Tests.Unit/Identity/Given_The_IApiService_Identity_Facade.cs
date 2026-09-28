@@ -12,11 +12,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Reflection-based tests pinning IApiService's five identity facade methods (design.md D9, A1). Each
+/// Reflection-based tests pinning IApiService's five identity facade methods. Each
 /// method's last parameter must be a required CancellationToken - no default - unlike every other
-/// IApiService entry point added before this story, because an identity request can hold a client-to-
-/// tenant binding and a claim-set lookup open, and a caller that forgets to thread its own token would
-/// silently opt into an uncancellable identity request.
+/// IApiService entry point added before the identity facade, because an identity request can hold a
+/// client-to-tenant binding and a claim-set lookup open, and a caller that forgets to thread its own
+/// token would silently opt into an uncancellable identity request.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -62,7 +62,7 @@ public class Given_The_IApiService_Identity_Facade
     }
 
     /// <summary>
-    /// The load-bearing assertion (A1): the trailing CancellationToken carries no default value, so a
+    /// The load-bearing assertion: the trailing CancellationToken carries no default value, so a
     /// caller must supply one explicitly. Every other IApiService entry point in this file defaults it
     /// to CancellationToken.None instead - the identity facade deliberately breaks that convention.
     /// </summary>

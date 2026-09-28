@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// Suppresses the framework's own <c>Microsoft.AspNetCore.Hosting.Diagnostics</c> request-start and
 /// request-finish log events for an identity get-by-id or results-poll route, because those events
 /// carry the identifier verbatim in both their <c>Path</c> and <c>RequestPath</c> properties and in
-/// the rendered message (D11). The match is case-insensitive and tolerates a single trailing slash
+/// the rendered message. The match is case-insensitive and tolerates a single trailing slash
 /// on the route, mirroring how ASP.NET Core routing matches these paths before this filter ever sees
 /// them. Every other route, including the other four identity routes (none of which carries an
 /// identifier) and their trailing-slash forms, keeps its framework events unchanged.
@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// must have exactly the <c>Func&lt;LogEvent, bool&gt;</c> shape Serilog's filter expects.
 /// </para>
 /// <para>
-/// Grounded in Task 4's probe (Contract round, Probe (a)): the request-starting (EventId 1) and
+/// Grounded in the framework's own hosting-diagnostics events: the request-starting (EventId 1) and
 /// request-finished (EventId 2) events, both Information, carry both <c>Path</c> and
 /// <c>RequestPath</c> simultaneously holding the identical value, so this checks both rather than
 /// picking one. A third, unrelated event on the same <c>SourceContext</c>

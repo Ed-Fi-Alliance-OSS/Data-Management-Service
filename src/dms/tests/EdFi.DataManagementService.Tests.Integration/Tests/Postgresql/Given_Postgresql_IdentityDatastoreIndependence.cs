@@ -18,12 +18,12 @@ using Microsoft.Extensions.Time.Testing;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 
 /// <summary>
-/// Proves A10: request-time datastore independence on an initialized, identity-enabled host. After one
+/// Proves request-time datastore independence on an initialized, identity-enabled host. After one
 /// resource request has served normally, the CMS data-store surface is poisoned (<c>LoadDataStores</c>
 /// throws, connection-string decryption throws) and the identity tenant snapshot's 60-second freshness
 /// window is advanced past expiry, yet an authorized identity request still reaches the
 /// operation-unsupported capability gate - because the identity pipeline never resolves a physical data
-/// store at all (design.md D9; <see cref="Identity.IdentityTenantSnapshotTests" /> A9 proves the same
+/// store at all (<see cref="Identity.IdentityTenantSnapshotTests" /> proves the same
 /// independence at the unit level) - while the poisoned <c>LoadDataStores</c> is never called during
 /// that request. Follows <see cref="Given_Postgresql_ApplicationContextIntegration" />'s
 /// MultiTenancy/BypassAuthorization shape.
@@ -164,7 +164,7 @@ internal sealed class IdentityGrantingClaimSetProvider(FixtureContext fixture) :
 /// An <see cref="IDataStoreProvider" /> serving one configured data store normally until
 /// <see cref="PoisonLoadDataStores" /> is called, after which <see cref="LoadDataStores" /> always
 /// throws. <see cref="LoadTenants" /> always succeeds regardless of poisoning, matching the design's
-/// separation between tenant-name lookup and datastore configuration (design.md D4, Finding 7).
+/// separation between tenant-name lookup and datastore configuration.
 /// <see cref="LoadDataStoresCallCount" /> lets a scenario prove a request never called it.
 /// </summary>
 internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDataStoreProvider

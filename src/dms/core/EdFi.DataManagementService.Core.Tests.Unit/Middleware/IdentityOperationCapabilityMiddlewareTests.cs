@@ -18,8 +18,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 /// <summary>
-/// Pins <see cref="IdentityOperationCapabilityMiddleware" /> (design.md "Pipeline", D9, story B1):
-/// with the host default <see cref="NoIdentityService" />, every operation is answered
+/// Pins <see cref="IdentityOperationCapabilityMiddleware" />: with the host default
+/// <see cref="NoIdentityService" />, every operation is answered
 /// operation-unsupported 404 regardless of body shape, because the gate runs before any content-type
 /// or body validation; the provider is resolved once and its <c>Capabilities</c> getter read once per
 /// request; and the requested operation is gated against exactly the matching capability flag.

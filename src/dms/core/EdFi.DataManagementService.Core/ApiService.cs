@@ -62,7 +62,7 @@ internal class ApiService : IApiService
     private readonly ILogger<IdentityHandler> _identityHandlerLogger;
 
     /// <summary>
-    /// The sanitized identity provider-execution boundary (design.md D9), shared by both identity
+    /// The sanitized identity provider-execution boundary, shared by both identity
     /// pipelines' capability gate and terminal handler. Stateless beyond its logger, so one instance
     /// safely serves every identity request for the process lifetime.
     /// </summary>
@@ -171,7 +171,7 @@ internal class ApiService : IApiService
         // duration behind the circuit-open 503's Retry-After is always the one the breaker was
         // actually built with, rather than whatever a defaulted instance happens to carry.
         CircuitBreakerSettings circuitBreakerSettings,
-        // The process-wide tenant-existence coordinator for the identity pipeline (D4, D9). Deliberately
+        // The process-wide tenant-existence coordinator for the identity pipeline. Deliberately
         // not IIdentityService - identity behavior itself is resolved per request from the scope, not
         // injected here.
         IdentityTenantSnapshot identityTenantSnapshot
@@ -690,7 +690,7 @@ internal class ApiService : IApiService
     }
 
     /// <summary>
-    /// The first eight steps shared by both identity pipelines (design.md D9): request/exception
+    /// The first eight steps shared by both identity pipelines: request/exception
     /// logging, tenant syntax validation, JWT authentication, tenant existence, client-to-tenant
     /// binding, service-claim authorization, and the identity operation-capability gate. Deliberately
     /// not GetCommonInitialSteps(): the identity pipelines never resolve a physical data store or parse
@@ -723,7 +723,7 @@ internal class ApiService : IApiService
     /// The pipeline for the three JSON-body identity operations: create, find, and search. The first
     /// eight steps from GetIdentityCommonSteps(), then content-type, body parsing, and duplicate-property
     /// checks - all gated behind the capability check, so a request for an unsupported operation never
-    /// reaches content-type or body validation (A13) - and finally IdentityHandler (design.md D9).
+    /// reaches content-type or body validation - and finally IdentityHandler.
     /// </summary>
     private PipelineProvider CreateIdentityJsonBodyPipeline()
     {
@@ -745,7 +745,7 @@ internal class ApiService : IApiService
     /// <summary>
     /// The pipeline for the two body-less identity operations: get-by-id and results polling. The same
     /// first eight steps as the JSON-body pipeline, with no content-type or body parsing since neither
-    /// operation carries a request body, then IdentityHandler (design.md D9).
+    /// operation carries a request body, then IdentityHandler.
     /// </summary>
     private PipelineProvider CreateIdentityBodylessPipeline()
     {
@@ -1272,7 +1272,7 @@ internal class ApiService : IApiService
     }
 
     /// <summary>
-    /// DMS entry point to get the fixed identity OpenAPI specification (design.md D2). The document
+    /// DMS entry point to get the fixed identity OpenAPI specification. The document
     /// itself is loaded once by <see cref="OpenApi.IdentityOpenApiDocument" />; this method only adds
     /// the request-specific servers array and the shared OAuth2 security section, exactly as every
     /// other served OpenAPI document does.

@@ -14,9 +14,9 @@ using Reqnroll;
 namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 
 /// <summary>
-/// Real-CMS identity lifecycle, authorization, and revocation step definitions (DMS-1515 Task 16).
-/// These steps drive the identity surface (D9/D10) through Configuration Service and DMS instances
-/// started with the toggle on, proving A20 and the E2E half of C1/C9 against a real CMS rather than
+/// Real-CMS identity lifecycle, authorization, and revocation step definitions.
+/// These steps drive the identity surface through Configuration Service and DMS instances
+/// started with the toggle on, proving the full lifecycle against a real CMS rather than
 /// a fake provider double.
 /// </summary>
 [Binding]

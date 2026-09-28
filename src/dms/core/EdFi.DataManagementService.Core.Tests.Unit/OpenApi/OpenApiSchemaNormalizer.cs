@@ -9,8 +9,8 @@ using Json.Schema;
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
-/// Converts an OpenAPI 3.0 component schema into a JSON Schema draft <c>JsonSchema.Net</c> accepts
-/// (story D4/D14): OpenAPI's <c>nullable: true</c> has no JSON Schema equivalent, so a property typed
+/// Converts an OpenAPI 3.0 component schema into a JSON Schema draft <c>JsonSchema.Net</c> accepts.
+/// OpenAPI's <c>nullable: true</c> has no JSON Schema equivalent, so a property typed
 /// <c>{"type": "string", "nullable": true}</c> becomes <c>{"type": ["string", "null"]}</c>, and a
 /// nullable <c>$ref</c> wrapped for OpenAPI 3.0's syntax as
 /// <c>{"allOf": [{"$ref": "..."}], "nullable": true}</c> becomes

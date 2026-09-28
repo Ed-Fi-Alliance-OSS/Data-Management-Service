@@ -7,7 +7,7 @@ namespace EdFi.DataManagementService.Core.Identity;
 
 /// <summary>
 /// The three outcomes <see cref="IdentityTenantSnapshot.CheckAsync" /> can answer for a requested
-/// tenant name (design.md:565-583). Only <see cref="Absent" /> is a confirmed negative; an
+/// tenant name. Only <see cref="Absent" /> is a confirmed negative; an
 /// <see cref="OperationCanceledException" /> for the caller's own request token is never converted
 /// into one of these three values, it propagates instead.
 /// </summary>

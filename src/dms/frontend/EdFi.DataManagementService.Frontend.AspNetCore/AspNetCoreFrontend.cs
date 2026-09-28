@@ -1256,7 +1256,7 @@ public static class AspNetCoreFrontend
 
     /// <summary>
     /// The literal route segment every identity operation route is anchored on, used both to
-    /// derive the redacted route-template path (D11) and to locate the real request path's tail
+    /// derive the redacted route-template path and to locate the real request path's tail
     /// for the Location header math in <see cref="ToResult"/>.
     /// </summary>
     private const string IdentitiesRouteSegment = "/identity/v2/identities";
@@ -1291,7 +1291,7 @@ public static class AspNetCoreFrontend
     /// span the whole path - tenant, route qualifiers, and all - because
     /// <see cref="RequestInfo.IdentityPollPathPrefix"/> is itself already tenant/qualifier-qualified
     /// (it is derived from <see cref="BuildIdentityTemplatePath"/>, which carries that prefix on
-    /// <see cref="FrontendRequest.Path"/> for D11). Stripping only the identities tail here, as a
+    /// <see cref="FrontendRequest.Path"/> for redaction). Stripping only the identities tail here, as a
     /// non-identity dmsPath would, would leave the tenant/qualifier prefix in the computed base and
     /// double it when Core's already-qualified Location path is appended.
     /// </summary>
@@ -1299,7 +1299,7 @@ public static class AspNetCoreFrontend
         request.Path.ToUriComponent().TrimStart('/');
 
     /// <summary>
-    /// The redacted route-template path carried on <see cref="FrontendRequest.Path"/> for D11:
+    /// The redacted route-template path carried on <see cref="FrontendRequest.Path"/>:
     /// tenant and route-qualifier segments are literal and escaped (read from the real request path's
     /// escaped form, so a qualifier value carrying a space or other reserved character stays a valid
     /// URL path segment when it reaches <see cref="ToResult"/>'s Location header), while any identifier

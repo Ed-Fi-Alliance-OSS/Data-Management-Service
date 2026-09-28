@@ -11,8 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Identity;
 
 /// <summary>
-/// Process-wide, singleton coordinator for <see cref="Middleware.ValidateTenantExistsMiddleware" />
-/// (design.md D4, design.md:565-583). Holds one immutable, case-insensitive tenant-name snapshot fed
+/// Process-wide, singleton coordinator for <see cref="Middleware.ValidateTenantExistsMiddleware" />.
+/// Holds one immutable, case-insensitive tenant-name snapshot fed
 /// by <see cref="IDataStoreProvider.LoadTenants" />, fresh for 60 seconds after a successful refresh
 /// completes. A cold or expired caller joins one shared refresh regardless of the tenant name it
 /// asked about; the refresh runs on its own <see cref="CancellationTokenSource" /> linked to

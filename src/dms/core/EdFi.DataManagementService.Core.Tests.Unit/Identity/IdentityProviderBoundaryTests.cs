@@ -22,8 +22,8 @@ using Serilog.Formatting.Json;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins <see cref="IdentityProviderBoundary" /> (design.md "Provider Execution and Exception
-/// Boundary", D9, story B8): activation, the <c>Capabilities</c> getter, and an operation invocation
+/// Pins <see cref="IdentityProviderBoundary" />'s provider execution and exception boundary:
+/// activation, the <c>Capabilities</c> getter, and an operation invocation
 /// are each guarded narrowly; a non-cancellation failure at activation or the getter produces a
 /// sanitized <c>500</c> provider-configuration response with no operation invoked, and a failure from
 /// invocation produces a sanitized <c>502</c> upstream-failure response; a live-request cancellation at

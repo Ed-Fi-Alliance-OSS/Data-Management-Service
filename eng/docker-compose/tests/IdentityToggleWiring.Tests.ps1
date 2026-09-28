@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-Describe "Identity management toggle wiring (DMS-1515, C8)" {
+Describe "Identity management toggle wiring" {
     # -ForEach arrays are evaluated at discovery time, before any BeforeAll runs, so the paths
     # are computed inline from $PSScriptRoot rather than from a script-scoped variable.
     It "carries AppSettings__EnableIdentityManagement beside AppSettings__EnableManagementEndpoints in <_>" -ForEach @(

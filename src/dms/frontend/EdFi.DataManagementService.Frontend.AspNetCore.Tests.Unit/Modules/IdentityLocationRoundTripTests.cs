@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 /// <summary>
 /// Drives the identity async find/results round trip through the real IApiService and Core identity
 /// pipelines, with only the plugin boundary (IIdentityService) and the CMS providers faked. Proves the
-/// emitted Location is fetchable end to end (B6) and that a provider-supplied token DMS cannot safely
+/// emitted Location is fetchable end to end and that a provider-supplied token DMS cannot safely
 /// compose into a poll path is refused before the 202 rather than surfacing a transport 414 on the
 /// follow-up request.
 /// </summary>
@@ -151,7 +151,7 @@ public class IdentityLocationRoundTripTests
                 services.AddSingleton(applicationContextProvider);
                 services.AddSingleton<IClaimSetProvider>(new IdentityGrantingClaimSetProvider());
 
-                // IIdentityService is registered scoped (not singleton) per B6, with the real
+                // IIdentityService is registered scoped (not singleton), with the real
                 // IApiService and identity pipelines resolving it once per request from the
                 // request's own scope, exactly as production does.
                 services.Replace(ServiceDescriptor.Scoped<IIdentityService>(_ => identityService));
@@ -307,7 +307,7 @@ public class IdentityLocationRoundTripTests
     }
 
     /// <summary>
-    /// D9/task 20: BuildIdentityTemplatePath (AspNetCoreFrontend) and ComputeIdentityPollPathPrefix
+    /// BuildIdentityTemplatePath (AspNetCoreFrontend) and ComputeIdentityPollPathPrefix
     /// (Core ApiService) must locate the "/identity/v2/identities" route segment case-insensitively,
     /// since ASP.NET Core routing itself matches case-insensitively. Before the fix, an Ordinal search
     /// for the lowercase literal against this mixed-case request text fails, silently dropping the
@@ -485,7 +485,7 @@ public class IdentityLocationRoundTripTests
     }
 
     /// <summary>
-    /// D9/task 20: ToResult (AspNetCoreFrontend) slices HttpRequest.UrlWithPathSegment() - built from
+    /// ToResult (AspNetCoreFrontend) slices HttpRequest.UrlWithPathSegment() - built from
     /// PathString.ToString(), the escaped form - by the decoded dmsPath's length. A token carrying a
     /// character that needed escaping (a space and a non-ASCII letter here) makes the escaped and
     /// decoded forms different lengths, so before the fix the slice cuts the wrong number of
@@ -543,7 +543,7 @@ public class IdentityLocationRoundTripTests
     }
 
     /// <summary>
-    /// D9/task 20: BuildIdentityTemplatePath must copy the route-qualifier prefix from the request
+    /// BuildIdentityTemplatePath must copy the route-qualifier prefix from the request
     /// path's escaped form, not the decoded RouteValues-derived form, or a qualifier value carrying a
     /// reserved character (a space here) reaches the Location unescaped - an invalid path segment.
     /// Proves both that the emitted Location carries the escaped value and that the escaped Location
@@ -631,7 +631,7 @@ public class IdentityLocationRoundTripTests
     }
 
     /// <summary>
-    /// Task 21: <c>FromIdentityRequest</c>/<c>ResolveMaxRequestLineSize</c> (AspNetCoreFrontend) must
+    /// <c>FromIdentityRequest</c>/<c>ResolveMaxRequestLineSize</c> (AspNetCoreFrontend) must
     /// reduce the request-line budget passed to Core by PathBase's length. Core's composed-path check
     /// (<see cref="Identity.IdentityRequestTokenRule"/>) measures the prefix from
     /// <see cref="HttpRequest.Path"/>, which excludes PathBase, but the real request line the client

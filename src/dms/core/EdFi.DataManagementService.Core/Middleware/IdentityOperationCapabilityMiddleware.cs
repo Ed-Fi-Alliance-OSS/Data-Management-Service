@@ -15,8 +15,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Resolves the registered <see cref="IIdentityService" /> once per request through
 /// <see cref="IdentityProviderBoundary" />, reads its <c>Capabilities</c> exactly once, and gates the
-/// requested route's <see cref="Identity.IdentityOperation" /> against the captured value
-/// (design.md "Pipeline", D9). An unsupported operation, including on a request whose POST body is
+/// requested route's <see cref="Identity.IdentityOperation" /> against the captured value.
+/// An unsupported operation, including on a request whose POST body is
 /// unparseable or carries a duplicate property, returns operation-unsupported <c>404</c> before any
 /// content-type or body validation runs - so "enabled with no plugin" answers not-implemented
 /// semantics for every request shape, not only well-formed ones.

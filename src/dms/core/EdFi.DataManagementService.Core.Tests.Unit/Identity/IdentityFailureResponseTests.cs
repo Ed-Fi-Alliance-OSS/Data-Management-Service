@@ -12,8 +12,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins the six fixed identity problem-detail builders (design.md D9): their type, title, status, and
-/// (where the story fixes them) detail, plus the shared envelope every <see cref="FailureResponse" />
+/// Pins the six fixed identity problem-detail builders: their type, title, status, and
+/// (where fixed) detail, plus the shared envelope every <see cref="FailureResponse" />
 /// builder produces.
 /// </summary>
 public class IdentityFailureResponseTests

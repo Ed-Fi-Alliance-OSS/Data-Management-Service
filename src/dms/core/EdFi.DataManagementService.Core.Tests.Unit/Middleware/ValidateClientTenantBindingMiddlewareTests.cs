@@ -21,7 +21,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 /// <summary>
-/// D6/A11: ValidateClientTenantBindingMiddleware resolves IApplicationContextProvider from the
+/// ValidateClientTenantBindingMiddleware resolves IApplicationContextProvider from the
 /// request scope, confirms the authenticated client's application is bound to the URL tenant, stores
 /// nothing from the resolved context (no RequestInfo.ApplicationContext assignment, DataStoreIds never
 /// inspected), and reuses ApplicationContextFailureResponseFactory for NotFound (401) and Unavailable

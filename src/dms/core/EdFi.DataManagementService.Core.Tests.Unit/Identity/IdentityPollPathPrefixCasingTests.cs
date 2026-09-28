@@ -32,7 +32,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
 /// Pins ApiService.ComputeIdentityPollPathPrefix's case-insensitive match against the literal
-/// "/identity/v2/identities" route segment (DMS-1515 task 20, design.md D9). In the real frontend
+/// "/identity/v2/identities" route segment. In the real frontend
 /// pipeline that segment is always canonical lowercase by the time it reaches Core, because
 /// BuildIdentityTemplatePath (AspNetCoreFrontend) never copies request text into it - it always emits
 /// the literal constant. These tests instead drive the real IApiService facade directly with a

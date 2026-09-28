@@ -10,7 +10,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins <see cref="IdentityRequestTokenRule.Evaluate" /> (design.md:722-768, story B5 rule half):
+/// Pins <see cref="IdentityRequestTokenRule.Evaluate" />'s token validation rule:
 /// content rules, the 1024-character escaped ceiling, and the composed-path check against a supplied
 /// <c>maxRequestLineSize</c>.
 /// </summary>

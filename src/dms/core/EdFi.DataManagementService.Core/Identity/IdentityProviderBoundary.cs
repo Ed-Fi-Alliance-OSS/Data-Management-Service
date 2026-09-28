@@ -26,8 +26,8 @@ internal readonly record struct IdentityInvocation<T>(bool BoundaryFailed, T? Re
     where T : class;
 
 /// <summary>
-/// The three-call-site sanitized boundary around a request-scoped <see cref="IIdentityService" />
-/// (design.md "Provider Execution and Exception Boundary", D9): request-scoped activation
+/// The three-call-site sanitized boundary around a request-scoped <see cref="IIdentityService" />:
+/// request-scoped activation
 /// (<see cref="Activate" />), the <c>Capabilities</c> getter (<see cref="ReadCapabilities" />), and an
 /// identity operation invocation (<see cref="InvokeAsync{T}" />). Each call site checks the request's
 /// cancellation token before it runs, so a cancelled request never enters the guarded call, and each

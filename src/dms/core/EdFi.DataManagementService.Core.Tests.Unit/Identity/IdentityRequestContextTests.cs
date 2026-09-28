@@ -17,8 +17,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins how <see cref="IdentityHandler" /> builds <see cref="IdentityRequestContext" /> (design.md
-/// "Route-Qualifier Context", D15, story B9): tenant and qualifier spelling is preserved exactly as
+/// Pins how <see cref="IdentityHandler" /> builds <see cref="IdentityRequestContext" />'s
+/// route-qualifier context: tenant and qualifier spelling is preserved exactly as
 /// the frontend sent it, <see cref="IdentityRequestContext.RouteQualifiers" /> keys compare
 /// case-insensitively, a qualifier-name collision under that comparer fails loudly instead of
 /// silently overwriting, and <see cref="IdentityRequestContext.ClientId" /> is passed through with its

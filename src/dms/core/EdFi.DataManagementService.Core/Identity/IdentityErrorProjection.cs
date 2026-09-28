@@ -12,8 +12,8 @@ namespace EdFi.DataManagementService.Core.Identity;
 
 /// <summary>
 /// Projects an <see cref="IdentityResultStatus.InvalidProperties" /> provider result into the same 400
-/// problem-detail shape core schema validation produces (design.md:896-927,
-/// <see cref="Middleware.ValidateDocumentMiddleware" />): a blank or null <see cref="IdentityError.Path" />
+/// problem-detail shape core schema validation produces
+/// (<see cref="Middleware.ValidateDocumentMiddleware" />): a blank or null <see cref="IdentityError.Path" />
 /// routes its <see cref="IdentityError.Message" /> to the document-level <c>errors</c> collection, and a
 /// non-blank <see cref="IdentityError.Path" /> is used verbatim - never parsed, split, or renumbered -
 /// as a <c>validationErrors</c> key, with messages for the same path grouped together in the order the

@@ -1686,7 +1686,7 @@ public class PipelineOrderingTests
     }
 
     /// <summary>
-    /// The two identity pipelines (design.md D9, A2, A3). Neither reaches a physical data store or
+    /// The two identity pipelines. Neither reaches a physical data store or
     /// parses a resource path, so this fixture registers only what the identity-specific steps resolve
     /// from the request scope: JwtAuthenticationMiddleware and its IJwtValidationService.
     /// </summary>
@@ -1695,7 +1695,7 @@ public class PipelineOrderingTests
     public class Given_The_Identity_Pipelines : PipelineOrderingTests
     {
         /// <summary>
-        /// The JSON-body identity pipeline's exact step order (design.md D9): the eight shared steps,
+        /// The JSON-body identity pipeline's exact step order: the eight shared steps,
         /// then content-type, body parsing, duplicate-property checking, and the terminal handler.
         /// </summary>
         private static readonly Type[] _expectedJsonBodyStepTypes =
@@ -1715,7 +1715,7 @@ public class PipelineOrderingTests
         ];
 
         /// <summary>
-        /// The body-less identity pipeline's exact step order (design.md D9): the same first eight
+        /// The body-less identity pipeline's exact step order: the same first eight
         /// steps as the JSON-body pipeline, then directly the terminal handler.
         /// </summary>
         private static readonly Type[] _expectedBodylessStepTypes =
@@ -1732,7 +1732,7 @@ public class PipelineOrderingTests
         ];
 
         /// <summary>
-        /// Steps that must never appear on either identity pipeline (A3): the identity operations are
+        /// Steps that must never appear on either identity pipeline: the identity operations are
         /// datastore-independent and resolve no ApiSchema-derived endpoint.
         /// </summary>
         private static readonly Type[] _forbiddenStepTypes =

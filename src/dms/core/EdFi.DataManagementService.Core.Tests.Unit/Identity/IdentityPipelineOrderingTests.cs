@@ -31,7 +31,7 @@ using Polly;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Proves the cross-middleware ordering invariants of the two identity pipelines (design.md D9, A13)
+/// Proves the cross-middleware ordering invariants of the two identity pipelines
 /// with a real ApiService built over a ServiceCollection, in the shape
 /// ApiServiceWriteCancellationTests.BuildApiService uses: tenant existence is checked before claims,
 /// client-to-tenant binding is checked before claims, and the capability gate runs before content-type
@@ -147,7 +147,7 @@ public class IdentityPipelineOrderingTests
         );
 
     /// <summary>
-    /// A2/A13: tenant existence is checked before claims are consulted, so a failing claim-set provider
+    /// Tenant existence is checked before claims are consulted, so a failing claim-set provider
     /// is never reached when the tenant itself does not exist.
     /// </summary>
     [TestFixture]
@@ -216,7 +216,7 @@ public class IdentityPipelineOrderingTests
     }
 
     /// <summary>
-    /// A13: client-to-tenant binding is checked before claims are consulted, so a NotFound binding
+    /// Client-to-tenant binding is checked before claims are consulted, so a NotFound binding
     /// never reaches a failing claim-set provider.
     /// </summary>
     [TestFixture]
@@ -268,7 +268,7 @@ public class IdentityPipelineOrderingTests
     }
 
     /// <summary>
-    /// A13: the capability gate runs before content-type and body validation, so a provider that
+    /// The capability gate runs before content-type and body validation, so a provider that
     /// supports no operation answers operation-unsupported 404 even for a malformed POST body.
     /// </summary>
     [TestFixture]

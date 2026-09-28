@@ -18,7 +18,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpe
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
-/// Story D6/D13: serves the identity OpenAPI document with a fixed <c>servers</c> entry and token URL,
+/// Serves the identity OpenAPI document with a fixed <c>servers</c> entry and token URL,
 /// normalizes it (recursively sorted object keys, <c>servers[*].url</c> and the client-credentials
 /// <c>tokenUrl</c> replaced by stable placeholders, the serve-time contract-version stamp removed), and
 /// compares the result byte for byte with the committed <c>identity-v2-wire-baseline.json</c> golden.

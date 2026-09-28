@@ -21,8 +21,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
-/// Serves the fixed identity OpenAPI document over HTTP with the toggle on (design.md D2; story D1,
-/// D7) and asserts the servers array, the shared OAuth2 security section, self-resolution of every
+/// Serves the fixed identity OpenAPI document over HTTP with the toggle on
+/// and asserts the servers array, the shared OAuth2 security section, self-resolution of every
 /// $ref, and the metadata listing entry - the same things
 /// <see cref="ChangeQueriesMetadataIntegrationTests" /> asserts for the change-queries document.
 /// </summary>

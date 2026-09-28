@@ -11,9 +11,9 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
-/// Walks the embedded identity OpenAPI document (design.md D2) and pins the paths, media types,
+/// Walks the embedded identity OpenAPI document and pins the paths, media types,
 /// request/response shapes, required/nullable sets, enums, additionalProperties, response
-/// declarations, headers, and examples the story's D2 and D3 acceptance criteria name.
+/// declarations, headers, and examples the document defines.
 /// </summary>
 public class IdentityOpenApiDocumentTests
 {

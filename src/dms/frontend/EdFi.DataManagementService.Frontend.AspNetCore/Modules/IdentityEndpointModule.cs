@@ -33,7 +33,7 @@ public class IdentityEndpointModule(
 
         // Fail closed at mapping time rather than at request time: a configured route-qualifier
         // name that collides with another under case-insensitive comparison would make
-        // IdentityRequestContext.RouteQualifiers ambiguous (D15), so the routes are not exposed
+        // IdentityRequestContext.RouteQualifiers ambiguous, so the routes are not exposed
         // at all rather than silently overwriting one qualifier's value with another's.
         if (HasCaseInsensitiveCollision(routeQualifierSegments, out string? collidingNames))
         {
@@ -90,7 +90,7 @@ public class IdentityEndpointModule(
 
     /// <summary>
     /// True when two or more configured route-qualifier segment names collide under
-    /// OrdinalIgnoreCase, which is the comparer IdentityRequestContext.RouteQualifiers uses (D15).
+    /// OrdinalIgnoreCase, which is the comparer IdentityRequestContext.RouteQualifiers uses.
     /// </summary>
     private static bool HasCaseInsensitiveCollision(string[] segments, out string? collidingNames)
     {

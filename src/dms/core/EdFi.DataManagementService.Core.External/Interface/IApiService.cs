@@ -220,7 +220,7 @@ public interface IApiService
     );
 
     /// <summary>
-    /// DMS entry point to get the fixed identity OpenAPI specification (design.md D2).
+    /// DMS entry point to get the fixed identity OpenAPI specification.
     /// Servers array should be provided by the front end.
     /// </summary>
     JsonNode GetIdentityOpenApiSpecification(JsonArray servers);
