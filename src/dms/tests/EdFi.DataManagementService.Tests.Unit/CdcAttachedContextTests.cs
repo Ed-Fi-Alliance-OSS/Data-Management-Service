@@ -318,7 +318,7 @@ public class Given_CdcAttachmentCleanup
 
 [TestFixture]
 [NonParallelizable]
-public class Given_CdcAttachmentWithoutHandoff
+public class Given_CdcAttachedContextWithoutHandoff
 {
     private string _original = null!;
     private Exception _failure = null!;
@@ -348,8 +348,11 @@ public class Given_CdcAttachmentWithoutHandoff
     [Test]
     public void It_fails_explicit_execution_with_only_a_sanitized_boundary_code()
     {
-        _failure.Should().BeOfType<InvalidOperationException>();
-        _failure.Message.Should().Be("CDC_API_ATTACHMENT_HANDOFF");
+        var failure = _failure.Should().BeOfType<CdcAttachmentException>().Subject;
+        failure.Boundary.Should().Be(CdcAttachmentBoundary.Handoff);
+        failure.Failure.Should().Be(CdcScenarioFailure.Error);
+        _failure.Message.Should().Be("CDC_API_ATTACHMENT_FAILED");
+        _failure.ToString().Should().NotContain("private-attachment-credentials");
         _failure.InnerException.Should().BeNull();
     }
 }

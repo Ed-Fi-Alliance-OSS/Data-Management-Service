@@ -59,7 +59,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     public async Task InitializeAsync(CancellationToken token)
     {
         CdcAttachedContext context = this;
-        string boundary = "HANDOFF";
+        var boundary = CdcAttachmentBoundary.Handoff;
         try
         {
             string path = Environment.GetEnvironmentVariable("CDC_API_E2E_HANDOFF_PATH") ?? "";
@@ -72,12 +72,12 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             deadline.CancelAfter(config.Timing.WaitTimeout);
             var ct = deadline.Token;
-            boundary = "PROVENANCE_OR_HTTP_CONFIGURATION";
+            boundary = CdcAttachmentBoundary.ProvenanceOrHttpConfiguration;
             await VerifyWrapperAsync(config, path, ct);
             config.Settings["Cdc:PublicationHistory:StatePath"] = handoff.StatePath;
             config.Settings["Cdc:PublicationHistory:DeploymentKey"] = config.Target.DeploymentKey;
 
-            boundary = "RETAINED_BINDING";
+            boundary = CdcAttachmentBoundary.RetainedBinding;
             DbConnection connection = config.CreateConnection();
             context._resources.Add((IAsyncDisposable)connection);
             var loader = new ApiSchemaFileLoader(
@@ -215,7 +215,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             // Registered last: stop executor/gate before disposing transports, DI and settings.
             context._resources.Add(context._owner);
 
-            boundary = "HTTP_ENDPOINTS";
+            boundary = CdcAttachmentBoundary.HttpEndpoints;
             var cms = new Uri(config.Required("ConfigurationServiceSettings:BaseUrl").TrimEnd('/') + "/");
             using var http = new HttpClient { Timeout = config.Timing.CallTimeout };
             foreach (var endpoint in new[] { new Uri(handoff.DmsBaseUrl, "health"), new Uri(cms, "health") })
@@ -223,12 +223,12 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
                 using var response = await http.GetAsync(endpoint, ct);
                 response.EnsureSuccessStatusCode();
             }
-            boundary = "PROVIDER";
+            boundary = CdcAttachmentBoundary.Provider;
             await connection.OpenAsync(ct);
             context.Documents = new(request.Binding.Provider, connection.ConnectionString);
             context.Provider = new(request.Binding, config.CreateConnection);
             context.Fences = new(context.Provider, request, context.Connect);
-            boundary = "KAFKA_ADVERTISED_ENDPOINTS";
+            boundary = CdcAttachmentBoundary.KafkaAdvertisedEndpoints;
             context.Kafka = new(adminConfig.BootstrapServers);
             var boundaries = await context.Kafka.CaptureKafkaBoundariesAsync(request.Binding.TopicName, ct);
             if (boundaries.Count != request.Binding.PartitionCount)
@@ -236,15 +236,15 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
                 throw new InvalidOperationException();
             }
 
-            boundary = "CONNECT";
+            boundary = CdcAttachmentBoundary.Connect;
             _ = Require(await context.Connect.ReadStatusAsync(request, ct));
-            boundary = "METRICS";
+            boundary = CdcAttachmentBoundary.Metrics;
             using (var response = await http.GetAsync(request.WorkerMetricsEndpoint, ct))
             {
                 response.EnsureSuccessStatusCode();
             }
 
-            boundary = "RUNTIME_IDENTITY_SCHEMA";
+            boundary = CdcAttachmentBoundary.RuntimeIdentitySchema;
             await context._owner.InPhaseAsync(
                 async cancellation =>
                 {
@@ -291,7 +291,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             context.EffectiveSchemaHash = builder
                 .Build(success.NormalizedNodes)
                 .EffectiveSchema.EffectiveSchemaHash;
-            boundary = "API_AUTHENTICATION";
+            boundary = CdcAttachmentBoundary.ApiAuthentication;
             context.Api = new(
                 handoff.DmsBaseUrl,
                 cms,
@@ -300,15 +300,11 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             context._resources.Add(context.Api);
             await context.Api.AuthenticateAsync(ct);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
+        catch (Exception exception)
         {
             // The scenario owner accounts for partial-attachment disposal in its finalization path.
             // Do not retain raw transport exceptions as inner exceptions (NUnit prints them).
-            throw new InvalidOperationException($"CDC_API_ATTACHMENT_{boundary}");
+            throw new CdcAttachmentException(boundary, exception);
         }
     }
 

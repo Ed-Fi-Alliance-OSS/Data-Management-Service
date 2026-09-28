@@ -37,6 +37,7 @@ The case-sensitive version 1 schema is:
   "Version": 1,
   "InvocationId": "11111111-1111-1111-1111-111111111111",
   "Identity": { "Provider": "", "BindingId": "", "Generation": 0 },
+  "AttachmentBoundary": "None",
   "Attachment": { "Id": "Attachment", "Outcome": "NotRun", "Failure": "None" },
   "Disposal": { "Id": "Disposal", "Outcome": "NotRun", "Failure": "None" },
   "Scenarios": [
@@ -67,7 +68,15 @@ zero mean unavailable identity before or after failed attachment. The opaque has
 avoids publishing deployment, tenant, datastore, connector, topic, or source names.
 No settings, document bodies, paths, raw exception messages, or inner exceptions
 are included. NUnit receives only the original failing stage and a fixed failure
-category, even if subsequent cleanup also fails.
+category, even if subsequent cleanup also fails. Known attachment failures also carry
+`AttachmentBoundary`: `Handoff`, `ProvenanceOrHttpConfiguration`, `RetainedBinding`,
+`HttpEndpoints`, `Provider`, `KafkaAdvertisedEndpoints`, `Connect`, `Metrics`,
+`RuntimeIdentitySchema`, or `ApiAuthentication`. `None` means no known boundary
+(including cancellation before attachment begins or before the bounded drain finishes). NUnit
+appends the known boundary to `CDC_API_Attachment_<category>`. Export validates the
+exact allowlist and retains `AttachmentFailure` and `AttachmentBoundary` even when
+binding identity is unavailable; this never qualifies an incomplete run. Earlier
+version-1 reports without the field default to `None`.
 
 Execution has a 45-minute deadline and observes NUnit cancellation. Scenarios must
 honor cancellation and await their operations. Finalization uses independent

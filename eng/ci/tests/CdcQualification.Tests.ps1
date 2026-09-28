@@ -1016,6 +1016,67 @@ Describe 'CDC API E2E accounting' {
         ($json | ConvertFrom-Json).Scenarios[2].Failure | Should -Be Unimplemented
         (Get-FileHash $path).Hash | Should -Be $hash
     }
+    It 'exports failed attachment boundary <Boundary> with unavailable identity and independent disposal failure' -ForEach @(
+        @{ Boundary = 'Handoff'; Failure = 'Error' }; @{ Boundary = 'ProvenanceOrHttpConfiguration'; Failure = 'Error' }
+        @{ Boundary = 'RetainedBinding'; Failure = 'Error' }; @{ Boundary = 'HttpEndpoints'; Failure = 'Error' }
+        @{ Boundary = 'Provider'; Failure = 'Error' }; @{ Boundary = 'KafkaAdvertisedEndpoints'; Failure = 'Error' }
+        @{ Boundary = 'Connect'; Failure = 'TimedOut' }; @{ Boundary = 'Metrics'; Failure = 'Cancelled' }
+        @{ Boundary = 'RuntimeIdentitySchema'; Failure = 'Error' }; @{ Boundary = 'ApiAuthentication'; Failure = 'Error' }
+        @{ Boundary = 'None'; Failure = 'Error' }
+    ) {
+        $script:fixture.Identity = @{ Provider = ''; BindingId = ''; Generation = 0 }
+        $script:fixture.Attachment.Outcome = 'Failed'; $script:fixture.Attachment.Failure = $Failure
+        $script:fixture.AttachmentBoundary = $Boundary
+        $script:fixture.Attachment.Message = 'credential-sentinel body-sentinel'
+        $script:fixture.Disposal.Outcome = 'Failed'; $script:fixture.Disposal.Failure = 'Error'
+        $script:fixture.Scenarios | ForEach-Object { $_.Outcome = 'NotRun' }
+        $script:fixture | ConvertTo-Json -Depth 8 | Set-Content $path
+        $validated = Get-CdcApiScenarioReport $path $runner $script:process
+        $validated.Status | Should -Be Failed
+        $validated.AttachmentBoundary | Should -BeExactly $Boundary
+        $validated.AttachmentFailure | Should -BeExactly $Failure
+        $out = Join-Path $TestDrive 'attachment-published'
+        Export-CdcQualificationEvidence -RawDirectory $TestDrive -Destination $out -ApiRunner $runner
+        $json = Get-Content (Join-Path $out 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'credential-sentinel|body-sentinel|Message'
+        $safe = $json | ConvertFrom-Json
+        $safe.AttachmentBoundary | Should -BeExactly $Boundary
+        $safe.AttachmentFailure | Should -BeExactly $Failure
+        $safe.Attachment | Should -Be Failed
+        $safe.Disposal | Should -Be Failed
+        @($safe.Scenarios | Where-Object Outcome -ne NotRun).Count | Should -Be 0
+    }
+    It 'rejects <Fault> attachment boundary without exporting untrusted values' -ForEach @(
+        @{ Fault = 'Unknown' }; @{ Fault = 'Sensitive' }; @{ Fault = 'Array' }; @{ Fault = 'Object' }
+        @{ Fault = 'Number' }; @{ Fault = 'Null' }; @{ Fault = 'Case' }; @{ Fault = 'Passed' }
+        @{ Fault = 'NoFailure' }; @{ Fault = 'WrongInvocation' }; @{ Fault = 'FailureArray' }
+    ) {
+        $script:fixture.Attachment.Outcome = 'Failed'; $script:fixture.Attachment.Failure = 'Error'
+        $script:fixture.AttachmentBoundary = 'Provider'
+        switch ($Fault) {
+            Unknown { $script:fixture.AttachmentBoundary = 'UnknownBoundary' }
+            Sensitive { $script:fixture.AttachmentBoundary = 'Password=credential-sentinel; body-sentinel /private/path' }
+            Array { $script:fixture.AttachmentBoundary = @('Provider', 'credential-sentinel') }
+            Object { $script:fixture.AttachmentBoundary = @{ Provider = 'credential-sentinel' } }
+            Number { $script:fixture.AttachmentBoundary = 999 }
+            Null { $script:fixture.AttachmentBoundary = $null }
+            Case { $script:fixture.AttachmentBoundary = 'provider' }
+            Passed { $script:fixture.Attachment.Outcome = 'Passed' }
+            NoFailure { $script:fixture.Attachment.Failure = 'None' }
+            WrongInvocation { $script:fixture.InvocationId = [guid]::NewGuid().ToString() }
+            FailureArray { $script:fixture.Attachment.Failure = @('Error', 'credential-sentinel') }
+        }
+        $script:fixture | ConvertTo-Json -Depth 8 | Set-Content $path
+        $validated = Get-CdcApiScenarioReport $path $runner $script:process
+        $validated.Status | Should -Be Failed
+        $validated.Reason | Should -Be $(if ($Fault -eq 'WrongInvocation') { 'ScenarioIdentityMismatch' } else { 'ScenarioReportInvalid' })
+        $out = Join-Path $TestDrive 'rejected-attachment'
+        Export-CdcQualificationEvidence -RawDirectory $TestDrive -Destination $out -ApiRunner $runner
+        $json = Get-Content (Join-Path $out 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'credential-sentinel|body-sentinel|UnknownBoundary|/private/path'
+        ($json | ConvertFrom-Json).AttachmentBoundary | Should -Be None
+        ($json | ConvertFrom-Json).AttachmentFailure | Should -Be None
+    }
     It 'exports setup failure with no fixture report' {
         $runner.Stages.Setup = 'Failed'; $runner.BindingId = ''; $runner.Generation = 0
         Export-CdcQualificationEvidence -RawDirectory $TestDrive -Destination (Join-Path $TestDrive 'out') -ApiRunner $runner

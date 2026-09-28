@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Unit;
 
 [TestFixture]
-public class Given_CdcScenarioAccounting
+public class Given_CdcScenarioRunnerAccounting
 {
     private string _directory = "";
     private string _path = "";
@@ -75,6 +75,120 @@ public class Given_CdcScenarioAccounting
         report["Identity"]!["Generation"]!.GetValue<long>().Should().Be(0);
         Outcomes(report).Should().Equal(Enumerable.Repeat("NotRun", 8));
         (await File.ReadAllTextAsync(_path)).Should().NotContain("private credentials");
+    }
+
+    [TestCase("Handoff", false)]
+    [TestCase("Provider", false)]
+    [TestCase("RuntimeIdentitySchema", false)]
+    [TestCase("ApiAuthentication", true)]
+    public async Task It_preserves_known_attachment_boundaries_and_primary_failure_without_private_exceptions(
+        string boundary,
+        bool disposalFails
+    )
+    {
+        var failure = new CdcAttachmentException(
+            Enum.Parse<CdcAttachmentBoundary>(boundary),
+            new InvalidOperationException(
+                "credential-sentinel body-sentinel",
+                new Exception("inner-sentinel")
+            )
+        );
+        failure.InnerException.Should().BeNull();
+        failure.ToString().Should().NotContain("sentinel");
+        _scenarios.OnAttach = _ => throw failure;
+        if (disposalFails)
+        {
+            _scenarios.OnDispose = () => throw new InvalidOperationException("disposal-sentinel");
+        }
+        await ExpectFailure($"CDC_API_Attachment_Error_{boundary}");
+        var report = Read();
+        report["AttachmentBoundary"]!.GetValue<string>().Should().Be(boundary);
+        report["Attachment"]!["Failure"]!.GetValue<string>().Should().Be("Error");
+        Outcome(report, "Disposal").Should().Be(disposalFails ? "Failed" : "Passed");
+        report["Identity"]!["BindingId"]!.GetValue<string>().Should().BeEmpty();
+        Outcomes(report).Should().Equal(Enumerable.Repeat("NotRun", 8));
+        (await File.ReadAllTextAsync(_path)).Should().NotContain("sentinel");
+    }
+
+    [TestCase("Timeout", "TimedOut")]
+    [TestCase("InternalCancellation", "TimedOut")]
+    [TestCase("CallerCancellation", "Cancelled")]
+    public async Task It_preserves_attachment_failure_classification_with_the_boundary(
+        string cause,
+        string expected
+    )
+    {
+        using var cancellation = new CancellationTokenSource();
+        _scenarios.OnAttach = _ =>
+        {
+            if (cause == "CallerCancellation")
+            {
+                cancellation.Cancel();
+            }
+            throw new CdcAttachmentException(
+                CdcAttachmentBoundary.Connect,
+                cause == "Timeout"
+                    ? new TimeoutException("private timeout")
+                    : new OperationCanceledException("private cancellation")
+            );
+        };
+        await ExpectFailure($"CDC_API_Attachment_{expected}_Connect", cancellation.Token);
+        Read()["Attachment"]!["Failure"]!.GetValue<string>().Should().Be(expected);
+        Read()["AttachmentBoundary"]!.GetValue<string>().Should().Be("Connect");
+    }
+
+    [Test]
+    public async Task It_retains_a_boundary_from_cancelled_attachment_drain_without_replacing_primary_cancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _scenarios.OnAttach = async _ =>
+        {
+            entered.SetResult();
+            await release.Task;
+            throw new CdcAttachmentException(
+                CdcAttachmentBoundary.Provider,
+                new Exception("private drain error")
+            );
+        };
+        Task execution = RunAsync(cancellation.Token);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await cancellation.CancelAsync();
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+        Func<Task> act = () => execution;
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("CDC_API_Attachment_Cancelled_Provider");
+        Read()["Attachment"]!["Failure"]!.GetValue<string>().Should().Be("Cancelled");
+        Read()["AttachmentBoundary"]!.GetValue<string>().Should().Be("Provider");
+        Outcome(Read(), "Disposal").Should().Be("Passed");
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_does_not_infer_boundaries_from_raw_messages_or_undefined_enum_values(bool typed)
+    {
+        _scenarios.OnAttach = _ =>
+            throw (
+                typed
+                    ? new CdcAttachmentException(
+                        (CdcAttachmentBoundary)999,
+                        new Exception("credential-sentinel")
+                    )
+                    : new InvalidOperationException(
+                        "CDC_API_ATTACHMENT_PROVIDER credential-sentinel body-sentinel"
+                    )
+            );
+        await ExpectFailure("CDC_API_Attachment_Error");
+        Read()["AttachmentBoundary"]!.GetValue<string>().Should().Be("None");
+        (await File.ReadAllTextAsync(_path)).Should().NotContain("sentinel");
     }
 
     [TestCase(1)]

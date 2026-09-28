@@ -92,6 +92,7 @@ internal sealed class CdcScenarioRunner
             current.Outcome = CdcScenarioOutcome.Failed;
             current.Failure = Classify(exception, token);
             primaryFailure = $"CDC_API_{current.Id}_{current.Failure}";
+            RecordAttachmentBoundary(exception);
         }
         finally
         {
@@ -116,6 +117,12 @@ internal sealed class CdcScenarioRunner
             catch (TimeoutException) when (!pending.IsCompleted)
             {
                 shutdownFailure = CdcScenarioFailure.TimedOut;
+            }
+            catch (CdcAttachmentException exception)
+            {
+                // WaitAsync may observe cancellation before attachment finishes unwinding.
+                // Retain its safe boundary without replacing the original failure category.
+                RecordAttachmentBoundary(exception);
             }
             catch
             { /* The execution failure is already recorded above. */
@@ -153,6 +160,18 @@ internal sealed class CdcScenarioRunner
             throw new InvalidOperationException("CDC_API_REPORT_PERSISTENCE_FAILED");
         }
 
+        void RecordAttachmentBoundary(Exception exception)
+        {
+            if (current == report.Attachment && exception is CdcAttachmentException attachmentFailure)
+            {
+                report.AttachmentBoundary = attachmentFailure.Boundary;
+                if (report.AttachmentBoundary != CdcAttachmentBoundary.None)
+                {
+                    primaryFailure = $"CDC_API_{current.Id}_{current.Failure}_{report.AttachmentBoundary}";
+                }
+            }
+        }
+
         async Task PersistFinalizationAsync()
         {
             using var reserve = new CancellationTokenSource(_finalizationTimeout);
@@ -170,6 +189,10 @@ internal sealed class CdcScenarioRunner
     private static CdcScenarioFailure Classify(Exception exception, CancellationToken caller) =>
         exception switch
         {
+            CdcAttachmentException { Failure: CdcScenarioFailure.Cancelled } => caller.IsCancellationRequested
+                ? CdcScenarioFailure.Cancelled
+                : CdcScenarioFailure.TimedOut,
+            CdcAttachmentException attachment => attachment.Failure,
             NotImplementedException => CdcScenarioFailure.Unimplemented,
             OperationCanceledException => caller.IsCancellationRequested
                 ? CdcScenarioFailure.Cancelled

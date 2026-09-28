@@ -23,7 +23,7 @@ function New-CdcApiRunnerReport {
 
 function Get-CdcApiScenarioReport {
     param([string] $Path, [Collections.IDictionary] $Runner, [Collections.IDictionary] $Process)
-    $result = @{ Status = 'Failed'; Reason = 'ScenarioReportMissing'; Cases = @(); Attachment = 'NotRun'; Disposal = 'NotRun' }
+    $result = @{ Status = 'Failed'; Reason = 'ScenarioReportMissing'; Cases = @(); Attachment = 'NotRun'; AttachmentFailure = 'None'; AttachmentBoundary = 'None'; Disposal = 'NotRun' }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $result }
     try {
         if ((Get-Item -LiteralPath $Path).Length -gt 32768) { throw 'Size' }
@@ -34,11 +34,24 @@ function Get-CdcApiScenarioReport {
         $failures = @('None', 'Error', 'Cancelled', 'TimedOut', 'Unimplemented')
         $expected = @(1..8 | ForEach-Object { 'CDC-E2E-{0:00}' -f $_ })
         foreach ($stage in @($report.Attachment, $report.Disposal) + $report.Scenarios) {
-            if ($stage.Outcome -cnotin $outcomes -or $stage.Failure -cnotin $failures) { return $result }
+            if ($stage.Outcome -isnot [string] -or $stage.Failure -isnot [string] -or
+                $stage.Outcome -cnotin $outcomes -or $stage.Failure -cnotin $failures) { return $result }
         }
         if ($report.Attachment.Id -cne 'Attachment' -or $report.Disposal.Id -cne 'Disposal') { return $result }
         for ($i = 0; $i -lt 8; $i++) { if ($report.Scenarios[$i].Id -cne $expected[$i]) { return $result } }
+        # Optional for earlier version-1 reports; a present value must be a scalar allowlisted token.
+        $boundary = 'None'
+        if ($report.ContainsKey('AttachmentBoundary')) {
+            $boundary = $report.AttachmentBoundary
+            if ($boundary -isnot [string] -or $boundary -cnotin @('None', 'Handoff', 'ProvenanceOrHttpConfiguration',
+                'RetainedBinding', 'HttpEndpoints', 'Provider', 'KafkaAdvertisedEndpoints', 'Connect', 'Metrics',
+                'RuntimeIdentitySchema', 'ApiAuthentication')) { return $result }
+            if ($boundary -cne 'None' -and ($report.Attachment.Outcome -cne 'Failed' -or
+                $report.Attachment.Failure -cnotin @('Error', 'TimedOut', 'Cancelled'))) { return $result }
+        }
         if ($report.InvocationId -cne $Runner.InvocationId) { $result.Reason = 'ScenarioIdentityMismatch'; return $result }
+        $result.AttachmentBoundary = $boundary
+        $result.AttachmentFailure = $report.Attachment.Failure
         $result.Cases = @($report.Scenarios | ForEach-Object { @{ Id = $_.Id; Outcome = $_.Outcome; Failure = $_.Failure } })
         $result.Attachment = $report.Attachment.Outcome; $result.Disposal = $report.Disposal.Outcome
         $result.Reason = 'ScenarioIdentityMismatch'
@@ -88,7 +101,8 @@ function Export-CdcApiEvidence {
         BindingId = $binding; Generation = $generation
         RequestedConnectDigest = $(if ($Runner.RequestedConnectDigest -is [string] -and $Runner.RequestedConnectDigest -cmatch '\Asha256:[a-f0-9]{64}\z') { $Runner.RequestedConnectDigest } else { '' })
         ReportValidation = $validated.Reason; Stages = $stages; Failures = $failures; Process = $process
-        Attachment = $validated.Attachment; Disposal = $validated.Disposal; Scenarios = $validated.Cases
+        Attachment = $validated.Attachment; AttachmentFailure = $validated.AttachmentFailure
+        AttachmentBoundary = $validated.AttachmentBoundary; Disposal = $validated.Disposal; Scenarios = $validated.Cases
         Traceability = @(Get-CdcApiTraceability)
         Diagnostics = Get-CdcApiDiagnostic -Path "$Path.checkpoints" -InvocationId $invocation
         RuntimeInputs = Get-CdcApiRuntimeInput -Path (Join-Path (Split-Path $Path -Parent) 'runtime-inputs.json') -InvocationId $invocation }

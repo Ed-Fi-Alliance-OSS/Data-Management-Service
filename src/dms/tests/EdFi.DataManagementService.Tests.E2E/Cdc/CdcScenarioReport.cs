@@ -55,6 +55,7 @@ internal sealed class CdcScenarioReport(string invocationId)
     public int Version { get; } = 1;
     public string InvocationId { get; } = invocationId;
     public CdcScenarioIdentity Identity { get; set; } = CdcScenarioIdentity.Unavailable;
+    public CdcAttachmentBoundary AttachmentBoundary { get; set; } = CdcAttachmentBoundary.None;
     public CdcScenarioResult Attachment { get; } = new("Attachment");
     public CdcScenarioResult Disposal { get; } = new("Disposal");
     public CdcScenarioResult[] Scenarios { get; } =
