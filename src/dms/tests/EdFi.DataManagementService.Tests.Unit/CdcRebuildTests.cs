@@ -209,7 +209,7 @@ public class Given_CdcRebuildObservations
             otherCommand
                 ? DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub
                 : DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
-            otherTarget ? DocumentCacheTargetKey.Create("Other", 7) : _target,
+            DocumentCacheTargetKey.Create(otherTarget ? "Other" : "tenant", 7),
             new(1),
             2,
             TimeSpan.FromMinutes(1),

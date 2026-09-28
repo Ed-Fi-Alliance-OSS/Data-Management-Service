@@ -95,7 +95,7 @@ public partial class Given_CdcProjectionGate
         await using var context = RuntimeContext(
             _materializer,
             _provider.GetRequiredService<IDocumentCacheWriter>(),
-            otherTarget ? DocumentCacheTargetKey.Create("Tenant-B", 1) : Target
+            DocumentCacheTargetKey.Create(otherTarget ? "Tenant-B" : "Tenant-A", 1)
         );
         (await _processor.ProcessItemAsync(Request(context, otherTarget ? 101 : 102)))
             .AcknowledgedOrRemovedDurableWork.Should()

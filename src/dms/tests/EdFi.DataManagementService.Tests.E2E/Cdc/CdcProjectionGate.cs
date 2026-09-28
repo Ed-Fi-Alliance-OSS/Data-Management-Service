@@ -218,7 +218,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
                 _drained = NewSignal();
             }
             bool selected =
-                request.TargetContext.TargetKey == _targetKey
+                request.TargetContext.TargetKey.Equals(_targetKey)
                 && (_documentId == 0 || request.WorkItem.DocumentId == _documentId);
             hold = selected && (_paused || (_overlap && _overlapStarted));
             if (selected && _overlap && !_overlapStarted)

@@ -339,7 +339,7 @@ internal sealed class CdcRebuildObservations(DocumentCacheTargetKey target)
             if (
                 !_active
                 || snapshot.Command != DocumentCacheAdministrativeCommand.OnlineCacheRebuild
-                || snapshot.TargetKey != target
+                || !snapshot.TargetKey.Equals(target)
             )
             {
                 return;

@@ -271,7 +271,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
 
                     var observed = await context._owner.Runtime.ObserveEstablishedDatabaseAsync(cancellation);
                     if (
-                        observed.TargetKey != target
+                        !observed.TargetKey.Equals(target)
                         || observed.PhysicalSourceFingerprint != request.Binding.PhysicalSourceFingerprint
                     )
                     {

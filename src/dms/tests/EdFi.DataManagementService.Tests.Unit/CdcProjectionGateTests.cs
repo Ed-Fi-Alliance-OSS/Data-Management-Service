@@ -55,7 +55,7 @@ public partial class Given_CdcProjectionGate
         _context = RuntimeContext(
             _materializer,
             _provider.GetRequiredService<IDocumentCacheWriter>(),
-            Target
+            DocumentCacheTargetKey.Create("Tenant-A", 1)
         );
         _processor = _provider.GetRequiredService<IDocumentCacheProjectionItemProcessor>();
         _gate.Pause(101);
@@ -147,13 +147,19 @@ public partial class Given_CdcProjectionGate
         _processing.IsCompleted.Should().BeFalse();
     }
 
-    [Test]
-    public async Task It_can_pause_all_target_work_again_for_a_new_document()
+    [TestCase("Tenant-A")]
+    [TestCase("tenant-a")]
+    public async Task It_can_pause_all_target_work_again_for_a_new_document(string runtimeTenant)
     {
         _gate.Release();
         await _processing;
         _gate.Pause();
-        _processing = _processor.ProcessItemAsync(Request(_context, 102));
+        await using var context = RuntimeContext(
+            _materializer,
+            _provider.GetRequiredService<IDocumentCacheWriter>(),
+            DocumentCacheTargetKey.Create(runtimeTenant, 1)
+        );
+        _processing = _processor.ProcessItemAsync(Request(context, 102));
         (await _gate.WaitUntilPausedAsync()).DocumentId.Should().Be(102);
         _writer.Calls.Should().HaveCount(2);
         _processing.IsCompleted.Should().BeFalse();
@@ -168,7 +174,7 @@ public partial class Given_CdcProjectionGate
         await using DocumentCacheProjectionTargetRuntimeContext context = RuntimeContext(
             _materializer,
             _writer,
-            otherTarget ? DocumentCacheTargetKey.Create("Tenant-B", 1) : Target
+            DocumentCacheTargetKey.Create(otherTarget ? "Tenant-B" : "Tenant-A", 1)
         );
         DocumentCacheProjectionItemProcessResult result = await _processor.ProcessItemAsync(
             Request(context, otherTarget ? 101 : 102)
