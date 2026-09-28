@@ -10,7 +10,7 @@ Ed-Fi API host without rebuilding it.
 
 A plugin is a directory of assemblies you publish, compiled against this package. An operator drops
 that directory into the host's plugin root and names it in an allowlist. The host loads it into an
-isolated assembly load context and calls your contribution hook. **No image is derived and nobody
+isolated assembly load context and calls your contribution hooks. **No image is derived and nobody
 rebuilds the Ed-Fi API.**
 
 This guide is about packaging and delivering a plugin. For the custom-validation contract itself —
@@ -32,10 +32,15 @@ One public type, `EdFiApiPlugin`, an abstract class with:
 
 - `Name`, an abstract property that must return the name of the directory the plugin is deployed
   into. The host verifies this at load time and a mismatch is fatal.
-- `ContributeServices`, a virtual method the host calls before it builds its container. The base
-  implementation does nothing, so a plugin overrides only what it needs.
+- `ContributeConfiguration`, a virtual method the host calls to let the plugin add configuration
+  sources, before anything that reads a value a plugin can supply. Added in contract 1.1.0; see
+  [Contributing configuration](#contributing-configuration).
+- `ContributeServices`, a virtual method the host calls before it builds its container.
 
-The host calls the hook on every loaded plugin unconditionally. There is no interface to implement,
+Both base implementations do nothing, so a plugin overrides only what it needs. The host runs the
+two phases in that order: `ContributeConfiguration` on every loaded plugin in allowlist order, then,
+once every configuration hook has returned, `ContributeServices` on every loaded plugin in the same
+order. It calls each hook on every loaded plugin unconditionally. There is no interface to implement,
 no per-phase discovery, and no way for an allowlisted plugin to be silently skipped.
 
 ## A plugin, end to end
@@ -100,6 +105,67 @@ services.TryAddEnumerable(
 
 That snippet is an illustration and is not mirrored into the consumer fixture, because that fixture
 exists to prove this package resolves and compiles on its own.
+
+## Contributing configuration
+
+A plugin that supplies configuration values, such as one that reads secrets from a vault, overrides
+`ContributeConfiguration`:
+
+```csharp
+public override void ContributeConfiguration(
+    IConfigurationBuilder configurationBuilder, IConfiguration bootstrapConfiguration)
+{
+    string vaultAddress = bootstrapConfiguration["Acme:VaultAddress"] ?? "https://localhost";
+    configurationBuilder.Add(new AcmeVaultConfigurationSource(vaultAddress));
+}
+```
+
+That snippet is an illustration and is not mirrored into the consumer fixture.
+
+**The two parameters.**
+
+- `configurationBuilder` is the host's configuration builder as it stands when your hook runs. Add
+  your sources to it.
+- `bootstrapConfiguration` is the configuration already layered at that moment, so you can read the
+  settings you need to build your sources, your own vault address being the usual case. It includes
+  what plugins earlier in the allowlist contributed. It is the host's live configuration, not a copy
+  or a read-only view, so nothing stops you writing through it; do not. A write is outside what the
+  contract supports and its effect on the host is undefined.
+
+**Contribution is additive only.** Add sources; never remove or reorder a source that was present
+when your hook began, including one an earlier plugin added. The host snapshots the builder's source
+list before your hook and compares it by reference afterwards:
+
+- **What it rejects.** A pre-existing source that is gone, or that is no longer in the same order
+  relative to the others, fails startup, naming your plugin. So does an exception thrown out of the
+  hook.
+- **What it cannot see.** A change to a pre-existing source object's own properties, such as an
+  environment source's prefix or a JSON source's path, leaves the list looking unchanged, and so does
+  a write through `bootstrapConfiguration`. Neither is detected; both are trust assumptions the host
+  does not enforce, and both can silently change how the whole host resolves configuration. Do not do
+  either.
+
+**Where your sources end up is decided by the host, not by where you add them.** After your hook
+passes that check, the host moves the sources you added to sit immediately below the operator's
+environment variables, keeping their order. So:
+
+- every plugin source outranks the host's JSON files, including an empty value `appsettings.json`
+  ships for the same key;
+- the operator's environment variables and command-line arguments outrank every plugin source;
+- among plugins, **allowlist order is contractual**: a plugin later in `Plugins:Allowed` outranks an
+  earlier one for any key both supply.
+
+Some values are read before any configuration hook runs, so a plugin cannot supply them: the
+`Plugins` section itself, which decided that your plugin loads, and the host's startup status file
+path. The operator configuration guide lists them for each host.
+
+**A configuration source counts as a contribution.** A plugin that adds at least one configuration
+source satisfies the host's "contributed nothing" check even if it registers no service at all, which
+is the whole of what a pure configuration plugin does. A plugin that adds no source and registers no
+declared plugin contract still fails startup.
+
+`ContributeConfiguration` reaches configuration and nothing else. Anything you want to register
+belongs in `ContributeServices`, where the host can see it.
 
 ## Names: four of them, and they must all match
 
@@ -217,8 +283,8 @@ complaint. Do not read the manifest as a minor-level compatibility check for the
 That is a property of how those assemblies version themselves, not a rule about every comparison the
 host makes. **The contract packages are the counterexample**: `EdFi.Api.Plugins` moves its
 `AssemblyVersion` whenever its surface moves, which is at the minor, so a plugin compiled against
-contract 1.1 *is* refused by a host carrying 1.0, by name. Read each row of the manifest with the
-versioning policy of the package it came from in mind.
+contract 1.1, which added `ContributeConfiguration`, *is* refused by a host carrying 1.0, by name.
+Read each row of the manifest with the versioning policy of the package it came from in mind.
 
 **When it fires depends on how *you* obtained the assembly, not on which section of the manifest
 lists it.** Skew on anything your own `.deps.json` declares a runtime entry for is caught at load,
@@ -246,7 +312,9 @@ An older plugin runs on a newer host **by construction**, and that phrase is use
 and for nothing wider. `EdFiApiPlugin` is a base class whose members are virtuals with no-op bodies,
 and the compatibility policy for this package is **additive-only for the life of the package**: new
 virtual members with no-op bodies, never a new abstract member, never a signature change, never a
-removal. Adding a member that way is binary-compatible with every plugin already published.
+removal. Adding a member that way is binary-compatible with every plugin already published: a
+plugin built against 1.0.0, which has no `ContributeConfiguration`, runs unchanged on a host carrying
+1.1.0, and its configuration hook is the base no-op.
 
 The same policy binds every interface a plugin implements, including `ICustomResourceValidator`: a
 member added after first publication carries a default implementation, and a member that cannot be
@@ -398,7 +466,7 @@ https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nug
 ```
 
 ```xml
-<PackageReference Include="EdFi.Api.Plugins" Version="[1.0.0]" />
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
 ```
 
 The second contract, `EdFi.Api.CustomValidation`, is on the same feed and carries its own version in
@@ -408,7 +476,9 @@ so their numbers move independently of each other and of the Data Management Ser
 
 Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
 the host assembly manifest attached to the Data Management Service release you are targeting states
-which contract versions that release carries.
+which contract versions that release carries. 1.1.0 is the version that adds
+`ContributeConfiguration`; a plugin that overrides only `ContributeServices` can build against
+1.0.0 instead, and then runs on a host carrying either.
 
 ## License
 

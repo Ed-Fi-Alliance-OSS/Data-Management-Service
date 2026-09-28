@@ -33,9 +33,10 @@ Configuration Service.
 ## Plugins
 
 A plugin is a directory of already-published assemblies that the Ed-Fi API loads at
-startup and lets contribute to its service composition. DMS ships no fetcher:
-getting a plugin directory under the plugin root is a **deployment** step that
-happens before the process starts, and it comes in two recipes, below.
+startup and lets contribute to its configuration and its service composition. DMS
+ships no fetcher: getting a plugin directory under the plugin root is a
+**deployment** step that happens before the process starts, and it comes in two
+recipes, below.
 
 Acquiring the bytes does not enable them. A plugin runs if and only if its directory
 name appears in `Plugins:Allowed`, which is a separate, deployment-owned setting
@@ -75,7 +76,7 @@ What this does **not** protect against, stated so it is not rediscovered:
   updates a directory and its digest together.
 - Anything a plugin does after it loads. There is no capability restriction, no
   resource limit, and no audit beyond the load inventory in the log.
-- A plugin that hangs. The contribution hook is synchronous and unbounded, so a
+- A plugin that hangs. The contribution hooks are synchronous and unbounded, so a
   plugin that blocks blocks startup. That is deliberate — a timeout would mean
   continuing without a plugin the operator required, which the failure rules below
   refuse. What you get instead is attribution: the loader announces each plugin
@@ -418,12 +419,13 @@ an error at all: nothing was asked for, and the root is not inspected.
 | The entry assembly exposes zero, or more than one, plugin class | Names what was found. |
 | The plugin's declared name does not match its directory name | Names both. Compared ordinally. |
 | The entry assembly's own assembly name does not match the directory name | Names both. |
-| A contribution hook throws | Names the plugin and the composition phase. |
+| A contribution hook throws | Names the plugin and the hook, `ContributeConfiguration` or `ContributeServices`, and keeps the plugin's own exception as the cause. |
+| The plugin's configuration hook removes or reorders a configuration source that was present before it ran | Names the plugin and the position and type of the source. Adding sources is the only permitted operation, and that includes leaving alone a source an earlier plugin in `Plugins:Allowed` added. |
 | The plugin registers a service type the host owns, or removes, replaces, or overwrites a host-owned registration that existed before its hook ran | Names the plugin and the service type, before the call reaches the host's own collection. Plugins contribute registrations; they do not edit the host's. Removing a registration the plugin itself added is fine, and removing a pre-existing framework or third-party registration is permitted and recorded in the inventory. |
 | The plugin removes, replaces, or overwrites one of the host's four logging registrations | Names the plugin and the service type. `ClearProviders()` lands here: it would silence DMS and the inventory record of the plugin doing it. Adding a logging **provider** is untouched. |
 | The plugin **adds** its own unkeyed logger factory or logger registration | Names the plugin and the service type. Those are resolved singly, so the last registration wins and a plugin would displace the host's logging by adding rather than removing. Keyed logging registrations and added providers stay permitted. |
 | The plugin registers a declared contract under a wildcard service key | Names the contract. Enumerable resolution cannot reach a wildcard registration, so the startup probe cannot cover it. |
-| The plugin leaves no surviving declared contract registration | Names the plugin and lists what it did register. It ran and contributed nothing the host will call — most often a plugin allowlisted on the wrong host, or a replace-contract claim made with a `TryAdd`, which declines invisibly. |
+| The plugin leaves no surviving declared contract registration and added no configuration source | Names the plugin and lists what it did register. It ran and contributed nothing the host will call — most often a plugin allowlisted on the wrong host, or a replace-contract claim made with a `TryAdd`, which declines invisibly. A plugin that added a configuration source is not reported here, because the host reads what it contributed. |
 | A registration of a declared contract cannot be constructed | Reported by the startup probe, which resolves each surviving declared-contract registration once before the process serves traffic. |
 
 Every row in this group is about the plugin's own content rather than about how the
@@ -455,17 +457,18 @@ again.
 
 #### Two rules that apply only to configuration contribution
 
-The plugin contract exposes a service-contribution hook and no configuration-contribution
-hook, so neither rule below can be reached by any plugin a deployment can install. They
-are recorded so the catalogue states the whole rule set rather than a silently partial
-one:
+A plugin can contribute configuration sources from its `ContributeConfiguration`
+hook, which DMS runs for every allowlisted plugin, in `Plugins:Allowed` order, as soon
+as the plugins have loaded. Two rows above are specific to it:
 
 - **A configuration hook that removes or reorders a source it did not add is
-  fatal**, naming the plugin. Adding is the only permitted operation.
-- **The "contributed nothing" row above has a second half that is likewise
-  unreachable.** A plugin satisfies that row by registering a declared contract;
-  where configuration contribution is supported, contributing a configuration source
-  satisfies it as well.
+  fatal**, naming the plugin. Adding is the only permitted operation. The loader then
+  places what the plugin added below the operator's environment and command-line
+  sources; see
+  [Configuration precedence](./CONFIGURATION.md#configuration-precedence).
+- **The "contributed nothing" row has a second half.** A plugin satisfies that row by
+  registering a declared contract, or by contributing at least one configuration
+  source, so a plugin whose only job is to supply configuration starts normally.
 
 ### Where to read the reason
 
@@ -475,9 +478,11 @@ The two questions have two answers, and they live in different places.
 `AppSettings:StartupStatusFilePath`, defaulting to `dms-startup-status.json` in the
 system temporary directory. It is a JSON document carrying the status, the bootstrap
 phase, a one-line summary, and — on a failure — the exception type and message. A
-plugin failure names its phase there: the loading phase for a failure to load, and
-the service-configuration phase for a failure inside a contribution hook, because the
-host invokes that hook while it is registering services.
+plugin failure names its phase there. `LoadPlugins` covers a failure to load and a
+failure inside a plugin's `ContributeConfiguration` hook, which runs in that same
+phase as soon as loading returns. `ConfigureServices` covers a failure inside a
+`ContributeServices` hook, because the host invokes that hook while it is registering
+services.
 
 **What actually loaded: the log.** Each loaded plugin produces one
 `Plugin inventory for {PluginName} version {AssemblyVersion}` event listing the files

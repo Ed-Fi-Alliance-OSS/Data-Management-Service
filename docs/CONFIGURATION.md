@@ -358,11 +358,11 @@ These settings configure the allowed client-secret length range used by CMS regi
 
 ## Plugins
 
-Plugins are directories of already-published assemblies that DMS loads at startup
-and lets contribute to its service composition. This section is the **only**
-configuration surface for them: it says what may load, and nothing about where the
-bytes came from. DMS ships no fetcher; getting a plugin directory under the root is
-a deployment step that happens before the process starts. See
+Plugins are directories of already-published assemblies that DMS loads at startup and
+lets contribute to its configuration and its service composition. This section is the
+**only** configuration surface for them: it says what may load, and nothing about
+where the bytes came from. DMS ships no fetcher; getting a plugin directory under the
+root is a deployment step that happens before the process starts. See
 [Plugins](./OPERATIONS.md#plugins) for the two acquisition recipes, the trust model,
 and what a startup failure means, and
 [eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
@@ -418,7 +418,8 @@ logger once one exists, as `Plugin loader warning` events, so a deployment that
 collects application logs rather than container output still sees them.
 
 The order written is the invocation order, so it is what decides the order in which
-plugins contribute.
+plugins contribute, and, where two plugins supply the same configuration key, which
+one wins: the later one. See [Configuration precedence](#configuration-precedence).
 
 Both keys bind from environment variables in the standard way, which is how a
 container deployment sets them:
@@ -437,31 +438,40 @@ follows, highest first:
 | ---- | ------ | ----- |
 | 1 | Environment variables | The unprefixed environment source DMS appends itself. See below for why this outranks the command line. |
 | 2 | Command-line arguments | Installed only when the host is started with arguments, which the stock container is not. |
-| 3 | Plugin-contributed configuration sources, in `Allowed` order | **Reserved; not supported.** See below. |
+| 3 | Plugin-contributed configuration sources, in `Allowed` order | A later plugin in `Allowed` outranks an earlier one. |
 | 4 | `appsettings.json` and the other JSON sources | Including `appsettings.{Environment}.json`. |
 
-**Rank 3 is reserved and unreachable.** The plugin contract exposes `Name` and
-`ContributeServices`, neither of which can add a configuration source, so no
-deployment can populate that rank. It appears in the table because the ordering rules
-for it are fixed rather than open: a plugin's sources are placed at rank 3 by the
-loader rather than wherever the plugin appended them, a later plugin in `Allowed`
-order outranks an earlier one, and no plugin source is placed above the operator's own
-environment or command-line surface.
+**Plugin sources land at rank 3 once the loader has placed them.** A plugin contributes
+configuration sources from its `ContributeConfiguration` hook, which DMS runs for
+each allowlisted plugin, in `Allowed` order, as soon as the plugins have loaded. After
+each hook the loader moves the sources that plugin added to sit immediately below the
+unprefixed environment source, keeping their order. The effects:
+
+- A plugin value outranks every JSON source, including an empty string that
+  `appsettings.json` ships for the same key, such as
+  `ConfigurationServiceSettings:EncryptionKey`.
+- A value the operator sets in the environment or on the command line outranks every
+  plugin. An operator who wants a plugin to supply a value does not also set it
+  there.
+- Among plugins, the later one in `Allowed` wins, so the order of `Allowed` is part of
+  the configuration and not only a list of what may run.
 
 **Why the environment outranks the command line.** ASP.NET Core's own builder
 installs the command-line source above the unprefixed environment source, so on its
 own the command line would win. DMS then appends one more environment source of its
-own, in `AddServices`
+own, with the `AddEnvironmentVariables()` call in `AddServices`
 ([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)),
 and an appended source outranks everything already installed.
 
 **That appended source carries a qualifier, and the qualifier is not cosmetic: it
-outranks the command line only for keys read after `AddServices` has run.** Two
-reads happen before it, and for those two the command line wins:
+outranks the command line only for keys read after that `AddEnvironmentVariables()`
+call.** Two reads happen before it, and for those two the command line wins:
 
 - **Serilog's configuration.** `AddServices` calls `ConfigureLogging()`, which reads
   `webAppBuilder.Configuration`, before it calls `AddEnvironmentVariables()`, so the
-  `Serilog` section is resolved without the appended source.
+  `Serilog` section is resolved without the appended source. Plugin sources are
+  already in place by then, so for this section the order is command line,
+  environment, plugins, then JSON.
 - **The whole `Plugins` section, not just `Allowed`.** The plugin-loading bootstrap
   phase binds the section in one go, `Allowed` and `Directory` alike, and it runs
   before the phase that calls `AddServices` at all. That ordering is deliberate for
@@ -481,17 +491,23 @@ Only a deployment that starts the host with arguments of its own is affected by 
 qualifier above.
 
 > [!IMPORTANT]
-> **One key is read before the plugin phase exists at all.**
-> `AppSettings:StartupStatusFilePath` is read immediately after the builder is
-> created, before plugins are loaded, because the startup status file is how a plugin
-> loading failure is reported and it cannot depend on anything a plugin supplied. No
-> plugin-contributed source can provide it, whatever rank 3 above holds.
+> **Three values cannot come from a plugin source**, because each is read before any
+> plugin's `ContributeConfiguration` hook has run:
 >
-> This is a bootstrap exception and **not** an exception to the
-> environment-versus-command-line rule above. The environment and command-line sources
-> both exist by the time this key is read, so for it the command line wins when a
-> deployment supplies one, exactly as it does for the two reads named above. What is
-> missing at that moment is a plugin source, not an operator-owned one.
+> - `AppSettings:StartupStatusFilePath`, read immediately after the builder is
+>   created and before plugins are loaded, because the startup status file is how a
+>   plugin loading failure is reported and it cannot depend on anything a plugin
+>   supplied.
+> - The `Plugins` section, `Allowed` and `Directory` alike, which decides which
+>   plugins load at all.
+> - `DATABASE_CONNECTION_STRING_ADMIN`, which `src/dms/run.sh` reads for its
+>   PostgreSQL readiness check before the .NET process starts.
+>
+> The first two are bootstrap exceptions and **not** exceptions to the
+> environment-versus-command-line rule above: the environment and command-line sources
+> both exist when they are read, so for them the command line wins when a deployment
+> supplies one. The third is not .NET configuration at all and is only ever read from
+> the container's environment.
 
 ## RateLimit
 
