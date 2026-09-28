@@ -125,8 +125,10 @@ That snippet is an illustration and is not mirrored into the consumer fixture.
 **The two parameters.**
 
 - `configurationBuilder` is a builder the host hands your hook alone. It starts with the host's sources
-  as they stand when your hook runs, and the host's builder properties, so a relative file path
-  resolves as it would against the host. Add your sources to it. Adding a source loads nothing; the
+  as they stand when your hook runs, and a copy of the host's builder properties, so a relative file
+  path resolves as it would against the host. Set your own base path on it, as a plugin reading a
+  file shipped beside its assembly does, and that base path is where your relative paths resolve; the
+  host's own is left as it was. Add your sources to it. Adding a source loads nothing; the
   host loads what you added, once, after your hook returns.
 - `bootstrapConfiguration` is the configuration already layered at that moment, so you can read the
   settings you need to build your sources, your own vault address being the usual case. It includes
@@ -161,6 +163,14 @@ yours. So:
   through `ContributeConfiguration`;
 - among plugins, **allowlist order is contractual**: a plugin later in `Plugins:Allowed` outranks an
   earlier one for any key both supply.
+
+**The host neither reloads nor disposes your sources.** A reload the host starts, through
+`IConfigurationRoot.Reload()`, does not reach them, and they are not disposed when the host's
+configuration is: they live as long as the process. A source that watches for its own changes, such
+as a JSON file added with `reloadOnChange: true`, still reloads itself and raises its change
+notification through the host's configuration. A source that must pick up new values on a schedule,
+such as a vault lease that expires, has to refresh itself; a source that holds a resource has to
+tolerate never being disposed.
 
 Some values are read before any configuration hook runs, so a plugin cannot supply them: the
 `Plugins` section itself, which decided that your plugin loads, and the host's startup status file
@@ -488,8 +498,10 @@ so their numbers move independently of each other and of the Data Management Ser
 Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
 the host assembly manifest attached to the Data Management Service release you are targeting states
 which contract versions that release carries. Build against 1.1.0. It is the version that adds
-`ContributeConfiguration`, and the first the release pipeline promotes: 1.0.0 appeared only in
-pre-release builds, so no released host carries it for a plugin to target.
+`ContributeConfiguration`. 1.0.0 is on the same feed and pre-release hosts carry it, so a plugin
+may already be pinned to `[1.0.0]`; that plugin runs unchanged on a host carrying 1.1.0, as
+[Older plugin, newer host](#older-plugin-newer-host) describes, but it cannot contribute
+configuration until it is rebuilt against 1.1.0.
 
 ## License
 
