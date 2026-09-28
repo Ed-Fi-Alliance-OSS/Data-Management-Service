@@ -801,7 +801,8 @@
       "Record the command, tested revision, qualified image/provider/broker/runtime inputs and sanitized evidence reference. Keep private settings and raw diagnostics out of the repository.",
       "Retain historical failed-run evidence. T31 PATH_BASE normalization was corrected by b50ecaf7b and T34 local authorization-notice handling by 586433c24; both passed in the latest PostgreSQL handoff/attachment run. Keep those resolved causes distinct from pending full qualification. Do not repeat either investigation without new contradictory evidence, reopen the completed T28 scan consolidation, or add a diagnostics framework.",
       "Complete the existing eight-scenario provider run after T36. Retain the post-T35 Error run separately from the earlier gate timeout; do not treat either partial run as qualification. Once the full run and governed cleanup pass, record the evidence and stop; repeat only when a subsequent behavior change invalidates that evidence or a demonstrated failure requires correction. Add no resource, fault, concurrency or consumer matrix. Diagnose newly demonstrated failures before retrying and capture nontrivial fixes as bounded follow-ups; do not retry unchanged failures blindly.",
-      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup from the previous run must complete before another setup."
+      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup from the previous run must complete before another setup.",
+      "The post-T36 PostgreSQL run at 3747f180b passed Student CRUD and then failed CDC-E2E-02 with Error before any descriptor checkpoint. T37 owns bounded diagnosis/regression before another qualification. Preserve this partial passing evidence separately; it establishes source/work/cache observations but not the sequence path or full qualification."
     ],
     "steps-to-verify": [
       "pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-postgresql",
@@ -813,7 +814,8 @@
       "T33",
       "T34",
       "T35",
-      "T36"
+      "T36",
+      "T37"
     ],
     "completed": false
   },
@@ -835,7 +837,8 @@
       "Record the command, tested revision, qualified image/provider/broker/runtime inputs and sanitized evidence reference. Keep private settings and raw diagnostics out of the repository.",
       "Retain historical failed-run evidence. T31 PATH_BASE normalization was corrected by b50ecaf7b and T34 local authorization-notice handling by 586433c24; both passed in the latest PostgreSQL handoff/attachment run. Keep those resolved causes distinct from pending full qualification. Do not repeat either investigation without new contradictory evidence, reopen the completed T28 scan consolidation, or add a diagnostics framework.",
       "Complete the existing eight-scenario provider run after T36. Retain the post-T35 Error run separately from the earlier gate timeout; do not treat either partial run as qualification. Once the full run and governed cleanup pass, record the evidence and stop; repeat only when a subsequent behavior change invalidates that evidence or a demonstrated failure requires correction. Add no resource, fault, concurrency or consumer matrix. Diagnose newly demonstrated failures before retrying and capture nontrivial fixes as bounded follow-ups; do not retry unchanged failures blindly.",
-      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup from the previous run must complete before another setup."
+      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup from the previous run must complete before another setup.",
+      "The post-T36 PostgreSQL run at 3747f180b passed Student CRUD and then failed CDC-E2E-02 with Error before any descriptor checkpoint. T37 owns bounded diagnosis/regression before another qualification. Preserve this partial passing evidence separately; it establishes source/work/cache observations but not the sequence path or full qualification."
     ],
     "steps-to-verify": [
       "pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-mssql",
@@ -847,7 +850,8 @@
       "T33",
       "T34",
       "T35",
-      "T36"
+      "T36",
+      "T37"
     ],
     "completed": false
   },
@@ -962,5 +966,36 @@
       "T35"
     ],
     "completed": true
+  },
+  {
+    "id": "T37",
+    "category": "e2e-descriptor-diagnosis",
+    "description": "High: Diagnose and repair CDC-E2E-02 Error before its first descriptor checkpoint. T23 at 3747f180b passed attachment and complete Student CRUD, then failed descriptor CRUD; six later scenarios did not run. The original exception is discarded, so the failing operation and cause remain unproven.",
+    "deliverable": "Confirmed failing operation/root cause and a bounded story-owned correction with focused regression; preserve full T23/T24 qualification as separate tasks.",
+    "files-to-read": [
+      "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiScenarios.DescriptorCrud.cs",
+      "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiScenarios.Crud.cs",
+      "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiClient.cs",
+      "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcScenarioRunner.cs",
+      "reference/cdc-documentation/evidence/dms1325-t23-postgresql-descriptor-blocked/run-details.json"
+    ],
+    "acceptance-criteria": [
+      "Identify the original failing operation and exception with private diagnostics or a faithful isolated reproduction before retrying qualification",
+      "Inspect the transition from completed Student CRUD into descriptor initial boundaries, capture inventory, readiness, POST, gate selection, source/work/cache reads and GET; absent descriptor checkpoints do not identify the failing operation",
+      "Add a focused regression for the confirmed story-owned defect, retaining real API mutations, production projection, complete descriptor/public-record assertions, admission and finite deadlines",
+      "Preserve the passed Student CRUD evidence; do not reopen T31/T34/T35/T36 or infer a T33 observer-authentication regression without contradictory evidence",
+      "Keep raw exceptions, credentials, settings and document bodies private; no diagnostics framework, additional matrix or production changes based on speculation",
+      "If the cause is outside this story, record it in PROBLEMS.md and stop; otherwise fresh full T23/T24 runner qualifications remain required after correction"
+    ],
+    "steps-to-verify": [
+      "Reproduce the confirmed failing operation with private diagnostics or faithful isolated coverage; do not run unchanged full qualification blindly. Remove temporary instrumentation before final validation.",
+      "Run the focused regression red before correction and green afterward; run the affected CDC unit coverage and Release E2E build, with CSharpier formatting and git diff --check.",
+      "If a diagnostic stack is necessary, use existing admitted runner setup and governed cleanup serially on an exclusively owned disposable workspace; verify resource absence. Keep sanitized evidence separate from raw private diagnostics.",
+      "Leave T23/T24 incomplete until their fresh full eight-phase runs and governed cleanup pass."
+    ],
+    "depends-on": [
+      "T36"
+    ],
+    "completed": false
   }
 ]

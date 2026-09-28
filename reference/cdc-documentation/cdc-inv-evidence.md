@@ -1229,29 +1229,36 @@ wrong-invocation and rejected data are identified, never copied as raw output.
 Private settings, handoff, logs, auth headers, connection strings and document bodies
 are excluded. Original execution, cleanup and export failures remain separate.
 
-PostgreSQL full qualification: **blocked T23**, with one failed scenario and
-seven scenarios not run. The latest
-[runner report](evidence/dms1325-t23-postgresql-after-t35-blocked/qualification.json) and
-[runtime/cleanup evidence](evidence/dms1325-t23-postgresql-after-t35-blocked/cdc-api-e2e.json)
+PostgreSQL full qualification: **blocked T23**, with Student CRUD passed,
+descriptor CRUD failed and six scenarios not run. The latest
+[runner report](evidence/dms1325-t23-postgresql-descriptor-blocked/qualification.json) and
+[runtime/cleanup evidence](evidence/dms1325-t23-postgresql-descriptor-blocked/cdc-api-e2e.json)
 record successful setup, admission, HTTP-only handoff and attachment at revision
-`3493d720bc0555bb042adf0aaab5ddc930187f96`, including T35's fixture target-value
-comparison correction. Student CRUD (`CDC-E2E-01`) then failed with `Error`
-before its first checkpoint. The test process completed in about 23 seconds;
-this is distinct from the previous five-minute gate timeout. Only the three
-attachment checkpoints were recorded, and the scenario runner discarded the
-underlying exception. The failing operation and cause remain unproven; T36 owns
-the bounded diagnosis and regression before another qualification attempt.
+`3747f180bb5e20d86db115a61386e02ce2a10ad8`, including T36's default-tenant
+comparison correction. Student CRUD (`CDC-E2E-01`) passed with held create/update
+work and cache observations, API reads/writes, fenced consumption of both published
+states and the canonical-delete tombstone. Its 35 checkpoints establish T33's
+source/work/cache observation paths and T35's held Student create/update behavior.
+The change-version sequence read, overlap and rebuild were not reached.
 
-Fixture disposal, governed teardown and export passed, with five owned containers
-and three volumes verified absent. An independent Docker inventory also found no
-remaining `dms-local` containers, volumes or networks. Scenario `CDC-E2E-01` is
-`Failed/Error`; `CDC-E2E-02` through `CDC-E2E-08` are `NotRun`. The runner's eight
-failed required outcomes count one executed failure and seven missing outcomes.
+Descriptor CRUD (`CDC-E2E-02`) failed with `Error` before its first checkpoint.
+The scenario runner discarded the underlying exception; the failing operation and
+cause remain unproven. T37 owns bounded diagnosis and regression before another
+qualification attempt. Fixture disposal, governed teardown and export passed,
+with five owned containers and three volumes verified absent. Independent Docker
+inventory also found no remaining `dms-local` containers, volumes or networks.
 Invocation, provider, binding and generation match across the reports. See the
-reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json).
-T33 live source/work/cache/sequence authentication evidence and T35 live held-create,
-overlap and rebuild evidence remain unestablished. T23 and T24 remain incomplete;
-no unchanged retry or production change was attempted.
+reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-descriptor-blocked/run-details.json).
+The runner's seven failed required outcomes count one executed failure and six
+missing outcomes. T23 and T24 remain incomplete; no unchanged retry or production
+change was attempted.
+
+The earlier [post-T35 Student Error](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json)
+remains historical evidence. T36 diagnosed the mismatch between the CDC binding's
+`default` tenant token and E18's empty default tenant, then applied the production
+tenant mapping in the fixture assertion. The latest run passed that assertion and
+the complete Student CRUD phase. The new descriptor failure does not identify a
+regression in T36 or supply full provider qualification.
 
 The earlier [CRUD timeout](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json)
 remains historical evidence. T35 corrected three fixture target reference
