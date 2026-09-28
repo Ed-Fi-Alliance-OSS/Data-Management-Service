@@ -178,6 +178,11 @@ resolved from), the attempt number and maximum, and a fence.
 
 - Honor the cancellation token. It is cancelled when the instance shuts down and when the execution
   loses certainty that it still owns the job.
+- A normal return means the work is complete. A handler that stops before its work is done must
+  let the `OperationCanceledException` propagate, or call `ThrowIfCancellationRequested`, rather
+  than return. The executor also refuses to count a return after the instance's stop signal as
+  success: it releases the job to `Pending` while it still certainly owns the job, and writes
+  nothing otherwise. A handler that finished just as shutdown began may therefore run again.
 - Assume at-least-once execution. A job may run again after a crash, a lost lease, a shutdown, or
   an ambiguous database result, so every handler must be idempotent: reconcile what an earlier
   attempt already did before acting.

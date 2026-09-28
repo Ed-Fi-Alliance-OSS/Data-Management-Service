@@ -217,6 +217,17 @@ public sealed class JobExecutor(
         try
         {
             await run.Registration.Execute(services, context, run.Payload, executionToken);
+
+            // A return after the host's stop signal is not taken as success: the handler may have swallowed the
+            // cancellation of unfinished work. Finalization releases the job while ownership is certain, and
+            // writes nothing otherwise.
+            if (stoppingToken.IsCancellationRequested)
+            {
+                return new Decision.Release(
+                    JobDiagnostics.From(new OperationCanceledException(stoppingToken), "Handler")
+                );
+            }
+
             return new Decision.Complete();
         }
         catch (JobPermanentException permanent)

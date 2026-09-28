@@ -973,6 +973,96 @@ public class JobRuntimeIntegrationTests
     }
 
     [TestFixture]
+    public class Given_a_handler_that_swallows_a_cancelled_fence : RuntimeTestBase
+    {
+        private RuntimeHarness _harness = null!;
+        private ClaimedJob _claimed = null!;
+        private Exception? _seenByHandler;
+        private JobExecutionResult _result = null!;
+        private long _fencedWrites;
+        private LeaseRow _row = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            JobOptions settings = WithoutRenewals();
+            TaskCompletionSource<Task<JobDatabaseSessionCleanup>> handedOver = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _harness = new RuntimeHarness(
+                settings,
+                Repository(settings.LeaseTimings),
+                HookedFenceFactory(
+                    settings,
+                    new JobDatabaseSessionHooks { HandedOver = cleanup => handedOver.TrySetResult(cleanup) }
+                )
+            );
+            long id = await SeedRuntimeJobAsync();
+            _claimed = await ClaimAsync(settings, OwnerA);
+
+            TaskCompletionSource written = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _harness.Script.Run = async (context, cancellationToken) =>
+            {
+                try
+                {
+                    await context.Fence.ExecuteAsync(
+                        async (transaction, token) =>
+                        {
+                            await FencedWriteAsync(transaction, token);
+                            written.TrySetResult();
+                            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                        },
+                        cancellationToken
+                    );
+                }
+                catch (OperationCanceledException canceled)
+                {
+                    // Against the handler contract: the handler swallows the shutdown and returns normally.
+                    _seenByHandler = canceled;
+                }
+            };
+            using CancellationTokenSource stopping = new();
+
+            Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(_claimed, stopping.Token);
+            await written.Task.WaitAsync(_wait);
+            await stopping.CancelAsync();
+            _result = await running.WaitAsync(_wait);
+
+            // The stop signal ended the fence's wait for its work; cleanup rolls the fenced write back.
+            await (await handedOver.Task.WaitAsync(_wait)).WaitAsync(_wait);
+            _fencedWrites = await FencedWriteCountAsync();
+            _row = await RowAsync(id);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_hands_the_cancellation_to_the_handler() =>
+            _seenByHandler.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_releases_the_job_instead_of_completing_it()
+        {
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.ReleasedOnShutdown));
+            _harness.Leases.OutcomeWrites.Should().Be(1);
+        }
+
+        [Test]
+        public void It_rolls_back_the_fenced_write() => _fencedWrites.Should().Be(0);
+
+        [Test]
+        public void It_returns_the_row_to_pending_with_its_attempt_kept()
+        {
+            _row.Status.Should().Be(JobStatuses.Pending);
+            _row.AttemptCount.Should().Be(_claimed.AttemptCount);
+            _row.FinishedAt.Should().BeNull();
+            _row.LeaseOwner.Should().BeNull();
+            _row.LeaseExpiresAt.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
     public class Given_a_renewal_waiting_behind_a_fence_commit : RuntimeTestBase
     {
         private long _commitRequested;

@@ -476,6 +476,56 @@ public class JobExecutorTests
         }
     }
 
+    [TestFixture]
+    public class Given_a_handler_that_returns_after_the_stop_signal
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private bool _handlerObservedCancellation;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness();
+
+            // Against the handler contract: the handler observes the cancellation and returns normally.
+            _harness.Script.Run = async (_, _, token) =>
+            {
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    _handlerObservedCancellation = true;
+                }
+            };
+            using CancellationTokenSource stopping = new();
+
+            Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(),
+                stopping.Token
+            );
+            await _harness.Script.Started.Task.WaitAsync(_wait);
+            await stopping.CancelAsync();
+            _result = await running.WaitAsync(_wait);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_returns_from_the_handler_after_observing_the_cancellation() =>
+            _handlerObservedCancellation.Should().BeTrue();
+
+        [Test]
+        public void It_releases_the_job_instead_of_completing_it()
+        {
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.ReleasedOnShutdown));
+            _harness.Leases.OutcomeWrites.Should().Equal("ReleaseToPending");
+        }
+    }
+
     [TestFixture(1, "FailTransient:30", "RetryScheduled")]
     [TestFixture(2, "FailTransient:60", "RetryScheduled")]
     [TestFixture(

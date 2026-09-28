@@ -18,5 +18,11 @@ public interface IJobHandler<in TPayload>
     /// <see cref="JobExecutionContext.Fence"/>; external operations stay outside it. Throw
     /// <see cref="JobPermanentException"/> for a failure that retrying cannot fix.
     /// </summary>
+    /// <remarks>
+    /// Returning normally reports the work as completed. A handler stopping before its work is done must propagate
+    /// the cancellation, or call <see cref="CancellationToken.ThrowIfCancellationRequested"/>, rather than return.
+    /// When the host has already signaled shutdown, the executor conservatively releases the job even after a
+    /// normal return, so the job may run again; handlers are idempotent.
+    /// </remarks>
     Task ExecuteAsync(JobExecutionContext context, TPayload payload, CancellationToken cancellationToken);
 }
