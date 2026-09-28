@@ -32,14 +32,15 @@ COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfi
 COPY contracts/EdFi.DmsConfigurationService.Secrets/ ./contracts/EdFi.DmsConfigurationService.Secrets/
 
 ARG VERSION=""
-ARG ASSEMBLY_VERSION=""
 
+# Version and InformationalVersion only. AssemblyVersion and FileVersion are deliberately not
+# passed, and nothing replaces them: a locally built image's Configuration Service assemblies carry
+# whatever Directory.Build.props declares, which nothing reads out of a development image, while
+# the release lane still stamps them through build-config.ps1 BuildAndPublish. The secrets contract
+# keeps its own declared version either way (see its csproj).
 RUN version_args=""; \
     if [ -n "$VERSION" ]; then \
         version_args="$version_args /p:Version=$VERSION /p:InformationalVersion=$VERSION"; \
-    fi; \
-    if [ -n "$ASSEMBLY_VERSION" ]; then \
-        version_args="$version_args /p:AssemblyVersion=$ASSEMBLY_VERSION /p:FileVersion=$ASSEMBLY_VERSION"; \
     fi; \
     dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
         -c Release --no-restore --self-contained false -o /app/Frontend \
