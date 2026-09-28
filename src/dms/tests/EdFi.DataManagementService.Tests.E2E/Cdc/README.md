@@ -89,7 +89,7 @@ with `Failure: None`. Wrapper setup/teardown, process exit/TRX, and export outco
 belong in the existing runner qualification summary and must independently pass;
 they are never fields in this fixture-owned report.
 
-## Student and descriptor CRUD checkpoints
+## CRUD and overlap checkpoints
 
 CDC-E2E-01 (Student) and CDC-E2E-02 (SchoolTypeDescriptor) share the same private CRUD
 sequence and hold the designated projector during POST and PUT. The create checkpoint
@@ -115,6 +115,17 @@ metadata and no-link stream ETag; complete body comparisons reject injected link
 The consumer checks the same UUID key and binding-derived partition through create,
 update, and the record-level null tombstone. Each CRUD phase starts from current
 Kafka ends on the existing binding; no database or capture state is reset between them.
+
+CDC-E2E-03 holds the actual Student N candidate at the production writer boundary,
+commits N+1 through HTTP, then releases only N's write. The gate records the real
+provider result and blocks the next processor call before its fast-path writer.
+While blocked, source/work must require N+1 and cache must remain absent or older.
+Only after those assertions does the scenario release processing, await cache/work
+convergence, and consume the independently expected N+1 envelope through provider
+fences and every Kafka partition boundary. N need not appear in Kafka. An API delete
+and fenced consumption clean up the scenario resource. Payload-free checkpoints
+appear in materialized-N, API-N+1, N-completed, next-blocked, converged order. The
+fixed runner accounts for this phase using the existing CDC-E2E-03 report entry.
 
 ## Development checkpoints
 

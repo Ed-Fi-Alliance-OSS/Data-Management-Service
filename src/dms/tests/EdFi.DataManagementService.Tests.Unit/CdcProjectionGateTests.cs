@@ -17,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EdFi.DataManagementService.Tests.Unit;
 
 [TestFixture]
-public class Given_CdcProjectionGate
+public partial class Given_CdcProjectionGate
 {
     private static readonly DateTimeOffset ObservedAt = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
     private static readonly DocumentCacheTargetKey Target = DocumentCacheTargetKey.Create("Tenant-A", 1);
@@ -44,14 +44,19 @@ public class Given_CdcProjectionGate
         _gate = new(Target, TimeSpan.FromSeconds(2));
         _writer = new();
         _materializer = new();
-        _context = RuntimeContext(_materializer, _writer, Target);
         _cancellation = new();
         ServiceCollection services = new();
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IDocumentCacheProjectionItemProcessor, DocumentCacheProjectionItemProcessor>();
+        services.AddScoped<IDocumentCacheWriter>(_ => _writer);
         _gate.ConfigureServices(services);
         _provider = services.BuildServiceProvider();
+        _context = RuntimeContext(
+            _materializer,
+            _provider.GetRequiredService<IDocumentCacheWriter>(),
+            Target
+        );
         _processor = _provider.GetRequiredService<IDocumentCacheProjectionItemProcessor>();
         _gate.Pause(101);
         _processing = _processor.ProcessItemAsync(Request(_context, 101), _cancellation.Token);
@@ -302,12 +307,18 @@ public class Given_CdcProjectionGate
         public Func<DocumentCacheWriterRequest, Task> BeforeWriteAsync { get; set; } =
             _ => Task.CompletedTask;
 
+        public bool SuppressCandidate { get; set; }
+
         public async Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
         {
             Calls.Add(request);
             await BeforeWriteAsync(request);
-            return request.Candidate is null
-                ? new DocumentCacheWriterResult.NeedsMaterialization(11)
+            if (request.Candidate is null)
+            {
+                return new DocumentCacheWriterResult.NeedsMaterialization(11);
+            }
+            return SuppressCandidate
+                ? new DocumentCacheWriterResult.StaleCandidateSuppressed(12, request.Candidate.ContentVersion)
                 : new DocumentCacheWriterResult.CandidateWrittenAcknowledged(request.Candidate, 11);
         }
     }

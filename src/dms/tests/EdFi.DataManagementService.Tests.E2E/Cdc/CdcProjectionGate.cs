@@ -36,9 +36,25 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
     private long _documentId;
     private bool _paused;
     private bool _disposed;
+    private bool _overlap;
+    private bool _overlapStarted;
+    private TaskCompletionSource _candidateReleased = NewSignal();
+    private TaskCompletionSource<CdcProjectionPauseObservation> _materialized = NewArrival();
+    private TaskCompletionSource<CdcProjectionWriteObservation> _written = NewWrite();
 
     public void ConfigureServices(IServiceCollection services)
     {
+        // Both production providers register this scoped alias through a factory. Preserve that
+        // factory so the provider retains ownership of its concrete writer/session-bound alias.
+        var writerFactory =
+            services.Last(d => d.ServiceType == typeof(IDocumentCacheWriter)).ImplementationFactory
+            ?? throw new InvalidOperationException("Expected the provider's scoped writer factory.");
+        services.Replace(
+            ServiceDescriptor.Scoped<IDocumentCacheWriter>(provider => new HeldCandidateWriter(
+                (IDocumentCacheWriter)writerFactory(provider),
+                this
+            ))
+        );
         services.AddSingleton<DocumentCacheProjectionItemProcessor>();
         services.Replace(
             ServiceDescriptor.Singleton<IDocumentCacheProjectionItemProcessor>(
@@ -57,7 +73,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_paused || _active != 0)
+            if (_paused || _overlap || _active != 0)
             {
                 throw new InvalidOperationException("Arm the gate only between completed processing phases.");
             }
@@ -68,6 +84,61 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         }
     }
 
+    /// <summary>Hold the first real candidate at the writer boundary, then block subsequent
+    /// processor calls before even their fast-path acknowledgement. Zero binds the first document.</summary>
+    public void PauseForOverlap(long documentId = 0)
+    {
+        lock (_sync)
+        {
+            Pause(documentId);
+            _paused = false;
+            _overlap = true;
+            _overlapStarted = false;
+            _candidateReleased = NewSignal();
+            _materialized = NewArrival();
+            _written = NewWrite();
+        }
+    }
+
+    public Task<CdcProjectionPauseObservation> WaitUntilMaterializedAsync(CancellationToken token = default)
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_overlap)
+            {
+                throw new InvalidOperationException("Arm overlap before awaiting materialization.");
+            }
+            return _materialized.Task.WaitAsync(_timeout, token);
+        }
+    }
+
+    public void ReleaseCandidate()
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_overlap || !_materialized.Task.IsCompletedSuccessfully)
+            {
+                throw new InvalidOperationException("Await the materialized candidate before releasing it.");
+            }
+            _candidateReleased.TrySetResult();
+        }
+    }
+
+    public Task<CdcProjectionWriteObservation> WaitUntilWrittenAsync(CancellationToken token = default)
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_overlap)
+            {
+                throw new InvalidOperationException("Arm overlap before awaiting completion.");
+            }
+            return _written.Task.WaitAsync(_timeout, token);
+        }
+    }
+
     public Task<CdcProjectionPauseObservation> WaitUntilPausedAsync(
         CancellationToken cancellationToken = default
     )
@@ -75,7 +146,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_paused)
+            if (!_paused && !_overlap)
             {
                 throw new InvalidOperationException("Arm the gate before awaiting an arrival.");
             }
@@ -89,6 +160,8 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             _paused = false;
+            _overlap = false;
+            _candidateReleased.TrySetResult();
             _released.TrySetResult();
         }
     }
@@ -117,11 +190,16 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
                 _drained = NewSignal();
             }
             bool selected =
-                _paused
-                && request.TargetContext.TargetKey == _targetKey
+                request.TargetContext.TargetKey == _targetKey
                 && (_documentId == 0 || request.WorkItem.DocumentId == _documentId);
-            release = selected ? _released.Task : Task.CompletedTask;
-            if (selected)
+            bool hold = selected && (_paused || (_overlap && _overlapStarted));
+            if (selected && _overlap && !_overlapStarted)
+            {
+                _documentId = request.WorkItem.DocumentId;
+                _overlapStarted = true;
+            }
+            release = hold ? _released.Task : Task.CompletedTask;
+            if (hold)
             {
                 _arrived.TrySetResult(
                     new(request.WorkItem.DocumentId, request.WorkItem.RequiredContentVersion)
@@ -159,6 +237,8 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             {
                 _disposed = true;
                 _arrived.TrySetCanceled();
+                _materialized.TrySetCanceled();
+                _written.TrySetCanceled();
                 _disposal = StopAsync(_active == 0 ? Task.CompletedTask : _drained.Task);
             }
             return new(_disposal);
@@ -170,6 +250,58 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         await _shutdown.CancelAsync().ConfigureAwait(false);
         await drained.WaitAsync(_timeout).ConfigureAwait(false);
         _shutdown.Dispose();
+    }
+
+    private async Task<DocumentCacheWriterResult> WriteAsync(
+        IDocumentCacheWriter inner,
+        DocumentCacheWriterRequest request
+    )
+    {
+        bool hold;
+        Task release;
+        lock (_sync)
+        {
+            hold =
+                _overlap
+                && _overlapStarted
+                && request.DocumentId == _documentId
+                && request.TargetContext.TargetKey.TenantKey == _targetKey.TenantKey
+                && request.TargetContext.TargetKey.DataStoreId.Value == _targetKey.DataStoreId
+                && request.Candidate is not null
+                && !_materialized.Task.IsCompleted;
+            release = _candidateReleased.Task;
+            if (hold)
+            {
+                _materialized.TrySetResult(new(request.DocumentId, request.Candidate!.ContentVersion));
+            }
+        }
+        if (hold)
+        {
+            // The candidate stays on the real processor's stack. No copy or re-materialization.
+            await release.WaitAsync(_timeout, request.CancellationToken).ConfigureAwait(false);
+            request.CancellationToken.ThrowIfCancellationRequested();
+        }
+        var result = await inner.WriteAsync(request).ConfigureAwait(false);
+        if (hold)
+        {
+            lock (_sync)
+            {
+                _written.TrySetResult(
+                    new(request.DocumentId, request.Candidate!.ContentVersion, result.Outcome)
+                );
+            }
+        }
+        return result;
+    }
+
+    private static TaskCompletionSource<CdcProjectionWriteObservation> NewWrite() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private sealed class HeldCandidateWriter(IDocumentCacheWriter inner, CdcProjectionGate gate)
+        : IDocumentCacheWriter
+    {
+        public Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request) =>
+            gate.WriteAsync(inner, request);
     }
 
     private static TaskCompletionSource NewSignal() =>
@@ -190,3 +322,9 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
 
 /// <summary>One bounded checkpoint, with no body, connection string or materialization result.</summary>
 internal sealed record CdcProjectionPauseObservation(long DocumentId, long RequiredContentVersion);
+
+internal sealed record CdcProjectionWriteObservation(
+    long DocumentId,
+    long ContentVersion,
+    DocumentCacheWriterOutcome Outcome
+);

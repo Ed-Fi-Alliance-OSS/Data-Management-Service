@@ -29,8 +29,6 @@ internal sealed partial class CdcApiScenarios : ICdcApiScenarios
     }
 
     // Each later story task replaces its method with the real scenario. Never report placeholders as passed.
-    public Task OverlapAsync(CancellationToken token) => throw new NotImplementedException();
-
     public Task DeleteBeforeProjectionAsync(CancellationToken token) => throw new NotImplementedException();
 
     public Task OnlineRebuildAsync(CancellationToken token) => throw new NotImplementedException();
