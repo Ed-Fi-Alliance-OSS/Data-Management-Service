@@ -61,12 +61,17 @@ internal sealed partial class CdcApiScenarios
                     await phase.RunWithUnavailableOffsetsAsync(
                         async faultToken =>
                         {
+                            int startCalls = phase.ConnectorStartCalls;
                             int reads = phase.UnavailableOffsetReads;
                             var unknown = (await phase.StatusAsync(faultToken))
                                 .Targets.Should()
                                 .ContainSingle()
                                 .Subject;
                             CdcUnavailableEvidenceAssertions.AssertUnknown(unknown);
+                            CdcUnavailableEvidenceAssertions.AssertNoConnectorStart(
+                                startCalls,
+                                phase.ConnectorStartCalls
+                            );
                             await AssertLivePrerequisitesAsync(faultToken);
                             phase.UnavailableOffsetReads.Should().BeGreaterThan(reads);
                             await EventAsync("unknown-not-ready-offset-unavailable");
@@ -81,6 +86,10 @@ internal sealed partial class CdcApiScenarios
                                 reads = phase.UnavailableOffsetReads;
                                 var rejected = await phase.ManageAsync(operation, faultToken);
                                 CdcUnavailableEvidenceAssertions.AssertRejected(rejected, operation);
+                                CdcUnavailableEvidenceAssertions.AssertNoConnectorStart(
+                                    startCalls,
+                                    phase.ConnectorStartCalls
+                                );
                                 await AssertLivePrerequisitesAsync(faultToken);
                                 phase.UnavailableOffsetReads.Should().BeGreaterThan(reads);
                                 phase.Runtime.Should().BeSameAs(runtime);
@@ -315,6 +324,11 @@ internal sealed partial class CdcApiScenarios
 
 internal static class CdcUnavailableEvidenceAssertions
 {
+    public static void AssertNoConnectorStart(int before, int after) =>
+        after
+            .Should()
+            .Be(before, "unavailable continuity evidence must prevent any connector restart/resume effect");
+
     public static void AssertUnknown(CdcControllerTargetStatus observation)
     {
         var status = observation.Status;

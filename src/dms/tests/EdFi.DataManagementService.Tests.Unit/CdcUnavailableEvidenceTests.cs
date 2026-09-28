@@ -409,6 +409,65 @@ public class Given_CdcUnavailableEvidenceAssertions(CdcProvider provider)
     public void It_accepts_rejection_from_offset_unavailability(CdcManagedLifecycleOperation operation) =>
         CdcUnavailableEvidenceAssertions.AssertRejected(Rejected(operation, _unknown), operation);
 
+    [TestCase(CdcManagedLifecycleOperation.Restart, false)]
+    [TestCase(CdcManagedLifecycleOperation.Resume, false)]
+    [TestCase(CdcManagedLifecycleOperation.Restart, true)]
+    [TestCase(CdcManagedLifecycleOperation.Resume, true)]
+    public async Task It_requires_no_forwarded_start_effect_during_unavailable_evidence(
+        CdcManagedLifecycleOperation operation,
+        bool forwardStart
+    )
+    {
+        var inner = A.Fake<ICdcConnectTransport>();
+        var transport = new CdcOffsetEvidenceTransport(inner);
+        // Earlier healthy operations must not invalidate the interval-specific assertion.
+        await transport.ResumeAsync(null!, CancellationToken.None);
+        int before = transport.StartCalls;
+        await transport.RunUnavailableAsync(
+            async token =>
+            {
+                CdcUnavailableEvidenceAssertions.AssertUnknown(_unknown);
+                CdcUnavailableEvidenceAssertions.AssertNoConnectorStart(before, transport.StartCalls);
+                if (forwardStart)
+                {
+                    if (operation == CdcManagedLifecycleOperation.Restart)
+                    {
+                        await transport.RestartAsync(null!, token);
+                        A.CallTo(() => inner.RestartAsync(null!, token)).MustHaveHappenedOnceExactly();
+                    }
+                    else
+                    {
+                        await transport.ResumeAsync(null!, token);
+                        A.CallTo(() => inner.ResumeAsync(null!, token)).MustHaveHappenedOnceExactly();
+                    }
+                }
+
+                // A correct rejection result alone cannot rule out an earlier transport effect.
+                CdcUnavailableEvidenceAssertions.AssertRejected(Rejected(operation, _unknown), operation);
+                Action check = () =>
+                    CdcUnavailableEvidenceAssertions.AssertNoConnectorStart(before, transport.StartCalls);
+                if (forwardStart)
+                {
+                    check.Should().Throw<AssertionException>();
+                }
+                else
+                {
+                    check.Should().NotThrow();
+                    A.CallTo(() => inner.RestartAsync(null!, token)).MustNotHaveHappened();
+                    A.CallTo(() => inner.ResumeAsync(null!, token)).MustNotHaveHappened();
+                }
+            },
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None
+        );
+
+        // Recovery is outside the measured interval and may resume the real connector.
+        int after = transport.StartCalls;
+        await transport.ResumeAsync(null!, CancellationToken.None);
+        transport.StartCalls.Should().Be(after + 1);
+        A.CallTo(() => inner.ResumeAsync(null!, CancellationToken.None)).MustHaveHappenedTwiceExactly();
+    }
+
     [TestCase("healthy")]
     [TestCase("latched")]
     [TestCase("wrong-evidence")]
