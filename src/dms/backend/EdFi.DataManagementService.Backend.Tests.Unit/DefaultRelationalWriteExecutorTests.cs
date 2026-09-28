@@ -7492,7 +7492,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static PostBranchAuthorizationInputs EmptyPostBranchInputs() =>
-        new(null, null, null, null, null, null, null, null);
+        new(null, null, null, null, null, null, null, null, null);
 
     [Test]
     public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()

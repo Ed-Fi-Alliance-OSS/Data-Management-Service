@@ -12581,7 +12581,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ToPostBranchInputs(executorInput)
             .Should()
             .BeEquivalentTo(
-                new PostBranchAuthorizationInputs(null, null, null, null, null, null, null, null)
+                new PostBranchAuthorizationInputs(null, null, null, null, null, null, null, null, null)
             );
     }
 
@@ -12679,7 +12679,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             input.PostRelationshipAuthorizationPlans,
             input.CustomViewAuthorization,
             input.StoredOwnershipAuthorization,
-            input.DeferredStoredOwnershipFailureResult
+            input.DeferredStoredOwnershipFailureResult,
+            input.DeferredCreateOwnershipFailureResult
         );
 
     /// <summary>

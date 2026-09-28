@@ -549,7 +549,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     private static PostBranchAuthorizationInputs EmptyBranchInputs() =>
-        new(null, null, null, null, null, null, null, null);
+        new(null, null, null, null, null, null, null, null, null);
 
     [Test]
     public async Task It_keeps_stored_authorization_and_hydration_vacuous_after_an_absent_capture()
@@ -1498,6 +1498,129 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
         commandText.Should().NotContain("CreatedByOwnershipTokenId");
         commandText.Should().NotContain("ownershipTokenIds");
+    }
+
+    /// <summary>
+    /// The create-side deferral reaches the resolved request of a create through <c>Resolve</c>, and the first
+    /// phase neither returns it nor emits anything for it: it is decided in C# and consumed after the proposed
+    /// filters, so the capture remains the only command.
+    /// </summary>
+    [Test]
+    public async Task It_carries_the_deferred_create_ownership_failure_to_a_post_create_without_returning_it()
+    {
+        var deferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        resolution.Outcome.ExecutionRequest.DeferredCreateOwnershipFailureResult.Should().BeSameAs(deferred);
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        commandText.Should().NotContain("CreatedByOwnershipTokenId");
+        commandText.Should().NotContain("ownershipTokenIds");
+    }
+
+    /// <summary>
+    /// Unlike the stored deferral, the create-side one does not route an upsert-as-update through the
+    /// ordered segments: it affects no statement the first phase emits, so the single composite command still
+    /// captures and hydrates, and nothing is returned in the ownership slot.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_single_composite_command_for_an_existing_post_target_with_a_deferred_create_ownership_failure()
+    {
+        var deferred = RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            RelationalWriteOperationKind.Post,
+            ["ownership token cap"]
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(
+            CreateCompositeReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.ExistingDocument>();
+        resolution.Outcome.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// With differing policies each branch plans its own create-side deferral, and the input arrives holding
+    /// the ExistingDocument branch's. The capture's overlay through <c>WithPostBranchInputs</c> must replace it
+    /// with the Create branch's for a create — a member the overlay dropped would leave the Update policy's
+    /// verdict deciding the create — and keep the ExistingDocument branch's for an upsert-as-update.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_overlays_the_deferred_create_ownership_failure_from_the_selected_post_branch(
+        bool targetExists
+    )
+    {
+        var createBranchDeferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var existingBranchDeferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    1,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    DeferredCreateOwnershipFailureResult = createBranchDeferred,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    DeferredCreateOwnershipFailureResult = existingBranchDeferred,
+                }
+            )
+        );
+        var session = new ScriptedWriteSession(
+            CreateCompositeReader(
+                targetExists ? new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value) : null
+            )
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.DeferredCreateOwnershipFailureResult.Should()
+            .BeSameAs(targetExists ? existingBranchDeferred : createBranchDeferred);
     }
 
     /// <summary>

@@ -865,6 +865,15 @@ public sealed record RelationalWriteExecutorRequest
     /// <see cref="StoredOwnershipAuthorization"/> null.
     /// </summary>
     public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
+
+    /// <summary>
+    /// The result a POST owes if it resolves to a create while <c>OwnershipBased</c> is planned for the Create
+    /// action — an ownership 403 or the token-cap 500 decided from the application context by
+    /// <see cref="CreateOwnershipAuthorization"/> — or <see langword="null"/>. The create-side counterpart of
+    /// <see cref="DeferredStoredOwnershipFailureResult"/>, which it never replaces: each is owed only on its own
+    /// target kind. Never set for a PUT, which cannot create.
+    /// </summary>
+    public RelationalWriteExecutorResult? DeferredCreateOwnershipFailureResult { get; init; }
 }
 
 /// <summary>
@@ -989,6 +998,9 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>
     public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
 
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.DeferredCreateOwnershipFailureResult"/>
+    public RelationalWriteExecutorResult? DeferredCreateOwnershipFailureResult { get; init; }
+
     /// <summary>
     /// For a POST whose Create and Update policies differ, the authorization each branch applies. When
     /// present, this input's own authorization members hold the ExistingDocument branch's inputs, which is
@@ -1014,6 +1026,7 @@ public sealed record RelationalWriteExecutorInput
             CustomViewAuthorization = inputs.CustomViewAuthorization,
             StoredOwnershipAuthorization = inputs.StoredOwnershipAuthorization,
             DeferredStoredOwnershipFailureResult = inputs.DeferredStoredOwnershipFailureResult,
+            DeferredCreateOwnershipFailureResult = inputs.DeferredCreateOwnershipFailureResult,
         };
 
     /// <summary>
@@ -1046,6 +1059,7 @@ public sealed record RelationalWriteExecutorInput
             CreatorOwnershipTokenId = CreatorOwnershipTokenId,
             StoredOwnershipAuthorization = StoredOwnershipAuthorization,
             DeferredStoredOwnershipFailureResult = DeferredStoredOwnershipFailureResult,
+            DeferredCreateOwnershipFailureResult = DeferredCreateOwnershipFailureResult,
         };
 }
 
@@ -1069,6 +1083,10 @@ internal sealed record PostRelationshipAuthorizationPlans(
 /// The failure a POST owes if it resolves to an existing target while its ownership check could not be
 /// parameterized; see <see cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>.
 /// </param>
+/// <param name="DeferredCreateOwnershipFailureResult">
+/// The failure a POST owes if it resolves to a create; see
+/// <see cref="RelationalWriteExecutorRequest.DeferredCreateOwnershipFailureResult"/>.
+/// </param>
 internal sealed record PostBranchAuthorizationInputs(
     RelationshipAuthorizationResult? StoredRelationshipAuthorization,
     RelationshipAuthorizationResult? ProposedRelationshipAuthorization,
@@ -1077,14 +1095,15 @@ internal sealed record PostBranchAuthorizationInputs(
     PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans,
     RelationalCustomViewAuthorization? CustomViewAuthorization,
     RelationalOwnershipAuthorization? StoredOwnershipAuthorization,
-    RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult
+    RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult,
+    RelationalWriteExecutorResult? DeferredCreateOwnershipFailureResult
 )
 {
     /// <summary>
     /// No authorization input at all: the value a write without a preflight carries.
     /// </summary>
     public static PostBranchAuthorizationInputs None { get; } =
-        new(null, null, null, null, null, null, null, null);
+        new(null, null, null, null, null, null, null, null, null);
 }
 
 /// <summary>

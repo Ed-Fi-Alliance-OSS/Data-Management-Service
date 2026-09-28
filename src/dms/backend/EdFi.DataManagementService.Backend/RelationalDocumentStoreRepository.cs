@@ -4114,7 +4114,8 @@ public sealed class RelationalDocumentStoreRepository(
                 PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null,
                 RelationalCustomViewAuthorization? customViewAuthorization = null,
                 RelationalOwnershipAuthorization? storedOwnershipAuthorization = null,
-                RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null
+                RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null,
+                RelationalWriteExecutorResult? deferredCreateOwnershipFailureResult = null
             )
             {
                 Authorization = Validated(
@@ -4126,7 +4127,8 @@ public sealed class RelationalDocumentStoreRepository(
                         postRelationshipAuthorizationPlans,
                         customViewAuthorization,
                         storedOwnershipAuthorization,
-                        deferredStoredOwnershipFailureResult
+                        deferredStoredOwnershipFailureResult,
+                        deferredCreateOwnershipFailureResult
                     )
                 );
             }
