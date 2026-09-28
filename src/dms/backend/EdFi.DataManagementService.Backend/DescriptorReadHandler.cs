@@ -33,7 +33,8 @@ internal sealed class DescriptorReadHandler(
     IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger,
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
-    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor
+    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor,
+    IOwnershipAuthorizationExecutor ownershipAuthorizationExecutor
 ) : IDescriptorReadHandler
 {
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -67,6 +68,9 @@ internal sealed class DescriptorReadHandler(
     private readonly ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor =
         customViewAuthorizationExecutor
         ?? throw new ArgumentNullException(nameof(customViewAuthorizationExecutor));
+    private readonly IOwnershipAuthorizationExecutor _ownershipAuthorizationExecutor =
+        ownershipAuthorizationExecutor
+        ?? throw new ArgumentNullException(nameof(ownershipAuthorizationExecutor));
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
         readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
 
@@ -341,9 +345,73 @@ internal sealed class DescriptorReadHandler(
             return new DescriptorGetByIdReadResult<TRow>.Complete(afterNamespaceDenial);
         }
 
+        // OwnershipBased is the last AND filter whatever position CMS gave it, so the stored-stamp check runs
+        // after every custom-view and namespace check, against the row the lookup above found.
+        if (
+            await ExecuteGetByIdOwnershipAsync(
+                    request,
+                    descriptorRow.DocumentId,
+                    authorizationResult.Proceed?.OwnershipAuthorization,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } ownershipDenial
+        )
+        {
+            return new DescriptorGetByIdReadResult<TRow>.Complete(ownershipDenial);
+        }
+
         LogDiscriminatorMismatchIfPresent(request, descriptorRow);
 
         return new DescriptorGetByIdReadResult<TRow>.AuthorizedRow(descriptorRow);
+    }
+
+    /// <summary>
+    /// Runs the stored-stamp ownership check for a descriptor GET-by-id — the same executor, compiler and
+    /// failure mapper the repository's GET-by-id uses — returning the response it owes or
+    /// <see langword="null"/> when the read is authorized.
+    /// </summary>
+    private async Task<GetResult?> ExecuteGetByIdOwnershipAsync(
+        DescriptorGetByIdRequest request,
+        long documentId,
+        RelationalOwnershipAuthorization? ownershipAuthorization,
+        CancellationToken cancellationToken
+    )
+    {
+        if (ownershipAuthorization is null)
+        {
+            return null;
+        }
+
+        var executionResult = await _ownershipAuthorizationExecutor
+            .ExecuteAsync(
+                new OwnershipAuthorizationExecutionRequest(
+                    request.MappingSet,
+                    documentId,
+                    ownershipAuthorization.Check,
+                    ownershipAuthorization.OwnershipTokenParameterization
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            OwnershipAuthorizationExecutionResult.Authorized => null,
+            OwnershipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                new GetResult.GetFailureOwnershipNotAuthorized(notAuthorized.Failure),
+            OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new GetResult.GetFailureSecurityConfiguration(
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
+            // The row was deleted between the lookup and this check, so it no longer exists: a 404, as the
+            // repository read path reports once it re-resolves the target.
+            OwnershipAuthorizationExecutionResult.StaleTarget => new GetResult.GetFailureNotExists(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ownership authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     private sealed record DescriptorGetByIdAuthorizationResult(
@@ -2775,7 +2843,37 @@ internal sealed class DescriptorReadHandler(
             );
         }
 
-        if (plan.NamespaceChecks.Count == 0 && customViewChecks.Count == 0)
+        RelationalOwnershipAuthorization? ownershipAuthorization = null;
+
+        if (plan.OwnershipCheck is { } ownershipCheck)
+        {
+            // Defensive: the planner reports an over-limit token list as its own terminal before handing back
+            // a plan, so this only fails if that terminal were dropped — and then closed, not with an
+            // over-limit parameter list at the SQL boundary. Every view runs ahead of ownership.
+            if (
+                !OwnershipTokenParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.OwnershipTokenIds,
+                    out var ownershipTokenParameterization,
+                    out var ownershipSecurityConfigurationMessage,
+                    out var ownershipSecurityConfigurationDiagnostics
+                )
+            )
+            {
+                return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [ownershipSecurityConfigurationMessage],
+                    ownershipSecurityConfigurationDiagnostics,
+                    customViewChecks
+                );
+            }
+
+            ownershipAuthorization = new RelationalOwnershipAuthorization(
+                ownershipCheck,
+                ownershipTokenParameterization
+            );
+        }
+
+        if (plan.NamespaceChecks.Count == 0 && customViewChecks.Count == 0 && ownershipAuthorization is null)
         {
             return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
         }
@@ -2785,13 +2883,25 @@ internal sealed class DescriptorReadHandler(
             namespacePrefixParameterization,
             customViewChecks,
             plan.CustomViewStrategies
-        );
+        )
+        {
+            OwnershipAuthorization = ownershipAuthorization,
+        };
     }
 
     private static PageDocumentIdAuthorizationSpec? BuildDescriptorQueryAuthorizationSpec(
         DescriptorReadAuthorizationPreflightOutcome.Proceed proceed
     )
     {
+        // A single-record ownership check has no page-query form. The planner never plans one for ReadMany, and
+        // if that ever changed this fails closed rather than composing a query that ignores it.
+        if (proceed.OwnershipAuthorization is not null)
+        {
+            throw new InvalidOperationException(
+                "A descriptor query was handed a single-record ownership check it cannot apply."
+            );
+        }
+
         if (proceed.NamespaceChecks.Count == 0 && proceed.CustomViewChecks.Count == 0)
         {
             return null;
@@ -2901,6 +3011,13 @@ internal sealed class DescriptorReadHandler(
         ) : DescriptorReadAuthorizationPreflightOutcome
         {
             public static Proceed NoAuthorization { get; } = new([], null, [], []);
+
+            /// <summary>
+            /// The stored-stamp ownership check GET-by-id runs after its custom-view and namespace checks, or
+            /// <see langword="null"/> when <c>OwnershipBased</c> is not planned. Only single-record reads plan
+            /// one; GET-many and partitions never carry it.
+            /// </summary>
+            public RelationalOwnershipAuthorization? OwnershipAuthorization { get; init; }
         }
     }
 

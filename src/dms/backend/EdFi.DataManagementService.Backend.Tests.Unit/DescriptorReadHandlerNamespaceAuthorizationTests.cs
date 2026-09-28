@@ -361,9 +361,10 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_validates_a_descriptor_get_by_id_custom_view_configured_before_an_unsupported_strategy()
     {
-        // OwnershipBased fails closed with a 501, but a custom view configured ahead of it executes first, so
-        // a missing or non-conforming view has to keep its own 500 rather than being hidden by the 501. The one
-        // scripted execution is the validation probe; a row fetch never happens on this path.
+        // A relationship strategy fails closed with a 501 on descriptors, but a custom view configured ahead of
+        // it executes first, so a missing or non-conforming view has to keep its own 500 rather than being
+        // hidden by the 501. The one scripted execution is the validation probe; a row fetch never happens on
+        // this path.
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
@@ -376,7 +377,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
                 [
                     CustomViewStrategy(),
                     new AuthorizationStrategyEvaluator(
-                        AuthorizationStrategyNameConstants.OwnershipBased,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                         [],
                         FilterOperator.And
                     ),
@@ -393,7 +394,6 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     }
 
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_get_by_id_with_an_unsupported_strategy_without_executing_sql(
         string authorizationStrategyName
     )
@@ -1014,14 +1014,15 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         return count;
     }
 
+    // ── Ownership (GET-by-id) ───────────────────────────────────────────
+
     /// <summary>
-    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor GET-by-id configured
-    /// with OwnershipBased fails closed with 501 even when NamespaceBased is configured alongside it and the
-    /// client has no namespace prefixes. Reporting the namespace 403 first would answer as though the
-    /// caller's prefixes refused a check that was never enforced.
+    /// Descriptor GET-by-id enforces OwnershipBased, so it takes the regular-resource precedence: with no
+    /// namespace prefixes the namespace 403 is reported before anything runs, and the ownership check is never
+    /// executed because Namespace-based precedes Ownership-based among the AND strategies.
     /// </summary>
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_get_by_id_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_get_by_id_with_ownership_when_the_client_has_no_prefixes()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
@@ -1029,24 +1030,461 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         var result = await sut.HandleGetByIdAsync(
             CreateGetByIdRequest(
                 namespacePrefixes: [],
-                authorizationStrategies:
-                [
-                    NamespaceStrategy(),
-                    new AuthorizationStrategyEvaluator(
-                        AuthorizationStrategyNameConstants.OwnershipBased,
-                        [],
-                        FilterOperator.And
-                    ),
-                ]
+                authorizationStrategies: [NamespaceStrategy(), OwnershipStrategy()],
+                ownershipTokenIds: [OwnedToken]
             )
         );
 
         result
             .Should()
-            .BeOfType<GetResult.GetFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+            .BeOfType<GetResult.GetFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A caller holding the descriptor's stamp reads it. The check is bound to the fetched row's DocumentId
+    /// and to the caller's own token list, at the configured position of OwnershipBased.
+    /// </summary>
+    [Test]
+    public async Task It_authorizes_a_descriptor_get_by_id_the_caller_owns()
+    {
+        List<OwnershipAuthorizationExecutionRequest> ownershipRequests = [];
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentId: 101L)),
+            ]),
+        ]);
+        var sut = CreateSut(
+            commandExecutor,
+            ownershipAuthorizationExecutor: OwnershipExecutorReturning(
+                new OwnershipAuthorizationExecutionResult.Authorized(),
+                ownershipRequests
+            )
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                ownershipTokenIds: [OtherToken, OwnedToken]
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        var ownershipRequest = ownershipRequests.Should().ContainSingle().Subject;
+        ownershipRequest.DocumentId.Should().Be(101L);
+        ownershipRequest.Check.RawConfiguredIndex.Should().Be(0);
+        ownershipRequest.OwnershipTokenParameterization.TokensInOrder.Should().Equal(OtherToken, OwnedToken);
+        commandExecutor.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// A stamp the caller does not hold (§2.13) and a stamp never assigned (§2.14) are the executor's own
+    /// failures, returned unchanged so the Core handler renders the shared ownership bodies.
+    /// </summary>
+    [TestCase(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)]
+    [TestCase(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized)]
+    public async Task It_returns_the_ownership_403_for_a_descriptor_get_by_id_the_caller_cannot_reach(
+        OwnershipAuthorizationFailureKind failureKind
+    )
+    {
+        var denial = new OwnershipAuthorizationFailure(
+            failureKind,
+            0,
+            AuthorizationStrategyNameConstants.OwnershipBased
+        );
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var sut = CreateSut(
+            commandExecutor,
+            ownershipAuthorizationExecutor: OwnershipExecutorReturning(
+                new OwnershipAuthorizationExecutionResult.NotAuthorized(denial)
+            )
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.Should()
+            .BeSameAs(denial);
+    }
+
+    /// <summary>
+    /// A missing descriptor is a 404 before any authorization runs: the strict ownership executor would
+    /// throw if the check were reached.
+    /// </summary>
+    [Test]
+    public async Task It_returns_not_exists_for_a_missing_descriptor_before_the_ownership_check()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_a_descriptor_deleted_before_the_ownership_check()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var sut = CreateSut(
+            commandExecutor,
+            ownershipAuthorizationExecutor: OwnershipExecutorReturning(
+                new OwnershipAuthorizationExecutionResult.StaleTarget()
+            )
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                ownershipTokenIds: [OwnedToken]
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+    }
+
+    [Test]
+    public async Task It_returns_security_configuration_500_when_the_descriptor_ownership_check_reports_an_unmappable_payload()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var sut = CreateSut(
+            commandExecutor,
+            ownershipAuthorizationExecutor: OwnershipExecutorReturning(
+                new OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure("bad payload")
+            )
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                ownershipTokenIds: [OwnedToken]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .Equal("bad payload");
+    }
+
+    /// <summary>
+    /// Ownership is the last AND filter whatever position CMS gave it. Configured first, it still yields to
+    /// a namespace denial: the strict ownership executor would throw had it run.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_namespace_denial_ahead_of_ownership_configured_before_it()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
+                ),
+            ]),
+        ]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [OwnershipStrategy(), NamespaceStrategy()],
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NamespaceMismatch);
+    }
+
+    /// <summary>
+    /// The same for a custom-view denial: ownership configured ahead of the view still never runs.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_custom_view_denial_ahead_of_ownership_configured_before_it()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var denial = CustomViewDenial();
+        var sut = CreateSut(
+            commandExecutor,
+            CustomViewExecutorReturning(new CustomViewAuthorizationExecutionResult.NotAuthorized(denial))
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy(), CustomViewStrategy()],
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.Should()
+            .BeSameAs(denial);
+    }
+
+    /// <summary>
+    /// When every earlier filter authorizes, the ownership check runs after the custom view — which CMS
+    /// configured after it — and after the passing namespace check, and its denial is the one reported.
+    /// </summary>
+    [Test]
+    public async Task It_runs_the_descriptor_ownership_check_after_the_custom_view_and_namespace_checks()
+    {
+        List<string> executionOrder = [];
+        var customViewExecutor = A.Fake<ICustomViewAuthorizationExecutor>();
+        A.CallTo(() =>
+                customViewExecutor.ExecuteAsync(
+                    A<CustomViewAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => executionOrder.Add("custom-view"))
+            .Returns(
+                Task.FromResult<CustomViewAuthorizationExecutionResult>(
+                    new CustomViewAuthorizationExecutionResult.Authorized()
+                )
+            );
+        var denial = new OwnershipAuthorizationFailure(
+            OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+            0,
+            AuthorizationStrategyNameConstants.OwnershipBased
+        );
+        var ownershipExecutor = A.Fake<IOwnershipAuthorizationExecutor>();
+        A.CallTo(() =>
+                ownershipExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => executionOrder.Add("ownership"))
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(denial)
+                )
+            );
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var sut = CreateSut(commandExecutor, customViewExecutor, ownershipExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [OwnershipStrategy(), NamespaceStrategy(), CustomViewStrategy()],
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.Should()
+            .BeSameAs(denial);
+        executionOrder.Should().Equal("custom-view", "ownership");
+    }
+
+    /// <summary>
+    /// OwnershipBased configured twice is one check at its earliest configured position.
+    /// </summary>
+    [Test]
+    public async Task It_runs_one_descriptor_ownership_check_at_the_earliest_of_duplicate_configurations()
+    {
+        List<OwnershipAuthorizationExecutionRequest> ownershipRequests = [];
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var sut = CreateSut(
+            commandExecutor,
+            ownershipAuthorizationExecutor: OwnershipExecutorReturning(
+                new OwnershipAuthorizationExecutionResult.Authorized(),
+                ownershipRequests
+            )
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    new AuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                        [],
+                        FilterOperator.And
+                    ),
+                    OwnershipStrategy(),
+                    OwnershipStrategy(),
+                ],
+                ownershipTokenIds: [OwnedToken]
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        ownershipRequests.Should().ContainSingle().Which.Check.RawConfiguredIndex.Should().Be(1);
+    }
+
+    /// <summary>
+    /// An over-limit token list is the security-configuration 500, before any row is fetched and without the
+    /// ownership check ever running.
+    /// </summary>
+    [Test]
+    public async Task It_fails_closed_for_a_descriptor_get_by_id_over_the_ownership_token_cap_without_executing_sql()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                ownershipTokenIds: OverCapTokens()
+            )
+        );
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(
+                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                    OwnershipTokenLimitExceededException.OwnershipTokenLimit
+                )
+            );
+        failure
+            .Diagnostics.Should()
+            .BeEquivalentTo(
+                AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                    AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                )
+            );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Every custom view runs ahead of ownership, so each is validated before the cap is reported — even
+    /// one CMS configured after OwnershipBased. The one scripted execution is that validation probe.
+    /// </summary>
+    [Test]
+    public async Task It_validates_a_descriptor_get_by_id_custom_view_configured_after_ownership_before_the_token_cap()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy(), CustomViewStrategy()],
+                ownershipTokenIds: OverCapTokens()
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
+        commandExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.CommandText.Should()
+            .Contain(CustomViewStrategyName);
+    }
+
+    /// <summary>
+    /// Internal read-modify-write fetches bypass per-record authorization, ownership included: the operation
+    /// that triggered the fetch is what gets authorized.
+    /// </summary>
+    [Test]
+    public async Task It_does_not_run_the_ownership_check_for_a_stored_document_descriptor_read()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
+            ]),
+        ]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [OwnershipStrategy()],
+                readMode: RelationalGetRequestReadMode.StoredDocument,
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+    }
+
+    private const short OwnedToken = 42;
+    private const short OtherToken = 7;
+
+    private static AuthorizationStrategyEvaluator OwnershipStrategy() =>
+        new(AuthorizationStrategyNameConstants.OwnershipBased, [], FilterOperator.And);
+
+    private static short[] OverCapTokens() =>
+        [
+            .. Enumerable
+                .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                .Select(static tokenId => (short)tokenId),
+        ];
+
+    private static IOwnershipAuthorizationExecutor OwnershipExecutorReturning(
+        OwnershipAuthorizationExecutionResult result,
+        List<OwnershipAuthorizationExecutionRequest>? capturedRequests = null
+    )
+    {
+        var executor = A.Fake<IOwnershipAuthorizationExecutor>();
+        A.CallTo(() =>
+                executor.ExecuteAsync(A<OwnershipAuthorizationExecutionRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+                capturedRequests?.Add(call.GetArgument<OwnershipAuthorizationExecutionRequest>(0)!)
+            )
+            .Returns(Task.FromResult(result));
+
+        return executor;
     }
 
     private static DescriptorGetByIdRequest CreateGetByIdRequest(
@@ -1060,7 +1498,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         IReadOnlyList<string> namespacePrefixes,
         AuthorizationStrategyEvaluator[] authorizationStrategies,
         SqlDialect dialect = SqlDialect.Pgsql,
-        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse
+        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse,
+        IReadOnlyList<short>? ownershipTokenIds = null
     ) =>
         new(
             CreateMappingSet(dialect),
@@ -1070,7 +1509,12 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             authorizationStrategies,
             readableProfileProjectionContext: null,
             new TraceId("descriptor-get-namespace"),
-            new RelationalAuthorizationContext([], namespacePrefixes)
+            new RelationalAuthorizationContext(
+                [],
+                namespacePrefixes,
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
+            )
         );
 
     private const string CustomViewStrategyName = "SchoolTypeDescriptorWithATag";
@@ -1130,7 +1574,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
 
     private static DescriptorReadHandler CreateSut(
         InMemoryRelationalCommandExecutor commandExecutor,
-        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null
+        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null,
+        IOwnershipAuthorizationExecutor? ownershipAuthorizationExecutor = null
     ) =>
         new(
             commandExecutor,
@@ -1138,7 +1583,10 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer(),
             NullLogger<DescriptorReadHandler>.Instance,
             PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
-            customViewAuthorizationExecutor ?? A.Fake<ICustomViewAuthorizationExecutor>()
+            customViewAuthorizationExecutor ?? A.Fake<ICustomViewAuthorizationExecutor>(),
+            // Strict, so a read that runs an ownership check nobody configured fails rather than passing.
+            ownershipAuthorizationExecutor
+                ?? A.Fake<IOwnershipAuthorizationExecutor>(options => options.Strict())
         );
 
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(

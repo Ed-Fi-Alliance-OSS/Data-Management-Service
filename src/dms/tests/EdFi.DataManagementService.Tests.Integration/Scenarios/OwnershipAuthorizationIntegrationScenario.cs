@@ -22,7 +22,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// <summary>
 /// Public-boundary coverage for OwnershipBased authorization: the exact ProblemDetails wire contracts from
 /// <c>auth.md</c> 2.13 and 2.14, stamping on create, the authorized round trip, the GET-many page filter, the
-/// provider-independent token cap, and the descriptor scope that stays withheld with a 501. The provider matrix
+/// provider-independent token cap, descriptor GET-by-id, and the descriptor operations that stay withheld with a
+/// 501. The provider matrix
 /// lives in the backend suites; this scenario owns only what those cannot observe - the served response body
 /// and the real application-context plumbing that carries the caller's ownership tokens.
 /// </summary>
@@ -63,6 +64,9 @@ internal static class OwnershipAuthorizationIntegrationScenario
 
     private const string NullableResourcesEndpointFormat = "/{0}/data/authz/authorizationNullableResources";
     private const string GradeLevelDescriptorsEndpointFormat = "/{0}/data/ed-fi/gradeLevelDescriptors";
+    private const string AcademicSubjectDescriptorsEndpointFormat =
+        "/{0}/data/ed-fi/academicSubjectDescriptors";
+    private const string SeedableDescriptorResourceName = "AcademicSubjectDescriptor";
 
     private const string MismatchType =
         "urn:ed-fi:api:security:authorization:ownership:access-denied:ownership-mismatch";
@@ -96,13 +100,22 @@ internal static class OwnershipAuthorizationIntegrationScenario
     /// <summary>
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
     /// is stamped or, for a caller that could not own the row, refused; every single-record read and write is
-    /// enforced; GET-many is filtered; and descriptor storage stays withheld. Seeding goes through the owner,
-    /// whose creates are authorized, and a NULL or foreign stamp is fabricated directly when a step needs one.
+    /// enforced; GET-many is filtered; descriptor GET-by-id is enforced and the other descriptor operations
+    /// stay withheld. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp
+    /// is fabricated directly when a step needs one.
     /// </summary>
+    /// <remarks>
+    /// One exception: <c>AcademicSubjectDescriptor</c> creates and updates under
+    /// <c>NoFurtherAuthorizationRequired</c>, so its rows can be seeded through the API while descriptor writes
+    /// under <c>OwnershipBased</c> still answer 501. Its reads and deletes keep <c>OwnershipBased</c>.
+    /// </remarks>
     public static IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new ConfigurableClaimSetProvider(
             fixture,
-            static (_, _) => [AuthorizationStrategyNameConstants.OwnershipBased]
+            static (resource, action) =>
+                resource.ResourceName == SeedableDescriptorResourceName && action is "Create" or "Update"
+                    ? [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+                    : [AuthorizationStrategyNameConstants.OwnershipBased]
         );
 
     /// <summary>
@@ -507,14 +520,66 @@ internal static class OwnershipAuthorizationIntegrationScenario
         int.Parse(response.Headers.GetValues("Total-Count").Single(), CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Descriptor ownership enforcement stays withheld on all four operations. The read and write paths are
-    /// given a document id nothing was created with, so a 501 there also proves the gate precedes target
-    /// lookup rather than depending on a row being present.
+    /// Descriptor GET-by-id is enforced with the same bodies as a regular resource: the owner is served, a
+    /// holder of other tokens gets 2.13, a descriptor never stamped gets 2.14, an unknown id is a 404 rather than
+    /// a 403, and the token cap is the security-configuration 500 with 1,999 still served. The other descriptor
+    /// operations stay withheld with a 501; they are given a document id nothing was created with, so a 501
+    /// there also proves the gate precedes target lookup rather than depending on a row being present.
     /// </summary>
-    public static async Task It_withholds_descriptor_operations_from_ownership_with_a_501(
+    public static async Task It_enforces_descriptor_get_by_id_ownership_and_withholds_the_other_descriptor_operations_with_a_501(
         ApiIntegrationHarness harness
     )
     {
+        Guid ownedId = await CreateSeedableDescriptorAsync(harness, OwnerTenant, "OwnedSubject");
+        (await ReadStoredOwnershipTokenAsync(harness, ownedId)).Should().Be(CreatorToken);
+
+        // A create under NoFurtherAuthorizationRequired by a client with no creator token stamps NULL, which is
+        // exactly how an unreachable descriptor arises.
+        Guid unstampedId = await CreateSeedableDescriptorAsync(
+            harness,
+            NoCreatorTokenTenant,
+            "UnstampedSubject"
+        );
+        (await ReadStoredOwnershipTokenAsync(harness, unstampedId)).Should().BeNull();
+
+        using HttpResponseMessage ownerResponse = await harness.HttpClient.GetAsync(
+            SeedableDescriptorPath(OwnerTenant, ownedId)
+        );
+        string ownerBody = await ownerResponse.Content.ReadAsStringAsync();
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK, ownerBody);
+        ownerBody.Should().Contain("OwnedSubject");
+
+        using HttpResponseMessage foreignResponse = await harness.HttpClient.GetAsync(
+            SeedableDescriptorPath(ForeignTenant, ownedId)
+        );
+        await AssertOwnershipDenialAsync(foreignResponse, MismatchType, []);
+
+        using HttpResponseMessage unstampedResponse = await harness.HttpClient.GetAsync(
+            SeedableDescriptorPath(OwnerTenant, unstampedId)
+        );
+        await AssertOwnershipDenialAsync(
+            unstampedResponse,
+            StoredUninitializedType,
+            _storedUninitializedErrors
+        );
+
+        using HttpResponseMessage unknownSeedableResponse = await harness.HttpClient.GetAsync(
+            SeedableDescriptorPath(ForeignTenant, Guid.NewGuid())
+        );
+        string unknownSeedableBody = await unknownSeedableResponse.Content.ReadAsStringAsync();
+        unknownSeedableResponse.StatusCode.Should().Be(HttpStatusCode.NotFound, unknownSeedableBody);
+
+        using HttpResponseMessage overCapResponse = await harness.HttpClient.GetAsync(
+            SeedableDescriptorPath(TokenCapTenant, ownedId)
+        );
+        await AssertSecurityConfigurationFailureAsync(overCapResponse);
+
+        using HttpResponseMessage underCapResponse = await harness.HttpClient.GetAsync(
+            SeedableDescriptorPath(UnderTokenCapTenant, ownedId)
+        );
+        string underCapBody = await underCapResponse.Content.ReadAsStringAsync();
+        underCapResponse.StatusCode.Should().Be(HttpStatusCode.OK, underCapBody);
+
         string descriptorsEndpoint = string.Format(GradeLevelDescriptorsEndpointFormat, OwnerTenant);
         string unknownId = Guid.NewGuid().ToString();
         string descriptorPath = $"{descriptorsEndpoint}/{unknownId}";
@@ -528,7 +593,8 @@ internal static class OwnershipAuthorizationIntegrationScenario
         await AssertNotImplementedAsync(postResponse);
 
         using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(descriptorPath);
-        await AssertNotImplementedAsync(getResponse);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound, getBody);
 
         using HttpResponseMessage putResponse = await SendJsonAsync(
             harness,
@@ -675,6 +741,33 @@ internal static class OwnershipAuthorizationIntegrationScenario
         }
 
         return body;
+    }
+
+    private static string SeedableDescriptorPath(string tenant, Guid documentId) =>
+        $"{string.Format(AcademicSubjectDescriptorsEndpointFormat, tenant)}/{documentId}";
+
+    private static async Task<Guid> CreateSeedableDescriptorAsync(
+        ApiIntegrationHarness harness,
+        string tenant,
+        string codeValue
+    )
+    {
+        using HttpResponseMessage response = await SendJsonAsync(
+            harness,
+            HttpMethod.Post,
+            string.Format(AcademicSubjectDescriptorsEndpointFormat, tenant),
+            new JsonObject
+            {
+                ["codeValue"] = codeValue,
+                ["namespace"] = "uri://ed-fi.org/AcademicSubjectDescriptor",
+                ["shortDescription"] = codeValue,
+            }
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+
+        return Guid.Parse(GetLocationPath(response).Split('/', StringSplitOptions.RemoveEmptyEntries)[^1]);
     }
 
     private static JsonObject CreateDescriptorBody(string? resourceId)

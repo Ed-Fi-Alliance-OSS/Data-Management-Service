@@ -178,10 +178,10 @@ public enum OwnershipTokenCapHandling
 /// <item><see cref="RelationalAuthorizationPlanOutcome.NoUsableRootColumn"/> — <c>NamespaceBased</c> is configured
 /// but no root-table column resolves (500).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — descriptor storage configured with
-/// <c>OwnershipBased</c> on a single-record operation (501 NotImplemented, fail closed). The one place an
-/// unsupported strategy outranks a namespace terminal: descriptor ownership enforcement is out of this story's
-/// scope, so reporting the namespace 403 first would answer as though the caller's prefixes refused a check
-/// that was never enforced. Scoped to the operations the ownership gate would otherwise enforce, so descriptor
+/// <c>OwnershipBased</c> on a single-record operation whose descriptor executor is not yet wired (501
+/// NotImplemented, fail closed). The one place an unsupported strategy outranks a namespace terminal:
+/// reporting the namespace 403 first would answer as though the caller's prefixes refused a check that was
+/// never enforced. Scoped to the operations the ownership gate would otherwise enforce, so descriptor
 /// <c>ReadMany</c> keeps its namespace terminal.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.NoPrefixesConfigured"/> — <c>NamespaceBased</c> is configured
 /// and the client has no namespace prefixes (403, preflight). Namespace-based is AND-combined and executes
@@ -210,8 +210,8 @@ public enum OwnershipTokenCapHandling
 /// Everywhere else it stays in the non-namespace bucket, so the classifier keeps reporting it
 /// known-but-not-enabled and the request keeps its fail-closed 501 — which is what stops an unenforced
 /// ownership strategy from being silently dropped. Each gate was flipped on in the same commit that wired its
-/// executor. Descriptor storage is withheld by both gates because descriptor ownership enforcement is out of
-/// scope. A custom view configured ahead of any of these terminals is still validated first, so an earlier
+/// executor. Descriptor storage is withheld by both gates except for the single-record operations whose
+/// descriptor executors are wired so far. A custom view configured ahead of any of these terminals is still validated first, so an earlier
 /// custom-view configuration failure keeps its own response.
 /// </para>
 /// </remarks>
@@ -341,9 +341,9 @@ public static class RelationalAuthorizationPlanner
             };
         }
 
-        // Descriptor ownership enforcement is out of this story's scope, so a descriptor configured with
-        // OwnershipBased must fail closed as known-but-not-enabled (501) on every single-record operation —
-        // GET-by-id, the write verbs, and DELETE. Ranked ahead of the namespace no-prefixes terminal on
+        // A descriptor configured with OwnershipBased must fail closed as known-but-not-enabled (501) on every
+        // single-record operation whose descriptor executor is not yet wired, which is the write verbs and
+        // DELETE now that GET-by-id is enforced. Ranked ahead of the namespace no-prefixes terminal on
         // purpose, and it is the one place where an unimplemented strategy outranks a namespace terminal:
         // that 403 is a runtime authorization answer for a strategy the caller does execute, so letting it
         // win reports "your namespace prefixes refused this" for a descriptor whose ownership strategy was
@@ -504,8 +504,8 @@ public static class RelationalAuthorizationPlanner
     /// </para>
     /// <para>
     /// <see cref="ResourceStorageKind.SharedDescriptorTable"/> is admitted only for the operations in
-    /// <c>_descriptorOwnershipEnforcedOperations</c>, which is empty until descriptor enforcement is wired
-    /// one operation at a time. This named arm is what keeps that boundary deliberate: before ownership had
+    /// <c>_descriptorOwnershipEnforcedOperations</c>, to which descriptor enforcement is added one operation
+    /// at a time. This named arm is what keeps that boundary deliberate: before ownership had
     /// its own bucket, descriptors were protected only incidentally, by
     /// <c>RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies</c> catching every
     /// non-namespace strategy. Splitting ownership out would have removed that protection silently.
@@ -631,10 +631,10 @@ public static class RelationalAuthorizationPlanner
     ];
 
     /// <summary>
-    /// The single-record operations whose descriptor callers execute the ownership check. Transitional:
-    /// empty until descriptor enforcement lands, when each operation is added in the same commit that wires
-    /// its descriptor consumers, and removed with <see cref="DescriptorOwnershipUnsupported"/> once all three
-    /// are in.
+    /// The single-record operations whose descriptor callers execute the ownership check. Transitional: each
+    /// operation is added in the same commit that wires its descriptor consumers, and the set is removed
+    /// with <see cref="DescriptorOwnershipUnsupported"/> once all three are in. GET-by-id is wired; the write
+    /// verbs and DELETE are not yet.
     /// </summary>
     /// <remarks>
     /// <see cref="EnforcesOwnershipChecks"/> admits descriptor storage for an operation only when it is a
@@ -644,7 +644,10 @@ public static class RelationalAuthorizationPlanner
     /// <see cref="EnforcesOwnershipPageFilter"/> on its own.
     /// </remarks>
     private static readonly HashSet<NamespaceAuthorizationOperation> _descriptorOwnershipEnforcedOperations =
-    [];
+    [
+        // Descriptor GET-by-id runs the stored-stamp check after its custom-view and namespace checks.
+        NamespaceAuthorizationOperation.ReadSingle,
+    ];
 
     /// <summary>
     /// Whether the ownership token-cap terminal may displace the relationship classifier's

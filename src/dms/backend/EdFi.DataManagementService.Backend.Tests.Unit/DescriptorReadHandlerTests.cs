@@ -133,6 +133,100 @@ public partial class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
+    /// <summary>
+    /// Read acceleration selects a cache candidate only through the handler's selection delegate, so the
+    /// ownership check runs there too: a descriptor the caller does not own completes with the 403 and never
+    /// becomes a candidate the cache could serve.
+    /// </summary>
+    [Test]
+    public async Task It_completes_descriptor_get_read_acceleration_with_the_ownership_denial_instead_of_a_candidate()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-131313131313"));
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, documentId: 205L)),
+            ]),
+        ]);
+        var denial = new OwnershipAuthorizationFailure(
+            OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+            0,
+            AuthorizationStrategyNameConstants.OwnershipBased
+        );
+        List<OwnershipAuthorizationExecutionRequest> ownershipRequests = [];
+        var ownershipExecutor = A.Fake<IOwnershipAuthorizationExecutor>();
+        A.CallTo(() =>
+                ownershipExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+                ownershipRequests.Add(call.GetArgument<OwnershipAuthorizationExecutionRequest>(0)!)
+            )
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(denial)
+                )
+            );
+        DocumentCacheReadAccelerationGetByIdSelectionResult capturedSelection = null!;
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
+                capturedSelection = await request
+                    .SelectAuthorizedCandidate(call.GetArgument<CancellationToken>(1))
+                    .ConfigureAwait(false);
+
+                return capturedSelection
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Complete>()
+                    .Subject.Result;
+            });
+
+        var sut = CreateHandler(
+            commandExecutor,
+            readAccelerationCoordinator,
+            ownershipAuthorizationExecutor: ownershipExecutor
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            new DescriptorGetByIdRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                _descriptorResource,
+                documentUuid,
+                RelationalGetRequestReadMode.ExternalResponse,
+                [CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased)],
+                readableProfileProjectionContext: null,
+                new TraceId("descriptor-get-ownership-candidate"),
+                new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds: [7]
+                )
+            )
+        );
+
+        result.Should().Be(new GetResult.GetFailureOwnershipNotAuthorized(denial));
+        capturedSelection
+            .Should()
+            .Be(
+                new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                    new GetResult.GetFailureOwnershipNotAuthorized(denial)
+                )
+            );
+        ownershipRequests.Should().ContainSingle().Which.DocumentId.Should().Be(205L);
+        commandExecutor.Commands.Should().ContainSingle();
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public async Task It_reexecutes_descriptor_get_relational_fallback_after_cache_lookup_miss(
@@ -1283,48 +1377,6 @@ public partial class Given_DescriptorReadHandler
         result
             .Should()
             .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
-            .And.NotContain("StudentWithCustomViewProviderTest");
-        commandExecutor
-            .Commands.Select(command => command.CommandText)
-            .Should()
-            .ContainSingle(sql =>
-                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
-                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
-            );
-    }
-
-    [Test]
-    public async Task It_excludes_the_resolved_custom_view_from_the_descriptor_get_by_id_OwnershipBased_message()
-    {
-        // The GET-by-id mirror of the sibling above. OwnershipBased is what fails the request closed, so it
-        // belongs in the message; the resolved custom view is supported on this path too and must not be
-        // named alongside it.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
-        ]);
-        var sut = CreateHandler(commandExecutor);
-
-        var result = await sut.HandleGetByIdAsync(
-            new DescriptorGetByIdRequest(
-                CreateQueryMappingSet(SqlDialect.Pgsql, CreateSupportedDescriptorQueryCapability()),
-                _descriptorResource,
-                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-161616161616")),
-                RelationalGetRequestReadMode.ExternalResponse,
-                [
-                    CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
-                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-                ],
-                readableProfileProjectionContext: null,
-                new TraceId("descriptor-get-custom-view-ownership"),
-                new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
-            )
-        );
-
-        result
-            .Should()
-            .BeOfType<GetResult.GetFailureNotImplemented>()
             .Which.FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
             .And.NotContain("StudentWithCustomViewProviderTest");
@@ -2752,20 +2804,23 @@ public partial class Given_DescriptorReadHandler
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
         IReadableProfileProjector? readableProfileProjector = null,
-        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null
+        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null,
+        IOwnershipAuthorizationExecutor? ownershipAuthorizationExecutor = null
     ) =>
         CreateHandler(
             commandExecutor,
             PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
             readableProfileProjector,
-            customViewAuthorizationExecutor
+            customViewAuthorizationExecutor,
+            ownershipAuthorizationExecutor
         );
 
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
         IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
         IReadableProfileProjector? readableProfileProjector = null,
-        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null
+        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null,
+        IOwnershipAuthorizationExecutor? ownershipAuthorizationExecutor = null
     )
     {
         return new DescriptorReadHandler(
@@ -2774,7 +2829,10 @@ public partial class Given_DescriptorReadHandler
             _servedEtagComposer,
             NullLogger<DescriptorReadHandler>.Instance,
             readAccelerationCoordinator,
-            customViewAuthorizationExecutor ?? A.Fake<ICustomViewAuthorizationExecutor>()
+            customViewAuthorizationExecutor ?? A.Fake<ICustomViewAuthorizationExecutor>(),
+            // Strict, so a read that runs an ownership check nobody configured fails rather than passing.
+            ownershipAuthorizationExecutor
+                ?? A.Fake<IOwnershipAuthorizationExecutor>(options => options.Strict())
         );
     }
 
