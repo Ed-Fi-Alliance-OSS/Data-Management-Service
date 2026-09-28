@@ -213,6 +213,24 @@ No absence-of-publication or strict native-recovery fencing guarantee is inferre
 Focused helper tests cover the fault and evidence assertions; T23/T24 still own full
 live qualification for both providers.
 
+CDC-E2E-08 is the final phase on that same binding. It publishes and consumes a
+Student, requires fresh healthy continuity, then stops the real connector, verifies
+zero tasks, deletes committed offsets exactly once and reads authoritative `Missing`
+evidence. Production status must detect `ConnectOffsetMissing`, durably latch
+`SourceHistoryContinuityLost`, report lost/NotReady and verify connector containment.
+Fresh controllers and independent state-store reads must retain the exact incident.
+The bounded offset decorator offers previously captured healthy streaming evidence
+while managed restart/resume still reject before any connector start effect; reads
+may short-circuit on retained loss. Real task status and containment are never faked.
+The decorator is removed in `finally`, and real offsets must still be missing.
+
+A final HTTP PUT/GET succeeds after containment while the designated executor is
+held: canonical/work versions advance and the complete older cache remains. The
+executor is then cancelled/disposed with work retained. No offset restoration,
+capture recreation, incident clearing, connector resume or post-loss Kafka fence is
+attempted. The terminal binding remains for the runner's governed teardown. Focused
+helper coverage is development evidence; T23/T24 still require full live runs.
+
 ## Development checkpoints
 
 Use the `ApiE2E` runner for development checkpoints and final provider qualifications,

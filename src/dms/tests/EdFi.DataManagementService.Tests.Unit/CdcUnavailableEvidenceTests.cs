@@ -80,6 +80,129 @@ public class Given_CdcOffsetEvidenceTransport
     }
 
     [Test]
+    public async Task It_offers_captured_healthy_offsets_without_changing_real_missing_evidence()
+    {
+        var captured = ((CdcTransportResult<CdcConnectOffsetEvidence>.Observed)_evidence).Value;
+        var missing = new CdcTransportResult<CdcConnectOffsetEvidence>.Observed(
+            new(CdcConnectOffsetState.Missing, "", null!, null!)
+        );
+        A.CallTo(() => _inner.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(missing);
+        await _transport.RunWithHealthyEvidenceAsync(
+            captured,
+            async token =>
+            {
+                var replay = (CdcTransportResult<CdcConnectOffsetEvidence>.Observed)
+                    await _transport.ReadOffsetEvidenceAsync(null!, token);
+                replay.Value.Should().BeSameAs(captured);
+                _transport.ReplayedReads.Should().Be(1);
+                _transport.UnavailableReads.Should().Be(0);
+                await _transport.ReadStatusAsync(null!, token);
+                await _transport.StopAsync(null!, token);
+                A.CallTo(() => _inner.ReadStatusAsync(null!, token)).MustHaveHappenedOnceExactly();
+                A.CallTo(() => _inner.StopAsync(null!, token)).MustHaveHappenedOnceExactly();
+                A.CallTo(() =>
+                        _inner.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._)
+                    )
+                    .MustNotHaveHappened();
+            },
+            Duration,
+            CancellationToken.None
+        );
+        (await _transport.ReadOffsetEvidenceAsync(null!, CancellationToken.None)).Should().BeSameAs(missing);
+        A.CallTo(() => _inner.DeleteOffsetsAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        _transport.StartCalls.Should().Be(0);
+        await _transport.ResumeAsync(null!, CancellationToken.None);
+        await _transport.RestartAsync(null!, CancellationToken.None);
+        _transport.StartCalls.Should().Be(2);
+    }
+
+    [TestCase("failure")]
+    [TestCase("deadline")]
+    [TestCase("cancellation")]
+    public async Task It_restores_healthy_replay_on_every_exit(string exit)
+    {
+        using var caller = new CancellationTokenSource();
+        var captured = ((CdcTransportResult<CdcConnectOffsetEvidence>.Observed)_evidence).Value;
+        Func<Task> run = () =>
+            _transport.RunWithHealthyEvidenceAsync(
+                captured,
+                async token =>
+                {
+                    if (exit == "failure")
+                    {
+                        throw new IOException();
+                    }
+                    if (exit == "cancellation")
+                    {
+                        await caller.CancelAsync();
+                    }
+                    try
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Even an action ignoring cancellation must no longer see replayed evidence.
+                        (await _transport.ReadOffsetEvidenceAsync(null!, CancellationToken.None))
+                            .Should()
+                            .BeSameAs(_evidence);
+                    }
+                },
+                exit == "deadline" ? TimeSpan.FromMilliseconds(30) : Duration,
+                caller.Token
+            );
+        if (exit == "failure")
+        {
+            await run.Should().ThrowAsync<IOException>();
+        }
+        else
+        {
+            await run.Should().ThrowAsync<OperationCanceledException>();
+        }
+        (await _transport.ReadOffsetEvidenceAsync(null!, CancellationToken.None))
+            .Should()
+            .BeSameAs(_evidence);
+    }
+
+    [Test]
+    public async Task It_rejects_replay_during_the_unavailable_fault()
+    {
+        var captured = ((CdcTransportResult<CdcConnectOffsetEvidence>.Observed)_evidence).Value;
+        await _transport.RunUnavailableAsync(
+            async token =>
+            {
+                Func<Task> nested = () =>
+                    _transport.RunWithHealthyEvidenceAsync(
+                        captured,
+                        _ => Task.CompletedTask,
+                        Duration,
+                        token
+                    );
+                await nested.Should().ThrowAsync<InvalidOperationException>();
+                Func<Task> read = () => _transport.ReadOffsetEvidenceAsync(null!, token);
+                await read.Should().ThrowAsync<IOException>();
+            },
+            Duration,
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public void It_rejects_unhealthy_replay_evidence()
+    {
+        Action run = () =>
+            _transport.RunWithHealthyEvidenceAsync(
+                new(CdcConnectOffsetState.Missing, "", null!, null!),
+                _ => Task.CompletedTask,
+                Duration,
+                CancellationToken.None
+            );
+        run.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
     public async Task It_restores_real_delegation_after_callback_failure()
     {
         Func<Task> run = () =>

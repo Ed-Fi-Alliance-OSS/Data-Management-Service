@@ -35,6 +35,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
     private Func<CancellationToken, Task<CdcRebuildObservation>> _rebuildOnline = null!;
     private CdcRestartObservations _restartObservations = null!;
     private CdcOffsetEvidenceTransport _offsetEvidence = null!;
+    private Action _reopenControllers = null!;
     private string _statePath = "";
     public CdcDeploymentRequest Request { get; private set; } = null!;
     public string EffectiveSchemaHash { get; private set; } = "";
@@ -137,26 +138,30 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             var positions = services
                 .GetServices<ICdcProviderSourcePositionAdapter>()
                 .Single(p => p.Provider == request.Binding.Provider);
-            context._status = new(
-                handoff.StatePath,
-                setup,
-                templates,
-                kafka,
-                context.Connect,
-                worker,
-                metrics,
-                [positions]
-            );
-            context._lifecycle = new(
-                handoff.StatePath,
-                setup,
-                templates,
-                kafka,
-                context.Connect,
-                worker,
-                metrics,
-                [positions]
-            );
+            context._reopenControllers = () =>
+            {
+                context._status = new(
+                    handoff.StatePath,
+                    setup,
+                    templates,
+                    kafka,
+                    context.Connect,
+                    worker,
+                    metrics,
+                    [positions]
+                );
+                context._lifecycle = new(
+                    handoff.StatePath,
+                    setup,
+                    templates,
+                    kafka,
+                    context.Connect,
+                    worker,
+                    metrics,
+                    [positions]
+                );
+            };
+            context._reopenControllers();
             context._owner = new(cancellation =>
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -324,6 +329,23 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
         }
         public CdcProjectionGate Gate => Current._owner.Gate;
         public ICdcProjectionRuntime Runtime => Current._owner.Runtime;
+
+        public void ReopenControllers() => Current._reopenControllers();
+
+        public int ReplayedOffsetReads => Current._offsetEvidence.ReplayedReads;
+        public int ConnectorStartCalls => Current._offsetEvidence.StartCalls;
+
+        public Task RunWithHealthyOffsetsAsync(
+            CdcConnectOffsetEvidence evidence,
+            Func<CancellationToken, Task> action,
+            CancellationToken token
+        ) =>
+            Current._offsetEvidence.RunWithHealthyEvidenceAsync(
+                evidence,
+                action,
+                TimeSpan.FromMinutes(3),
+                token
+            );
 
         public int UnavailableOffsetReads => Current._offsetEvidence.UnavailableReads;
 

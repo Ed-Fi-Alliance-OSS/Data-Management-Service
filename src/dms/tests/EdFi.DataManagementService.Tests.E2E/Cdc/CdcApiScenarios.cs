@@ -28,8 +28,5 @@ internal sealed partial class CdcApiScenarios : ICdcApiScenarios
         return CdcScenarioIdentity.FromBinding(_context.Request.Binding);
     }
 
-    // Each later story task replaces its method with the real scenario. Never report placeholders as passed.
-    public Task TerminalLossAsync(CancellationToken token) => throw new NotImplementedException();
-
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 }
