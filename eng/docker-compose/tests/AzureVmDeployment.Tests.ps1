@@ -337,3 +337,89 @@ exit 17
         Test-Path -LiteralPath $script:dockerLog | Should -BeFalse
     }
 }
+
+Describe "Azure VM populated template seed" {
+    BeforeAll {
+        $script:grandbendSource = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed/grandbend.sh"))
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-seed-$([Guid]::NewGuid().ToString('N'))"
+        $script:composeRoot = Join-Path $script:work "compose"
+        $script:binRoot = Join-Path $script:work "bin"
+        New-Item -ItemType Directory -Path (Join-Path $script:composeRoot "seed") -Force | Out-Null
+        New-Item -ItemType Directory -Path $script:binRoot -Force | Out-Null
+        Copy-Item -LiteralPath $script:grandbendSource -Destination (Join-Path $script:composeRoot "seed/grandbend.sh")
+        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "DATABASE_TEMPLATE_PACKAGE_VERSION=1.0.0" -NoNewline
+
+        $script:dockerLog = Join-Path $script:work "docker.log"
+        $script:dockerStdinLog = Join-Path $script:work "docker-stdin.log"
+        $dockerStub = Join-Path $script:binRoot "docker"
+        Set-Content -LiteralPath $dockerStub -Value @'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+if [ "${1:-}" = "exec" ] && [ "${2:-}" = "-i" ]; then
+  cat >> "$DOCKER_STDIN_LOG"
+  [ "${ROLE_SETUP_FAILS:-0}" = "1" ] && exit 1
+fi
+exit 0
+'@ -NoNewline
+        & chmod +x $dockerStub
+
+        $curlStub = Join-Path $script:binRoot "curl"
+        Set-Content -LiteralPath $curlStub -Value @'
+#!/usr/bin/env bash
+out=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-o" ]; then out="$2"; shift; fi
+  shift
+done
+[ -n "$out" ] || exit 1
+python3 - "$out" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("template.sql", 'CREATE SCHEMA edfi;\nCREATE TABLE dms."EffectiveSchema" ();\n')
+PY
+'@ -NoNewline
+        & chmod +x $curlStub
+
+        $script:originalPath = $env:PATH
+        $env:PATH = "$script:binRoot$([IO.Path]::PathSeparator)$env:PATH"
+        $env:DOCKER_LOG = $script:dockerLog
+        $env:DOCKER_STDIN_LOG = $script:dockerStdinLog
+    }
+
+    AfterEach {
+        $env:PATH = $script:originalPath
+        foreach ($name in @("DOCKER_LOG", "DOCKER_STDIN_LOG", "ROLE_SETUP_FAILS")) {
+            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "creates the locked-down enqueue owner role before restoring the template" {
+        $output = & bash (Join-Path $script:composeRoot "seed/grandbend.sh") edfi_st edfi_mt 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $roleSetup = Select-String -LiteralPath $script:dockerLog -Pattern "exec -i dms-sec-postgres psql .*-d postgres"
+        $restores = @(Select-String -LiteralPath $script:dockerLog -Pattern "-f /tmp/grandbend.sql")
+        $roleSetup | Should -Not -BeNullOrEmpty
+        $restores.Count | Should -Be 2
+        $roleSetup.LineNumber | Should -BeLessThan $restores[0].LineNumber
+        $roleSql = Get-Content -LiteralPath $script:dockerStdinLog -Raw
+        $roleSql | Should -Match 'CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;'
+        $roleSql | Should -Match "exists but is not locked down"
+    }
+
+    It "does not restore when the enqueue owner role cannot be ensured" {
+        $env:ROLE_SETUP_FAILS = "1"
+
+        $output = & bash (Join-Path $script:composeRoot "seed/grandbend.sh") edfi_st 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $output | Out-String | Should -Match "edfi_dms_enqueue_owner"
+        Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "-f /tmp/grandbend.sql"
+    }
+}
