@@ -43,18 +43,30 @@ internal static class MessageContractRecordAssertions
                     new DescribeConfigsOptions { RequestTimeout = TimeSpan.FromSeconds(10) }
                 )
                 .WaitAsync(token);
-            config.Single().Entries["cleanup.policy"].Value.Should().Be("compact");
-            long.Parse(config.Single().Entries["delete.retention.ms"].Value)
-                .Should()
-                .BeGreaterThanOrEqualTo(604800000);
             var bounds = await new MessageContractKafkaObserver(bootstrapServers).CaptureKafkaBoundariesAsync(
                 topic,
                 token
             );
-            bounds.Should().HaveCount(topic == binding.TopicName ? binding.PartitionCount : 1);
+            AssertTopicPolicy(binding, topic, config.Single().Entries, bounds.Count);
         }
         token.ThrowIfCancellationRequested();
         AssertNoRawTopics(admin.GetMetadata(TimeSpan.FromSeconds(10)), binding.ConnectorName);
+    }
+
+    internal static void AssertTopicPolicy(
+        CdcBinding binding,
+        string topic,
+        IReadOnlyDictionary<string, ConfigEntryResult> config,
+        int partitionCount
+    )
+    {
+        config["cleanup.policy"].Value.Should().Be("compact");
+        // Only the public state-bootstrap topic carries the seven-day tombstone contract.
+        if (topic == binding.TopicName)
+        {
+            long.Parse(config["delete.retention.ms"].Value).Should().BeGreaterThanOrEqualTo(604800000);
+        }
+        partitionCount.Should().Be(topic == binding.TopicName ? binding.PartitionCount : 1);
     }
 
     // Inspect the complete broker inventory after a provider fence; public/progress scans alone

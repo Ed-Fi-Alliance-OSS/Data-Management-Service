@@ -6,6 +6,7 @@
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
@@ -54,6 +55,92 @@ public sealed class Given_MessageContractKafkaBoundariesSharedAssertions
             0
         );
     }
+
+    [TestCase(CdcProvider.Postgresql, "604800000")]
+    [TestCase(CdcProvider.Postgresql, "1209600000")]
+    [TestCase(CdcProvider.SqlServer, "604800000")]
+    [TestCase(CdcProvider.SqlServer, "1209600000")]
+    public void It_accepts_public_retention_and_shorter_progress_broker_default(
+        CdcProvider provider,
+        string publicRetention
+    )
+    {
+        var request = CdcConnectorTemplateTestData.BuildRequest(provider);
+        var binding = request.Binding with { PartitionCount = 3 };
+        MessageContractRecordAssertions.AssertTopicPolicy(
+            binding,
+            request.PublicTopicName,
+            TopicConfig("compact", publicRetention),
+            3
+        );
+        var progressConfig = TopicConfig("compact", "86400000");
+        progressConfig["delete.retention.ms"].Source = ConfigSource.DefaultConfig;
+        MessageContractRecordAssertions.AssertTopicPolicy(
+            binding,
+            request.ProgressTopicName,
+            progressConfig,
+            1
+        );
+    }
+
+    [TestCase("604799999")]
+    [TestCase("86400000")]
+    public void It_rejects_public_retention_below_seven_days(string retention)
+    {
+        Action act = () =>
+            MessageContractRecordAssertions.AssertTopicPolicy(
+                _request.Binding,
+                _request.PublicTopicName,
+                TopicConfig("compact", retention),
+                _request.Binding.PartitionCount
+            );
+        act.Should().Throw<AssertionException>();
+    }
+
+    [TestCase(false, "delete")]
+    [TestCase(false, "compact,delete")]
+    [TestCase(true, "delete")]
+    [TestCase(true, "compact,delete")]
+    public void It_rejects_non_compact_only_cleanup_for_both_topics(bool progress, string cleanupPolicy)
+    {
+        Action act = () =>
+            MessageContractRecordAssertions.AssertTopicPolicy(
+                _request.Binding,
+                progress ? _request.ProgressTopicName : _request.PublicTopicName,
+                TopicConfig(cleanupPolicy, "604800000"),
+                1
+            );
+        act.Should().Throw<AssertionException>();
+    }
+
+    [TestCase(false, 1)]
+    [TestCase(false, 4)]
+    [TestCase(true, 0)]
+    [TestCase(true, 3)]
+    public void It_rejects_wrong_partition_counts_for_both_topics(bool progress, int partitionCount)
+    {
+        Action act = () =>
+            MessageContractRecordAssertions.AssertTopicPolicy(
+                _request.Binding with
+                {
+                    PartitionCount = 3,
+                },
+                progress ? _request.ProgressTopicName : _request.PublicTopicName,
+                TopicConfig("compact", "604800000"),
+                partitionCount
+            );
+        act.Should().Throw<AssertionException>();
+    }
+
+    private static Dictionary<string, ConfigEntryResult> TopicConfig(
+        string cleanupPolicy,
+        string retention
+    ) =>
+        new()
+        {
+            ["cleanup.policy"] = new() { Name = "cleanup.policy", Value = cleanupPolicy },
+            ["delete.retention.ms"] = new() { Name = "delete.retention.ms", Value = retention },
+        };
 
     [TestCase("source")]
     [TestCase("heartbeat")]
