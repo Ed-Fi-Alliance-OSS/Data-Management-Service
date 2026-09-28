@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Tests.E2E.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DataManagementService.Tests.Unit;
 
@@ -50,6 +51,7 @@ public class Given_CdcAttachmentReadiness(CdcProvider provider)
             satisfied,
             []
         );
+        status = WithLocalKafkaPolicy(status);
         _target = new(
             _projection.ObservedAt,
             status,
@@ -87,6 +89,55 @@ public class Given_CdcAttachmentReadiness(CdcProvider provider)
         result.Aggregate.Readiness.Should().Be(CdcReadiness.NotReady);
         _projection.OperationalHealthReason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
         A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [Test]
+    public void It_accepts_production_local_authorization_notices_without_starting_projection()
+    {
+        _target
+            .Status.Diagnostics.Select(d => (d.Code, d.Component))
+            .Should()
+            .Equal(
+                ("authorizationDisabledLocal", CdcDiagnosticComponent.KafkaPolicy),
+                ("authorizationDisabledLocal", CdcDiagnosticComponent.ConnectOffsetStore)
+            );
+        CdcAttachmentReadiness.RequireUnstarted(Result(_target), _projection);
+        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [TestCase("warning")]
+    [TestCase("error")]
+    [TestCase("category")]
+    [TestCase("component")]
+    [TestCase("code")]
+    [TestCase("retryable")]
+    [TestCase("additional-info")]
+    public void It_rejects_diagnostics_outside_the_exact_local_authorization_notice(string change)
+    {
+        var notice = _target.Status.Diagnostics[0];
+        var unexpected = change switch
+        {
+            "warning" => notice with { Severity = CdcDiagnosticSeverity.Warning },
+            "error" => notice with { Severity = CdcDiagnosticSeverity.Error },
+            "category" => notice with { Category = CdcDiagnosticCategory.KafkaPolicyInvalid },
+            "component" => notice with { Component = CdcDiagnosticComponent.Projection },
+            "code" or "additional-info" => notice with { Code = "unexpectedNotice" },
+            "retryable" => notice with { Retryable = true },
+            _ => throw new AssertionException("Unknown test case"),
+        };
+        AssertRejected(
+            _target with
+            {
+                Status = _target.Status with
+                {
+                    Diagnostics =
+                        change == "additional-info"
+                            ? [.. _target.Status.Diagnostics, unexpected]
+                            : [unexpected, _target.Status.Diagnostics[1]],
+                },
+            },
+            _projection
+        );
     }
 
     [TestCase("Binding")]
@@ -272,6 +323,121 @@ public class Given_CdcAttachmentReadiness(CdcProvider provider)
 
     private static CdcControllerStatusResult Result(CdcControllerTargetStatus target) =>
         new(CdcAggregateStatusEvaluator.Evaluate(new(target.ObservedAt, [target.Status])), [target]);
+
+    private CdcTargetStatus WithLocalKafkaPolicy(CdcTargetStatus status)
+    {
+        // Produce the notices through the same policy mapping and core evaluation as controller
+        // status. The other admitted prerequisites remain independently supplied by this fixture.
+        var identity = _projection.TargetIdentity;
+        var names = CdcArtifactNameGenerator
+            .Render(new(identity.DeploymentKey, "edfi", identity.InstanceKey, identity.Generation, provider))
+            .Inventory!;
+        var binding = new CdcBinding(
+            1,
+            identity.DeploymentKey,
+            identity.TenantKey,
+            identity.DataStoreId,
+            identity.InstanceKey,
+            identity.Generation,
+            provider,
+            _projection.PhysicalSourceFingerprint!,
+            names.ConnectorName,
+            names.TopicName,
+            1,
+            CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
+            1
+        );
+        var configuration = new ConfigurationBuilder().Build();
+        using var configurationLifetime = (IDisposable)configuration;
+        var request = CdcDeploymentRequest.CreateDeferred(
+            binding,
+            configuration,
+            () => throw new AssertionException("Policy observation must not prepare provider schema."),
+            new("http://connect:8083/"),
+            new("http://connect:9404/metrics"),
+            new("broker:9092", 1_048_576),
+            new(
+                new("worker"),
+                new("connect-offsets"),
+                CdcQualifiedWorkerImage.Digest,
+                268_435_456,
+                "All",
+                CdcKafkaDurabilityProfile.LocalSingleBroker,
+                CdcKafkaAuthorizationProfile.AuthorizationDisabledLocal,
+                new("worker"),
+                new("connector"),
+                new("administrator"),
+                []
+            ),
+            new(
+                provider == CdcProvider.Postgresql
+                    ? EdFi.DataManagementService.Backend.Ddl.CdcProvider.Postgresql
+                    : EdFi.DataManagementService.Backend.Ddl.CdcProvider.SqlServer,
+                new Dictionary<string, string>()
+            ),
+            new(new Dictionary<string, string>()),
+            new(TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1))
+        );
+        var plan = CdcDeploymentKafkaPolicy.Build(request);
+        var topics = plan
+            .BindingTopics.Append(plan.OffsetStore)
+            .ToDictionary(
+                t => t.Name,
+                t =>
+                    (CdcTransportResult<CdcKafkaTopicEvidence>)
+                        new CdcTransportResult<CdcKafkaTopicEvidence>.Observed(
+                            new(
+                                t.Name,
+                                new Dictionary<int, IReadOnlyList<int>> { [0] = new[] { 0 } },
+                                t.Configuration.ToDictionary(
+                                    c => c.Key,
+                                    c => new CdcKafkaConfigurationValue(c.Value, true)
+                                )
+                            )
+                        )
+            );
+        var evidence = new CdcKafkaDeploymentEvidence(
+            topics,
+            new CdcTransportResult<CdcKafkaBrokerEvidence>.Observed(
+                new(true, [new(0, 16_777_216, plan.MaxRecordBytes, plan.MaxRecordBytes)])
+            ),
+            new CdcTransportResult<CdcKafkaProducerCapacityEvidence>.Observed(
+                new(plan.MaxRecordBytes, plan.ProducerBufferBytes, request.WorkerPolicy.HeapBytes)
+            ),
+            new CdcTransportResult<CdcKafkaAclEvidence>.Observed(new(false, true, false, [], []))
+        );
+        var evaluated = CdcTargetStatusEvaluator.EvaluatePostAdmission(
+            new(_projection.OperationId, _projection.ObservedAt, identity, binding.PhysicalSourceFingerprint)
+            {
+                KafkaPolicy = CdcDeploymentKafkaPolicy.ObserveBinding(
+                    request,
+                    _projection.OperationId,
+                    _projection.ObservedAt,
+                    evidence
+                ),
+                ConnectOffsetStore = CdcDeploymentKafkaPolicy.ObserveOffsetStore(
+                    request,
+                    _projection.OperationId,
+                    _projection.ObservedAt,
+                    evidence
+                ),
+            }
+        );
+        evaluated.KafkaPolicy.State.Should().Be(CdcComponentState.Satisfied);
+        evaluated.ConnectOffsetStore.State.Should().Be(CdcComponentState.Satisfied);
+        return status with
+        {
+            KafkaPolicy = evaluated.KafkaPolicy,
+            ConnectOffsetStore = evaluated.ConnectOffsetStore,
+            Diagnostics = evaluated
+                .Diagnostics.Where(d =>
+                    d.Component
+                        is CdcDiagnosticComponent.KafkaPolicy
+                            or CdcDiagnosticComponent.ConnectOffsetStore
+                )
+                .ToArray(),
+        };
+    }
 
     private static void AssertRejected(
         CdcControllerTargetStatus target,

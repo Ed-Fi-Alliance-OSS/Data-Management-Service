@@ -49,7 +49,16 @@ internal static class CdcAttachmentReadiness
             || status.SourceHistory.State != CdcComponentState.Satisfied
             || status.SourceHistory.Continuity != CdcSourceHistoryContinuity.Healthy
             || status.SourceHistory.IncidentLatched
-            || status.Diagnostics.Count != 0
+            // The admitted local profile emits these notices even when both Kafka policies
+            // are satisfied. They report the profile's limits, not an unavailable prerequisite.
+            || status.Diagnostics.Any(d =>
+                d.Code != "authorizationDisabledLocal"
+                || d.Category != CdcDiagnosticCategory.None
+                || d.Severity != CdcDiagnosticSeverity.Info
+                || d.Component
+                    is not (CdcDiagnosticComponent.KafkaPolicy or CdcDiagnosticComponent.ConnectOffsetStore)
+                || d.Retryable
+            )
             || target.HasPendingRecordSizeIncrease
             || target.HasSharedOffsetStoreIssue
             || target.Recovery.RequiresFreshPass
