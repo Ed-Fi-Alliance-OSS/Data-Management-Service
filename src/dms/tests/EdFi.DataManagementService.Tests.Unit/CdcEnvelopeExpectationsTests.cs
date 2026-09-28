@@ -112,16 +112,17 @@ public class Given_CdcEnvelopeExpectations
         _body.ToJsonString().Should().Be(original);
     }
 
-    [Test]
-    public void It_rejects_metadata_from_a_different_resource_key()
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_rejects_metadata_from_a_different_resource_key(bool descriptor)
     {
         Action act = () =>
             CdcEnvelopeExpectations.Create(
-                CdcApiResource.Student,
+                descriptor ? CdcApiResource.SchoolTypeDescriptor : CdcApiResource.Student,
                 _body,
                 _source with
                 {
-                    ResourceName = "SchoolTypeDescriptor",
+                    ResourceName = descriptor ? "Student" : "SchoolTypeDescriptor",
                 }
             );
         act.Should().Throw<InvalidOperationException>();

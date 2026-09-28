@@ -14,8 +14,9 @@ using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Unit;
 
-[TestFixture]
-public class Given_CdcCrudAssertions
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_CdcCrudAssertions(bool descriptor)
 {
     private static readonly Guid Uuid = Guid.Parse("abcdef00-0000-0000-0000-000000000001");
     private CdcBinding _binding = null!;
@@ -24,6 +25,9 @@ public class Given_CdcCrudAssertions
     private Dictionary<long, JsonElement> _expected = null!;
     private MessageContractConsumer _consumer = null!;
     private int _partition;
+    private CdcApiResource Resource =>
+        descriptor ? CdcApiResource.SchoolTypeDescriptor : CdcApiResource.Student;
+    private string UpdatedField => descriptor ? "shortDescription" : "firstName";
 
     [SetUp]
     public void Setup()
@@ -51,11 +55,13 @@ public class Given_CdcCrudAssertions
             new DateTimeOffset(2026, 9, 28, 12, 30, 45, TimeSpan.Zero),
             "abcdef0123456789",
             "EdFi",
-            "Student",
+            descriptor ? "SchoolTypeDescriptor" : "Student",
             "5.2.0"
         );
-        _body = CdcApiClient.NewStudent("Created");
-        _expected = new() { [901] = CdcEnvelopeExpectations.Create(CdcApiResource.Student, _body, _source) };
+        _body = descriptor
+            ? CdcApiClient.NewSchoolTypeDescriptor("Created")
+            : CdcApiClient.NewStudent("Created");
+        _expected = new() { [901] = CdcEnvelopeExpectations.Create(Resource, _body, _source) };
         _partition = MessageContractPartition.ForUuid(Uuid.ToString("D"), 3, _binding.PartitionerAlgorithm);
         _consumer = new(DateTimeOffset.UtcNow);
         _consumer.Assign(
@@ -68,9 +74,9 @@ public class Given_CdcCrudAssertions
     {
         Apply([Upsert(0), Upsert(2)], 4);
         _consumer.Documents[Uuid.ToString("D")].ContentVersion.Should().Be(901);
-        _body["firstName"] = "Updated";
+        _body[UpdatedField] = "Updated";
         _expected[902] = CdcEnvelopeExpectations.Create(
-            CdcApiResource.Student,
+            Resource,
             _body,
             _source with
             {
@@ -82,7 +88,7 @@ public class Given_CdcCrudAssertions
         _consumer
             .Documents[Uuid.ToString("D")]
             .Envelope.GetProperty("document")
-            .GetProperty("firstName")
+            .GetProperty(UpdatedField)
             .GetString()
             .Should()
             .Be("Updated");
@@ -109,17 +115,32 @@ public class Given_CdcCrudAssertions
     [TestCase("body")]
     [TestCase("version")]
     [TestCase("null-key")]
+    [TestCase("resource-name")]
+    [TestCase("link")]
+    [TestCase("etag-link-mode")]
     public void It_rejects_unexpected_public_records_instead_of_filtering_them_out(string mutation)
     {
         var record = Upsert(0);
         var value = JsonNode.Parse(_expected[901].GetRawText())!.AsObject();
         if (mutation == "body")
         {
-            value["document"]!["firstName"] = "Incorrect";
+            value["document"]![UpdatedField] = "Incorrect";
         }
         if (mutation == "version")
         {
             value["contentVersion"] = 999;
+        }
+        if (mutation == "resource-name")
+        {
+            value["resourceName"] = descriptor ? "Student" : "SchoolTypeDescriptor";
+        }
+        if (mutation == "link")
+        {
+            value["document"]!["link"] = new JsonObject { ["href"] = "/unexpected", ["rel"] = "self" };
+        }
+        if (mutation == "etag-link-mode")
+        {
+            value["document"]!["_etag"] = descriptor ? "901-abcdef01.j._.l.i" : "901-abcdef01.j._.n.i";
         }
         record = mutation switch
         {
@@ -162,6 +183,8 @@ public class Given_CdcCrudAssertions
     [TestCase("etag")]
     [TestCase("timestamp")]
     [TestCase("embedded-etag")]
+    [TestCase("resource-name")]
+    [TestCase("link")]
     public void It_rejects_cache_rows_that_do_not_match_the_independent_expected_state(string mutation)
     {
         var document = JsonNode.Parse(_expected[901].GetProperty("document").GetRawText())!.AsObject();
@@ -173,22 +196,27 @@ public class Given_CdcCrudAssertions
             etag,
             _source.ContentLastModifiedAt,
             "EdFi",
-            "Student",
+            descriptor ? "SchoolTypeDescriptor" : "Student",
             "5.2.0",
             document
         );
         CdcCrudAssertions.AssertCache(cache, _source, _expected[901]);
         if (mutation == "body")
         {
-            document["firstName"] = "Incorrect";
+            document[UpdatedField] = "Incorrect";
         }
         if (mutation == "embedded-etag")
         {
             document["_etag"] = etag;
         }
+        if (mutation == "link")
+        {
+            document["link"] = new JsonObject { ["href"] = "/unexpected", ["rel"] = "self" };
+        }
         cache = mutation switch
         {
             "version" => cache with { ContentVersion = 902 },
+            "resource-name" => cache with { ResourceName = "Incorrect" },
             "etag" => cache with { StreamEtag = "HTTP-etag" },
             "timestamp" => cache with { LastModifiedAt = _source.ContentLastModifiedAt.AddSeconds(1) },
             _ => cache,
@@ -203,7 +231,7 @@ public class Given_CdcCrudAssertions
         var actual = JsonNode.Parse(_expected[901].GetProperty("document").GetRawText())!.AsObject();
         actual["_etag"] = "HTTP-etag";
         CdcCrudAssertions.AssertApiBody(actual, _body, Uuid);
-        actual["firstName"] = "Stale";
+        actual[UpdatedField] = "Stale";
         Action act = () => CdcCrudAssertions.AssertApiBody(actual, _body, Uuid);
         act.Should().Throw<AssertionException>();
     }

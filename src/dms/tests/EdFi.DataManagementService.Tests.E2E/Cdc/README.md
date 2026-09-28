@@ -89,10 +89,11 @@ with `Failure: None`. Wrapper setup/teardown, process exit/TRX, and export outco
 belong in the existing runner qualification summary and must independently pass;
 they are never fields in this fixture-owned report.
 
-## Student CRUD checkpoints
+## Student and descriptor CRUD checkpoints
 
-CDC-E2E-01 holds the designated projector during POST and PUT. The create checkpoint
-compares the admitted target/source and configured schema, reads the Student over
+CDC-E2E-01 (Student) and CDC-E2E-02 (SchoolTypeDescriptor) share the same private CRUD
+sequence and hold the designated projector during POST and PUT. The create checkpoint
+compares the admitted target/source and configured schema, reads the resource over
 HTTP, and requires matching durable work with no cache row. The update checkpoint
 requires newer source/work versions while the complete old cache row remains.
 After each release, cache publication and work acknowledgement precede consumption;
@@ -107,6 +108,13 @@ Kafka ends, classifies progress records as heartbeats, and separately checks bro
 metadata for forbidden raw topics. Capture inventory and connector include lists
 exclude projection work. Payload-free checkpoint output includes versions and
 partition boundaries; the existing scenario report records the phase result.
+
+CDC-E2E-02 changes `shortDescription` through the descriptor API while preserving
+namespace/code identity. Its independent envelope uses the descriptor ResourceKey
+metadata and no-link stream ETag; complete body comparisons reject injected links.
+The consumer checks the same UUID key and binding-derived partition through create,
+update, and the record-level null tombstone. Each CRUD phase starts from current
+Kafka ends on the existing binding; no database or capture state is reset between them.
 
 ## Development checkpoints
 

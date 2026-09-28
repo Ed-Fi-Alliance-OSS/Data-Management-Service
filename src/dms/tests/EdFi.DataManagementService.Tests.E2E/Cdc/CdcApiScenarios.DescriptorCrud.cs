@@ -7,12 +7,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
 internal sealed partial class CdcApiScenarios
 {
-    public Task StudentCrudAsync(CancellationToken token) =>
+    public Task DescriptorCrudAsync(CancellationToken token) =>
         CrudAsync(
-            CdcApiResource.Student,
-            CdcApiClient.NewStudent("Created"),
-            "firstName",
-            "CDC-E2E-01",
+            CdcApiResource.SchoolTypeDescriptor,
+            CdcApiClient.NewSchoolTypeDescriptor("Created"),
+            "shortDescription",
+            "CDC-E2E-02",
             token
         );
 }
