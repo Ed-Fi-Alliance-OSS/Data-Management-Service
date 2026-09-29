@@ -1193,7 +1193,7 @@ DMS-1325 API evidence. Retirement, topic cleanup, tombstones and cleaner observa
 supply no platform purge proof. Production performance, cloud installation and
 independent consumer products/certification remain outside this qualification.
 
-## API-to-Kafka scenario traceability (DMS-1325, T19)
+## API-to-Kafka scenario traceability (DMS-1325)
 
 The single `Given_CdcApiE2E` fixture runs these phases in order on one admitted
 binding. The [ApiE2E runner](../../eng/ci/Invoke-CdcQualification.ps1) exports
@@ -1259,69 +1259,29 @@ executable changes require fresh qualification. Earlier passing reports remain i
 Git history; failed attempts below remain historical evidence. Raw diagnostics
 remain private.
 
-Historical PostgreSQL attempt before T37: Student CRUD passed,
-descriptor CRUD failed and six scenarios not run. The historical
-[runner report](evidence/dms1325-t23-postgresql-descriptor-blocked/qualification.json) and
-[runtime/cleanup evidence](evidence/dms1325-t23-postgresql-descriptor-blocked/cdc-api-e2e.json)
-record successful setup, admission, HTTP-only handoff and attachment at revision
-`3747f180bb5e20d86db115a61386e02ce2a10ad8`, including T36's default-tenant
-comparison correction. Student CRUD (`CDC-E2E-01`) passed with held create/update
-work and cache observations, API reads/writes, fenced consumption of both published
-states and the canonical-delete tombstone. Its 35 checkpoints establish T33's
-source/work/cache observation paths and T35's held Student create/update behavior.
-The change-version sequence read, overlap and rebuild were not reached.
+### Historical incomplete attempts
 
-Descriptor CRUD (`CDC-E2E-02`) failed with `Error` before its first checkpoint.
-The scenario runner discarded the underlying exception; that run did not establish
-the failing operation or cause. Fixture disposal, governed teardown and export passed,
-with five owned containers and three volumes verified absent. Independent Docker
-inventory also found no remaining `dms-local` containers, volumes or networks.
-Invocation, provider, binding and generation match across the reports. See the
-reproducible [run inputs and limits](evidence/dms1325-t23-postgresql-descriptor-blocked/run-details.json).
-The runner's seven failed required outcomes count one executed failure and six
-missing outcomes. At that point T23 and T24 remained incomplete; no unchanged retry
-or production change was attempted.
+The following PostgreSQL attempts are retained for failure triage only. They were
+superseded by the passing provider runs above and do not qualify the current source.
+Their recorded revisions, invocation IDs and task labels describe the original
+executions; they are not current implementation instructions.
 
-T37 subsequently reproduced the failure through the existing PostgreSQL runner
-with temporary private diagnostics (invocation `b781de5b-693a-4f6b-8fcd-9605883776b0`).
-Student CRUD passed; the descriptor POST returned HTTP 403 before gate arrival or
-source/work/cache reads. The selected `E2E-NoFurtherAuthRequiredClaimSet` lacked
-the SchoolTypeDescriptor grant. The test-owned fragment now grants its four CRUD
-actions with `NoFurtherAuthorizationRequired`. A regression using the existing
-fragment composer and authorization metadata factory failed before the correction
-and passed afterward. The diagnostic run completed fixture disposal, governed
-teardown and export; independent Docker checks confirmed no remaining `dms-local`
-containers, volumes or networks. Temporary instrumentation was removed, and raw
-diagnostics remain private. The correction alone supplied no full qualification.
-The fresh provider runs above now pass all eight scenarios and governed cleanup
-on both providers.
+| Failure boundary | Historical run details |
+| --- | --- |
+| Connector admission/read-back | [Admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json) |
+| HTTP-only handoff path normalization | [Handoff failure](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json) |
+| Attachment rejected authorization-disabled informational notices | [Attachment failure](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json) |
+| CDC-E2E-01 fixture target comparisons | [CRUD timeout](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json) |
+| CDC-E2E-01 default-tenant comparison | [Student CRUD failure](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json) |
+| CDC-E2E-02 descriptor authorization | [Descriptor CRUD failure](evidence/dms1325-t23-postgresql-descriptor-blocked/run-details.json) |
 
-The earlier [post-T35 Student Error](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json)
-remains historical evidence. T36 diagnosed the mismatch between the CDC binding's
-`default` tenant token and E18's empty default tenant, then applied the production
-tenant mapping in the fixture assertion. The pre-T37 run passed that assertion and
-the complete Student CRUD phase. That descriptor failure did not identify a
-regression in T36 or supply full provider qualification.
+The descriptor attempt passed CDC-E2E-01, failed CDC-E2E-02 before its first
+checkpoint and left the remaining six scenarios unrun. Temporary private diagnostics
+subsequently identified HTTP 403 on descriptor POST: the test-owned
+`E2E-NoFurtherAuthRequiredClaimSet` lacked the SchoolTypeDescriptor grant. The fragment
+was corrected and a focused authorization regression passed. Temporary instrumentation
+was removed; the passing provider runs above subsequently exercised all eight flows.
 
-The earlier [CRUD timeout](evidence/dms1325-t23-postgresql-crud-blocked/run-details.json)
-remains historical evidence. T35 corrected three fixture target reference
-comparisons and verified independently constructed equivalent keys in focused
-regressions. The subsequent `Error` result does not establish live gate selection
-or identify a regression in that correction. Do not conflate the two failures.
-
-The earlier [attachment failure](evidence/dms1325-t23-postgresql-attachment-blocked/run-details.json)
-remains historical evidence. T34 diagnosed rejection of valid local
-authorization-disabled informational notices and corrected the attachment
-predicate in `586433c24`; attachment passed in subsequent runs. That correction
-does not establish passing CRUD or full qualification.
-
-The earlier [HTTP-only rollout failure](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json)
-is historical evidence: T31 diagnosed the `PATH_BASE` normalization mismatch and
-corrected it in `b50ecaf7b`. Subsequent runs passed that handoff; the successful
-PostgreSQL run above now supplies API-to-Kafka qualification. The earlier
-[admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json) also remains
-historical evidence of the Connect rebalance/read-back blocker. T19's parser, privacy,
-interruption and delegation tests alone provide no live qualification claim; the
-provider runs above supply that evidence. Detailed E18 paging/query-plan/repair matrices, sibling
-message/consumer conformance, strict native-recovery fencing and same-topic recovery
-after terminal loss remain outside this evidence.
+Detailed E18 paging/query-plan/repair matrices, sibling message/consumer conformance,
+strict native-recovery fencing and same-topic recovery after terminal loss remain
+outside this evidence.

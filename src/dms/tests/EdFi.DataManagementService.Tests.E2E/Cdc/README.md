@@ -16,6 +16,11 @@ scenario selectors, resets between phases, retries, or report-resume modes.
 | CDC-E2E-07 | Temporarily unavailable offset evidence |
 | CDC-E2E-08 | Terminal source-history loss (always last) |
 
+Full qualification requires all eight scenarios to pass through the `ApiE2E`
+setup/test/teardown/export path on both PostgreSQL and SQL Server. Focused helper
+tests provide development coverage. Retained provider runs and their tested revisions
+are indexed in the [API-to-Kafka evidence](../../../../../reference/cdc-documentation/cdc-inv-evidence.md#api-to-kafka-scenario-traceability-dms-1325).
+
 The runner supplies these environment variables:
 
 - `CDC_API_E2E_HANDOFF_PATH`: private admitted-stack handoff produced by the wrapper.
@@ -148,8 +153,7 @@ fence and bounded scan verify no resurrection, followed by fresh database absenc
 checks. Both scans retain one consumer and all partition positions; every upsert
 is rejected, including transient upsert-then-delete pairs. Replayed tombstones and
 compacted gaps are allowed. An empty scan cannot satisfy initial deletion evidence.
-The existing CDC-E2E-04 report entry records the result; full live provider evidence
-remains part of T23/T24 qualification.
+The existing CDC-E2E-04 report entry records the result.
 
 ## Online rebuild checkpoints
 
@@ -167,8 +171,7 @@ cache contents. The same multi-key consumer and partition positions span the ope
 equal-version replay is permitted, every tombstone is rejected, and all live keys remain.
 Provider fences precede Kafka bounds; source continuity, binding/generation, capture
 inventory and advancing offsets are checked. Canonical API deletion and fenced
-consumption clean up only after the measured rebuild. Live evidence remains part of
-T23/T24; these focused helper tests do not claim provider qualification.
+consumption clean up only after the measured rebuild.
 
 ## Executor restart checkpoints
 
@@ -195,8 +198,7 @@ rebuild observations cannot satisfy or contaminate this evidence. Controller sta
 resolves the replacement, checks healthy same-binding continuity, and API deletes
 clean up after convergence. Page holds honor finite deadlines/cancellation; disposal
 cancels and awaits in-flight provider calls. UTC interval checkpoints, page counts,
-operation counts and Kafka boundaries contain no document payloads. T23/T24 retain
-responsibility for full live qualification on both providers.
+operation counts and Kafka boundaries contain no document payloads.
 
 ## Unavailable continuity evidence checkpoints
 
@@ -221,8 +223,7 @@ write and a subsequent API mutation must converge to independently expected cach
 Kafka state on the same binding/generation/topic. Provider fences, retained consumer
 positions, full-record assertions and final API deletion reuse existing helpers.
 No absence-of-publication or strict native-recovery fencing guarantee is inferred.
-Focused helper tests cover the fault and evidence assertions; T23/T24 still own full
-live qualification for both providers.
+Focused helper tests cover the fault and evidence assertions.
 
 CDC-E2E-08 is the final phase on that same binding. It publishes and consumes a
 Student, requires fresh healthy continuity, then stops the real connector, verifies
@@ -239,8 +240,7 @@ A final HTTP PUT/GET succeeds after containment while the designated executor is
 held: canonical/work versions advance and the complete older cache remains. The
 executor is then cancelled/disposed with work retained. No offset restoration,
 capture recreation, incident clearing, connector resume or post-loss Kafka fence is
-attempted. The terminal binding remains for the runner's governed teardown. Focused
-helper coverage is development evidence; T23/T24 still require full live runs.
+attempted. The terminal binding remains for the runner's governed teardown.
 
 ## Development checkpoints
 
@@ -258,8 +258,7 @@ risk; it is not required after every scenario. Every run starts at CDC-E2E-01.
 The first unfinished scenario fails normally, later phases stay `NotRun`, and the
 runner still performs governed teardown. Earlier passed phases are useful progress
 evidence, but every incomplete run fails qualification. There is no separate
-direct-development setup or reporting path. Bounded diagnostics use the same export path;
-they do not block implementing Student CRUD in T11.
+direct-development setup or reporting path. Bounded diagnostics use the same export path.
 
 ## Runner preparation and failure handling
 
@@ -320,5 +319,5 @@ Resource counts and verified absence supplement the runner's teardown outcome.
 ApiE2E publishes only `cdc-api-e2e.json`; it does not recursively export arbitrary
 attachments or TRX output from the private directory. This includes bounded copies
 of existing stage/process/scenario results, separate failure categories, traceability,
-runtime inputs and checkpoint data. See the [evidence index](../../../../../reference/cdc-documentation/cdc-inv-evidence.md#api-to-kafka-scenario-traceability-dms-1325-t19)
+runtime inputs and checkpoint data. See the [evidence index](../../../../../reference/cdc-documentation/cdc-inv-evidence.md#api-to-kafka-scenario-traceability-dms-1325)
 for precise invariant scope. Diagnostic entries never establish qualification alone.
