@@ -1493,6 +1493,7 @@ Describe 'Managed primitive DMS startup selection' {
         function docker { }
         function Wait-HttpEndpointHealthy { }
         function Invoke-TestDmsStartup($flavor, $DmsOnly, $CdcDmsComposeFile, $EnableSwaggerUI) {
+            Set-StrictMode -Version Latest
             $path = Join-Path $PSScriptRoot "../start-$flavor-dms.ps1"
             $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
             # Execute production validation, argument construction and the DMS branch in order.
@@ -1512,6 +1513,7 @@ Describe 'Managed primitive DMS startup selection' {
             $EnvironmentFile = '/selected/.env'
             $databaseOnlyStartup = $false
             $CdcDatabaseInfrastructure = $false
+            $CdcApiE2E = $false
             $dmsUrl = 'http://localhost:8080'
             & ([scriptblock]::Create(($nodes.Extent.Text -join "`n"))) | Out-Null
         }
