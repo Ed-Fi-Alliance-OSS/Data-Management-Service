@@ -8,11 +8,14 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
@@ -558,11 +561,21 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         string? tenant = ExtractTenantFromRoute(httpContext);
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
 
-        JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
-            profileName,
-            tenant,
-            servers
-        );
+        JsonNode? content;
+        try
+        {
+            content = await apiService.GetProfileOpenApiSpecificationAsync(profileName, tenant, servers);
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The profile provider already logged the cause. An unavailable catalog is not a missing
+            // profile, so this is a retriable 503 rather than the 404 below.
+            await WriteProfileDataUnavailableAsync(
+                httpContext,
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
+            );
+            return;
+        }
 
         if (content is null)
         {
@@ -608,7 +621,24 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         }
 
         string? tenant = ExtractTenantFromRoute(httpContext);
-        IReadOnlyList<string> profileNames = await apiService.GetProfileNamesAsync(tenant);
+        IReadOnlyList<string> profileNames;
+        try
+        {
+            profileNames = await apiService.GetProfileNamesAsync(tenant);
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The profile provider already logged the cause. The whole listing is refused: one
+            // without the profile sections would publish a partial catalog.
+            await WriteProfileDataUnavailableAsync(
+                httpContext,
+                AspNetCoreFrontend.ExtractTraceIdFrom(
+                    httpContext.Request,
+                    httpContext.RequestServices.GetRequiredService<IOptions<FrontendAppSettings>>()
+                )
+            );
+            return;
+        }
         foreach (string profileName in profileNames)
         {
             sections.Add(
@@ -621,6 +651,18 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
+    }
+
+    private static Task WriteProfileDataUnavailableAsync(HttpContext httpContext, TraceId traceId)
+    {
+        httpContext.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+        httpContext.Response.ContentType = "application/problem+json";
+        return httpContext.Response.WriteAsync(
+            JsonSerializer.Serialize(
+                FailureResponse.ForServiceUnavailable(traceId),
+                AspNetCoreFrontend.SharedSerializerOptions
+            )
+        );
     }
 
     internal static async Task GetSectionMetadata(
