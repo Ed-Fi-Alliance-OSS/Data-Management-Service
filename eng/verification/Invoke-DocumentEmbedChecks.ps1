@@ -75,6 +75,21 @@ $checkedDocument = @(
             "eng/verification/CustomValidatorPluginConsumer/StudentIdentityPlugin.cs#plugin"
         )
     }
+    [pscustomobject]@{
+        # Three regions rather than one, and all three are required, for the same reason as the
+        # custom-validation guide above: this how-to's worked example is an options type, a
+        # validator, and the plugin that registers it, and dropping any one of the three would
+        # publish a sample that does not compile where it is read. The reference plugin these
+        # regions come from is loaded by this repository's own integration suite over real HTTP, so
+        # the sample this page teaches from is one that has been proven rather than one that only
+        # looks right.
+        Document = "docs/UNIQUEID-VALIDATION.md"
+        RequiredEmbed = @(
+            "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationOptions.cs#options",
+            "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs#validator",
+            "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationPlugin.cs#plugin"
+        )
+    }
 )
 
 if ($ListPath) {
