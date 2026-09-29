@@ -1229,53 +1229,35 @@ wrong-invocation and rejected data are identified, never copied as raw output.
 Private settings, handoff, logs, auth headers, connection strings and document bodies
 are excluded. Original execution, cleanup and export failures remain separate.
 
-PostgreSQL full qualification: **passed T23** at revision
-`94c3df5c7f69e62d33045de5bb5173dff5b366a6`. The
-[runner report](evidence/dms1325-t23-postgresql/qualification.json) records all eight
-required scenario IDs passed, zero failures/skips, and successful setup, test,
-governed teardown and export. The
-[fixture and runtime evidence](evidence/dms1325-t23-postgresql/cdc-api-e2e.json)
-records successful attachment/disposal on the same invocation, provider, binding
-and generation. [Run details](evidence/dms1325-t23-postgresql/run-details.json)
-retain the exact command, tested revision, qualified image inputs, runtime versions
-and artifact hashes; raw diagnostics remain private.
+Fresh full qualification on **2026-09-29 passed on both providers** at the clean
+revision `17b0f50b64b18b3d96165b2a3ba2fee97d18d0fc`, including the fence fail-fast,
+disposal-order, shutdown-budget and invariant-annotation corrections. Each provider
+ran the shipped `Invoke-CdcQualification.ps1` locally with `Suite=ApiE2E` once,
+including its setup/test/teardown/export path; these were not GitHub Actions runs.
 
-The run exercised real API mutations, production projection/capture and bounded
-Kafka consumption across all eight phases without intermediate resets. Descriptor
-CRUD passed after T37. Overlap suppressed the stale candidate while retaining newer
-work; rebuild repopulated the cache without changing canonical versions or losing
-consumer state. Restart drained four work pages (2, 2, 2, 1) with no baseline or
-inventory scans while API traffic succeeded. Unavailable continuity evidence
-rejected restart/resume and recovered on the same binding. The final history-loss
-phase persisted containment and rejection despite later healthy-looking evidence.
-CRUD and rebuild also exercised all four T33 database observation paths, including
-the change-version sequence read.
+| Provider | Runner report | Fixture/runtime evidence | Command, tested source and artifact hashes |
+| --- | --- | --- | --- |
+| PostgreSQL | [8/8 passed](evidence/dms1325-t23-postgresql/qualification.json) | [Sanitized evidence](evidence/dms1325-t23-postgresql/cdc-api-e2e.json) | [Run details](evidence/dms1325-t23-postgresql/run-details.json) |
+| SQL Server 2025 | [8/8 passed](evidence/dms1325-t24-mssql/qualification.json) | [Sanitized evidence](evidence/dms1325-t24-mssql/cdc-api-e2e.json) | [Run details](evidence/dms1325-t24-mssql/run-details.json) |
 
-Governed cleanup verified all five owned containers and three volumes absent.
-Independent Docker checks found no remaining `dms-local` containers, networks or
-volumes. SQL Server qualification also passed T24, as recorded below. Earlier failed
-attempts remain historical evidence.
+Both runs passed `CDC-E2E-01` through `CDC-E2E-08`, with zero failures or skips,
+successful attachment/disposal, and successful setup, test, governed teardown and
+export. Each exercised real API traffic, production projection/capture and bounded
+Kafka consumption on one admitted binding without intermediate resets, with terminal
+history loss last. Each exporter accepted 238 checkpoints without rejection or
+truncation. Governed cleanup verified all five owned containers and three volumes
+absent; independent Docker checks found no remaining `dms-local` containers,
+networks or volumes.
 
-SQL Server full qualification: **passed T24** at revision
-`951e9a674ca539182466de8abc7369320d679519`. The
-[runner report](evidence/dms1325-t24-mssql/qualification.json) records all eight
-required scenario IDs passed, zero failures/skips, and successful setup, test,
-governed teardown and export. The
-[fixture and runtime evidence](evidence/dms1325-t24-mssql/cdc-api-e2e.json)
-records successful attachment/disposal with matching invocation, provider, binding
-and generation. [Run details](evidence/dms1325-t24-mssql/run-details.json) retain
-the exact command, tested revision, immutable SQL Server 2025 and qualified Connect
-inputs, host versions and artifact hashes; the fixture evidence retains broker and
-application image identities. Raw diagnostics remain private.
-
-All eight phases exercised real API traffic, projection, capture and bounded Kafka
-consumption on one admitted binding without intermediate resets, with terminal
-history loss last. The exporter accepted 238 checkpoints without rejection or
-truncation. Restart drained work pages of 2, 2, 2 and 1 with zero baseline/inventory
-scans while API reads and writes succeeded. Governed cleanup verified all five
-owned containers and three volumes absent; independent Docker checks confirmed no
-remaining `dms-local` containers, networks or volumes. Together with T23, this
-supplies the required eight-scenario qualification on both providers.
+The refreshed reports correlate invocation, provider, binding and generation. Run
+details retain the actual tested revision, immutable image inputs, host versions,
+test-process timestamps and artifact SHA-256 hashes. `TestedSourceTrees` also records
+the Git tree hashes of `src`, `eng`, `.github` and `.config`, allowing source-content
+comparison after a rebase or squash without relabeling an old run with a new commit.
+For example, compare `git rev-parse HEAD:src` with the recorded `src` hash. Subsequent
+executable changes require fresh qualification. Earlier passing reports remain in
+Git history; failed attempts below remain historical evidence. Raw diagnostics
+remain private.
 
 Historical PostgreSQL attempt before T37: Student CRUD passed,
 descriptor CRUD failed and six scenarios not run. The historical
@@ -1311,7 +1293,7 @@ and passed afterward. The diagnostic run completed fixture disposal, governed
 teardown and export; independent Docker checks confirmed no remaining `dms-local`
 containers, volumes or networks. Temporary instrumentation was removed, and raw
 diagnostics remain private. The correction alone supplied no full qualification.
-The fresh T23 and T24 runs above now pass all eight scenarios and governed cleanup
+The fresh provider runs above now pass all eight scenarios and governed cleanup
 on both providers.
 
 The earlier [post-T35 Student Error](evidence/dms1325-t23-postgresql-after-t35-blocked/run-details.json)
@@ -1336,10 +1318,10 @@ does not establish passing CRUD or full qualification.
 The earlier [HTTP-only rollout failure](evidence/dms1325-t23-postgresql-handoff-blocked/run-details.json)
 is historical evidence: T31 diagnosed the `PATH_BASE` normalization mismatch and
 corrected it in `b50ecaf7b`. Subsequent runs passed that handoff; the successful
-T23 run above now supplies PostgreSQL API-to-Kafka qualification. The earlier
+PostgreSQL run above now supplies API-to-Kafka qualification. The earlier
 [admission failure](evidence/dms1325-t23-postgresql-blocked/run-details.json) also remains
 historical evidence of the Connect rebalance/read-back blocker. T19's parser, privacy,
 interruption and delegation tests alone provide no live qualification claim; the
-T23/T24 runs above supply that evidence. Detailed E18 paging/query-plan/repair matrices, sibling
+provider runs above supply that evidence. Detailed E18 paging/query-plan/repair matrices, sibling
 message/consumer conformance, strict native-recovery fencing and same-topic recovery
 after terminal loss remain outside this evidence.

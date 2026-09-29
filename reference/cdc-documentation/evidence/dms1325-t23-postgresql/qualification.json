@@ -1,7 +1,7 @@
 [
   {
     "Name": "Postgresql-ApiE2E",
-    "InvocationId": "bcaf3bb3-7212-42d2-87af-ba61a22b6a26",
+    "InvocationId": "92b3da9e-ed11-41d6-a63d-d2e8ccf949f2",
     "Provider": "Postgresql",
     "RequestedConnectDigest": "sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
     "Status": "Passed",
@@ -21,54 +21,54 @@
     },
     "ProcessResult": {
       "Passed": 1,
-      "Failed": 0,
       "Skipped": 0,
+      "Failed": 0,
       "Status": "Passed",
       "Total": 1
     },
     "ProcessExit": 0,
-    "BindingId": "02ae6dbd53fc220257cc996f23a413255ae8a1d27ad85656b701ec1191abc08b",
+    "BindingId": "5fbe35aff302e1a49b5a2b19bf39822bf841354ceaf4056455ed9071f8eae786",
     "Generation": 1,
     "Cases": [
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-01"
+        "Id": "CDC-E2E-01",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-02"
+        "Id": "CDC-E2E-02",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-03"
+        "Id": "CDC-E2E-03",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-04"
+        "Id": "CDC-E2E-04",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-05"
+        "Id": "CDC-E2E-05",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-06"
+        "Id": "CDC-E2E-06",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-07"
+        "Id": "CDC-E2E-07",
+        "Failure": "None"
       },
       {
-        "Failure": "None",
         "Outcome": "Passed",
-        "Id": "CDC-E2E-08"
+        "Id": "CDC-E2E-08",
+        "Failure": "None"
       }
     ]
   }
