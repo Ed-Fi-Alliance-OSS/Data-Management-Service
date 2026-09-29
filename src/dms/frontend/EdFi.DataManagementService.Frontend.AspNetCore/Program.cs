@@ -242,7 +242,7 @@ if (invalidConfigurationException is null)
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
-            app.UseRateLimiter();
+            app.UseMiddleware<GlobalRateLimitingMiddleware>();
         }
 
         app.UseCors("AllowSwaggerUI");
