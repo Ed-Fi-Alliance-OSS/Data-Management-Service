@@ -1302,10 +1302,10 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// A caller that resolves its target in-session — POST — cannot know at planning time whether the cap
-    /// applies, because a create never parameterizes the list. Asked to defer, the planner hands back the plan
-    /// with the ownership check in it instead of the cap terminal; the caller owes the failure only once the
-    /// target proves to exist.
+    /// A caller that resolves its target in-session — POST — cannot know at planning time which branch will
+    /// owe the cap. Asked to defer, the planner hands back the plan with the ownership check in it instead of
+    /// the cap terminal; the caller reports the failure once target resolution has selected the Create or the
+    /// Update branch, in that branch's ownership slot.
     /// </summary>
     [Test]
     public void It_hands_back_the_plan_when_the_token_cap_is_deferred_to_target_resolution()

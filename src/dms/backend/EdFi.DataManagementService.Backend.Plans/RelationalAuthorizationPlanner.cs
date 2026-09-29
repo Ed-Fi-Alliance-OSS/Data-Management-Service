@@ -149,13 +149,14 @@ public enum OwnershipTokenCapHandling
     FailAtPlanning,
 
     /// <summary>
-    /// Plan as though the list were under the limit and leave the failure to the caller, who owes it only once
-    /// the target proves to exist. For POST: the stored-token check is vacuous for a create and the over-limit
-    /// list is never parameterized for one, so the cap reaches a create through the caller's create-side
-    /// verdict instead, in the create branch's ownership slot; a POST that resolves to an upsert-as-update
-    /// fails closed in the stored ownership slot. Both are after the custom-view and namespace checks, before
-    /// the relationship check and before any DML. With the cap deferred it is not a planning fact, so a
-    /// relationship configuration failure keeps its own precedence rather than yielding to the cap.
+    /// Plan as though the list were under the limit and leave the failure to the caller, who reports it once
+    /// target resolution has selected the Create or the Update branch — either branch can owe it — in that
+    /// branch's ownership slot, after the checks that precede it. For POST: the stored-token check is vacuous
+    /// for a create and the over-limit list is never parameterized for one, so the cap reaches a create through
+    /// the caller's create-side verdict, in the create branch's ownership slot; a POST that resolves to an
+    /// upsert-as-update fails closed in the stored ownership slot. Both are after the custom-view and namespace
+    /// checks, before the relationship check and before any DML. With the cap deferred it is not a planning
+    /// fact, so a relationship configuration failure keeps its own precedence rather than yielding to the cap.
     /// </summary>
     DeferToTargetResolution,
 }
@@ -192,7 +193,8 @@ public enum OwnershipTokenCapHandling
 /// custom-view configuration failure, which the classifier reports in the same bucket as relationship failures —
 /// see <c>OwnershipCapOutranksClassifierFailure</c>. A caller that resolves its target in-session — POST — asks
 /// for <see cref="OwnershipTokenCapHandling.DeferToTargetResolution"/>, and this terminal is then never
-/// returned: the plan is handed back and the caller fails closed only once the target proves to exist.</item>
+/// returned: the plan is handed back, and the caller fails closed once target resolution has selected the Create
+/// or the Update branch, in that branch's ownership slot.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — the relationship classifier reports a
 /// known-but-not-enabled strategy in the non-namespace bucket, or a custom view the operation does not execute
 /// (501 NotImplemented, fail closed). No current operation reaches it: the classifier's only known-but-not-enabled
@@ -267,8 +269,8 @@ public static class RelationalAuthorizationPlanner
 
         var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation);
 
-        // Deferred, the cap is not a planning fact: a POST that creates never parameterizes the list, so the
-        // caller owes the failure only once the target proves to exist, and no terminal below may consult it.
+        // Deferred, the cap is not a planning fact: the caller reports it once target resolution has selected
+        // the Create or the Update branch, in that branch's ownership slot, so no terminal below may consult it.
         var ownershipCapExceeded =
             ownershipTokenCapHandling is OwnershipTokenCapHandling.FailAtPlanning
             && ownershipStrategies.Count > 0
