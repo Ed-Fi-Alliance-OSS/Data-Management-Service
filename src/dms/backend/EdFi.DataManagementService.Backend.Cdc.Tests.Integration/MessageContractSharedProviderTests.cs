@@ -3,11 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
+using FakeItEasy;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
@@ -121,6 +123,95 @@ public sealed class Given_MessageContractProviderAttachment(CdcProvider provider
                     Content = new StringContent(
                         JsonSerializer.Serialize(
                             new Dictionary<string, string> { ["table.include.list"] = includeList }
+                        )
+                    ),
+                }
+            );
+        }
+    }
+}
+
+[TestFixture("FAILED", "RUNNING")]
+[TestFixture("RUNNING", "FAILED")]
+[Category("CdcMessageContract")]
+public sealed class Given_MessageContractProviderFence_WithFailedStatus(
+    string connectorState,
+    string taskState
+)
+{
+    private MessageContractProviderFences _fences = null!;
+    private HttpClient _client = null!;
+    private StatusHandler _handler = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var request = CdcDeploymentRequestTestData.Request(CdcProvider.Postgresql);
+        var observer = new MessageContractProviderObserver(
+            request.Binding,
+            () =>
+            {
+                var connection = A.Fake<DbConnection>();
+                var command = A.Fake<DbCommand>();
+                A.CallTo(connection)
+                    .WithReturnType<DbCommand>()
+                    .Where(call => call.Method.Name == "CreateDbCommand")
+                    .Returns(command);
+                A.CallTo(() => command.ExecuteScalarAsync(A<CancellationToken>._)).Returns("0/1");
+                A.CallTo(() => command.ExecuteNonQueryAsync(A<CancellationToken>._)).Returns(1);
+                return connection;
+            }
+        );
+        _handler = new(request.Binding.ConnectorName, connectorState, taskState);
+        _client = new(_handler);
+        _fences = new(observer, request, new CdcConnectRestAdapter(_client));
+    }
+
+    [TearDown]
+    public void Teardown() => _client.Dispose();
+
+    [Test]
+    public async Task It_fails_on_the_first_failed_status_instead_of_waiting_for_the_fence_timeout()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Func<Task> fence = () => _fences.FencePostgresqlSourceAsync("failed-connector", timeout.Token);
+        await fence
+            .Should()
+            .ThrowAsync<AssertionException>()
+            .WithMessage("Kafka Connect connector or task failed during source fence. Details redacted.");
+        _handler.RequestCount.Should().Be(1);
+    }
+
+    private sealed class StatusHandler(string connectorName, string connectorState, string taskState)
+        : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            RequestCount++;
+            return Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                name = connectorName,
+                                connector = new { state = connectorState, worker_id = "private-worker" },
+                                tasks = new[]
+                                {
+                                    new
+                                    {
+                                        id = 0,
+                                        state = taskState,
+                                        worker_id = "private-worker",
+                                    },
+                                },
+                            }
                         )
                     ),
                 }

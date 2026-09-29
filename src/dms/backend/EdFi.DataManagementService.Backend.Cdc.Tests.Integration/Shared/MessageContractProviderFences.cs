@@ -111,6 +111,18 @@ internal sealed class MessageContractProviderFences(
     private async Task<CdcConnectOffsetEvidence?> ReadStreamingOffsetAsync(CancellationToken token)
     {
         var status = await connect.ReadStatusAsync(request, token);
+        if (
+            status is CdcTransportResult<CdcConnectStatus>.Observed state
+            && (
+                state.Value.Runtime.ConnectorState == CoreCdc.CdcConnectorRuntimeState.Failed
+                || state.Value.Tasks.Any(task => task.State == CoreCdc.CdcConnectorRuntimeState.Failed)
+            )
+        )
+        {
+            throw new AssertionException(
+                "Kafka Connect connector or task failed during source fence. Details redacted."
+            );
+        }
         if (status is not CdcTransportResult<CdcConnectStatus>.Observed { Value.IsRunning: true })
         {
             return null;
