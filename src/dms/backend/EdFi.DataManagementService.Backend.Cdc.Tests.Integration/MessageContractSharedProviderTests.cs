@@ -134,6 +134,7 @@ public sealed class Given_MessageContractProviderAttachment(CdcProvider provider
 [TestFixture("FAILED", "RUNNING")]
 [TestFixture("RUNNING", "FAILED")]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-10")]
 public sealed class Given_MessageContractProviderFence_WithFailedStatus(
     string connectorState,
     string taskState
