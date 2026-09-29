@@ -443,7 +443,7 @@ public class IdentityRequestTokenRuleTests
             const string longPrefix = "/tenant-a/255901/2026/identity/v2/identities/results";
 
             int shortRequestLineLength =
-                shortPrefix.Length + 1 + token.Length + "GET ".Length + " HTTP/1.1".Length;
+                shortPrefix.Length + 1 + token.Length + "GET ".Length + " HTTP/1.1".Length + "\r\n".Length;
 
             // Comfortably above the short prefix's request line, but below the longer prefix's, because
             // longPrefix adds well over 5 characters versus shortPrefix.
@@ -494,8 +494,10 @@ public class IdentityRequestTokenRuleTests
             const string token = "tok";
             const string prefix = "/identity/v2/identities/results";
 
-            int exactRequestLineLength =
-                prefix.Length + 1 + token.Length + "GET ".Length + " HTTP/1.1".Length;
+            // "GET " (4) + prefix (31) + "/" (1) + token (3) + " HTTP/1.1" (9) + CRLF (2) = 50. Kestrel
+            // counts the terminating CRLF against MaxRequestLineSize, so a 50-byte limit is the smallest
+            // one this request line fits.
+            const int exactRequestLineLength = 50;
 
             _exactlyAtLimit = IdentityRequestTokenRule.Evaluate(token, prefix, exactRequestLineLength);
             _oneUnderLimit = IdentityRequestTokenRule.Evaluate(token, prefix, exactRequestLineLength - 1);

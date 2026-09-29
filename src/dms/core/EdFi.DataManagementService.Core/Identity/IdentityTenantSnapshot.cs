@@ -103,7 +103,9 @@ internal sealed class IdentityTenantSnapshot(
     /// Returns the one shared in-flight refresh, joining an existing one when present. Reuses a
     /// recently failed refresh unchanged while it is still inside its 5-second cooldown so a joining
     /// caller neither starts a new <see cref="IDataStoreProvider.LoadTenants" /> call nor waits any
-    /// longer than the original refresh already has. Once the cooldown has elapsed - or the previous
+    /// longer than the original refresh already has. Reuses a completed successful refresh while the
+    /// snapshot it produced is still fresh, so a caller that observed an expired snapshot just before
+    /// that refresh completed does not start another. Once the cooldown has elapsed - or the previous
     /// refresh succeeded but the snapshot has since expired - starts a brand new refresh instead.
     /// </summary>
     private Task<bool> GetOrStartRefreshTask()
@@ -115,12 +117,25 @@ internal sealed class IdentityTenantSnapshot(
                 return inFlight;
             }
 
-            if (_refreshTask is { IsCompleted: true } completed && !completed.Result)
+            if (_refreshTask is { IsCompleted: true } completed)
             {
-                FailureRecord? failure = Volatile.Read(ref _lastFailure);
-                if (failure is not null && timeProvider.GetUtcNow() - failure.FailedAt < FailureCooldown)
+                if (completed.Result)
                 {
-                    return completed;
+                    // A caller that read an expired snapshot just before another refresh completed
+                    // re-checks freshness here rather than starting a redundant load.
+                    Snapshot? current = Volatile.Read(ref _snapshot);
+                    if (current is not null && IsFresh(current))
+                    {
+                        return completed;
+                    }
+                }
+                else
+                {
+                    FailureRecord? failure = Volatile.Read(ref _lastFailure);
+                    if (failure is not null && timeProvider.GetUtcNow() - failure.FailedAt < FailureCooldown)
+                    {
+                        return completed;
+                    }
                 }
             }
 

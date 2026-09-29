@@ -9,14 +9,11 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,7 +27,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
 /// IdentityEndpointModule route mapping, tenant/qualifier prefixing, body parsing, Content-Type
-/// handling, and the qualifier-collision fail-closed guard.
+/// handling.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -591,137 +588,6 @@ public class IdentityEndpointModuleTests
             );
 
             captured.Should().Be(requestAbortedSource.Token);
-        }
-    }
-
-    /// <summary>
-    /// The fail-closed qualifier-name collision guard is a module-mapping-time concern shared by
-    /// every fixed-route module built from the same configured RouteQualifierSegments, not an
-    /// identity-only one: booting the full host with a colliding configuration would fail every
-    /// module's own MapEndpoints (ASP.NET Core's route pattern parser itself rejects a route
-    /// template with a duplicate parameter name under its own case-insensitive comparison), not
-    /// just IdentityEndpointModule's. So this exercises IdentityEndpointModule.MapEndpoints in
-    /// isolation, the same unit the production fail-closed check runs in, without booting Program.
-    /// </summary>
-    [TestFixture]
-    public class Given_Colliding_Route_Qualifier_Names
-    {
-        [Test]
-        public void It_does_not_map_identity_routes_and_logs_an_error()
-        {
-            using WebApplication app = WebApplication.CreateBuilder().Build();
-            var logger = new RecordingLogger<IdentityEndpointModule>();
-            var module = new IdentityEndpointModule(
-                Options.Create(
-                    new AppSettings
-                    {
-                        AuthenticationService = "test",
-                        Datastore = "postgresql",
-                        CorrelationIdHeader = "X-Correlation-ID",
-                        MultiTenancy = false,
-                        RouteQualifierSegments = "DistrictId,districtid",
-                    }
-                ),
-                Options.Create(
-                    new CoreAppSettings { AllowIdentityUpdateOverrides = "", EnableIdentityManagement = true }
-                ),
-                logger
-            );
-
-            module.MapEndpoints(app);
-
-            IEndpointRouteBuilder endpointRouteBuilder = app;
-            endpointRouteBuilder
-                .DataSources.SelectMany(dataSource => dataSource.Endpoints)
-                .Should()
-                .BeEmpty();
-            logger
-                .Entries.Should()
-                .Contain(entry =>
-                    entry.Level == LogLevel.Error
-                    && entry.Message.Contains("collide", StringComparison.OrdinalIgnoreCase)
-                );
-        }
-    }
-
-    /// <summary>
-    /// A configured route-qualifier segment named like the identity routes' own get-by-id or
-    /// results-token parameter would repeat that parameter name in the route template, so the
-    /// module refuses to map the identity routes and names the reserved name in its error.
-    /// </summary>
-    [TestFixture("__identityId")]
-    [TestFixture("__IDENTITYTOKEN")]
-    public class Given_A_Route_Qualifier_Named_Like_A_Reserved_Identity_Parameter(string qualifierName)
-    {
-        private IReadOnlyList<Endpoint> _endpoints = null!;
-        private RecordingLogger<IdentityEndpointModule> _logger = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            using WebApplication app = WebApplication.CreateBuilder().Build();
-            _logger = new RecordingLogger<IdentityEndpointModule>();
-            var module = new IdentityEndpointModule(
-                Options.Create(
-                    new AppSettings
-                    {
-                        AuthenticationService = "test",
-                        Datastore = "postgresql",
-                        CorrelationIdHeader = "X-Correlation-ID",
-                        MultiTenancy = false,
-                        RouteQualifierSegments = $"districtId,{qualifierName}",
-                    }
-                ),
-                Options.Create(
-                    new CoreAppSettings { AllowIdentityUpdateOverrides = "", EnableIdentityManagement = true }
-                ),
-                _logger
-            );
-
-            module.MapEndpoints(app);
-
-            IEndpointRouteBuilder endpointRouteBuilder = app;
-            _endpoints = [.. endpointRouteBuilder.DataSources.SelectMany(dataSource => dataSource.Endpoints)];
-        }
-
-        [Test]
-        public void It_does_not_map_identity_routes()
-        {
-            _endpoints.Should().BeEmpty();
-        }
-
-        [Test]
-        public void It_logs_an_error_naming_the_reserved_qualifier()
-        {
-            _logger
-                .Entries.Should()
-                .Contain(entry =>
-                    entry.Level == LogLevel.Error
-                    && entry.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase)
-                    && entry.Message.Contains(qualifierName, StringComparison.Ordinal)
-                );
-        }
-    }
-
-    private sealed class RecordingLogger<T> : ILogger<T>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            ArgumentNullException.ThrowIfNull(formatter);
-            Entries.Add((logLevel, formatter(state, exception)));
         }
     }
 }

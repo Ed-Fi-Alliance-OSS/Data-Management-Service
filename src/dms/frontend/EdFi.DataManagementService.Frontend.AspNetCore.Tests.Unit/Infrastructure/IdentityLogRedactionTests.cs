@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Identity;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,9 +31,11 @@ using Serilog.Extensions.Logging;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
 /// <summary>
-/// No identity operation identifier ever reaches a log, at either DMS layer or in the
-/// framework's own hosting-diagnostics events, while a resource route (the negative control) and the
-/// other four identity routes are unaffected.
+/// No identity operation identifier reaches any property or rendered message of a log event, at
+/// either DMS layer or in the framework's own hosting-diagnostics events, while a resource route (the
+/// negative control) and the other four identity routes are unaffected. Exception detail attached to
+/// the identity provider boundary's Debug event is outside that guarantee by design and is not
+/// scanned here.
 /// </summary>
 /// <remarks>
 /// Two independent proofs, because they need two different harnesses:
@@ -332,7 +333,7 @@ public class IdentityLogRedactionTests
             // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
             // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from every value
             // it sanitizes, redacted or not - the redaction guarantee here is only that the
-            // identifier segment itself never reaches the log.
+            // identifier segment itself never reaches this Path value.
             LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
             ScalarProperty(frontendCompleted, "Path").Should().Be("/identity/v2/identities/id");
         }
@@ -623,7 +624,8 @@ public class IdentityLogRedactionTests
             // No literal braces: LoggingSanitizer.SanitizeInternalValueForLogging's Method/Path
             // allowlist (letters, digits, space, and `_-.:/\`) strips `{` and `}` from any value,
             // including this one, same as it always has for a non-identity path - only the
-            // identifier segment itself is what the redaction guarantee promises never reaches the log.
+            // identifier segment itself is what the redaction guarantee promises never reaches this
+            // Path value.
             const string expectedPath = "/tenant-a/255901/2026/identity/v2/identities/id";
 
             LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
@@ -641,8 +643,63 @@ public class IdentityLogRedactionTests
     }
 
     /// <summary>
-    /// Unit-level coverage of <see cref="IdentityRoutePathRedactor.Redact"/> itself (PR review
-    /// finding): ASP.NET Core routing matches these routes case-insensitively and tolerates a
+    /// An identity-shaped path whose leading segment count does not match the host's configuration
+    /// (here: no tenant segment on a multi-tenant host) matches no endpoint and falls through to a
+    /// 404, yet the frontend completion event still logs its path. Redaction must not depend on the
+    /// configured prefix shape, or the identifier reaches that event's <c>Path</c> and rendered message.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Get_By_Id_Path_Without_The_Tenant_Segment_On_A_Multi_Tenant_Host
+    {
+        private HttpResponseMessage _response = null!;
+        private IReadOnlyList<LogEvent> _events = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var sink = new CapturingSerilogSink();
+            var identityService = new FakeIdentityService();
+            _factory = CreateFactory(identityService, sink, multiTenancy: true);
+            _client = _factory.CreateClient();
+
+            _response = await _client.SendAsync(AuthorizedGet($"/identity/v2/identities/{UniqueId}"));
+            _events = sink.Events;
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_404()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public void It_never_logs_the_unique_id_in_any_property_or_rendered_message_of_any_event()
+        {
+            IReadOnlyList<string> leaks = EventsLeaking(_events, UniqueId);
+            leaks.Should().BeEmpty("no event may carry it, yet these did: {0}", string.Join(" | ", leaks));
+        }
+
+        [Test]
+        public void It_redacts_the_unique_id_in_the_frontend_completion_path()
+        {
+            LogEvent frontendCompleted = _events.Single(IsFrontendCompletionEvent);
+            ScalarProperty(frontendCompleted, "Path").Should().Be("/identity/v2/identities/id");
+        }
+    }
+
+    /// <summary>
+    /// Unit-level coverage of <see cref="IdentityRoutePathRedactor.RedactWithAnyPrefix"/> itself:
+    /// ASP.NET Core routing matches these routes case-insensitively and tolerates a
     /// trailing slash, so the redactor's regexes must too, or an identifier reaches
     /// <c>LoggingMiddleware</c>'s scope <c>Path</c> unredacted whenever a client or an upstream
     /// proxy sends the route in a different case or with a trailing slash.
@@ -658,10 +715,7 @@ public class IdentityLogRedactionTests
             string expected
         )
         {
-            IdentityRoutePathRedactor
-                .Redact(new PathString(path), [], multiTenancy: false)
-                .Should()
-                .Be(expected);
+            IdentityRoutePathRedactor.RedactWithAnyPrefix(path).Should().Be(expected);
         }
 
         [TestCase(
@@ -677,36 +731,29 @@ public class IdentityLogRedactionTests
             string expected
         )
         {
-            IdentityRoutePathRedactor
-                .Redact(new PathString(path), [], multiTenancy: false)
-                .Should()
-                .Be(expected);
+            IdentityRoutePathRedactor.RedactWithAnyPrefix(path).Should().Be(expected);
         }
 
         [TestCase("/identity/v2/identities/FIND/")]
         [TestCase("/identity/v2/identities/Search/")]
         public void It_leaves_find_and_search_unchanged_even_with_a_trailing_slash(string path)
         {
-            IdentityRoutePathRedactor.Redact(new PathString(path), [], multiTenancy: false).Should().Be(path);
+            IdentityRoutePathRedactor.RedactWithAnyPrefix(path).Should().Be(path);
         }
 
         [Test]
         public void It_keeps_the_tenant_and_qualifier_literal_case_while_redacting_a_mixed_case_trailing_slash_identifier()
         {
             IdentityRoutePathRedactor
-                .Redact(
-                    new PathString("/tenant-a/255901/2026/IDENTITY/V2/IDENTITIES/605943412/"),
-                    ["districtId", "schoolYear"],
-                    multiTenancy: true
-                )
+                .RedactWithAnyPrefix("/tenant-a/255901/2026/IDENTITY/V2/IDENTITIES/605943412/")
                 .Should()
                 .Be("/tenant-a/255901/2026/IDENTITY/V2/IDENTITIES/{id}");
         }
     }
 
     /// <summary>
-    /// Unit-level coverage of <see cref="IdentityHostingDiagnosticsFilter.Matches"/> itself (PR
-    /// review finding), mirroring the case-insensitive and trailing-slash-tolerant cases above but
+    /// Unit-level coverage of <see cref="IdentityHostingDiagnosticsFilter.Matches"/> itself,
+    /// mirroring the case-insensitive and trailing-slash-tolerant cases above but
     /// against the predicate the framework hosting-diagnostics filter actually evaluates.
     /// </summary>
     [TestFixture]
@@ -1099,7 +1146,7 @@ public class IdentityLogRedactionTests
 
     /// <summary>
     /// The plugin boundary double: GetByIdAsync answers a fixed success payload; ResultsAsync always
-    /// throws, so the request drives both the redaction path (the token must never reach a log) and
+    /// throws, so the request drives both the redaction path (the token must never reach a logged property or rendered message) and
     /// the provider-exception logging contract in the same call.
     /// </summary>
     private sealed class FakeIdentityService : IIdentityService

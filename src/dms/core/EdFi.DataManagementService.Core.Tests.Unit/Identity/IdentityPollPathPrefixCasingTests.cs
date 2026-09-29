@@ -370,3 +370,53 @@ public class Given_An_Incomplete_Results_Poll_Whose_Path_Has_A_Differently_Cased
             .Be("/tenantA/Identity/V2/Identities/results/poll-prefix-token-9");
     }
 }
+
+/// <summary>
+/// A tenant/route-qualifier prefix whose values are literally "identity", "v2", and "identities"
+/// spells the identity route segment itself. The poll prefix must be anchored on the last occurrence
+/// of that segment - the real route - so the look-alike prefix ahead of it reaches the 202's Location
+/// instead of being mistaken for the route and dropped.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_A_Find_Request_Whose_Prefix_Values_Spell_The_Identity_Segment
+{
+    private IFrontendResponse _response = null!;
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        var provider = new IdentityPollPathPrefixCasingTestSupport.ScriptedIdentityService
+        {
+            Capabilities = IdentityCapabilities.Find | IdentityCapabilities.Results,
+            NextAsyncResult = new IdentityAsyncResult
+            {
+                Status = IdentityResultStatus.Success,
+                RequestToken = "poll-prefix-token-4",
+            },
+        };
+        var apiService = IdentityPollPathPrefixCasingTestSupport.BuildApiService(provider);
+
+        _response = await apiService.IdentityFind(
+            IdentityPollPathPrefixCasingTestSupport.BuildFrontendRequest(
+                "/identity/v2/identities/identity/v2/identities/find",
+                new JsonArray("605943412")
+            ),
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public void It_returns_202_accepted()
+    {
+        _response.StatusCode.Should().Be(202);
+    }
+
+    [Test]
+    public void It_keeps_the_look_alike_prefix_in_the_Location_path()
+    {
+        _response
+            .LocationHeaderPath.Should()
+            .Be("/identity/v2/identities/identity/v2/identities/results/poll-prefix-token-4");
+    }
+}

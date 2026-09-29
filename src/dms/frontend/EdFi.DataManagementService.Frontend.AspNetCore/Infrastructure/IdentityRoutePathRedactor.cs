@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -33,35 +32,14 @@ internal static class IdentityRoutePathRedactor
     private const string IdGroup = "id";
     private const string TokenGroup = "token";
 
-    // Keyed by the number of leading tenant/route-qualifier segments (0-N, effectively a handful of
-    // distinct values per process), so the compiled pattern for a given configuration is built once.
-    private static readonly ConcurrentDictionary<int, Regex> _configuredPatterns = new();
-
-    // The same route shape with any number of leading segments, for callers that have no
-    // configuration seam (Serilog filters and enrichers wired while the logger is built).
+    // The route shape with any number of leading tenant and route-qualifier segments, so redaction
+    // never depends on configuration: a path whose prefix does not fit this host's configuration is
+    // redacted as well.
     private static readonly Regex _anyPrefixPattern = BuildPattern("(?:/[^/]+)*");
-
-    public static string? Redact(PathString path, string[] qualifierSegments, bool multiTenancy)
-    {
-        string? value = path.Value;
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        int prefixSegmentCount = (multiTenancy ? 1 : 0) + qualifierSegments.Length;
-        Regex pattern = _configuredPatterns.GetOrAdd(
-            prefixSegmentCount,
-            count => BuildPattern(string.Concat(Enumerable.Repeat("/[^/]+", count)))
-        );
-
-        return Redact(value, pattern);
-    }
 
     /// <summary>
     /// Redacts an identity get-by-id or results-poll path whatever its number of leading tenant and
-    /// route-qualifier segments, producing the same placeholder form as
-    /// <see cref="Redact(PathString, string[], bool)"/>. Every other path is returned unchanged.
+    /// route-qualifier segments. Every other path is returned unchanged.
     /// </summary>
     public static string RedactWithAnyPrefix(string path) => Redact(path, _anyPrefixPattern);
 

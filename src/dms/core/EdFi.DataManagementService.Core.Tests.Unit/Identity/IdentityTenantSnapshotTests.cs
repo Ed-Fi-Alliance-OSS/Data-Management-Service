@@ -522,4 +522,80 @@ public class IdentityTenantSnapshotTests
             A.CallTo(_decryptionService).MustNotHaveHappened();
         }
     }
+
+    /// <summary>
+    /// A <see cref="FakeTimeProvider" /> that runs a one-shot callback the next time the clock is read
+    /// after being armed. <see cref="IdentityTenantSnapshot.CheckAsync" /> reads the clock exactly once
+    /// between observing its snapshot and entering the refresh gate, so arming the hook lets a test
+    /// complete another caller's refresh at precisely that point.
+    /// </summary>
+    private sealed class InterleavingTimeProvider : FakeTimeProvider
+    {
+        private Action? _onNextRead;
+
+        public void ArmNextRead(Action onNextRead) => _onNextRead = onNextRead;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            Action? onNextRead = _onNextRead;
+            _onNextRead = null;
+            onNextRead?.Invoke();
+            return base.GetUtcNow();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Stale_Reader_Entering_The_Gate_After_Another_Refresh_Completed
+        : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _staleReaderOutcome;
+        private TenantExistenceOutcome _racingCallerOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new InterleavingTimeProvider();
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>(["North"]));
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+
+            // First successful refresh, then let it expire.
+            await snapshot.CheckAsync("North", CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+            // The stale reader has already read the expired snapshot when its freshness check reads the
+            // clock; at that instant a racing caller completes a brand new refresh.
+            timeProvider.ArmNextRead(() =>
+                _racingCallerOutcome = snapshot
+                    .CheckAsync("North", CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult()
+            );
+
+            _staleReaderOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
+        }
+
+        [Test]
+        public void It_answers_Exists_for_the_racing_caller()
+        {
+            _racingCallerOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_answers_Exists_for_the_stale_reader()
+        {
+            _staleReaderOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_does_not_start_a_redundant_refresh_for_the_stale_reader()
+        {
+            // One call for the initial fill and one for the racing caller's refresh; the stale reader
+            // must reuse the snapshot that refresh just produced.
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedTwiceExactly();
+        }
+    }
 }

@@ -18,8 +18,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// </summary>
 public class IdentityEndpointModule(
     IOptions<FrontendAppSettings> frontendOptions,
-    IOptions<CoreAppSettings> coreOptions,
-    ILogger<IdentityEndpointModule> logger
+    IOptions<CoreAppSettings> coreOptions
 ) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -30,50 +29,6 @@ public class IdentityEndpointModule(
         }
 
         string[] routeQualifierSegments = frontendOptions.Value.GetRouteQualifierSegmentsArray();
-
-        // Fail closed at mapping time rather than at request time: a configured route-qualifier
-        // name that collides with another under case-insensitive comparison would make
-        // IdentityRequestContext.RouteQualifiers ambiguous, so the routes are not exposed
-        // at all rather than silently overwriting one qualifier's value with another's.
-        if (HasCaseInsensitiveCollision(routeQualifierSegments, out string? collidingNames))
-        {
-            logger.LogError(
-                "Identity routes were not mapped because configured route qualifier segments "
-                    + "collide under case-insensitive comparison: {CollidingNames}. Configure "
-                    + "unique qualifier names to enable the identity endpoints.",
-                collidingNames
-            );
-            return;
-        }
-
-        // A qualifier named like this module's own get-by-id or results-token parameter would
-        // repeat that parameter name in the route template, which fails host start with an
-        // opaque route-pattern error; refuse the identity routes with a named error instead.
-        string[] reservedNames = routeQualifierSegments
-            .Where(segment =>
-                string.Equals(
-                    segment,
-                    AspNetCoreFrontend.IdentityIdRouteParameterName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-                || string.Equals(
-                    segment,
-                    AspNetCoreFrontend.IdentityTokenRouteParameterName,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            .ToArray();
-
-        if (reservedNames.Length > 0)
-        {
-            logger.LogError(
-                "Identity routes were not mapped because configured route qualifier segments use "
-                    + "names reserved for the identity route parameters: {ReservedNames}. Rename "
-                    + "those qualifiers to enable the identity endpoints.",
-                string.Join(", ", reservedNames)
-            );
-            return;
-        }
 
         string prefix = FixedRoutePattern.Build(routeQualifierSegments, frontendOptions.Value.MultiTenancy);
         string identitiesBase = $"{prefix}/identity/v2/identities";
@@ -89,7 +44,9 @@ public class IdentityEndpointModule(
         // qualifier's own segment is a literal "{id}"/"{token}" earlier in this same route
         // template (FixedRoutePattern.Build), so a literal "id"/"token" here would make the route
         // template repeat a parameter name and fail host start. Follows the
-        // "__metadataRouteQualifier{n}" precedent in MetadataRouteValidator.
+        // "__metadataRouteQualifier{n}" precedent in MetadataRouteValidator. A qualifier named
+        // like either of these parameters, or two qualifiers differing only by case, are refused
+        // at startup by the frontend AppSettingsValidator.
         endpoints
             .MapPost(identitiesBase, AspNetCoreFrontend.IdentityCreate)
             .WithMetadata(new IdentityOperationEndpointMetadata());
@@ -115,28 +72,5 @@ public class IdentityEndpointModule(
                 AspNetCoreFrontend.IdentityResults
             )
             .WithMetadata(new IdentityOperationEndpointMetadata());
-    }
-
-    /// <summary>
-    /// True when two or more configured route-qualifier segment names collide under
-    /// OrdinalIgnoreCase, which is the comparer IdentityRequestContext.RouteQualifiers uses.
-    /// </summary>
-    private static bool HasCaseInsensitiveCollision(string[] segments, out string? collidingNames)
-    {
-        Dictionary<string, string> seenByCaseInsensitiveName = new(StringComparer.OrdinalIgnoreCase);
-
-        foreach (string segment in segments)
-        {
-            if (seenByCaseInsensitiveName.TryGetValue(segment, out string? existing))
-            {
-                collidingNames = $"{existing}, {segment}";
-                return true;
-            }
-
-            seenByCaseInsensitiveName[segment] = segment;
-        }
-
-        collidingNames = null;
-        return false;
     }
 }

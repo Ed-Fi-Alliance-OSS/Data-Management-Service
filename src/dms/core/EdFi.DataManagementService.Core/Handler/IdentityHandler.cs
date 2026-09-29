@@ -46,8 +46,8 @@ internal sealed class IdentityHandler(
     /// <summary>
     /// The fallback maximum HTTP request-line size passed to every <see cref="IdentityHandler"/>
     /// instance, used only when a request's <see cref="FrontendRequest.MaxRequestLineSize"/> is null.
-    /// This is the documented default for Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>,
-    /// re-verified at runtime against a live host rather than assumed.
+    /// This is the documented default for Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>, a
+    /// limit Kestrel applies to the whole request line including its terminating CRLF.
     /// </summary>
     internal const int DefaultMaxRequestLineSize = 8192;
 
@@ -73,9 +73,9 @@ internal sealed class IdentityHandler(
         }
 
         // BuildContext throws InvalidOperationException on a route-qualifier name collision under
-        // case-insensitive comparison - a host configuration defect. The frontend already guards
-        // against this at module-mapping time, so reaching it here is a genuine host bug rather than
-        // a client or provider fault. It is deliberately left uncaught here, not routed through the
+        // case-insensitive comparison - a host configuration defect. The frontend's startup options
+        // validation already refuses such a configuration before the host starts, so reaching it
+        // here is a genuine host bug rather than a client or provider fault. It is deliberately left uncaught here, not routed through the
         // provider boundary, so CoreExceptionLoggingMiddleware's general handler logs it as an
         // unexpected condition.
         IdentityRequestContext context = BuildContext(requestInfo);

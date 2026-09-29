@@ -80,6 +80,10 @@ request logging layer:
   For an identity get-by-id or results-poll route, DMS replaces the identifier segment with the same placeholder before any sink writes the event, and this value is not sanitized, so the placeholder keeps its braces (for example `/identity/v2/identities/{id}` or `/identity/v2/identities/results/{token}`).
   Every other route keeps its raw value.
   For those identity routes, DMS also drops the framework's own `Microsoft.AspNetCore.Hosting.Diagnostics` request-starting and request-finished events and the Debug-level `Microsoft.AspNetCore.Routing.Matching.DfaMatcher` candidate events, because they carry the raw path in their `Path` property and rendered message.
+  This `Path` and `RequestPath` redaction, and the dropping of those framework events, is always on as defense in depth, independent of `AppSettings:EnableIdentityManagement` and of the configured tenant and route-qualifier segments.
+  With the flag off, or with a leading-segment shape that does not match this host's configuration, an identity-shaped path returns 404, and it is still redacted and its framework hosting start and finish events are still dropped.
+  The redaction does not extend to identity provider exception detail logged at `Debug` by the Core identity provider boundary (logger category `EdFi.DataManagementService.Core.Identity.IdentityProviderBoundary`), which may quote the unique id, the results token, or submitted person data.
+  Do not enable `Debug` for that category in production unless logging that detail is acceptable.
 * `StatusCode`: HTTP response status code. An unhandled exception before a
   response is produced is logged as `500`.
 * `DurationMs`: elapsed request duration in milliseconds as a numeric `long`.

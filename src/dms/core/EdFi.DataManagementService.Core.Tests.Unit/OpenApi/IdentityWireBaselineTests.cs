@@ -6,6 +6,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
@@ -190,26 +191,47 @@ public class IdentityWireBaselineTests
         }
     }
 
+    /// <summary>
+    /// The contract version comes from the Identity assembly's <c>IdentityContractVersion</c>
+    /// <see cref="AssemblyMetadataAttribute" />, whose value the Identity csproj derives from its own
+    /// <c>VersionPrefix</c>. Unlike <c>AssemblyInformationalVersion</c>, neither is overridden by a
+    /// global <c>/p:Version</c> or <c>/p:InformationalVersion</c>, so the stamp stays the contract's
+    /// version inside release-stamped images.
+    /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_The_Identity_Contract_Version_Stamp
     {
         private JsonNode _served = null!;
         private JsonNode _baseline = null!;
-        private string _expectedVersion = null!;
+        private string? _assemblyMetadataVersion;
+        private string _csprojVersionPrefix = null!;
 
         [SetUp]
         public void Setup()
         {
             _served = BuildServedDocument(ServerUrl, TokenUrl);
-            _expectedVersion = ResolveIdentityContractInformationalVersion();
+            _assemblyMetadataVersion = typeof(IIdentityService)
+                .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .SingleOrDefault(attribute => attribute.Key == "IdentityContractVersion")
+                ?.Value;
+            _csprojVersionPrefix = ReadIdentityCsprojVersionPrefix();
             _baseline = JsonNode.Parse(File.ReadAllText(ExpectedPath))!;
         }
 
         [Test]
-        public void It_equals_the_identity_assembly_informational_version()
+        public void It_equals_the_identity_assembly_contract_version_metadata()
         {
-            _served["x-edfi-identity-contract-version"]!.GetValue<string>().Should().Be(_expectedVersion);
+            _served["x-edfi-identity-contract-version"]!
+                .GetValue<string>()
+                .Should()
+                .Be(_assemblyMetadataVersion);
+        }
+
+        [Test]
+        public void It_equals_the_identity_csproj_VersionPrefix()
+        {
+            _served["x-edfi-identity-contract-version"]!.GetValue<string>().Should().Be(_csprojVersionPrefix);
         }
 
         [Test]
@@ -218,20 +240,16 @@ public class IdentityWireBaselineTests
             _baseline["x-edfi-identity-contract-version"].Should().BeNull();
         }
 
-        /// <summary>
-        /// Mirrors <c>IdentityOpenApiDocument.ResolveContractVersion</c>'s stripping of a trailing
-        /// <c>+commit</c> metadata suffix, so this test's expectation matches what is actually stamped.
-        /// </summary>
-        private static string ResolveIdentityContractInformationalVersion()
+        private static string ReadIdentityCsprojVersionPrefix()
         {
-            string informationalVersion =
-                typeof(IIdentityService)
-                    .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                    ?.InformationalVersion
-                ?? "0.0.0";
+            string csprojPath = Path.Combine(
+                ProjectRoot,
+                "..",
+                "EdFi.DataManagementService.Identity",
+                "EdFi.DataManagementService.Identity.csproj"
+            );
 
-            int plusIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
-            return plusIndex < 0 ? informationalVersion : informationalVersion[..plusIndex];
+            return XDocument.Load(csprojPath).Descendants("VersionPrefix").Single().Value.Trim();
         }
     }
 

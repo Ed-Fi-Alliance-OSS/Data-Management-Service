@@ -34,7 +34,7 @@ public class LoggingMiddleware
         // scope Path property and every rendered message template below carry the redacted value,
         // never the real identifier. Every other path - including the other four identity routes,
         // which carry no identifier - passes through unchanged.
-        var redactedPath = RedactPath(context, context.Request.Path, _appSettings);
+        var redactedPath = RedactPath(context.Request.Path);
         var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(redactedPath);
         var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
         // Normalized at the ingestion boundary by AspNetCoreFrontend, so no second,
@@ -255,27 +255,14 @@ public class LoggingMiddleware
     /// Redacts an identity get-by-id or results-poll identifier from <paramref name="path"/>.
     /// </summary>
     /// <remarks>
-    /// Reads <see cref="AppSettings.MultiTenancy"/> and the configured route-qualifier segments to
-    /// build the redaction pattern, through <see cref="AspNetCoreFrontend.TryReadAppSettings"/>
-    /// rather than <paramref name="appSettings"/> directly: that helper caches the read (or the
-    /// fact that it threw) on <see cref="HttpContext.Items"/>, so a request whose <c>AppSettings</c>
-    /// failed validation costs one read and one thrown <see cref="OptionsValidationException"/>
-    /// total, shared with <see cref="AspNetCoreFrontend.IngestCorrelationIdFrom"/> below, not a
-    /// second one for redaction. Degrades to no redaction, rather than throwing, when the options
-    /// value cannot be read.
+    /// Matches the identity route shape whatever its number of leading tenant and route-qualifier
+    /// segments, so a path whose prefix does not fit this host's configuration (which routing sends to
+    /// the 404 fallback) is redacted as well, and so is every path on a host whose
+    /// <c>AppSettings</c> failed validation.
     /// </remarks>
-    private static string? RedactPath(HttpContext context, PathString path, IOptions<AppSettings> appSettings)
+    private static string? RedactPath(PathString path)
     {
-        AppSettings? settings = AspNetCoreFrontend.TryReadAppSettings(context, appSettings);
-        if (settings is null)
-        {
-            return path.Value;
-        }
-
-        return IdentityRoutePathRedactor.Redact(
-            path,
-            settings.GetRouteQualifierSegmentsArray(),
-            settings.MultiTenancy
-        );
+        string? value = path.Value;
+        return string.IsNullOrEmpty(value) ? value : IdentityRoutePathRedactor.RedactWithAnyPrefix(value);
     }
 }

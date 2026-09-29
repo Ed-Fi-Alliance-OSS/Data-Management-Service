@@ -437,10 +437,8 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// The key under which this request's one <c>AppSettings</c> read outcome - the resolved
     /// value, or the fact that reading it threw <see cref="OptionsValidationException"/> - is
-    /// cached on <see cref="HttpContext.Items"/>, so a second consumer in the same request
-    /// (<c>LoggingMiddleware</c> ingesting the correlation ID and, separately, redacting an
-    /// identity route) reuses it rather than reading, and on a host stuck with invalid
-    /// configuration re-throwing, again.
+    /// cached on <see cref="HttpContext.Items"/>, so a later consumer in the same request reuses
+    /// it rather than reading, and on a host stuck with invalid configuration re-throwing, again.
     /// </summary>
     internal const string AppSettingsSnapshotItemsKey =
         "EdFi.DataManagementService.Frontend.AppSettingsSnapshot";
@@ -1268,8 +1266,8 @@ public static class AspNetCoreFrontend
     /// RouteQualifierSegments) can itself be named "id", and the qualifier prefix segments are built
     /// from that configured name (FixedRoutePattern), so a literal "id" here would make the identity
     /// route template repeat a parameter name and fail host start. Follows the
-    /// "__metadataRouteQualifier{n}" precedent (MetadataRouteValidator) of a double-underscore name no
-    /// user-configured qualifier can collide with.
+    /// "__metadataRouteQualifier{n}" precedent (MetadataRouteValidator) of a double-underscore name,
+    /// and the frontend AppSettingsValidator refuses a configured qualifier with this name at startup.
     /// </summary>
     internal const string IdentityIdRouteParameterName = "__identityId";
 
@@ -1308,12 +1306,18 @@ public static class AspNetCoreFrontend
     /// is case-insensitive because ASP.NET Core routing matches these routes case-insensitively, so a
     /// differently-cased request (for example .../Identity/V2/Identities/find) must still find the
     /// prefix boundary; the emitted "/identity/v2/identities" suffix always stays canonical lowercase
-    /// since it comes from the <see cref="IdentitiesRouteSegment"/> constant, not the request text.
+    /// since it comes from the <see cref="IdentitiesRouteSegment"/> constant, not the request text. The
+    /// last occurrence is the real route: tenant or qualifier values can themselves spell the segment,
+    /// while the tail after it (empty, "/find", "/search", an identifier, or "/results/{token}") is one
+    /// or two escaped segments and never can.
     /// </summary>
     private static string BuildIdentityTemplatePath(HttpRequest request, string operationSuffix)
     {
         string requestPath = request.Path.ToUriComponent();
-        int segmentIndex = requestPath.IndexOf(IdentitiesRouteSegment, StringComparison.OrdinalIgnoreCase);
+        int segmentIndex = requestPath.LastIndexOf(
+            IdentitiesRouteSegment,
+            StringComparison.OrdinalIgnoreCase
+        );
         string prefix = segmentIndex >= 0 ? requestPath[..segmentIndex] : string.Empty;
         return $"{prefix}{IdentitiesRouteSegment}{operationSuffix}";
     }

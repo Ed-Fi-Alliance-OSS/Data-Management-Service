@@ -769,12 +769,14 @@ internal class ApiService : IApiService
     /// only happens in a test double that does not model real routing. The segment match is
     /// case-insensitive because ASP.NET Core routing matches these routes case-insensitively, so a
     /// differently-cased request path (for example .../Identity/V2/Identities/find) still locates the
-    /// tenant/qualifier prefix boundary correctly.
+    /// tenant/qualifier prefix boundary correctly. The last occurrence is the real route: tenant or
+    /// qualifier values can themselves spell the segment, while the tail after it (empty, "/find",
+    /// "/search", an identifier, or "/results/{token}") is a single escaped segment or two and never can.
     /// </summary>
     private static string ComputeIdentityPollPathPrefix(string requestPath)
     {
         const string identitiesSegment = "/identity/v2/identities";
-        int segmentIndex = requestPath.IndexOf(identitiesSegment, StringComparison.OrdinalIgnoreCase);
+        int segmentIndex = requestPath.LastIndexOf(identitiesSegment, StringComparison.OrdinalIgnoreCase);
         string routeQualifiedBase =
             segmentIndex >= 0 ? requestPath[..(segmentIndex + identitiesSegment.Length)] : identitiesSegment;
         return $"{routeQualifiedBase}/results";

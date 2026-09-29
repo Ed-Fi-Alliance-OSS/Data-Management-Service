@@ -118,10 +118,16 @@ internal static class IdentityRequestTokenRule
             return Reject(escaped, IdentityRequestTokenRejectionReason.EscapedTokenTooLong);
         }
 
-        // "GET " and " HTTP/1.1" bound the request-line overhead around the composed path: method,
-        // a separating space, the path itself, another space, and the HTTP version token.
+        // "GET ", " HTTP/1.1", and "\r\n" bound the request-line overhead around the composed path:
+        // method, a separating space, the path itself, another space, the HTTP version token, and the
+        // terminating CRLF, which Kestrel counts against MaxRequestLineSize.
         int composedRequestLineLength =
-            composedPathPrefix.Length + 1 + escaped.Length + "GET ".Length + " HTTP/1.1".Length;
+            composedPathPrefix.Length
+            + 1
+            + escaped.Length
+            + "GET ".Length
+            + " HTTP/1.1".Length
+            + "\r\n".Length;
 
         if (composedRequestLineLength > maxRequestLineSize)
         {

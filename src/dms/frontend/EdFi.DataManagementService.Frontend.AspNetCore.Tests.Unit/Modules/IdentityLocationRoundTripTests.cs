@@ -631,6 +631,88 @@ public class IdentityLocationRoundTripTests
     }
 
     /// <summary>
+    /// Route-qualifier values that are literally "identity", "v2", and "identities" spell the identity
+    /// route segment ahead of the real one. Both BuildIdentityTemplatePath (AspNetCoreFrontend) and
+    /// ComputeIdentityPollPathPrefix (Core ApiService) must anchor on the last occurrence of that
+    /// segment, or the look-alike qualifier prefix is mistaken for the route and dropped from the
+    /// emitted Location. Following the Location back proves it still routes to the results endpoint.
+    /// </summary>
+    [TestFixture]
+    public class Given_Route_Qualifier_Values_That_Spell_The_Identity_Segment
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _findResponse = null!;
+        private HttpResponseMessage _resultsResponse = null!;
+        private RecordingIdentityService _identityService = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _identityService = new RecordingIdentityService("look-alike-prefix-token");
+            _factory = CreateFactory(
+                _identityService,
+                multiTenancy: false,
+                routeQualifierSegments: "first,second,third"
+            );
+            _client = _factory.CreateClient(
+                new WebApplicationFactoryClientOptions { AllowAutoRedirect = false }
+            );
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                "round-trip-token"
+            );
+
+            using var findRequest = new HttpRequestMessage(
+                HttpMethod.Post,
+                "/identity/v2/identities/identity/v2/identities/find"
+            )
+            {
+                Content = new StringContent("""["605943412"]""", Encoding.UTF8, "application/json"),
+            };
+            _findResponse = await _client.SendAsync(findRequest);
+
+            _resultsResponse = await _client.GetAsync(_findResponse.Headers.Location);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _findResponse.Dispose();
+            _resultsResponse.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_202_accepted()
+        {
+            _findResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        }
+
+        [Test]
+        public void It_keeps_the_look_alike_qualifier_prefix_in_the_location()
+        {
+            _findResponse
+                .Headers.Location!.ToString()
+                .Should()
+                .Be(
+                    "http://localhost/identity/v2/identities/identity/v2/identities/results/look-alike-prefix-token"
+                );
+        }
+
+        [Test]
+        public void It_redeems_the_same_token_the_location_carried()
+        {
+            _identityService
+                .ResultsTokensReceived.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be("look-alike-prefix-token");
+        }
+    }
+
+    /// <summary>
     /// <c>FromIdentityRequest</c>/<c>ResolveMaxRequestLineSize</c> (AspNetCoreFrontend) must
     /// reduce the request-line budget passed to Core by PathBase's length. Core's composed-path check
     /// (<see cref="Identity.IdentityRequestTokenRule"/>) measures the prefix from
@@ -640,19 +722,21 @@ public class IdentityLocationRoundTripTests
     /// to just fit the unqualified budget passes here but overflows the real request line by exactly
     /// PathBase's length once the poll path is fetched under the PathBase.
     ///
-    /// All three fixtures below share single-tenant, no-route-qualifier routing, so
+    /// All four fixtures below share single-tenant, no-route-qualifier routing, so
     /// <c>composedPathPrefix</c> is the fixed <c>"/identity/v2/identities/results"</c> (31 characters),
     /// making <c>IdentityRequestTokenRule.Evaluate</c>'s arithmetic exact:
     /// <c>composedRequestLineLength = 31 + 1 + escaped.Length + "GET ".Length + " HTTP/1.1".Length
-    /// = 45 + escaped.Length</c>. With <see cref="RequestLineLimit"/> (100) configured as the raw
-    /// Kestrel <c>MaxRequestLineSize</c>: an <see cref="ExactFitTokenLength"/> (55) token exactly fills
-    /// the budget with no PathBase (45 + 55 = 100), and only a <see cref="PathBaseFitTokenLength"/> (51,
-    /// four characters shorter) token exactly fills the budget once <see cref="PathBaseSegment"/>
-    /// ("/api", 4 characters) is subtracted (100 - 4 = 96; 45 + 51 = 96).
+    /// + "\r\n".Length = 47 + escaped.Length</c>, because Kestrel counts the terminating CRLF against
+    /// <c>MaxRequestLineSize</c>. With <see cref="RequestLineLimit"/> (100) configured as the raw
+    /// Kestrel <c>MaxRequestLineSize</c>: an <see cref="ExactFitTokenLength"/> (53) token exactly fills
+    /// the budget with no PathBase (47 + 53 = 100), a token one character longer (54) overflows it
+    /// (47 + 54 = 101), and only a <see cref="PathBaseFitTokenLength"/> (49, four characters shorter)
+    /// token exactly fills the budget once <see cref="PathBaseSegment"/> ("/api", 4 characters) is
+    /// subtracted (100 - 4 = 96; 47 + 49 = 96).
     /// </summary>
     private const int RequestLineLimit = 100;
     private const string PathBaseSegment = "/api";
-    private const int ExactFitTokenLength = 55;
+    private const int ExactFitTokenLength = 53;
     private const int PathBaseFitTokenLength = ExactFitTokenLength - 4;
 
     [TestFixture]
@@ -701,6 +785,54 @@ public class IdentityLocationRoundTripTests
                 .Be(
                     $"http://localhost/identity/v2/identities/results/{new string('a', ExactFitTokenLength)}"
                 );
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_token_one_character_longer_than_the_exact_fit_with_no_PathBase
+    {
+        private HttpResponseMessage _findResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string token = new('a', ExactFitTokenLength + 1);
+            var identityService = new RecordingIdentityService(token);
+            await using var factory = CreateFactory(
+                identityService,
+                maxRequestLineSize: RequestLineLimit,
+                multiTenancy: false,
+                routeQualifierSegments: ""
+            );
+            using var client = factory.CreateClient(
+                new WebApplicationFactoryClientOptions { AllowAutoRedirect = false }
+            );
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                "round-trip-token"
+            );
+
+            using var findRequest = new HttpRequestMessage(HttpMethod.Post, "/identity/v2/identities/find")
+            {
+                Content = new StringContent("""["605943412"]""", Encoding.UTF8, "application/json"),
+            };
+            _findResponse = await client.SendAsync(findRequest);
+        }
+
+        /// <summary>
+        /// One character past the exact fit, the follow-up poll's request line plus its terminating
+        /// CRLF would exceed the Kestrel limit by one byte, so the token must be refused before the 202.
+        /// </summary>
+        [Test]
+        public void It_returns_502_bad_gateway()
+        {
+            _findResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        }
+
+        [Test]
+        public void It_returns_no_location()
+        {
+            _findResponse.Headers.Location.Should().BeNull();
         }
     }
 

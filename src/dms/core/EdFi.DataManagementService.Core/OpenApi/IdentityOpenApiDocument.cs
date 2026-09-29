@@ -57,19 +57,18 @@ internal static class IdentityOpenApiDocument
     }
 
     /// <summary>
-    /// Reads the identity contract's informational version from <see cref="IIdentityService" />'s
-    /// assembly, stripping any trailing <c>+commit</c> metadata suffix so the stamp is a bare
-    /// semantic version.
+    /// Reads the identity contract version from the <c>IdentityContractVersion</c>
+    /// <see cref="AssemblyMetadataAttribute" /> on <see cref="IIdentityService" />'s assembly. The
+    /// Identity project stamps it from its own <c>VersionPrefix</c>, which a global
+    /// <c>/p:Version</c> or <c>/p:InformationalVersion</c> does not override, so the stamp is the
+    /// contract's version rather than whatever DMS release the host was built as.
     /// </summary>
-    private static string ResolveContractVersion()
-    {
-        string informationalVersion =
-            typeof(IIdentityService)
-                .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion
-            ?? "0.0.0";
-
-        int plusIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
-        return plusIndex < 0 ? informationalVersion : informationalVersion[..plusIndex];
-    }
+    private static string ResolveContractVersion() =>
+        typeof(IIdentityService)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .SingleOrDefault(attribute => attribute.Key == "IdentityContractVersion")
+            ?.Value
+        ?? throw new InvalidOperationException(
+            "The identity contract assembly carries no IdentityContractVersion metadata."
+        );
 }
