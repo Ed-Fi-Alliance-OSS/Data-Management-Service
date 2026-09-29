@@ -34,6 +34,10 @@ internal record CmsProfileResponseInternal(long Id, string Name, string Definiti
 /// <summary>
 /// Retrieves profile data from the Configuration Management Service API.
 /// Uses per-request headers for thread safety when making concurrent requests.
+/// A CMS 404 for an application or a single profile is the only outcome reported as absent
+/// (<c>null</c>). Every other failure is logged once here and thrown as
+/// <see cref="ProfileDataUnavailableException" />, so a dependency failure is never mistaken for
+/// "no profile" and never cached as a successful result.
 /// </summary>
 public class ConfigurationServiceProfileProvider(
     ConfigurationServiceApiClient configurationServiceApiClient,
@@ -67,6 +71,7 @@ public class ConfigurationServiceProfileProvider(
 
             using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/applications/{applicationId}");
             SetRequestHeaders(request, token, tenantId);
+            request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
 
@@ -90,7 +95,7 @@ public class ConfigurationServiceProfileProvider(
                     "Failed to deserialize application response for applicationId: {ApplicationId}",
                     applicationId
                 );
-                return null;
+                throw ApplicationProfileInfoUnavailable(applicationId);
             }
 
             logger.LogDebug(
@@ -108,7 +113,7 @@ public class ConfigurationServiceProfileProvider(
                 "HTTP request failed while fetching application profile info for applicationId: {ApplicationId}",
                 applicationId
             );
-            return null;
+            throw ApplicationProfileInfoUnavailable(applicationId, ex);
         }
         catch (JsonException ex)
         {
@@ -117,16 +122,16 @@ public class ConfigurationServiceProfileProvider(
                 "Failed to parse application response for applicationId: {ApplicationId}",
                 applicationId
             );
-            return null;
+            throw ApplicationProfileInfoUnavailable(applicationId, ex);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ProfileDataUnavailableException)
         {
             logger.LogError(
                 ex,
                 "Unexpected error while fetching application profile info for applicationId: {ApplicationId}",
                 applicationId
             );
-            return null;
+            throw ApplicationProfileInfoUnavailable(applicationId, ex);
         }
     }
 
@@ -145,6 +150,10 @@ public class ConfigurationServiceProfileProvider(
 
             using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/profiles/{profileId}");
             SetRequestHeaders(request, token, tenantId);
+            // CMS also answers 404 for a stored profile that fails its XSD validation. Letting the
+            // response handler throw for it would make every catalog holding such a profile
+            // permanently unavailable instead of skipping that one profile.
+            request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
 
@@ -166,7 +175,7 @@ public class ConfigurationServiceProfileProvider(
                     "Failed to deserialize profile response for profileId: {ProfileId}",
                     profileId
                 );
-                return null;
+                throw ProfileUnavailable(profileId);
             }
 
             logger.LogDebug(
@@ -188,21 +197,21 @@ public class ConfigurationServiceProfileProvider(
                 "HTTP request failed while fetching profile for profileId: {ProfileId}",
                 profileId
             );
-            return null;
+            throw ProfileUnavailable(profileId, ex);
         }
         catch (JsonException ex)
         {
             logger.LogError(ex, "Failed to parse profile response for profileId: {ProfileId}", profileId);
-            return null;
+            throw ProfileUnavailable(profileId, ex);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ProfileDataUnavailableException)
         {
             logger.LogError(
                 ex,
                 "Unexpected error while fetching profile for profileId: {ProfileId}",
                 profileId
             );
-            return null;
+            throw ProfileUnavailable(profileId, ex);
         }
     }
 
@@ -219,6 +228,8 @@ public class ConfigurationServiceProfileProvider(
 
             logger.LogDebug("Fetching profile catalog from CMS");
 
+            // No AllowNotFoundResponse: the list endpoint always exists, so a 404 here is a failure,
+            // never an empty catalog.
             using var request = new HttpRequestMessage(HttpMethod.Get, "/v3/profiles");
             SetRequestHeaders(request, token, tenantId);
 
@@ -232,8 +243,8 @@ public class ConfigurationServiceProfileProvider(
 
             if (profileResponses == null)
             {
-                logger.LogWarning("Profile catalog response was empty or could not be parsed");
-                return Array.Empty<CmsProfileResponse>();
+                logger.LogError("Profile catalog response was empty or could not be parsed");
+                throw CatalogUnavailable();
             }
 
             var results = profileResponses
@@ -247,19 +258,36 @@ public class ConfigurationServiceProfileProvider(
         catch (HttpRequestException ex)
         {
             logger.LogError(ex, "HTTP request failed while fetching profile catalog");
-            return Array.Empty<CmsProfileResponse>();
+            throw CatalogUnavailable(ex);
         }
         catch (JsonException ex)
         {
             logger.LogError(ex, "Failed to parse profile catalog response");
-            return Array.Empty<CmsProfileResponse>();
+            throw CatalogUnavailable(ex);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ProfileDataUnavailableException)
         {
             logger.LogError(ex, "Unexpected error while fetching profile catalog");
-            return Array.Empty<CmsProfileResponse>();
+            throw CatalogUnavailable(ex);
         }
     }
+
+    private static ProfileDataUnavailableException ApplicationProfileInfoUnavailable(
+        long applicationId,
+        Exception? innerException = null
+    ) =>
+        new(
+            $"Application profile info for applicationId {applicationId} is unavailable from the Configuration Service",
+            innerException
+        );
+
+    private static ProfileDataUnavailableException ProfileUnavailable(
+        long profileId,
+        Exception? innerException = null
+    ) => new($"Profile {profileId} is unavailable from the Configuration Service", innerException);
+
+    private static ProfileDataUnavailableException CatalogUnavailable(Exception? innerException = null) =>
+        new("The profile catalog is unavailable from the Configuration Service", innerException);
 
     /// <summary>
     /// Sets authorization and tenant headers on the request message.

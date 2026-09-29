@@ -454,7 +454,13 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                     .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
+                // The host has no Configuration Service, and profiles are outside this smoke path.
+                var profileCmsProvider = A.Fake<IProfileCmsProvider>();
+                A.CallTo(() => profileCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+                    .Returns(Task.FromResult<ApplicationProfileInfo?>(null));
+
                 services.RemoveAll<IJwtValidationService>();
+                services.RemoveAll<IProfileCmsProvider>();
                 services.RemoveAll<IClaimSetProvider>();
                 services.RemoveAll<IApplicationContextProvider>();
                 services.RemoveAll<IDocumentStoreRepository>();
@@ -471,6 +477,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IRelationalWriteSessionFactory>();
 
                 services.AddSingleton(jwtValidationService);
+                services.AddSingleton(profileCmsProvider);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
                 services.AddSingleton(applicationContextProvider);
                 services.AddSingleton<RelationalEdOrgAuthorizationElementResolutionCache>();
