@@ -511,9 +511,18 @@ function DockerBuild {
         $versionArgs += "VERSION=$DmsCSVersion"
     }
 
+    # --load: under a docker-container buildx builder (as in CI) the result otherwise stays only in the
+    # build cache, and DockerRun and the image version proof both need the tagged local image.
     Push-Location src/config/
-    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
-    Pop-Location
+    try {
+        &docker buildx build --load -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker buildx build failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function DockerRun {

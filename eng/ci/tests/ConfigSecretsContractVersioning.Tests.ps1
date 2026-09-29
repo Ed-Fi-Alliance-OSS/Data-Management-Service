@@ -218,6 +218,9 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
             }
 
             $script:builtImageId = docker image inspect --format "{{.Id}}" $script:imageTag 2>$null
+            if ($LASTEXITCODE -ne 0 -or -not $script:builtImageId) {
+                throw "DockerBuild left no local image tagged $($script:imageTag); the build output was not loaded into the image store."
+            }
 
             $imageFiles = Join-Path $TestDrive "image"
             New-Item -ItemType Directory -Path $imageFiles -Force | Out-Null
@@ -225,9 +228,19 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
             $script:imageFrontend = Join-Path $imageFiles "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll"
 
             $container = docker create $script:imageTag
+            if ($LASTEXITCODE -ne 0 -or -not $container) {
+                throw "Could not create a container from $($script:imageTag)."
+            }
             try {
-                docker cp "${container}:/app/$($script:assemblyName).dll" $script:imageContract | Out-Host
-                docker cp "${container}:/app/EdFi.DmsConfigurationService.Frontend.AspNetCore.dll" $script:imageFrontend | Out-Host
+                foreach ($copy in @(
+                    @{ Source = "/app/$($script:assemblyName).dll"; Destination = $script:imageContract },
+                    @{ Source = "/app/EdFi.DmsConfigurationService.Frontend.AspNetCore.dll"; Destination = $script:imageFrontend }
+                )) {
+                    docker cp "${container}:$($copy.Source)" $copy.Destination | Out-Host
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Could not copy $($copy.Source) out of $($script:imageTag)."
+                    }
+                }
             }
             finally {
                 docker rm $container | Out-Null
