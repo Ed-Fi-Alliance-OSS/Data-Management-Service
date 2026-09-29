@@ -720,44 +720,183 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     }
 
     /// <summary>
-    /// Descriptor single-record operations enforce OwnershipBased, but descriptor GET-many has no ownership
-    /// page filter yet, so the request keeps its 501 rather than returning an unfiltered page. The caller's
-    /// token count must not change that: under the cap and at it alike the outcome is the 501, with no SQL,
-    /// and never the token-cap 500 the single-record operations report.
+    /// A caller with no ownership token can own no descriptor, so its page is empty — count zero when asked
+    /// for, selection skipped — with no SQL, the same answer a regular resource gives and never a 403.
     /// </summary>
-    [TestCase(0)]
-    [TestCase(1)]
-    [TestCase(OwnershipTokenLimitExceededException.OwnershipTokenLimit)]
-    public async Task It_fails_closed_for_descriptor_query_with_ownership_based_authorization(int tokenCount)
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_answers_a_descriptor_query_for_a_caller_with_no_ownership_token_with_an_empty_page_and_no_sql(
+        bool totalCount
+    )
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
-        var request = CreateQueryRequest(
-            namespacePrefixes: ["uri://ed-fi.org/"],
-            authorizationStrategy: new AuthorizationStrategyEvaluator(
-                AuthorizationStrategyNameConstants.OwnershipBased,
-                [],
-                FilterOperator.And
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: OwnershipStrategy(),
+                totalCount: totalCount,
+                ownershipTokenIds: []
             )
         );
 
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(totalCount ? 0 : null);
+        success.SelectionSkipped.Should().BeTrue();
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// At the token cap the planner's cap terminal is the security-configuration 500, before any SQL; the list
+    /// is never sent to the provider.
+    /// </summary>
+    [Test]
+    public async Task It_fails_a_descriptor_query_at_the_ownership_token_cap_without_executing_sql()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
         var result = await sut.HandleQueryAsync(
-            request with
-            {
-                RelationalAuthorizationContext = new RelationalAuthorizationContext(
-                    [],
-                    request.RelationalAuthorizationContext.NamespacePrefixes,
-                    null,
-                    [.. Enumerable.Range(1, tokenCount).Select(static tokenId => (short)tokenId)]
-                ),
-            }
+            CreateQueryRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: OwnershipStrategy(),
+                ownershipTokenIds: OwnershipTokenRange(
+                    OwnershipTokenLimitExceededException.OwnershipTokenLimit
+                )
+            )
         );
 
         result
             .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+            .BeOfType<QueryResult.QueryFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .Equal(
+                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                    OwnershipTokenLimitExceededException.OwnershipTokenLimit
+                )
+            );
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The ownership filter is part of the page relation itself, so the total count and the page are cut from
+    /// the same owned rows: the predicate appears once in the count and once in the page subquery, after the
+    /// namespace filter — ownership executes last among the AND strategies — and the caller's tokens are bound
+    /// deduplicated and in ascending order.
+    /// </summary>
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"Namespace\" IS NOT NULL AND r.\"Namespace\" LIKE ANY(@namespacePrefixes)",
+        "doc.\"CreatedByOwnershipTokenId\" IS NOT NULL AND doc.\"CreatedByOwnershipTokenId\" = ANY(@ownershipTokenIds)"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[Namespace] IS NOT NULL AND (r.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\')",
+        "doc.[CreatedByOwnershipTokenId] IS NOT NULL AND doc.[CreatedByOwnershipTokenId] IN (@ownershipTokenIds_0, @ownershipTokenIds_1)"
+    )]
+    public async Task It_filters_the_descriptor_page_and_total_count_by_the_callers_ownership_tokens_after_the_namespace_filter(
+        SqlDialect dialect,
+        string expectedNamespacePredicate,
+        string expectedOwnershipPredicate
+    )
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["count"] = 1L }),
+                    InMemoryRelationalResultSet.Create(
+                        CreateDescriptorRow(ns: "uri://ed-fi.org/SchoolTypeDescriptor")
+                    ),
+                ]),
+            ],
+            dialect
+        );
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategy: OwnershipStrategy(),
+                dialect: dialect,
+                totalCount: true,
+                additionalAuthorizationStrategy: NamespaceStrategy(),
+                ownershipTokenIds: [42, 7, 42]
+            )
+        );
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.TotalCount.Should().Be(1);
+        var command = commandExecutor.Commands.Should().ContainSingle().Subject;
+        CountOccurrences(command.CommandText, expectedOwnershipPredicate).Should().Be(2);
+        CountOccurrences(command.CommandText, expectedNamespacePredicate).Should().Be(2);
+        command
+            .CommandText.IndexOf(expectedNamespacePredicate, StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(command.CommandText.IndexOf(expectedOwnershipPredicate, StringComparison.Ordinal));
+
+        if (dialect is SqlDialect.Pgsql)
+        {
+            command
+                .Parameters.Single(static parameter => parameter.Name == "@ownershipTokenIds")
+                .Value.Should()
+                .BeAssignableTo<IReadOnlyList<short>>()
+                .Which.Should()
+                .Equal((short)7, (short)42);
+        }
+        else
+        {
+            command
+                .Parameters.Single(static parameter => parameter.Name == "@ownershipTokenIds_0")
+                .Value.Should()
+                .Be((short)7);
+            command
+                .Parameters.Single(static parameter => parameter.Name == "@ownershipTokenIds_1")
+                .Value.Should()
+                .Be((short)42);
+        }
+    }
+
+    /// <summary>
+    /// SQL Server binds one parameter per token, so the combined budget counts them with the namespace prefixes
+    /// and the query's own parameters: 1,999 tokens are valid on their own, but with 100 prefixes the command
+    /// would exceed the provider's parameter ceiling, and the request fails closed naming all four counts.
+    /// </summary>
+    [Test]
+    public async Task It_counts_ownership_tokens_in_the_mssql_descriptor_query_parameter_budget()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([], SqlDialect.Mssql);
+        var sut = CreateSut(commandExecutor);
+        string[] namespacePrefixes =
+        [
+            .. Enumerable.Range(0, 100).Select(static index => $"uri://district{index}.org/"),
+        ];
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                namespacePrefixes: namespacePrefixes,
+                authorizationStrategy: NamespaceStrategy(),
+                dialect: SqlDialect.Mssql,
+                additionalAuthorizationStrategy: OwnershipStrategy(),
+                ownershipTokenIds: OwnershipTokenRange(
+                    OwnershipTokenLimitExceededException.OwnershipTokenLimit - 1
+                )
+            )
+        );
+
+        // Three query parameters: the traditional offset and limit, and the ResourceKeyId discriminator.
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .Equal(
+                NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
+                    100,
+                    0,
+                    OwnershipTokenLimitExceededException.OwnershipTokenLimit - 1,
+                    3
+                )
+            );
         commandExecutor.Commands.Should().BeEmpty();
     }
 
@@ -1568,7 +1707,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         AuthorizationStrategyEvaluator authorizationStrategy,
         SqlDialect dialect = SqlDialect.Pgsql,
         bool totalCount = false,
-        AuthorizationStrategyEvaluator? additionalAuthorizationStrategy = null
+        AuthorizationStrategyEvaluator? additionalAuthorizationStrategy = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
     ) =>
         new(
             CreateMappingSet(dialect),
@@ -1583,8 +1723,11 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-namespace"),
             PageOrderingMode.DocumentId,
-            new RelationalAuthorizationContext([], namespacePrefixes)
+            new RelationalAuthorizationContext([], namespacePrefixes, null, ownershipTokenIds ?? [])
         );
+
+    private static short[] OwnershipTokenRange(int count) =>
+        [.. Enumerable.Range(1, count).Select(static tokenId => (short)tokenId)];
 
     private static DescriptorReadHandler CreateSut(
         InMemoryRelationalCommandExecutor commandExecutor,

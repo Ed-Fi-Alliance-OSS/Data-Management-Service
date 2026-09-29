@@ -1798,6 +1798,31 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Creates (or replaces) the [auth].[{strategyName}] custom authorization view over the shared descriptor
+    /// table, authorizing only the descriptors whose CodeValue is in <paramref name="authorizedCodeValues"/>.
+    /// </summary>
+    public async Task CreateDescriptorCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<string> authorizedCodeValues
+    )
+    {
+        var codeValueList = string.Join(
+            ", ",
+            authorizedCodeValues.Select(codeValue => $"N'{codeValue.Replace("'", "''")}'")
+        );
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT [DocumentId]
+            FROM [dms].[Descriptor]
+            WHERE [CodeValue] IN ({codeValueList});
+            """
+        );
+    }
+
     public async Task DropCustomAuthViewAsync(string strategyName)
     {
         var escapedStrategyName = EscapeIdentifierPart(strategyName);

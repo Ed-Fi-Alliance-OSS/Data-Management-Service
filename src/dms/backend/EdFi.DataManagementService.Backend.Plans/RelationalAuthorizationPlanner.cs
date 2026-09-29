@@ -30,7 +30,7 @@ public abstract record RelationalAuthorizationPlanOutcome
     {
         /// <summary>
         /// The planned ownership check, or <see langword="null"/> when <c>OwnershipBased</c> is not
-        /// configured or is not enforced for this operation and storage kind.
+        /// configured or is not enforced for this operation.
         /// </summary>
         /// <remarks>
         /// An <c>init</c> property rather than a positional member so no existing construction site changes.
@@ -47,7 +47,7 @@ public abstract record RelationalAuthorizationPlanOutcome
 
         /// <summary>
         /// The planned <c>OwnershipBased</c> page filter, or <see langword="null"/> when <c>OwnershipBased</c>
-        /// is not configured or the operation and storage kind do not enforce the page filter.
+        /// is not configured or the operation does not enforce the page filter.
         /// </summary>
         /// <remarks>
         /// The GET-many counterpart of <see cref="OwnershipCheck"/>, never set together with it: the page filter
@@ -204,10 +204,8 @@ public enum OwnershipTokenCapHandling
 /// Everywhere else it stays in the non-namespace bucket, so the classifier keeps reporting it
 /// known-but-not-enabled and the request keeps its fail-closed 501 — which is what stops an unenforced
 /// ownership strategy from being silently dropped. Each gate was flipped on in the same commit that wired its
-/// executor. The single-record gate treats descriptor storage like any other; the page-filter gate still
-/// withholds it, so descriptor GET-many and partitions keep their 501 until they apply the filter. A custom
-/// view configured ahead of any of these terminals is still validated first, so an earlier custom-view
-/// configuration failure keeps its own response.
+/// executor, and both treat descriptor storage like any other. A custom view configured ahead of any of these
+/// terminals is still validated first, so an earlier custom-view configuration failure keeps its own response.
 /// </para>
 /// </remarks>
 public static class RelationalAuthorizationPlanner
@@ -236,7 +234,7 @@ public static class RelationalAuthorizationPlanner
         // is what makes an unenforced ownership strategy fail closed rather than be silently dropped, and
         // it is why this split is conditional rather than unconditional like the namespace one.
         var enforcesOwnershipChecks = EnforcesOwnershipChecks(operation);
-        var enforcesOwnershipPageFilter = EnforcesOwnershipPageFilter(operation, resource.StorageKind);
+        var enforcesOwnershipPageFilter = EnforcesOwnershipPageFilter(operation);
 
         IReadOnlyList<ConfiguredAuthorizationStrategy> ownershipStrategies = [];
 
@@ -431,8 +429,8 @@ public static class RelationalAuthorizationPlanner
                 .Where(strategy => !customViewStrategyRawIndexes.Contains(strategy.RawConfiguredIndex))
                 .ToArray();
 
-        // Planned only where enforced, so the ownership bucket is empty for every operation and storage kind
-        // both gates withhold — and in those cases the strategy is still in the relationship bucket earning
+        // Planned only where enforced, so the ownership bucket is empty for any operation both gates
+        // withhold — and in those cases the strategy is still in the relationship bucket earning
         // its known-but-not-enabled 501 above, so neither null can mean "dropped". Each gate plans only its
         // own shape: the single-record planner is never asked to plan ReadMany, which it rejects, and the
         // page filter is never planned for a single-record operation. An empty token list still plans the
@@ -487,31 +485,26 @@ public static class RelationalAuthorizationPlanner
         _ownershipEnforcedOperations.Contains(operation);
 
     /// <summary>
-    /// Whether the caller for this operation and storage kind applies the <c>OwnershipBased</c> page filter
-    /// this planner would hand back. True only for <see cref="NamespaceAuthorizationOperation.ReadMany"/> over
-    /// relationally stored resources: the GET-many page and the partition candidate relation share that path,
-    /// so both are filtered. When it is false and <see cref="EnforcesOwnershipChecks"/> is too,
+    /// Whether the caller for this operation applies the <c>OwnershipBased</c> page filter this planner would
+    /// hand back. True only for <see cref="NamespaceAuthorizationOperation.ReadMany"/>, for relationally stored
+    /// resources and descriptors alike: each resource kind's GET-many page and partition candidate relation
+    /// share one path, so both are filtered. When it is false and <see cref="EnforcesOwnershipChecks"/> is too,
     /// <c>OwnershipBased</c> is left in the relationship bucket so the classifier reports it
     /// known-but-not-enabled and the request fails closed with 501.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Descriptor storage is withheld until descriptor GET-many and partitions apply the filter: without this
-    /// arm, splitting ownership out of the bucket would silently remove the protection
-    /// <c>RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies</c> gives descriptor GET-many,
-    /// and the request would be answered unfiltered. Until then descriptor <c>ReadMany</c> keeps
-    /// <c>OwnershipBased</c> in the relationship bucket and fails closed with 501.
+    /// Descriptor storage was admitted in the same commit that wired the filter into descriptor GET-many and
+    /// partitions. Before that, splitting ownership out of the bucket would have removed the protection
+    /// <c>RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies</c> gave descriptor GET-many,
+    /// and the request would have been answered unfiltered.
     /// </para>
     /// <para>
     /// Internal so its matrix can be pinned directly, for the same reason the single-record gate is.
     /// </para>
     /// </remarks>
-    internal static bool EnforcesOwnershipPageFilter(
-        NamespaceAuthorizationOperation operation,
-        ResourceStorageKind storageKind
-    ) =>
-        operation is NamespaceAuthorizationOperation.ReadMany
-        && storageKind is not ResourceStorageKind.SharedDescriptorTable;
+    internal static bool EnforcesOwnershipPageFilter(NamespaceAuthorizationOperation operation) =>
+        operation is NamespaceAuthorizationOperation.ReadMany;
 
     /// <summary>
     /// Plans the single page filter for the configured <c>OwnershipBased</c> occurrences. The earliest

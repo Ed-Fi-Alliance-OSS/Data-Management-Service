@@ -11,7 +11,9 @@ using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
@@ -22,8 +24,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// <summary>
 /// Public-boundary coverage for OwnershipBased authorization: the exact ProblemDetails wire contracts from
 /// <c>auth.md</c> 2.13 and 2.14, stamping on create, the authorized round trip, the GET-many page filter, the
-/// provider-independent token cap, descriptor single-record reads and writes, and descriptor GET-many and
-/// partitions, which stay withheld with a 501. The provider matrix lives in the backend suites; this scenario owns only what those cannot observe - the served response body
+/// provider-independent token cap, descriptor single-record reads and writes, and the descriptor GET-many and
+/// partitions page filter. The provider matrix lives in the backend suites; this scenario owns only what those cannot observe - the served response body
 /// and the real application-context plumbing that carries the caller's ownership tokens.
 /// </summary>
 /// <remarks>
@@ -100,7 +102,7 @@ internal static class OwnershipAuthorizationIntegrationScenario
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
     /// is stamped or, for a caller that could not own the row, refused; every single-record read and write is
     /// enforced; GET-many is filtered; descriptor single-record operations are enforced and descriptor GET-many
-    /// stays withheld. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp is
+    /// is filtered. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp is
     /// fabricated directly when a step needs one.
     /// </summary>
     /// <remarks>
@@ -523,9 +525,8 @@ internal static class OwnershipAuthorizationIntegrationScenario
     /// owner is served and may create, update and delete, a holder of other tokens gets 2.13, a descriptor
     /// never stamped gets 2.14, a create the caller could not own is refused with no row, an unknown id is a
     /// 404 rather than a 403, and the token cap is the security-configuration 500 with 1,999 still served.
-    /// Descriptor GET-many and partitions stay withheld with a 501.
     /// </summary>
-    public static async Task It_enforces_descriptor_single_record_ownership_and_withholds_descriptor_pages_with_a_501(
+    public static async Task It_enforces_descriptor_ownership_on_single_record_reads_and_writes(
         ApiIntegrationHarness harness
     )
     {
@@ -702,21 +703,92 @@ internal static class OwnershipAuthorizationIntegrationScenario
         );
         string deletedGetBody = await deletedGet.Content.ReadAsStringAsync();
         deletedGet.StatusCode.Should().Be(HttpStatusCode.NotFound, deletedGetBody);
+    }
 
-        // Descriptor GET-many and partitions have no ownership page filter yet, so both stay withheld with a
-        // 501 rather than serving an unfiltered page, for the owner as for a caller over the token cap.
-        foreach (string tenant in (string[])[OwnerTenant, TokenCapTenant])
+    /// <summary>
+    /// Descriptor GET-many and partitions are filtered by the caller's ownership tokens like a regular
+    /// resource. A holder of only the foreign token is served exactly the one descriptor stamped with it —
+    /// not the owner's and not the null-stamped one — with a total count of one, and its partitions open on
+    /// that descriptor alone. The owner, holding both tokens, is served both stamped descriptors and never the
+    /// null one. The token cap is the security-configuration 500 on both endpoints, and 1,999 tokens serve.
+    /// </summary>
+    public static async Task It_filters_descriptor_get_many_and_partitions_to_the_callers_ownership_tokens(
+        ApiIntegrationHarness harness
+    )
+    {
+        Guid ownedId = await CreateSeedableDescriptorAsync(harness, OwnerTenant, "PageOwnedSubject");
+        Guid unstampedId = await CreateSeedableDescriptorAsync(
+            harness,
+            NoCreatorTokenTenant,
+            "PageUnstampedSubject"
+        );
+        Guid foreignId = await CreateSeedableDescriptorAsync(harness, OwnerTenant, "PageForeignSubject");
+        await SetStoredOwnershipTokenAsync(harness, foreignId, ForeignToken);
+        (await ReadStoredOwnershipTokenAsync(harness, unstampedId)).Should().BeNull();
+
+        // No other descriptor of this type is ever stamped with the foreign token, so the page is exact.
+        string foreignCollection = string.Format(AcademicSubjectDescriptorsEndpointFormat, ForeignTenant);
+
+        using HttpResponseMessage foreignResponse = await harness.HttpClient.GetAsync(
+            $"{foreignCollection}?totalCount=true"
+        );
+        string foreignBody = await foreignResponse.Content.ReadAsStringAsync();
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.OK, foreignBody);
+        ReadServedIds(foreignBody).Should().Equal(foreignId);
+        ReadTotalCount(foreignResponse).Should().Be(1);
+
+        using HttpResponseMessage foreignPartitions = await harness.HttpClient.GetAsync(
+            $"{foreignCollection}/partitions?number=4"
+        );
+        string foreignPartitionsBody = await foreignPartitions.Content.ReadAsStringAsync();
+        foreignPartitions.StatusCode.Should().Be(HttpStatusCode.OK, foreignPartitionsBody);
+        List<string> foreignPageTokens =
+        [
+            .. JsonNode.Parse(foreignPartitionsBody)!["pageTokens"]!
+                .AsArray()
+                .Select(static pageToken => pageToken!.GetValue<string>()),
+        ];
+        foreignPageTokens.Should().ContainSingle("only one descriptor carries the foreign token");
+        PageTokenCodec
+            .TryDecode(foreignPageTokens[0], out CursorRange? foreignRange, out _)
+            .Should()
+            .BeTrue();
+        foreignRange!.InclusiveMinimum.Should().Be(await ReadDocumentIdAsync(harness, foreignId));
+
+        string ownerCollection = string.Format(AcademicSubjectDescriptorsEndpointFormat, OwnerTenant);
+
+        using HttpResponseMessage ownerResponse = await harness.HttpClient.GetAsync(
+            $"{ownerCollection}?totalCount=true"
+        );
+        string ownerBody = await ownerResponse.Content.ReadAsStringAsync();
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK, ownerBody);
+        List<Guid> ownerIds = ReadServedIds(ownerBody);
+        ownerIds.Should().Contain([ownedId, foreignId]).And.NotContain(unstampedId);
+        ReadTotalCount(ownerResponse).Should().BeGreaterThanOrEqualTo(ownerIds.Count);
+
+        foreach (Guid servedId in ownerIds)
         {
-            string collectionPath = string.Format(GradeLevelDescriptorsEndpointFormat, tenant);
-
-            using HttpResponseMessage queryResponse = await harness.HttpClient.GetAsync(collectionPath);
-            await AssertNotImplementedAsync(queryResponse);
-
-            using HttpResponseMessage partitionsResponse = await harness.HttpClient.GetAsync(
-                $"{collectionPath}/partitions"
-            );
-            await AssertNotImplementedAsync(partitionsResponse);
+            (await ReadStoredOwnershipTokenAsync(harness, servedId))
+                .Should()
+                .BeOneOf(CreatorToken, ForeignToken);
         }
+
+        string overCapCollection = string.Format(AcademicSubjectDescriptorsEndpointFormat, TokenCapTenant);
+
+        using HttpResponseMessage overCapResponse = await harness.HttpClient.GetAsync(overCapCollection);
+        await AssertSecurityConfigurationFailureAsync(overCapResponse);
+
+        using HttpResponseMessage overCapPartitions = await harness.HttpClient.GetAsync(
+            $"{overCapCollection}/partitions?number=4"
+        );
+        await AssertSecurityConfigurationFailureAsync(overCapPartitions);
+
+        using HttpResponseMessage underCapResponse = await harness.HttpClient.GetAsync(
+            string.Format(AcademicSubjectDescriptorsEndpointFormat, UnderTokenCapTenant)
+        );
+        string underCapBody = await underCapResponse.Content.ReadAsStringAsync();
+        underCapResponse.StatusCode.Should().Be(HttpStatusCode.OK, underCapBody);
+        ReadServedIds(underCapBody).Should().Contain([ownedId, foreignId]).And.NotContain(unstampedId);
     }
 
     private static string GradeLevelDescriptorPath(string tenant, Guid documentId) =>
@@ -791,6 +863,21 @@ internal static class OwnershipAuthorizationIntegrationScenario
     {
         Guid documentId = await CreateAsync(harness, OwnerTenant, authorizationNullableId, name);
 
+        await SetStoredOwnershipTokenAsync(harness, documentId, storedOwnershipTokenId);
+
+        return documentId;
+    }
+
+    /// <summary>
+    /// Fabricates a stored stamp directly, the way a legacy or misconfigured create left one. Product code
+    /// never updates the stamp, so this is the only way to reach these states once creates are enforced.
+    /// </summary>
+    private static async Task SetStoredOwnershipTokenAsync(
+        ApiIntegrationHarness harness,
+        Guid documentId,
+        short? storedOwnershipTokenId
+    )
+    {
         string sql = IsMssql(harness.DbConnection)
             ? """
                 UPDATE [dms].[Document]
@@ -822,8 +909,21 @@ internal static class OwnershipAuthorizationIntegrationScenario
         }
 
         (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().Be(storedOwnershipTokenId);
+    }
 
-        return documentId;
+    private static async Task<long> ReadDocumentIdAsync(ApiIntegrationHarness harness, Guid documentUuid)
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = IsMssql(harness.DbConnection)
+            ? "SELECT [DocumentId] FROM [dms].[Document] WHERE [DocumentUuid] = @documentUuid;"
+            : """SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @documentUuid;""";
+
+        DbParameter uuidParameter = command.CreateParameter();
+        uuidParameter.ParameterName = "@documentUuid";
+        uuidParameter.Value = documentUuid;
+        command.Parameters.Add(uuidParameter);
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     private static async Task<HttpResponseMessage> PostAsync(
@@ -1032,17 +1132,6 @@ internal static class OwnershipAuthorizationIntegrationScenario
                 }
                 break;
         }
-    }
-
-    private static async Task AssertNotImplementedAsync(HttpResponseMessage response)
-    {
-        string body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, body);
-        JsonNode.Parse(body)!.AsObject()["error"]!
-            .GetValue<string>()
-            .Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
     }
 
     /// <summary>

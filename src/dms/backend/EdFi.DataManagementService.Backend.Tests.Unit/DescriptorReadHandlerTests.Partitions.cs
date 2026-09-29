@@ -183,45 +183,115 @@ public partial class Given_DescriptorReadHandler
     }
 
     /// <summary>
-    /// Partitions select through the same page authorization as GET-many, and descriptors have no ownership
-    /// page filter yet, so OwnershipBased keeps its 501 with no SQL whether the caller is under the token cap
-    /// or at it.
+    /// A caller with no ownership token owns nothing to partition, so the boundary set is empty and skipped,
+    /// with no SQL — the answer GET-many gives the same caller.
     /// </summary>
-    [TestCase(0)]
-    [TestCase(1)]
-    [TestCase(OwnershipTokenLimitExceededException.OwnershipTokenLimit)]
-    public async Task It_fails_closed_for_descriptor_partitions_with_ownership_based_authorization(
-        int tokenCount
-    )
+    [Test]
+    public async Task It_returns_no_ranges_without_a_command_for_a_caller_with_no_ownership_token()
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
-        var request = CreatePartitionRequest(
-            SqlDialect.Pgsql,
-            authorizationStrategyEvaluators:
-            [
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]
-        );
 
         var result = await sut.HandlePartitionsAsync(
-            request with
-            {
-                RelationalAuthorizationContext = new RelationalAuthorizationContext(
-                    [],
-                    [],
-                    null,
-                    [.. Enumerable.Range(1, tokenCount).Select(static tokenId => (short)tokenId)]
-                ),
-            }
+            CreatePartitionRequest(
+                SqlDialect.Pgsql,
+                authorizationStrategyEvaluators:
+                [
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ],
+                ownershipTokenIds: []
+            )
+        );
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_fails_descriptor_partitions_at_the_ownership_token_cap_without_executing_sql()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandlePartitionsAsync(
+            CreatePartitionRequest(
+                SqlDialect.Pgsql,
+                authorizationStrategyEvaluators:
+                [
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ],
+                ownershipTokenIds:
+                [
+                    .. Enumerable
+                        .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                        .Select(static tokenId => (short)tokenId),
+                ]
+            )
         );
 
         result
             .Should()
-            .BeOfType<PartitionResult.PartitionFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+            .BeOfType<PartitionResult.PartitionFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .Equal(
+                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                    OwnershipTokenLimitExceededException.OwnershipTokenLimit
+                )
+            );
         commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Boundaries are cut from the owned relation: the one boundary command carries the ownership predicate
+    /// and binds the caller's tokens, so a partition range can never span a row the caller does not own.
+    /// </summary>
+    [TestCase(
+        SqlDialect.Pgsql,
+        "doc.\"CreatedByOwnershipTokenId\" IS NOT NULL AND doc.\"CreatedByOwnershipTokenId\" = ANY(@ownershipTokenIds)"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "doc.[CreatedByOwnershipTokenId] IS NOT NULL AND doc.[CreatedByOwnershipTokenId] IN (@ownershipTokenIds_0, @ownershipTokenIds_1)"
+    )]
+    public async Task It_cuts_descriptor_partition_boundaries_from_the_owned_relation(
+        SqlDialect dialect,
+        string expectedOwnershipPredicate
+    )
+    {
+        var commandExecutor = CreateBoundaryCommandExecutor(dialect, 110L);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandlePartitionsAsync(
+            CreatePartitionRequest(
+                dialect,
+                authorizationStrategyEvaluators:
+                [
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ],
+                ownershipTokenIds: [42, 7]
+            )
+        );
+
+        result.Should().BeOfType<PartitionResult.PartitionSuccess>();
+        var command = commandExecutor.Commands.Should().ContainSingle().Subject;
+        command.CommandText.Should().Contain("ROW_NUMBER() OVER");
+        command.CommandText.Should().Contain(expectedOwnershipPredicate);
+
+        if (dialect is SqlDialect.Pgsql)
+        {
+            BoundaryParameterValue(command, "@ownershipTokenIds")
+                .Should()
+                .BeAssignableTo<IReadOnlyList<short>>()
+                .Which.Should()
+                .Equal((short)7, (short)42);
+        }
+        else
+        {
+            BoundaryParameterValue(command, "@ownershipTokenIds_0").Should().Be((short)7);
+            BoundaryParameterValue(command, "@ownershipTokenIds_1").Should().Be((short)42);
+        }
     }
 
     [Test]
@@ -457,7 +527,8 @@ public partial class Given_DescriptorReadHandler
         ChangeVersionRange? changeVersionRange = null,
         int requestedPartitionCount = 4,
         long minimumPartitionSize = 500L,
-        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -474,7 +545,7 @@ public partial class Given_DescriptorReadHandler
             minimumPartitionSize,
             new TraceId("descriptor-partition-trace"),
             pageOrderingMode,
-            new RelationalAuthorizationContext([], namespacePrefixes ?? []),
+            new RelationalAuthorizationContext([], namespacePrefixes ?? [], null, ownershipTokenIds ?? []),
             changeVersionRange
         );
     }
