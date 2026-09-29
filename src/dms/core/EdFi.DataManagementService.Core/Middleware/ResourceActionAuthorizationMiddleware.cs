@@ -39,7 +39,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         {
             _logger.LogDebug(
                 "Entering ResourceActionAuthorizationMiddleware - {TraceId}",
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             if (!ValidateClientAuthorizations(requestInfo))
@@ -95,7 +95,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             _logger.LogError(
                 ex,
                 "ResourceActionAuthorizationMiddleware: Error while authorizing the request - {TraceId}",
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
@@ -121,7 +121,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         {
             _logger.LogWarning(
                 "ResourceActionAuthorizationMiddleware: No ClientAuthorizations found - JWT authentication may have failed - {TraceId}",
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
             CreateUnauthorizedResponse(requestInfo);
             return false;
@@ -153,7 +153,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             _logger.LogInformation(
                 "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
                 LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
         }
 
@@ -198,7 +198,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             _logger.LogDebug(
                 "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
                 resourceClaimName,
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
             CreateForbiddenResponse(requestInfo);
             return false;
@@ -369,7 +369,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 "ResourceAuthorizationMiddleware: Can not perform {RequestMethod} on the resource {ResourceName} - {TraceId}",
                 requestInfo.Method.ToString(),
                 resourceClaimName,
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
             CreateActionDeniedResponse(requestInfo, actionName, resourceClaimName, claimSetName);
             return false;

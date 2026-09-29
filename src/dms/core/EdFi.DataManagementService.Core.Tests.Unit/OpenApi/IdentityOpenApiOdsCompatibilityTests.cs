@@ -49,10 +49,12 @@ public class IdentityOpenApiOdsCompatibilityTests
         "ProblemDetails",
         "IdentityOperationNotSupportedProblemDetails",
         "IdentityNotFoundProblemDetails",
+        "NotFoundProblemDetails",
         "IdentityProviderContractViolationProblemDetails",
         "IdentityUpstreamFailureProblemDetails",
         "IdentityJobFailedProblemDetails",
         "IdentityProviderConfigurationProblemDetails",
+        "SecurityConfigurationProblemDetails",
     };
 
     /// <summary>
@@ -72,15 +74,18 @@ public class IdentityOpenApiOdsCompatibilityTests
                 && diff.EndsWith(":501", StringComparison.Ordinal)
         ),
         (
-            "D-11/D3: DMS adds 400/404/415/429/500 problem responses the ODS fixture does not declare for that operation",
+            "D-11/D3: DMS adds 400/401/403/404/415/429/500/503 problem responses the ODS fixture does not declare for that operation",
             diff =>
                 diff.StartsWith("response-code-added:", StringComparison.Ordinal)
                 && (
                     diff.EndsWith(":400", StringComparison.Ordinal)
+                    || diff.EndsWith(":401", StringComparison.Ordinal)
+                    || diff.EndsWith(":403", StringComparison.Ordinal)
                     || diff.EndsWith(":404", StringComparison.Ordinal)
                     || diff.EndsWith(":415", StringComparison.Ordinal)
                     || diff.EndsWith(":429", StringComparison.Ordinal)
                     || diff.EndsWith(":500", StringComparison.Ordinal)
+                    || diff.EndsWith(":503", StringComparison.Ordinal)
                 )
         ),
         (

@@ -47,6 +47,12 @@
           "415": {
             "$ref": "#/components/responses/Identity415"
           },
+          "401": {
+            "$ref": "#/components/responses/Identity401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Identity403"
+          },
           "404": {
             "$ref": "#/components/responses/Identity404"
           },
@@ -58,6 +64,9 @@
           },
           "429": {
             "$ref": "#/components/responses/Identity429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Identity503"
           }
         }
       }
@@ -113,6 +122,12 @@
           "400": {
             "$ref": "#/components/responses/Identity400"
           },
+          "401": {
+            "$ref": "#/components/responses/Identity401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Identity403"
+          },
           "404": {
             "$ref": "#/components/responses/Identity404"
           },
@@ -124,6 +139,9 @@
           },
           "429": {
             "$ref": "#/components/responses/Identity429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Identity503"
           }
         }
       }
@@ -239,6 +257,12 @@
           "415": {
             "$ref": "#/components/responses/Identity415"
           },
+          "401": {
+            "$ref": "#/components/responses/Identity401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Identity403"
+          },
           "404": {
             "$ref": "#/components/responses/Identity404"
           },
@@ -250,6 +274,9 @@
           },
           "429": {
             "$ref": "#/components/responses/Identity429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Identity503"
           }
         }
       }
@@ -365,6 +392,12 @@
           "415": {
             "$ref": "#/components/responses/Identity415"
           },
+          "401": {
+            "$ref": "#/components/responses/Identity401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Identity403"
+          },
           "404": {
             "$ref": "#/components/responses/Identity404"
           },
@@ -376,6 +409,9 @@
           },
           "429": {
             "$ref": "#/components/responses/Identity429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Identity503"
           }
         }
       }
@@ -464,6 +500,12 @@
           "400": {
             "$ref": "#/components/responses/Identity400"
           },
+          "401": {
+            "$ref": "#/components/responses/Identity401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Identity403"
+          },
           "404": {
             "$ref": "#/components/responses/Identity404"
           },
@@ -475,6 +517,9 @@
           },
           "429": {
             "$ref": "#/components/responses/Identity429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Identity503"
           }
         }
       }
@@ -806,6 +851,24 @@
           }
         ]
       },
+      "NotFoundProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "urn:ed-fi:api:not-found"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "IdentityProviderContractViolationProblemDetails": {
         "allOf": [
           {
@@ -877,6 +940,24 @@
             }
           }
         ]
+      },
+      "SecurityConfigurationProblemDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "urn:ed-fi:api:system:configuration:security"
+                ]
+              }
+            }
+          }
+        ]
       }
     },
     "headers": {
@@ -900,6 +981,12 @@
         "description": "The number of seconds to wait before retrying, present only when the rate limiter supplies it.",
         "schema": {
           "type": "integer"
+        }
+      },
+      "WwwAuthenticate": {
+        "description": "The authentication challenge for a rejected bearer token (RFC 6750 3).",
+        "schema": {
+          "type": "string"
         }
       }
     },
@@ -1015,8 +1102,70 @@
           }
         }
       },
+      "Identity401": {
+        "description": "The request carried no bearer token, the token could not be validated, or the authenticated client is not bound to this tenant.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "WWW-Authenticate": {
+            "$ref": "#/components/headers/WwwAuthenticate"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "authenticationFailed": {
+                "summary": "The Authorization header was missing or its bearer token was rejected.",
+                "value": {
+                  "detail": "The caller could not be authenticated.",
+                  "type": "urn:ed-fi:api:security:authentication",
+                  "title": "Authentication Failed",
+                  "status": 401,
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "errors": [
+                    "Authorization header is missing."
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "Identity403": {
+        "description": "The authenticated client's claim set does not grant the identity service claim for this operation.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "authorizationDenied": {
+                "summary": "The client's claim set does not grant this identity operation.",
+                "value": {
+                  "detail": "Access to the resource could not be authorized.",
+                  "type": "urn:ed-fi:api:security:authorization:",
+                  "title": "Authorization Denied",
+                  "status": 403,
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "validationErrors": {},
+                  "errors": []
+                }
+              }
+            }
+          }
+        }
+      },
       "Identity404": {
-        "description": "Either the identity provider does not support the requested operation, or the provider reported no matching identity, namespace, or job for this request.",
+        "description": "Either the request's tenant does not exist, the identity provider does not support the requested operation, or the provider reported no matching identity, namespace, or job for this request.",
         "headers": {
           "Cache-Control": {
             "$ref": "#/components/headers/CacheControl"
@@ -1031,6 +1180,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/IdentityNotFoundProblemDetails"
+                },
+                {
+                  "$ref": "#/components/schemas/NotFoundProblemDetails"
                 }
               ]
             },
@@ -1052,6 +1204,18 @@
                 "value": {
                   "detail": "The specified data could not be found.",
                   "type": "urn:ed-fi:api:identities:not-found",
+                  "title": "Not Found",
+                  "status": 404,
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "validationErrors": {},
+                  "errors": []
+                }
+              },
+              "tenantNotFound": {
+                "summary": "The tenant named in the request path does not exist.",
+                "value": {
+                  "detail": "The specified tenant could not be found.",
+                  "type": "urn:ed-fi:api:not-found",
                   "title": "Not Found",
                   "status": 404,
                   "correlationId": "0HNOOQ2BHB6VR",
@@ -1175,7 +1339,7 @@
         }
       },
       "Identity500": {
-        "description": "The identity provider could not be activated or its capabilities could not be evaluated.",
+        "description": "The identity provider could not be activated or its capabilities could not be evaluated, or the identity service claim's security configuration is invalid.",
         "headers": {
           "Cache-Control": {
             "$ref": "#/components/headers/CacheControl"
@@ -1184,7 +1348,14 @@
         "content": {
           "application/problem+json": {
             "schema": {
-              "$ref": "#/components/schemas/IdentityProviderConfigurationProblemDetails"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/IdentityProviderConfigurationProblemDetails"
+                },
+                {
+                  "$ref": "#/components/schemas/SecurityConfigurationProblemDetails"
+                }
+              ]
             },
             "examples": {
               "providerConfiguration": {
@@ -1197,6 +1368,20 @@
                   "correlationId": "0HNOOQ2BHB6VR",
                   "validationErrors": {},
                   "errors": []
+                }
+              },
+              "securityConfiguration": {
+                "summary": "The identity service claim grants this action with authorization strategies other than exactly NoFurtherAuthorizationRequired.",
+                "value": {
+                  "detail": "A security configuration problem was detected. The request cannot be authorized.",
+                  "type": "urn:ed-fi:api:system:configuration:security",
+                  "title": "Security Configuration Error",
+                  "status": 500,
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "validationErrors": {},
+                  "errors": [
+                    "The identity service claim's authorization strategies for claim set 'SIS-Vendor' and action 'Create' must be exactly ['NoFurtherAuthorizationRequired']."
+                  ]
                 }
               }
             }
@@ -1226,6 +1411,35 @@
                   "type": "urn:ed-fi:api:too-many-requests",
                   "title": "Too Many Requests",
                   "status": 429,
+                  "correlationId": "0HNOOQ2BHB6VR",
+                  "validationErrors": {},
+                  "errors": []
+                }
+              }
+            }
+          }
+        }
+      },
+      "Identity503": {
+        "description": "The tenant catalog or the client-to-tenant binding could not be resolved right now; retry the request later.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            },
+            "examples": {
+              "serviceUnavailable": {
+                "summary": "A dependency needed to authorize the request was temporarily unavailable.",
+                "value": {
+                  "detail": "The service is temporarily unable to handle the request. Retry the request later.",
+                  "type": "urn:ed-fi:api:service-unavailable",
+                  "title": "Service Unavailable",
+                  "status": 503,
                   "correlationId": "0HNOOQ2BHB6VR",
                   "validationErrors": {},
                   "errors": []

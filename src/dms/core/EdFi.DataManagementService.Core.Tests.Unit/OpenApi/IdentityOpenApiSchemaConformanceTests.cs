@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.OpenApi;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Identity;
 using FluentAssertions;
 using Json.Schema;
@@ -40,6 +41,107 @@ public class IdentityOpenApiSchemaConformanceTests
         return Paths[path]![method]!["responses"]![status]!["content"]!["application/json"]!["examples"]![
             exampleName
         ]!["value"]!;
+    }
+
+    /// <summary>
+    /// Follows a <c>#/components/...</c> reference to the node it names within the served document,
+    /// or returns the node unchanged when it is not a reference.
+    /// </summary>
+    private static JsonNode Resolve(JsonNode node)
+    {
+        string? refValue = node["$ref"]?.GetValue<string>();
+        if (refValue is null)
+        {
+            return node;
+        }
+
+        JsonNode current = Document;
+        foreach (string segment in refValue[2..].Split('/'))
+        {
+            current = current[segment]!;
+        }
+        return current;
+    }
+
+    /// <summary>
+    /// The shared authorization stages every identity operation runs (tenant existence, client
+    /// binding, JWT authentication, and service-claim authorization) answer with DMS's generic
+    /// problem bodies rather than identity-specific ones, so each of those actual bodies must
+    /// validate against the schema the served document declares for that status on every operation.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Shared_Authorization_Stage_Problem_Bodies
+    {
+        private static readonly TraceId TraceId = new("0HNOOQ2BHB6VR");
+
+        private static readonly (string Path, string Method)[] Operations =
+        [
+            ("/identities", "post"),
+            ("/identities/{id}", "get"),
+            ("/identities/find", "post"),
+            ("/identities/search", "post"),
+            ("/identities/results/{id}", "get"),
+        ];
+
+        private static IEnumerable<TestCaseData> BodiesByOperation()
+        {
+            (string Status, string Name, JsonNode Body)[] bodies =
+            [
+                (
+                    "401",
+                    "authentication failure",
+                    FailureResponse.ForAuthenticationFailure(TraceId, ["Authorization header is missing."])
+                ),
+                ("403", "forbidden", FailureResponse.ForForbidden(TraceId, [])),
+                (
+                    "404",
+                    "tenant not found",
+                    FailureResponse.ForNotFound("The specified tenant could not be found.", TraceId)
+                ),
+                (
+                    "500",
+                    "security configuration",
+                    FailureResponse.ForSecurityConfiguration(
+                        TraceId,
+                        [
+                            "The identity service claim's authorization strategies for claim set 'SIS-Vendor' and action 'Create' must be exactly ['NoFurtherAuthorizationRequired'].",
+                        ]
+                    )
+                ),
+                ("503", "service unavailable", FailureResponse.ForServiceUnavailable(TraceId)),
+            ];
+
+            foreach ((string path, string method) in Operations)
+            {
+                foreach ((string status, string name, JsonNode body) in bodies)
+                {
+                    string operation = new([.. $"{method}{path}".Select(c => char.IsLetter(c) ? c : '_')]);
+                    yield return new TestCaseData(path, method, status, body).SetName(
+                        $"It_accepts_the_actual_{status}_{name.Replace(' ', '_')}_body_on_{operation}"
+                    );
+                }
+            }
+        }
+
+        /// <summary>
+        /// Builds the evaluator schema for an operation's <c>application/problem+json</c> response,
+        /// following the response's component reference.
+        /// </summary>
+        private static JsonSchema BuildProblemSchemaFor(string path, string method, string status)
+        {
+            JsonNode response = Resolve(Paths[path]![method]!["responses"]![status]!);
+            JsonNode rootSchema = response["content"]!["application/problem+json"]!["schema"]!;
+            return OpenApiSchemaNormalizer.BuildJsonSchema(Schemas, rootSchema);
+        }
+
+        [TestCaseSource(nameof(BodiesByOperation))]
+        public void It_accepts_the_actual_body(string path, string method, string status, JsonNode body)
+        {
+            EvaluationResults result = BuildProblemSchemaFor(path, method, status).Evaluate(body);
+
+            result.IsValid.Should().BeTrue();
+        }
     }
 
     [TestFixture]
@@ -155,22 +257,6 @@ public class IdentityOpenApiSchemaConformanceTests
             );
 
             CanonicalJson(projected).Should().Be(CanonicalJson(pinnedExample));
-        }
-
-        private static JsonNode Resolve(JsonNode node)
-        {
-            string? refValue = node["$ref"]?.GetValue<string>();
-            if (refValue is null)
-            {
-                return node;
-            }
-
-            JsonNode current = Document;
-            foreach (string segment in refValue[2..].Split('/'))
-            {
-                current = current[segment]!;
-            }
-            return current;
         }
 
         /// <summary>

@@ -23,6 +23,7 @@ Feature: Identity Authorization
          When a GET request is made to identity route "NonExistentTenant/255901/2024/identity/v2/identities/605943412"
          Then it should respond with 404
           And the response body "type" should be "urn:ed-fi:api:not-found"
+          And the response body "detail" should be "The specified tenant could not be found."
 
     Scenario: A claim set without the identity claim is forbidden
          Given I am authenticated to DMS with credentials for tenant "Tenant_255901"

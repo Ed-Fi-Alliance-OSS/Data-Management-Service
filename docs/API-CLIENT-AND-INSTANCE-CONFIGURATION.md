@@ -152,12 +152,9 @@ initial client's. To act on that client, read it with
    both `GET /v3/apiClients/{numeric id}` and `GET /v3/apiClients/{key}` report
    `404`.
 
-What the resulting token can *do* with a DMS identity API is out of scope here:
-**the DMS identity routes do not exist yet.** This section documents only how to
-provision such a client in the Configuration Service and confirm its credentials
-work. The end-to-end proof from these credentials through to identity operations,
-and the guarantee that they grant no resource access, belong to the story that
-introduces the identity API surface.
+What the resulting token can *do* is governed by the DMS identity surface under `/identity/v2/identities`, which DMS maps only when `AppSettings:EnableIdentityManagement` is `true` (see [Configuration](./CONFIGURATION.md)).
+With the surface enabled, the token reaches the identity operations its claim set grants, and it grants no resource access.
+This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
 
 ### Context-Based Routing
 

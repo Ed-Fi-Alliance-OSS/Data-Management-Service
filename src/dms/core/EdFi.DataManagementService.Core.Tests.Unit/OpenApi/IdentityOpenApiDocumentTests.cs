@@ -30,10 +30,13 @@ public class IdentityOpenApiDocumentTests
     )
     {
         responses.Should().ContainKey("400");
+        responses.Should().ContainKey("401");
+        responses.Should().ContainKey("403");
         responses.Should().ContainKey("404");
         responses.Should().ContainKey("502");
         responses.Should().ContainKey("500");
         responses.Should().ContainKey("429");
+        responses.Should().ContainKey("503");
 
         if (expects415)
         {
@@ -767,13 +770,47 @@ public class IdentityOpenApiDocumentTests
         }
 
         [Test]
-        public void It_documents_two_distinct_problem_types()
+        public void It_documents_three_distinct_problem_types()
         {
             _types
                 .Should()
                 .BeEquivalentTo(
                     "urn:ed-fi:api:identities:operation-not-supported",
-                    "urn:ed-fi:api:identities:not-found"
+                    "urn:ed-fi:api:identities:not-found",
+                    "urn:ed-fi:api:not-found"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_500_Response_Problem_Types
+    {
+        private List<string> _types = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode fiveHundred = Resolve(Paths["/identities"]!["post"]!["responses"]!["500"]!);
+            JsonArray oneOf = fiveHundred["content"]!["application/problem+json"]!["schema"]![
+                "oneOf"
+            ]!.AsArray();
+            _types = oneOf
+                .Select(ExtractRefName)
+                .Select(name =>
+                    Schemas[name]!["allOf"]![1]!["properties"]!["type"]!["enum"]![0]!.GetValue<string>()
+                )
+                .ToList();
+        }
+
+        [Test]
+        public void It_documents_the_provider_and_security_configuration_problem_types()
+        {
+            _types
+                .Should()
+                .BeEquivalentTo(
+                    "urn:ed-fi:api:identities:provider-configuration",
+                    "urn:ed-fi:api:system:configuration:security"
                 );
         }
     }

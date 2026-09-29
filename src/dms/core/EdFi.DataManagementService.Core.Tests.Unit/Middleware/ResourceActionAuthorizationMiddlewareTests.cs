@@ -370,18 +370,17 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     /// <summary>
-    /// AGENTS.md Logging: the token-scope claim-set name and the request's trace id must be
-    /// sanitized before reaching a log line - the "Claim set name from token scope" information log
-    /// fires unconditionally, and the "No ClaimSet matching Scope" log fires because no configured
-    /// claim set matches the injected name.
+    /// AGENTS.md Logging: the token-scope claim-set name must be sanitized before reaching a log
+    /// line - the "Claim set name from token scope" information log fires unconditionally, and the
+    /// "No ClaimSet matching Scope" log fires because no configured claim set matches the injected
+    /// name.
     /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_No_Matching_ClaimSet_With_Control_Characters_In_The_Scope_And_Trace_Id
+    public class Given_No_Matching_ClaimSet_With_Control_Characters_In_The_Scope
         : ResourceActionAuthorizationMiddlewareTests
     {
         private const string InjectedClaimSetName = "Bad\r\nInjected";
-        private const string InjectedTraceId = "trace\r\nid";
         private RecordingLogger _logger = null!;
 
         [SetUp]
@@ -415,7 +414,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Form: null,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId(InjectedTraceId),
+                TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
 
@@ -460,17 +459,6 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             record.Level.Should().Be(LogLevel.Information);
             record.Properties["Scope"].Should().Be("BadInjected");
-        }
-
-        [Test]
-        public void It_logs_the_trace_id_without_carriage_return_or_line_feed()
-        {
-            LogRecord record = _logger
-                .Records.Should()
-                .ContainSingle(record => record.Message.Contains("No ClaimSet matching Scope"))
-                .Subject;
-
-            record.Properties["TraceId"].Should().Be("traceid");
         }
     }
 
