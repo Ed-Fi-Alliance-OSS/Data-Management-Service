@@ -395,8 +395,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
         public Task OpenRestartRuntimeAsync(CdcRestartObservations observations, CancellationToken token)
         {
             Current._restartObservations = observations;
-            Current._resources.Add(observations);
-            return Current._owner.OpenAsync(token);
+            return Current._owner.OpenAsync(token, observations);
         }
 
         public void Dispose() => _ended = true;

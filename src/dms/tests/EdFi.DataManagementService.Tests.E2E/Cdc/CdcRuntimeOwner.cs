@@ -17,6 +17,7 @@ internal sealed class CdcRuntimeOwner(
     private readonly SemaphoreSlim _serial = new(1);
     private ICdcProjectionRuntime _runtime = null!;
     private CdcProjectionGate _gate = null!;
+    private CdcRestartObservations _restartObservations = null!;
     private bool _disposed;
     private bool _stopFailed;
 
@@ -39,13 +40,14 @@ internal sealed class CdcRuntimeOwner(
     }
 
     // Called only inside InPhaseAsync; separate stop/open permits API requests during the outage.
-    public async Task OpenAsync(CancellationToken token)
+    public async Task OpenAsync(CancellationToken token, CdcRestartObservations restartObservations = null!)
     {
         if (_runtime is not null || _stopFailed)
         {
             throw new InvalidOperationException("CDC_API_RUNTIME_ALREADY_OWNED_OR_STOP_FAILED");
         }
 
+        _restartObservations = restartObservations;
         (_runtime, _gate) = await create(token);
     }
 
@@ -53,8 +55,10 @@ internal sealed class CdcRuntimeOwner(
     {
         var runtime = _runtime;
         var gate = _gate;
+        var restartObservations = _restartObservations;
         _runtime = null!;
         _gate = null!;
+        _restartObservations = null!;
         Exception failure = null!;
         try
         {
@@ -72,6 +76,18 @@ internal sealed class CdcRuntimeOwner(
             if (runtime is not null)
             {
                 await runtime.DisposeAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+        try
+        {
+            // The executor can still read through the observed pager until runtime shutdown completes.
+            if (restartObservations is not null)
+            {
+                await restartObservations.DisposeAsync();
             }
         }
         catch (Exception exception)

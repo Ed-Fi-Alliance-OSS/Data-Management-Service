@@ -161,6 +161,45 @@ public class Given_CdcRuntimeOwnership
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_keeps_restart_observations_alive_until_runtime_disposal_finishes(bool stopFails)
+    {
+        await using var observations = new CdcRestartObservations(TimeSpan.FromSeconds(5));
+        await _owner.InPhaseAsync(
+            async token =>
+            {
+                await _owner.StopAsync();
+                await _owner.OpenAsync(token, observations);
+                return true;
+            },
+            CancellationToken.None
+        );
+        var waiting = observations.WaitUntilHeldAsync(CancellationToken.None);
+        bool observationsAliveDuringStop = false;
+        _runtimes[1].OnDispose = () =>
+        {
+            observationsAliveDuringStop = !waiting.IsCompleted;
+            return stopFails
+                ? Task.FromException(new InvalidOperationException("stop failed"))
+                : Task.CompletedTask;
+        };
+
+        Func<Task> dispose = async () => await _owner.DisposeAsync();
+        if (stopFails)
+        {
+            await dispose.Should().ThrowAsync<InvalidOperationException>().WithMessage("stop failed");
+        }
+        else
+        {
+            await dispose();
+        }
+
+        observationsAliveDuringStop.Should().BeTrue();
+        Func<Task> wait = () => waiting;
+        await wait.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     [Test]
     public async Task It_waits_for_an_active_phase_before_disposal()
     {
