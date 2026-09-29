@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1556 investigation overlay: CMS diagnostics via a dotnet-monitor sidecar.
+# Apply IN ADDITION to the stack's own -f list, with the same --env-file and -p:
+#   docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml \
+#     -f local-config-diagnostics.yml --env-file .env.e2e -p cs-local up -d config cms-monitor
+# (for the dms-local E2E stack, use that stack's -f list and -p dms-local instead).
+#
+# The sidecar runs in LISTEN mode: CMS connects out to /diag/cms-monitor.sock, so the
+# sidecar sees the process from startup and /dump, /stacks, /livemetrics work without
+# guessing a pid. Suspend mode (the default) is required: /stacks depends on in-process
+# features the monitor can only inject while the runtime waits at startup, so CMS startup
+# blocks until the sidecar is up (hence the depends_on below). Set
+# CMS_DOTNET_DIAGNOSTIC_PORTS to '/diag/cms-monitor.sock,nosuspend' to trade /stacks for
+# startup independence.
+services:
+  config:
+    environment:
+      DOTNET_EnableDiagnostics: ${CMS_DOTNET_ENABLE_DIAGNOSTICS:-1}
+      DOTNET_DiagnosticPorts: ${CMS_DOTNET_DIAGNOSTIC_PORTS:-/diag/cms-monitor.sock,suspend}
+      TMPDIR: ${CMS_DOTNET_TMPDIR:-/diag}
+    volumes:
+      - ${CMS_DOTNET_DIAGNOSTICS_DIR:-../../.dms-dotnet-diagnostics}:/diag
+    depends_on:
+      cms-monitor:
+        condition: service_started
+
+  cms-monitor:
+    # Digest resolved from mcr.microsoft.com/dotnet/monitor:9 on 2026-09-29 (Q17: the
+    # diagnostics tooling is version-pinned so recorded output labels stay comparable).
+    image: mcr.microsoft.com/dotnet/monitor:9@sha256:ca0dd147d5ca5a261ec75961ae7399ce3a87aea45f1a2c8336b73c02027af816
+    container_name: cms-dotnet-monitor
+    # Root, unlike the image's default non-root user: the in-process (call stacks)
+    # channel is a unix socket the CMS process creates under its own user in /diag, and
+    # the sidecar cannot connect to it across containers otherwise. Local tool only.
+    user: root
+    # --no-auth is acceptable only because the endpoint binds to 127.0.0.1 on the host
+    # and this overlay is a local investigation tool, never a deployment artifact.
+    command: ["collect", "--no-auth", "--urls", "http://+:52323"]
+    environment:
+      DotnetMonitor_DiagnosticPort__ConnectionMode: Listen
+      DotnetMonitor_DiagnosticPort__EndpointName: /diag/cms-monitor.sock
+      DotnetMonitor_Storage__DefaultSharedPath: /diag
+      DotnetMonitor_InProcessFeatures__Enabled: "true"
+      DotnetMonitor_InProcessFeatures__CallStacks__Enabled: "true"
+    ports:
+      - "127.0.0.1:${CMS_MONITOR_PORT:-52323}:52323"
+    volumes:
+      - ${CMS_DOTNET_DIAGNOSTICS_DIR:-../../.dms-dotnet-diagnostics}:/diag
+    networks:
+      - dms
+    restart: unless-stopped
+
+networks:
+  dms:
+    external: true

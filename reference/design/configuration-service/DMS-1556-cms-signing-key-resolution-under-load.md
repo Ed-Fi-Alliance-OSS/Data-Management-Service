@@ -1,0 +1,357 @@
+# DMS-1556 Implementation Spec — CMS profile requests return HTTP 500 during concurrent catalog loading
+
+Status: **v4 — Phase 0, step 0.1 approved (Codex, 2026-09-29); every later step and all production phases remain gated.** v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. No baseline experiment has been run and no production code has been changed. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
+Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1556`, branch `DMS-1556` (fresh from `main` at `5e0d010af`). Target: Ed-Fi API v8.1. `SchemaHashConstants.RelationalMappingVersion` stays `v3`; no schema migration.
+
+## 0. Review history and dispositions
+
+### 0.0 Approval-round corrections (v3 → v4, 2026-09-29)
+
+Step 0.1 was approved on v3 with two corrections and two question decisions, all applied in v4:
+
+| Item | Disposition |
+| --- | --- |
+| 1 Scheduler due-time expression (`NextAttemptAt > now ? NextAttemptAt : lastSuccessAt + RefreshInterval`) lost the retry deadline exactly when it became due, and a success signal could authorize an immediate extra load | §4.4 "Scheduling" restated as explicit due-time rules: never loaded → due immediately; last attempt failed → due time remains `NextAttemptAt`, **including when it is already past**; last attempt succeeded → due time is the next normal refresh deadline; a state-change signal causes recomputation and never itself authorizes a load; an attempt starts only when due, eligible, and no attempt is in flight. New tests 1.6-h (retry deadline reached exactly) and 1.6-i (successful publication causes no additional load before the next due time); M8 extended with 1.6-h and M10 added for 1.6-i; step 1.6 is a scheduler review checkpoint. |
+| 2 The spec referenced v2 sections ("As v2 §7.1", "As v2 §6", "Conventions as before") that are not preserved anywhere — the file is untracked | §1.5/§1.6, §1.8, §4.9, §5 conventions, §6, §7.1, and §8 are restated inline and self-contained in v4. The review-history tables (§0.1, §0.2) remain as history only and are not prerequisites for understanding the operative plan. |
+| Q17 approved with adjustments | Dump analysis reads captured runtime state; it does not execute `ThreadPool.GetMinThreads` in the target. The `dotnet-dump` version is pinned and its `threadpool` output is verified rather than assumed: the current diagnostics command exposes the value as `Worker Min Limit` (`ThreadPoolCommand` reports `threadPool.MinThreads`). Dumps are collected outside timed burst windows so collection does not contaminate timeout evidence. |
+| Q18 approved | 87 total requests / 87 maximum concurrency for the catalog-shaped workload; 256 / 128 for additional stress. Overlap is measured after admission through the semaphore and through response-body completion. The two workloads are separately identified in all evidence. |
+
+### 0.1 Round 2 findings (v2 → v3)
+
+| Finding | Disposition |
+| --- | --- |
+| 1 Refresh scheduler waits for the *later* of tick and retry deadline, contradicting the ~60 s recovery bound | **Deadline-driven scheduling** (§4.4 "Scheduling"): after a failure the service sleeps until the retry deadline (`NextAttemptAt`), not the next tick; the deadline is re-read on every wake because request-triggered attempts move it; bounds are split into *attempt start* (`T_start ≤ max backoff`) and *attempt completion* (`+ LoadTimeout`). Test 1.6-e: startup retrieval fails, store recovers, **no requests**, recovery within the documented bound under fake time. |
+| 2 Final gate allowed the original profile failure to remain | **Full-request success gate restored**: in healthy baseline-comparison runs every expected profile request must return HTTP 200 with the expected `id`/`definition` (harness validates bodies); stage-classified 503/500 expectations apply only to deliberately injected outage runs. §2 (AC 2), Phase 4.1 and §7.4 now use the same criterion. |
+| 3 Attribution overstated; concurrency undefined | Effective thread-pool minimum is read from the target process with `ThreadPool.GetMinThreads` via a dump (`dotnet-monitor /dump` + `dotnet-dump analyze -c threadpool`), never inferred from thread counts; the "two controls → two mechanisms" rule is removed and an ineffective E4 does **not** exclude starvation (stacks decide); the harness separates `-MaxConcurrency` from `-TotalRequests` (IDs repeat when total exceeds the seeded count) and reports the **measured** peak overlap; R-slow-only evidence is provisional and does not establish the reported mechanism for AC 1. |
+| 4 Rotation runbook not executable with the unchanged issuer | Runbook rewritten around the actual behavior: the private-key query selects the newest active row (`ORDER BY CreatedAt DESC LIMIT 1`), so inserting a newer active key switches signing on the next mint; the resulting window in which another instance may 401 a legitimate new-key token is bounded and documented; first-sighting acceptance is stated as *conditional on gate and cooldown eligibility*; old-key retention accounts for `TokenExpirationMinutes` **plus** `TokenValidationClockSkew` (5 min). Tests cover eligible and suppressed refresh and two independent providers (1.5-h/p/q, 3.1-e/q). |
+| 5 Mutations that would not fail the named tests | M2 split: **M2a** boundary short-circuit, pinned by a counting configuration-manager decorator asserting zero downstream configuration/validation calls on a boundary failure; **M2b** translation removed at all three events, pinned by 3.1-f/g turning into 500s. M5 uses **successive, non-overlapping** unknown-kid requests within one cooldown (1.5-j rewritten). "3.4-a evidence" removed from must-fail; connection measurements are observational only. |
+| 6 Background certificate initialization races token issuance | A shared `DevelopmentCertificateStore` singleton owns check-and-create for the development certificate under one `SemaphoreSlim`, writes atomically (temp file + rename), and is used by **both** `CertificateSigningKeySource` and `LoadActiveSigningKeyFromCertificatesAsync` (issuance semantics unchanged: same file, same thumbprint kid). Deterministic first-start test with concurrent snapshot load and token issuance asserts the issued token's kid equals the published thumbprint (1.5-r). |
+| Sequencing | 2.1 registers only what exists after Phase 1 (sources, provider, hosted service, `TimeProvider`); the configuration manager and shared events are registered in 2.3 where they are defined. Timer-driven tests moved from 1.5 to 1.6; 1.5 keeps only provider-API, time-advancing tests. |
+
+Question decisions recorded: **Q13** `MaxStaleness = 3600 s`, explicit configurable policy independent of token lifetime; a full database outage still prevents authentication through the uncached token-status check — stale keys give no general outage availability (§4.5). **Q14** `RefreshOnIssuerKeyNotFound = false`; the boundary owns unknown-key refresh. **Q15** introspection keeps `{"active": false}` with a categorized Error log — documented as *preserving existing behavior*, not as a protocol requirement. **Q16** `OpenIddictKey` is reset in the integration database; hosts and refresh services are disposed before reset; key-table fixtures are `[NonParallelizable]`.
+
+### 0.2 Round 1 findings (v1 → v2), still in force
+
+Plain `IConfigurationManager<OpenIdConnectConfiguration>` (never `BaseConfigurationManager`); boundary classification in `OnMessageReceived`/`OnChallenge` via `context.Fail(exception)` (the handler rethrows unless an event supplies a result); retry eligibility in the provider governing every trigger; separate bounds `T_prop`/`T_max`; consumer-by-consumer semantics with OAuth contracts preserved; mutation-based revert checks; Phase 0 with controls E3/E4/E5, R-500/R-slow, M-conn, disk evidence, E6 moved to Phase 4; fix-demonstrating vs compatibility tests; steps split for reviewable commits. Q1 commit harness; Q2 supply manager only, `Authority` stays, `MetadataAddress` inert; Q3 503 for protected requests and JWKS only; Q5 typed exception; Q6/Q9/Q10/Q11/Q12 as recommended; Q7 remove only the format cache; Q8 evidence summary in repo, raw captures to Jira.
+
+## 1. Problem statement, confirmed facts, verified framework behavior, hypotheses, scope
+
+### 1.1 Problem statement
+
+During a burst of authenticated `GET /v3/profiles/{id}` requests (DMS fans out one request per catalog entry with `Task.WhenAll`; ~87 profiles in the affected runs), CMS in self-contained mode with database-backed signing keys returned HTTP 500 for existing profiles after ~15 s. The 500 originated in `ProfileRepository.GetProfile` (`NpgsqlConnection.OpenAsync` → `TimeoutException` during SASL authentication or a read). In the same window CMS logged `Failed to fetch public keys for JWKS` (7× and 13×), also from connection opening in `OpenIddictDataRepository.GetActivePublicKeysInternalAsync`. PostgreSQL logged no crash, restart or `too many connections`. The mechanism is unproven (Jira DMS-1556).
+
+### 1.2 Confirmed facts (code inspection; paths relative to `src/config`)
+
+| # | Fact | Where |
+| --- | --- | --- |
+| F1 | The default `Bearer` scheme's `IssuerSigningKeyResolver` blocks the request thread: `tokenManager.GetPublicKeysAsync().ConfigureAwait(false).GetAwaiter().GetResult()`. | `frontend/…/Infrastructure/WebApplicationBuilderExtensions.cs:387-414` |
+| F2 | `DmsJwtBearer` (registered by `AddJwtAuthentication` from both store registrations) has the same blocking resolver and an `OnTokenValidated` that calls `ValidateTokenAsync` by reflection. No endpoint selects it. | `backend/…Backend.OpenIddict/Extensions/JwtAuthenticationExtensions.cs:50-173` |
+| F3 | Per authenticated request in database-key mode, authentication performs **three sequential database acquisitions** before the endpoint's query: resolver key read; `VerifyTokenAsync` key read; `GetTokenStatusAsync`. Physical connection counts and reuse are a **measurement** (M-conn). | `OpenIddictTokenManager.cs:401-412, 465-471, 555-561`; `Backend.Postgresql/OpenIddict/Repositories/OpenIddictDataRepository.cs:489-497, 544-551`; `Backend.Postgresql/Repositories/ProfileRepository.cs:122-125` |
+| F4 | `_keyFormatCache` caches detected key formats only. | `OpenIddictTokenManager.cs:37-48, 716-738` |
+| F5 | `GetPublicKeysFromDatabaseAsync` swallows exceptions and returns a possibly empty/partial list; JWKS then answers `200 {"keys":[]}`. | `OpenIddictTokenManager.cs:783-787`; `Modules/JwksEndpointModule.cs:20-25` |
+| F6 | `Authority`/`MetadataAddress` are set and no `ConfigurationManager` is supplied, so post-configuration builds an HTTP manager targeting CMS itself (E2E `IdentitySettings__Authority=http://ed-fi-api-config:8081`); first authenticated request self-fetches discovery + JWKS; metadata keys are merged into validation keys (V-2, V-5). | `WebApplicationBuilderExtensions.cs:339-341`; `eng/docker-compose/.env.e2e:41,73,157` |
+| F7 | `ITokenManager` transient at `:211`, then singleton in `AddPostgresOpenIddictStores` (`:35`) / `AddMssqlOpenIddictStores` (`:33`); concrete (`:34`/`:32`) and `ITokenRevocationManager` (`:36`/`:34`) are separate singletons → **three `OpenIddictTokenManager` instances**. Shared key state must be its own singleton. | as cited |
+| F8 | `ProfileRepository.GetProfile` opens outside its `try`; open failures → `GlobalExceptionHandler` → 500; query failures → `FailureUnknown` → 500. Unchanged (Q10). | `ProfileRepository.cs:122-145` |
+| F9 | Keys are seeded by tooling (`Generate-OpenIddictKey-Insert.ps1`, `OpenIddict-Crypto.psm1`; pgcrypto from migration `0020`). **The private-key query selects the newest active row** (`WHERE "IsActive" = TRUE ORDER BY "CreatedAt" DESC LIMIT 1`; MSSQL `TOP 1 … ORDER BY CreatedAt DESC`), so inserting a newer active key changes signing on the next mint; there is no separate activation control. `ExpiresAt` is never queried. | `OpenIddictDataRepository.cs:523-542` (PG), `:564-585` (MSSQL); `0019_Create_OpenIdKeys_Table.sql` |
+| F10 | Certificate mode serves keys from an X.509 file re-read per call; when `UseDevelopmentCertificates` is on, **both** `LoadActiveSigningKeyFromCertificatesAsync` (issuance) and `GetPublicKeysFromCertificatesAsync` (validation) independently check `File.Exists` and create the file. Certificate mode is a zero-code control removing database I/O from both key reads. | `OpenIddictTokenManager.cs:87-118, 648-679` |
+| F11 | Npgsql 8.0.4 defaults with the E2E string: `Max Pool Size=100`, `Timeout=15` s, idle lifetime 300 s; PostgreSQL `max_connections` 100 shared by DMS, CMS, job workers, tests. | `.env.e2e:152`; `eng/docker-compose/postgresql.yml:13` |
+| F12 | CI runs PostgreSQL, CMS, DMS and the test process on one `ubuntu-latest` runner; actual vCPU/memory recorded at investigation time. | `.github/workflows/on-dms-pullrequest.yml:2011-2123` |
+| F13 | DMS `Task.WhenAll` fan-out; no per-server cap; DMS caches its CMS token (1500 s), no re-mint on 401; DMS-side handling is DMS-1557 (AC 6). | `src/dms/core/…/Profile/CachedProfileService.cs:658-668`; `ConfigurationServiceTokenHandler.cs:34-67` |
+| F14 | No test exercises the real `JwtBearer` pipeline with database keys (integration tests use `AddTestAuthentication`; frontend tests fake `ITokenManager` or run it over a fake repository). | `Jobs/JobApiIntegrationTests.cs:116-139`; `IdentityModuleTests.cs:1438-1466` |
+| F15 | Pre-existing, out of scope: `MaxKeyCacheSize`/`KeyFormatCacheSize` spelling; duplicate `OpenIddict.AddValidation`; shadowed transient at `:211`. | `appsettings.json:61` |
+| F16 | `/health` returns the time only. | `Modules/HealthModule.cs` |
+| F17 | `JwtTokenValidator.TokenValidationClockSkew = 5 min`; the expired-token sweep already keeps rows for expiration + skew. | `Backend.OpenIddict/Token/JwtTokenValidator.cs:69`; `TokenCleanupService.cs:79-84` |
+
+### 1.3 Verified framework behavior (version-pinned sources read 2026-09-29)
+
+- **V-1** `JwtBearerHandler.HandleAuthenticateAsync` (aspnetcore v10.0.1): `MessageReceived` → `if (messageReceivedContext.Result != null) return …`; `TokenValidated` → same; outer `catch` → `AuthenticationFailed` → returns `Result` if set, **otherwise rethrows**; `HandleChallengeAsync` returns when `eventContext.Handled`.
+- **V-2** `SetupTokenValidationParametersAsync`: a `BaseConfigurationManager` is assigned to `tokenValidationParameters.ConfigurationManager`; **any other** `IConfigurationManager` is awaited via `GetConfigurationAsync(Context.RequestAborted)` and its `Issuer`/`SigningKeys` are concatenated into the cloned parameters, leaving `TokenValidationParameters.ConfigurationManager` null.
+- **V-3** IdentityModel 8.12.0 `JsonWebTokenHandler.ValidateTokenAsync(JsonWebToken, …)`: first `GetBaseConfigurationAsync(CancellationToken.None)` is try/caught (IDX10261, continues with null); `LastKnownGoodConfiguration` assigned on success regardless of `UseLastKnownGoodConfiguration`; second call after `RequestRefresh()` unguarded; LKG loop when enabled. **Rejected for this design.**
+- **V-4** `RefreshOnIssuerKeyNotFound` only calls `RequestRefresh()`; no in-request retry on the non-`Base` path.
+- **V-5** `JwtBearerPostConfigureOptions`: `ValidAudience` from `options.Audience` when unset; HTTP manager and `Backchannel` created **only when `options.ConfigurationManager == null`**.
+- **V-6** `ValidateSignature` throws `SecurityTokenSignatureKeyNotFoundException` (IDX10500) with no keys.
+- **V-7** `ThreadPool.GetMinThreads(out workerThreads, out completionPortThreads)` reports the configured minimum independent of the current thread count (API documentation); the runtime knob `DOTNET_ThreadPool_ForceMinWorkerThreads` takes a hexadecimal value.
+
+### 1.4 Hypotheses (not mutually exclusive)
+
+- **H1 thread-pool starvation** from the blocking resolver. Primary evidence: thread stacks blocked under the resolver plus `threadpool-queue-length` growth; E4 supports but neither proves alone nor excludes when ineffective (§3.5).
+- **H2 connection creation and SCRAM cost** under the burst. Primary evidence: M-conn creation burst and PostgreSQL CPU; E5 and E3 change the outcome.
+- **H3 PostgreSQL saturation** (checkpoint I/O, CPU, disk): waits, slow statements, disk stalls; unaffected by E4.
+- **H4 runner contention**: profile-dependent reproduction.
+- **H5 self-referential metadata amplification** (F5/F6): self-requests correlated with `Failed to fetch` lines.
+
+### 1.5 Scope
+
+- CMS (`src/config`) only: authentication key resolution, the request boundary of both JwtBearer schemes, JWKS, and the OpenIddict token manager's key/status paths.
+- Self-contained identity mode with database-backed signing keys is the primary target. Certificate mode is touched only where named: the shared development-certificate store (D-10), which changes *where and by whom* the file is created, not what is issued.
+- PostgreSQL **and** MSSQL backends wherever the repository contract changes (D-8): both implementations of `GetActivePublicKeysInternalAsync` gain the cancellation-token overload.
+- Investigation tooling (Phase 0): the burst harness and diagnostics recipes under `eng/performance/dms-1556/` and the compose overlays under `eng/docker-compose/`. These are committed; captured evidence artifacts are not (gitignored `artifacts/` and `.dms-dotnet-diagnostics/` paths).
+
+### 1.6 Non-goals (scope exclusions)
+
+- No change under `src/dms` (AC 6; DMS-side failure handling is DMS-1557).
+- No token-validity caching: the per-request token-status check stays uncached (I-2, D-7).
+- No connection-string timeout, thread-pool minimum, or pool-size change as the fix — those appear only as Phase 0 experiment controls (E4, E5).
+- No rotation tooling, key-management endpoints, or key-table schema change; `ExpiresAt` stays unqueried (F9). `SchemaHashConstants.RelationalMappingVersion` stays `v3`.
+- No Keycloak-mode behavior change (no OpenIddict stores are registered there).
+- OAuth endpoint contracts preserved exactly as §4.7 states them (token, introspection, revocation).
+- Pre-existing issues in F15 (settings spelling, duplicate `AddValidation`, shadowed transient) stay untouched.
+
+### 1.7 Questions decided at the step-0.1 approval
+
+| Q | Question | Decision (2026-09-29) |
+| --- | --- | --- |
+| Q17 | Reading the effective thread-pool minimum from the container: `dotnet-monitor /dump` → `dotnet-dump analyze <dump> -c threadpool` inside a Linux container matching the CMS image's runtime (the dump is Alpine/linux-musl and must be analyzed on a matching runtime). Acceptable as the "approved diagnostic mechanism"? | **Approved with adjustments.** Dump analysis reads captured runtime state — it does not execute `ThreadPool.GetMinThreads` in the target. The `dotnet-dump` version is pinned, and its output is verified rather than assumed: the current diagnostics `ThreadPoolCommand` reports `threadPool.MinThreads` and exposes the value as `Worker Min Limit`. Dumps are collected outside timed burst windows so collection does not contaminate the timeout evidence. |
+| Q18 | `-TotalRequests` default for the burst: 87 (one per profile, matching DMS) with `-MaxConcurrency 87`; the N=128 point uses `-TotalRequests 256 -MaxConcurrency 128` with cycling IDs. | **Approved.** 87/87 is the catalog-shaped workload; 256/128 is additional stress. Overlap is measured after admission through the semaphore and through response-body completion, and the two workloads are separately identified in the evidence (`catalog-87x87`, `stress-256x128`). |
+
+### 1.8 Sources read
+
+- aspnetcore v10.0.1: `JwtBearerHandler.HandleAuthenticateAsync` / `HandleChallengeAsync`, `SetupTokenValidationParametersAsync`, `JwtBearerPostConfigureOptions` (V-1, V-2, V-5).
+- IdentityModel 8.12.0: `JsonWebTokenHandler.ValidateTokenAsync(JsonWebToken, …)`, `BaseConfigurationManager`/LKG behavior, `ValidateSignature` (V-3, V-4, V-6).
+- `ThreadPool.GetMinThreads` API documentation and the `DOTNET_ThreadPool_ForceMinWorkerThreads` runtime knob (V-7).
+- `dotnet/diagnostics` `Microsoft.Diagnostics.ExtensionCommands.ThreadPoolCommand` — the `threadpool` command reports `threadPool.MinThreads` and prints it as `Worker Min Limit` (Q17).
+- CMS sources cited fact-by-fact in §1.2 (F1–F17), including `OpenIddictDataRepository.GetActivePrivateKeyInternalAsync` on both engines and `JwtTokenValidator.TokenValidationClockSkew`.
+- Npgsql 8.0.4 pooling defaults; `eng/docker-compose/.env.e2e`, `postgresql.yml`, and `.github/workflows/on-dms-pullrequest.yml` for the deployment topology (F6, F11, F12).
+
+## 2. Acceptance-criteria mapping (Jira, verbatim)
+
+| AC | Text (verbatim) | Steps | Tests (F = demonstrates the fix, C = compatibility) | Completion evidence |
+| --- | --- | --- | --- | --- |
+| AC 1 | Establish and document the failure mechanism using a repeatable stress/regression scenario and runtime evidence. | 0.1–0.6 | Harness E1–E5; 3.1-s (F) | `DMS-1556-investigation.md`: R-500/R-slow outcome per run (R-slow-only marked provisional), per-experiment tables, measured peak overlap, effective `MinThreads` from the process, M-conn, PostgreSQL/disk samples, stacks, attribution table with verdicts incl. *inconclusive*, E7 observations, G2 decision by Codex. |
+| AC 2 | CMS serves existing profiles reliably during the catalog-load burst within the supported CI/resource envelope; requests do not fail because authentication blocks async database work. | 1.x, 2.x, 3.1–3.4 | 3.1-a/s (F), 3.4-a (F) | **Healthy-run gate (§7.4-H):** on the fixed image, every expected profile request in every healthy baseline-comparison run (both profiles, 5 cold + 5 warm at 87/87 and 256/128) returns **HTTP 200 with the expected `id` and `definition`** — zero non-200 responses of any kind; stacks show no blocked authentication frames. Phase 4.2: shards 1 and 2 green on ≥ 2 independent runs each; CI after push confirms the real envelope (recorded in the PR). |
+| AC 3 | If the signing-key resolver is changed, resolve from a safe in-memory snapshot with asynchronous refresh/coalescing or equivalent design, preserving key rotation, unknown-key behavior, revocation validation, and failure semantics. Do not trade availability for accepting invalid tokens or indefinitely trusting retired keys. | 1.1–1.6, 2.2, 2.3, 3.1, 3.2 | 1.5-a…r, 1.6-a…g, 2.2, 2.3, 3.1-b…s, 3.4-b/c | §7 fixtures pass; mutations M1–M10 each fail exactly their named fixtures; `T_start`/`T_prop`/`T_max` demonstrated by fake-time tests. |
+| AC 4 | Retain diagnosable dependency errors and avoid silently treating failed key retrieval as a valid empty key set. | 1.2, 1.5, 2.2, 2.3, 3.1, 3.3 | 1.5-f/g (F), 2.2-c/d (F), 2.3-b/c (F), 3.1-f/g/i (F), 3.3-a (F) | Injected-outage runs (§4.1-O) show stage-classified 503s with `Retry-After` and the §4.9 Error lines; JWKS 503 vs `200 []` distinguished. |
+| AC 5 | Add coverage for concurrent cold requests, database interruption/recovery, and signing-key rotation; rerun the affected PostgreSQL self-contained E2E shards. A single passing rerun alone does not establish the fix. | 1.5, 1.6, 3.1, 3.4, 4.1, 4.2 | Cold: 1.5-a, 3.1-a, 3.4-a. Interruption/recovery: 1.5-f/l/m, 1.6-b/e, 3.1-f/g/i/n. Rotation/retirement: 1.5-h/i/p/q, 1.6-f, 3.1-e/h/q, 3.4-b/c. Certificate race: 1.5-r. | §7.1 executed on the final commit; shards 1 and 2 ≥ 2 runs each; harness 5× per profile. |
+| AC 6 | Keep the DMS failure-handling correction independent: preventing this CMS timeout must not be DMS's only protection against upstream 500s. | none in `src/dms` | — | `git diff --stat main...DMS-1556` has no `src/dms` path; DMS-1557 remains required. |
+
+## 3. Phase 0 — Investigation
+
+No production code. Steps 0.2–0.5 stop individually with evidence committed as increments of the investigation document.
+
+### 3.1 Environment
+
+1. Stack: `teardown-local-dms.ps1`; `setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` (self-contained, PostgreSQL 16.8, database keys, DMS idle). CMS at `http://127.0.0.1:8081/config` — the harness targets `127.0.0.1`, not `localhost`, because the Windows dual-stack fallback adds ~2 s to every new connection (a client-side artifact that would contaminate latency evidence; measured during the 0.1 smoke).
+2. CMS diagnostics overlay `eng/docker-compose/local-config-diagnostics.yml` (`DOTNET_DiagnosticPorts=/diag/cms-monitor.sock,suspend`, `TMPDIR=/diag`, bind mount) + `dotnet-monitor` sidecar (digest-pinned, `--no-auth`, listen mode, run as root for the cross-container in-process socket): `/livemetrics`, `/stacks`, `/dump`. Suspend mode is required for `/stacks` — the in-process call-stacks feature can only be injected while the runtime waits at startup (verified during the 0.1 smoke), so CMS start depends on the sidecar under this overlay. **Effective thread-pool minimum (Q17):** one `/dump` per run, **collected outside the timed burst windows** (before the first or after the last timed round) so collection does not contaminate timeout evidence; analyzed with the **pinned** `dotnet-dump` version's `threadpool` command in a Linux container whose runtime matches the CMS image (Alpine/linux-musl → Alpine SDK image). The dump is captured runtime state — nothing executes `ThreadPool.GetMinThreads` in the target. The recorded value is the `Worker Min Limit` line (`ThreadPoolCommand` reports `threadPool.MinThreads`); the recipe verifies that label is present in the output and records the tool version, alongside `docker inspect` of `DOTNET_ThreadPool_ForceMinWorkerThreads`/`DOTNET_PROCESSOR_COUNT`.
+3. PostgreSQL overlay (scratch): `log_connections`, `log_disconnections`, `log_min_duration_statement=250`, `log_lock_waits`, `log_checkpoints`; sampler (250 ms): `pg_stat_activity` by state/wait_event_type/backend_type, `numbackends`, `pg_stat_io`, `pg_stat_bgwriter`.
+4. Container/host samplers: `docker stats` (CPU, memory, PIDs, BlockIO) at 500 ms; host disk counters (`Get-Counter` on Windows; `/proc/diskstats` noted as the runner equivalent).
+5. CMS `Debug` log level for correlated durations/trace ids.
+6. Seeding: `Invoke-CmsProfileBurst.ps1 -Seed -ProfileCount 87` (idempotent), recording each profile's id and definition hash for body validation.
+7. Load: `Invoke-CmsProfileBurst.ps1 -TotalRequests T -MaxConcurrency N -Rounds R [-Cold] [-ValidateBodies]` — `HttpClient` + `Task.WhenAll` with a `SemaphoreSlim(N)` admission gate; request *i* targets profile `ids[i mod 87]` (IDs repeat when `T > 87`); output: per-request CSV (admission and body-completion timestamps, status, ms, trace id, body-valid) and a summary including the **measured peak overlap** and body-validation counts. Per Q18, a request's in-flight interval runs **from admission through the semaphore to response-body completion**, and peak overlap is the maximum number of simultaneously in-flight intervals derived from those timestamps. Defaults per Q18 (87/87); every run is labeled with its workload (`catalog-87x87`, `stress-256x128`, or `workload-TxN`) and the two Q18 workloads are kept separately identified in all evidence.
+8. Resource profiles (both recorded with `nproc`, memory, Docker limits, env, `Worker Min Limit`): **P-dev** and **P-runner-approx** (`cpus: 2` on CMS and PostgreSQL; `DOTNET_PROCESSOR_COUNT=4`). P-runner-approx is a stress approximation; the envelope evidence is the real workload (E7 locally, CI after push).
+
+### 3.2 Reproduction definitions
+
+- **R-500**: ≥ 1 HTTP 500 on `GET /v3/profiles/{id}` whose CMS log shows `NpgsqlException`/`TimeoutException` from `OpenAsync` in the profile path and/or `Failed to fetch public keys for JWKS` in the window.
+- **R-slow**: no 500 but p99 ≥ 5 s at 87/87. **R-slow alone is provisional**: it may steer the investigation but does not establish the reported timeout/500 mechanism for AC 1; the doc must say so.
+
+### 3.3 Measurements
+
+HTTP status histogram, percentiles, time-to-first-failure, measured peak overlap, body validation; CMS `threadpool-thread-count`, `threadpool-queue-length`, `threadpool-completed-items-count`, lock contention, CPU, GC, working set; ASP.NET current/failed requests; Npgsql meter; **M-conn** (physical connections created in the window from `log_connections`, peak `numbackends` for the CMS role, pool peak in-use, reuse ratio); stacks at t≈2/8/14 s; PostgreSQL waits, slow statements, checkpoints, `pg_stat_io`; disk; CMS log counts (`Failed to fetch`, `/.well-known/` self-requests, `Authentication failed`); `Worker Min Limit` from the dump.
+
+### 3.4 Experiments
+
+| Id | Purpose | Setup | What it can and cannot show |
+| --- | --- | --- | --- |
+| E0 | Pin framework facts (scratch project) | (a) plain manager throwing → `OnAuthenticationFailed` receives the type; `Fail(ex)` prevents rethrow; `OnChallenge.AuthenticateFailure` is the type; (b) `OnMessageReceived` `Fail(ex)` short-circuits **and no `GetConfigurationAsync` call follows**; (c) manager supplied + `Authority` set → zero backchannel sends; (d) `GetConfigurationAsync` receives `RequestAborted`; abort during a cold load cancels only that waiter; (e) cold failure → 503, expired → 503, recovery → 200, `TokenValidationParameters.ConfigurationManager` null; (f) `ValidAudience` from `Audience` | validity of D-2/D-3, I-5 |
+| E1 | Baseline | current image; both profiles; `-Cold` + 4 warm rounds; 87/87; 5× | R-500/R-slow (G1) |
+| E2 | Concurrency sweep | `(T,N)` ∈ {(87,4),(87,8),(87,16),(87,32),(87,64),(87,87),(256,128)}, warm, P-runner-approx | degradation shape; M-conn vs measured overlap |
+| E3 | Control — remove database-backed key retrieval collectively (certificate mode) | `UseCertificates=true`, dev cert on a writable volume | implicates key retrieval as a whole; does not isolate blocking from round-trip cost |
+| E4 | Control — thread availability | `DOTNET_ThreadPool_ForceMinWorkerThreads=0x80`; `Worker Min Limit` confirmed from the dump | vanish → supports H1; **persist → does not exclude H1** (minimum may still be insufficient, or blocking may sit elsewhere) — stacks decide |
+| E5 | Control — bound physical connections | `Max Pool Size=16` | failure signature/PG CPU shift → H2 quantified |
+| E7 | Real workload: shard 2 via `build-dms.ps1 E2ETest` under P-runner-approx with the overlay (best effort) | local observation of the real workload; complements CI |
+
+### 3.5 Attribution rules
+
+- A control that removes the failure **supports** its hypothesis. Two controls each removing it do **not** establish two mechanisms; both may relieve one mechanism (certificate mode and extra threads can both relieve blocking). Mechanisms are attributed from direct evidence — blocked stacks and queue growth (H1), M-conn and PostgreSQL CPU (H2), waits/`pg_stat_io`/disk (H3) — with controls as corroboration.
+- An ineffective E4 never excludes starvation.
+- Verdicts: *supported*, *refuted*, *modifier*, **inconclusive**.
+
+| Hypothesis | Direct evidence | Corroborating controls | Observed | Verdict |
+| --- | --- | --- | --- | --- |
+| H1 | blocked stacks under the resolver, queue growth, timeout clustering | E4, E3 | | |
+| H2 | M-conn creation burst, PG CPU | E5, E3 | | |
+| H3 | waits, slow statements, disk stalls | samplers; E4 no effect | | |
+| H4 | profile dependence | P-dev vs P-runner-approx | | |
+| H5 | self-requests correlated with `Failed to fetch` | E0(c), E1 logs | | |
+
+### 3.6 Decision gates
+
+- **G1** R-500 in ≥ 1 of 5 cold runs under either profile → *reproduced*. R-slow only → *partially reproduced (provisional)*; attribution may proceed but AC 1 is not satisfied by R-slow evidence alone, and AC 2's envelope evidence leans on E7 and CI. Neither → re-plan with Codex; Phase 1 does not start.
+- **G2** Proceed with Phases 1–3 when direct evidence supports H1 and/or H2 and at least one control corroborates. Stacks showing blocking elsewhere → revise §4 first. H2-dominant → snapshot still removes two of three authentication acquisitions; connection-string guidance added; re-approve. H3/H4-dominant or inconclusive → §4 withdrawn.
+- **G3** settings confirmed/adjusted; `MaxStaleness` fixed at 3600 s by Q13.
+
+### 3.7 Deliverable
+
+`reference/design/configuration-service/DMS-1556-investigation.md`; raw captures to Jira.
+
+## 4. Proposed architecture
+
+### 4.1 Decisions (D)
+
+- **D-1** Shared key state in a new singleton (F7).
+- **D-2** Both schemes receive keys through `SigningKeyConfigurationManager : IConfigurationManager<OpenIdConnectConfiguration>` (plain, V-2/V-5); the blocking resolver is removed from both.
+- **D-3** Request boundary in `OnMessageReceived` (shared `SigningKeyBearerEvents`): readiness with `RequestAborted`, unknown-`kid` pre-resolution, classification via `context.Fail(exception)`; `OnAuthenticationFailed`/`OnTokenValidated` also `Fail(exception)` on dependency failures; `OnChallenge` classifies by `AuthenticateFailure`; `RefreshOnIssuerKeyNotFound = false` (Q14).
+- **D-4** Failure classes: `Failed(Retrieval)`, `Succeeded(0)`, `Failed(Processing)`, `Succeeded(n)`; a failed load never replaces the current snapshot.
+- **D-5** One load gate for every trigger: single-flight + retry eligibility with backoff; **deadline-driven scheduling** in the hosted service (§4.4).
+- **D-6** Unknown-kid refresh throttled globally (`Cooldown`) and gated (D-5).
+- **D-7** Per-request token-status check retained, uncached; `ValidateTokenAsync` rethrows `AuthenticationDependencyUnavailableException` ahead of its general catch.
+- **D-8** Contract change limited to `GetActivePublicKeysAsync(CancellationToken)` / `GetActivePublicKeysInternalAsync(CancellationToken)` on both engines.
+- **D-9** 503 problem (`FailureResponse.ForUnclassifiedStatus(503, …)`) + `Retry-After` for protected requests and JWKS; OAuth endpoints preserved (§4.7).
+- **D-10** Development-certificate creation has one owner: `DevelopmentCertificateStore` (singleton; `SemaphoreSlim(1,1)`; check-and-create under the lock; atomic write via temp file + `File.Move(overwrite)`), used by both the validation source and the issuance path. Issuance semantics (same file, thumbprint kid, cert lifetime) unchanged.
+
+### 4.2 Conditional
+
+C-1 all of §4 conditional on G2. C-2 `MetadataAddress` documented inert. C-3 settings other than `MaxStaleness` confirmed at G3.
+
+### 4.3 Components (`Backend.OpenIddict` unless noted)
+
+1. `Backend/AuthenticationDependencyUnavailableException` (`Category`: `SigningKeyStore` | `TokenStatusStore`) and `SigningKeys/SigningKeysUnavailableException`.
+2. `SigningKeys/SigningKeySnapshot` (immutable; `Keys`, `RetrievedAt`, `Version`, `Source`), `SigningKeyEntry`, `SigningKeyRefreshOutcome`, `SigningKeyProviderStatus`.
+3. `SigningKeys/PublicKeyMaterialParser` (moved; no format cache).
+4. `SigningKeys/DevelopmentCertificateStore` (D-10) and `SigningKeys/CertificateSigningKeySource` / `DatabaseSigningKeySource` behind `ISigningKeySource`.
+5. `SigningKeys/ISigningKeySnapshotProvider` / `SigningKeySnapshotProvider` (§4.4): `Current`, `Status`, `GetUsableAsync(ct)`, `RefreshAsync(trigger, ct)`, `TryRefreshForUnknownKeyAsync(kid, ct)`, `NextAttemptAt`, and `AttemptStateChanged` (a signal the scheduler awaits).
+6. `SigningKeys/SigningKeyRefreshService : BackgroundService` — deadline-driven loop (§4.4 "Scheduling"), `TimeProvider`-based waits, startup attempt non-fatal.
+7. `SigningKeys/SigningKeyConfigurationManager` — `GetConfigurationAsync(ct)` → `provider.GetUsableAsync(ct)` → one cached `OpenIdConnectConfiguration` per snapshot version; `RequestRefresh()` → gated unknown-key refresh (unreachable with Q14; kept for interface completeness).
+8. `SigningKeys/SigningKeyBearerEvents` — shared handlers (§4.6) composed onto each scheme's `JwtBearerEvents`, preserving each scheme's existing logging in `OnChallenge`/`OnAuthenticationFailed` for non-dependency failures (those are logged and left without a result, so today's rethrow behavior is unchanged).
+9. `OpenIddictTokenManager`: `GetPublicKeysAsync` projects the snapshot; `VerifyTokenAsync` uses snapshot keys with one gated unknown-kid refresh; `ValidateTokenAsync` translates `DbException`/`TimeoutException`/`OperationCanceledException` from `GetTokenStatusAsync` into the typed exception and rethrows typed exceptions before its general catch; `LoadActiveSigningKeyFromCertificatesAsync` obtains the development certificate from `DevelopmentCertificateStore` (D-10) — its only change; database issuance untouched.
+10. Frontend: `Bearer` supplies the manager and shared events; `JwtAuthenticationExtensions` does the same for `DmsJwtBearer`; `JwksEndpointModule` uses the provider.
+11. Registration split by step: 2.1 (sources, store, provider, hosted service, `TimeProvider`), 2.3 (manager, events).
+12. Options: `SigningKeyRefreshIntervalSeconds` (300), `SigningKeyMaxStalenessSeconds` (3600, Q13), `SigningKeyUnknownKeyRefreshCooldownSeconds` (30), `SigningKeyLoadTimeoutSeconds` (10); validated fail-fast.
+
+### 4.4 Provider state machine, load gate, scheduling
+
+States of `Current`: `None`, `Usable` (*fresh* ≤ `RefreshInterval`, *overdue* ≤ `MaxStaleness`), `Expired`. Gate: `InFlight`, `NextAttemptAt`, consecutive failures `n`.
+
+- **Load attempt** (any trigger): join `InFlight` if present; else refused when `now < NextAttemptAt`; else start under a token linked to host shutdown + `LoadTimeout`. Success: publish, `n = 0`, `NextAttemptAt = now` (eligible immediately). Failure: `n++`, `NextAttemptAt = now + backoff(n)`, `backoff = min(5·2^(n−1), 60) s ± 20 %`; `Current` unchanged. Every transition raises `AttemptStateChanged`.
+- **`GetUsableAsync(ct)`**: fresh → return; overdue → return and request a load (gate may refuse); `None`/`Expired` → attempt; refused/failed → `SigningKeysUnavailableException`; in flight → `await InFlight.WaitAsync(ct)`.
+- **`TryRefreshForUnknownKeyAsync(kid)`**: refused when the last *completed* load finished < `Cooldown` ago, or when the gate refuses; else attempt; returns whether the kid is now present.
+- **During a retry delay**: cold/expired requests → 503 without repository traffic; overdue → served from `Current`; unknown kid → 401 without a call; scheduler sleeps until the deadline. Repository traffic is bounded by one attempt per backoff interval regardless of request rate.
+- **Scheduling (hosted service).** The loop computes a **due time** from the outcome of the last attempt — never from gate eligibility, and never with an expression that switches source at the deadline:
+  - **Never loaded** (no attempt has completed): the initial attempt is due immediately.
+  - **Last attempt failed**: the due time remains `NextAttemptAt`, **including when it is already past** (at and beyond the retry deadline the due time stays the retry deadline; it never switches to the normal refresh deadline).
+  - **Last attempt succeeded**: the due time is the next normal refresh deadline, `lastSuccessAt + RefreshInterval ± jitter`.
+  - **Signals recompute; they do not authorize.** The service waits until `min(dueAt, next AttemptStateChanged signal)` with `TimeProvider`; on any wake it re-reads the state (a request-triggered attempt may have succeeded, failed, or moved the deadline) and recomputes the due time. In particular, a success signal must not trigger another load merely because the gate is immediately eligible (`NextAttemptAt = now` after success): eligibility says an attempt *may* start, the due time says one *should*.
+  - **Start condition**: the service starts an attempt only when `now ≥ dueAt`, the gate is eligible, and no attempt is in flight.
+
+  After a failure the service therefore wakes at the retry deadline, never at the next tick. These rules are pinned by 1.6-b/e (deadline-driven recovery), 1.6-h (retry deadline reached exactly), and 1.6-i (successful publication causes no additional load before the next due time); the scheduler implementation is reviewed at its own checkpoint (step 1.6).
+- **Bounds.** *Attempt start*: with no requests, the next attempt starts within `T_start ≤ backoff(n) ≤ 60 s + jitter` of the previous failure; after the store recovers at time `R`, an attempt starts by `R + 60 s + jitter` at the latest (earlier if `NextAttemptAt` falls sooner or a request arrives after it). *Attempt completion*: `T_start + LoadTimeout`. Recovery is observed by the first completed attempt after `R`.
+
+### 4.5 Freshness bounds and rotation
+
+- **`T_prop`** (healthy instance, no request-driven refresh): a key-table change committed at `t` is visible by `t + RefreshInterval + jitter + LoadTimeout`.
+- **New-key fast path** (conditional): a token carrying an unknown kid triggers one refresh **only if** the gate is open and the last completed load is older than `Cooldown`; then the new key is accepted in that request. Otherwise the request is 401 and the key arrives by the earlier of the cooldown end (next unknown-kid request) or `T_prop`.
+- **`T_max`** = `MaxStaleness` (3600 s, Q13): maximum trust after the last successful retrieval; beyond it every request fails closed. A key retired during a key-store outage may be trusted up to `T_max` on that instance — the documented, configurable trade-off. **Stale keys give no general outage availability**: with the whole database down, `GetTokenStatusAsync` fails and every authenticated request answers 503 regardless of snapshot state; `T_max` only matters when key retrieval fails while the token store works.
+- **Rotation runbook (as the system actually behaves, F9).** (1) Insert the new active key. **Signing switches on the next mint on every instance** (newest active row wins). (2) Validators pick the key up by first sighting when eligible, else within `T_prop`; during that window an instance whose gate is closed or whose cooldown is running may 401 a legitimate new-key token — bounded by `min(Cooldown, RefreshInterval) + LoadTimeout`, and by `max backoff + LoadTimeout` if the store was failing. Operators who need zero 401s insert the key at a quiet time and wait `T_prop` before expecting new-key traffic. (3) Keep the old key active for at least `TokenExpirationMinutes + TokenValidationClockSkew` (default 30 + 5 min) after the insert so tokens minted before the switch stay verifiable. (4) Set `IsActive = false` on the old key; its tokens are rejected within `T_prop` on healthy instances and never beyond `T_max`.
+- **Two instances**: independent gates/cooldowns; A may accept a new-kid token by first sighting while B is suppressed and answers 401 until its cooldown ends or its next tick; tests 1.5-q and 3.1-q pin both outcomes.
+- **Unknown kid when refresh fails**: `Current` usable → 401; none/expired → 503.
+
+### 4.6 Request boundary flow (both schemes)
+
+`OnMessageReceived`: extract the bearer token from `Authorization` (same rule as the handler; CMS accepts tokens only there); absent → return. `snapshot = await provider.GetUsableAsync(RequestAborted)`; `SigningKeysUnavailableException` → Error log (category, trace id) → `context.Fail(ex)` (**no downstream call follows**: the handler returns the result before `SetupTokenValidationParametersAsync`, V-1/E0(b)). Parse the header only (`JsonWebToken`); parse failure → return (handler rejects). `kid` present and unknown → `await provider.TryRefreshForUnknownKeyAsync(kid, RequestAborted)` (outcome logged once at Warning, sanitized) → return. Handler: `manager.GetConfigurationAsync(RequestAborted)` (memory), validation, `OnTokenValidated` → `ValidateTokenAsync` (status; dependency → `Fail(ex)`). `OnAuthenticationFailed`: dependency type (direct or inside `AggregateException`) → `Fail(ex)`; otherwise existing logging, no result. `OnChallenge`: `AuthenticateFailure is AuthenticationDependencyUnavailableException` → `HandleResponse()`, 503, `Retry-After: min(RefreshInterval, 30)`, problem body; else existing behavior.
+
+### 4.7 Consumer-by-consumer semantics
+
+| Consumer | Key source | Unknown kid | Key-store failure | Token-status failure | Contract |
+| --- | --- | --- | --- | --- | --- |
+| Default `Bearer` | manager (snapshot) | boundary refresh if eligible; still unknown → 401 | 503 + `Retry-After` (cold/expired); warm → proceeds | 503 + `Retry-After` | **changed** (was 401) |
+| `DmsJwtBearer` (explicit; unused) | same manager, same events | same | same | same | same as `Bearer`; its `EnhancedTokenValidator` pre-check and reflection call are replaced by the shared status check |
+| JWKS | provider | n/a | 503 problem | n/a | **changed** (was `200 []` on failure); `Succeeded(0)` → `200 {"keys":[]}` |
+| Introspection | `EnhancedTokenValidator` → `ValidateTokenAsync` → `VerifyTokenAsync` | one gated refresh; still unknown → `active:false` | caught in `EnhancedTokenValidator`, **Error log with category**, `{"active": false}` | same | **preserved existing behavior** (Q15; not a protocol requirement to mask) |
+| Revocation | `RevokeTokenAsync` → `VerifyTokenAsync` | same; still unknown → no-op `200` | caught, Error log, `false` → `200` | n/a | **preserved** (RFC 7009 always-200) |
+| Token endpoint | `LoadActiveSigningKey` (unchanged; dev-cert path via the shared store) | n/a | existing `FailureUnknown` mapping | n/a | **preserved** |
+
+### 4.8 Security invariants
+
+I-1 issuer/audience/lifetime/signature unchanged. I-2 status check per request, uncached. I-3 no 200 while keys or status store are unavailable. I-4 `T_prop`/`T_max` bounds. I-5 no LKG/metadata fallback; zero backchannel sends. I-6 arbitrary kids → ≤ 1 load per `Cooldown` and per backoff interval. I-7 sanitized kids/categories only; generic 503 body. I-8 failed retrieval never published as empty. I-9 missing `kid` and forged signatures rejected. I-10 issued dev-certificate tokens always verify against the published certificate (D-10).
+
+### 4.9 Logging requirements
+
+- **Load attempt failure**: one Error per attempt with the category (`SigningKeyStore` | `TokenStatusStore`), the trigger (startup | timer | request | unknown-kid), the consecutive-failure count, the next-attempt delay, and the sanitized exception type and message — never key material or connection strings.
+- **Snapshot publication**: Information with key count, snapshot version, source (database | certificate), and retrieval duration. `Succeeded(0)` additionally logs a Warning (an empty key set is being served deliberately, distinguishable from a swallowed failure — AC 4).
+- **Request boundary 503**: Error with the category and trace id; the response body stays generic (I-7).
+- **Unknown-kid refresh**: one Warning per boundary decision with the sanitized kid and the outcome (refreshed-found | refreshed-absent | suppressed-cooldown | refused-gate).
+- **Scheduler wake**: Debug with the wake reason (`RetryDeadline` | `Tick` | `Signal`) and the recomputed due time.
+- **`DevelopmentCertificateStore` creation**: Information, path only.
+- Every string that can derive from a client is normalized/sanitized before logging (`LoggingUtility.SanitizeForLog`), and values are logged as their already-normalized strings, never as the wrapping record/struct (repository logging rules).
+
+## 5. Phases and steps
+
+**Commit and review conventions.** One local commit per numbered step, message `[DMS-1556] <step id> — <summary>`. Every checkpoint: the solution builds (`dotnet build src/config/EdFi.DmsConfigurationService.sln`), the application still resolves its DI graph, and the test projects the step touches pass. Before each commit: `dotnet csharpier format src/config` on changed C# files, and changed PowerShell files pass `eng/Invoke-StagedPowerShellAnalysis.ps1` (also enforced by the pre-commit hook on staged files). Nothing is pushed and no PR is opened until §7.4 is met and push is explicitly approved. Steps marked **stop** end with a checkpoint report — commit SHA, file-by-file changes, validation commands and results, deviations — and wait for review before the next step starts. Phase 0 evidence lands as increments of the investigation document (§3.7). The scheduler implementation (1.6) is reviewed at its own checkpoint before Phase 2 starts.
+
+### Phase 0 — Investigation (each step stops; evidence committed per step)
+
+**0.1** Harness (`-TotalRequests`, `-MaxConcurrency`, `-ValidateBodies`, measured overlap) + diagnostics recipes (overlay, sidecar, samplers, dump/`threadpool` script). **0.2** E0 (incl. (b) no-downstream-call). **0.3** E1 → G1. **0.4** E2 + M-conn + disk. **0.5** E3/E4/E5 (+E7). **0.6** attribution, G1–G3 records, README index; **stop for G2.**
+
+### Phase 1
+
+**1.1 Options** (+ binding tests). **1.2 Exceptions and snapshot model.** **1.3 Parser move** (format cache removed; existing manager tests green). **1.4 Repository cancellation** (both engines; canceled-token tests). **1.5 Sources, development-certificate store, provider.** Tests (fake repository, `FakeTimeProvider`, no timer): (a) 64 concurrent cold callers → one load, same instance; (b) waiter cancellation detaches only the waiter; (c) `LoadTimeout` → unavailable, repository token canceled; (d) overdue → served + one load requested; (e) expired → load awaited; failure → exception; (f) refresh throws → previous retained, `Failed(Retrieval)`; (g) zero rows → `Succeeded(0)`; rows/none parse → `Failed(Processing)`; partial → `Succeeded(n)`; (h) rotation, **eligible**: unknown kid with gate open and cooldown elapsed → one load, key present; (i) retirement removed after `RefreshAsync`; (j) **successive, non-overlapping** unknown-kid calls (100, each awaited) within one cooldown → exactly one load; after the cooldown → one more; (k) invalid settings → constructor throws; (l) waves of 50 cold calls every 100 ms of fake time during immediate failures for 90 s → loads == backoff intervals elapsed + 1, no calls between attempts; (m) recovery → next eligible attempt succeeds; (n) *(moved to 1.6-f)*; (o) refresh failing, fake time past `MaxStaleness`, `GetUsableAsync` → unavailable; just before → served; (p) rotation, **suppressed**: unknown kid inside the cooldown → refused, 401-class result, key absent; after the cooldown → accepted; (q) two independent providers over one fake repository: A eligible (accepts), B suppressed (rejects) then accepts after its cooldown; (r) **certificate first start**: file absent; concurrent `CertificateSigningKeySource.LoadAsync` and `DevelopmentCertificateStore.GetAsync` (as issuance would call) → one file created, both return the same thumbprint, no partial file observed (temp-file rename asserted via directory listing). Commit. **1.6 Refresh service** (timer-driven): (a) startup load then cadence; (b) failure → next wake at the retry deadline, not the tick; (c) stop token quiet; (d) startup failure non-fatal; (e) **startup retrieval fails, store recovers at fake time `R`, no requests arrive → a successful load completes by `R + 60 s + jitter + LoadTimeout`**; (f) key retired, fake time advanced past `T_prop` with the timer driving → key absent, no manual refresh; (g) a request-triggered failure during the sleep moves the deadline and the service wakes at the new deadline (signal); (h) **retry deadline reached exactly**: last attempt failed, fake time advanced to exactly `NextAttemptAt` → the attempt starts (the due time remains the retry deadline at and past equality; it never switches to the refresh deadline); (i) **success authorizes nothing**: a load succeeds (gate immediately eligible, `NextAttemptAt = now`), no requests arrive → the success signal only recomputes the due time and **no additional load starts before `lastSuccessAt + RefreshInterval`**. Commit; **scheduler review checkpoint — stop for review of the 1.6 implementation before Phase 2.**
+
+### Phase 2
+
+**2.1 Registration of Phase 1 services** (sources by mode, `DevelopmentCertificateStore`, provider, hosted service with guard, `TimeProvider`); registration tests: one provider instance, one hosted service, source by mode; application still resolves with the old resolver. Commit. **2.2 `OpenIddictTokenManager` on the provider and the shared certificate store** — tests: (a) `GetPublicKeysAsync` projects/throws; (b) valid → true, revoked → false, unknown kid → one gated refresh then false, malformed jti → false; (c) status-store `DbException`/timeout → typed exception rethrown; (d) `RevokeTokenAsync`/`EnhancedTokenValidator` translation → false/invalid + Error log; (e) **issuance and validation on a first start** (dev-cert mode, file absent, concurrent `GetAccessTokenAsync` and `GetPublicKeysAsync`) → the issued token's `kid` equals the published thumbprint and `ValidateTokenAsync` returns true (I-10). Commit. **2.3 `SigningKeyConfigurationManager` + `SigningKeyBearerEvents` + their registration** — tests: (a) configuration identity per version; (b) unavailable → typed exception; (c) events with a fake `HttpContext` and a **counting manager**: boundary cold failure → `Result` is a failure carrying the typed exception **and the manager's `GetConfigurationAsync` count is 0**; (d) unknown kid → one refresh request; (e) `OnChallenge` typed → 503 + `Retry-After` + `Handled`; other → untouched; registration test: manager and events resolvable, one instance each. Commit.
+
+### Phase 3
+
+**3.1 `Bearer` scheme** (manager, events, `RefreshOnIssuerKeyNotFound=false`, resolver deleted) with pipeline fixtures (real `JwtBearer`; fake repository with gates; endpoint repository faked; recording `BackchannelHttpHandler`; the configuration manager wrapped by a counting decorator in the host): (a) 64 cold → 200, one load [F]; (b) revoked → 401 [C]; (c) expired/wrong audience/wrong issuer → 401 [C]; (d) unknown kid → 401, ≤ 1 load [F]; (e) new key rotated in, **eligible** → accepted in the first-sighting request [F]; (f) cold key-store failure → 503 + `Retry-After`, generic body, **manager call count 0** [F]; (g) status-store failure with warm keys → 503 [F]; (h) key retired, fake time past `T_prop` (hosted timer) → 401 [F]; (i) recovery → 200 [F]; (j) forged signature → 401 [C]; (k) missing kid → 401 [C]; (l) uncached status (revoke between two requests) → second 401, two status reads [C]; (m) refresh failing, past `MaxStaleness` → 503 [F]; (n) three request waves during immediate failures → one load [F]; (o) zero backchannel sends [F]; (p) post-authentication profile-repository failure → 500 unchanged [C]; (q) new key rotated in, **suppressed** (cooldown running) → 401, then 200 after the cooldown [F]; (s) structural: `IssuerSigningKeyResolver == null`, `ConfigurationManager` is ours, `TokenValidationParameters.ConfigurationManager == null` [F]. Commit. **3.2 `DmsJwtBearer` parity** (structural (s), explicit-scheme fixture: cold 200, key-store failure 503, revoked 401). Commit. **3.3 JWKS** (unavailable 503 [F]; empty `200 []` [C]; keys [C]). Commit. **3.4 PostgreSQL integration pipeline test** (`[NonParallelizable]`; `OpenIddictKey` respawned; host and hosted services disposed before reset — Q16): (a) 64 concurrent cold → all 200 with expected definitions; connections/backends **recorded only**; (b) newer active key inserted → signing switches on the next mint (assert the minted `kid`) and the token is accepted (eligible first sighting); (c) `IsActive=false` + provider `RefreshAsync` → old-key token 401. Commit.
+
+### Phase 4
+
+**4.1-H Healthy baseline-comparison runs** on the fixed image (both profiles; 5 cold + 5 warm at 87/87 and 256/128; `-ValidateBodies`): gate = every expected request returns 200 with the expected `id`/`definition`; stacks recorded. **4.1-O Injected outage runs** (`docker pause dms-postgresql` 20 s mid-burst): expectations classified by stage — authentication-stage → 503 + `Retry-After`; requests already past authentication may hit the unchanged profile-repository 500 (F8) and are reported separately; recovery within `max backoff + LoadTimeout`. Doc updated; commit. **4.2 E2E** (teardown; rebuild; shards 1 and 2 ≥ 2 runs each; CMS E2E once). **4.3 Docs** (`CONFIGURATION.md`, `CS-AUTH.md` incl. the runbook of §4.5, README, spec status). **4.4 Final matrix + push-readiness report.**
+
+## 6. Compatibility and rollout
+
+- **Wire contracts**: token, introspection, and revocation endpoints unchanged (§4.7). Protected requests and JWKS gain 503 + `Retry-After` on dependency failure where they previously answered 401 / `200 {"keys":[]}` — the deliberate, documented contract change (D-9, AC 4).
+- **Configuration**: the new `SigningKey*` options (§4.3.12) all have defaults, so existing deployments start unchanged with no configuration edit; invalid values fail fast at startup.
+- **Database**: no schema change on either engine; `RelationalMappingVersion` stays `v3`. The repository contract change is additive (cancellation-token overload, D-8).
+- **Keycloak mode**: untouched — the affected components are only registered by the self-contained store registrations.
+- **Certificate mode**: development-certificate creation now has a single owner (same file, same thumbprint kid; no change for deployments that supply their own certificate or use database keys).
+- **Rotation**: semantics documented as the system actually behaves (F9, §4.5 runbook); `MaxStaleness` is a documented, configurable policy (Q13).
+- **Rollback**: reverting the commit range restores the blocking resolver; no data migration in either direction.
+
+## 7. Test matrix, mutation checks, push-readiness
+
+### 7.1 Automated matrix
+
+All commands run from the worktree root in pwsh unless noted. [F]/[C] labels as in §5.
+
+- **CMS unit tests** (every `*.Tests.Unit` project under `src/config`): `dotnet test src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit` and `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit`.
+- **PostgreSQL integration**: `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` against a trust-auth PostgreSQL on `localhost:5432` with database `edfi_configurationservice` created. Key-table fixtures are `[NonParallelizable]` and respawn `OpenIddictKey` with hosts disposed first (Q16).
+- **MSSQL integration**: `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration` with `ConnectionStrings__MssqlAdmin` pointing at a dedicated local SQL Server (e.g. `Server=localhost,1434;User Id=sa;Password=<pw>;TrustServerCertificate=true`). The variable absent means the tests **silently skip** — its presence is checked before the run counts.
+- **CMS E2E**: from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E`: `pwsh ./setup-local-cms.ps1`, `dotnet test`, `pwsh ./teardown-local-cms.ps1`.
+- **DMS E2E shards 1 and 2, ≥ 2 independent runs each**: `./build-dms.ps1 Build -Configuration Release` first (missing Release E2E assemblies otherwise yield a zero-test false green), then `./build-dms.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-1'` (and `-shard-2`). `-SkipDockerBuild` only when the image already matches the branch (a cross-branch stale image aborts setup on a schema-hash mismatch); teardown/setup between runs.
+- **Formatting gate**: `dotnet csharpier check src/config` (scoped: the whole tree has accepted pre-existing drift in six unrelated files).
+- **PowerShell analysis**: `pwsh ./eng/Invoke-StagedPowerShellAnalysis.ps1 <changed .ps1/.psm1 paths>` (also runs on staged files from the pre-commit hook).
+
+### 7.2 Runtime evidence
+
+4.1-H tables (all-200 with body validation, both profiles), 4.1-O stage-classified tables, stacks, counters, M-conn, `Worker Min Limit`, PostgreSQL/disk samples.
+
+### 7.3 Mutation checks (applied locally, reverted, `--no-incremental` rebuild)
+
+| M | Mutation (guarantee) | Must fail |
+| --- | --- | --- |
+| M1 | `GetUsableAsync` always loads (coalescing) | 1.5-a, 3.1-a |
+| M2a | boundary swallows `SigningKeysUnavailableException` and returns without a result (short-circuit) | 2.3-c, 3.1-f (manager call count) |
+| M2b | dependency translation removed in `OnMessageReceived`, `OnAuthenticationFailed` **and** `OnTokenValidated` (typed exceptions rethrown by the handler → 500) | 3.1-f, 3.1-g, 3.1-m |
+| M3 | `ValidateTokenAsync` returns `false` on `DbException` | 2.2-c, 3.1-g |
+| M4 | gate ignores `NextAttemptAt` | 1.5-l, 3.1-n |
+| M5 | `Cooldown` check removed | 1.5-j (successive), 1.5-p, 3.1-q |
+| M6 | `MaxStaleness` ignored | 1.5-o, 3.1-m |
+| M7 | `options.ConfigurationManager` not supplied | 3.1-o, 3.1-s |
+| M8 | scheduler waits for the tick instead of the retry deadline (incl. switching the due time to the refresh deadline once `NextAttemptAt` is due) | 1.6-b, 1.6-e, 1.6-h |
+| M9 | `DevelopmentCertificateStore` lock removed (both paths create independently) | 1.5-r, 2.2-e |
+| M10 | scheduler starts a load from the success signal (treats gate eligibility as due-ness) | 1.6-i |
+
+### 7.4 Push-readiness criteria
+
+**7.4-H**: every healthy baseline-comparison run in §7.2 has 100 % HTTP 200 with validated bodies at 87/87 and 256/128 under both profiles. **7.4-O**: injected-outage runs match §4.6/§4.7 by stage. All lanes in §7.1 green with skips enumerated; M1–M10 confirmed; shards 1 and 2 green on ≥ 2 independent runs each; no `src/dms` path in the diff; CSharpier clean; docs merged; every §2 row filled; explicit approval to push.
+
+## 8. Risks
+
+- **Reproduction may be host-dependent** (H4): P-runner-approx is a stress approximation, not the CI envelope; the real envelope comes from E7 and CI after push. G1 has the explicit re-plan path when neither R-500 nor R-slow reproduces.
+- **The diagnostics overlay changes the measured system** (dotnet-monitor event pipes, PostgreSQL statement/connection logging I/O): every compared run keeps the overlay constant, and dumps are collected outside timed burst windows (Q17).
+- **Dump analysis requires a linux-musl-compatible `dotnet-dump` host** — mitigated by running the pinned tool inside a container whose runtime matches the CMS image.
+- **`AttemptStateChanged` signaling must not wake the scheduler in a tight loop** (coalesced signal, tested by 1.6-g), **and a signal must never authorize a load** — a success with an immediately-eligible gate would otherwise cause a spurious reload (tested by 1.6-i).
+- **Jittered deadlines make equality timing subtle**: the due-time rules are pinned at exact-deadline boundaries with fake time (1.6-h) rather than trusting comparison direction.
+- **Fixing blocking may unmask a second mechanism** (H2/H3 under higher effective concurrency): §3.5 attributes mechanisms from direct evidence, and G2 re-approves §4 if the dominant mechanism is not H1.
+- **Stack/environment drift between runs** (shared Docker network, stale images): teardown/setup per §3.1 and the schema-hash guard on `-SkipDockerBuild` (§7.1).
