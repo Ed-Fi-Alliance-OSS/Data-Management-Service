@@ -267,5 +267,5 @@ $created | Format-List
 Write-Output "DMS endpoints:"
 Write-Output "  single-tenant: $publicBaseUrl/st-dms/data/ed-fi/..."
 Write-Output "  multi-tenant : $publicBaseUrl/mt-dms/{tenant}/$schoolYear/data/ed-fi/...   (tenant in PATH: $tenant1 or $tenant2)"
-Write-Output "Token endpoint: $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). /st-dms Discovery advertises this; /mt-dms Discovery advertises a broken value (DMS-1262) -- use the URL above directly. The <dms-base>/oauth/token proxy also forwards here (add curl -k / trust the cert if the gateway cert is self-signed)."
+Write-Output "Token endpoint: $publicBaseUrl/auth/realms/$realm/protocol/openid-connect/token  (Basic key:secret, grant_type=client_credentials). Discovery advertises the <dms-base>/oauth/token proxy (qualified with /{tenant}/{schoolYear} for /mt-dms), which forwards here (add curl -k / trust the cert if the gateway cert is self-signed)."
 New-Item -ItemType File -Path $bootstrapComplete -Force | Out-Null
