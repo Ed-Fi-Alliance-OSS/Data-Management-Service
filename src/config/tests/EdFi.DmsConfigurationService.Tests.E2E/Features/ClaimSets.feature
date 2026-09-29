@@ -285,3 +285,103 @@ Feature: ClaimSets endpoints
                       "errors": []
                   }
                   """
+
+        Scenario: 12 Verify copy rejects a claim set name with white space the same way insert does
+             When a POST request is made to "/v3/claimSets/copy" with
+                  """
+                  {
+                      "originalId": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
+                      "claimSetName": "DistrictHostedSISVendor (copy)"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "Claim set name must not contain white spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DistrictHostedSISVendor (copy)"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "Claim set name must not contain white spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+
+        Scenario: 13 Ensure clients can copy a claim set with a valid name and keep its resource claims
+             When a POST request is made to "/v3/claimSets/import" with
+                  """
+                  {
+                      "claimSetName": "CopySourceClaimSet",
+                      "resourceClaims": [
+                          {
+                              "name": "systemDescriptors",
+                              "claimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                 { "name": "Create", "enabled": true }
+                              ]
+                          },
+                          {
+                              "name": "academicHonorCategoryDescriptor",
+                              "claimName": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
+                              "parentClaimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                  { "name": "Create", "enabled": true },
+                                  { "name": "Read", "enabled": true }
+                              ]
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "sourceClaimSetId"
+             When a GET request is made to "/v3/claimSets/{sourceClaimSetId}"
+             Then it should respond with 200
+              And the response body property "resourceClaims" is captured as "sourceResourceClaims"
+             When a POST request is made to "/v3/claimSets/copy" with
+                  """
+                  {
+                      "originalId": {sourceClaimSetId},
+                      "claimSetName": "CopySourceClaimSet-Copy"
+                  }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "copiedClaimSetId"
+             When a GET request is made to "/v3/claimSets/{copiedClaimSetId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": {copiedClaimSetId},
+                      "claimSetName": "CopySourceClaimSet-Copy",
+                      "_isSystemReserved": false,
+                      "_applications": [],
+                      "resourceClaims": "{*}"
+                  }
+                  """
+              And the response body property "resourceClaims" equals the value captured as "sourceResourceClaims"
