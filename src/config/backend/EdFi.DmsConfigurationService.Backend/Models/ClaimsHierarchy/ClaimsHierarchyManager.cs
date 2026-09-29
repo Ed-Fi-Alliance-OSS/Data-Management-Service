@@ -355,16 +355,24 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
         return claimLookup;
     }
 
-    private static Claim? FindClaim(string resourceClaimName, IEnumerable<Claim> claims)
+    private static Claim? FindClaim(string resourceClaimName, IEnumerable<Claim> claims) =>
+        FindClaim(resourceClaimName, claims, StringComparison.Ordinal)
+        ?? FindClaim(resourceClaimName, claims, StringComparison.OrdinalIgnoreCase);
+
+    private static Claim? FindClaim(
+        string resourceClaimName,
+        IEnumerable<Claim> claims,
+        StringComparison comparison
+    )
     {
         foreach (Claim claim in claims)
         {
-            if (claim.Name.Equals(resourceClaimName, StringComparison.Ordinal))
+            if (claim.Name.Equals(resourceClaimName, comparison))
             {
                 return claim;
             }
 
-            Claim? child = FindClaim(resourceClaimName, claim.Claims);
+            Claim? child = FindClaim(resourceClaimName, claim.Claims, comparison);
             if (child is not null)
             {
                 return child;
