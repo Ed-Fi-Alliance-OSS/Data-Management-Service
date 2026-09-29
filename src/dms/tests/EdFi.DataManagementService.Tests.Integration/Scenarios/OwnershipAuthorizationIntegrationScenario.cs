@@ -420,6 +420,102 @@ internal static class OwnershipAuthorizationIntegrationScenario
         ownerGetBody.Should().NotContain("ownership-over-cap-post-as-update");
     }
 
+    /// <summary>
+    /// A conditional POST under ownership-only authorization, so nothing else is configured that could defer
+    /// the create-time If-Match 412. The create verdict is an authorization failure owed ahead of that 412:
+    /// over the token cap the POST fails with the security-configuration 500 whether its target is absent or
+    /// exists, and a create the caller could not own is refused with 2.14 or 2.13. Only a create the verdict
+    /// allows reaches the 412. None of them writes a row or changes the existing one.
+    /// </summary>
+    public static async Task It_returns_the_create_ownership_verdict_ahead_of_an_if_match_precondition(
+        ApiIntegrationHarness harness
+    )
+    {
+        const string StaleEtag = "\"stale-etag\"";
+        Guid existingId = await CreateAsync(harness, OwnerTenant, 1801, "ownership-conditional-existing");
+        long documentCount = await CountDocumentsAsync(harness);
+
+        using HttpResponseMessage overCapAbsent = await PostWithIfMatchAsync(
+            harness,
+            TokenCapTenant,
+            1802,
+            "ownership-conditional-over-cap-absent",
+            StaleEtag
+        );
+        await AssertSecurityConfigurationFailureAsync(overCapAbsent);
+
+        using HttpResponseMessage overCapExisting = await PostWithIfMatchAsync(
+            harness,
+            TokenCapTenant,
+            1801,
+            "ownership-conditional-over-cap-existing",
+            StaleEtag
+        );
+        await AssertSecurityConfigurationFailureAsync(overCapExisting);
+
+        using HttpResponseMessage uninitialized = await PostWithIfMatchAsync(
+            harness,
+            NoCreatorTokenTenant,
+            1803,
+            "ownership-conditional-null-creator",
+            StaleEtag
+        );
+        await AssertOwnershipDenialAsync(uninitialized, StoredUninitializedType, _storedUninitializedErrors);
+
+        using HttpResponseMessage mismatch = await PostWithIfMatchAsync(
+            harness,
+            ForeignTenant,
+            1804,
+            "ownership-conditional-foreign-creator",
+            StaleEtag
+        );
+        await AssertOwnershipDenialAsync(mismatch, MismatchType, []);
+
+        using HttpResponseMessage authorized = await PostWithIfMatchAsync(
+            harness,
+            OwnerTenant,
+            1805,
+            "ownership-conditional-authorized",
+            StaleEtag
+        );
+        string authorizedBody = await authorized.Content.ReadAsStringAsync();
+        authorized.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed, authorizedBody);
+
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
+        (await ReadStoredOwnershipTokenAsync(harness, existingId)).Should().Be(CreatorToken);
+
+        using HttpResponseMessage ownerGet = await harness.HttpClient.GetAsync(
+            ResourcePath(OwnerTenant, existingId)
+        );
+        string ownerGetBody = await ownerGet.Content.ReadAsStringAsync();
+        ownerGet.StatusCode.Should().Be(HttpStatusCode.OK, ownerGetBody);
+        ownerGetBody.Should().Contain("ownership-conditional-existing").And.NotContain("over-cap-existing");
+    }
+
+    private static async Task<HttpResponseMessage> PostWithIfMatchAsync(
+        ApiIntegrationHarness harness,
+        string tenant,
+        int authorizationNullableId,
+        string name,
+        string ifMatch
+    )
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            string.Format(NullableResourcesEndpointFormat, tenant)
+        )
+        {
+            Content = new StringContent(
+                CreateBody(authorizationNullableId, name, resourceId: null).ToJsonString(),
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", ifMatch).Should().BeTrue();
+
+        return await harness.HttpClient.SendAsync(request);
+    }
+
     private static async Task AssertSecurityConfigurationFailureAsync(HttpResponseMessage response)
     {
         string body = await response.Content.ReadAsStringAsync();

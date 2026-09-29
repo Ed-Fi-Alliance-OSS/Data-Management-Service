@@ -530,6 +530,43 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Be(EtagPreconditionEvaluation.BeforeProposedAuthorization);
     }
 
+    /// <summary>
+    /// The unresolved decision shapes only the hydration of an existing target, which never owes the create
+    /// ownership verdict, so the verdict — shared or carried by the create branch alone — leaves it, and with
+    /// it the first-phase command, unchanged. The resolved create request is what defers the If-Match 412.
+    /// </summary>
+    [Test]
+    public void It_does_not_defer_the_unresolved_precondition_for_a_pending_create_ownership_verdict()
+    {
+        var denial = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    DeferredCreateOwnershipFailureResult = denial,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"etag\""),
+            DeferredCreateOwnershipFailureResult = denial,
+        };
+
+        RelationalWriteExecutionStateResolver
+            .GetEtagPreconditionEvaluation(input)
+            .Should()
+            .Be(EtagPreconditionEvaluation.BeforeProposedAuthorization);
+    }
+
     private static RelationalWriteExecutorInput CreatePostInputWithBranches(
         PostBranchAuthorization createNew,
         PostBranchAuthorization existingDocument,

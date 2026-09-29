@@ -914,34 +914,185 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
-    /// <summary>
-    /// The pre-existing placement of an If-Match create with nothing proposed to authorize: the 412 is decided
-    /// before the second command, so it still precedes the create-side ownership verdict.
-    /// </summary>
-    [Test]
-    public async Task It_keeps_the_if_match_create_precondition_ahead_of_the_create_ownership_denial_when_nothing_proposed_is_authorized()
+    public enum CreateOwnershipVerdict
     {
+        NullCreatorToken,
+        CreatorTokenNotHeld,
+        TokenCap,
+        Authorized,
+    }
+
+    /// <summary>
+    /// An If-Match create with only <c>OwnershipBased</c> configured, so nothing proposed would otherwise defer
+    /// the precondition. The create-side verdict is an authorization failure owed ahead of the 412, so a POST
+    /// behaves the same whether or not its target exists: 403 for a null or unheld creator token, the
+    /// security-configuration 500 at the token cap. Only a create the verdict allows reaches the 412. None of
+    /// them persists anything, and each rolls back.
+    /// </summary>
+    [TestCase(CreateOwnershipVerdict.NullCreatorToken)]
+    [TestCase(CreateOwnershipVerdict.CreatorTokenNotHeld)]
+    [TestCase(CreateOwnershipVerdict.TokenCap)]
+    [TestCase(CreateOwnershipVerdict.Authorized)]
+    public async Task It_returns_the_create_ownership_verdict_ahead_of_the_if_match_create_precondition_with_nothing_proposed_to_authorize(
+        CreateOwnershipVerdict verdict
+    )
+    {
+        RelationalWriteExecutorResult? deferredCreateOwnershipFailure = verdict switch
+        {
+            CreateOwnershipVerdict.NullCreatorToken => CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+            ),
+            CreateOwnershipVerdict.CreatorTokenNotHeld => CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.OwnershipTokenMismatch
+            ),
+            CreateOwnershipVerdict.TokenCap => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureSecurityConfiguration(["ownership token cap"])
+            ),
+            _ => null,
+        };
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
         ) with
         {
+            DeferredCreateOwnershipFailureResult = deferredCreateOwnershipFailure,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        switch (verdict)
+        {
+            case CreateOwnershipVerdict.NullCreatorToken or CreateOwnershipVerdict.CreatorTokenNotHeld:
+                result.Should().BeSameAs(deferredCreateOwnershipFailure);
+                break;
+            case CreateOwnershipVerdict.TokenCap:
+                var securityConfiguration = result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                    .Which.Result.Should()
+                    .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+                    .Subject;
+                securityConfiguration.Errors.Should().Equal("ownership token cap");
+                securityConfiguration.TargetAction.Should().Be(UpsertTargetAction.Create);
+                break;
+            default:
+                result
+                    .Should()
+                    .Be(
+                        RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                            RelationalWriteOperationKind.Post,
+                            ETagPreconditionFailureReason.TargetDoesNotExist
+                        )
+                    );
+                break;
+        }
+
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A shared-policy POST carries the create verdict whatever its target. Resolving to an existing document,
+    /// it is an upsert-as-update the verdict never decides, so a stale If-Match still owes its 412 rather than
+    /// the create denial.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_stale_if_match_412_for_a_post_as_update_carrying_a_create_ownership_denial()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        ) with
+        {
             DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(
-                OwnershipAuthorizationFailureKind.OwnershipTokenMismatch
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
             ),
         };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
 
         var result = await _sut.ExecuteAsync(request);
 
         result
             .Should()
-            .Be(
-                RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                    RelationalWriteOperationKind.Post,
-                    ETagPreconditionFailureReason.TargetDoesNotExist
-                )
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
             );
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Create and Update policies that differ, with only the Create branch owing the verdict. The branch the
+    /// target selects decides: a create returns the denial ahead of its If-Match 412, and an upsert-as-update
+    /// keeps the Update branch's own precondition outcome, untouched by the Create branch's denial.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_applies_the_create_ownership_verdict_only_to_the_selected_create_branch_under_an_if_match(
+        bool targetExists
+    )
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var denial = CreateOwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        var request = targetExists
+            ? CreateRequest(
+                RelationalWriteOperationKind.Post,
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    existingDocumentUuid,
+                    44L
+                ),
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            )
+            : CreateRequest(
+                RelationalWriteOperationKind.Post,
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            );
+
+        if (targetExists)
+        {
+            _targetLookupResolver.PostResults.Enqueue(
+                new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+            );
+        }
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(
+                    new PostBranchAuthorization.Authorized(
+                        EmptyPostBranchInputs() with
+                        {
+                            DeferredCreateOwnershipFailureResult = denial,
+                        }
+                    ),
+                    new PostBranchAuthorization.Authorized(EmptyPostBranchInputs())
+                ),
+            }
+        );
+
+        if (targetExists)
+        {
+            result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+                );
+        }
+        else
+        {
+            result.Should().BeSameAs(denial);
+        }
+
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     /// <summary>

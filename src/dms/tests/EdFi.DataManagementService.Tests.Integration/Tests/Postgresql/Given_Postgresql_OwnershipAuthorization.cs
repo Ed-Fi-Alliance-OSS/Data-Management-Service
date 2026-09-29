@@ -82,6 +82,12 @@ public sealed class Given_Postgresql_OwnershipAuthorization : PostgresqlApiInteg
         );
 
     [Test]
+    public Task It_returns_the_create_ownership_verdict_ahead_of_an_if_match_precondition() =>
+        OwnershipAuthorizationIntegrationScenario.It_returns_the_create_ownership_verdict_ahead_of_an_if_match_precondition(
+            Harness
+        );
+
+    [Test]
     public Task It_filters_get_many_to_the_callers_ownership_tokens() =>
         OwnershipAuthorizationIntegrationScenario.It_filters_get_many_to_the_callers_ownership_tokens(
             Harness
