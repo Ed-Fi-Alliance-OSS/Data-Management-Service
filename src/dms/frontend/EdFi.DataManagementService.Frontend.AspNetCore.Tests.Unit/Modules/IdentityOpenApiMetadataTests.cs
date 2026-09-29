@@ -40,7 +40,7 @@ public class IdentityOpenApiMetadataTests
         private HttpResponseMessage _response = null!;
         private JsonNode _document = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory();
@@ -51,7 +51,7 @@ public class IdentityOpenApiMetadataTests
             _document = JsonNode.Parse(content)!;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -176,7 +176,7 @@ public class IdentityOpenApiMetadataTests
         private HttpResponseMessage _response = null!;
         private JsonNode _document = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(
@@ -200,7 +200,7 @@ public class IdentityOpenApiMetadataTests
             _document = JsonNode.Parse(content)!;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -249,7 +249,7 @@ public class IdentityOpenApiMetadataTests
         private HttpResponseMessage _response = null!;
         private JsonNode? _identitySection;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory();
@@ -264,7 +264,7 @@ public class IdentityOpenApiMetadataTests
             );
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();

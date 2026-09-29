@@ -175,7 +175,7 @@ public class IdentityLocationRoundTripTests
         private HttpResponseMessage _resultsResponse = null!;
         private RecordingIdentityService _identityService = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _identityService = new RecordingIdentityService("round-trip-token-abc123");
@@ -200,7 +200,7 @@ public class IdentityLocationRoundTripTests
             _resultsResponse = await _client.GetAsync(_findResponse.Headers.Location);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _findResponse.Dispose();
@@ -252,7 +252,7 @@ public class IdentityLocationRoundTripTests
         private HttpResponseMessage _findResponse = null!;
         private RecordingIdentityService _identityService = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             // Legal on its own (well under the 1024-character escaped ceiling and free of reserved
@@ -279,7 +279,7 @@ public class IdentityLocationRoundTripTests
             _findResponse = await _client.SendAsync(findRequest);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _findResponse.Dispose();
@@ -320,7 +320,7 @@ public class IdentityLocationRoundTripTests
         private HttpClient _client = null!;
         private HttpResponseMessage _findResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var identityService = new RecordingIdentityService("mixed-case-find-token");
@@ -343,7 +343,7 @@ public class IdentityLocationRoundTripTests
             _findResponse = await _client.SendAsync(findRequest);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _findResponse.Dispose();
@@ -380,7 +380,7 @@ public class IdentityLocationRoundTripTests
         private HttpClient _client = null!;
         private HttpResponseMessage _searchResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var identityService = new RecordingIdentityService("mixed-case-search-token");
@@ -403,7 +403,7 @@ public class IdentityLocationRoundTripTests
             _searchResponse = await _client.SendAsync(searchRequest);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _searchResponse.Dispose();
@@ -441,7 +441,7 @@ public class IdentityLocationRoundTripTests
         private HttpClient _client = null!;
         private HttpResponseMessage _resultsResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var identityService = new IncompleteResultsIdentityService();
@@ -459,7 +459,7 @@ public class IdentityLocationRoundTripTests
             );
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _resultsResponse.Dispose();
@@ -499,7 +499,7 @@ public class IdentityLocationRoundTripTests
         private HttpClient _client = null!;
         private HttpResponseMessage _resultsResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var identityService = new IncompleteResultsIdentityService();
@@ -515,7 +515,7 @@ public class IdentityLocationRoundTripTests
             _resultsResponse = await _client.GetAsync("/identity/v2/identities/results/job%20%C3%A91");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _resultsResponse.Dispose();
@@ -558,7 +558,7 @@ public class IdentityLocationRoundTripTests
         private HttpResponseMessage _resultsResponse = null!;
         private RecordingIdentityService _identityService = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _identityService = new RecordingIdentityService("qualifier-space-token");
@@ -583,7 +583,7 @@ public class IdentityLocationRoundTripTests
             _resultsResponse = await _client.GetAsync(_findResponse.Headers.Location);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _findResponse.Dispose();
@@ -646,7 +646,7 @@ public class IdentityLocationRoundTripTests
         private HttpResponseMessage _resultsResponse = null!;
         private RecordingIdentityService _identityService = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _identityService = new RecordingIdentityService("look-alike-prefix-token");
@@ -675,7 +675,7 @@ public class IdentityLocationRoundTripTests
             _resultsResponse = await _client.GetAsync(_findResponse.Headers.Location);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _findResponse.Dispose();
@@ -744,7 +744,7 @@ public class IdentityLocationRoundTripTests
     {
         private HttpResponseMessage _findResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             string token = new('a', ExactFitTokenLength);
@@ -770,6 +770,12 @@ public class IdentityLocationRoundTripTests
             _findResponse = await client.SendAsync(findRequest);
         }
 
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _findResponse.Dispose();
+        }
+
         /// <summary>
         /// Control proving the token size math itself: with no PathBase to account for, the exact-fit
         /// token is accepted and produces a poll Location.
@@ -793,7 +799,7 @@ public class IdentityLocationRoundTripTests
     {
         private HttpResponseMessage _findResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             string token = new('a', ExactFitTokenLength + 1);
@@ -819,6 +825,12 @@ public class IdentityLocationRoundTripTests
             _findResponse = await client.SendAsync(findRequest);
         }
 
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _findResponse.Dispose();
+        }
+
         /// <summary>
         /// One character past the exact fit, the follow-up poll's request line plus its terminating
         /// CRLF would exceed the Kestrel limit by one byte, so the token must be refused before the 202.
@@ -841,7 +853,7 @@ public class IdentityLocationRoundTripTests
     {
         private HttpResponseMessage _findResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             string token = new('a', ExactFitTokenLength);
@@ -869,6 +881,12 @@ public class IdentityLocationRoundTripTests
                 Content = new StringContent("""["605943412"]""", Encoding.UTF8, "application/json"),
             };
             _findResponse = await client.SendAsync(findRequest);
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _findResponse.Dispose();
         }
 
         /// <summary>
@@ -910,7 +928,7 @@ public class IdentityLocationRoundTripTests
     {
         private HttpResponseMessage _findResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             string token = new('a', PathBaseFitTokenLength);
@@ -938,6 +956,12 @@ public class IdentityLocationRoundTripTests
                 Content = new StringContent("""["605943412"]""", Encoding.UTF8, "application/json"),
             };
             _findResponse = await client.SendAsync(findRequest);
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _findResponse.Dispose();
         }
 
         /// <summary>

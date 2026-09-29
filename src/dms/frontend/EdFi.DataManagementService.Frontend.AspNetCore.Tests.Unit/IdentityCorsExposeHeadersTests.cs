@@ -80,7 +80,7 @@ public class IdentityCorsExposeHeadersTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -98,7 +98,7 @@ public class IdentityCorsExposeHeadersTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -129,7 +129,7 @@ public class IdentityCorsExposeHeadersTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -146,7 +146,7 @@ public class IdentityCorsExposeHeadersTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -177,7 +177,7 @@ public class IdentityCorsExposeHeadersTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -192,7 +192,7 @@ public class IdentityCorsExposeHeadersTests
             _response = await _client.GetAsync("/identity/v2/identities/results/tok");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -226,7 +226,7 @@ public class IdentityCorsExposeHeadersTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -246,7 +246,7 @@ public class IdentityCorsExposeHeadersTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();

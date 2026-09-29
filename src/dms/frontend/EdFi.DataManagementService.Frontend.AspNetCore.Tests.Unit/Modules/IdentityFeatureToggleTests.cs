@@ -103,21 +103,37 @@ public class IdentityFeatureToggleTests
                 new TestCaseData(route.Method, route.Path).SetName($"{route.Method.Method} {route.Path}")
             );
 
+        // Each case sends its own request; only the stateless toggle-off host is shared.
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [OneTimeSetUp]
+        public void Setup()
+        {
+            _factory = CreateFactory(enableIdentityManagement: false);
+            _client = _factory.CreateClient();
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
         [TestCaseSource(nameof(RouteCases))]
         public async Task It_answers_the_fallback_not_found_for_every_identity_route(
             HttpMethod method,
             string path
         )
         {
-            await using var factory = CreateFactory(enableIdentityManagement: false);
-            using var client = factory.CreateClient();
             using var request = new HttpRequestMessage(method, path);
             if (method == HttpMethod.Post)
             {
                 request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
             }
 
-            var response = await client.SendAsync(request);
+            using var response = await _client.SendAsync(request);
             var content = await response.Content.ReadAsStringAsync();
             var body = JsonNode.Parse(content);
 
@@ -135,7 +151,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _apiService = A.Fake<IApiService>();
@@ -152,7 +168,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -182,7 +198,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _apiService = A.Fake<IApiService>();
@@ -197,7 +213,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.GetAsync("/identity/v2/identities/605943412");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -229,7 +245,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _apiService = A.Fake<IApiService>();
@@ -246,7 +262,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -276,7 +292,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _apiService = A.Fake<IApiService>();
@@ -293,7 +309,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -323,7 +339,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _apiService = A.Fake<IApiService>();
@@ -338,7 +354,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.GetAsync("/identity/v2/identities/results/tok");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -372,7 +388,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(enableIdentityManagement: false);
@@ -381,7 +397,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.GetAsync("/metadata/identity/v2/swagger.json");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -404,7 +420,7 @@ public class IdentityFeatureToggleTests
         private HttpResponseMessage _response = null!;
         private JsonArray _sections = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(enableIdentityManagement: false);
@@ -415,7 +431,7 @@ public class IdentityFeatureToggleTests
             _sections = JsonNode.Parse(content)!.AsArray();
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -438,7 +454,7 @@ public class IdentityFeatureToggleTests
         private HttpResponseMessage _response = null!;
         private JsonNode _document = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(enableIdentityManagement: false);
@@ -449,7 +465,7 @@ public class IdentityFeatureToggleTests
             _document = JsonNode.Parse(content)!;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -471,7 +487,7 @@ public class IdentityFeatureToggleTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(enableIdentityManagement: true);
@@ -480,7 +496,7 @@ public class IdentityFeatureToggleTests
             _response = await _client.GetAsync("/metadata/identity/v2/swagger.json");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -503,7 +519,7 @@ public class IdentityFeatureToggleTests
         private HttpResponseMessage _response = null!;
         private JsonNode? _identitySection;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(enableIdentityManagement: true);
@@ -518,7 +534,7 @@ public class IdentityFeatureToggleTests
             );
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -547,7 +563,7 @@ public class IdentityFeatureToggleTests
         private HttpResponseMessage _response = null!;
         private JsonNode _document = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _factory = CreateFactory(enableIdentityManagement: true);
@@ -558,7 +574,7 @@ public class IdentityFeatureToggleTests
             _document = JsonNode.Parse(content)!;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();

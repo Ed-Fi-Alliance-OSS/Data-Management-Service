@@ -183,7 +183,7 @@ public class IdentityEndpointModuleTests
         private HttpResponseMessage _getByIdResponse = null!;
         private HttpResponseMessage _resultsResponse = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _apiService = A.Fake<IApiService>();
@@ -212,9 +212,11 @@ public class IdentityEndpointModuleTests
             _resultsResponse = await _client.GetAsync("/q1/q2/identity/v2/identities/results/tok");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
+            _getByIdResponse.Dispose();
+            _resultsResponse.Dispose();
             _client.Dispose();
             await _factory.DisposeAsync();
         }

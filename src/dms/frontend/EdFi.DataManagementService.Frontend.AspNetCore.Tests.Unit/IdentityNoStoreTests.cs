@@ -135,7 +135,7 @@ public class IdentityNoStoreTests
         // that the identity route is never reached at all in this test: the second request, to the
         // identity route, is rejected by the real global limiter before routing dispatches to any
         // endpoint, so IIdentityService is provably never invoked.
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             _identityService = A.Fake<IIdentityService>();
@@ -173,7 +173,7 @@ public class IdentityNoStoreTests
             _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -224,7 +224,7 @@ public class IdentityNoStoreTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -234,7 +234,7 @@ public class IdentityNoStoreTests
             _response = await _client.GetAsync("/metadata/identity/v2/swagger.json");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -262,7 +262,7 @@ public class IdentityNoStoreTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -272,7 +272,7 @@ public class IdentityNoStoreTests
             _response = await _client.GetAsync("/");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -300,7 +300,7 @@ public class IdentityNoStoreTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -318,7 +318,7 @@ public class IdentityNoStoreTests
             _response = await _client.GetAsync("/data/ed-fi/schools/abc");
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -346,7 +346,7 @@ public class IdentityNoStoreTests
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
@@ -360,7 +360,7 @@ public class IdentityNoStoreTests
             _response = await _client.SendAsync(request);
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();

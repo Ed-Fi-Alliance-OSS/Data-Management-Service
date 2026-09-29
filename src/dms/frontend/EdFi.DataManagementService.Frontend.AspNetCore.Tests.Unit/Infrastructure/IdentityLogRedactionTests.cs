@@ -277,7 +277,7 @@ public class IdentityLogRedactionTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
@@ -289,7 +289,7 @@ public class IdentityLogRedactionTests
             _events = sink.Events;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -364,7 +364,7 @@ public class IdentityLogRedactionTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
@@ -390,7 +390,7 @@ public class IdentityLogRedactionTests
             );
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -507,7 +507,7 @@ public class IdentityLogRedactionTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
@@ -523,7 +523,7 @@ public class IdentityLogRedactionTests
             _events = sink.Events;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -567,7 +567,7 @@ public class IdentityLogRedactionTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
@@ -586,7 +586,7 @@ public class IdentityLogRedactionTests
             _events = sink.Events;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
@@ -656,7 +656,7 @@ public class IdentityLogRedactionTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
 
-        [SetUp]
+        [OneTimeSetUp]
         public async Task Setup()
         {
             var sink = new CapturingSerilogSink();
@@ -668,7 +668,7 @@ public class IdentityLogRedactionTests
             _events = sink.Events;
         }
 
-        [TearDown]
+        [OneTimeTearDown]
         public async Task TearDown()
         {
             _response.Dispose();
