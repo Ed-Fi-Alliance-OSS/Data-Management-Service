@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -88,6 +89,8 @@ public class ConfigurationServiceClaimSetProviderTests
                 _provider,
                 memoryCache,
                 new CacheSettings(),
+                TimeProvider.System,
+                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 

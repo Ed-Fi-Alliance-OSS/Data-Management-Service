@@ -289,6 +289,35 @@ public class IdentityHandlerResponseMappingTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Create_InvalidProperties_Result_With_An_Empty_Error_List
+    {
+        private IFrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var provider = new ScriptedIdentityService
+            {
+                NextResult = new IdentityResult
+                {
+                    Status = IdentityResultStatus.InvalidProperties,
+                    Errors = [],
+                },
+            };
+            var requestInfo = CreateRequestInfo(IdentityOperation.Create, provider);
+
+            _response = await Execute(requestInfo);
+        }
+
+        [Test]
+        public void It_is_a_502_provider_contract_violation()
+        {
+            AssertContractViolation(_response);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Create_InvalidProperties_Result_With_A_Null_Error_Entry
     {
         private IFrontendResponse _response = null!;

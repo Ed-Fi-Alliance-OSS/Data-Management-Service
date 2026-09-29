@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -187,8 +188,11 @@ public class IdentityNoStoreTests
             _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         }
 
+        // The rejection happens before routing reaches the identity pipeline, so no-store here
+        // comes from the host-wide SecurityHeadersMiddleware; this pins that an identity 429 is
+        // still never cacheable and carries the directive once.
         [Test]
-        public void It_carries_cache_control_no_store_exactly_once()
+        public void It_is_not_cacheable()
         {
             _response
                 .Headers.GetValues("Cache-Control")
@@ -196,6 +200,14 @@ public class IdentityNoStoreTests
                 .ContainSingle()
                 .Which.Should()
                 .Be("no-store");
+        }
+
+        [Test]
+        public void It_tells_the_client_when_to_retry_within_the_sixty_second_window()
+        {
+            string retryAfter = _response.Headers.GetValues("Retry-After").Should().ContainSingle().Which;
+
+            int.Parse(retryAfter, CultureInfo.InvariantCulture).Should().BeInRange(1, 60);
         }
 
         [Test]

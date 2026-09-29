@@ -12,6 +12,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -53,13 +54,15 @@ public class StampedeProtectionTests
             _mockProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
 
             // Configure mock to track calls and add delay to simulate real fetch
-            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
                 .ReturnsLazily(_ => FetchClaimSetsAsync());
 
             _cachedProvider = new CachedClaimSetProvider(
                 _mockProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
+                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
         }
@@ -308,16 +311,28 @@ public class StampedeProtectionTests
             _tenant2FactoryCount = 0;
             _mockProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
 
-            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("tenant1")))
+            A.CallTo(() =>
+                    _mockProvider.GetAllClaimSets(
+                        A<string?>.That.IsEqualTo("tenant1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .ReturnsLazily(_ => FetchTenant1ClaimSetsAsync());
 
-            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("tenant2")))
+            A.CallTo(() =>
+                    _mockProvider.GetAllClaimSets(
+                        A<string?>.That.IsEqualTo("tenant2"),
+                        A<CancellationToken>._
+                    )
+                )
                 .ReturnsLazily(_ => FetchTenant2ClaimSetsAsync());
 
             _cachedProvider = new CachedClaimSetProvider(
                 _mockProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
+                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
         }

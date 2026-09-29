@@ -12,20 +12,19 @@ using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
-using FakeItEasy;
 using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 
 /// <summary>
 /// Proves request-time datastore independence on an initialized, identity-enabled host. After one
-/// resource request has served normally, the CMS data-store surface is poisoned (<c>LoadDataStores</c>
-/// throws, connection-string decryption throws) and the identity tenant snapshot's 60-second freshness
-/// window is advanced past expiry, yet an authorized identity request still reaches the
-/// operation-unsupported capability gate - because the identity pipeline never resolves a physical data
-/// store at all (<see cref="Identity.IdentityTenantSnapshotTests" /> proves the same
-/// independence at the unit level) - while the poisoned <c>LoadDataStores</c> is never called during
-/// that request. Follows <see cref="Given_Postgresql_ApplicationContextIntegration" />'s
+/// resource request and one identity request have served normally, the CMS data-store surface is
+/// poisoned (<c>LoadDataStores</c> throws) and the identity tenant snapshot's 60-second freshness window
+/// is advanced past expiry, yet an authorized identity request still refreshes the snapshot through
+/// <c>LoadTenants</c> and reaches the operation-unsupported capability gate - because the identity
+/// pipeline never resolves a physical data store at all (<see cref="Identity.IdentityTenantSnapshotTests" />
+/// proves the same independence at the unit level) - while the poisoned <c>LoadDataStores</c> is never
+/// called during that request. Follows <see cref="Given_Postgresql_ApplicationContextIntegration" />'s
 /// MultiTenancy/BypassAuthorization shape.
 /// </summary>
 public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlApiIntegrationTestBase
@@ -34,8 +33,6 @@ public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlA
 
     private readonly PoisonableRecordingDataStoreProvider _dataStoreProvider = new(Tenant);
     private readonly FakeTimeProvider _timeProvider = new(DateTimeOffset.UtcNow);
-    private readonly IConnectionStringDecryptionService _connectionStringDecryptionService =
-        CreateThrowingConnectionStringDecryptionService();
 
     protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
 
@@ -59,9 +56,6 @@ public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlA
     }
 
     protected override TimeProvider TimeProviderOverride => _timeProvider;
-
-    protected override IConnectionStringDecryptionService ConnectionStringDecryptionServiceOverride =>
-        _connectionStringDecryptionService;
 
     /// <summary>
     /// Keeps the production, scoped CachedApplicationContextProvider real while swapping only its
@@ -91,22 +85,8 @@ public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlA
             Harness,
             Tenant,
             _dataStoreProvider,
-            _timeProvider,
-            _connectionStringDecryptionService
+            _timeProvider
         );
-
-    private static IConnectionStringDecryptionService CreateThrowingConnectionStringDecryptionService()
-    {
-        var fake = A.Fake<IConnectionStringDecryptionService>();
-        A.CallTo(() => fake.DecryptFromBase64(A<string?>._))
-            .Throws(() =>
-                new InvalidOperationException(
-                    "IConnectionStringDecryptionService was poisoned for this test and must never be called "
-                        + "by the identity pipeline."
-                )
-            );
-        return fake;
-    }
 }
 
 /// <summary>
@@ -165,16 +145,21 @@ internal sealed class IdentityGrantingClaimSetProvider(FixtureContext fixture) :
 /// <see cref="PoisonLoadDataStores" /> is called, after which <see cref="LoadDataStores" /> always
 /// throws. <see cref="LoadTenants" /> always succeeds regardless of poisoning, matching the design's
 /// separation between tenant-name lookup and datastore configuration.
-/// <see cref="LoadDataStoresCallCount" /> lets a scenario prove a request never called it.
+/// <see cref="LoadDataStoresCallCount" /> lets a scenario prove a request never called it, and
+/// <see cref="LoadTenantsCallCount" /> lets it prove a request did refresh the tenant snapshot.
 /// </summary>
 internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDataStoreProvider
 {
     private DataStore? _dataStore;
     private volatile bool _shouldThrowOnLoadDataStores;
     private int _loadDataStoresCallCount;
+    private int _loadTenantsCallCount;
 
     /// <summary>How many times LoadDataStores has been called, across the lifetime of this instance.</summary>
     public int LoadDataStoresCallCount => Volatile.Read(ref _loadDataStoresCallCount);
+
+    /// <summary>How many times LoadTenants has been called, across the lifetime of this instance.</summary>
+    public int LoadTenantsCallCount => Volatile.Read(ref _loadTenantsCallCount);
 
     public void Configure(long id, string connectionString) =>
         _dataStore = new DataStore(
@@ -218,8 +203,11 @@ internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDat
 
     public bool IsLoaded(string? tenant = null) => _dataStore is not null;
 
-    public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IList<string>>([tenant]);
+    public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _loadTenantsCallCount);
+        return Task.FromResult<IList<string>>([tenant]);
+    }
 
     public bool TenantExists(string tenant) => true;
 

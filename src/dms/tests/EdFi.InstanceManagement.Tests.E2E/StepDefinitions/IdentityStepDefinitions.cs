@@ -25,6 +25,7 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
 {
     private string? _applicationTenant;
     private int? _applicationId;
+    private ApplicationRequest? _applicationRequest;
     private readonly Dictionary<string, (int Id, string Key, string Secret)> _clientsByRole = new(
         StringComparer.OrdinalIgnoreCase
     );
@@ -179,6 +180,29 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
 
         reset.Key.Should().Be(key, "reset-credential must not change the OAuth client key");
         _clientsByRole[role] = (id, reset.Key, reset.Secret);
+    }
+
+    [When("the application is reassigned to claim set {string}")]
+    public async Task WhenTheApplicationIsReassignedToClaimSet(string claimSetName)
+    {
+        _applicationId.Should().NotBeNull("an identity-only application must be created first");
+        _applicationRequest.Should().NotBeNull();
+        var client = GetTenantConfigClient(_applicationTenant!);
+
+        _applicationRequest = _applicationRequest! with { ClaimSetName = claimSetName };
+        await client.UpdateApplicationAsync(_applicationId!.Value, _applicationRequest);
+    }
+
+    [When("a token is minted with the {string} client's current credentials as {string}")]
+    public async Task WhenATokenIsMintedWithTheClientsCurrentCredentialsAs(string role, string tokenName)
+    {
+        (_, string key, string secret) = ResolveClient(role);
+
+        _tokensByRole[tokenName] = await TokenHelper.GetDmsTokenAsync(
+            $"{TestConfiguration.ConfigServiceUrl}/connect/token",
+            key,
+            secret
+        );
     }
 
     [When("the {string} client is deleted")]
@@ -409,21 +433,21 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
         string districtId = tenantName.Split('_')[^1];
 
         var client = GetTenantConfigClient(tenantName);
-        var application = await client.CreateApplicationAsync(
-            new ApplicationRequest(
-                VendorId: vendorId,
-                // The Application's first API client row reuses this name verbatim in a column that
-                // is only 50 characters wide (dmscs.ApiClient.Name), so a long claim set name is
-                // truncated here rather than risking an unhandled 500 from the database.
-                ApplicationName: $"Identity E2E {tenantName} {ShortClaimSetTag(claimSetName)}",
-                ClaimSetName: claimSetName,
-                EducationOrganizationIds: [int.Parse(districtId, CultureInfo.InvariantCulture)],
-                DataStoreIds: []
-            )
+        var applicationRequest = new ApplicationRequest(
+            VendorId: vendorId,
+            // The Application's first API client row reuses this name verbatim in a column that
+            // is only 50 characters wide (dmscs.ApiClient.Name), so a long claim set name is
+            // truncated here rather than risking an unhandled 500 from the database.
+            ApplicationName: $"Identity E2E {tenantName} {ShortClaimSetTag(claimSetName)}",
+            ClaimSetName: claimSetName,
+            EducationOrganizationIds: [int.Parse(districtId, CultureInfo.InvariantCulture)],
+            DataStoreIds: []
         );
+        var application = await client.CreateApplicationAsync(applicationRequest);
 
         _applicationTenant = tenantName;
         _applicationId = application.Id;
+        _applicationRequest = applicationRequest;
         _clientsByRole.Clear();
         _tokensByRole.Clear();
         context.MarkApplicationScenarioOwned(tenantName, application.Id);

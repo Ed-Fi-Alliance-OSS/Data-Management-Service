@@ -18,6 +18,9 @@ using EdFi.DataManagementService.Identity;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
@@ -979,6 +982,90 @@ public class IdentityLocationRoundTripTests
                 .Be(
                     $"http://localhost{PathBaseSegment}/identity/v2/identities/results/{new string('a', PathBaseFitTokenLength)}"
                 );
+        }
+    }
+
+    /// <summary>
+    /// TestServer does not enforce <c>MaxRequestLineSize</c>, so the fixtures above prove only the
+    /// budget arithmetic. This one runs the same host on a real loopback Kestrel with the same
+    /// <see cref="RequestLineLimit"/>, pinning the budget's model of what Kestrel counts: the
+    /// exact-fit Location that find emits is served when followed, and a poll path one character
+    /// longer is refused by Kestrel itself with 414.
+    /// </summary>
+    [TestFixture]
+    public class Given_Real_Kestrel_Enforcing_The_Request_Line_Limit
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _findResponse = null!;
+        private HttpResponseMessage _exactFitPollResponse = null!;
+        private HttpResponseMessage _oneOverPollResponse = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            string token = new('a', ExactFitTokenLength);
+            _factory = CreateFactory(
+                new RecordingIdentityService(token),
+                maxRequestLineSize: RequestLineLimit,
+                multiTenancy: false,
+                routeQualifierSegments: ""
+            );
+            _factory.UseKestrel(0);
+            _factory.StartServer();
+            string serverAddress = _factory
+                .Services.GetRequiredService<IServer>()
+                .Features.GetRequiredFeature<IServerAddressesFeature>()
+                .Addresses.First();
+            _client = _factory.CreateClient(
+                new WebApplicationFactoryClientOptions
+                {
+                    AllowAutoRedirect = false,
+                    BaseAddress = new Uri(serverAddress),
+                }
+            );
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                "round-trip-token"
+            );
+
+            using var findRequest = new HttpRequestMessage(HttpMethod.Post, "/identity/v2/identities/find")
+            {
+                Content = new StringContent("""["605943412"]""", Encoding.UTF8, "application/json"),
+            };
+            _findResponse = await _client.SendAsync(findRequest);
+
+            string pollPath = _findResponse.Headers.Location!.AbsolutePath;
+            _exactFitPollResponse = await _client.GetAsync(pollPath);
+            _oneOverPollResponse = await _client.GetAsync(pollPath + "a");
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            _findResponse.Dispose();
+            _exactFitPollResponse.Dispose();
+            _oneOverPollResponse.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_accepts_the_exact_fit_find_request()
+        {
+            _findResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        }
+
+        [Test]
+        public void It_serves_the_exact_fit_location_when_followed()
+        {
+            _exactFitPollResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_refuses_a_poll_path_one_character_longer_with_414()
+        {
+            _oneOverPollResponse.StatusCode.Should().Be(HttpStatusCode.RequestUriTooLong);
         }
     }
 

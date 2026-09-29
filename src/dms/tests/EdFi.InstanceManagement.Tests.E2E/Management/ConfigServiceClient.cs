@@ -226,6 +226,32 @@ public class ConfigServiceClient
     }
 
     /// <summary>
+    /// Replace an application's stored definition (a full replacement, per the endpoint's own
+    /// contract), for example to reassign it to a different claim set.
+    /// </summary>
+    public async Task UpdateApplicationAsync(int id, ApplicationRequest request)
+    {
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            _accessToken
+        );
+
+        var response = await _httpClient.PutAsJsonAsync(
+            $"/v3/applications/{id}",
+            new
+            {
+                Id = id,
+                request.ApplicationName,
+                request.VendorId,
+                request.ClaimSetName,
+                request.EducationOrganizationIds,
+                request.DataStoreIds,
+            }
+        );
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
     /// Create an API client under an application. The first client an application-create call
     /// mints is read back through <see cref="GetApiClientAsync"/>; this method mints every
     /// additional client.

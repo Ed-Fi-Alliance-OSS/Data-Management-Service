@@ -6,10 +6,8 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
-using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -29,8 +27,7 @@ internal static class IdentityDatastoreIndependenceScenario
         ApiIntegrationHarness harness,
         string tenant,
         PoisonableRecordingDataStoreProvider dataStoreProvider,
-        FakeTimeProvider timeProvider,
-        IConnectionStringDecryptionService connectionStringDecryptionService
+        FakeTimeProvider timeProvider
     )
     {
         // One resource request through the fully initialized host, proving the leased data store is
@@ -49,13 +46,41 @@ internal static class IdentityDatastoreIndependenceScenario
         string warmupBody = await warmupResponse.Content.ReadAsStringAsync();
         warmupResponse.StatusCode.Should().Be(HttpStatusCode.Created, warmupBody);
 
+        // One identity request fills the identity tenant snapshot, so the clock advance below
+        // genuinely expires it.
+        await AssertOperationNotSupportedAsync(harness, tenant);
+
         int loadDataStoresCallCountBeforeTheIdentityRequest = dataStoreProvider.LoadDataStoresCallCount;
+        int loadTenantsCallCountBeforeTheIdentityRequest = dataStoreProvider.LoadTenantsCallCount;
 
         // Poison the datastore configuration surface, then push the identity tenant snapshot's
         // 60-second freshness window into the past so the next identity request must refresh it.
         dataStoreProvider.PoisonLoadDataStores();
         timeProvider.Advance(TimeSpan.FromSeconds(61));
 
+        await AssertOperationNotSupportedAsync(harness, tenant);
+
+        // The expired snapshot was refreshed through LoadTenants during the poisoned request.
+        dataStoreProvider
+            .LoadTenantsCallCount.Should()
+            .Be(
+                loadTenantsCallCountBeforeTheIdentityRequest + 1,
+                "the expired identity tenant snapshot must refresh through LoadTenants"
+            );
+
+        // The poisoned LoadDataStores was never reached by the identity request: the identity pipeline
+        // maps no ResolveDataStoreMiddleware step and resolves tenant existence through LoadTenants
+        // alone.
+        dataStoreProvider
+            .LoadDataStoresCallCount.Should()
+            .Be(
+                loadDataStoresCallCountBeforeTheIdentityRequest,
+                "the identity pipeline must never call LoadDataStores"
+            );
+    }
+
+    private static async Task AssertOperationNotSupportedAsync(ApiIntegrationHarness harness, string tenant)
+    {
         using HttpResponseMessage identityResponse = await harness.HttpClient.GetAsync(
             string.Format(IdentityGetByIdEndpointFormat, tenant)
         );
@@ -68,16 +93,5 @@ internal static class IdentityDatastoreIndependenceScenario
             .GetValue<string>()
             .Should()
             .Be(IdentityFailureResponse.OperationNotSupportedType);
-
-        // The poisoned LoadDataStores was never reached by the identity request: the identity pipeline
-        // maps no ResolveDataStoreMiddleware step and resolves tenant existence through LoadTenants
-        // alone.
-        dataStoreProvider
-            .LoadDataStoresCallCount.Should()
-            .Be(
-                loadDataStoresCallCountBeforeTheIdentityRequest,
-                "the identity pipeline must never call LoadDataStores"
-            );
-        A.CallTo(connectionStringDecryptionService).MustNotHaveHappened();
     }
 }

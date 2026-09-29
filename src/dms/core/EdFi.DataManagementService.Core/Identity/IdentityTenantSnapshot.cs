@@ -16,7 +16,9 @@ namespace EdFi.DataManagementService.Core.Identity;
 /// by <see cref="IDataStoreProvider.LoadTenants" />, fresh for 60 seconds after a successful refresh
 /// completes. A cold or expired caller, or one whose tenant is missing from a fresh snapshot, joins one
 /// shared refresh regardless of the tenant name it asked about, so a tenant created in the
-/// Configuration Service is recognized as soon as it is requested; the refresh runs on its own <see cref="CancellationTokenSource" /> linked to
+/// Configuration Service is recognized within seconds of being requested. A miss refreshes a fresh
+/// snapshot at most once per 5 seconds, so repeated unknown names cannot drive back-to-back full-list
+/// fetches; the refresh runs on its own <see cref="CancellationTokenSource" /> linked to
 /// <see cref="IHostApplicationLifetime.ApplicationStopping" /> with a 30-second budget, never on a
 /// caller's own token, so one caller leaving never aborts a fill another caller still needs. A failed
 /// refresh answers <see cref="TenantExistenceOutcome.Unavailable" /> to every live waiter and refuses
@@ -40,6 +42,9 @@ internal sealed class IdentityTenantSnapshot(
 
     /// <summary>How long a failed refresh blocks a new refresh attempt.</summary>
     private static readonly TimeSpan FailureCooldown = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long after a successful refresh a miss on the fresh snapshot answers without another fetch.</summary>
+    private static readonly TimeSpan MissRefreshInterval = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// The current immutable snapshot, or null before the first successful refresh. Replaced
@@ -66,8 +71,8 @@ internal sealed class IdentityTenantSnapshot(
     /// <summary>
     /// Answers whether <paramref name="tenant" /> exists, using a fresh snapshot that contains it
     /// immediately or joining a shared refresh otherwise. A tenant missing from a fresh snapshot is
-    /// answered from the refreshed snapshot, or from the still-fresh one when that refresh fails or
-    /// the failure cooldown suppresses it. An <see cref="OperationCanceledException" /> raised because
+    /// answered from the refreshed snapshot, or from the still-fresh one when that refresh fails, the
+    /// failure cooldown suppresses it, or the snapshot is younger than the miss refresh interval. An <see cref="OperationCanceledException" /> raised because
     /// <paramref name="requestToken" /> itself was cancelled propagates untouched; every other failure
     /// - including the refresh's own timeout or a host-shutdown cancellation - is reported as
     /// <see cref="TenantExistenceOutcome.Unavailable" />.
@@ -108,7 +113,9 @@ internal sealed class IdentityTenantSnapshot(
     /// caller neither starts a new <see cref="IDataStoreProvider.LoadTenants" /> call nor waits any
     /// longer than the original refresh already has. Reuses a completed successful refresh when it
     /// replaced the <paramref name="observed" /> snapshot after the caller read it, so a caller that
-    /// raced that refresh does not start another. Otherwise starts a brand new refresh.
+    /// raced that refresh does not start another, and while the snapshot it produced is younger than
+    /// the 5-second miss refresh interval, so a miss does not refetch a list that was just fetched.
+    /// Otherwise starts a brand new refresh.
     /// </summary>
     private Task<bool> GetOrStartRefreshTask(Snapshot? observed)
     {
@@ -124,8 +131,16 @@ internal sealed class IdentityTenantSnapshot(
                 if (completed.Result)
                 {
                     // A caller that read a snapshot just before another refresh replaced it reuses
-                    // that refresh rather than starting a redundant load.
-                    if (!ReferenceEquals(Volatile.Read(ref _snapshot), observed))
+                    // that refresh rather than starting a redundant load, and a miss on a snapshot
+                    // fetched moments ago answers from it rather than fetching the whole list again.
+                    Snapshot? current = Volatile.Read(ref _snapshot);
+                    if (
+                        !ReferenceEquals(current, observed)
+                        || (
+                            current is not null
+                            && timeProvider.GetUtcNow() - current.LoadedAt < MissRefreshInterval
+                        )
+                    )
                     {
                         return completed;
                     }

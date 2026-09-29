@@ -89,10 +89,10 @@ public class IdentityTenantSnapshotTests
         }
 
         [Test]
-        public void It_refreshes_once_for_the_initial_fill_and_once_per_unknown_name()
+        public void It_answers_misses_within_the_miss_refresh_interval_without_refetching()
         {
             A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappened(3, Times.Exactly);
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -129,10 +129,10 @@ public class IdentityTenantSnapshotTests
         }
 
         [Test]
-        public void It_refreshes_again_for_the_name_missing_from_the_fresh_snapshot()
+        public void It_answers_the_miss_within_the_miss_refresh_interval_without_refetching()
         {
             A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappenedTwiceExactly();
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -155,7 +155,7 @@ public class IdentityTenantSnapshotTests
             var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             await snapshot.CheckAsync("North", CancellationToken.None);
-            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
             _newTenantOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
             _knownTenantOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
         }
@@ -181,6 +181,56 @@ public class IdentityTenantSnapshotTests
     }
 
     [TestFixture]
+    public class Given_Repeated_Unknown_Names_Around_The_Miss_Refresh_Interval : IdentityTenantSnapshotTests
+    {
+        private int _loadsAfterFirstMiss;
+        private int _loadsJustInsideTheInterval;
+        private int _loadsOnceTheIntervalElapses;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            IDataStoreProvider dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>(["North"]));
+            var snapshot = CreateSnapshot(dataStoreProvider, timeProvider);
+
+            await snapshot.CheckAsync("North", CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+            await snapshot.CheckAsync("Unknown-1", CancellationToken.None);
+            _loadsAfterFirstMiss = Fake.GetCalls(dataStoreProvider).Count();
+
+            timeProvider.Advance(TimeSpan.FromSeconds(4));
+            await snapshot.CheckAsync("Unknown-2", CancellationToken.None);
+            _loadsJustInsideTheInterval = Fake.GetCalls(dataStoreProvider).Count();
+
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await snapshot.CheckAsync("Unknown-3", CancellationToken.None);
+            _loadsOnceTheIntervalElapses = Fake.GetCalls(dataStoreProvider).Count();
+        }
+
+        [Test]
+        public void It_refreshes_for_a_miss_once_the_snapshot_is_older_than_the_interval()
+        {
+            _loadsAfterFirstMiss.Should().Be(2);
+        }
+
+        [Test]
+        public void It_does_not_refresh_for_a_miss_inside_the_interval()
+        {
+            _loadsJustInsideTheInterval.Should().Be(2);
+        }
+
+        [Test]
+        public void It_refreshes_again_once_the_interval_elapses()
+        {
+            _loadsOnceTheIntervalElapses.Should().Be(3);
+        }
+    }
+
+    [TestFixture]
     public class Given_Two_Concurrent_Callers_Missing_From_A_Fresh_Snapshot : IdentityTenantSnapshotTests
     {
         private IDataStoreProvider _dataStoreProvider = null!;
@@ -200,6 +250,7 @@ public class IdentityTenantSnapshotTests
             var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             await snapshot.CheckAsync("North", CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
 
             Task<TenantExistenceOutcome> south = snapshot.CheckAsync("South", CancellationToken.None);
             Task<TenantExistenceOutcome> west = snapshot.CheckAsync("West", CancellationToken.None);
@@ -254,6 +305,7 @@ public class IdentityTenantSnapshotTests
             var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             await snapshot.CheckAsync("North", CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
             _failedRefreshOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
             _withinCooldownOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
             _loadsWithinCooldown = Fake.GetCalls(_dataStoreProvider).Count();

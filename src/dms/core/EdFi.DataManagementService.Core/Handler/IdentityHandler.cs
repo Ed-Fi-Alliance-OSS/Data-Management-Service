@@ -268,11 +268,15 @@ internal sealed class IdentityHandler(
                 );
 
             case IdentityResultStatus.InvalidProperties:
-                if (errors is null || errors.Any(error => error is null || error.Message is null))
+                if (
+                    errors is null
+                    || errors.Count == 0
+                    || errors.Any(error => error is null || error.Message is null)
+                )
                 {
                     return ContractViolation(
                         traceId,
-                        "The identity provider returned InvalidProperties with a missing error list, a null error, or an error with a null message."
+                        "The identity provider returned InvalidProperties with a missing or empty error list, a null error, or an error with a null message."
                     );
                 }
                 return new FrontendResponse(
