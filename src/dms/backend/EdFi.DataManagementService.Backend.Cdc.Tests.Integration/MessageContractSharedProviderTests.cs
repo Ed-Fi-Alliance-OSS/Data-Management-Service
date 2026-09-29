@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [TestFixture(CdcProvider.Postgresql)]
 [TestFixture(CdcProvider.SqlServer)]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-10")]
 public sealed class Given_MessageContractProviderAttachment(CdcProvider provider)
 {
     private CdcDeploymentRequest _request = null!;
@@ -27,6 +28,7 @@ public sealed class Given_MessageContractProviderAttachment(CdcProvider provider
 
     [TestCase(false)]
     [TestCase(true)]
+    [Property("CdcInvariant", "CDC-INV-06")]
     public async Task It_checks_the_effective_include_list_at_the_supplied_endpoint(bool includeWork)
     {
         using var handler = new ConfigurationHandler(includeWork);

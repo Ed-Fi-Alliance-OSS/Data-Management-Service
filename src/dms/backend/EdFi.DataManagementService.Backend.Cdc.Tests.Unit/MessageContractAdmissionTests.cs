@@ -13,6 +13,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [TestFixtureSource(nameof(Scenarios))]
 [Category("CdcMessageContract")]
 [Parallelizable(ParallelScope.Fixtures)]
+[Property("CdcInvariant", "CDC-INV-09")]
+[Property("CdcInvariant", "CDC-INV-10")]
 public class Given_MessageContractAdmission(CdcProvider provider, string scenario)
 {
     private CdcAdmission _baseline = null!;

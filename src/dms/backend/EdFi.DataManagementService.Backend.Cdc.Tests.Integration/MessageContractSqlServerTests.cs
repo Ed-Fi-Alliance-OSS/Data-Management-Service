@@ -17,6 +17,12 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("CdcMessageContract")]
 [Category("CdcMessageContractKafka")]
 [Category("MssqlIntegration")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-06")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
+[Property("CdcInvariant", "CDC-INV-09")]
+[Property("CdcInvariant", "CDC-INV-10")]
 public sealed class Given_MessageContractSqlServer
 {
     private CdcConnectorTemplateRequest _request = null!;

@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-07")]
 public sealed class Given_MessageContractKafkaBoundariesSharedAssertions
 {
     private const string Uuid = "00112233-4455-6677-8899-aabbccddeeff";
@@ -144,6 +145,7 @@ public sealed class Given_MessageContractKafkaBoundariesSharedAssertions
 
     [TestCase("source")]
     [TestCase("heartbeat")]
+    [Property("CdcInvariant", "CDC-INV-08")]
     public void It_rejects_forbidden_metadata_even_when_public_records_match(string kind)
     {
         MessageContractRecordAssertions.AssertUpsert(_request, _record, Uuid, 0, _expected);
@@ -168,6 +170,7 @@ public sealed class Given_MessageContractKafkaBoundariesSharedAssertions
     }
 
     [Test]
+    [Property("CdcInvariant", "CDC-INV-08")]
     public void It_accepts_public_progress_and_unrelated_topics()
     {
         Metadata metadata = new(
