@@ -56,6 +56,23 @@ public class OpenIddictServiceCollectionExtensionsTests
         return services.BuildServiceProvider().GetRequiredService<ClientSecretHasher>();
     }
 
+    /// <summary>
+    /// Runs the checks <c>ValidateOnStart</c> registered, which is what the host runs before it
+    /// starts serving; resolving <c>IOptions.Value</c> would validate even without ValidateOnStart.
+    /// </summary>
+    private static Action ValidateAtStartup(Dictionary<string, string?> settings)
+    {
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+
+        ServiceCollection services = new();
+        services.AddOpenIddictIdentityOptions(configuration);
+
+        IStartupValidator startupValidator = services
+            .BuildServiceProvider()
+            .GetRequiredService<IStartupValidator>();
+        return startupValidator.Validate;
+    }
+
     private static ClientSecretHasher CreateHasherAt(int iterations) =>
         new(
             NullLogger<ClientSecretHasher>.Instance,
@@ -217,5 +234,62 @@ public class OpenIddictServiceCollectionExtensionsTests
 
         [Test]
         public void It_does_not_hash_at_the_default_count() => _verifiedAtDefault.Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_a_positive_client_secret_hashing_iterations_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:ClientSecretHashingIterations"] = "1" }
+            );
+
+        [Test]
+        public void It_passes_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// PBKDF2 throws on a non-positive count, so an unchecked value would only fail on the first
+    /// client create or token request.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_zero_client_secret_hashing_iterations_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:ClientSecretHashingIterations"] = "0" }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:ClientSecretHashingIterations must be greater than zero*");
+    }
+
+    [TestFixture]
+    public class Given_a_negative_client_secret_hashing_iterations_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:ClientSecretHashingIterations"] = "-5" }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:ClientSecretHashingIterations must be greater than zero*");
     }
 }

@@ -114,17 +114,33 @@ if ($assemblyVersion -ne $expectedAssemblyVersion) {
 }
 Remove-Item -LiteralPath $extracted -Recurse -Force
 
-# 3. Restore the consumer from the local feed only, into the fresh cache, and compile it.
-$env:NUGET_PACKAGES = $packages
+# 3. Restore the consumer from the local feed only, into the fresh cache, and compile it. The
+#    caller's NUGET_PACKAGES is restored afterwards so an interactive session is not left pointing
+#    at the throwaway folder. An originally-absent variable is removed rather than assigned $null:
+#    on PowerShell 7.5 that leaves the name defined and empty, which NuGet does not treat as unset.
+$nugetPackagesWasSet = Test-Path -LiteralPath "Env:NUGET_PACKAGES"
+$previousNuGetPackages = if ($nugetPackagesWasSet) { $env:NUGET_PACKAGES } else { $null }
 
-dotnet restore $ConsumerProject --source $feed -p:SecretsPackageVersion=$packageVersion
-if ($LASTEXITCODE -ne 0) {
-    throw "The scratch consumer failed to restore $packageId $packageVersion from $feed."
+try {
+    $env:NUGET_PACKAGES = $packages
+
+    dotnet restore $ConsumerProject --source $feed -p:SecretsPackageVersion=$packageVersion
+    if ($LASTEXITCODE -ne 0) {
+        throw "The scratch consumer failed to restore $packageId $packageVersion from $feed."
+    }
+
+    dotnet build $ConsumerProject -c $Configuration --no-restore --nologo -p:SecretsPackageVersion=$packageVersion
+    if ($LASTEXITCODE -ne 0) {
+        throw "The scratch consumer failed to compile against $packageId $packageVersion."
+    }
 }
-
-dotnet build $ConsumerProject -c $Configuration --no-restore --nologo -p:SecretsPackageVersion=$packageVersion
-if ($LASTEXITCODE -ne 0) {
-    throw "The scratch consumer failed to compile against $packageId $packageVersion."
+finally {
+    if ($nugetPackagesWasSet) {
+        $env:NUGET_PACKAGES = $previousNuGetPackages
+    }
+    elseif (Test-Path -LiteralPath "Env:NUGET_PACKAGES") {
+        Remove-Item -LiteralPath "Env:NUGET_PACKAGES"
+    }
 }
 
 Write-Output "Verified $packageId $packageVersion packs with AssemblyVersion $assemblyVersion and that the scratch consumer implements ISecretResolver and IClientSecretHasher against it from a local feed."
