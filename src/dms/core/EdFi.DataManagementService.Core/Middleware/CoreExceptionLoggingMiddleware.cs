@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
@@ -18,7 +19,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Converts exceptions escaping the core pipeline into error responses: 403 for
-/// authorization failures, 503 when the backend circuit is open, Snapshot Not Found when a read could
+/// authorization failures, 503 when the backend circuit is open or profile data is unavailable from
+/// the Configuration Service, Snapshot Not Found when a read could
 /// not acquire a connection to a selected snapshot, 500 otherwise. The 500-path
 /// exception is captured on the request so the outer request logging middleware attaches it to the
 /// structured request-failure event; this middleware does not log it. The snapshot path is the
@@ -78,6 +80,23 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circui
                 StatusCode: 503,
                 Body: FailureResponse.ForServiceUnavailable(requestInfo.FrontendRequest.TraceId),
                 Headers: RetryAfterHeaderFor(_circuitBreakDuration),
+                ContentType: "application/problem+json"
+            );
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The Configuration Service could not supply the profile catalog or the application's
+            // profile assignments. Answering anything but a retriable 503 would either skip profile
+            // enforcement or report an existing profile as unsupported, so this fails closed. No
+            // Retry-After: nothing tells us when the Configuration Service will recover.
+            //
+            // Deliberately not recorded as a caught exception, for the same reason as the circuit-open
+            // arm above: the profile provider already logged the cause once per failed fetch, and one
+            // failed fetch can serve many joined requests, each visible as a 503 in the request log.
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceUnavailable(requestInfo.FrontendRequest.TraceId),
+                Headers: [],
                 ContentType: "application/problem+json"
             );
         }
