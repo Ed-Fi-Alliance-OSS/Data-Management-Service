@@ -79,9 +79,11 @@ binding identity is unavailable; this never qualifies an incomplete run. Earlier
 version-1 reports without the field default to `None`.
 
 Execution has a 45-minute deadline and observes NUnit cancellation. Scenarios must
-honor cancellation and await their operations. Finalization uses independent
-30-second bounds for cancellation callbacks, draining outstanding work, local
-disposal, and each of two report writes. Budget up to 150 seconds for finalization,
+honor cancellation and await their operations. Cancellation callbacks, draining
+outstanding work, and local disposal share one independent 10-minute shutdown
+budget, covering the five-minute gate and two-minute pager drains with room for
+runtime/transport cleanup. Each of two final report writes has its own 30-second
+bound. Budget up to 11 minutes for finalization,
 plus initialization and the runner's governed infrastructure teardown reserve.
 Disposal is attempted after attachment failure as well as scenario failure.
 Outstanding work that does not drain makes disposal fail even if resource disposal
@@ -280,9 +282,9 @@ identity are resolved with the production configuration loader and state store.
 
 `qualification.json` is the runner-owned atomic stage summary. Its invocation UUID
 is persisted before prerequisites and passed to the fixture. Setup has a shared
-30-minute budget, tests have 50 minutes (including the fixture's 45-minute deadline
+30-minute budget, tests have 60 minutes (including the fixture's 45-minute deadline
 and finalization), governed teardown gets an independent 15 minutes, and export
-gets an independent 2 minutes. Reserve at least 100 minutes after workflow
+gets an independent 2 minutes. Reserve at least 110 minutes after workflow
 prerequisites. An OS kill can prevent finalization; incremental reports and the
 private ownership marker remain useful, but incomplete runs fail qualification.
 

@@ -11,16 +11,23 @@ internal sealed class CdcScenarioRunner
 {
     private readonly TimeSpan _executionTimeout;
     private readonly TimeSpan _finalizationTimeout;
+    private readonly TimeSpan _shutdownTimeout;
 
     public CdcScenarioRunner()
-        : this(TimeSpan.FromMinutes(45), TimeSpan.FromSeconds(30)) { }
+        : this(TimeSpan.FromMinutes(45), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(10)) { }
 
-    internal CdcScenarioRunner(TimeSpan executionTimeout, TimeSpan finalizationTimeout)
+    internal CdcScenarioRunner(
+        TimeSpan executionTimeout,
+        TimeSpan finalizationTimeout,
+        TimeSpan shutdownTimeout
+    )
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(executionTimeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(finalizationTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(shutdownTimeout, TimeSpan.Zero);
         _executionTimeout = executionTimeout;
         _finalizationTimeout = finalizationTimeout;
+        _shutdownTimeout = shutdownTimeout;
     }
 
     public async Task RunAsync(
@@ -99,10 +106,14 @@ internal sealed class CdcScenarioRunner
             report.Disposal.Outcome = CdcScenarioOutcome.Running;
             await PersistFinalizationAsync();
             // Cancellation of work must not cancel report persistence or local resource disposal.
+            // Share one shutdown reserve across callbacks, phase drain and disposal. It allows the
+            // five-minute gate and two-minute pager drains plus runtime/transport cleanup, while
+            // still bounding a stuck phase holding the runtime owner's lock or a stuck runtime stop.
+            using var shutdown = new CancellationTokenSource(_shutdownTimeout);
             CdcScenarioFailure shutdownFailure = CdcScenarioFailure.None;
             try
             {
-                await execution.CancelAsync().WaitAsync(_finalizationTimeout);
+                await execution.CancelAsync().WaitAsync(shutdown.Token);
             }
             catch (Exception exception)
             {
@@ -112,9 +123,9 @@ internal sealed class CdcScenarioRunner
             // passed if an operation outlives this independent bounded drain.
             try
             {
-                await pending.WaitAsync(_finalizationTimeout);
+                await pending.WaitAsync(shutdown.Token);
             }
-            catch (TimeoutException) when (!pending.IsCompleted)
+            catch (OperationCanceledException) when (shutdown.IsCancellationRequested && !pending.IsCompleted)
             {
                 shutdownFailure = CdcScenarioFailure.TimedOut;
             }
@@ -130,7 +141,7 @@ internal sealed class CdcScenarioRunner
 
             try
             {
-                await scenarios.DisposeAsync().AsTask().WaitAsync(_finalizationTimeout);
+                await scenarios.DisposeAsync().AsTask().WaitAsync(shutdown.Token);
                 report.Disposal.Outcome =
                     shutdownFailure == CdcScenarioFailure.None
                         ? CdcScenarioOutcome.Passed

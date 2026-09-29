@@ -499,7 +499,7 @@ Describe 'CDC qualification CI scheduling' {
     }
     It 'retains fail-closed prerequisites and sanitized artifacts in the nightly jobs' {
         $script:scheduledJob | Should -Match 'runs-on: ubuntu-latest'
-        $script:scheduledJob | Should -Match 'timeout-minutes: 120'
+        $script:scheduledJob | Should -Match 'timeout-minutes: 130'
         $script:scheduledJob | Should -Match 'fail-fast: false'
         $script:scheduledJob | Should -Not -Match 'continue-on-error:'
         foreach ($image in @('REDPANDA', 'POSTGRES', 'SQLSERVER_2025')) {
@@ -1093,7 +1093,7 @@ Describe 'CDC API E2E native process budgets' {
     }
     InModuleScope cdc-qualification {
         It 'accepts the actual <Seconds>-second stage budget through the real transport' -ForEach @(
-            @{ Seconds = 1800 }, @{ Seconds = 3000 }, @{ Seconds = 900 }
+            @{ Seconds = 1800 }, @{ Seconds = 3600 }, @{ Seconds = 900 }
         ) {
             $result = Invoke-CdcApiProcess -FilePath pwsh -Arguments @('-NoProfile', '-Command', 'exit 0') `
                 -LogPath (Join-Path $TestDrive "budget-$Seconds") -TimeoutSeconds $Seconds

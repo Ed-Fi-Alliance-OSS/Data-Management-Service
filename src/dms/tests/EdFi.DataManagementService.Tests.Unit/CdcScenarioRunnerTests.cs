@@ -25,7 +25,7 @@ public class Given_CdcScenarioRunnerAccounting
         Directory.CreateDirectory(_directory);
         _path = Path.Combine(_directory, "scenarios.json");
         _invocation = Guid.NewGuid().ToString("D");
-        _runner = new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1));
+        _runner = new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         _scenarios = new(_path, _invocation);
     }
 
@@ -265,7 +265,7 @@ public class Given_CdcScenarioRunnerAccounting
     [Test]
     public async Task It_records_timeout_and_awaits_cancelled_work_before_disposal()
     {
-        _runner = new(TimeSpan.FromMilliseconds(150), TimeSpan.FromSeconds(1));
+        _runner = new(TimeSpan.FromMilliseconds(150), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         bool unwound = false;
         _scenarios.OnPhase = async (_, token) =>
         {
@@ -288,10 +288,79 @@ public class Given_CdcScenarioRunnerAccounting
         Outcomes(Read()).Should().Equal(new[] { "Failed" }.Concat(Enumerable.Repeat("NotRun", 7)));
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_allows_cleanup_beyond_the_report_write_timeout(bool cancelPhase)
+    {
+        _runner = new(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(8));
+        using var cancellation = new CancellationTokenSource();
+        bool unwound = !cancelPhase;
+        bool disposed = false;
+        if (cancelPhase)
+        {
+            _scenarios.OnPhase = async (_, token) =>
+            {
+                try
+                {
+                    await cancellation.CancelAsync();
+                    token.ThrowIfCancellationRequested();
+                }
+                finally
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    unwound = true;
+                }
+            };
+        }
+        _scenarios.OnDispose = async () =>
+        {
+            unwound.Should().BeTrue();
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            disposed = true;
+        };
+
+        if (cancelPhase)
+        {
+            await ExpectFailure("CDC_API_CDC-E2E-01_Cancelled", cancellation.Token);
+        }
+        else
+        {
+            await RunAsync();
+        }
+
+        disposed.Should().BeTrue();
+        Outcome(Read(), "Disposal").Should().Be("Passed");
+    }
+
+    [Test]
+    public async Task It_shares_the_shutdown_budget_between_phase_drain_and_disposal()
+    {
+        _runner = new(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+        using var cancellation = new CancellationTokenSource();
+        Task disposal = Task.CompletedTask;
+        _scenarios.OnPhase = async (_, token) =>
+        {
+            await cancellation.CancelAsync();
+            await Task.Delay(TimeSpan.FromMilliseconds(1200));
+            token.ThrowIfCancellationRequested();
+        };
+        _scenarios.OnDispose = () => disposal = Task.Delay(TimeSpan.FromMilliseconds(1200));
+        try
+        {
+            await ExpectFailure("CDC_API_CDC-E2E-01_Cancelled", cancellation.Token);
+            Outcome(Read(), "Disposal").Should().Be("Failed");
+            Read()["Disposal"]!["Failure"]!.GetValue<string>().Should().Be("TimedOut");
+        }
+        finally
+        {
+            await disposal;
+        }
+    }
+
     [Test]
     public async Task It_records_noncooperative_work_as_failed_disposal_with_a_bounded_finalization()
     {
-        _runner = new(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(100));
+        _runner = new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(100));
         using var cancellation = new CancellationTokenSource();
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _scenarios.OnPhase = async (_, _) =>
@@ -317,7 +386,7 @@ public class Given_CdcScenarioRunnerAccounting
         bool timeout
     )
     {
-        _runner = new(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(100));
+        _runner = new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(100));
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _scenarios.OnDispose = () =>
             timeout ? release.Task : Task.FromException(new InvalidOperationException("private cleanup"));

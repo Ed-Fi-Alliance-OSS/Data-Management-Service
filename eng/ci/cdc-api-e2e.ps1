@@ -165,8 +165,8 @@ function Invoke-CdcApiQualification {
         # Serialize cooperating runner invocations before establishing absence/cleanup authority.
         $lock = [IO.File]::Open((Join-Path $Repo 'eng/docker-compose/.cdc-api-e2e.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
         Assert-CdcApiWorkspaceAbsent -Repo $Repo -PrivateDirectory $private
-        # 30 minutes shared by builds/preparation/admission, 50 for test+fixture finalization,
-        # then a fresh 15-minute cleanup budget. Workflow must reserve at least 100 minutes.
+        # 30 minutes shared by builds/preparation/admission, 60 for test+fixture finalization,
+        # then a fresh 15-minute cleanup budget. Workflow must reserve at least 110 minutes.
         foreach ($build in @($Configuration, 'Debug') | Select-Object -Unique) {
             $result = Invoke-CdcApiProcess -FilePath dotnet -Arguments @('build',
                 (Join-Path $Repo 'src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj'),
@@ -204,7 +204,7 @@ function Invoke-CdcApiQualification {
             (Join-Path $Repo 'src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj'),
             '-c', $Configuration, '--nologo', '--filter', 'FullyQualifiedName~Given_CdcApiE2E',
             '--results-directory', $private, '--logger', 'trx;LogFileName=api.trx', '--logger', 'console;verbosity=quiet') `
-            -LogPath (Join-Path $private 'test') -TimeoutSeconds 3000
+            -LogPath (Join-Path $private 'test') -TimeoutSeconds 3600
         $Report.ProcessExit = $result.ExitCode
         $process = Get-CdcQualificationReport -Path (Join-Path $private 'api.trx') -ExitCode $result.ExitCode
         foreach ($key in @('Status', 'Total', 'Passed', 'Failed', 'Skipped')) { $Report.ProcessResult[$key] = $process[$key] }

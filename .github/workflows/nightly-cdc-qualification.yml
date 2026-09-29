@@ -50,9 +50,9 @@ jobs:
     name: CDC Qualification (${{ matrix.lane }} / ${{ matrix.suite }})
     needs: select-suites
     runs-on: ubuntu-latest
-    # ApiE2E reserves 30m setup/build + 50m test + 15m cleanup + 2m export
+    # ApiE2E reserves 30m setup/build + 60m test + 15m cleanup + 2m export
     # inside the runner, leaving 23m for workflow prerequisites, pulls and upload.
-    timeout-minutes: 120
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-suites.outputs.matrix) }}
