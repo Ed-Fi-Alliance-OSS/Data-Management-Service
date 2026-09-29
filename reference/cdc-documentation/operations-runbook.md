@@ -795,12 +795,19 @@ provisioning. Keep DMS and test processes offline during preparation.
 | Input | E2E value/source | Permitted fixture replacement |
 | --- | --- | --- |
 | Environment | Absolute path to protected `eng/docker-compose/.env.e2e`; review its CMS credentials, database ports, identity settings and worker secret | Owned E2E environment |
+| Infrastructure startup | Add `-AddExtensionSecurityMetadata` to the provider's `start-local-dms.ps1 -InfraOnly` invocation before the first CMS startup | Same switch for both providers |
 | Primary database | Effective `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Set both `Cdc.SetupConnectionString` database and `ProviderConnectionProperties.database.dbname` to it | Fixture's dedicated new primary |
 | Snapshot | Effective `E2E_SNAPSHOT_DATABASE_NAME`; must differ from primary and reserved infrastructure/CMS databases | Fixture's dedicated snapshot |
 | Target/identity | Same CMS-selected ID in `DocumentCache.Targets` and `Cdc.DataStoreId`; example `1`/`datastore-1`, generation `1` | Actual fixture target/identity |
 | Settings/state | Write the complete merged settings as `.local/cdc/postgresql-e2e.json`; use original `.local/cdc/state-pg-e2e` from first provisioning | Owned fixture paths |
 | Schemas | Selected E2E environment's `SCHEMA_PACKAGES`, including Sample/Homograph test extensions; staged identically for primary, snapshot and runtime | Matching fixture core/extensions |
 | Endpoints/principals | Effective E2E host ports, container endpoints, CMS credentials, setup principal and existing `cdc_reader` | Matching fixture values |
+
+The infrastructure switch stages extension and test-owned E2E claim fragments before
+CMS initializes its claims tables. The later E2E wrapper also stages these fragments,
+but CMS skips initial claims loading when those tables are already populated; a
+restart cannot supply claim sets omitted at first startup. Apply this switch during
+the fresh infrastructure preparation for both PostgreSQL and SQL Server.
 
 In `cdc-pg-settings`, replace the base settings with the complete normal settings for
 this E2E deployment, the settings/state/environment paths with this table's paths,
@@ -911,6 +918,7 @@ and must not be used to insert a manual primary-user creation step.
 | Input in SQL Server preparation | E2E value/source | Permitted fixture replacement |
 | --- | --- | --- |
 | `./eng/docker-compose/.env` everywhere, including infrastructure and `Cdc.Compose.EnvironmentFile` | Protected `./eng/docker-compose/.env.e2e`, with effective MSSQL/CMS/worker credentials and `MSSQL_PORT` | Owned E2E environment with matching effective endpoints/secrets |
+| Infrastructure startup | Add `-AddExtensionSecurityMetadata` to `start-local-dms.ps1 -InfraOnly` before the first CMS startup, as in the common E2E requirements | Same shipped switch |
 | Complete base settings | Full normal DMS settings for this E2E deployment, including CMS credentials and self-contained identity | Fixture complete normal settings, not a standalone `Cdc` fragment |
 | `.local/cdc/sqlserver.json`, `.local/cdc/state-sqlserver` | `.local/cdc/sqlserver-e2e.json`, original `.local/cdc/state-sqlserver-e2e` | Owned fixture settings/state roots |
 | `edfi_cdc` in masked setup connection and `database.names` | Effective `E2E_DATABASE_NAME`, default `edfi_datamanagementservice_e2e` | Same dedicated primary in CMS registration, provisioner, connector and tests |

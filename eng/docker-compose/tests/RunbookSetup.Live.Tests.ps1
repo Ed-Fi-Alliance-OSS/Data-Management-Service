@@ -118,8 +118,9 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $suffix = if ($E2e) { '-e2e' } else { '' }
         $settingsPath = Join-Path $local "$providerName$suffix.json"
         $statePath = Join-Path $local "$stateName$suffix"
-        # Exact infrastructure snippet, with its declared environment-path substitution.
+        # Infrastructure snippet with the documented E2E environment/claims substitutions.
         $infra = (Get-CdcRunbookCode "$prefix-infrastructure").Replace('./eng/docker-compose/.env', $environmentFile)
+        if ($E2e) { $infra = $infra.Replace('-InfraOnly', '-InfraOnly -AddExtensionSecurityMetadata') }
         if ($Published) { $infra = $infra.Replace('start-local-dms.ps1', 'start-published-dms.ps1') }
         (Invoke-PrivateScript "$prefix-infrastructure" $infra).ExitCode | Should -Be 0
         (& docker inspect $databaseContainer --format '{{.Config.Image}}') | Should -Be $providerImage
@@ -132,6 +133,26 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
             # Container-owned secret, never a password argument or output artifact.
             return Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-mssql', 'sh', '-c',
                 'SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -d "$1"', 'sqlcmd', $Database) -InputText ("SET NOCOUNT ON;`n" + $Sql)
+        }
+        if ($E2e) {
+            # Assert first-start initialization before the E2E wrapper stages its bootstrap claims.
+            # Restarting CMS later cannot add missing claim sets to already-populated tables.
+            $claims = if ($SqlServer) {
+                Invoke-FixtureSql -Database 'edfi_configurationservice' -Sql "SELECT ClaimSetName FROM dmscs.ClaimSet WHERE ClaimSetName LIKE 'E2E-%';"
+            } else {
+                $claimsSql = 'SELECT "ClaimSetName" FROM "dmscs"."ClaimSet" WHERE "ClaimSetName" LIKE ''E2E-%'';'
+                Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'edfi_configurationservice', '-At', '-v', 'ON_ERROR_STOP=1') -InputText $claimsSql
+            }
+            $claims.FailureKind | Should -Be 'None'
+            $claims.ExitCode | Should -Be 0
+            @($claims.StandardOutput.Trim() -split '\r?\n' | ForEach-Object { $_.Trim() } | Sort-Object) | Should -Be @(
+                'E2E-NameSpaceBasedClaimSet'
+                'E2E-NoFurtherAuthRequiredClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
+            ) -Because 'E2E claims must be loaded on the first CMS startup'
         }
         if ($SqlServer) {
             $server = (& docker inspect dms-mssql | ConvertFrom-Json)[0]
