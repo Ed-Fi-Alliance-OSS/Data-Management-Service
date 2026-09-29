@@ -90,9 +90,16 @@ internal sealed partial class CdcApiScenarios
                 await CheckpointAsync(scenarioId, "healthy-before-loss", source, source.ContentVersion);
 
                 await CdcTerminalLossFault.InjectAsync(_context.Connect, request, request.Timing, ct);
+                int stopCallsAfterInjection = phase.ConnectorStopCalls;
                 await EventAsync("connector-stopped-tasks-zero-offsets-deleted-once-authoritative-Missing");
                 var lost = (await phase.StatusAsync(ct)).Targets.Should().ContainSingle().Subject;
                 CdcTerminalLossAssertions.AssertLost(lost);
+                phase
+                    .ConnectorStopCalls.Should()
+                    .BeGreaterThan(
+                        stopCallsAfterInjection,
+                        "production containment must issue a stop after the fault injection"
+                    );
                 await CdcTerminalLossFault.VerifyStoppedAsync(_context.Connect, request, request.Timing, ct);
                 var incident = CdcTerminalLossAssertions.AssertRetained(
                     await phase.ReadRetainedBindingAsync(ct),

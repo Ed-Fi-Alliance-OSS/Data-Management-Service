@@ -19,8 +19,10 @@ internal sealed class CdcOffsetEvidenceTransport(ICdcConnectTransport inner) : I
     private CdcConnectOffsetEvidence _healthyEvidence = null!;
     private int _replayedReads;
     private int _startCalls;
+    private int _stopCalls;
     public int ReplayedReads => Volatile.Read(ref _replayedReads);
     public int StartCalls => Volatile.Read(ref _startCalls);
+    public int StopCalls => Volatile.Read(ref _stopCalls);
     public int UnavailableReads => Volatile.Read(ref _unavailableReads);
 
     public async Task RunUnavailableAsync(
@@ -167,7 +169,11 @@ internal sealed class CdcOffsetEvidenceTransport(ICdcConnectTransport inner) : I
     public Task<CdcTransportResult<CdcTransportAcknowledgement>> StopAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
-    ) => inner.StopAsync(request, cancellationToken);
+    )
+    {
+        Interlocked.Increment(ref _stopCalls);
+        return inner.StopAsync(request, cancellationToken);
+    }
 
     public Task<CdcTransportResult<CdcTransportAcknowledgement>> DeleteAsync(
         CdcDeploymentRequest request,

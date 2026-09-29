@@ -74,6 +74,7 @@ public class Given_CdcOffsetEvidenceTransport
         A.CallTo(() => _inner.DeleteOffsetsAsync(null!, token)).MustHaveHappenedOnceExactly();
         A.CallTo(() => _inner.RestartAsync(null!, token)).MustHaveHappenedOnceExactly();
         A.CallTo(() => _inner.StopAsync(null!, token)).MustHaveHappenedOnceExactly();
+        _transport.StopCalls.Should().Be(1);
         A.CallTo(() => _inner.DeleteAsync(null!, token)).MustHaveHappenedOnceExactly();
         (await _transport.ReadOffsetEvidenceAsync(null!, token)).Should().BeSameAs(_evidence);
         A.CallTo(() => _inner.ReadOffsetEvidenceAsync(null!, token)).MustHaveHappenedOnceExactly();

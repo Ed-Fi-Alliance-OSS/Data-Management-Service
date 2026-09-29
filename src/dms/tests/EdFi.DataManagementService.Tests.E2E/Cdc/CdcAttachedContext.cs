@@ -345,6 +345,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
 
         public int ReplayedOffsetReads => Current._offsetEvidence.ReplayedReads;
         public int ConnectorStartCalls => Current._offsetEvidence.StartCalls;
+        public int ConnectorStopCalls => Current._offsetEvidence.StopCalls;
 
         public Task RunWithHealthyOffsetsAsync(
             CdcConnectOffsetEvidence evidence,
