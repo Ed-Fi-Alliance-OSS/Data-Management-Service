@@ -786,7 +786,7 @@
   {
     "id": "T23",
     "category": "provider-qualification",
-    "description": "Complete one full Postgresql API E2E qualification through the runner with workflow-equivalent inputs on an exclusively owned disposable stack.",
+    "description": "Qualify all eight API-to-Kafka scenarios on PostgreSQL through the existing runner, including setup, governed teardown, and sanitized completion evidence.",
     "deliverable": "Eight passing Postgresql scenario results, successful governed cleanup and reproducible sanitized evidence indexed in the existing CDC evidence document.",
     "files-to-read": [
       "eng/ci/Invoke-CdcQualification.ps1",
@@ -795,22 +795,21 @@
       "reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md"
     ],
     "acceptance-criteria": [
-      "Use the actual admitted database, real HTTP API mutations, production projection/capture, the qualified connector and bounded consumers. All eight phases run on one binding with no intermediate resets; terminal loss is last.",
+      "Use workflow-equivalent inputs on an exclusively owned disposable stack with the actual admitted database, real HTTP API mutations, production projection/capture, the qualified connector and bounded consumers. All eight phases run on one binding with no intermediate resets; terminal loss is last.",
       "Require setup, all eight scenario IDs and teardown to pass. Environment failures, skips, partial runs or missing results cannot count as completion.",
-      "Use successful source/work/cache and sequence reads in the existing scenarios as T33 live authentication evidence, together with the retained connection-factory implementation and default PersistSecurityInfo=false. Add no credential-specific instrumentation, authentication harness, separate stack or extra scenario; do not reopen the connection-factory design without a demonstrated failure.",
-      "Record the command, tested revision, qualified image/provider/broker/runtime inputs and sanitized evidence reference. Keep private settings and raw diagnostics out of the repository.",
-      "Retain historical failed-run evidence. T31 PATH_BASE normalization was corrected by b50ecaf7b and T34 local authorization-notice handling by 586433c24; both passed in the latest PostgreSQL handoff/attachment run. Keep those resolved causes distinct from pending full qualification. Do not repeat either investigation without new contradictory evidence, reopen the completed T28 scan consolidation, or add a diagnostics framework.",
-      "Complete the existing eight-scenario provider run after T36. Retain the post-T35 Error run separately from the earlier gate timeout; do not treat either partial run as qualification. Once the full run and governed cleanup pass, record the evidence and stop; repeat only when a subsequent behavior change invalidates that evidence or a demonstrated failure requires correction. Add no resource, fault, concurrency or consumer matrix. Diagnose newly demonstrated failures before retrying and capture nontrivial fixes as bounded follow-ups; do not retry unchanged failures blindly.",
-      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup from the previous run must complete before another setup.",
-      "The post-T36 PostgreSQL run at 3747f180b passed Student CRUD and then failed CDC-E2E-02 with Error before any descriptor checkpoint. T37 owns bounded diagnosis/regression before another qualification. Preserve this partial passing evidence separately; it establishes source/work/cache observations but not the sequence path or full qualification."
+      "Record the command, tested revision, qualified image/provider/broker/runtime inputs and sanitized evidence reference in the existing evidence index. Keep private settings and raw diagnostics out of the repository.",
+      "Limit qualification to the existing eight scenarios. Add no resource, fault, concurrency, consumer or authentication matrix, separate harness or diagnostics framework. Diagnose demonstrated failures before retrying and keep necessary corrections bounded.",
+      "Once the full run and governed cleanup pass, record the evidence. Repeat only when a subsequent behavior change invalidates that evidence or a demonstrated failure requires correction.",
+      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup must complete before another setup."
     ],
     "steps-to-verify": [
       "pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-postgresql",
-      "Inspect eight distinct Passed scenario IDs and successful attachment/disposal in the fixture report, plus successful setup/teardown, process and export outcomes in the runner summary. Verify invocation/provider/binding identity matches, confirm governed cleanup evidence, and update the evidence index. Confirm existing scenario execution reached all four T33 database observation paths; report their success without adding a separate credential artifact. Keep the evidence update to the existing index and sanitized runner outputs."
+      "Inspect eight distinct Passed scenario IDs and successful attachment/disposal in the fixture report, plus successful setup/teardown, process and export outcomes in the runner summary. Verify invocation/provider/binding identity matches, confirm governed cleanup evidence, and update the existing evidence index with sanitized runner outputs."
     ],
     "depends-on": [
       "T22",
       "T31",
+      "T32",
       "T33",
       "T34",
       "T35",
@@ -822,7 +821,7 @@
   {
     "id": "T24",
     "category": "provider-qualification",
-    "description": "Complete one full Mssql API E2E qualification through the runner with workflow-equivalent inputs on an exclusively owned disposable stack.",
+    "description": "Qualify all eight API-to-Kafka scenarios on SQL Server through the existing runner, including setup, governed teardown, and sanitized completion evidence.",
     "deliverable": "Eight passing Mssql scenario results, successful governed cleanup and reproducible sanitized evidence indexed in the existing CDC evidence document.",
     "files-to-read": [
       "eng/ci/Invoke-CdcQualification.ps1",
@@ -831,22 +830,21 @@
       "reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md"
     ],
     "acceptance-criteria": [
-      "Use the actual admitted database, real HTTP API mutations, production projection/capture, the qualified connector and bounded consumers. All eight phases run on one binding with no intermediate resets; terminal loss is last.",
+      "Use workflow-equivalent inputs on an exclusively owned disposable stack with the actual admitted database, real HTTP API mutations, production projection/capture, the qualified connector and bounded consumers. All eight phases run on one binding with no intermediate resets; terminal loss is last.",
       "Require setup, all eight scenario IDs and teardown to pass. Environment failures, skips, partial runs or missing results cannot count as completion.",
-      "Use successful source/work/cache and sequence reads in the existing scenarios as T33 live authentication evidence, together with the retained connection-factory implementation and default PersistSecurityInfo=false. Add no credential-specific instrumentation, authentication harness, separate stack or extra scenario; do not reopen the connection-factory design without a demonstrated failure.",
-      "Record the command, tested revision, qualified image/provider/broker/runtime inputs and sanitized evidence reference. Keep private settings and raw diagnostics out of the repository.",
-      "Retain historical failed-run evidence. T31 PATH_BASE normalization was corrected by b50ecaf7b and T34 local authorization-notice handling by 586433c24; both passed in the latest PostgreSQL handoff/attachment run. Keep those resolved causes distinct from pending full qualification. Do not repeat either investigation without new contradictory evidence, reopen the completed T28 scan consolidation, or add a diagnostics framework.",
-      "Complete the existing eight-scenario provider run after T36. Retain the post-T35 Error run separately from the earlier gate timeout; do not treat either partial run as qualification. Once the full run and governed cleanup pass, record the evidence and stop; repeat only when a subsequent behavior change invalidates that evidence or a demonstrated failure requires correction. Add no resource, fault, concurrency or consumer matrix. Diagnose newly demonstrated failures before retrying and capture nontrivial fixes as bounded follow-ups; do not retry unchanged failures blindly.",
-      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup from the previous run must complete before another setup.",
-      "The post-T36 PostgreSQL run at 3747f180b passed Student CRUD and then failed CDC-E2E-02 with Error before any descriptor checkpoint. T37 owns bounded diagnosis/regression before another qualification. Preserve this partial passing evidence separately; it establishes source/work/cache observations but not the sequence path or full qualification."
+      "Record the command, tested revision, qualified image/provider/broker/runtime inputs and sanitized evidence reference in the existing evidence index. Keep private settings and raw diagnostics out of the repository.",
+      "Limit qualification to the existing eight scenarios. Add no resource, fault, concurrency, consumer or authentication matrix, separate harness or diagnostics framework. Diagnose demonstrated failures before retrying and keep necessary corrections bounded.",
+      "Once the full run and governed cleanup pass, record the evidence. Repeat only when a subsequent behavior change invalidates that evidence or a demonstrated failure requires correction.",
+      "Run provider qualifications serially when using the same local Compose workspace. Governed cleanup must complete before another setup."
     ],
     "steps-to-verify": [
       "pwsh ./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite ApiE2E -ResultsDirectory TestResults/cdc-api-e2e-mssql",
-      "Inspect eight distinct Passed scenario IDs and successful attachment/disposal in the fixture report, plus successful setup/teardown, process and export outcomes in the runner summary. Verify invocation/provider/binding identity matches, confirm governed cleanup evidence, and update the evidence index. Confirm existing scenario execution reached all four T33 database observation paths; report their success without adding a separate credential artifact. Keep the evidence update to the existing index and sanitized runner outputs."
+      "Inspect eight distinct Passed scenario IDs and successful attachment/disposal in the fixture report, plus successful setup/teardown, process and export outcomes in the runner summary. Verify invocation/provider/binding identity matches, confirm governed cleanup evidence, and update the existing evidence index with sanitized runner outputs."
     ],
     "depends-on": [
       "T22",
       "T31",
+      "T32",
       "T33",
       "T34",
       "T35",
@@ -858,7 +856,7 @@
   {
     "id": "T32",
     "category": "test-support-simplification",
-    "description": "Low, non-blocking cleanup: Remove unused CDC API fixture entry points and the obsolete failure-suppressing disposal helper. CdcEnvelopeExpectations.AssertUpsert, CdcAttachedContext.Phase.OpenRuntimeAsync and CdcAttachedContext.DisposeAfterFailureAsync have no callers; CdcAttachmentResources.DisposeAfterFailureAsync is reached only by an isolated unit test. These unused paths duplicate active assertion/runtime/cleanup ownership and leave misleading cleanup coverage.",
+    "description": "Remove the listed unused CDC fixture members and obsolete isolated test. Optional cleanup; does not block story acceptance.",
     "acceptance-criteria": [
       "Remove CdcEnvelopeExpectations.AssertUpsert and its now-unused imports; retain Create and the active CdcCrudAssertions/MessageContractRecordAssertions path.",
       "Remove CdcAttachedContext.Phase.OpenRuntimeAsync and CdcAttachedContext.DisposeAfterFailureAsync; retain OpenRestartRuntimeAsync, initialization through CdcRuntimeOwner, and ordinary DisposeAsync.",
@@ -970,26 +968,25 @@
   {
     "id": "T37",
     "category": "e2e-descriptor-diagnosis",
-    "description": "High: Diagnose and repair CDC-E2E-02 Error before its first descriptor checkpoint. T23 at 3747f180b passed attachment and complete Student CRUD, then failed descriptor CRUD; six later scenarios did not run. The original exception is discarded, so the failing operation and cause remain unproven.",
+    "description": "Diagnose and resolve the descriptor CRUD scenario failure that blocks full provider qualification.",
     "deliverable": "Confirmed failing operation/root cause and a bounded story-owned correction with focused regression; preserve full T23/T24 qualification as separate tasks.",
     "files-to-read": [
       "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiScenarios.DescriptorCrud.cs",
       "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiScenarios.Crud.cs",
       "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiClient.cs",
       "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcScenarioRunner.cs",
-      "reference/cdc-documentation/evidence/dms1325-t23-postgresql-descriptor-blocked/run-details.json"
+      "reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md"
     ],
     "acceptance-criteria": [
-      "Identify the original failing operation and exception with private diagnostics or a faithful isolated reproduction before retrying qualification",
-      "Inspect the transition from completed Student CRUD into descriptor initial boundaries, capture inventory, readiness, POST, gate selection, source/work/cache reads and GET; absent descriptor checkpoints do not identify the failing operation",
-      "Add a focused regression for the confirmed story-owned defect, retaining real API mutations, production projection, complete descriptor/public-record assertions, admission and finite deadlines",
-      "Preserve the passed Student CRUD evidence; do not reopen T31/T34/T35/T36 or infer a T33 observer-authentication regression without contradictory evidence",
-      "Keep raw exceptions, credentials, settings and document bodies private; no diagnostics framework, additional matrix or production changes based on speculation",
-      "If the cause is outside this story, record it in PROBLEMS.md and stop; otherwise fresh full T23/T24 runner qualifications remain required after correction"
+      "Identify the failing operation and original exception with private diagnostics or a faithful isolated reproduction before changing code or retrying qualification.",
+      "Inspect the descriptor scenario path from initial boundaries and capture inventory through readiness, POST, gate selection, source/work/cache reads and GET as needed to establish the cause.",
+      "For a confirmed story-owned code defect, make a narrow correction and add a focused regression, retaining real API mutations, production projection, complete descriptor/public-record assertions, admission and finite deadlines.",
+      "Keep raw exceptions, credentials, settings and document bodies private. Remove temporary diagnostic instrumentation before completion. Add no diagnostics framework, additional matrix or production changes based on speculation.",
+      "If the cause is outside this story, record it in PROBLEMS.md and stop; otherwise full T23/T24 runner qualifications remain required after correction."
     ],
     "steps-to-verify": [
       "Reproduce the confirmed failing operation with private diagnostics or faithful isolated coverage; do not run unchanged full qualification blindly. Remove temporary instrumentation before final validation.",
-      "Run the focused regression red before correction and green afterward; run the affected CDC unit coverage and Release E2E build, with CSharpier formatting and git diff --check.",
+      "For a code correction, demonstrate that the focused regression fails before the correction and passes afterward. Run affected CDC unit coverage and the Release E2E build, format changed C# with CSharpier, and run git diff --check.",
       "If a diagnostic stack is necessary, use existing admitted runner setup and governed cleanup serially on an exclusively owned disposable workspace; verify resource absence. Keep sanitized evidence separate from raw private diagnostics.",
       "Leave T23/T24 incomplete until their fresh full eight-phase runs and governed cleanup pass."
     ],
