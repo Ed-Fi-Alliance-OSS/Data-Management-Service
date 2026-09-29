@@ -22,9 +22,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// <summary>
 /// Public-boundary coverage for OwnershipBased authorization: the exact ProblemDetails wire contracts from
 /// <c>auth.md</c> 2.13 and 2.14, stamping on create, the authorized round trip, the GET-many page filter, the
-/// provider-independent token cap, descriptor GET-by-id and writes, and descriptor DELETE, which stays withheld
-/// with a 501. The provider matrix
-/// lives in the backend suites; this scenario owns only what those cannot observe - the served response body
+/// provider-independent token cap, descriptor single-record reads and writes, and descriptor GET-many and
+/// partitions, which stay withheld with a 501. The provider matrix lives in the backend suites; this scenario owns only what those cannot observe - the served response body
 /// and the real application-context plumbing that carries the caller's ownership tokens.
 /// </summary>
 /// <remarks>
@@ -100,8 +99,8 @@ internal static class OwnershipAuthorizationIntegrationScenario
     /// <summary>
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
     /// is stamped or, for a caller that could not own the row, refused; every single-record read and write is
-    /// enforced; GET-many is filtered; descriptor GET-by-id and writes are enforced and descriptor DELETE stays
-    /// withheld. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp is
+    /// enforced; GET-many is filtered; descriptor single-record operations are enforced and descriptor GET-many
+    /// stays withheld. Seeding goes through the owner, whose creates are authorized, and a NULL or foreign stamp is
     /// fabricated directly when a step needs one.
     /// </summary>
     /// <remarks>
@@ -520,13 +519,13 @@ internal static class OwnershipAuthorizationIntegrationScenario
         int.Parse(response.Headers.GetValues("Total-Count").Single(), CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Descriptor GET-by-id, POST and PUT are enforced with the same bodies as a regular resource: the owner is
-    /// served and may create and update, a holder of other tokens gets 2.13, a descriptor never stamped gets
-    /// 2.14, a create the caller could not own is refused with no row, an unknown id is a 404 rather than a
-    /// 403, and the token cap is the security-configuration 500 with 1,999 still served. DELETE stays withheld
-    /// with a 501.
+    /// Descriptor GET-by-id, POST, PUT and DELETE are enforced with the same bodies as a regular resource: the
+    /// owner is served and may create, update and delete, a holder of other tokens gets 2.13, a descriptor
+    /// never stamped gets 2.14, a create the caller could not own is refused with no row, an unknown id is a
+    /// 404 rather than a 403, and the token cap is the security-configuration 500 with 1,999 still served.
+    /// Descriptor GET-many and partitions stay withheld with a 501.
     /// </summary>
-    public static async Task It_enforces_descriptor_ownership_on_reads_and_writes_and_withholds_delete_with_a_501(
+    public static async Task It_enforces_descriptor_single_record_ownership_and_withholds_descriptor_pages_with_a_501(
         ApiIntegrationHarness harness
     )
     {
@@ -665,10 +664,59 @@ internal static class OwnershipAuthorizationIntegrationScenario
         string unknownPutBody = await unknownPut.Content.ReadAsStringAsync();
         unknownPut.StatusCode.Should().Be(HttpStatusCode.NotFound, unknownPutBody);
 
-        // DELETE is the one descriptor operation still withheld; an unknown id also proves the gate precedes
-        // target lookup.
-        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(unknownPath);
-        await AssertNotImplementedAsync(deleteResponse);
+        // DELETE is decided by the stored stamp like every other single-record operation: a holder of other
+        // tokens gets 2.13 and the row stays, a descriptor never stamped gets 2.14, an unknown id is a 404
+        // rather than a 403, and the owner deletes.
+        long documentCountBeforeDeletes = await CountDocumentsAsync(harness);
+
+        using HttpResponseMessage foreignDelete = await harness.HttpClient.DeleteAsync(
+            GradeLevelDescriptorPath(ForeignTenant, gradeLevelId)
+        );
+        await AssertOwnershipDenialAsync(foreignDelete, MismatchType, []);
+
+        using HttpResponseMessage unstampedDelete = await harness.HttpClient.DeleteAsync(
+            SeedableDescriptorPath(OwnerTenant, unstampedId)
+        );
+        await AssertOwnershipDenialAsync(
+            unstampedDelete,
+            StoredUninitializedType,
+            _storedUninitializedErrors
+        );
+        (await CountDocumentsAsync(harness)).Should().Be(documentCountBeforeDeletes);
+
+        using HttpResponseMessage unknownDelete = await harness.HttpClient.DeleteAsync(
+            GradeLevelDescriptorPath(ForeignTenant, Guid.NewGuid())
+        );
+        string unknownDeleteBody = await unknownDelete.Content.ReadAsStringAsync();
+        unknownDelete.StatusCode.Should().Be(HttpStatusCode.NotFound, unknownDeleteBody);
+
+        using HttpResponseMessage ownerDelete = await harness.HttpClient.DeleteAsync(
+            GradeLevelDescriptorPath(OwnerTenant, gradeLevelId)
+        );
+        string ownerDeleteBody = await ownerDelete.Content.ReadAsStringAsync();
+        ownerDelete.StatusCode.Should().Be(HttpStatusCode.NoContent, ownerDeleteBody);
+        (await CountDocumentsAsync(harness)).Should().Be(documentCountBeforeDeletes - 1);
+
+        using HttpResponseMessage deletedGet = await harness.HttpClient.GetAsync(
+            GradeLevelDescriptorPath(OwnerTenant, gradeLevelId)
+        );
+        string deletedGetBody = await deletedGet.Content.ReadAsStringAsync();
+        deletedGet.StatusCode.Should().Be(HttpStatusCode.NotFound, deletedGetBody);
+
+        // Descriptor GET-many and partitions have no ownership page filter yet, so both stay withheld with a
+        // 501 rather than serving an unfiltered page, for the owner as for a caller over the token cap.
+        foreach (string tenant in (string[])[OwnerTenant, TokenCapTenant])
+        {
+            string collectionPath = string.Format(GradeLevelDescriptorsEndpointFormat, tenant);
+
+            using HttpResponseMessage queryResponse = await harness.HttpClient.GetAsync(collectionPath);
+            await AssertNotImplementedAsync(queryResponse);
+
+            using HttpResponseMessage partitionsResponse = await harness.HttpClient.GetAsync(
+                $"{collectionPath}/partitions"
+            );
+            await AssertNotImplementedAsync(partitionsResponse);
+        }
     }
 
     private static string GradeLevelDescriptorPath(string tenant, Guid documentId) =>

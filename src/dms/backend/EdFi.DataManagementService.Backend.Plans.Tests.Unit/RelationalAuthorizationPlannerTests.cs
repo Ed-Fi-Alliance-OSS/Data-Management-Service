@@ -579,8 +579,9 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// Descriptor ownership enforcement is out of scope, so descriptor GET-many keeps OwnershipBased in the
-    /// classifier bucket and its known-but-not-enabled 501, and the token cap is never consulted for it.
+    /// Descriptor GET-many does not apply the ownership page filter yet, so it keeps OwnershipBased in the
+    /// classifier bucket and its known-but-not-enabled 501 — for a caller under the token cap and over it,
+    /// because the cap is never consulted for an operation that does not enforce ownership.
     /// </summary>
     [TestCase(false)]
     [TestCase(true)]
@@ -637,7 +638,7 @@ public class Given_RelationalAuthorizationPlanner
             foreach (var storageKind in Enum.GetValues<ResourceStorageKind>())
             {
                 (
-                    RelationalAuthorizationPlanner.EnforcesOwnershipChecks(operation, storageKind)
+                    RelationalAuthorizationPlanner.EnforcesOwnershipChecks(operation)
                     && RelationalAuthorizationPlanner.EnforcesOwnershipPageFilter(operation, storageKind)
                 )
                     .Should()
@@ -1167,9 +1168,10 @@ public class Given_RelationalAuthorizationPlanner
 
     // ── DMS-1060 ownership enablement gate ──────────────────────────────
     //
-    // Every single-record operation is enforced; ReadMany is withheld for the whole story. The predicate is
-    // asserted directly as well as through plan outcomes, because a withheld operation produces the same 501
-    // whether the gate withheld it or the classifier never saw it, and only the predicate separates those.
+    // Every single-record operation is enforced, for relationally stored resources and descriptors alike.
+    // ReadMany is withheld from this gate and has its own. The predicate is asserted directly as well as
+    // through plan outcomes, because a withheld operation produces the same 501 whether the gate withheld it
+    // or the classifier never saw it, and only the predicate separates those.
 
     /// <summary>
     /// Every single-record operation, and only those. Each enforcement step added its own operation in the
@@ -1181,10 +1183,7 @@ public class Given_RelationalAuthorizationPlanner
     [TestCase(NamespaceAuthorizationOperation.Delete)]
     public void It_enforces_ownership_for_the_enabled_operations(NamespaceAuthorizationOperation operation)
     {
-        RelationalAuthorizationPlanner
-            .EnforcesOwnershipChecks(operation, ResourceStorageKind.RelationalTables)
-            .Should()
-            .BeTrue();
+        RelationalAuthorizationPlanner.EnforcesOwnershipChecks(operation).Should().BeTrue();
     }
 
     /// <summary>
@@ -1195,67 +1194,9 @@ public class Given_RelationalAuthorizationPlanner
     public void It_withholds_ownership_enforcement_for_read_many()
     {
         RelationalAuthorizationPlanner
-            .EnforcesOwnershipChecks(
-                NamespaceAuthorizationOperation.ReadMany,
-                ResourceStorageKind.RelationalTables
-            )
+            .EnforcesOwnershipChecks(NamespaceAuthorizationOperation.ReadMany)
             .Should()
             .BeFalse();
-    }
-
-    /// <summary>
-    /// Descriptor storage is withheld for every operation whose descriptor executor is not yet wired. Before
-    /// ownership had a bucket of its own, descriptors were protected only incidentally — by the descriptor
-    /// guardrail rejecting every non-namespace strategy — so splitting ownership out would have removed that
-    /// protection silently. This is the named replacement.
-    /// </summary>
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
-    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
-    public void It_withholds_ownership_enforcement_for_descriptor_storage(
-        NamespaceAuthorizationOperation operation
-    )
-    {
-        RelationalAuthorizationPlanner
-            .EnforcesOwnershipChecks(operation, ResourceStorageKind.SharedDescriptorTable)
-            .Should()
-            .BeFalse();
-    }
-
-    /// <summary>
-    /// Descriptor GET-by-id and the descriptor write verbs run the stored-stamp check, so their gates are open.
-    /// </summary>
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
-    [TestCase(NamespaceAuthorizationOperation.Update)]
-    public void It_enforces_ownership_for_the_wired_descriptor_operations(
-        NamespaceAuthorizationOperation operation
-    )
-    {
-        RelationalAuthorizationPlanner
-            .EnforcesOwnershipChecks(operation, ResourceStorageKind.SharedDescriptorTable)
-            .Should()
-            .BeTrue();
-    }
-
-    /// <summary>
-    /// The descriptor arm is its own set, not the relational one: every single-record operation is enforced
-    /// for relational resources, but descriptor storage admits only the operation whose descriptor executor
-    /// is wired.
-    /// </summary>
-    [Test]
-    public void It_enforces_descriptor_ownership_only_for_the_wired_operations()
-    {
-        foreach (var operation in Enum.GetValues<NamespaceAuthorizationOperation>())
-        {
-            RelationalAuthorizationPlanner
-                .EnforcesOwnershipChecks(operation, ResourceStorageKind.SharedDescriptorTable)
-                .Should()
-                .Be(
-                    operation
-                        is NamespaceAuthorizationOperation.ReadSingle
-                            or NamespaceAuthorizationOperation.Update,
-                    $"only descriptor GET-by-id and the write verbs enforce ownership so far ({operation})"
-                );
-        }
     }
 
     /// <summary>
@@ -1442,8 +1383,8 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// Deferral changes only how the cap is reported; it cannot open the descriptor boundary. A descriptor
-    /// operation still withheld keeps its 501 when asked to defer, because ownership is not enforced there.
+    /// Deferral changes only how the cap is reported; it cannot open the descriptor page-filter boundary.
+    /// Descriptor GET-many keeps its 501 when asked to defer, because it does not apply the filter yet.
     /// </summary>
     [Test]
     public void It_keeps_descriptor_ownership_unsupported_when_the_token_cap_is_deferred()
@@ -1451,7 +1392,7 @@ public class Given_RelationalAuthorizationPlanner
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
             DescriptorResource(),
-            NamespaceAuthorizationOperation.Delete,
+            NamespaceAuthorizationOperation.ReadMany,
             [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
             OverCapOwnershipContext(),
             OwnershipTokenCapHandling.DeferToTargetResolution
@@ -1615,24 +1556,21 @@ public class Given_RelationalAuthorizationPlanner
     // ── Out-of-scope boundaries, asserted rather than inferred from absence ─
 
     /// <summary>
-    /// A descriptor configured with OwnershipBased keeps its known-but-not-enabled 501 on every operation
-    /// whose descriptor executor is not yet wired.
+    /// A descriptor GET-many configured with OwnershipBased keeps its known-but-not-enabled 501, and the
+    /// strategy the classifier reports is OwnershipBased itself.
     /// </summary>
     /// <remarks>
-    /// The behavioral counterpart to the gate-predicate assertions above. Before ownership had a bucket of
-    /// its own this held only incidentally, because the descriptor guardrail rejects every non-namespace
-    /// strategy; splitting ownership out could have removed that with no failing test.
+    /// The behavioral counterpart to the page-filter gate's matrix. Before ownership had a bucket of its own
+    /// this held only incidentally, because the descriptor guardrail rejects every non-namespace strategy;
+    /// splitting ownership out could have removed that with no failing test.
     /// </remarks>
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
-    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
-    public void It_keeps_descriptor_ownership_unsupported_for_every_operation_not_yet_enforced(
-        NamespaceAuthorizationOperation operation
-    )
+    [Test]
+    public void It_keeps_descriptor_ownership_unsupported_for_read_many()
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
             DescriptorResource(),
-            operation,
+            NamespaceAuthorizationOperation.ReadMany,
             [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
             TwoPrefixContext()
         );
@@ -1650,13 +1588,14 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// The descriptor boundary must not be reachable through the token cap either: an over-cap list on a
-    /// withheld descriptor request keeps the 501 rather than becoming the cap's 500, because ownership is not
-    /// enforced there at all and so there is nothing for the cap to gate.
+    /// Every descriptor single-record operation plans the ownership check like a regular resource: ownership
+    /// leaves the relationship bucket, so nothing is left for a 501, and duplicate configuration collapses to
+    /// the earliest configured occurrence.
     /// </summary>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
     [TestCase(NamespaceAuthorizationOperation.Delete)]
-    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
-    public void It_keeps_descriptor_ownership_unsupported_even_over_the_token_cap(
+    public void It_plans_the_ownership_check_for_every_descriptor_single_record_operation(
         NamespaceAuthorizationOperation operation
     )
     {
@@ -1664,25 +1603,6 @@ public class Given_RelationalAuthorizationPlanner
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
             DescriptorResource(),
             operation,
-            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
-            OverCapOwnershipContext()
-        );
-
-        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
-    }
-
-    /// <summary>
-    /// Descriptor GET-by-id plans the single-record ownership check like a regular resource: ownership leaves
-    /// the relationship bucket, so nothing is left for a 501, and duplicate configuration collapses to the
-    /// earliest configured occurrence.
-    /// </summary>
-    [Test]
-    public void It_plans_the_ownership_check_for_a_descriptor_get_by_id()
-    {
-        var outcome = RelationalAuthorizationPlanner.Plan(
-            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
-            DescriptorResource(),
-            NamespaceAuthorizationOperation.ReadSingle,
             [
                 Strategy(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired, 0),
                 Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
@@ -1702,16 +1622,20 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// Now that descriptor GET-by-id enforces ownership, the cap gates it as it gates a regular resource:
-    /// the 500 terminal, carrying every resolved custom view so each is validated first.
+    /// The cap gates every descriptor single-record operation that reports it at planning as it gates a
+    /// regular resource: the 500 terminal, carrying every resolved custom view so each is validated first.
     /// </summary>
-    [Test]
-    public void It_reports_the_token_cap_for_a_descriptor_get_by_id()
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_reports_the_token_cap_for_a_descriptor_single_record_operation(
+        NamespaceAuthorizationOperation operation
+    )
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),
-            NamespaceAuthorizationOperation.ReadSingle,
+            operation,
             [
                 Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0),
                 Strategy("StudentWithCTECourseEnrollments", 1),
@@ -1732,17 +1656,17 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// A descriptor 501 for ownership still carries the resolved custom views, so a missing or
+    /// The descriptor GET-many 501 for ownership still carries the resolved custom views, so a missing or
     /// non-conforming view keeps its own 500 instead of being masked by the 501. Ownership executes last
     /// among the AND strategies whatever its configured position, so every view runs ahead of it.
     /// </summary>
     [Test]
-    public void It_carries_resolved_custom_views_on_a_descriptor_ownership_terminal()
+    public void It_carries_resolved_custom_views_on_the_descriptor_read_many_ownership_terminal()
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
             DescriptorResource(),
-            NamespaceAuthorizationOperation.Delete,
+            NamespaceAuthorizationOperation.ReadMany,
             [
                 Strategy("StudentWithCTECourseEnrollments", 0),
                 Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
@@ -1783,50 +1707,13 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// The descriptor ownership boundary must not be maskable by the namespace no-prefixes 403. DELETE, whose
-    /// descriptor ownership executor is not yet wired, fails closed with the known-but-not-enabled 501 even
-    /// when <c>NamespaceBased</c> is configured alongside it and the caller has no namespace prefixes.
-    /// </summary>
-    /// <remarks>
-    /// Without the descriptor arm the namespace terminal is reported first and the descriptor handlers turn
-    /// it into a namespace 403, which says the caller's prefixes refused the request rather than that
-    /// descriptor ownership is not implemented.
-    /// </remarks>
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
-    public void It_keeps_descriptor_ownership_unsupported_ahead_of_the_namespace_no_prefixes_terminal(
-        NamespaceAuthorizationOperation operation
-    )
-    {
-        var outcome = RelationalAuthorizationPlanner.Plan(
-            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
-            NamespaceableDescriptorResource(),
-            operation,
-            [
-                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
-                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
-            ],
-            EmptyPrefixContext()
-        );
-
-        var stillUnsupported = outcome
-            .Should()
-            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
-            .Subject;
-        stillUnsupported
-            .RelationshipClassification.KnownButNotEnabledStrategies.Select(static strategy =>
-                strategy.ConfiguredStrategy.StrategyName
-            )
-            .Should()
-            .Equal(AuthorizationStrategyNameConstants.OwnershipBased);
-    }
-
-    /// <summary>
-    /// Descriptor GET-by-id and the write verbs enforce ownership, so they take the regular-resource
-    /// precedence: the namespace no-prefixes 403 outranks ownership, because Namespace-based executes ahead of Ownership-based among
-    /// the AND strategies.
+    /// Every descriptor single-record operation enforces ownership, so it takes the regular-resource
+    /// precedence: the namespace no-prefixes 403 outranks ownership, because Namespace-based executes ahead of
+    /// Ownership-based among the AND strategies.
     /// </summary>
     [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
     [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
     public void It_reports_the_namespace_no_prefixes_terminal_for_an_enforced_descriptor_operation_with_ownership(
         NamespaceAuthorizationOperation operation
     )
@@ -1846,39 +1733,8 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// The same descriptor terminal still carries the resolved custom views, so a view configured ahead of
-    /// it keeps its own configuration failure rather than being masked by the 501.
-    /// </summary>
-    [Test]
-    public void It_carries_resolved_custom_views_on_a_descriptor_ownership_terminal_over_the_namespace_terminal()
-    {
-        var outcome = RelationalAuthorizationPlanner.Plan(
-            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
-            NamespaceableDescriptorResource(),
-            NamespaceAuthorizationOperation.Delete,
-            [
-                Strategy("StudentWithCTECourseEnrollments", 0),
-                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 1),
-                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 2),
-            ],
-            EmptyPrefixContext()
-        );
-
-        var stillUnsupported = outcome
-            .Should()
-            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
-            .Subject;
-        stillUnsupported
-            .RelationshipClassification.SupportedCustomViewStrategies.Should()
-            .ContainSingle()
-            .Which.ConfiguredStrategy.StrategyName.Should()
-            .Be("StudentWithCTECourseEnrollments");
-    }
-
-    /// <summary>
-    /// Descriptor GET-many is left exactly as it was. Ownership filtering for GET-many belongs to DMS-1410,
-    /// so the namespace no-prefixes 403 stays the reported terminal there — the descriptor arm covers only
-    /// the single-record operations the ownership gate would otherwise enforce.
+    /// Descriptor GET-many keeps its namespace precedence: it does not apply the ownership page filter yet, and
+    /// the namespace no-prefixes 403 is reported ahead of the ownership 501 it would otherwise owe.
     /// </summary>
     [Test]
     public void It_keeps_the_namespace_no_prefixes_terminal_for_a_descriptor_read_many()
@@ -1900,7 +1756,7 @@ public class Given_RelationalAuthorizationPlanner
     /// <summary>
     /// Regular resources are left exactly as they were: ownership is enforced there, so the namespace
     /// no-prefixes 403 still outranks it — Namespace-based executes ahead of Ownership-based among the AND
-    /// strategies. The descriptor arm must not generalize to relational storage.
+    /// strategies.
     /// </summary>
     [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
     [TestCase(NamespaceAuthorizationOperation.Update)]

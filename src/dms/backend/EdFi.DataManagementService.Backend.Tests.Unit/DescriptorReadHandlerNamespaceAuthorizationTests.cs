@@ -719,24 +719,38 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         commandExecutor.Commands.Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_fails_closed_for_descriptor_query_with_ownership_based_authorization()
+    /// <summary>
+    /// Descriptor single-record operations enforce OwnershipBased, but descriptor GET-many has no ownership
+    /// page filter yet, so the request keeps its 501 rather than returning an unfiltered page. The caller's
+    /// token count must not change that: under the cap and at it alike the outcome is the 501, with no SQL,
+    /// and never the token-cap 500 the single-record operations report.
+    /// </summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(OwnershipTokenLimitExceededException.OwnershipTokenLimit)]
+    public async Task It_fails_closed_for_descriptor_query_with_ownership_based_authorization(int tokenCount)
     {
-        // OwnershipBased is known-but-not-enabled for GET-many exactly as for every other operation:
-        // DMS-1410 owns descriptor GET-many ownership support, so the request keeps its 501
-        // rather than silently succeeding with an empty page.
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
+        var request = CreateQueryRequest(
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            authorizationStrategy: new AuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.OwnershipBased,
+                [],
+                FilterOperator.And
+            )
+        );
 
         var result = await sut.HandleQueryAsync(
-            CreateQueryRequest(
-                namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: new AuthorizationStrategyEvaluator(
-                    AuthorizationStrategyNameConstants.OwnershipBased,
+            request with
+            {
+                RelationalAuthorizationContext = new RelationalAuthorizationContext(
                     [],
-                    FilterOperator.And
-                )
-            )
+                    request.RelationalAuthorizationContext.NamespacePrefixes,
+                    null,
+                    [.. Enumerable.Range(1, tokenCount).Select(static tokenId => (short)tokenId)]
+                ),
+            }
         );
 
         result

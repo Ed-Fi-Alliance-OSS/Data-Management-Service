@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -178,6 +179,48 @@ public partial class Given_DescriptorReadHandler
         );
 
         result.Should().BeOfType<PartitionResult.PartitionFailureNotImplemented>();
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Partitions select through the same page authorization as GET-many, and descriptors have no ownership
+    /// page filter yet, so OwnershipBased keeps its 501 with no SQL whether the caller is under the token cap
+    /// or at it.
+    /// </summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(OwnershipTokenLimitExceededException.OwnershipTokenLimit)]
+    public async Task It_fails_closed_for_descriptor_partitions_with_ownership_based_authorization(
+        int tokenCount
+    )
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreatePartitionRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]
+        );
+
+        var result = await sut.HandlePartitionsAsync(
+            request with
+            {
+                RelationalAuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    null,
+                    [.. Enumerable.Range(1, tokenCount).Select(static tokenId => (short)tokenId)]
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<PartitionResult.PartitionFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         commandExecutor.Commands.Should().BeEmpty();
     }
 

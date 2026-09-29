@@ -16,9 +16,9 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 /// <summary>
-/// <c>OwnershipBased</c> on descriptor POST and PUT: the create-side verdict for a POST that creates, the
-/// stored-stamp check for a PUT or a POST that updates, and the POST token cap deferred to the branch the
-/// resolved target selects.
+/// <c>OwnershipBased</c> on descriptor POST, PUT and DELETE: the create-side verdict for a POST that creates,
+/// the stored-stamp check for a PUT, a DELETE or a POST that updates, and the POST token cap deferred to the
+/// branch the resolved target selects.
 /// </summary>
 /// <remarks>
 /// Every denial asserts that no data-modifying statement of any kind reached either command stream — the
@@ -631,6 +631,344 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
+    // ── DELETE ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// With only OwnershipBased configured there is no namespace or custom-view check to force the resolve and
+    /// lock, so the delete must still take the locked path: the target is resolved, locked, and its stamp
+    /// checked before the delete statement runs.
+    /// </summary>
+    [Test]
+    public async Task It_deletes_an_owned_descriptor_under_an_ownership_only_configuration()
+    {
+        var sessionFactory = LockedDeleteTargetSessionFactory();
+        EnqueueDescriptorDeleteSuccess(sessionFactory);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            WithOwnership(
+                CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+                ownershipTokenIds: [OwnedToken]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        sessionFactory
+            .Session.ScalarCommands.Should()
+            .ContainSingle("the target is locked before its stamp is checked");
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(1);
+        AllSessionCommands(sessionFactory).Should().Contain(command => IsDataModifying(command));
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    [TestCase(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)]
+    [TestCase(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized)]
+    public async Task It_denies_a_descriptor_delete_the_caller_does_not_own_and_rolls_back(
+        OwnershipAuthorizationFailureKind failureKind
+    )
+    {
+        var sessionFactory = LockedDeleteTargetSessionFactory();
+        sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(OwnershipDenial(failureKind))
+        );
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            WithOwnership(
+                CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        var failure = result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Subject.OwnershipFailure;
+        failure.FailureKind.Should().Be(failureKind);
+        failure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(1);
+        AssertDeniedWithRollback(sessionFactory);
+    }
+
+    /// <summary>
+    /// A missing target is a 404 before any authorization runs, on both locked paths: there is no stored stamp
+    /// to check, and a 403 would claim a row exists.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reports_not_exists_for_a_missing_descriptor_delete_target_before_the_ownership_check(
+        bool withPrecondition
+    )
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        // The target resolve finds no row.
+        sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
+        sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                OwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)
+            )
+        );
+        var sut = CreateSut(sessionFactory);
+        var request = WithOwnership(
+            CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+            ownershipTokenIds: [OtherToken]
+        ) with
+        {
+            WritePrecondition = withPrecondition
+                ? new WritePrecondition.IfMatch("\"stale-etag\"")
+                : new WritePrecondition.None(),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(0);
+        sessionFactory.Session.ScalarCommands.Should().BeEmpty("nothing was found to lock");
+        AssertNoDataModification(sessionFactory);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A stored-namespace denial is reported ahead of ownership, whatever position CMS gave OwnershipBased, on
+    /// both locked paths.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reports_a_stored_namespace_denial_ahead_of_the_descriptor_delete_ownership_check(
+        bool withPrecondition
+    )
+    {
+        var sessionFactory = withPrecondition
+            ? PreconditionLockedTargetSessionFactory()
+            : LockedDeleteTargetSessionFactory();
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.NotAuthorized(StoredMismatchFailure())
+        );
+        sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                OwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)
+            )
+        );
+        var sut = CreateSut(sessionFactory);
+        var request = WithOwnership(
+            CreateDeleteRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [OwnershipStrategy(), NamespaceStrategy()]
+            ),
+            ownershipTokenIds: [OtherToken]
+        ) with
+        {
+            WritePrecondition = withPrecondition
+                ? new WritePrecondition.IfMatch("\"stale-etag\"")
+                : new WritePrecondition.None(),
+        };
+
+        var result = await sut.HandleDeleteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.ValueSource.Should()
+            .Be(NamespaceAuthorizationFailureValueSource.Stored);
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(0);
+        AssertDeniedWithRollback(sessionFactory);
+    }
+
+    /// <summary>
+    /// A custom view configured after NamespaceBased runs before ownership: the view's nonconforming 500 is
+    /// reported and the ownership check, which would deny, never runs. Both locked paths.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_runs_the_descriptor_delete_ownership_check_after_a_custom_view_configured_after_namespace(
+        bool withPrecondition
+    )
+    {
+        var sessionFactory = withPrecondition
+            ? PreconditionLockedTargetSessionFactory()
+            : LockedDeleteTargetSessionFactory();
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.Authorized()
+        );
+        sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                OwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)
+            )
+        );
+        var validationExecutor = new RecordingCustomViewValidationExecutor(
+            new StubDbException("missing authorization view")
+        );
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+        var request = WithOwnership(
+            CreateDeleteRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies:
+                [
+                    OwnershipStrategy(),
+                    NamespaceStrategy(),
+                    DeleteCustomViewStrategy(),
+                ]
+            ),
+            ownershipTokenIds: [OtherToken]
+        ) with
+        {
+            WritePrecondition = withPrecondition
+                ? new WritePrecondition.IfMatch("\"stale-etag\"")
+                : new WritePrecondition.None(),
+        };
+
+        var act = async () => await sut.HandleDeleteAsync(request);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.Session.Executor.NamespaceResults.Should().BeEmpty("the namespace check ran first");
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(0);
+        AssertNoDataModification(sessionFactory);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Under a stale If-Match the stored-stamp check runs against the locked row before the ETag comparison, so
+    /// a non-owner gets the 403 rather than a 412 that would disclose the row had changed. The control: the
+    /// owner, with the same stale ETag, gets the 412.
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_reports_the_descriptor_delete_ownership_denial_ahead_of_a_stale_if_match(bool denied)
+    {
+        var sessionFactory = PreconditionLockedTargetSessionFactory();
+
+        if (denied)
+        {
+            sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+                new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                    OwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)
+                )
+            );
+        }
+
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            WithOwnership(
+                CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+                ownershipTokenIds: [denied ? OtherToken : OwnedToken]
+            ) with
+            {
+                WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
+            }
+        );
+
+        if (denied)
+        {
+            result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>();
+        }
+        else
+        {
+            result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        }
+
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(1);
+        AssertDeniedWithRollback(sessionFactory);
+    }
+
+    /// <summary>
+    /// A provider failure the ownership mapper cannot attribute is a security-configuration 500.
+    /// </summary>
+    [Test]
+    public async Task It_maps_an_invalid_descriptor_delete_ownership_failure_to_a_security_configuration_failure()
+    {
+        var sessionFactory = LockedDeleteTargetSessionFactory();
+        sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+            new OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure(
+                "Ownership authorization failed, but the failure metadata could not be mapped."
+            )
+        );
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            WithOwnership(
+                CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+                ownershipTokenIds: [OtherToken]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .Equal("Ownership authorization failed, but the failure metadata could not be mapped.");
+        AssertDeniedWithRollback(sessionFactory);
+    }
+
+    /// <summary>
+    /// The ownership check reporting the target gone is a 404, never a 403.
+    /// </summary>
+    [Test]
+    public async Task It_reports_not_exists_when_the_descriptor_delete_ownership_check_finds_a_stale_target()
+    {
+        var sessionFactory = LockedDeleteTargetSessionFactory();
+        sessionFactory.Session.Executor.OwnershipResults.Enqueue(
+            new OwnershipAuthorizationExecutionResult.StaleTarget()
+        );
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            WithOwnership(
+                CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+                ownershipTokenIds: [OwnedToken]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        AssertDeniedWithRollback(sessionFactory);
+    }
+
+    /// <summary>
+    /// DELETE reports the cap at planning, before any session; one below it the delete proceeds.
+    /// </summary>
+    [TestCase(0)]
+    [TestCase(-1)]
+    public async Task It_applies_the_ownership_token_cap_to_a_descriptor_delete_before_opening_a_session(
+        int offsetFromCap
+    )
+    {
+        var sessionFactory = LockedDeleteTargetSessionFactory();
+        EnqueueDescriptorDeleteSuccess(sessionFactory);
+        var sut = CreateSut(sessionFactory);
+        var tokenCount = OwnershipTokenLimitExceededException.OwnershipTokenLimit + offsetFromCap;
+
+        var result = await sut.HandleDeleteAsync(
+            WithOwnership(
+                CreateDeleteRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
+                ownershipTokenIds: TokenRange(tokenCount)
+            )
+        );
+
+        if (offsetFromCap == 0)
+        {
+            result
+                .Should()
+                .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+                .Which.Errors.Should()
+                .Equal(
+                    OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                        OwnershipTokenLimitExceededException.OwnershipTokenLimit
+                    )
+                );
+            sessionFactory.CreateAsyncCallCount.Should().Be(0);
+        }
+        else
+        {
+            result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+            sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(1);
+        }
+    }
+
     // ── POST token cap ───────────────────────────────────────────────────
 
     /// <summary>
@@ -1032,6 +1370,38 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 ownershipTokenIds
             ),
         };
+
+    private static DescriptorDeleteRequest WithOwnership(
+        DescriptorDeleteRequest request,
+        IReadOnlyList<short> ownershipTokenIds
+    ) =>
+        request with
+        {
+            RelationalAuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                request.RelationalAuthorizationContext.NamespacePrefixes,
+                null,
+                ownershipTokenIds
+            ),
+        };
+
+    /// <summary>The no-precondition DELETE path: target resolve, then the lock scalar.</summary>
+    private static RecordingNamespaceWriteSessionFactory LockedDeleteTargetSessionFactory()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow()]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        return sessionFactory;
+    }
+
+    /// <summary>The descriptor delete statement's result: the deleted document id.</summary>
+    private static void EnqueueDescriptorDeleteSuccess(
+        RecordingNamespaceWriteSessionFactory sessionFactory
+    ) =>
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(),
+            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
+        ]);
 
     private static short[] TokenRange(int count) =>
         [.. Enumerable.Range(1, count).Select(static tokenId => (short)tokenId)];

@@ -1533,8 +1533,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     [Test]
     public async Task It_validates_a_descriptor_delete_custom_view_configured_before_an_unsupported_strategy()
     {
-        // OwnershipBased executes last regardless of configured position, so every resolved view is validated
-        // before its 501.
+        // A relationship strategy fails closed with a 501 on descriptors, and every resolved view is validated
+        // before it.
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
@@ -1545,7 +1545,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 authorizationStrategies:
                 [
                     DeleteCustomViewStrategy(),
-                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly),
                 ]
             )
         );
@@ -1871,9 +1871,9 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     /// <summary>
-    /// Descriptor POST and PUT enforce OwnershipBased, so they take the regular-resource precedence: with no
-    /// namespace prefixes the namespace 403 is reported before any session opens, because Namespace-based
-    /// executes ahead of Ownership-based among the AND strategies.
+    /// Descriptor POST, PUT and DELETE enforce OwnershipBased, so they take the regular-resource precedence:
+    /// with no namespace prefixes the namespace 403 is reported before any session opens, because
+    /// Namespace-based executes ahead of Ownership-based among the AND strategies.
     /// </summary>
     [Test]
     public async Task It_returns_namespace_403_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
@@ -1926,7 +1926,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1942,7 +1942,11 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 

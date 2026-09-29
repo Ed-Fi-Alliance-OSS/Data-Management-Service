@@ -94,8 +94,8 @@ public sealed class Given_Postgresql_OwnershipAuthorization : PostgresqlApiInteg
         );
 
     [Test]
-    public Task It_enforces_descriptor_ownership_on_reads_and_writes_and_withholds_delete_with_a_501() =>
-        OwnershipAuthorizationIntegrationScenario.It_enforces_descriptor_ownership_on_reads_and_writes_and_withholds_delete_with_a_501(
+    public Task It_enforces_descriptor_single_record_ownership_and_withholds_descriptor_pages_with_a_501() =>
+        OwnershipAuthorizationIntegrationScenario.It_enforces_descriptor_single_record_ownership_and_withholds_descriptor_pages_with_a_501(
             Harness
         );
 }

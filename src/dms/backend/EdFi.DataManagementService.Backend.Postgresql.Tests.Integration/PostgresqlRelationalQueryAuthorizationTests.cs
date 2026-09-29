@@ -1617,7 +1617,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
         string? ifMatch = null,
-        string? traceId = null
+        string? traceId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         ResetRecorder();
@@ -1634,7 +1635,12 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             MappingSet: MappingSet
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
+            ),
             AuthorizationStrategyEvaluators =
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(

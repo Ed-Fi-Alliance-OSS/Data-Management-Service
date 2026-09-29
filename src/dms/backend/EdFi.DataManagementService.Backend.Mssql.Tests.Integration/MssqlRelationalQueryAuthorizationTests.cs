@@ -1971,7 +1971,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<string> strategyNames,
         string? ifMatch = null,
         string? traceId = null,
-        IReadOnlyList<string>? namespacePrefixes = null
+        IReadOnlyList<string>? namespacePrefixes = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         ResetRecorder();
@@ -1990,7 +1991,9 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         {
             AuthorizationContext = new RelationalAuthorizationContext(
                 claimEducationOrganizationIds,
-                namespacePrefixes ?? []
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
             ),
             AuthorizationStrategyEvaluators =
             [

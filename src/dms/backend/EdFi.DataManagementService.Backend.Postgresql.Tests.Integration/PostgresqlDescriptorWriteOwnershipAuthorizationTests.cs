@@ -18,14 +18,15 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// Live-provider coverage for descriptor POST and PUT under <c>OwnershipBased</c> on PostgreSQL, through the
-/// repository and the production descriptor write handler.
+/// Live-provider coverage for descriptor POST, PUT and DELETE under <c>OwnershipBased</c> on PostgreSQL,
+/// through the repository and the production descriptor write handler.
 /// </summary>
 /// <remarks>
 /// Rows are seeded through a create under <c>NoFurtherAuthorizationRequired</c>, which stamps the creating
 /// client's token — or null for a client with none — exactly as a legacy or misconfigured create did. Every
 /// denied create counts <c>dms.Document</c> and <c>dms.Descriptor</c> and finds nothing; every denied update
-/// shows the document, descriptor row and referential identities unchanged.
+/// shows the document, descriptor row and referential identities unchanged; every denied delete finds both
+/// rows still present.
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
@@ -198,6 +199,76 @@ public class Given_A_Postgresql_Descriptor_Write_With_Ownership_Authorization
         (await ReadStateAsync()).Should().BeEquivalentTo(before);
     }
 
+    // ── DELETE ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A holder of other tokens and a caller facing a row never stamped are refused and the row stays; only
+    /// OwnershipBased is configured, so nothing but the stored-stamp check can stop the delete.
+    /// </summary>
+    [TestCase(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)]
+    [TestCase(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized)]
+    public async Task It_denies_a_descriptor_delete_the_caller_does_not_own_and_keeps_the_row(
+        OwnershipAuthorizationFailureKind expectedKind
+    )
+    {
+        await SeedAsync(
+            expectedKind is OwnershipAuthorizationFailureKind.OwnershipTokenMismatch ? OwnedToken : null
+        );
+        var before = await ReadStateAsync();
+
+        var result = await DeleteAsync([OtherToken]);
+
+        var failure = result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Subject.OwnershipFailure;
+        failure.FailureKind.Should().Be(expectedKind);
+        failure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
+        (await CountRowsAsync()).Should().Be((1, 1));
+        (await ReadStateAsync()).Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_deletes_a_descriptor_for_its_owner()
+    {
+        await SeedAsync(OwnedToken);
+
+        var result = await DeleteAsync([OtherToken, OwnedToken]);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        (await CountRowsAsync()).Should().Be((0, 0));
+    }
+
+    /// <summary>
+    /// A missing target is a 404 even for a caller holding none of the tokens a stamp could carry: there is no
+    /// row to check, and a 403 would claim one exists.
+    /// </summary>
+    [Test]
+    public async Task It_reports_not_exists_for_a_missing_descriptor_delete_target_under_ownership()
+    {
+        var result = await DeleteAsync([OtherToken]);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+    }
+
+    /// <summary>
+    /// The stored-stamp check runs against the locked row before the If-Match compare, so a non-owner under a
+    /// stale ETag is told only that it does not own the row; the owner with the same stale ETag gets the 412,
+    /// so the precondition is live and ownership is what decided the first request.
+    /// </summary>
+    [Test]
+    public async Task It_reports_the_descriptor_delete_ownership_denial_ahead_of_a_stale_if_match()
+    {
+        await SeedAsync(OwnedToken);
+
+        var foreign = await DeleteAsync([OtherToken], ifMatch: "\"stale-etag\"");
+        var owner = await DeleteAsync([OwnedToken], ifMatch: "\"stale-etag\"");
+
+        foreign.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>();
+        owner.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        (await CountRowsAsync()).Should().Be((1, 1));
+    }
+
     // ── Token cap ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -280,6 +351,36 @@ public class Given_A_Postgresql_Descriptor_Write_With_Ownership_Authorization
         (await ReadStateAsync()).Should().BeEquivalentTo(before);
     }
 
+    [Test]
+    public async Task It_fails_a_descriptor_delete_at_the_ownership_token_cap_and_keeps_the_row()
+    {
+        await SeedAsync(OwnedToken);
+
+        var result = await DeleteAsync(TokenRange(OwnershipTokenLimitExceededException.OwnershipTokenLimit));
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
+        (await CountRowsAsync()).Should().Be((1, 1));
+    }
+
+    [Test]
+    public async Task It_deletes_a_descriptor_one_below_the_ownership_token_cap()
+    {
+        await SeedAsync(OwnedToken);
+
+        var result = await DeleteAsync(
+            TokenRange(OwnershipTokenLimitExceededException.OwnershipTokenLimit - 1)
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        (await CountRowsAsync()).Should().Be((0, 0));
+    }
+
     // ── Support ──────────────────────────────────────────────────────────
 
     private static void AssertDenied(UpsertResult result, OwnershipAuthorizationFailureKind expectedKind)
@@ -338,6 +439,17 @@ public class Given_A_Postgresql_Descriptor_Write_With_Ownership_Authorization
             creatorOwnershipTokenId: OtherToken,
             ownershipTokenIds: ownershipTokenIds,
             ifMatch: ifMatch
+        );
+
+    private Task<DeleteResult> DeleteAsync(IReadOnlyList<short> ownershipTokenIds, string? ifMatch = null) =>
+        _context.DeleteByIdAsync(
+            DescriptorProject,
+            DescriptorResource,
+            _documentUuid,
+            [],
+            [AuthorizationStrategyNameConstants.OwnershipBased],
+            ifMatch: ifMatch,
+            ownershipTokenIds: ownershipTokenIds
         );
 
     private Task<AuthorizationWriteSideEffectState> ReadStateAsync() =>
