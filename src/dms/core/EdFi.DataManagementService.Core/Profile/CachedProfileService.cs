@@ -88,6 +88,13 @@ internal sealed record CachedProfileStore(
 /// Provides profile resolution for requests, catalog-level access to profiles,
 /// and cached profile-filtered OpenAPI specifications.
 /// </summary>
+/// <remarks>
+/// Failures are never cached. A <see cref="ProfileDataUnavailableException" /> from the provider
+/// escapes the HybridCache factory, so nothing is stored, every caller joined to that fetch
+/// receives the exception, and the next request fetches again. There is no staleness policy: an
+/// expired catalog is gone, never served stale, so a failed refresh fails closed (503) rather than
+/// falling back to an older catalog or to unprofiled access.
+/// </remarks>
 internal class CachedProfileService(
     IProfileCmsProvider profileCmsProvider,
     IProfileDataValidator profileDataValidator,
@@ -109,7 +116,7 @@ internal class CachedProfileService(
             : $"{ApplicationProfilesCacheKeyPrefix}:{tenantId}:{applicationId}";
     }
 
-    private static string GetCatalogCacheKey(string? tenantId) =>
+    internal static string GetCatalogCacheKey(string? tenantId) =>
         string.IsNullOrEmpty(tenantId)
             ? ProfileCatalogCacheKeyPrefix
             : $"{ProfileCatalogCacheKeyPrefix}:{tenantId}";
@@ -192,6 +199,9 @@ internal class CachedProfileService(
                         applicationId
                     );
 
+                    // A failed fetch throws ProfileDataUnavailableException out of this factory, so it
+                    // is never cached. Only a completed fetch (null meaning CMS answered 404) reaches
+                    // the code below.
                     ApplicationProfileInfo? appInfo = await profileCmsProvider.GetApplicationProfileInfoAsync(
                         applicationId,
                         tenantId
@@ -210,6 +220,10 @@ internal class CachedProfileService(
                     // Fetch profile store to get names for the IDs
                     CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
 
+                    // An assigned id missing from the catalog CMS returned is dropped. That is not proof
+                    // the profile was deleted or is invalid: this entry and the catalog entry have
+                    // independent lifetimes, so a catalog older or newer than the assignments gives
+                    // the same result.
                     var profilesById = new Dictionary<long, string>();
                     foreach (long profileId in appInfo.ProfileIds)
                     {
@@ -220,7 +234,7 @@ internal class CachedProfileService(
                         else
                         {
                             logger.LogWarning(
-                                "Profile ID {ProfileId} not found in profile store for application {ApplicationId}",
+                                "Profile ID {ProfileId} is missing from the profile catalog CMS returned, for application {ApplicationId}",
                                 profileId,
                                 applicationId
                             );
@@ -655,7 +669,10 @@ internal class CachedProfileService(
                         );
                     }
 
-                    // Fetch all profile definitions in parallel
+                    // Fetch all profile definitions in parallel. Any failed fetch, of the list or of one
+                    // definition, throws ProfileDataUnavailableException out of this factory, so a
+                    // partial catalog is never cached. Only a CMS 404 for a definition comes back as
+                    // null, and that one profile is skipped below.
                     var fetchTasks = profiles.Select(async profile =>
                     {
                         CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
@@ -678,7 +695,7 @@ internal class CachedProfileService(
                         if (profileResponse is null)
                         {
                             logger.LogWarning(
-                                "Profile fetch returned null. ProfileId: {ProfileId}, Tenant: {Tenant}",
+                                "Listed profile was not found in CMS (deleted, or rejected by CMS validation). ProfileId: {ProfileId}, Tenant: {Tenant}",
                                 profileId,
                                 LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                             );

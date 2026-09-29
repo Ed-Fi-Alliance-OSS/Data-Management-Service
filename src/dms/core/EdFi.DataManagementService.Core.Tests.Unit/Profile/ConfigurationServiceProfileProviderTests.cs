@@ -64,9 +64,9 @@ internal sealed class CmsGate
 /// <summary>
 /// A scripted, routing Configuration Service HTTP double for the profile provider. Routes are keyed
 /// by (tenant, path); a route scripted without a tenant serves every tenant that has no route of its
-/// own. A route can fail a set number of times, or until it is made healthy, before serving its
-/// healthy reply, and its next request can be held behind a gate. Requests are counted per
-/// (tenant, path). It sits behind the production <see cref="ConfigurationServiceResponseHandler" />,
+/// own, and supplies the healthy reply of a tenant route that scripts only failures. A route can
+/// fail a set number of times, or until it is made healthy, before serving its healthy reply, and
+/// its next request can be held behind a gate. Requests are counted per (tenant, path). It sits behind the production <see cref="ConfigurationServiceResponseHandler" />,
 /// so status-code handling is the real one.
 /// </summary>
 internal sealed class CmsProfileHttpDouble : HttpMessageHandler
@@ -230,8 +230,10 @@ internal sealed class CmsProfileHttpDouble : HttpMessageHandler
             }
             else
             {
+                // A tenant route that only scripts failures falls back to the shared healthy reply.
                 reply =
                     route.Healthy
+                    ?? _routes.GetValueOrDefault((null, path))?.Healthy
                     ?? throw new InvalidOperationException($"No healthy CMS reply scripted for {path}");
             }
         }
