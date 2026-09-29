@@ -125,6 +125,27 @@ $$;
 SQL
   { echo "ERROR: failed to ensure PostgreSQL role 'edfi_dms_enqueue_owner' in $PG_CONTAINER." >&2; exit 1; }
 
+# Every restore is an independent writable data store, so it needs its own source identity rather
+# than the one baked into the template (otherwise edfi_st and both tenant DBs report one physical
+# source). Mirrors Invoke-RestoredDataStoreIdentitySourceIdentityReseed in Template-Management.psm1.
+RESEED_SQL="$(cat <<'SQL'
+DO $$
+DECLARE
+    _updated_count integer;
+BEGIN
+    UPDATE "dms"."DataStoreIdentity"
+    SET "SourceIdentity" = gen_random_uuid()
+    WHERE "DataStoreIdentitySingletonId" = 1;
+
+    GET DIAGNOSTICS _updated_count = ROW_COUNT;
+    IF _updated_count <> 1 THEN
+        RAISE EXCEPTION 'Restored database is missing the dms.DataStoreIdentity singleton row.';
+    END IF;
+END
+$$;
+SQL
+)"
+
 for db in "${DBS[@]}"; do
   exists="$(docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$db" -tAc "SELECT 1 FROM pg_namespace WHERE nspname='dms'" 2>/dev/null || true)"
   if [ "$exists" = "1" ]; then
@@ -133,10 +154,11 @@ for db in "${DBS[@]}"; do
     continue
   fi
   echo "Restoring Grand Bend (relational) into $db ..."
-  # --single-transaction: an interrupted/failed restore rolls back entirely, so the DB is left
-  # with NO 'dms' schema. That keeps the skip-guard above honest -- a failed attempt is retried,
-  # not silently skipped as "already seeded" on the next run.
-  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -f /tmp/grandbend.sql
+  # --single-transaction wraps the -f restore and the -c reseed together: an interrupted/failed
+  # restore or reseed rolls back entirely, so the DB is left with NO 'dms' schema. That keeps the
+  # skip-guard above honest -- a failed attempt is retried, not silently skipped as "already seeded".
+  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" \
+    -f /tmp/grandbend.sql -c "$RESEED_SQL"
   RESTORED+=("$db")
 done
 if [ ${#RESTORED[@]} -gt 0 ]; then echo "Restored this run: ${RESTORED[*]}."; fi

@@ -413,6 +413,21 @@ PY
         $roleSql | Should -Match "exists but is not locked down"
     }
 
+    It "reseeds the data store source identity inside each restore transaction" {
+        $output = & bash (Join-Path $script:composeRoot "seed/grandbend.sh") edfi_st edfi_mt 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $log = Get-Content -LiteralPath $script:dockerLog -Raw
+        $restores = [regex]::Matches($log, '(?s)psql -v ON_ERROR_STOP=1 --single-transaction -U postgres -d (edfi_st|edfi_mt) -f /tmp/grandbend\.sql -c (.*?)END\s*\$\$;')
+        $restores.Count | Should -Be 2
+        foreach ($restore in $restores) {
+            $reseed = $restore.Groups[2].Value
+            $reseed | Should -Match 'UPDATE "dms"\."DataStoreIdentity"'
+            $reseed | Should -Match 'SET "SourceIdentity" = gen_random_uuid\(\)'
+            $reseed | Should -Match 'GET DIAGNOSTICS _updated_count = ROW_COUNT'
+        }
+    }
+
     It "does not restore when the enqueue owner role cannot be ensured" {
         $env:ROLE_SETUP_FAILS = "1"
 
