@@ -67,7 +67,11 @@ public class ProfileResolutionMiddlewareTests
         if (appContextProvider is null)
         {
             A.CallTo(() =>
-                    applicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+                    applicationContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
                 )
                 .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
         }
@@ -94,7 +98,8 @@ public class ProfileResolutionMiddlewareTests
         RequestMethod method,
         Dictionary<string, string>? headers = null,
         string resourceName = "Student",
-        IServiceProvider? scopedServiceProvider = null
+        IServiceProvider? scopedServiceProvider = null,
+        CancellationToken cancellationToken = default
     )
     {
         var frontendRequest = new FrontendRequest(
@@ -110,7 +115,8 @@ public class ProfileResolutionMiddlewareTests
         var requestInfo = new RequestInfo(
             frontendRequest,
             method,
-            scopedServiceProvider ?? BuildScopedServiceProvider()
+            scopedServiceProvider ?? BuildScopedServiceProvider(),
+            cancellationToken
         )
         {
             ResourceSchema = new Core.ApiSchema.ResourceSchema(
@@ -202,7 +208,13 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
@@ -250,7 +262,13 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.Unavailable())
                 );
@@ -305,7 +323,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
@@ -370,7 +394,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
@@ -417,7 +447,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
@@ -456,7 +492,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
@@ -548,7 +590,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
@@ -622,7 +670,13 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
@@ -683,7 +737,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
@@ -757,7 +817,13 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
@@ -828,7 +894,13 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+            A.CallTo(() =>
+                    appContextProvider.GetApplicationByClientIdAsync(
+                        A<string>._,
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
@@ -896,13 +968,21 @@ public class ProfileResolutionMiddlewareTests
         {
             _firstApplicationContextProvider = A.Fake<IApplicationContextProvider>();
             A.CallTo(() =>
-                    _firstApplicationContextProvider.GetApplicationByClientIdAsync("client123", tenant: null)
+                    _firstApplicationContextProvider.GetApplicationByClientIdAsync(
+                        "client123",
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
                 )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext(11)));
 
             _secondApplicationContextProvider = A.Fake<IApplicationContextProvider>();
             A.CallTo(() =>
-                    _secondApplicationContextProvider.GetApplicationByClientIdAsync("client123", tenant: null)
+                    _secondApplicationContextProvider.GetApplicationByClientIdAsync(
+                        "client123",
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
                 )
                 .Returns(new ApplicationContextResult.Success(CreateApplicationContext(22)));
 
@@ -953,6 +1033,64 @@ public class ProfileResolutionMiddlewareTests
                     _profileService.ResolveProfileAsync(null, RequestMethod.GET, "Student", 22, A<string?>._)
                 )
                 .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>
+    /// The request's own cancellation token must reach the application context provider, and a
+    /// cancellation the provider observes must propagate as OperationCanceledException rather than
+    /// being turned into a response.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Requests_Token_Is_Cancelled_During_Application_Context_Resolution
+        : ProfileResolutionMiddlewareTests
+    {
+        private IApplicationContextProvider _appContextProvider = null!;
+        private CancellationTokenSource _cts = null!;
+        private RequestInfo _requestInfo = null!;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _cts = new CancellationTokenSource();
+            _cts.Cancel();
+            _appContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() =>
+                    _appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null, _cts.Token)
+                )
+                .Throws(() => new OperationCanceledException(_cts.Token));
+
+            _requestInfo = CreateRequestInfo(
+                RequestMethod.GET,
+                scopedServiceProvider: BuildScopedServiceProvider(_appContextProvider),
+                cancellationToken: _cts.Token
+            );
+
+            var middleware = CreateMiddleware();
+            _act = () => middleware.Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        [TearDown]
+        public void TearDown() => _cts.Dispose();
+
+        [Test]
+        public async Task It_passes_the_requests_cancellation_token_to_the_application_context_provider()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            A.CallTo(() =>
+                    _appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null, _cts.Token)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_propagates_operation_canceled_instead_of_a_response()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

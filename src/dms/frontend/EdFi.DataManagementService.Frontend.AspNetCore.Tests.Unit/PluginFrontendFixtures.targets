@@ -1,13 +1,13 @@
 <Project>
     <!--
-        Publishes the one fixture plugin whose criteria are about the Data Management Service's own
-        types into this project's output as a real plugin directory. Its sources live beside the plugin
-        hosting tests' own fixtures, because that is where fixture plugins live and because the tree
-        already carries the props that keep a deliberately odd test asset out of the analyzer set; only
-        the staging happens here.
+        Publishes the fixture plugins whose criteria are about the Data Management Service's own types
+        or its configuration source list into this project's output as real plugin directories. Their
+        sources live beside the plugin hosting tests' own fixtures, because that is where fixture
+        plugins live and because the tree already carries the props that keep a deliberately odd test
+        asset out of the analyzer set; only the staging happens here.
 
-        Two fixtures rather than an import of the hosting project's fixture list. That list is 32
-        directories and publishing all of them into a second project's output would double a long build
+        Three fixtures rather than an import of the hosting project's fixture list. That list is dozens
+        of directories, and publishing all of them into a second project's output would double a long build
         for assets no test here reads.
 
         This file is the two lists and nothing else. Deciding freshness, pruning and publishing are in
@@ -20,6 +20,9 @@
         </PluginStagedFixture>
         <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/Acme.RealHelpers.csproj">
             <StagedName>Acme.RealHelpers</StagedName>
+        </PluginStagedFixture>
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.ConfigContributor/Acme.ConfigContributor.csproj">
+            <StagedName>Acme.ConfigContributor</StagedName>
         </PluginStagedFixture>
     </ItemGroup>
 
@@ -49,7 +52,8 @@
         <PluginStagedFixtureInput Include="$(MSBuildThisFileFullPath)" />
 
         <!--
-            Every staged fixture's own directory. Written out rather than derived from the item list
+            Every staged fixture's own directory, and the fixture-contracts project the configuration
+            contributor references. Written out rather than derived from the item list
             above, because an item transform does not glob: '%(Directory)**/*' arrives as one item whose
             identity is that literal string, so a transform here watches nothing at all. It was written
             that way first and the closure cases below caught it.
@@ -59,8 +63,8 @@
             are watched, and they fail when one is not.
         -->
         <PluginStagedFixtureInput
-            Include="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/**/*;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/**/*"
-            Exclude="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/obj/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/obj/**"
+            Include="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/**/*;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/**/*;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.ConfigContributor/**/*;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/**/*"
+            Exclude="$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/obj/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/obj/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.ConfigContributor/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.ConfigContributor/obj/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/bin/**;$(PluginFrontendFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/obj/**"
         />
 
         <!-- The props those fixtures inherit from the fixture tree they sit in. -->

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The plugin the configuration-phase cases drive. Its hook picks a behaviour from the bootstrap
+        configuration under a key carrying its own name, so two plugins in one allowlist can be told to
+        do different things. Acme.SecondConfigContributor compiles the same source under a second
+        assembly name, which is the second identity the ordering cases need.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.ConfigContributor</AssemblyName>
+        <RootNamespace>Acme.ConfigContributor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    </ItemGroup>
+</Project>

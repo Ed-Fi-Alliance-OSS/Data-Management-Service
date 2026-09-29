@@ -323,4 +323,98 @@ public class ValidateContentTypeMiddlewareTests
             _next.WasCalled.Should().BeTrue();
         }
     }
+
+    /// <summary>
+    /// The accepted/rejected matrix under ContentTypePolicy.ResourceWrite, the default policy used
+    /// by every current construction site.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_ResourceWrite_Policy : ValidateContentTypeMiddlewareTests
+    {
+        [TestCase("application/json")]
+        [TestCase("application/json; charset=utf-8")]
+        [TestCase("text/json")]
+        [TestCase("application/vnd.ed-fi.school.test-profile.writable+json")]
+        [TestCase(null)]
+        public async Task It_accepts_baseline_json_profile_media_types_and_an_absent_header(
+            string? contentType
+        )
+        {
+            var next = new CountingNext();
+            var requestInfo = RequestInfoWith(contentType);
+
+            await new ValidateContentTypeMiddleware(
+                NullLogger.Instance,
+                ContentTypePolicy.ResourceWrite
+            ).Execute(requestInfo, next.Next);
+
+            next.WasCalled.Should().BeTrue();
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [TestCase("text/plain")]
+        [TestCase("application/xml")]
+        [TestCase("not-a-media-type")]
+        [TestCase("")]
+        public async Task It_rejects_everything_else_with_415(string contentType)
+        {
+            var next = new CountingNext();
+            var requestInfo = RequestInfoWith(contentType);
+
+            await new ValidateContentTypeMiddleware(
+                NullLogger.Instance,
+                ContentTypePolicy.ResourceWrite
+            ).Execute(requestInfo, next.Next);
+
+            next.WasCalled.Should().BeFalse();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(415);
+        }
+    }
+
+    /// <summary>
+    /// The accepted/rejected matrix under ContentTypePolicy.BaselineJsonOnly: baseline JSON and an
+    /// absent header are accepted; everything else, including Ed-Fi profile media types, is rejected.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_BaselineJsonOnly_Policy : ValidateContentTypeMiddlewareTests
+    {
+        [TestCase("application/json")]
+        [TestCase("application/json; charset=utf-8")]
+        [TestCase("text/json")]
+        [TestCase(null)]
+        public async Task It_accepts_baseline_json_and_an_absent_header(string? contentType)
+        {
+            var next = new CountingNext();
+            var requestInfo = RequestInfoWith(contentType);
+
+            await new ValidateContentTypeMiddleware(
+                NullLogger.Instance,
+                ContentTypePolicy.BaselineJsonOnly
+            ).Execute(requestInfo, next.Next);
+
+            next.WasCalled.Should().BeTrue();
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [TestCase("application/vnd.ed-fi.school.test-profile.writable+json")]
+        [TestCase("text/plain")]
+        [TestCase("application/xml")]
+        [TestCase("not-a-media-type")]
+        [TestCase("")]
+        public async Task It_rejects_everything_else_with_415(string contentType)
+        {
+            var next = new CountingNext();
+            var requestInfo = RequestInfoWith(contentType);
+
+            await new ValidateContentTypeMiddleware(
+                NullLogger.Instance,
+                ContentTypePolicy.BaselineJsonOnly
+            ).Execute(requestInfo, next.Next);
+
+            next.WasCalled.Should().BeFalse();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(415);
+        }
+    }
 }

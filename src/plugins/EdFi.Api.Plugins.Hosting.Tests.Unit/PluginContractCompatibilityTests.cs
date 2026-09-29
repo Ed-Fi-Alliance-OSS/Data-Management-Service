@@ -9,11 +9,13 @@ using System.Runtime.Loader;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.Api.Plugins.Hosting.Tests.Unit;
 
-/// <summary>What one run of the 1.1 host reported, as the runner serialised it.</summary>
+/// <summary>What one run of the 1.2 host reported, as the runner serialised it.</summary>
 internal sealed record HostRunnerResult(
     string HostContractVersion,
     string PluginName,
@@ -32,11 +34,11 @@ internal sealed record HostRunnerSubstitution(
 );
 
 /// <summary>
-/// Stages a private copy of the host runner whose default context carries contract 1.1.0, and runs it.
+/// Stages a private copy of the host runner whose default context carries contract 1.2.0, and runs it.
 /// </summary>
 /// <remarks>
-/// The staged runner is published against the production contract at 1.0.0, like any host. Making a
-/// 1.1 host out of it is done to a copy, in a temporary directory of its own, so no shared staged
+/// The staged runner is published against the production contract at 1.1.0, like any host. Making a
+/// 1.2 host out of it is done to a copy, in a temporary directory of its own, so no shared staged
 /// output is ever the thing whose identity is rewritten and two cases cannot observe each other's
 /// staging.
 /// </remarks>
@@ -61,7 +63,7 @@ internal sealed class TemporaryHostRunner : IDisposable
 
     /// <summary>
     /// Copies the staged runner, and unless <paramref name="substituteContract"/> is false replaces
-    /// that copy's contract assembly with the additive 1.1 build and rewrites its manifest rows.
+    /// that copy's contract assembly with the additive 1.2 build and rewrites its manifest rows.
     /// </summary>
     internal static TemporaryHostRunner Create(bool substituteContract = true)
     {
@@ -76,14 +78,14 @@ internal sealed class TemporaryHostRunner : IDisposable
             // it. Rewritten with System.Text.Json against a real published manifest rather than by text
             // replacement, so every other byte the publish produced survives.
             File.Copy(
-                PluginFixtures.Contract11Assembly,
+                PluginFixtures.Contract12Assembly,
                 Path.Combine(runnerDirectory, "EdFi.Api.Plugins.dll"),
                 overwrite: true
             );
 
             RewriteContractVersionRows(
                 Path.Combine(runnerDirectory, $"{PluginFixtures.HostRunnerName}.deps.json"),
-                "1.1.0.0"
+                "1.2.0.0"
             );
         }
 
@@ -118,7 +120,7 @@ internal sealed class TemporaryHostRunner : IDisposable
         start.ArgumentList.Add(pluginRoot);
         start.ArgumentList.Add(pluginName);
 
-        return ChildProcess.Run(start, _deadline, "The 1.1 contract host");
+        return ChildProcess.Run(start, _deadline, "The 1.2 contract host");
     }
 
     /// <summary>Reads the runner's serialised result out of everything it wrote.</summary>
@@ -250,12 +252,12 @@ internal sealed class HostFirstProbeContext : AssemblyLoadContext, IDisposable
 }
 
 /// <summary>
-/// The additive 1.1 contract fixture, against the real production contract it claims to extend.
+/// The additive 1.2 contract fixture, against the real production contract it claims to extend.
 /// </summary>
 /// <remarks>
-/// The 1.0-on-1.1 proof is only worth anything if the 1.1 assembly really is the production contract
+/// The 1.1-on-1.2 proof is only worth anything if the 1.2 assembly really is the production contract
 /// plus an addition. A fixture that had quietly drifted into a different surface would still load a
-/// 1.0 plugin and still report a substitution, and the proof would say nothing about compatibility. So
+/// 1.1 plugin and still report a substitution, and the proof would say nothing about compatibility. So
 /// the superset relation is asserted rather than assumed, member by member and signature by signature.
 /// </remarks>
 [TestFixture]
@@ -275,7 +277,7 @@ public class Given_the_additive_contract_fixture
         _fixtureContext = new HostFirstProbeContext();
 
         _fixture = _fixtureContext
-            .LoadFromAssemblyPath(PluginFixtures.Contract11Assembly)
+            .LoadFromAssemblyPath(PluginFixtures.Contract12Assembly)
             .GetType("EdFi.Api.Plugins.EdFiApiPlugin")!;
     }
 
@@ -318,8 +320,8 @@ public class Given_the_additive_contract_fixture
         // The premise of the whole proof. One assembly name, two versions; if the fixture were a
         // differently named assembly nothing would ever be substituted for anything.
         _fixture.Assembly.GetName().Name.Should().Be(_production.Assembly.GetName().Name);
-        _production.Assembly.GetName().Version.Should().Be(new Version(1, 0, 0, 0));
-        _fixture.Assembly.GetName().Version.Should().Be(new Version(1, 1, 0, 0));
+        _production.Assembly.GetName().Version.Should().Be(new Version(1, 1, 0, 0));
+        _fixture.Assembly.GetName().Version.Should().Be(new Version(1, 2, 0, 0));
     }
 
     [Test]
@@ -328,8 +330,8 @@ public class Given_the_additive_contract_fixture
         string[] production = [.. PublicSurfaceOf(_production)];
         string[] fixture = [.. PublicSurfaceOf(_fixture)];
 
-        TestContext.Out.WriteLine($"production 1.0.0: {string.Join(" | ", production)}");
-        TestContext.Out.WriteLine($"fixture 1.1.0:    {string.Join(" | ", fixture)}");
+        TestContext.Out.WriteLine($"production 1.1.0: {string.Join(" | ", production)}");
+        TestContext.Out.WriteLine($"fixture 1.2.0:    {string.Join(" | ", fixture)}");
 
         // Superset, member for member and signature for signature. An added member is allowed; a
         // removed or altered one is what the additive-only policy forbids and what this catches.
@@ -359,11 +361,11 @@ public class Given_the_additive_contract_fixture
 }
 
 /// <summary>
-/// A plugin compiled against contract 1.0.0, loaded by the real loader in a host carrying 1.1.0.
+/// A plugin compiled against contract 1.1.0, loaded by the real loader in a host carrying 1.2.0.
 /// </summary>
 /// <remarks>
 /// Draft 02's criterion taken literally. A unit-test process cannot be the host, because this
-/// assembly's own default context already holds the production contract at 1.0.0 through a project
+/// assembly's own default context already holds the production contract at 1.1.0 through a project
 /// reference, so the proof runs in a process of its own whose contract assembly has been replaced in a
 /// private copy of its publish output.
 /// </remarks>
@@ -401,11 +403,11 @@ public class Given_a_plugin_built_against_the_older_contract_on_a_newer_host
     }
 
     [Test]
-    public void It_really_is_a_1_1_host()
+    public void It_really_is_a_1_2_host()
     {
         // Read out of the running process's own default context before it loaded anything, which is
         // what makes the staged identity a fact of the run instead of an assumption about staging.
-        _result.HostContractVersion.Should().Be("1.1.0.0");
+        _result.HostContractVersion.Should().Be("1.2.0.0");
     }
 
     [Test]
@@ -417,17 +419,17 @@ public class Given_a_plugin_built_against_the_older_contract_on_a_newer_host
     [Test]
     public void It_serves_the_plugin_the_hosts_newer_contract()
     {
-        // The plugin ships its own 1.0.0 copy and declares 1.0.0, and its base type came from the
-        // host's 1.1.0 assembly instead. That is host-first resolving the contract, and it is the
+        // The plugin ships its own 1.1.0 copy and declares 1.1.0, and its base type came from the
+        // host's 1.2.0 assembly instead. That is host-first resolving the contract, and it is the
         // direction the upgrade story needs.
-        _result.PluginBaseContractVersion.Should().Be("1.1.0.0");
+        _result.PluginBaseContractVersion.Should().Be("1.2.0.0");
     }
 
     [Test]
     public void It_exposes_the_member_only_the_newer_contract_declares()
     {
         // Found and invoked by the runner, so this is "present and does nothing" rather than a claim
-        // about a member nobody called. A plugin served its own 1.0.0 copy could not have it at all.
+        // about a member nobody called. A plugin served its own 1.1.0 copy could not have it at all.
         _result.AddedVirtualVisible.Should().BeTrue();
     }
 
@@ -447,9 +449,88 @@ public class Given_a_plugin_built_against_the_older_contract_on_a_newer_host
             .ContainSingle(row => row.AssemblyName == "EdFi.Api.Plugins")
             .Subject;
 
-        substitution.RequestedVersion.Should().Be("1.0.0.0");
-        substitution.HostVersion.Should().Be("1.1.0.0");
-        substitution.DeclaredVersion.Should().Be("1.0.0.0");
+        substitution.RequestedVersion.Should().Be("1.1.0.0");
+        substitution.HostVersion.Should().Be("1.2.0.0");
+        substitution.DeclaredVersion.Should().Be("1.1.0.0");
+    }
+}
+
+/// <summary>
+/// The same plugin, loaded by the real loader in this process, which carries the production contract at
+/// 1.1.0.
+/// </summary>
+/// <remarks>
+/// The proof above runs it on a newer host; this one runs it on the host that shipped
+/// <c>ContributeConfiguration</c>. The plugin overrides only <c>ContributeServices</c>, so what has to
+/// hold is that the new hook is inherited as the base no-op and the hook the plugin did override still
+/// runs.
+/// </remarks>
+[TestFixture]
+public class Given_a_plugin_that_overrides_only_ContributeServices_on_the_1_1_host
+{
+    private TemporaryPluginRoot _root = null!;
+    private LoadedPlugin _plugin = null!;
+    private ServiceProvider _provider = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create();
+        _root.Add(PluginFixtures.OldContract);
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(_root.RootPath, PluginFixtures.OldContract);
+        run.Failure.Should().BeNull();
+        _plugin = run.Result!.Plugins.Should().ContainSingle().Subject;
+
+        IConfiguration configuration = new ConfigurationBuilder().Build();
+        ServiceCollection services = [];
+
+        _plugin.Instance.ContributeConfiguration(new ConfigurationBuilder(), configuration);
+        _plugin.Instance.ContributeServices(services, configuration);
+
+        _provider = services.BuildServiceProvider();
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _provider.Dispose();
+        _root.Dispose();
+    }
+
+    [Test]
+    public void It_really_is_a_1_1_host()
+    {
+        typeof(EdFiApiPlugin).Assembly.GetName().Version.Should().Be(new Version(1, 1, 0, 0));
+    }
+
+    [Test]
+    public void It_serves_the_plugin_the_hosts_contract()
+    {
+        _plugin.Instance.GetType().BaseType.Should().BeSameAs(typeof(EdFiApiPlugin));
+    }
+
+    [Test]
+    public void It_inherits_the_configuration_hook_rather_than_overriding_it()
+    {
+        _plugin
+            .Instance.GetType()
+            .GetMethod(nameof(EdFiApiPlugin.ContributeConfiguration))!
+            .DeclaringType.Should()
+            .Be(typeof(EdFiApiPlugin));
+    }
+
+    [Test]
+    public void It_runs_the_service_hook_the_plugin_overrides()
+    {
+        // Resolved out of a real provider, and the marker's type is the plugin's own, so this fails if
+        // the override did not run.
+        Type markerType = _plugin.Instance.GetType().Assembly.GetType("Acme.OldContract.OldContractMarker")!;
+
+        object? marker = _provider.GetService(markerType);
+
+        marker.Should().NotBeNull();
+        markerType.GetProperty("PluginName")!.GetValue(marker).Should().Be(PluginFixtures.OldContract);
     }
 }
 
@@ -457,9 +538,9 @@ public class Given_a_plugin_built_against_the_older_contract_on_a_newer_host
 /// The same runner without the contract substitution, which is the control on its self-verification.
 /// </summary>
 /// <remarks>
-/// The proof above rests entirely on the host really carrying 1.1.0, and the only thing that
+/// The proof above rests entirely on the host really carrying 1.2.0, and the only thing that
 /// establishes it is the runner refusing to proceed otherwise. If that refusal did not work, a staging
-/// step that silently failed would turn the whole case into a 1.0-on-1.0 run reporting success. This
+/// step that silently failed would turn the whole case into a 1.1-on-1.1 run reporting success. This
 /// runs the unmodified staged output to show the refusal happens and says so by name.
 /// </remarks>
 [TestFixture]
@@ -498,8 +579,8 @@ public class Given_the_host_runner_was_not_given_the_newer_contract
     public void It_names_the_identity_it_required_and_the_one_it_found()
     {
         _run.Output.Should().Contain("HOST CONTRACT MISMATCH");
+        _run.Output.Should().Contain("1.2.0.0");
         _run.Output.Should().Contain("1.1.0.0");
-        _run.Output.Should().Contain("1.0.0.0");
     }
 
     [Test]

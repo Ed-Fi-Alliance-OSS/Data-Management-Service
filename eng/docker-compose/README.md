@@ -683,7 +683,7 @@ The artifact includes:
 | `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
 | `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
-| `JwtAuthentication:Authority` | `http://localhost:8081` |
+| `JwtAuthentication:Authority` | `http://ed-fi-api-config:8081` (the Config Service's token issuer, not a URL DMS calls; it must match the issuer exactly) |
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 

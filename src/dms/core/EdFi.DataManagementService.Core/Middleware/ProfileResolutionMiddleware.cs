@@ -62,7 +62,8 @@ internal class ProfileResolutionMiddleware(
         ApplicationContextResult applicationContextResult =
             await applicationContextProvider.GetApplicationByClientIdAsync(
                 requestInfo.ClientAuthorizations.ClientId,
-                requestInfo.FrontendRequest.Tenant
+                requestInfo.FrontendRequest.Tenant,
+                requestInfo.RequestCancellationToken
             );
 
         if (applicationContextResult is not ApplicationContextResult.Success success)

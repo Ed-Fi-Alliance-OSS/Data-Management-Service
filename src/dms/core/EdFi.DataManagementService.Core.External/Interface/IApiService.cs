@@ -44,22 +44,34 @@ public interface IApiService
     /// <summary>
     /// DMS entry point for all API DELETE requests, which are "by id"
     /// </summary>
-    Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> DeleteById(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for the token introspection request
     /// </summary>
-    Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetTokenInfo(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for the Change Queries availableChangeVersions request
     /// </summary>
-    Task<IFrontendResponse> GetAvailableChangeVersions(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetAvailableChangeVersions(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for resource-scoped Change Query tracked changes requests
     /// </summary>
-    Task<IFrontendResponse> GetTrackedChanges(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetTrackedChanges(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for a data-route request whose HTTP method is not one of the supported

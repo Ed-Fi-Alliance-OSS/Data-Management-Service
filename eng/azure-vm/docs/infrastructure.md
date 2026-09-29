@@ -221,7 +221,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
    the retired `EdFi.Dms.Populated.Template.*` ids and are rejected by the relational backend
    (the script guards against them regardless of the package id).
 7. **Keycloak issuer behind the proxy.** Tokens are issued with `iss =
-   https://<PUBLIC_HOST>/auth/realms/edfi`; if DMS rejects valid tokens, re-check
+   https://<PUBLIC_HOST>/auth/realms/edfi`; if DMS fails to start or rejects valid tokens, re-check
    `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`, and that the metadata `issuer` matches
    the public URL. (This environment is Keycloak-only — the DMS/CMS auth wiring in the
    compose file is Keycloak-specific.)

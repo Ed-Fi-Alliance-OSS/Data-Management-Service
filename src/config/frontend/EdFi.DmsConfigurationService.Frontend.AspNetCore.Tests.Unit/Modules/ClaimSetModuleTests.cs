@@ -509,6 +509,79 @@ public class ClaimSetModuleTests
     }
 
     [TestFixture]
+    public class Given_ClaimSetCopyNameWithWhitespace : ClaimSetModuleTests
+    {
+        private HttpStatusCode _insertStatus;
+        private HttpStatusCode _copyStatus;
+        private JsonNode _insertBody = null!;
+        private JsonNode _copyBody = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using var client = SetUpClient();
+            using var insertResponse = await client.PostAsync(
+                "/v3/claimSets",
+                new StringContent(
+                    """{"claimSetName":"DistrictHostedSISVendor (copy)"}""",
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            using var copyResponse = await client.PostAsync(
+                "/v3/claimSets/copy",
+                new StringContent(
+                    """{"originalId":1,"claimSetName":"DistrictHostedSISVendor (copy)"}""",
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            _insertStatus = insertResponse.StatusCode;
+            _copyStatus = copyResponse.StatusCode;
+            _insertBody = JsonNode.Parse(await insertResponse.Content.ReadAsStringAsync())!;
+            _copyBody = JsonNode.Parse(await copyResponse.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_rejects_the_insert_with_bad_request()
+        {
+            _insertStatus.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_rejects_the_copy_with_bad_request()
+        {
+            _copyStatus.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_returns_the_whitespace_message_for_the_copy()
+        {
+            _copyBody["validationErrors"]!["Name"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal("Claim set name must not contain white spaces.");
+        }
+
+        [Test]
+        public void It_returns_the_same_problem_details_as_the_insert()
+        {
+            _copyBody.AsObject().Remove("correlationId");
+            _insertBody.AsObject().Remove("correlationId");
+
+            JsonNode.DeepEquals(_copyBody, _insertBody).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_copy_the_claim_set()
+        {
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
     public class FailureValidationTests : ClaimSetModuleTests
     {
         [SetUp]

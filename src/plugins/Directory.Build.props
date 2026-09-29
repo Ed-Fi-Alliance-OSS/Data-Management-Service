@@ -18,15 +18,16 @@
     -->
     <PropertyGroup>
         <!--
-            The first published contract surface: an abstract Name and a virtual ContributeServices.
+            1.0.0 was the first published contract surface: an abstract Name and a virtual
+            ContributeServices. 1.1.0 adds the virtual ContributeConfiguration, the Phase A hook.
             Bump the minor when a new virtual member with a no-op body is added, which is the only
             evolution the additive-only compatibility policy allows. A breaking change is a new
             package id, not a major bump, because the default binder would load an older plugin
             against it and fail with MissingMethodException inside a hook.
         -->
-        <VersionPrefix>1.0.0</VersionPrefix>
-        <AssemblyVersion>1.0.0</AssemblyVersion>
-        <FileVersion>1.0.0</FileVersion>
+        <VersionPrefix>1.1.0</VersionPrefix>
+        <AssemblyVersion>1.1.0</AssemblyVersion>
+        <FileVersion>1.1.0</FileVersion>
         <Product>Ed-Fi API</Product>
         <Authors>Ed-Fi Alliance, LLC and contributors</Authors>
         <Company>Ed-Fi Alliance, LLC and contributors</Company>

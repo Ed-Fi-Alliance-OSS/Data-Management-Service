@@ -26,10 +26,9 @@
 
         EdFiApiPlugin's shipped hook signature names IConfiguration and IServiceCollection, so both
         Abstractions assemblies are in the public surface rather than in the implementation, and a
-        contract cannot decline a dependency its own signatures require. IConfigurationBuilder joins
-        them from the same Microsoft.Extensions.Configuration.Abstractions assembly when the secrets
-        foundation story adds ContributeConfiguration, so that addition needs no new package
-        reference.
+        contract cannot decline a dependency its own signatures require. IConfigurationBuilder, which
+        ContributeConfiguration names, comes from the same Microsoft.Extensions.Configuration.Abstractions
+        assembly, so that hook needed no new package reference.
 
         Nothing beyond those two is added for an implementer's convenience. The dependency closure a
         third party inherits is part of the contract, and the pack lane asserts this exact set.

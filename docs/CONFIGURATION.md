@@ -148,6 +148,31 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
 
+## JobSettings
+
+The Configuration Service runs durable background jobs: a worker that claims and runs jobs, a dispatcher that turns recurring schedules into jobs, and a retention sweep that deletes old finished jobs. These settings control them (`appsettings.json` section `JobSettings`; in the provided Docker Compose files, `JobSettings__<Parameter>` is set from `DMS_CONFIG_JOBS_<PARAMETER>`, for example `DMS_CONFIG_JOBS_POLL_INTERVAL`). Durations use the `[d.]hh:mm:ss` format. The service validates every value at startup and refuses to start, naming `JobSettings:<Parameter>` and the accepted range, when one is out of bounds.
+
+For how jobs run, recover, and are observed, see [Configuration Service Background Jobs](./CMS-BACKGROUND-JOBS.md).
+
+| Parameter            | Description                                                                                                                                              | Default      | Accepted range                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------- |
+| WorkerEnabled        | Runs the worker on this instance.                                                                                                                        | `true`       | `true`, `false`                  |
+| SchedulerEnabled     | Runs the schedule dispatcher on this instance.                                                                                                           | `true`       | `true`, `false`                  |
+| RetentionEnabled     | Runs the retention sweep on this instance.                                                                                                               | `true`       | `true`, `false`                  |
+| PollInterval         | How often an idle worker or dispatcher checks for work.                                                                                                  | `00:00:05`   | 1 s – 5 min                      |
+| LeaseDuration        | How long a running job is owned before another instance may take it over. A crashed instance's job is picked up again at most this long after its last renewal. | `00:05:00`   | 30 s – 1 h                       |
+| RenewalInterval      | How often a running job renews its lease. Half of it is the time limit for one renewal or outcome write.                                                  | `00:01:00`   | 12 s – `LeaseDuration` / 3       |
+| FenceTimeout         | The longest a job's fenced database write may take.                                                                                                      | `00:00:10`   | 1 s – 1 min                      |
+| MaxAttempts          | Executions a job may start before it fails for good.                                                                                                     | `5`          | 1 – 20                           |
+| RetryBackoffBase     | The wait before the first retry; each later retry doubles it.                                                                                            | `00:00:30`   | 1 s – 1 h                        |
+| RetryBackoffMaximum  | The longest wait between retries.                                                                                                                        | `00:15:00`   | `RetryBackoffBase` – 24 h        |
+| MaxConcurrentJobs    | Jobs one instance runs at the same time.                                                                                                                 | `2`          | 1 – 32                           |
+| FinishedJobRetention | How long a completed or failed job is kept.                                                                                                              | `7.00:00:00` | 1 h – 365 d                      |
+| RetentionInterval    | How often the retention sweep runs.                                                                                                                      | `01:00:00`   | 1 min – 24 h                     |
+| RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
+
+The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
+
 ## Reverse Proxy and Forwarded Headers
 
 When the DMS API or Configuration Service runs behind a reverse proxy or load balancer
@@ -358,11 +383,11 @@ These settings configure the allowed client-secret length range used by CMS regi
 
 ## Plugins
 
-Plugins are directories of already-published assemblies that DMS loads at startup
-and lets contribute to its service composition. This section is the **only**
-configuration surface for them: it says what may load, and nothing about where the
-bytes came from. DMS ships no fetcher; getting a plugin directory under the root is
-a deployment step that happens before the process starts. See
+Plugins are directories of already-published assemblies that DMS loads at startup and
+lets contribute to its configuration and its service composition. This section is the
+**only** configuration surface for them: it says what may load, and nothing about
+where the bytes came from. DMS ships no fetcher; getting a plugin directory under the
+root is a deployment step that happens before the process starts. See
 [Plugins](./OPERATIONS.md#plugins) for the two acquisition recipes, the trust model,
 and what a startup failure means, and
 [eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
@@ -418,7 +443,8 @@ logger once one exists, as `Plugin loader warning` events, so a deployment that
 collects application logs rather than container output still sees them.
 
 The order written is the invocation order, so it is what decides the order in which
-plugins contribute.
+plugins contribute, and, where two plugins supply the same configuration key, which
+one wins: the later one. See [Configuration precedence](#configuration-precedence).
 
 Both keys bind from environment variables in the standard way, which is how a
 container deployment sets them:
@@ -435,33 +461,54 @@ follows, highest first:
 
 | Rank | Source | Notes |
 | ---- | ------ | ----- |
-| 1 | Environment variables | The unprefixed environment source DMS appends itself. See below for why this outranks the command line. |
+| 1 | Unprefixed environment variables | The unprefixed environment source DMS appends itself, above the one ASP.NET Core's builder installs. See below for why this outranks the command line. |
 | 2 | Command-line arguments | Installed only when the host is started with arguments, which the stock container is not. |
-| 3 | Plugin-contributed configuration sources, in `Allowed` order | **Reserved; not supported.** See below. |
+| 3 | Plugin-contributed configuration sources, in `Allowed` order | A later plugin in `Allowed` outranks an earlier one. |
 | 4 | `appsettings.json` and the other JSON sources | Including `appsettings.{Environment}.json`. |
+| 5 | `ASPNETCORE_` and `DOTNET_` prefixed environment variables | Installed by ASP.NET Core's builder below the JSON sources, and read with the prefix removed, so `ASPNETCORE_AppSettings__MaximumPageSize` supplies `AppSettings:MaximumPageSize`. These are not the operator override that ranks 1 and 2 describe. |
 
-**Rank 3 is reserved and unreachable.** The plugin contract exposes `Name` and
-`ContributeServices`, neither of which can add a configuration source, so no
-deployment can populate that rank. It appears in the table because the ordering rules
-for it are fixed rather than open: a plugin's sources are placed at rank 3 by the
-loader rather than wherever the plugin appended them, a later plugin in `Allowed`
-order outranks an earlier one, and no plugin source is placed above the operator's own
-environment or command-line surface.
+**Plugin sources land at rank 3 once the loader has placed them.** A plugin contributes
+configuration sources from its `ContributeConfiguration` hook, which DMS runs for
+each allowlisted plugin, in `Allowed` order, as soon as the plugins have loaded. After
+each hook the loader loads the sources that plugin added, once, and inserts them into
+the host's configuration as a single source immediately below the unprefixed
+environment source ASP.NET Core's builder installs, keeping their order within it.
+The effects:
 
-**Why the environment outranks the command line.** ASP.NET Core's own builder
+- A plugin value outranks every JSON source, including an empty string that
+  `appsettings.json` ships for the same key, such as
+  `ConfigurationServiceSettings:EncryptionKey`.
+- A plugin value also outranks the `ASPNETCORE_` and `DOTNET_` prefixed environment
+  sources, which sit below the JSON sources. An operator who sets
+  `ASPNETCORE_AppSettings__MaximumPageSize` does not override a plugin that supplies
+  `AppSettings:MaximumPageSize`; the unprefixed `AppSettings__MaximumPageSize` does.
+- A value the operator sets as an unprefixed environment variable or on the command
+  line outranks every plugin source added through `ContributeConfiguration`. An
+  operator who wants a plugin to supply a value does not also set it there. This rests on the plugin
+  keeping to its contract: a plugin's `ContributeServices` hook, like the rest of its
+  code, receives the live configuration, and one that adds a source there skips
+  placement and can outrank the operator. DMS does not detect that; it is part of
+  the full process trust a loaded plugin runs with (see
+  [Trust](./OPERATIONS.md#trust)).
+- Among plugins, the later one in `Allowed` wins, so the order of `Allowed` is part of
+  the configuration and not only a list of what may run.
+
+**Why unprefixed environment variables outrank the command line.** ASP.NET Core's own builder
 installs the command-line source above the unprefixed environment source, so on its
 own the command line would win. DMS then appends one more environment source of its
-own, in `AddServices`
+own, with the `AddEnvironmentVariables()` call in `AddServices`
 ([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)),
 and an appended source outranks everything already installed.
 
 **That appended source carries a qualifier, and the qualifier is not cosmetic: it
-outranks the command line only for keys read after `AddServices` has run.** Two
-reads happen before it, and for those two the command line wins:
+outranks the command line only for keys read after that `AddEnvironmentVariables()`
+call.** Two reads happen before it, and for those two the command line wins:
 
 - **Serilog's configuration.** `AddServices` calls `ConfigureLogging()`, which reads
   `webAppBuilder.Configuration`, before it calls `AddEnvironmentVariables()`, so the
-  `Serilog` section is resolved without the appended source.
+  `Serilog` section is resolved without the appended source. Plugin sources are
+  already in place by then, so for this section the order is command line,
+  unprefixed environment, plugins, JSON, then the prefixed environment sources.
 - **The whole `Plugins` section, not just `Allowed`.** The plugin-loading bootstrap
   phase binds the section in one go, `Allowed` and `Directory` alike, and it runs
   before the phase that calls `AddServices` at all. That ordering is deliberate for
@@ -481,17 +528,32 @@ Only a deployment that starts the host with arguments of its own is affected by 
 qualifier above.
 
 > [!IMPORTANT]
-> **One key is read before the plugin phase exists at all.**
-> `AppSettings:StartupStatusFilePath` is read immediately after the builder is
-> created, before plugins are loaded, because the startup status file is how a plugin
-> loading failure is reported and it cannot depend on anything a plugin supplied. No
-> plugin-contributed source can provide it, whatever rank 3 above holds.
+> **Some values cannot come from a plugin source**, because each is read before any
+> plugin's `ContributeConfiguration` hook has run:
 >
-> This is a bootstrap exception and **not** an exception to the
-> environment-versus-command-line rule above. The environment and command-line sources
-> both exist by the time this key is read, so for it the command line wins when a
-> deployment supplies one, exactly as it does for the two reads named above. What is
-> missing at that moment is a plugin source, not an operator-owned one.
+> - `AppSettings:StartupStatusFilePath`, read immediately after the builder is
+>   created and before plugins are loaded, because the startup status file is how a
+>   plugin loading failure is reported and it cannot depend on anything a plugin
+>   supplied.
+> - The `Plugins` section, `Allowed` and `Directory` alike, which decides which
+>   plugins load at all.
+> - The values `src/dms/run.sh`, the container entry point, reads from the
+>   environment before the .NET process starts:
+>   - `AppSettings__Datastore`, which decides whether it waits for PostgreSQL. It
+>     defaults to `postgresql` when unset, so a plugin that supplies `mssql` while
+>     the environment leaves it unset still gets the PostgreSQL wait, which does not
+>     end.
+>   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
+>   - `AppSettings__UseApiSchemaPath` and `AppSettings__ApiSchemaPath`, which decide
+>     whether and where it downloads the schema packages. A plugin that supplies
+>     either sends .NET to read a directory the script did not fill.
+>
+> The first two are bootstrap exceptions and **not** exceptions to the
+> unprefixed-environment-versus-command-line rule above: the builder's unprefixed
+> environment source and the command-line source both exist when they are read, so for them the command line wins when a deployment
+> supplies one. The `run.sh` values are not read as .NET configuration there at all,
+> only from the container's environment, so a deployment on the stock image sets
+> them in the environment even when a plugin also supplies them.
 
 ## RateLimit
 
@@ -778,8 +840,8 @@ Configuration Service outage.
 | Parameter         | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
 |-------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
-| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
-| `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until it re-fetches metadata that matches. DMS retries at most once per `RefreshIntervalMinutes` (default 60), so recovery can lag the fix by up to that long; restarting DMS recovers immediately. The first rejected request is logged as an error and repeats at debug level | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint. DMS fetches signing keys only from this address's origin (scheme, host and port): a metadata document whose `jwks_uri` names another origin is refused, which stops DMS from starting, or keeps the last good metadata on a later refresh. DMS then retries until a fetch succeeds (once the automatic refresh is due, on every request), logging the first refusal as an error and repeats at debug level. DMS does not follow redirects for these fetches. For Keycloak reached over an internal hostname, set `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak's default makes `jwks_uri` name the public host | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.

@@ -45,10 +45,28 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
         _resolver = new AssemblyDependencyResolver(entryAssemblyPath);
         _declaredVersions = declaredVersions;
 
+        // The resolver's own spelling of the plugin directory, read by resolving the entry assembly
+        // through it. The resolver canonicalizes the directory through the filesystem, so a plugin
+        // private assembly it serves carries a location that can differ from the path the loader
+        // composed, wherever a directory above the plugin is a symbolic link: /var and /private/var
+        // on macOS is the everyday case. Falls back to the composed directory when the resolver does
+        // not know the entry assembly.
+        string entryDirectory = Path.GetDirectoryName(entryAssemblyPath)!;
+        string? resolvedEntry = _resolver.ResolveAssemblyToPath(
+            new AssemblyName(Path.GetFileNameWithoutExtension(entryAssemblyPath))
+        );
+        ResolverDirectory = resolvedEntry is null ? entryDirectory : Path.GetDirectoryName(resolvedEntry)!;
+
         // Null on the public loader path, which is what keeps an ordinary host run free of any
         // observation state. Only a caller that names the assemblies it wants to know about gets one.
         _observer = observer;
     }
+
+    /// <summary>
+    /// The plugin directory as the dependency resolver spells it, which is the directory a
+    /// plugin-private assembly this context loads is reported under.
+    /// </summary>
+    internal string ResolverDirectory { get; }
 
     /// <summary>
     /// Every assembly this context has actually served from the host in place of the plugin's own,

@@ -353,6 +353,8 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:AllowIdentityUpdateOverrides", AllowIdentityUpdateOverrides);
             builder.UseSetting("AppSettings:RouteQualifierSegments", RouteQualifierSegments);
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
+            // The OIDC warm-up task pins the fake's issuer to the configured authority.
+            builder.UseSetting("JwtAuthentication:Authority", FakeOidcConfigurationManager.Issuer);
             builder.UseSetting("AppSettings:MultiTenancy", multiTenancy ? "true" : "false");
             builder.UseSetting(
                 "AppSettings:EnableAspNetCompression",

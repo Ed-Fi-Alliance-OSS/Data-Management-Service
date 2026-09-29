@@ -10,7 +10,10 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public class NoClaimsClaimSetProvider(ILogger _logger) : IClaimSetProvider
 {
-    public async Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+    public async Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         _logger.LogWarning(
             "GetAllClaimSets: Backend ClaimSetProvider has been configured to always report success."

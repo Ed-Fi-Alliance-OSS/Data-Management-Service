@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <!--
-        The production plugin contract at an additive 1.1.0, built as a test asset so that the
-        1.0-plugin-on-a-1.1-host proof has a 1.1 host to run in. It carries the production 1.0.0 public
+        The production plugin contract at an additive 1.2.0, built as a test asset so that the
+        1.1-plugin-on-a-1.2-host proof has a 1.2 host to run in. It carries the production 1.1.0 public
         surface unchanged plus one added no-op virtual, which is the only evolution the contract's
         additive-only policy allows.
 
@@ -11,15 +11,15 @@
         contract is present here with the same signature, so this file cannot drift into a different
         contract and let that proof pass vacuously.
 
-        Nothing in production references it, and the production contract's own source and version are
-        untouched.
+        Nothing in production references it. It declares its own version here rather than taking the
+        production contract's, so building it changes nothing about the production contract.
     -->
     <PropertyGroup>
         <AssemblyName>EdFi.Api.Plugins</AssemblyName>
         <RootNamespace>EdFi.Api.Plugins</RootNamespace>
-        <AssemblyVersion>1.1.0</AssemblyVersion>
-        <FileVersion>1.1.0</FileVersion>
-        <Version>1.1.0</Version>
+        <AssemblyVersion>1.2.0</AssemblyVersion>
+        <FileVersion>1.2.0</FileVersion>
+        <Version>1.2.0</Version>
     </PropertyGroup>
     <!--
         The two abstractions the hook signature names, at the versions the production contract uses, so

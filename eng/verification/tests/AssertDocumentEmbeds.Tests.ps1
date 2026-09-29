@@ -104,11 +104,13 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
         # verifier checks for drift either way.
         $output = @(& $script:embedChecks)
 
-        $output | Should -HaveCount 3
+        $output | Should -HaveCount 4
         $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 2 required."
         $output[1] | Should -BeLike "Verified PLUGINS.md: * match their files, including 1 required."
         $output[2] |
             Should -BeLike "Verified CUSTOM-VALIDATION.md: * match their files, including 3 required."
+        $output[3] |
+            Should -BeLike "Verified UNIQUEID-VALIDATION.md: * match their files, including 3 required."
     }
 
     It "still requires both plugin Compose overlays" {
@@ -146,6 +148,21 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
             Should -Contain "eng/verification/CustomValidatorPluginConsumer/StudentIdentityValidator.cs"
         $paths |
             Should -Contain "eng/verification/CustomValidatorPluginConsumer/StudentIdentityPlugin.cs"
+    }
+
+    It "still requires all three of the UniqueId validation how-to's compiled sample regions" {
+        # Same reasoning as the custom-validation guide above: the options type, the validator, and
+        # the plugin that registers it are all required, because an implementer copying two of the
+        # three out of the guide would get code that does not compile. The fixture they come from is
+        # also loaded by this repository's own integration suite over real HTTP against a stub of the
+        # external unique-id system, so the sample this page teaches from has been proven rather than
+        # one that only looks right.
+        $paths = @(& $script:embedChecks -ListPath)
+
+        $paths | Should -Contain "docs/UNIQUEID-VALIDATION.md"
+        $paths | Should -Contain "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationOptions.cs"
+        $paths | Should -Contain "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs"
+        $paths | Should -Contain "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationPlugin.cs"
     }
 }
 

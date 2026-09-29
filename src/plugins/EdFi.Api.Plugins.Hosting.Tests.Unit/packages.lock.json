@@ -280,8 +280,10 @@
       "edfi.api.plugins.hosting": {
         "type": "Project",
         "dependencies": {
-          "EdFi.Api.Plugins": "[1.0.0, )",
+          "EdFi.Api.Plugins": "[1.1.0, )",
+          "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }
