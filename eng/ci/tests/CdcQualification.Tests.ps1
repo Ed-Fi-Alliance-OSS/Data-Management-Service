@@ -1589,6 +1589,14 @@ Describe 'CDC API E2E bounded diagnostics export' {
         ($json | ConvertFrom-Json).Diagnostics.Rejected | Should -Be 6
         @(Get-ChildItem $script:diagnosticOut).Count | Should -Be 1
     }
+    It 'keeps private failure causes out of exported diagnostics' {
+        'failure:CDC-E2E-02: InvalidOperationException: Descriptor POST returned Forbidden' | Add-Content $checkpointPath
+        Export-CdcQualificationEvidence $raw $script:diagnosticOut $runner
+        $json = Get-Content (Join-Path $script:diagnosticOut 'cdc-api-e2e.json') -Raw
+        $json | Should -Not -Match 'InvalidOperationException|Descriptor POST returned Forbidden|failure:CDC-E2E-02'
+        ($json | ConvertFrom-Json).Diagnostics.Checkpoints | Should -Be $lines
+        ($json | ConvertFrom-Json).Diagnostics.Rejected | Should -Be 1
+    }
     It 'bounds or rejects <Fault> diagnostic input explicitly' -ForEach @(
         @{ Fault = 'Oversized'; Availability = 'Oversized' }; @{ Fault = 'Count'; Availability = 'Available' }
         @{ Fault = 'Identity'; Availability = 'IdentityMismatch' }; @{ Fault = 'Missing'; Availability = 'Missing' }

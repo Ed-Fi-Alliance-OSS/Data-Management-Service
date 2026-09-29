@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Tests.E2E.Cdc;
 using FluentAssertions;
+using NUnit.Framework.Internal;
 
 namespace EdFi.DataManagementService.Tests.Unit;
 
@@ -61,6 +62,81 @@ public class Given_CdcScenarioDiagnostics
         Func<Task> write = () => _diagnostics.WriteAsync(new string('x', 513));
         await write.Should().ThrowAsync<InvalidOperationException>();
         (await File.ReadAllLinesAsync(_path + ".checkpoints")).Should().Equal(_invocation);
+    }
+
+    [Test]
+    public async Task It_retains_the_exception_type_and_first_line_only_in_the_private_journal()
+    {
+        await CdcScenarioDiagnostics.WriteFailureAsync(
+            _path,
+            _invocation,
+            "CDC-E2E-02",
+            new InvalidOperationException(
+                "Descriptor POST returned Forbidden\r\nprivate response",
+                new Exception("private inner")
+            ),
+            CancellationToken.None
+        );
+        (await File.ReadAllLinesAsync(_path + ".checkpoints"))
+            .Should()
+            .Equal(
+                _invocation,
+                "failure:CDC-E2E-02: InvalidOperationException: Descriptor POST returned Forbidden"
+            );
+        TestExecutionContext
+            .CurrentContext.CurrentResult.Output.Should()
+            .NotContain("Descriptor POST returned Forbidden");
+    }
+
+    [TestCase("Request failed Password=unquoted secret", "Request failed [redacted]")]
+    [TestCase("Request failed Authorization: Bearer secret", "Request failed [redacted]")]
+    [TestCase("Request failed https://user:secret@host/path", "Request failed https[redacted]")]
+    [TestCase("Expected value to be \"private student\"", "Expected value to be [redacted]")]
+    [TestCase("Response {\"firstName\":\"private student\"}", "Response [redacted]")]
+    [TestCase("Failed\u001b\t request", "Failed request")]
+    [TestCase("Failed Pass\u0000word=secret", "Failed [redacted]")]
+    public async Task It_sanitizes_the_failure_lead_in(string message, string expected)
+    {
+        await CdcScenarioDiagnostics.WriteFailureAsync(
+            _path,
+            _invocation,
+            "CDC-E2E-02",
+            new Exception(message),
+            CancellationToken.None
+        );
+        (await File.ReadAllLinesAsync(_path + ".checkpoints"))
+            .Should()
+            .Equal(_invocation, $"failure:CDC-E2E-02: Exception: {expected}");
+    }
+
+    [Test]
+    public async Task It_redacts_before_truncating_the_failure_line()
+    {
+        await CdcScenarioDiagnostics.WriteFailureAsync(
+            _path,
+            _invocation,
+            "CDC-E2E-02",
+            new Exception("Failed Password=\"" + new string('s', 1000) + "\""),
+            CancellationToken.None
+        );
+        (await File.ReadAllLinesAsync(_path + ".checkpoints"))
+            .Should()
+            .Equal(_invocation, "failure:CDC-E2E-02: Exception: Failed [redacted]");
+    }
+
+    [Test]
+    public async Task It_bounds_the_failure_line()
+    {
+        await CdcScenarioDiagnostics.WriteFailureAsync(
+            _path,
+            _invocation,
+            "CDC-E2E-02",
+            new Exception(new string('x', 1000)),
+            CancellationToken.None
+        );
+        (await File.ReadAllLinesAsync(_path + ".checkpoints"))[1]
+            .Should()
+            .Be("failure:CDC-E2E-02: Exception: " + new string('x', 481));
     }
 
     [Test]

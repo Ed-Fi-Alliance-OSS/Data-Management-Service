@@ -100,6 +100,7 @@ internal sealed class CdcScenarioRunner
             current.Failure = Classify(exception, token);
             primaryFailure = $"CDC_API_{current.Id}_{current.Failure}";
             RecordAttachmentBoundary(exception);
+            await RecordFailureAsync(current.Id, exception);
         }
         finally
         {
@@ -118,6 +119,7 @@ internal sealed class CdcScenarioRunner
             catch (Exception exception)
             {
                 shutdownFailure = Classify(exception, CancellationToken.None);
+                await RecordFailureAsync("Disposal-Cancellation", exception);
             }
             // Let a cancelled operation unwind before disposing its resources. Never mark disposal
             // passed if an operation outlives this independent bounded drain.
@@ -125,15 +127,18 @@ internal sealed class CdcScenarioRunner
             {
                 await pending.WaitAsync(shutdown.Token);
             }
-            catch (OperationCanceledException) when (shutdown.IsCancellationRequested && !pending.IsCompleted)
+            catch (OperationCanceledException exception)
+                when (shutdown.IsCancellationRequested && !pending.IsCompleted)
             {
                 shutdownFailure = CdcScenarioFailure.TimedOut;
+                await RecordFailureAsync("Disposal-Drain", exception);
             }
             catch (CdcAttachmentException exception)
             {
                 // WaitAsync may observe cancellation before attachment finishes unwinding.
                 // Retain its safe boundary without replacing the original failure category.
                 RecordAttachmentBoundary(exception);
+                await RecordFailureAsync("Attachment-Drain", exception);
             }
             catch
             { /* The execution failure is already recorded above. */
@@ -152,6 +157,7 @@ internal sealed class CdcScenarioRunner
             {
                 report.Disposal.Outcome = CdcScenarioOutcome.Failed;
                 report.Disposal.Failure = Classify(exception, CancellationToken.None);
+                await RecordFailureAsync("Disposal", exception);
             }
             await PersistFinalizationAsync();
         }
@@ -193,6 +199,25 @@ internal sealed class CdcScenarioRunner
             catch
             {
                 persistenceFailed = true;
+            }
+        }
+
+        async Task RecordFailureAsync(string stage, Exception exception)
+        {
+            using var reserve = new CancellationTokenSource(_finalizationTimeout);
+            try
+            {
+                await CdcScenarioDiagnostics.WriteFailureAsync(
+                    path,
+                    invocationId,
+                    stage,
+                    exception,
+                    reserve.Token
+                );
+            }
+            catch
+            {
+                // A diagnostic write must not replace the primary failure or prevent cleanup.
             }
         }
     }

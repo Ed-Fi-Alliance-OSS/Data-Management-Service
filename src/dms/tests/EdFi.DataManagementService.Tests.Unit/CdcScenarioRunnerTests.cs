@@ -75,6 +75,9 @@ public class Given_CdcScenarioRunnerAccounting
         report["Identity"]!["Generation"]!.GetValue<long>().Should().Be(0);
         Outcomes(report).Should().Equal(Enumerable.Repeat("NotRun", 8));
         (await File.ReadAllTextAsync(_path)).Should().NotContain("private credentials");
+        (await File.ReadAllLinesAsync(_path + ".checkpoints"))
+            .Should()
+            .Equal(_invocation, "failure:Attachment: InvalidOperationException: private credentials");
     }
 
     [TestCase("Handoff", false)]
@@ -410,6 +413,23 @@ public class Given_CdcScenarioRunnerAccounting
         _scenarios.OnDispose = () => throw new InvalidOperationException("cleanup private error");
         await ExpectFailure("CDC_API_CDC-E2E-01_Error");
         Outcome(Read(), "Disposal").Should().Be("Failed");
+        (await File.ReadAllLinesAsync(_path + ".checkpoints"))
+            .Should()
+            .Equal(
+                _invocation,
+                "failure:CDC-E2E-01: InvalidOperationException: original private error",
+                "failure:Disposal: InvalidOperationException: cleanup private error"
+            );
+    }
+
+    [Test]
+    public async Task It_preserves_the_phase_failure_and_cleanup_when_the_private_journal_is_unwritable()
+    {
+        Directory.CreateDirectory(_path + ".checkpoints");
+        _scenarios.OnPhase = (_, _) => throw new InvalidOperationException("original private error");
+        await ExpectFailure("CDC_API_CDC-E2E-01_Error");
+        _scenarios.Events.Should().Equal("Attachment", "Student", "Disposal");
+        Outcome(Read(), "Disposal").Should().Be("Passed");
     }
 
     [TestCase("", "valid", "CDC_API_REPORT_ABSOLUTE_PATH_REQUIRED")]

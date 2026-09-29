@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 
@@ -40,5 +41,56 @@ internal sealed class CdcScenarioDiagnostics
         await File.AppendAllTextAsync(_path, checkpoint + "\n");
         _count++;
         await TestContext.Out.WriteLineAsync(checkpoint);
+    }
+
+    // Failure details stay private: do not echo them to NUnit/TRX. The exporter rejects this prefix.
+    // The runner also uses this before attachment has created a journal (e.g. early cancellation).
+    public static async Task WriteFailureAsync(
+        string reportPath,
+        string invocationId,
+        string stage,
+        Exception exception,
+        CancellationToken token
+    )
+    {
+        string path = reportPath + ".checkpoints";
+        if (!File.Exists(path))
+        {
+            _ = new CdcScenarioDiagnostics(reportPath, invocationId);
+        }
+        // Bound private diagnostics too, and never append to a different invocation's journal.
+        using (var reader = File.OpenText(path))
+        {
+            if (await reader.ReadLineAsync(token) != invocationId)
+            {
+                return;
+            }
+        }
+
+        string message = exception.Message.TrimStart();
+        int newline = message.IndexOfAny(['\r', '\n']);
+        if (newline >= 0)
+        {
+            message = message[..newline];
+        }
+        message = new string(message.Where(character => !char.IsControl(character)).ToArray());
+        // Preserve the diagnostic lead-in, but drop the entire suffix at quoted/structured data,
+        // URLs or credential markers. This deliberately avoids parsing arbitrary response bodies
+        // or attempting to redact individual values in malformed connection strings.
+        var sensitive = Regex.Match(
+            message,
+            "[\"'{\\[<]|://|password|pwd|secret|token|authorization|bearer|connectionstring|user id|username|body|payload",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+        );
+        if (sensitive.Success)
+        {
+            message = message[..sensitive.Index] + "[redacted]";
+        }
+        string line = $"failure:{stage}: {exception.GetType().Name}: {message}";
+        line = line[..Math.Min(line.Length, 512)] + "\n";
+        if (new FileInfo(path).Length + Encoding.UTF8.GetByteCount(line) <= 37 + MaximumCheckpoints * 513)
+        {
+            await File.AppendAllTextAsync(path, line, token);
+        }
     }
 }
