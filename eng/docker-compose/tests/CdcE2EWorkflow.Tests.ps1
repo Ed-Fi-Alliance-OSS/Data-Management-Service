@@ -818,11 +818,13 @@ Describe 'Private API CDC attachment contract' {
         Initialize-AttachmentFixture $Provider
         $base = Join-Path $script:attachmentRoot 'base.json'
         @{ services = @{ dms = @{ image = 'fixture'; ports = @('127.0.0.1:18080:8080') } } } | ConvertTo-Json -Depth 8 | Set-Content $base
-        $merged = & docker compose -p cdc-attachment-test -f $base -f $script:httpPath config --format json 2>$null
+        $composeArguments = @('compose', '-p', 'cdc-attachment-test', '-f', $base, '-f', $script:httpPath, 'config', '--format', 'json')
+        $merged = & docker @composeArguments 2>$null
         $LASTEXITCODE | Should -Be 0
         $configuration = ($merged -join "`n") | ConvertFrom-Json -AsHashtable
         { Assert-E2ECdcHttpConfiguration $configuration } | Should -Not -Throw
-        $merged = & docker compose -p cdc-attachment-test -f $base -f $script:admittedPath -f $script:httpPath config --format json 2>$null
+        $composeArguments = @('compose', '-p', 'cdc-attachment-test', '-f', $base, '-f', $script:admittedPath, '-f', $script:httpPath, 'config', '--format', 'json')
+        $merged = & docker @composeArguments 2>$null
         $LASTEXITCODE | Should -Be 0
         $configuration = ($merged -join "`n") | ConvertFrom-Json -AsHashtable
         { Assert-E2ECdcHttpConfiguration $configuration } | Should -Throw '*no projection targets*'
