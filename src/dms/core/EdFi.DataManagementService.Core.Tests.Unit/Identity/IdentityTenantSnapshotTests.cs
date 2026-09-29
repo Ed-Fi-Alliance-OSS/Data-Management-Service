@@ -89,10 +89,10 @@ public class IdentityTenantSnapshotTests
         }
 
         [Test]
-        public void It_calls_LoadTenants_exactly_once()
+        public void It_refreshes_once_for_the_initial_fill_and_once_per_unknown_name()
         {
             A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappenedOnceExactly();
+                .MustHaveHappened(3, Times.Exactly);
         }
     }
 
@@ -129,10 +129,160 @@ public class IdentityTenantSnapshotTests
         }
 
         [Test]
-        public void It_calls_LoadTenants_exactly_once()
+        public void It_refreshes_again_for_the_name_missing_from_the_fresh_snapshot()
         {
             A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
-                .MustHaveHappenedOnceExactly();
+                .MustHaveHappenedTwiceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Tenant_Created_After_The_Snapshot_Loaded : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _newTenantOutcome;
+        private TenantExistenceOutcome _knownTenantOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>(["North"]))
+                .Once()
+                .Then.Returns(Task.FromResult<IList<string>>(["North", "South"]));
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+
+            await snapshot.CheckAsync("North", CancellationToken.None);
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            _newTenantOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
+            _knownTenantOutcome = await snapshot.CheckAsync("North", CancellationToken.None);
+        }
+
+        [Test]
+        public void It_answers_Exists_for_the_new_tenant_while_the_snapshot_is_still_fresh()
+        {
+            _newTenantOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_answers_Exists_for_the_known_tenant()
+        {
+            _knownTenantOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_refreshes_only_for_the_miss_and_never_for_a_known_tenant()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedTwiceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Two_Concurrent_Callers_Missing_From_A_Fresh_Snapshot : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _southOutcome;
+        private TenantExistenceOutcome _westOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            var gate = new TaskCompletionSource<IList<string>>();
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>(["North"]))
+                .Once()
+                .Then.ReturnsLazily(_ => gate.Task);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+
+            await snapshot.CheckAsync("North", CancellationToken.None);
+
+            Task<TenantExistenceOutcome> south = snapshot.CheckAsync("South", CancellationToken.None);
+            Task<TenantExistenceOutcome> west = snapshot.CheckAsync("West", CancellationToken.None);
+            await Task.Delay(50);
+
+            gate.SetResult(["North", "South"]);
+
+            _southOutcome = await south;
+            _westOutcome = await west;
+        }
+
+        [Test]
+        public void It_answers_Exists_for_the_tenant_the_shared_refresh_found()
+        {
+            _southOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_answers_Absent_for_the_tenant_the_shared_refresh_did_not_find()
+        {
+            _westOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_shares_one_refresh_between_both_misses()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedTwiceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Miss_Refresh_That_Fails : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private TenantExistenceOutcome _failedRefreshOutcome;
+        private TenantExistenceOutcome _withinCooldownOutcome;
+        private TenantExistenceOutcome _afterCooldownOutcome;
+        private int _loadsWithinCooldown;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .Returns(Task.FromResult<IList<string>>(["North"]))
+                .Once()
+                .Then.ThrowsAsync(new InvalidOperationException("boom"))
+                .Once()
+                .Then.Returns(Task.FromResult<IList<string>>(["North", "South"]));
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+
+            await snapshot.CheckAsync("North", CancellationToken.None);
+            _failedRefreshOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
+            _withinCooldownOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
+            _loadsWithinCooldown = Fake.GetCalls(_dataStoreProvider).Count();
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+            _afterCooldownOutcome = await snapshot.CheckAsync("South", CancellationToken.None);
+        }
+
+        [Test]
+        public void It_answers_Absent_from_the_still_fresh_snapshot_when_the_refresh_fails()
+        {
+            _failedRefreshOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_answers_Absent_within_the_cooldown_window()
+        {
+            _withinCooldownOutcome.Should().Be(TenantExistenceOutcome.Absent);
+        }
+
+        [Test]
+        public void It_starts_no_refresh_within_the_cooldown_window()
+        {
+            _loadsWithinCooldown.Should().Be(2);
+        }
+
+        [Test]
+        public void It_answers_Exists_once_the_cooldown_elapses()
+        {
+            _afterCooldownOutcome.Should().Be(TenantExistenceOutcome.Exists);
         }
     }
 

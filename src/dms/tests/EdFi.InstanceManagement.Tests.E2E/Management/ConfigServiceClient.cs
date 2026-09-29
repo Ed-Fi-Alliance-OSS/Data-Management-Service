@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using EdFi.InstanceManagement.Tests.E2E.Models;
@@ -312,6 +313,35 @@ public class ConfigServiceClient
             ?? throw new InvalidOperationException(
                 "Failed to deserialize reset API client credentials response"
             );
+    }
+
+    /// <summary>
+    /// Delete an API client.
+    /// </summary>
+    public async Task DeleteApiClientAsync(int id)
+    {
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            _accessToken
+        );
+
+        var response = await _httpClient.DeleteAsync($"/v3/apiClients/{id}");
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Get the status code of a read of an API client by its numeric identifier or its OAuth client
+    /// key, without requiring success, so a caller can assert that a deleted client is gone.
+    /// </summary>
+    public async Task<HttpStatusCode> GetApiClientStatusAsync(string idOrClientKey)
+    {
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            _accessToken
+        );
+
+        using var response = await _httpClient.GetAsync($"/v3/apiClients/{idOrClientKey}");
+        return response.StatusCode;
     }
 
     /// <summary>

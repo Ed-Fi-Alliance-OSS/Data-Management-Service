@@ -478,4 +478,68 @@ public class ClaimSetCacheServiceTests
             await holderTask;
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Caller_Holding_The_Fill_Is_Aborted : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task It_Keeps_The_Shared_Fill_Running_For_A_Live_Waiter()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var gate = new TaskCompletionSource();
+            var liveClaims = new List<ClaimSet> { new("LiveClaimSet", []) };
+            var fillTokens = new List<CancellationToken>();
+
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .ReturnsLazily(
+                    async (string? _, CancellationToken token) =>
+                    {
+                        fillTokens.Add(token);
+                        await gate.Task.WaitAsync(token);
+                        return (IList<ClaimSet>)liveClaims;
+                    }
+                );
+
+            var service = new CachedClaimSetProvider(
+                securityMetadataProvider,
+                CreateMemoryCache(),
+                CreateCacheSettings(),
+                NullLogger<CachedClaimSetProvider>.Instance
+            );
+
+            // Holder: starts the fill and blocks inside it until the gate opens.
+            using var abortedHolderCts = new CancellationTokenSource();
+            Task<IList<ClaimSet>> abortedHolderTask = service.GetAllClaimSets(
+                cancellationToken: abortedHolderCts.Token
+            );
+            await Task.Delay(50);
+
+            // Live waiter: needs the same tenant's claim sets and does not cancel.
+            Task<IList<ClaimSet>> liveWaiterTask = service.GetAllClaimSets();
+            await Task.Delay(50);
+
+            var stopwatch = Stopwatch.StartNew();
+            await abortedHolderCts.CancelAsync();
+
+            Func<Task> act = async () => await abortedHolderTask;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+
+            // The holder leaving did not cancel the fetch the live waiter still needs.
+            fillTokens.Should().ContainSingle().Which.IsCancellationRequested.Should().BeFalse();
+            liveWaiterTask.IsCompleted.Should().BeFalse();
+
+            gate.SetResult();
+
+            IList<ClaimSet> liveResult = await liveWaiterTask.WaitAsync(TimeSpan.FromSeconds(2));
+            liveResult.Should().BeEquivalentTo(liveClaims);
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
 }

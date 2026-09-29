@@ -14,8 +14,9 @@ namespace EdFi.DataManagementService.Core.Identity;
 /// Process-wide, singleton coordinator for <see cref="Middleware.ValidateTenantExistsMiddleware" />.
 /// Holds one immutable, case-insensitive tenant-name snapshot fed
 /// by <see cref="IDataStoreProvider.LoadTenants" />, fresh for 60 seconds after a successful refresh
-/// completes. A cold or expired caller joins one shared refresh regardless of the tenant name it
-/// asked about; the refresh runs on its own <see cref="CancellationTokenSource" /> linked to
+/// completes. A cold or expired caller, or one whose tenant is missing from a fresh snapshot, joins one
+/// shared refresh regardless of the tenant name it asked about, so a tenant created in the
+/// Configuration Service is recognized as soon as it is requested; the refresh runs on its own <see cref="CancellationTokenSource" /> linked to
 /// <see cref="IHostApplicationLifetime.ApplicationStopping" /> with a 30-second budget, never on a
 /// caller's own token, so one caller leaving never aborts a fill another caller still needs. A failed
 /// refresh answers <see cref="TenantExistenceOutcome.Unavailable" /> to every live waiter and refuses
@@ -63,8 +64,10 @@ internal sealed class IdentityTenantSnapshot(
     private readonly object _refreshGate = new();
 
     /// <summary>
-    /// Answers whether <paramref name="tenant" /> exists, using a fresh snapshot immediately or
-    /// joining a shared refresh otherwise. An <see cref="OperationCanceledException" /> raised because
+    /// Answers whether <paramref name="tenant" /> exists, using a fresh snapshot that contains it
+    /// immediately or joining a shared refresh otherwise. A tenant missing from a fresh snapshot is
+    /// answered from the refreshed snapshot, or from the still-fresh one when that refresh fails or
+    /// the failure cooldown suppresses it. An <see cref="OperationCanceledException" /> raised because
     /// <paramref name="requestToken" /> itself was cancelled propagates untouched; every other failure
     /// - including the refresh's own timeout or a host-shutdown cancellation - is reported as
     /// <see cref="TenantExistenceOutcome.Unavailable" />.
@@ -73,25 +76,25 @@ internal sealed class IdentityTenantSnapshot(
     {
         requestToken.ThrowIfCancellationRequested();
 
-        Snapshot? current = Volatile.Read(ref _snapshot);
-        if (current is not null && IsFresh(current))
+        Snapshot? observed = Volatile.Read(ref _snapshot);
+        if (observed is not null && IsFresh(observed) && observed.TenantNames.Contains(tenant))
         {
-            return Contains(current, tenant);
+            return TenantExistenceOutcome.Exists;
         }
 
-        Task<bool> refreshTask = GetOrStartRefreshTask();
+        Task<bool> refreshTask = GetOrStartRefreshTask(observed);
 
         // RunRefreshAsync never throws - the only OperationCanceledException WaitAsync can raise
         // here is for the caller's own requestToken, so it is left unhandled and propagates.
         bool refreshSucceeded = await refreshTask.WaitAsync(requestToken).ConfigureAwait(false);
 
-        if (!refreshSucceeded)
+        Snapshot? latest = Volatile.Read(ref _snapshot);
+        if (latest is not null && (refreshSucceeded || IsFresh(latest)))
         {
-            return TenantExistenceOutcome.Unavailable;
+            return Contains(latest, tenant);
         }
 
-        Snapshot? refreshed = Volatile.Read(ref _snapshot);
-        return refreshed is null ? TenantExistenceOutcome.Unavailable : Contains(refreshed, tenant);
+        return TenantExistenceOutcome.Unavailable;
     }
 
     private bool IsFresh(Snapshot snapshot) => timeProvider.GetUtcNow() - snapshot.LoadedAt < FreshnessWindow;
@@ -103,12 +106,11 @@ internal sealed class IdentityTenantSnapshot(
     /// Returns the one shared in-flight refresh, joining an existing one when present. Reuses a
     /// recently failed refresh unchanged while it is still inside its 5-second cooldown so a joining
     /// caller neither starts a new <see cref="IDataStoreProvider.LoadTenants" /> call nor waits any
-    /// longer than the original refresh already has. Reuses a completed successful refresh while the
-    /// snapshot it produced is still fresh, so a caller that observed an expired snapshot just before
-    /// that refresh completed does not start another. Once the cooldown has elapsed - or the previous
-    /// refresh succeeded but the snapshot has since expired - starts a brand new refresh instead.
+    /// longer than the original refresh already has. Reuses a completed successful refresh when it
+    /// replaced the <paramref name="observed" /> snapshot after the caller read it, so a caller that
+    /// raced that refresh does not start another. Otherwise starts a brand new refresh.
     /// </summary>
-    private Task<bool> GetOrStartRefreshTask()
+    private Task<bool> GetOrStartRefreshTask(Snapshot? observed)
     {
         lock (_refreshGate)
         {
@@ -121,10 +123,9 @@ internal sealed class IdentityTenantSnapshot(
             {
                 if (completed.Result)
                 {
-                    // A caller that read an expired snapshot just before another refresh completed
-                    // re-checks freshness here rather than starting a redundant load.
-                    Snapshot? current = Volatile.Read(ref _snapshot);
-                    if (current is not null && IsFresh(current))
+                    // A caller that read a snapshot just before another refresh replaced it reuses
+                    // that refresh rather than starting a redundant load.
+                    if (!ReferenceEquals(Volatile.Read(ref _snapshot), observed))
                     {
                         return completed;
                     }

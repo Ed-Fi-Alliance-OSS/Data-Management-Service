@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Text.Json;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using EdFi.InstanceManagement.Tests.E2E.Models;
@@ -106,6 +107,7 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
         await client.ImportIdentityOnlyClaimSetAsync(claimSetName);
     }
 
+    [Given("claim sets are reloaded for tenant {string}")]
     [When("claim sets are reloaded for tenant {string}")]
     public async Task WhenClaimSetsAreReloadedForTenant(string tenantName)
     {
@@ -117,6 +119,7 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
     }
 
     [When("{int} seconds elapse for the claim set cache to expire")]
+    [When("{int} seconds elapse for the application context cache to expire")]
     public async Task WhenSecondsElapseForTheClaimSetCacheToExpire(int seconds)
     {
         await Task.Delay(TimeSpan.FromSeconds(seconds));
@@ -176,6 +179,28 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
 
         reset.Key.Should().Be(key, "reset-credential must not change the OAuth client key");
         _clientsByRole[role] = (id, reset.Key, reset.Secret);
+    }
+
+    [When("the {string} client is deleted")]
+    public async Task WhenTheClientIsDeleted(string role)
+    {
+        (int id, _, _) = ResolveClient(role);
+        var client = GetTenantConfigClient(_applicationTenant!);
+
+        await client.DeleteApiClientAsync(id);
+    }
+
+    [Then("the {string} client should no longer exist in the Configuration Service")]
+    public async Task ThenTheClientShouldNoLongerExistInTheConfigurationService(string role)
+    {
+        (int id, _, _) = ResolveClient(role);
+        var client = GetTenantConfigClient(_applicationTenant!);
+
+        HttpStatusCode status = await client.GetApiClientStatusAsync(
+            id.ToString(CultureInfo.InvariantCulture)
+        );
+
+        status.Should().Be(HttpStatusCode.NotFound, $"the {role} client was deleted");
     }
 
     [Given("a token is minted with the {string} client's current credentials")]

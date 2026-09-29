@@ -8,7 +8,8 @@ Feature: Identity Client Lifecycle
     Verify the full CMS-managed lifecycle of an identity-only API client against real
     Configuration Service and DMS instances: an application with an empty Data Store assignment
     can still authenticate, mint tokens, and reach every identity operation, while a resource
-    route stays out of reach for the same client. Tenant_255901 is pre-registered by the
+    route stays out of reach for the same client. Deleting the second client leaves the initial
+    client's identity access and resource-route outcome unchanged. Tenant_255901 is pre-registered by the
     suite-owned fixture.
 
     Background:
@@ -30,3 +31,7 @@ Feature: Identity Client Lifecycle
           And every identity operation for tenant "Tenant_255901" instance "255901/2024" using the "second" client's token responds with 404 and problem type "urn:ed-fi:api:identities:operation-not-supported"
           And a GET request for resource "contentClassDescriptors" at tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 403
           And a GET request for resource "contentClassDescriptors" at tenant "Tenant_255901" instance "255901/2024" using the "second" client's token responds with 403
+         When the "second" client is deleted
+         Then the "second" client should no longer exist in the Configuration Service
+          And every identity operation for tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 404 and problem type "urn:ed-fi:api:identities:operation-not-supported"
+          And a GET request for resource "contentClassDescriptors" at tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 403

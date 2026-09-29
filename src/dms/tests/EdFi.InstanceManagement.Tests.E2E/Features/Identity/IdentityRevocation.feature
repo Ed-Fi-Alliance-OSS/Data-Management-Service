@@ -8,7 +8,9 @@ Feature: Identity Revocation
     Verify that removing the identity claim from a claim set and reloading claim sets for one
     tenant-name spelling revokes identity authorization for that spelling while a differently
     cased spelling of the same tenant keeps authorizing until its own cached claim set entry
-    naturally expires, after which both spellings are denied. The claim-set cache key is spelling
+    naturally expires, after which both spellings are denied. Deleting a client keeps its
+    already-issued token working on the identity routes until the cached application context
+    expires, after which the token is rejected with 401. The claim-set cache key is spelling
     sensitive by design (an operational limitation this feature tests rather than normalizes).
     Tenant_255901 is pre-registered by the suite-owned fixture.
 
@@ -26,3 +28,11 @@ Feature: Identity Revocation
           And every identity operation for tenant "tenant_255901" instance "255901/2024" using the "initial" client's token responds with 404 and problem type "urn:ed-fi:api:identities:operation-not-supported"
          When 16 seconds elapse for the claim set cache to expire
          Then every identity operation for tenant "tenant_255901" instance "255901/2024" using the "initial" client's token responds with 403
+
+    Scenario: A deleted client's already-issued token keeps authorizing until its cached application context expires
+         Given claim sets are reloaded for tenant "Tenant_255901"
+          And every identity operation for tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 404 and problem type "urn:ed-fi:api:identities:operation-not-supported"
+         When the "initial" client is deleted
+         Then every identity operation for tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 404 and problem type "urn:ed-fi:api:identities:operation-not-supported"
+         When 16 seconds elapse for the application context cache to expire
+         Then every identity operation for tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 401
