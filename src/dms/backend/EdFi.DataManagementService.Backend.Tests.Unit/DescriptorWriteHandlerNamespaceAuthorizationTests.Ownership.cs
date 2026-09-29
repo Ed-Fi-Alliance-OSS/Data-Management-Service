@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -20,9 +21,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 /// resolved target selects.
 /// </summary>
 /// <remarks>
-/// Every denial asserts that no <c>INSERT</c> or <c>UPDATE</c> was issued and nothing committed, and that the
+/// Every denial asserts that no data-modifying statement of any kind reached either command stream — the
+/// session executor's or the commands created directly on the session — and that nothing committed and the
 /// session was rolled back when one was opened. The one deliberate exception is a create whose verdict has
-/// nothing configured ahead of it: it is decided before any session opens, so the assertion is that none was.
+/// nothing configured ahead of it: it is decided before any session opens, so the assertion is that none was
+/// and that no command was issued at all.
 /// </remarks>
 public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 {
@@ -46,56 +49,77 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     // ── POST that creates ────────────────────────────────────────────────
 
-    [TestCase(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized)]
-    [TestCase(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)]
+    /// <summary>
+    /// The three verdicts a create can owe: no creator token (§2.14), a creator token outside the client's own
+    /// list (§2.13), and the token cap (500). With nothing configured ahead of the verdict it is decided before
+    /// any session opens, so not a single command is issued.
+    /// </summary>
+    [TestCase(CreateDenialKind.NoCreatorToken)]
+    [TestCase(CreateDenialKind.CreatorTokenNotHeld)]
+    [TestCase(CreateDenialKind.TokenCap)]
     public async Task It_denies_a_descriptor_post_create_the_caller_could_not_own_without_opening_a_session(
-        OwnershipAuthorizationFailureKind expectedKind
+        CreateDenialKind denialKind
     )
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, CreateNewTargetLookup());
 
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-            WithOwnership(
+            WithCreateDenial(
                 CreatePostRequest(namespacePrefixes: [], authorizationStrategies: [OwnershipStrategy()]),
-                creatorOwnershipTokenId: expectedKind
-                is OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
-                    ? null
-                    : OwnedToken,
-                ownershipTokenIds: [OtherToken]
+                denialKind
             )
         );
 
-        AssertUpsertOwnershipDenial(result, expectedKind);
+        AssertCreateDenial(result, denialKind, expectedConfiguredIndex: 0);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
+        AllSessionCommands(sessionFactory).Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_denies_a_descriptor_post_create_in_the_ownership_slot_after_the_proposed_namespace_check_authorizes()
+    /// <summary>
+    /// With the proposed namespace check configured ahead of it, every create verdict is returned in the
+    /// ownership slot once that check authorizes — on the plain create path and on the locked-resolve path an
+    /// If-None-Match create takes — with no data-modifying statement and the opened session rolled back.
+    /// </summary>
+    [TestCase(CreateDenialKind.NoCreatorToken, false)]
+    [TestCase(CreateDenialKind.CreatorTokenNotHeld, false)]
+    [TestCase(CreateDenialKind.TokenCap, false)]
+    [TestCase(CreateDenialKind.NoCreatorToken, true)]
+    [TestCase(CreateDenialKind.CreatorTokenNotHeld, true)]
+    [TestCase(CreateDenialKind.TokenCap, true)]
+    public async Task It_denies_a_descriptor_post_create_in_the_ownership_slot_after_the_proposed_namespace_check_authorizes(
+        CreateDenialKind denialKind,
+        bool withPrecondition
+    )
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+
+        if (withPrecondition)
+        {
+            // The in-session lookup finds no row.
+            sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
+        }
+
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.Authorized()
         );
         var sut = CreateSut(sessionFactory, CreateNewTargetLookup());
 
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-            WithOwnership(
+            WithCreateDenial(
                 CreatePostRequest(
                     namespacePrefixes: ["uri://ed-fi.org/"],
-                    authorizationStrategies: [NamespaceStrategy(), OwnershipStrategy()]
+                    authorizationStrategies: [NamespaceStrategy(), OwnershipStrategy()],
+                    writePrecondition: withPrecondition
+                        ? new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+                        : null
                 ),
-                creatorOwnershipTokenId: null,
-                ownershipTokenIds: [OwnedToken]
+                denialKind
             )
         );
 
         // Attributed to OwnershipBased's configured position, which the verdict carries from the plan.
-        AssertUpsertOwnershipDenial(
-            result,
-            OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
-            expectedConfiguredIndex: 1
-        );
+        AssertCreateDenial(result, denialKind, expectedConfiguredIndex: 1);
         sessionFactory.Session.Executor.NamespaceResults.Should().BeEmpty("the proposed namespace check ran");
         AssertDeniedWithRollback(sessionFactory);
     }
@@ -184,6 +208,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         );
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        // The control for the no-data-modification assertions: the detector does flag a real insert.
+        AllSessionCommands(sessionFactory).Should().Contain(command => IsDataModifying(command));
         sessionFactory
             .Session.Executor.Commands.Should()
             .ContainSingle(command => IsDocumentInsert(command))
@@ -244,6 +270,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         result.Should().BeOfType<UpsertResult.UpdateSuccess>();
         sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(1);
         sessionFactory.Session.Executor.Commands.Should().Contain(command => IsDescriptorUpdate(command));
+        // The control for the no-data-modification assertions: the detector does flag a real update.
+        AllSessionCommands(sessionFactory).Should().Contain(command => IsDataModifying(command));
         sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
@@ -416,7 +444,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             result.Should().BeOfType<UpsertResult.UpdateSuccess>();
         }
 
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDescriptorUpdate(command));
+        AssertNoDataModification(sessionFactory);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
     }
 
@@ -465,6 +493,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
         sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(1);
+        AllSessionCommands(sessionFactory).Should().Contain(command => IsDataModifying(command));
         sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
@@ -643,14 +672,14 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             .TargetAction.Should()
             .Be(target is PostTarget.Create ? UpsertTargetAction.Create : UpsertTargetAction.Update);
         sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(0);
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDocumentInsert(command));
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDescriptorUpdate(command));
+        AssertNoDataModification(sessionFactory);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
 
         if (target is PostTarget.Create && !withPrecondition)
         {
-            // Nothing is configured ahead of the verdict, so it is decided without a session.
+            // Nothing is configured ahead of the verdict, so it is decided without a session or a command.
             sessionFactory.CreateAsyncCallCount.Should().Be(0);
+            AllSessionCommands(sessionFactory).Should().BeEmpty();
         }
         else
         {
@@ -665,9 +694,11 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Create, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     public async Task It_applies_a_descriptor_post_one_below_the_ownership_token_cap(
         PostTarget target,
         bool withPrecondition,
@@ -735,18 +766,47 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     /// <summary>
     /// A denial the branch owes ahead of ownership still wins over the deferred cap: the proposed namespace
-    /// check on a create, the stored namespace check on an update.
+    /// check on a create, the stored namespace check on an update. Asserted on both execution paths — the
+    /// plain one and the locked-resolve one a precondition takes — and under shared and split policies.
     /// </summary>
-    [TestCase(PostTarget.Create)]
-    [TestCase(PostTarget.Update)]
+    [TestCase(PostTarget.Create, false, OwnershipPolicyShape.Shared)]
+    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.Shared)]
+    [TestCase(PostTarget.Create, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, false, OwnershipPolicyShape.Shared)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
+    [TestCase(PostTarget.Update, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     public async Task It_reports_a_preceding_namespace_denial_ahead_of_the_deferred_ownership_token_cap(
-        PostTarget target
+        PostTarget target,
+        bool withPrecondition,
+        OwnershipPolicyShape policyShape
     )
     {
-        var sessionFactory =
-            target is PostTarget.Create
-                ? new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql)
-                : LockedTargetSessionFactory(CreatePersistedDescriptorRow());
+        RecordingNamespaceWriteSessionFactory sessionFactory;
+        WritePrecondition? precondition = null;
+
+        if (target is PostTarget.Create)
+        {
+            sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+
+            if (withPrecondition)
+            {
+                // The in-session lookup finds no row.
+                sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
+                precondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
+            }
+        }
+        else if (withPrecondition)
+        {
+            sessionFactory = PreconditionLockedTargetSessionFactory(CreatePersistedDescriptorRow());
+            precondition = new WritePrecondition.IfNoneMatch(["\"not-the-current-etag\""]);
+        }
+        else
+        {
+            sessionFactory = LockedTargetSessionFactory(CreatePersistedDescriptorRow());
+        }
+
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.NotAuthorized(
                 target is PostTarget.Create ? ProposedMismatchFailure() : StoredMismatchFailure()
@@ -757,16 +817,32 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             target is PostTarget.Create ? CreateNewTargetLookup() : ExistingPostTargetLookup()
         );
 
-        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+        // Ownership configured first, so only precedence can put the namespace answer ahead of the cap.
+        AuthorizationStrategyEvaluator[] ownershipThenNamespace = [OwnershipStrategy(), NamespaceStrategy()];
+        var policy = (policyShape, target) switch
+        {
+            (OwnershipPolicyShape.Shared, _) => UpsertActionAuthorization.SamePolicyForCreateAndUpdate(
+                ownershipThenNamespace
+            ),
+            (_, PostTarget.Create) => PolicyPair(
+                create: ownershipThenNamespace,
+                update: [NoFurtherStrategy()]
+            ),
+            _ => PolicyPair(create: [NoFurtherStrategy()], update: ownershipThenNamespace),
+        };
+
+        var result = await sut.HandlePostAsync(
             WithOwnership(
                 CreatePostRequest(
                     namespacePrefixes: ["uri://ed-fi.org/"],
-                    authorizationStrategies: [OwnershipStrategy(), NamespaceStrategy()],
-                    @namespace: "uri://other.org/SchoolTypeDescriptor"
+                    authorizationStrategies: [],
+                    @namespace: "uri://other.org/SchoolTypeDescriptor",
+                    writePrecondition: precondition
                 ),
                 creatorOwnershipTokenId: OwnedToken,
                 ownershipTokenIds: TokenRange(OwnershipTokenLimitExceededException.OwnershipTokenLimit)
-            )
+            ),
+            policy
         );
 
         result
@@ -778,10 +854,101 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                     ? NamespaceAuthorizationFailureValueSource.Proposed
                     : NamespaceAuthorizationFailureValueSource.Stored
             );
+        sessionFactory.Session.Executor.OwnershipCallCount.Should().Be(0);
         AssertDeniedWithRollback(sessionFactory);
     }
 
     // ── Support ──────────────────────────────────────────────────────────
+
+    public enum CreateDenialKind
+    {
+        /// <summary>No creator token: §2.14.</summary>
+        NoCreatorToken,
+
+        /// <summary>A creator token outside the client's own list: §2.13.</summary>
+        CreatorTokenNotHeld,
+
+        /// <summary>2,000 tokens, the creator token among them: the cap 500.</summary>
+        TokenCap,
+    }
+
+    private static DescriptorWriteRequest WithCreateDenial(
+        DescriptorWriteRequest request,
+        CreateDenialKind denialKind
+    ) =>
+        denialKind switch
+        {
+            CreateDenialKind.NoCreatorToken => WithOwnership(request, null, [OwnedToken]),
+            CreateDenialKind.CreatorTokenNotHeld => WithOwnership(request, OwnedToken, [OtherToken]),
+            _ => WithOwnership(
+                request,
+                OwnedToken,
+                TokenRange(OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+            ),
+        };
+
+    private static void AssertCreateDenial(
+        UpsertResult result,
+        CreateDenialKind denialKind,
+        int expectedConfiguredIndex
+    )
+    {
+        switch (denialKind)
+        {
+            case CreateDenialKind.NoCreatorToken:
+                AssertUpsertOwnershipDenial(
+                    result,
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    expectedConfiguredIndex
+                );
+                break;
+            case CreateDenialKind.CreatorTokenNotHeld:
+                AssertUpsertOwnershipDenial(
+                    result,
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    expectedConfiguredIndex
+                );
+                break;
+            default:
+                var failure = result
+                    .Should()
+                    .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+                    .Subject;
+                failure
+                    .Errors.Should()
+                    .Equal(
+                        OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                            OwnershipTokenLimitExceededException.OwnershipTokenLimit
+                        )
+                    );
+                failure.TargetAction.Should().Be(UpsertTargetAction.Create);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Every command the session saw: the ones created directly on it (the target lock) and the ones its
+    /// command executor ran.
+    /// </summary>
+    private static IEnumerable<RelationalCommand> AllSessionCommands(
+        RecordingNamespaceWriteSessionFactory sessionFactory
+    ) => sessionFactory.Session.ScalarCommands.Concat(sessionFactory.Session.Executor.Commands);
+
+    /// <summary>
+    /// Table-independent: any statement that inserts, updates, deletes, merges or truncates, whichever table it
+    /// names. <c>UPDATE</c> is matched only as a statement (<c>UPDATE target SET</c>), so a lock's
+    /// <c>FOR UPDATE</c> clause is not mistaken for a write.
+    /// </summary>
+    private static bool IsDataModifying(RelationalCommand command) =>
+        _dataModifyingStatement.IsMatch(command.CommandText);
+
+    private static readonly Regex _dataModifyingStatement = new(
+        """\bINSERT\s+INTO\b|\bDELETE\s+FROM\b|\bMERGE\b|\bTRUNCATE\b|\bUPDATE\s+[\w.\[\]"]+\s+SET\b""",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+    );
+
+    private static void AssertNoDataModification(RecordingNamespaceWriteSessionFactory sessionFactory) =>
+        AllSessionCommands(sessionFactory).Should().NotContain(command => IsDataModifying(command));
 
     /// <summary>
     /// Arranges a POST over the given token list, with its creator token in the list, for either target. With
@@ -889,12 +1056,14 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         failure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
     }
 
-    /// <summary>A denial inside an opened session: nothing written, nothing committed, rolled back.</summary>
+    /// <summary>
+    /// A denial inside an opened session: no data-modifying statement on either command stream, nothing
+    /// committed, rolled back.
+    /// </summary>
     private static void AssertDeniedWithRollback(RecordingNamespaceWriteSessionFactory sessionFactory)
     {
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDocumentInsert(command));
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDescriptorUpdate(command));
+        AssertNoDataModification(sessionFactory);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
