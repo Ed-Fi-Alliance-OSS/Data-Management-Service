@@ -1195,6 +1195,12 @@ independent consumer products/certification remain outside this qualification.
 
 ## API-to-Kafka scenario traceability (DMS-1325)
 
+Related implementation changes replace DMS-1324's `traceability.json` with checked-in
+NUnit `CdcInvariant` annotations validated by the traceability tests, as permitted by
+that story's equivalent-mapping requirement. Connector registration also retries
+transient configuration-read failures within its original deadline, without
+repeating connector writes; focused unit tests cover this production change.
+
 The single `Given_CdcApiE2E` fixture runs these phases in order on one admitted
 binding. The [ApiE2E runner](../../eng/ci/Invoke-CdcQualification.ps1) exports
 `<Provider>-ApiE2E/cdc-api-e2e.json`, correlated with `qualification.json` by
