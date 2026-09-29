@@ -1079,7 +1079,8 @@ public class ClaimSetRepository(
         string claimSetSql = $"""
                 SELECT "ClaimSetName", "IsSystemReserved"
                 FROM "dmscs"."ClaimSet"
-                WHERE "Id" = @ClaimSetId AND {ClaimSetWhereClause()};
+                WHERE "Id" = @ClaimSetId AND {ClaimSetWhereClause()}
+                FOR UPDATE;
                 """;
 
         return await connection.QuerySingleOrDefaultAsync<

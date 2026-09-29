@@ -1069,7 +1069,7 @@ public class ClaimSetRepository(
     {
         string claimSetSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
-                FROM dmscs.ClaimSet
+                FROM dmscs.ClaimSet WITH (UPDLOCK, HOLDLOCK)
                 WHERE Id = @ClaimSetId AND {ClaimSetWhereClause()};
                 """;
 
