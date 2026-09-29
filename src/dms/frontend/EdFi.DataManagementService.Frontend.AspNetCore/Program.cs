@@ -140,11 +140,14 @@ RunBootstrapPhase(
                 "AllowSwaggerUI",
                 policy =>
                 {
-                    policy
-                        .WithOrigins(swaggerUiOrigin)
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .WithExposedHeaders("Location");
+                    policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+
+                    // The identity surface's async 202 and incomplete results 200 carry a Location
+                    // the Swagger UI must read; with the surface off, nothing extra is exposed.
+                    if (builder.Configuration.GetValue<bool>("AppSettings:EnableIdentityManagement"))
+                    {
+                        policy.WithExposedHeaders("Location");
+                    }
                 }
             );
         });

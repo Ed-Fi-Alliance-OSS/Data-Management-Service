@@ -644,6 +644,65 @@ public class IdentityEndpointModuleTests
         }
     }
 
+    /// <summary>
+    /// A configured route-qualifier segment named like the identity routes' own get-by-id or
+    /// results-token parameter would repeat that parameter name in the route template, so the
+    /// module refuses to map the identity routes and names the reserved name in its error.
+    /// </summary>
+    [TestFixture("__identityId")]
+    [TestFixture("__IDENTITYTOKEN")]
+    public class Given_A_Route_Qualifier_Named_Like_A_Reserved_Identity_Parameter(string qualifierName)
+    {
+        private IReadOnlyList<Endpoint> _endpoints = null!;
+        private RecordingLogger<IdentityEndpointModule> _logger = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            using WebApplication app = WebApplication.CreateBuilder().Build();
+            _logger = new RecordingLogger<IdentityEndpointModule>();
+            var module = new IdentityEndpointModule(
+                Options.Create(
+                    new AppSettings
+                    {
+                        AuthenticationService = "test",
+                        Datastore = "postgresql",
+                        CorrelationIdHeader = "X-Correlation-ID",
+                        MultiTenancy = false,
+                        RouteQualifierSegments = $"districtId,{qualifierName}",
+                    }
+                ),
+                Options.Create(
+                    new CoreAppSettings { AllowIdentityUpdateOverrides = "", EnableIdentityManagement = true }
+                ),
+                _logger
+            );
+
+            module.MapEndpoints(app);
+
+            IEndpointRouteBuilder endpointRouteBuilder = app;
+            _endpoints = [.. endpointRouteBuilder.DataSources.SelectMany(dataSource => dataSource.Endpoints)];
+        }
+
+        [Test]
+        public void It_does_not_map_identity_routes()
+        {
+            _endpoints.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_logs_an_error_naming_the_reserved_qualifier()
+        {
+            _logger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase)
+                    && entry.Message.Contains(qualifierName, StringComparison.Ordinal)
+                );
+        }
+    }
+
     private sealed class RecordingLogger<T> : ILogger<T>
     {
         public List<(LogLevel Level, string Message)> Entries { get; } = [];

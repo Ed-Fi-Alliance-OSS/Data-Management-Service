@@ -315,20 +315,6 @@ public class ConfigServiceClient
     }
 
     /// <summary>
-    /// Delete an API client.
-    /// </summary>
-    public async Task DeleteApiClientAsync(int id)
-    {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            _accessToken
-        );
-
-        var response = await _httpClient.DeleteAsync($"/v3/apiClients/{id}");
-        response.EnsureSuccessStatusCode();
-    }
-
-    /// <summary>
     /// Imports (creates, or replaces in place when the name already exists - the endpoint's own
     /// upsert-by-name contract) a claim set whose only resource claim is the identity service
     /// claim, granting exactly the given actions. An empty action list produces a claim set that

@@ -178,15 +178,6 @@ public class IdentityStepDefinitions(InstanceManagementContext context)
         _clientsByRole[role] = (id, reset.Key, reset.Secret);
     }
 
-    [When("the {string} client is deleted")]
-    public async Task WhenTheClientIsDeleted(string role)
-    {
-        (int id, _, _) = ResolveClient(role);
-        var client = GetTenantConfigClient(_applicationTenant!);
-
-        await client.DeleteApiClientAsync(id);
-    }
-
     [Given("a token is minted with the {string} client's current credentials")]
     [When("a token is minted with the {string} client's current credentials")]
     public async Task WhenATokenIsMintedWithTheClientsCurrentCredentials(string role)

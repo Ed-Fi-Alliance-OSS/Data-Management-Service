@@ -80,8 +80,8 @@ internal sealed class IdentityHandler(
         // unexpected condition.
         IdentityRequestContext context = BuildContext(requestInfo);
 
-        // Populated by IdentityOperationCapabilityMiddleware, which returns operation-unsupported
-        // 404 before this handler runs if activation failed, so this is never null here.
+        // Populated by IdentityOperationCapabilityMiddleware, which returns a provider-configuration
+        // 500 before this handler runs if activation failed, so this is never null here.
         IIdentityService provider = requestInfo.IdentityProvider!;
 
         FrontendResponse? mapped = requestInfo.IdentityOperation switch
@@ -268,6 +268,13 @@ internal sealed class IdentityHandler(
                 );
 
             case IdentityResultStatus.InvalidProperties:
+                if (errors is null || errors.Any(error => error is null))
+                {
+                    return ContractViolation(
+                        traceId,
+                        "The identity provider returned InvalidProperties with a missing error list or a null error."
+                    );
+                }
                 return new FrontendResponse(
                     StatusCode: 400,
                     Body: IdentityErrorProjection.Project(errors, traceId),

@@ -22,7 +22,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// With the toggle on, a request carrying <c>Origin: &lt;Cors:SwaggerUIOrigin&gt;</c> receives
 /// <c>Access-Control-Expose-Headers</c> including <c>Location</c> on the async 202 and on the
 /// incomplete results 200, exercised through the real <c>UseCors</c> pipeline rather than the
-/// policy object directly. A request without an <c>Origin</c> header carries no CORS headers.
+/// policy object directly. A request without an <c>Origin</c> header carries no CORS headers, and
+/// with the toggle off the policy exposes nothing extra on any route.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -32,7 +33,10 @@ public class IdentityCorsExposeHeadersTests
     private const string SwaggerUiOrigin = "http://localhost:8082";
     private const string ResultsLocationPath = "/identity/v2/identities/results/tok";
 
-    private static WebApplicationFactory<Program> CreateFactory(IApiService apiService)
+    private static WebApplicationFactory<Program> CreateFactory(
+        IApiService apiService,
+        bool enableIdentityManagement = true
+    )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -41,7 +45,12 @@ public class IdentityCorsExposeHeadersTests
                 (context, configuration) =>
                 {
                     configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["AppSettings:EnableIdentityManagement"] = "true" }
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:EnableIdentityManagement"] = enableIdentityManagement
+                                ? "true"
+                                : "false",
+                        }
                     );
                 }
             );
@@ -207,6 +216,60 @@ public class IdentityCorsExposeHeadersTests
         public void It_carries_no_access_control_allow_origin()
         {
             _response.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Toggle_Off_And_A_Resource_Request_With_Origin
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            var okResponse = A.Fake<IFrontendResponse>();
+            A.CallTo(() => okResponse.StatusCode).Returns(200);
+            A.CallTo(() => okResponse.Body).Returns(new JsonObject { ["id"] = "abc" });
+            A.CallTo(() => okResponse.Headers).Returns(new Dictionary<string, string>());
+            A.CallTo(() => okResponse.ContentType).Returns("application/json");
+            A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+                .Returns(Task.FromResult(okResponse));
+
+            _factory = CreateFactory(apiService, enableIdentityManagement: false);
+            _client = _factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/data/ed-fi/schools/abc");
+            request.Headers.Add("Origin", SwaggerUiOrigin);
+
+            _response = await _client.SendAsync(request);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_still_allows_the_swagger_ui_origin()
+        {
+            _response.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(SwaggerUiOrigin);
+        }
+
+        [Test]
+        public void It_carries_no_access_control_expose_headers()
+        {
+            _response.Headers.Contains("Access-Control-Expose-Headers").Should().BeFalse();
         }
     }
 }

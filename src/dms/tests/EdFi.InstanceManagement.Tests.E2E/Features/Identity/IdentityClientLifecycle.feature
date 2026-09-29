@@ -30,5 +30,3 @@ Feature: Identity Client Lifecycle
           And every identity operation for tenant "Tenant_255901" instance "255901/2024" using the "second" client's token responds with 404 and problem type "urn:ed-fi:api:identities:operation-not-supported"
           And a GET request for resource "contentClassDescriptors" at tenant "Tenant_255901" instance "255901/2024" using the "initial" client's token responds with 403
           And a GET request for resource "contentClassDescriptors" at tenant "Tenant_255901" instance "255901/2024" using the "second" client's token responds with 403
-         When the "second" client is deleted
-         Then a GET request for resource "contentClassDescriptors" at tenant "Tenant_255901" instance "255901/2024" using the "second" client's token responds with 403

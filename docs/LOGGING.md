@@ -73,12 +73,13 @@ request logging layer:
   normalization](#correlation-id-normalization).
 * `Method`: sanitized HTTP method.
 * `Path`: sanitized request path without the query string.
-  For an identity get-by-id or results-poll route, the identifier segment is
-  replaced by a placeholder before sanitizing, so it never reaches the log;
-  every other route is unaffected. The existing sanitizer allowlist strips `{`
-  and `}` from every path like it always has, so the placeholder itself is not
-  literally bracketed in the logged value (for example
-  `/identity/v2/identities/id`, not `/identity/v2/identities/{id}`).
+  For an identity get-by-id or results-poll route, the identifier segment is replaced by a placeholder before sanitizing, so it never reaches the log.
+  Every other route is unaffected.
+  The existing sanitizer allowlist strips `{` and `}` from every path like it always has, so the placeholder itself is not literally bracketed in the logged value (for example `/identity/v2/identities/id`, not `/identity/v2/identities/{id}`).
+* `RequestPath`: raw request path from the ASP.NET Core request log scope, which is attached to every event logged while a request runs, including framework routing events and DMS frontend, core, and handler events.
+  For an identity get-by-id or results-poll route, DMS replaces the identifier segment with the same placeholder before any sink writes the event, and this value is not sanitized, so the placeholder keeps its braces (for example `/identity/v2/identities/{id}` or `/identity/v2/identities/results/{token}`).
+  Every other route keeps its raw value.
+  For those identity routes, DMS also drops the framework's own `Microsoft.AspNetCore.Hosting.Diagnostics` request-starting and request-finished events and the Debug-level `Microsoft.AspNetCore.Routing.Matching.DfaMatcher` candidate events, because they carry the raw path in their `Path` property and rendered message.
 * `StatusCode`: HTTP response status code. An unhandled exception before a
   response is produced is logged as `500`.
 * `DurationMs`: elapsed request duration in milliseconds as a numeric `long`.

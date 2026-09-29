@@ -30,11 +30,16 @@ internal static class IdentityRoutePathRedactor
 {
     private const string IdSegmentTemplate = "{id}";
     private const string TokenSegmentTemplate = "{token}";
+    private const string IdGroup = "id";
+    private const string TokenGroup = "token";
 
     // Keyed by the number of leading tenant/route-qualifier segments (0-N, effectively a handful of
     // distinct values per process), so the compiled pattern for a given configuration is built once.
-    private static readonly ConcurrentDictionary<int, Regex> _byIdPatterns = new();
-    private static readonly ConcurrentDictionary<int, Regex> _resultsPatterns = new();
+    private static readonly ConcurrentDictionary<int, Regex> _configuredPatterns = new();
+
+    // The same route shape with any number of leading segments, for callers that have no
+    // configuration seam (Serilog filters and enrichers wired while the logger is built).
+    private static readonly Regex _anyPrefixPattern = BuildPattern("(?:/[^/]+)*");
 
     public static string? Redact(PathString path, string[] qualifierSegments, bool multiTenancy)
     {
@@ -45,39 +50,50 @@ internal static class IdentityRoutePathRedactor
         }
 
         int prefixSegmentCount = (multiTenancy ? 1 : 0) + qualifierSegments.Length;
+        Regex pattern = _configuredPatterns.GetOrAdd(
+            prefixSegmentCount,
+            count => BuildPattern(string.Concat(Enumerable.Repeat("/[^/]+", count)))
+        );
 
-        Regex resultsPattern = _resultsPatterns.GetOrAdd(prefixSegmentCount, BuildResultsPattern);
-        Match resultsMatch = resultsPattern.Match(value);
-        if (resultsMatch.Success)
-        {
-            return string.Concat(value.AsSpan(0, resultsMatch.Groups[1].Index), TokenSegmentTemplate);
-        }
-
-        Regex byIdPattern = _byIdPatterns.GetOrAdd(prefixSegmentCount, BuildByIdPattern);
-        Match byIdMatch = byIdPattern.Match(value);
-        if (byIdMatch.Success)
-        {
-            return string.Concat(value.AsSpan(0, byIdMatch.Groups[1].Index), IdSegmentTemplate);
-        }
-
-        return value;
+        return Redact(value, pattern);
     }
 
-    // IgnoreCase/CultureInvariant because ASP.NET Core routing matches these routes
-    // case-insensitively; the trailing /? before $ tolerates the trailing slash routing also
-    // accepts, without pulling it into the captured identifier group.
-    private static Regex BuildByIdPattern(int prefixSegmentCount) =>
+    /// <summary>
+    /// Redacts an identity get-by-id or results-poll path whatever its number of leading tenant and
+    /// route-qualifier segments, producing the same placeholder form as
+    /// <see cref="Redact(PathString, string[], bool)"/>. Every other path is returned unchanged.
+    /// </summary>
+    public static string RedactWithAnyPrefix(string path) => Redact(path, _anyPrefixPattern);
+
+    /// <summary>
+    /// True when <paramref name="path"/> is an identity get-by-id or results-poll path, whatever its
+    /// number of leading tenant and route-qualifier segments.
+    /// </summary>
+    public static bool IsIdentifierBearingPathWithAnyPrefix(string path) => _anyPrefixPattern.IsMatch(path);
+
+    private static string Redact(string value, Regex pattern)
+    {
+        Match match = pattern.Match(value);
+        if (!match.Success)
+        {
+            return value;
+        }
+
+        Group token = match.Groups[TokenGroup];
+        return token.Success
+            ? string.Concat(value.AsSpan(0, token.Index), TokenSegmentTemplate)
+            : string.Concat(value.AsSpan(0, match.Groups[IdGroup].Index), IdSegmentTemplate);
+    }
+
+    // One route shape for every caller: a results-poll path (.../identity/v2/identities/results/{value})
+    // or a get-by-id path (.../identity/v2/identities/{value}, excluding the literal find and search
+    // operation names). The results alternative is tried first, so a results-poll path is never
+    // mistaken for a get-by-id of "results". IgnoreCase/CultureInvariant because ASP.NET Core
+    // routing matches these routes case-insensitively; the trailing /? before $ tolerates the
+    // trailing slash routing also accepts, without pulling it into the captured identifier group.
+    private static Regex BuildPattern(string prefixPattern) =>
         new(
-            $"^{BuildPrefixPattern(prefixSegmentCount)}/identity/v2/identities/(?!find/?$|search/?$)([^/]+)/?$",
+            $"^{prefixPattern}/identity/v2/identities/(?:results/(?<{TokenGroup}>[^/]+)|(?!find/?$|search/?$)(?<{IdGroup}>[^/]+))/?$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
         );
-
-    private static Regex BuildResultsPattern(int prefixSegmentCount) =>
-        new(
-            $"^{BuildPrefixPattern(prefixSegmentCount)}/identity/v2/identities/results/([^/]+)/?$",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
-        );
-
-    private static string BuildPrefixPattern(int prefixSegmentCount) =>
-        string.Concat(Enumerable.Repeat("/[^/]+", prefixSegmentCount));
 }

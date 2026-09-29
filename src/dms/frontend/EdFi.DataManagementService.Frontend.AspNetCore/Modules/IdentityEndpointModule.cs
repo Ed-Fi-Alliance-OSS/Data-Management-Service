@@ -46,6 +46,35 @@ public class IdentityEndpointModule(
             return;
         }
 
+        // A qualifier named like this module's own get-by-id or results-token parameter would
+        // repeat that parameter name in the route template, which fails host start with an
+        // opaque route-pattern error; refuse the identity routes with a named error instead.
+        string[] reservedNames = routeQualifierSegments
+            .Where(segment =>
+                string.Equals(
+                    segment,
+                    AspNetCoreFrontend.IdentityIdRouteParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || string.Equals(
+                    segment,
+                    AspNetCoreFrontend.IdentityTokenRouteParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .ToArray();
+
+        if (reservedNames.Length > 0)
+        {
+            logger.LogError(
+                "Identity routes were not mapped because configured route qualifier segments use "
+                    + "names reserved for the identity route parameters: {ReservedNames}. Rename "
+                    + "those qualifiers to enable the identity endpoints.",
+                string.Join(", ", reservedNames)
+            );
+            return;
+        }
+
         string prefix = FixedRoutePattern.Build(routeQualifierSegments, frontendOptions.Value.MultiTenancy);
         string identitiesBase = $"{prefix}/identity/v2/identities";
 

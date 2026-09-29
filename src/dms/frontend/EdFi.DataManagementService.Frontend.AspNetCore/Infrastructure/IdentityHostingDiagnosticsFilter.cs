@@ -3,14 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
 using Serilog.Events;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
 /// Suppresses the framework's own <c>Microsoft.AspNetCore.Hosting.Diagnostics</c> request-start and
-/// request-finish log events for an identity get-by-id or results-poll route, because those events
+/// request-finish log events (and the routing matcher's Debug-level candidate events, see remarks) for an identity get-by-id or results-poll route, because those events
 /// carry the identifier verbatim in both their <c>Path</c> and <c>RequestPath</c> properties and in
 /// the rendered message. The match is case-insensitive and tolerates a single trailing slash
 /// on the route, mirroring how ASP.NET Core routing matches these paths before this filter ever sees
@@ -32,24 +31,22 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// property read here is guarded by a presence check before it is compared - an unguarded indexer
 /// read would throw or, if defaulted, misfire on that unrelated event.
 /// </para>
+/// <para>
+/// The routing matcher's Debug-level candidate events (<c>Microsoft.AspNetCore.Routing.Matching.DfaMatcher</c>,
+/// "candidate(s) found for the request path" and "is valid for the request path") carry the same raw
+/// path in their <c>Path</c> property and rendered message, so they are dropped for the same routes
+/// when an operator lowers the routing log level to Debug.
+/// </para>
+/// <para>
+/// Serilog runs enrichers before filters, so by the time this runs
+/// <see cref="IdentityRequestPathRedactingEnricher"/> has already redacted <c>RequestPath</c>; the
+/// raw <c>Path</c> property is what still identifies these events.
+/// </para>
 /// </remarks>
 internal static class IdentityHostingDiagnosticsFilter
 {
     private const string HostingDiagnosticsSourceContext = "Microsoft.AspNetCore.Hosting.Diagnostics";
-
-    // Matches an identity get-by-id path (.../identity/v2/identities/{value}, excluding the literal
-    // find and search operation names) or a results-poll path
-    // (.../identity/v2/identities/results/{value}), with any number of leading path segments
-    // (tenant and route-qualifier prefixes) ahead of /identity/v2. IgnoreCase/CultureInvariant
-    // because ASP.NET Core routing matches these routes case-insensitively, and the trailing /?
-    // before $ tolerates the trailing slash routing also accepts. Unlike IdentityRoutePathRedactor,
-    // this predicate has no configuration seam - it is wired directly as a Serilog
-    // Func&lt;LogEvent, bool&gt; - so the leading-segment count is unconstrained rather than pinned
-    // to the configured tenant/qualifier count.
-    private static readonly Regex _identityIdOrTokenRouteRegex = new(
-        @"^(?:/[^/]+)*/identity/v2/identities/(?:(?!find/?$|search/?$)[^/]+|results/[^/]+)/?$",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
-    );
+    private const string RoutingMatcherSourceContext = "Microsoft.AspNetCore.Routing.Matching.DfaMatcher";
 
     public static bool Matches(LogEvent logEvent)
     {
@@ -58,7 +55,10 @@ internal static class IdentityHostingDiagnosticsFilter
         if (
             !logEvent.Properties.TryGetValue("SourceContext", out LogEventPropertyValue? sourceContextValue)
             || sourceContextValue is not ScalarValue { Value: string sourceContext }
-            || !string.Equals(sourceContext, HostingDiagnosticsSourceContext, StringComparison.Ordinal)
+            || !(
+                string.Equals(sourceContext, HostingDiagnosticsSourceContext, StringComparison.Ordinal)
+                || string.Equals(sourceContext, RoutingMatcherSourceContext, StringComparison.Ordinal)
+            )
         )
         {
             return false;
@@ -77,6 +77,8 @@ internal static class IdentityHostingDiagnosticsFilter
             return false;
         }
 
-        return _identityIdOrTokenRouteRegex.IsMatch(path);
+        // No configuration seam here - this is wired directly as a Serilog Func<LogEvent, bool> -
+        // so the leading tenant/qualifier segment count is unconstrained.
+        return IdentityRoutePathRedactor.IsIdentifierBearingPathWithAnyPrefix(path);
     }
 }

@@ -44,9 +44,12 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructu
 /// pipelines through a booted host, with only the plugin boundary (<c>IIdentityService</c>) and the
 /// CMS providers faked - the same shape <c>IdentityLocationRoundTripTests</c> uses - and
 /// capture through a second Serilog provider registered via <c>ConfigureServices</c>
-/// (<c>PluginHostProbe.cs:152-183</c>'s pattern). This proves <c>LoggingMiddleware</c> and
-/// <c>RequestResponseLoggingMiddleware</c> log the redacted template, never the raw identifier, and
-/// that <c>IdentityProviderBoundary</c>'s sanitized failure-level log carries no provider detail.
+/// (<c>PluginHostProbe.cs:152-183</c>'s pattern), whose logger runs the same
+/// <c>LoggingConfigurator.ApplyLogContextAndIdentityRedaction</c> stage production does. This proves
+/// that no captured event - framework, DMS frontend, DMS Core, or handler - carries the raw
+/// identifier in any property (including the request scope's <c>RequestPath</c>) or in its rendered
+/// message, and that <c>IdentityProviderBoundary</c>'s sanitized failure-level log carries no
+/// provider detail.
 /// </para>
 /// <para>
 /// <b>The framework hosting-diagnostics filter</b>
@@ -96,6 +99,42 @@ public class IdentityLogRedactionTests
         e.MessageTemplate.Text.Contains("DMS core request completed", StringComparison.Ordinal)
         || e.MessageTemplate.Text.Contains("DMS core request failed", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Describes every captured event that carries <paramref name="secret"/> anywhere a sink could
+    /// write it: the rendered message, or any scalar property value, including scalars nested inside
+    /// structure, sequence, or dictionary property values. Empty when nothing leaks.
+    /// </summary>
+    private static IReadOnlyList<string> EventsLeaking(IEnumerable<LogEvent> events, string secret) =>
+        events
+            .SelectMany(e =>
+                e.Properties.Where(property => ValueContains(property.Value, secret))
+                    .Select(property =>
+                        $"[{ScalarProperty(e, "SourceContext")}] {e.MessageTemplate.Text} :: property {property.Key}"
+                    )
+                    .Concat(
+                        e.RenderMessage().Contains(secret, StringComparison.Ordinal)
+                            ?
+                            [
+                                $"[{ScalarProperty(e, "SourceContext")}] {e.MessageTemplate.Text} :: rendered message",
+                            ]
+                            : []
+                    )
+            )
+            .ToList();
+
+    private static bool ValueContains(LogEventPropertyValue value, string secret) =>
+        value switch
+        {
+            ScalarValue scalar => scalar.Value?.ToString()?.Contains(secret, StringComparison.Ordinal)
+                ?? false,
+            StructureValue structure => structure.Properties.Any(p => ValueContains(p.Value, secret)),
+            SequenceValue sequence => sequence.Elements.Any(element => ValueContains(element, secret)),
+            DictionaryValue dictionary => dictionary.Elements.Any(pair =>
+                ValueContains(pair.Key, secret) || ValueContains(pair.Value, secret)
+            ),
+            _ => value.ToString().Contains(secret, StringComparison.Ordinal),
+        };
+
     private static WebApplicationFactory<Program> CreateFactory(
         IIdentityService identityService,
         CapturingSerilogSink sink,
@@ -103,8 +142,11 @@ public class IdentityLogRedactionTests
         string routeQualifierSegments = ""
     )
     {
-        Logger captureLogger = new LoggerConfiguration()
-            .MinimumLevel.Verbose()
+        // The capture runs the same log-context and identity redaction stage that
+        // LoggingConfigurator.ConfigureLogging applies in production, so every captured event is
+        // what a production sink would receive.
+        Logger captureLogger = LoggingConfigurator
+            .ApplyLogContextAndIdentityRedaction(new LoggerConfiguration().MinimumLevel.Verbose())
             .WriteTo.Sink(sink)
             .CreateLogger();
 
@@ -261,24 +303,27 @@ public class IdentityLogRedactionTests
         }
 
         [Test]
-        public void It_never_logs_the_unique_id_in_the_path_or_rendered_message_of_any_completion_event()
+        public void It_never_logs_the_unique_id_in_any_property_or_rendered_message_of_any_event()
         {
-            // Scoped to the Path property and the rendered message on the frontend and Core
-            // completion events, not every property a Verbose capture
-            // happens to see: unrelated framework internals (routing candidate matching, endpoint
-            // selection) legitimately carry the raw path and are out of scope for this test, and this
-            // capture bypasses the production Filter.ByExcluding entirely (see the class remarks),
-            // so it cannot speak to Microsoft.AspNetCore.Hosting.Diagnostics either way - that is
-            // proven separately by Given_The_Production_Logging_Pipeline.
-            foreach (
-                LogEvent completed in _events.Where(e =>
-                    IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
-                )
-            )
-            {
-                ScalarProperty(completed, "Path").Should().NotContain(UniqueId);
-                completed.RenderMessage().Should().NotContain(UniqueId);
-            }
+            // Every captured event, not just the DMS completion events: the framework's request
+            // scope stamps RequestPath onto every event logged while the request runs (routing,
+            // DMS frontend and Core, handler logs), so any event is a potential carrier. The
+            // capture goes through the same redaction stage LoggingConfigurator applies in
+            // production (see CreateFactory); the hosting-diagnostics filter half of that stage is
+            // also proven separately by Given_The_Production_Logging_Pipeline.
+            IReadOnlyList<string> leaks = EventsLeaking(_events, UniqueId);
+            leaks.Should().BeEmpty("no event may carry it, yet these did: {0}", string.Join(" | ", leaks));
+        }
+
+        [Test]
+        public void It_redacts_the_request_path_scope_property()
+        {
+            _events
+                .Where(e => e.Properties.ContainsKey("RequestPath"))
+                .Select(e => ScalarProperty(e, "RequestPath"))
+                .Should()
+                .NotBeEmpty()
+                .And.AllBe("/identity/v2/identities/{id}");
         }
 
         [Test]
@@ -359,17 +404,21 @@ public class IdentityLogRedactionTests
         }
 
         [Test]
-        public void It_never_logs_the_results_token_in_the_path_or_rendered_message_of_any_completion_event()
+        public void It_never_logs_the_results_token_in_any_property_or_rendered_message_of_any_event()
         {
-            foreach (
-                LogEvent completed in _events.Where(e =>
-                    IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
-                )
-            )
-            {
-                ScalarProperty(completed, "Path").Should().NotContain(ResultsToken);
-                completed.RenderMessage().Should().NotContain(ResultsToken);
-            }
+            IReadOnlyList<string> leaks = EventsLeaking(_events, ResultsToken);
+            leaks.Should().BeEmpty("no event may carry it, yet these did: {0}", string.Join(" | ", leaks));
+        }
+
+        [Test]
+        public void It_redacts_the_request_path_scope_property()
+        {
+            _events
+                .Where(e => e.Properties.ContainsKey("RequestPath"))
+                .Select(e => ScalarProperty(e, "RequestPath"))
+                .Should()
+                .NotBeEmpty()
+                .And.AllBe("/identity/v2/identities/results/{token}");
         }
 
         [Test]
@@ -496,6 +545,17 @@ public class IdentityLogRedactionTests
             LogEvent coreEvent = _events.Single(IsCoreCompletionEvent);
             ScalarProperty(coreEvent, "Path").Should().Be("/ed-fi/students/abc");
         }
+
+        [Test]
+        public void It_still_logs_its_raw_request_path_scope_property()
+        {
+            _events
+                .Where(e => e.Properties.ContainsKey("RequestPath"))
+                .Select(e => ScalarProperty(e, "RequestPath"))
+                .Should()
+                .NotBeEmpty()
+                .And.AllBe("/data/ed-fi/students/abc");
+        }
     }
 
     [TestFixture]
@@ -540,17 +600,21 @@ public class IdentityLogRedactionTests
         }
 
         [Test]
-        public void It_never_logs_the_unique_id_in_the_path_or_rendered_message_of_any_completion_event()
+        public void It_never_logs_the_unique_id_in_any_property_or_rendered_message_of_any_event()
         {
-            foreach (
-                LogEvent completed in _events.Where(e =>
-                    IsFrontendCompletionEvent(e) || IsCoreCompletionEvent(e)
-                )
-            )
-            {
-                ScalarProperty(completed, "Path").Should().NotContain(UniqueId);
-                completed.RenderMessage().Should().NotContain(UniqueId);
-            }
+            IReadOnlyList<string> leaks = EventsLeaking(_events, UniqueId);
+            leaks.Should().BeEmpty("no event may carry it, yet these did: {0}", string.Join(" | ", leaks));
+        }
+
+        [Test]
+        public void It_redacts_the_request_path_scope_property_and_keeps_the_tenant_and_qualifier_literals()
+        {
+            _events
+                .Where(e => e.Properties.ContainsKey("RequestPath"))
+                .Select(e => ScalarProperty(e, "RequestPath"))
+                .Should()
+                .NotBeEmpty()
+                .And.AllBe("/tenant-a/255901/2026/identity/v2/identities/{id}");
         }
 
         [Test]
@@ -682,6 +746,44 @@ public class IdentityLogRedactionTests
         public void It_does_not_match_find_or_search_even_with_a_trailing_slash(string path)
         {
             IdentityHostingDiagnosticsFilter.Matches(CaptureHostingDiagnosticsEvent(path)).Should().BeFalse();
+        }
+    }
+
+    /// <summary>
+    /// The routing matcher's Debug-level candidate events carry the raw request path in their
+    /// <c>Path</c> property and rendered message, so the filter drops them for an identity
+    /// get-by-id or results-poll route, and keeps them for every other route.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Routing_Matcher_Debug_Event_For_The_Hosting_Diagnostics_Filter
+    {
+        private static LogEvent CaptureRoutingMatcherEvent(string path)
+        {
+            var sink = new CapturingSerilogSink();
+            using Logger captureLogger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Sink(sink)
+                .CreateLogger();
+
+            captureLogger
+                .ForContext("SourceContext", "Microsoft.AspNetCore.Routing.Matching.DfaMatcher")
+                .Debug("{CandidateCount} candidate(s) found for the request path '{Path}'", 1, path);
+
+            return sink.Events.Single();
+        }
+
+        [TestCase("/identity/v2/identities/605943412")]
+        [TestCase("/tenant-a/255901/2026/identity/v2/identities/results/SECRET-TOKEN-XYZ")]
+        public void It_matches_an_identity_get_by_id_or_results_poll_path(string path)
+        {
+            IdentityHostingDiagnosticsFilter.Matches(CaptureRoutingMatcherEvent(path)).Should().BeTrue();
+        }
+
+        [TestCase("/identity/v2/identities/find")]
+        [TestCase("/data/ed-fi/students/abc")]
+        public void It_does_not_match_find_or_a_resource_path(string path)
+        {
+            IdentityHostingDiagnosticsFilter.Matches(CaptureRoutingMatcherEvent(path)).Should().BeFalse();
         }
     }
 
@@ -856,6 +958,71 @@ public class IdentityLogRedactionTests
                 .Where(e => e.Level == "Debug" && e.Property("assemblyName") == "Acme.Fixture")
                 .Should()
                 .ContainSingle();
+        }
+
+        [Test]
+        public void It_redacts_the_request_path_scope_property_on_events_the_hosting_filter_keeps()
+        {
+            const string GetByIdPath = "/identity/v2/identities/605943412";
+            const string ResultsPath = "/identity/v2/identities/results/SECRET-TOKEN-XYZ";
+            const string MultiTenantGetByIdPath = "/tenant-a/255901/2026/identity/v2/identities/605943412";
+            const string FindPath = "/identity/v2/identities/find";
+            const string ResourcePath = "/data/ed-fi/students/abc";
+            string[] paths = [GetByIdPath, ResultsPath, MultiTenantGetByIdPath, FindPath, ResourcePath];
+
+            Serilog.ILogger logger = BuildProductionLogger();
+            try
+            {
+                // The same route production takes: a Microsoft.Extensions.Logging logger over the
+                // Serilog logger, inside a request scope shaped like the framework's own hosting
+                // scope, which is what stamps RequestPath onto every event logged during a request.
+                using var loggerFactory = new SerilogLoggerFactory(logger);
+                Microsoft.Extensions.Logging.ILogger routingLogger = loggerFactory.CreateLogger(
+                    "Microsoft.AspNetCore.Routing.EndpointMiddleware"
+                );
+
+                for (int probeCase = 0; probeCase < paths.Length; probeCase++)
+                {
+                    string path = paths[probeCase];
+                    using (
+                        routingLogger.BeginScope(
+                            new Dictionary<string, object>
+                            {
+                                ["RequestId"] = "0HN0000000000:00000001",
+                                ["RequestPath"] = path,
+                            }
+                        )
+                    )
+                    {
+                        routingLogger.LogInformation(
+                            "Executing endpoint '{EndpointName}' for {ProbeCase}",
+                            "HTTP: GET /identity/v2/identities/{id}",
+                            probeCase
+                        );
+                    }
+                }
+            }
+            finally
+            {
+                (logger as IDisposable)?.Dispose();
+            }
+
+            IReadOnlyList<CapturedEvent> events = ReadCapturedEvents(_logFilePath);
+
+            string? RequestPathFor(string path) =>
+                events
+                    .Single(e => e.Property("ProbeCase") == Array.IndexOf(paths, path).ToString())
+                    .Property("RequestPath");
+
+            RequestPathFor(GetByIdPath).Should().Be("/identity/v2/identities/{id}");
+            RequestPathFor(ResultsPath).Should().Be("/identity/v2/identities/results/{token}");
+            RequestPathFor(MultiTenantGetByIdPath)
+                .Should()
+                .Be("/tenant-a/255901/2026/identity/v2/identities/{id}");
+
+            // Not redacted: no identifier segment (find), or not an identity route at all.
+            RequestPathFor(FindPath).Should().Be(FindPath);
+            RequestPathFor(ResourcePath).Should().Be(ResourcePath);
         }
 
         private sealed record CapturedEvent(string Level, IReadOnlyDictionary<string, string> Properties)
