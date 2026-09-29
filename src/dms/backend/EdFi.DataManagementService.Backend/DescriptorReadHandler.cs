@@ -2643,11 +2643,12 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
-    /// The known-but-not-enabled 501 terminal. OwnershipBased — the only known-but-not-enabled strategy —
-    /// executes last per auth.md "Execution order", regardless of its configured position, so for GET-many
-    /// every resolved custom view is validated before the 501 is reported, mirroring the relational query
-    /// path. That lets a missing or non-conforming view surface its own configuration failure. GET-by-id
-    /// carries its resolved views the same way, so neither read path reports a bare 501 over them.
+    /// The planner's known-but-not-enabled 501 terminal, kept as the fail-closed arm for that outcome. No
+    /// descriptor read reaches it today: the classifier's only known-but-not-enabled strategy is
+    /// <c>OwnershipBased</c>, which every descriptor read now enforces, so the planner splits it out rather than
+    /// reporting it. A descriptor 501 comes instead from the relationship guardrail on a <c>Plan</c> above. Were
+    /// this terminal reached, it would execute last whatever its configured position, so every resolved custom
+    /// view is validated before the 501 is reported and a missing or non-conforming view keeps its own failure.
     /// </summary>
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadNotImplemented(
         MappingSet mappingSet,

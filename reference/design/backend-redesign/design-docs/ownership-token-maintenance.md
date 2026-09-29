@@ -5,6 +5,7 @@ jira: DMS-1058
 related:
   - DMS-1060
   - DMS-1410
+  - DMS-1431
 ---
 
 # Decision Record: Ownership Token Maintenance and Delivery
@@ -245,7 +246,10 @@ statement must be updated after this proposal is approved.
 Each API client has zero or one `CreatorOwnershipTokenId`.
 
 - DMS stamps this value into `dms.Document.CreatedByOwnershipTokenId` for every create.
-- When it is null, DMS stamps null.
+- When it is null and the Create action is not configured with `OwnershipBased`, DMS stamps null.
+- When the Create action is configured with `OwnershipBased`, a create whose creator token is null, or
+  is not among the client's `OwnershipTokenIds`, is denied before any row is written, because the
+  client could never reach the row it would create (DMS-1431; see [Errata](#errata)).
 - Changing the configured creator token affects only future creates.
 - PUT does not change the ownership token on an existing DMS document.
 
@@ -277,11 +281,12 @@ grants those clients access to documents stamped with that token.
 
 ### Descriptors
 
-Descriptors: stamping is in scope, enforcement is not. Descriptor creates stamp
-`CreatedByOwnershipTokenId` like any other create, but descriptor GET-by-id, POST, PUT, and DELETE
-configured with `OwnershipBased` remain fail-closed at `501` in DMS-1060. Ownership enforcement for
-descriptors is not implemented in this story. The GET-by-id, PUT, and DELETE statements above
-therefore describe relationally stored resources.
+Descriptors are stamped and enforced like any other resource. Descriptor creates stamp
+`CreatedByOwnershipTokenId`, and descriptor GET-by-id, GET-many, partitions, POST, PUT, and DELETE
+configured with `OwnershipBased` apply the same stored-token check, create-time denial, and GET-many
+filter as relationally stored resources (DMS-1431). DMS-1060 originally kept descriptors fail-closed at
+`501`; see [Errata](#errata). A descriptor whose stored token is null is, as for any resource,
+unreachable through `OwnershipBased`.
 
 ## CMS Persistence Contract
 
@@ -581,7 +586,8 @@ When a required application context is not already cached:
 A successfully resolved application context with a null creator and empty token collection is a
 valid configuration:
 
-- DMS-1060 POST stamps null; and
+- DMS-1060 POST stamps null, unless the Create action is configured with `OwnershipBased`, in which
+  case DMS-1431 denies the create with the `auth.md` 2.14 response before any row is written; and
 - DMS-1060 applies its ownership-uninitialized or ownership-mismatch behavior to a single record,
   while DMS-1410 applies its GET-many ownership filter using the empty token collection.
 
@@ -705,6 +711,22 @@ The approved handoff:
    and recorded in
    [`08-write-roundtrip-batching.md`](../epics/07-relational-write-path/08-write-roundtrip-batching.md); and
 4. retains the defensive SQL Server failure at 2,000 or more tokens for both consumers.
+
+## Errata
+
+DMS-1431 (2026-09-28, after this record's evidence baseline) changed two behaviors this record
+described:
+
+- A POST that resolves to create is authorized from the application context when its Create action is
+  configured with `OwnershipBased`. A null `CreatorOwnershipTokenId` is denied with the `auth.md` 2.14
+  response, and a creator token not among the client's `OwnershipTokenIds` with 2.13, before any row is
+  written; 2,000 or more tokens fail the create with the defensive security-configuration 500. Without
+  `OwnershipBased` on the Create action, stamping is unchanged.
+- Descriptors are no longer a fail-closed `501` carve-out: every descriptor operation enforces
+  `OwnershipBased` exactly as relationally stored resources do.
+
+[Creator token](#creator-token), [Descriptors](#descriptors), and [Failure behavior](#failure-behavior)
+are corrected in place. The rest of this record, including its evidence baseline, is unchanged.
 
 ## Acceptance Criteria Traceability
 

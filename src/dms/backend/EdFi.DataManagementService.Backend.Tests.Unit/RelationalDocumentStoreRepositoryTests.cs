@@ -817,7 +817,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_delegates_descriptor_get_authorization_that_requires_filtering_to_the_descriptor_read_handler()
     {
         var expectedResult = new GetResult.GetFailureNotImplemented(
-            "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
+            "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased', 'NoFurtherAuthorizationRequired', and/or 'OwnershipBased' are currently supported."
         );
 
         A.CallTo(() =>
@@ -5586,7 +5586,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var descriptorResourceInfo = CreateResourceInfo("SchoolTypeDescriptor");
         var mappingSet = CreateDescriptorOnlyMappingSet(descriptorResourceInfo);
         var expectedResult = new QueryResult.QueryFailureNotImplemented(
-            "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
+            "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased', 'NoFurtherAuthorizationRequired', and/or 'OwnershipBased' are currently supported."
         );
 
         A.CallTo(() =>

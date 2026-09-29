@@ -245,7 +245,9 @@ public partial class Given_DescriptorReadHandler
 
     /// <summary>
     /// Boundaries are cut from the owned relation: the one boundary command carries the ownership predicate
-    /// and binds the caller's tokens, so a partition range can never span a row the caller does not own.
+    /// and binds the caller's tokens, so every range starts on a DocumentId the caller owns. A range is a span
+    /// of DocumentId values, not of rows, and can still contain ids of documents the caller does not own; the
+    /// cursor page query for that range applies the same filter, so those rows are never served.
     /// </summary>
     [TestCase(
         SqlDialect.Pgsql,

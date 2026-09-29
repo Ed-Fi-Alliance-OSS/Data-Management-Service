@@ -1080,8 +1080,9 @@ internal sealed record PostRelationshipAuthorizationPlans(
 /// relationship plans.
 /// </summary>
 /// <param name="StoredOwnershipAuthorization">
-/// The ownership check, or <see langword="null"/> when <c>OwnershipBased</c> is not configured. Ownership has
-/// one value source, the stored token, so it decides an update and is vacuous for a create.
+/// The stored-token ownership check, or <see langword="null"/> when <c>OwnershipBased</c> is not configured. It
+/// decides an update and is vacuous for a create, which is decided instead by
+/// <paramref name="DeferredCreateOwnershipFailureResult"/> from the application context.
 /// </param>
 /// <param name="DeferredStoredOwnershipFailureResult">
 /// The failure a POST owes if it resolves to an existing target while its ownership check could not be
