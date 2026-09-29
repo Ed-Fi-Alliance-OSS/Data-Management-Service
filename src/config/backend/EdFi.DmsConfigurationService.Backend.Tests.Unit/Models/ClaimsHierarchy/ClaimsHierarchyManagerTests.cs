@@ -1010,4 +1010,213 @@ public class ClaimsHierarchyManagerTests
             .Should()
             .Equal("Reserved");
     }
+
+    [Test]
+    public void ReplaceClaimSetResourceActions_ShouldUseExactResourceClaimIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Read" }] }],
+            },
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/Student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Update" }] }],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .ReplaceClaimSetResourceActions(
+                "SIS Vendor",
+                "http://ed-fi.org/identity/claims/ed-fi/Student",
+                ["Create"],
+                ["Create"],
+                claims
+            )
+            .Should()
+            .BeTrue();
+
+        claims[0].ClaimSets.Single().Actions.Select(action => action.Name).Should().Equal("Read");
+        claims[1].ClaimSets.Single().Actions.Select(action => action.Name).Should().Equal("Update", "Create");
+    }
+
+    [Test]
+    public void RemoveClaimSetResourceActions_ShouldUseExactResourceClaimIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Read" }] }],
+            },
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/Student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Update" }] }],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .RemoveClaimSetResourceActions(
+                "SIS Vendor",
+                "http://ed-fi.org/identity/claims/ed-fi/Student",
+                claims
+            )
+            .Should()
+            .BeTrue();
+
+        claims[0].ClaimSets.Single().Actions.Select(action => action.Name).Should().Equal("Read");
+        claims[1].ClaimSets.Should().BeEmpty();
+    }
+
+    [Test]
+    public void OverrideClaimSetResourceActionStrategies_ShouldUseExactResourceClaimIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/student",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Preserve" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/Student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Read" }] }],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .OverrideClaimSetResourceActionStrategies(
+                "SIS Vendor",
+                "http://ed-fi.org/identity/claims/ed-fi/Student",
+                "Read",
+                ["NamespaceBased"],
+                claims
+            )
+            .Should()
+            .BeTrue();
+
+        claims[0]
+            .ClaimSets.Single()
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Preserve");
+        claims[1]
+            .ClaimSets.Single()
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("NamespaceBased");
+    }
+
+    [Test]
+    public void GetClaimSetResourceActionStatus_ShouldUseExactResourceClaimIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Read" }] }],
+            },
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/Student",
+                ClaimSets = [new() { Name = "SIS Vendor", Actions = [new() { Name = "Update" }] }],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .GetClaimSetResourceActionStatus(
+                "SIS Vendor",
+                "http://ed-fi.org/identity/claims/ed-fi/Student",
+                "Update",
+                claims
+            )
+            .Should()
+            .Be(ClaimSetResourceActionStatus.Enabled);
+    }
+
+    [Test]
+    public void ResetClaimSetResourceActionStrategies_ShouldUseExactResourceClaimIdentity()
+    {
+        List<Claim> claims =
+        [
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/student",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Preserve" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+            new()
+            {
+                Name = "http://ed-fi.org/identity/claims/ed-fi/Student",
+                ClaimSets =
+                [
+                    new()
+                    {
+                        Name = "SIS Vendor",
+                        Actions =
+                        [
+                            new()
+                            {
+                                Name = "Read",
+                                AuthorizationStrategyOverrides = [new() { Name = "Reset" }],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        _claimsHierarchyManager
+            .ResetClaimSetResourceActionStrategies(
+                "SIS Vendor",
+                "http://ed-fi.org/identity/claims/ed-fi/Student",
+                claims
+            )
+            .Should()
+            .BeTrue();
+
+        claims[0]
+            .ClaimSets.Single()
+            .Actions.Single()
+            .AuthorizationStrategyOverrides.Select(strategy => strategy.Name)
+            .Should()
+            .Equal("Preserve");
+        claims[1].ClaimSets.Single().Actions.Single().AuthorizationStrategyOverrides.Should().BeEmpty();
+    }
 }

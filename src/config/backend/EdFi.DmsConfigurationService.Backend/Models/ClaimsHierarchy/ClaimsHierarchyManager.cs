@@ -359,7 +359,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
     {
         foreach (Claim claim in claims)
         {
-            if (claim.Name.Equals(resourceClaimName, StringComparison.OrdinalIgnoreCase))
+            if (claim.Name.Equals(resourceClaimName, StringComparison.Ordinal))
             {
                 return claim;
             }
