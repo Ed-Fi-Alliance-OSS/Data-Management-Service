@@ -133,7 +133,7 @@ function Write-E2ECdcApiHandoff {
     ProviderConnectionProperties (container endpoints); any fixture host adaptations belong
     only in memory, using Cdc:Compose:DatabaseHostPort. Never fall back to static E2E settings.
 
-    Neither this file, the override nor raw settings belongs in public evidence. T04's caller
+    Neither this file, the override nor raw settings belongs in public evidence. The caller
     owns rollout/health ordering and removes these two private test files only after successful
     governed teardown. A returned path is the only publication point; failures retain originals.
     #>
