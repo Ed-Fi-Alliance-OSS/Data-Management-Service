@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -20,23 +21,15 @@ public class OpenIdConfigurationModule : IEndpointModule
         HttpContext httpContext,
         IOptions<IdentitySettings> identitySettings,
         IConfiguration configuration,
-        IOpenIdConnectConfigurationProvider? configurationProvider = null
+        [FromServices] IOpenIdConnectConfigurationProvider? configurationProvider = null
     )
     {
-        // Build the base URL from the request, including PathBase if configured
-        var request = httpContext.Request;
-        var pathBase = configuration.GetValue<string>("AppSettings:PathBase");
-        var uriBuilder = new UriBuilder
-        {
-            Scheme = request.Scheme,
-            Host = request.Host.Host,
-            Port = request.Host.Port ?? (request.Scheme == "https" ? 443 : 80),
-            Path = string.IsNullOrEmpty(pathBase) ? "" : pathBase,
-        };
-        var baseUrl = uriBuilder.Uri.ToString().TrimEnd('/');
+        var authorityBase = identitySettings.Value.Authority.TrimEnd('/');
+        var pathSegment = configuration.GetValue<string>("AppSettings:PathBase")?.Trim('/') ?? string.Empty;
+        var baseUrl = string.IsNullOrEmpty(pathSegment) ? authorityBase : $"{authorityBase}/{pathSegment}";
 
         // Use enhanced configuration provider if available, otherwise fallback to basic implementation
-        if (configurationProvider != null)
+        if (configurationProvider is not null)
         {
             var enhancedConfig = await configurationProvider.GetConfigurationAsync(baseUrl);
 
@@ -86,6 +79,7 @@ public class OpenIdConfigurationModule : IEndpointModule
                 revocation_endpoint_auth_methods_supported = new[] { "client_secret_basic" },
             };
 
+            httpContext.Response.Headers.CacheControl = "no-store";
             return Results.Ok(openIdConfig);
         }
 
@@ -115,6 +109,7 @@ public class OpenIdConfigurationModule : IEndpointModule
             id_token_signing_alg_values_supported = new[] { "RS256" },
         };
 
+        httpContext.Response.Headers.CacheControl = "no-store";
         return Results.Ok(basicConfig);
     }
 }
