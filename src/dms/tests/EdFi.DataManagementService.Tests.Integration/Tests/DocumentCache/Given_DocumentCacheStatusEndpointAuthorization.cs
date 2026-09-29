@@ -114,6 +114,7 @@ public class Given_DocumentCacheStatusEndpointAuthorization
 
         JwtAuthenticationOptions jwtAuthenticationOptions = new()
         {
+            Authority = TestIssuer,
             Audience = TestAudience,
             RoleClaimType = roleClaimType,
             ClientRole = "legacy-service",

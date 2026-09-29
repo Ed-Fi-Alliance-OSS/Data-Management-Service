@@ -31,7 +31,9 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| **401 / invalid token** from DMS | Keycloak issuer mismatch behind the proxy. Decode the token; its `iss` must equal `JwtAuthentication__Authority` (`https://<FQDN>/auth/realms/edfi`). Check `KC_HOSTNAME` and `KC_HOSTNAME_BACKCHANNEL_DYNAMIC` in `keycloak.yml`. |
+| **401 / invalid token** from DMS | The token was not issued by the configured realm. Decode it; its `iss` must equal `JwtAuthentication__Authority` (`https://<FQDN>/auth/realms/edfi`). |
+| **DMS crash-loops** with `OIDC metadata issuer '…' does not match the configured JwtAuthentication:Authority '…'` | Keycloak's metadata `issuer` differs from `JwtAuthentication__Authority`. `KC_HOSTNAME` in `keycloak.yml` must be `${PUBLIC_BASE_URL}/auth`, the same public URL the DMS `Authority` is built from. |
+| **DMS crash-loops** with `OIDC document address '…' is not on the JwtAuthentication:MetadataAddress origin '…'` | Keycloak's `jwks_uri` names the public host instead of `http://dms-keycloak:8080`. `KC_HOSTNAME_BACKCHANNEL_DYNAMIC` in `keycloak.yml` must be `true`. |
 | **403** on relationship-based data (students, sections, ...) | Expected when the record is outside the client's `educationOrganizationIds` — `EdFiSandbox` scopes relationship-based data to them. Add the EdOrg to the Application. |
 | Bootstrap fails **"claim set not found"** | The `claimSetName` doesn't exist. `GET /<config>/v3/claimSets` for valid names; pass `-ClaimSetName` to `bootstrap.ps1`. |
 | Grand Bend restore **skipped** | `grandbend.sh` only loads into a fresh DB. If the `dms` schema already exists (the DB was already provisioned with `api-schema-tools` or previously seeded), reset the data volumes (`./reset.sh`) and re-run `seed/grandbend.sh` against the fresh, empty DB. |
