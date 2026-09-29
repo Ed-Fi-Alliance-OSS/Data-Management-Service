@@ -656,6 +656,68 @@ jobs:
           path: |
             **/*.trx
 
+  # DMS-1552: the EdFi.Api.Secrets contract package. Packs it into a local folder feed, asserts the
+  # packed assembly's version equals the package version, and compiles a scratch consumer that
+  # implements both contracts against that feed alone. Then runs the versioning proofs once per
+  # pull request: the packed nupkg's identity and version, solution membership, a real
+  # build-config.ps1 BuildAndPublish with explicit versions, and a real DockerBuild with an explicit
+  # assembly version, each with a control showing the Configuration Service assemblies were built
+  # by that run. Kept out of run-parity-pester-tests because the last two build the whole solution
+  # and the image.
+  verify-secrets-contract:
+    name: Verify Secrets Contract Package
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # build-config.ps1 DockerBuild uses `docker buildx build --build-context`.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Pack EdFi.Api.Secrets and Compile the Scratch Consumer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Fresh feed and global-packages folders per run. The script refuses non-empty ones, so a
+          # stale nupkg or an already-extracted same-version package can never be what it restores.
+          $runId = [guid]::NewGuid().ToString('N')
+          ./eng/verification/Invoke-SecretsConsumerCheck.ps1 `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -FeedDirectory (Join-Path $env:RUNNER_TEMP "secrets-feed-$runId") `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-secrets-$runId")
+
+      - name: Install Pester
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+
+      - name: Run Secrets Contract Versioning Tests
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $result = Invoke-Pester -Path "eng/ci/tests/ConfigSecretsContractVersioning.Tests.ps1" -Output Detailed -PassThru
+
+          # A discovery-time failure produces no test object, and a skipped or inconclusive proof
+          # reads as green unless it is counted; every case here must actually pass.
+          $nonPassing = @($result.Tests | Where-Object { $_.Result -ne "Passed" })
+          if ($result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0 -or $result.TotalCount -eq 0 -or $nonPassing.Count -gt 0) {
+              $summary = ($nonPassing | ForEach-Object { "$($_.Result): $($_.ExpandedName)" }) -join "`n"
+              throw "Secrets contract versioning tests did not all pass: $($result.TotalCount) total, $($result.FailedContainersCount) failed container(s), $($result.FailedBlocksCount) failed block(s).`n$summary"
+          }
+
   fresh-rebuild-docker-image:
     name: Fresh Rebuild Config Docker Image
     needs: detect-fresh-build-changes
@@ -682,7 +744,7 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [verify-lock-files, run-parity-pester-tests, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
+    needs: [verify-lock-files, run-parity-pester-tests, verify-secrets-contract, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
     # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
     if: always() && github.event.pull_request.draft != true
     steps:
@@ -709,6 +771,7 @@ jobs:
       - scan-actions-bidi
       - verify-lock-files
       - run-parity-pester-tests
+      - verify-secrets-contract
       - run-unit-tests
       - run-integration-tests
       - run-e2e-tests
