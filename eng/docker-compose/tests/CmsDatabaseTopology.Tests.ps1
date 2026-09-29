@@ -5300,7 +5300,7 @@ foreach ($name in $InterceptedCommand) {
                 # Seeds an unparsable line into the real observation file, so the actual read/parse path
                 # fails and restoration can be proven unconditional.
                 [switch]$CorruptObservation,
-                # Writes the env file a pre-DMS-1489 .env.example seeded: no
+                # Writes the env file an older .env.example seeded: no
                 # KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY.
                 [switch]$OmitConfigIdentityAuthority,
                 # Runs the script's teardown shape (-d) instead of a bring-up.

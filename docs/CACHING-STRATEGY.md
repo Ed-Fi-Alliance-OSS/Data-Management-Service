@@ -402,7 +402,8 @@ doesn't accept requests until JWT authentication is fully functional. When `Bypa
   internally by Microsoft.IdentityModel.Protocols library
 - An issuer mismatch at request time rejects the token and triggers
   `RequestRefresh()`, at most once per RefreshInterval (60 minutes); later
-  requests succeed once a matching document is adopted
+  requests succeed once a matching document is adopted. Only the first rejected
+  request is logged as an error; repeats log at debug level until then
 
 ---
 

@@ -1410,6 +1410,67 @@ public class JwtValidationServiceTests
         }
     }
 
+    /// <summary>
+    /// A mismatch stands for every request until a refresh adopts matching metadata, so one
+    /// misconfigured issuer would otherwise log an Error per request. A request that finds the
+    /// issuer matching ends the episode.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Repeated_Metadata_Issuer_Mismatches_Before_The_Metadata_Matches_Again
+        : JwtValidationServiceTests
+    {
+        private RecordingLogger<JwtValidationService> _logger = null!;
+        private IConfigurationManager<OpenIdConnectConfiguration> _configurationManager = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<JwtValidationService>();
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                logger: _logger
+            );
+            _configurationManager = configurationManager;
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .ReturnsNextFromSequence(
+                    Task.FromResult(CreateMetadata(AttackerIssuer, signingKey)),
+                    Task.FromResult(CreateMetadata(AttackerIssuer, signingKey)),
+                    Task.FromResult(CreateMetadata(TestAuthority, signingKey)),
+                    Task.FromResult(CreateMetadata(AttackerIssuer, signingKey))
+                );
+
+            string token = CreateTestToken(
+                [new Claim("jti", "episode-token-id")],
+                TestAuthority,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            for (int i = 0; i < 4; i++)
+            {
+                await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None);
+            }
+        }
+
+        [Test]
+        public void It_logs_the_first_mismatch_of_each_episode_at_error_and_repeats_at_debug()
+        {
+            _logger
+                .Records.Where(entry => entry.Properties.ContainsKey("DiscoveredIssuer"))
+                .Select(entry => entry.Level)
+                .Should()
+                .Equal(LogLevel.Error, LogLevel.Debug, LogLevel.Error);
+        }
+
+        [Test]
+        public void It_requests_a_metadata_refresh_on_every_mismatch()
+        {
+            A.CallTo(() => _configurationManager.RequestRefresh()).MustHaveHappened(3, Times.Exactly);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Metadata_Issuer_Differs_Only_By_A_Trailing_Slash : JwtValidationServiceTests

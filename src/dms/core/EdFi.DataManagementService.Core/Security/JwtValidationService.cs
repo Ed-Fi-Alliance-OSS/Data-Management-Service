@@ -46,6 +46,12 @@ internal class JwtValidationService(
     private readonly object _cacheMaintenanceLock = new();
     private DateTimeOffset _lastCacheMaintenance = DateTimeOffset.MinValue;
 
+    // 1 while an episode of issuer mismatches has already been logged at Error. A mismatch stands
+    // for every request until a refresh adopts matching metadata, so only the first request of an
+    // episode logs at Error and repeats log at Debug; a request that finds the issuer matching
+    // ends the episode.
+    private int _issuerMismatchLogged;
+
     internal int ValidatedTokenCacheCount => _validatedTokenCache.Count;
     internal int ValidationParametersCacheCount => _validationParametersCache.Count;
 
@@ -95,16 +101,27 @@ internal class JwtValidationService(
             // (RFC 8414 3.3, OIDC Discovery 4.3), so no normalization. Checked before the caches so
             // no token is accepted while the mismatch stands. RequestRefresh schedules a throttled
             // background re-fetch so a transient mismatch does not persist until the next
-            // automatic refresh.
+            // automatic refresh. It is requested on every mismatch, not once per episode: the
+            // library throttles it, and a re-fetch that still mismatches must be retried.
             if (!string.Equals(oidcConfig.Issuer, _options.Authority, StringComparison.Ordinal))
             {
-                logger.LogError(
+                LogLevel level =
+                    Interlocked.Exchange(ref _issuerMismatchLogged, 1) == 0 ? LogLevel.Error : LogLevel.Debug;
+
+                logger.Log(
+                    level,
                     "Token validation failed: OIDC metadata issuer {DiscoveredIssuer} does not match the configured JwtAuthentication:Authority {ConfiguredAuthority}; requesting a metadata refresh",
                     SanitizeIssuerForLogging(oidcConfig.Issuer),
                     SanitizeIssuerForLogging(_options.Authority)
                 );
                 configurationManager.RequestRefresh();
                 return (null, null);
+            }
+
+            // Read first so matching requests do not each take an interlocked write.
+            if (Volatile.Read(ref _issuerMismatchLogged) != 0)
+            {
+                Interlocked.Exchange(ref _issuerMismatchLogged, 0);
             }
 
             string validationFingerprint = CreateValidationFingerprint(oidcConfig);

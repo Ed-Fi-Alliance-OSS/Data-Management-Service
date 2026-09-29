@@ -224,7 +224,7 @@ public class HttpDocumentRetrieverTests
     }
 
     /// <summary>
-    /// The DMS-1488 shape: the document asserts the configured issuer but names signing keys on
+    /// A tampered metadata document: it asserts the configured issuer but names signing keys on
     /// another host. The library fetches jwks_uri through this retriever, so the origin check must
     /// fail the whole retrieval before the foreign host is contacted.
     /// </summary>

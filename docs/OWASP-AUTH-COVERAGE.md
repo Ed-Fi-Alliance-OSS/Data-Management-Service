@@ -238,6 +238,8 @@ The behaviors above are exercised by automated tests:
   The DMS **issuer pin** is covered in the same file:
   - a metadata document whose issuer differs from the configured authority is rejected; the
     error log names both values, and a metadata refresh is requested;
+  - repeated mismatches are logged as an error only once per episode, while every one still
+    requests a metadata refresh;
   - a **legitimate token is rejected while the metadata issuer mismatches**, and accepted again
     once the metadata matches;
   - the comparison is exact: an issuer that differs only by a trailing slash, or only by letter
