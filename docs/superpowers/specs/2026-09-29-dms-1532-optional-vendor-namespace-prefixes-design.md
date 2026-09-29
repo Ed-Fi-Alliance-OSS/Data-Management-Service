@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-**Status:** Conversational design approved on 2026-09-29; written specification awaiting review.
+**Status:** Approved on 2026-09-29.
 
 The authoritative requirement is [`.plans/ref/DMS-1532.md`](../../../.plans/ref/DMS-1532.md). The approved DMS-1356 vendor-update design governs the existing PUT workflow. The human and nano pre-specs and their review are supporting analysis, not requirements.
 
