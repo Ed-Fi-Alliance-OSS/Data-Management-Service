@@ -15,7 +15,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 internal sealed class MessageContractProviderFences(
     MessageContractProviderObserver provider,
     CdcDeploymentRequest request,
-    ICdcConnectTransport connect
+    ICdcConnectTransport connect,
+    TimeSpan sourceFenceTimeout = default
 )
 {
     public async Task<MessageContractPostgresqlFence> FencePostgresqlSourceAsync(
@@ -23,31 +24,42 @@ internal sealed class MessageContractProviderFences(
         CancellationToken token
     )
     {
+        CancellationToken callerToken = token;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        timeout.CancelAfter(sourceFenceTimeout == default ? TimeSpan.FromMinutes(2) : sourceFenceTimeout);
         token = timeout.Token;
         CoreCdc.CdcPostgresqlWalPosition barrier = await provider.CapturePostgresqlWalAsync(token);
         await provider.AdvanceHeartbeatAsync(token);
-        while (true)
+        try
         {
-            var observed = await ReadStreamingOffsetAsync(token);
-            if (
-                observed is not null
-                && CoreCdc
-                    .CdcPostgresqlProviderPosition.CompareCommittedOffsetToBarrier(
-                        barrier,
-                        observed.Postgresql
-                    )
-                    .Succeeded
-            )
+            while (true)
             {
-                ulong processed = unchecked((ulong)observed.Postgresql.LsnProc!.Value);
-                await TestContext.Out.WriteLineAsync(
-                    $"{phase}: WAL barrier={barrier.Value}, committed lsn_proc={processed}, matching single server partition"
-                );
-                return new(phase, barrier.Value, processed);
+                var observed = await ReadStreamingOffsetAsync(token);
+                if (
+                    observed is not null
+                    && CoreCdc
+                        .CdcPostgresqlProviderPosition.CompareCommittedOffsetToBarrier(
+                            barrier,
+                            observed.Postgresql
+                        )
+                        .Succeeded
+                )
+                {
+                    ulong processed = unchecked((ulong)observed.Postgresql.LsnProc!.Value);
+                    await TestContext.Out.WriteLineAsync(
+                        $"{phase}: WAL barrier={barrier.Value}, committed lsn_proc={processed}, matching single server partition"
+                    );
+                    return new(phase, barrier.Value, processed);
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(500), token);
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(500), token);
+        }
+        catch (OperationCanceledException)
+            when (timeout.IsCancellationRequested && !callerToken.IsCancellationRequested)
+        {
+            throw new AssertionException(
+                $"PostgreSQL {phase} committed source fence timed out; WAL barrier={barrier.Value}. Details redacted."
+            );
         }
     }
 
@@ -56,8 +68,9 @@ internal sealed class MessageContractProviderFences(
         CancellationToken token
     )
     {
+        CancellationToken callerToken = token;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromMinutes(4));
+        timeout.CancelAfter(sourceFenceTimeout == default ? TimeSpan.FromMinutes(4) : sourceFenceTimeout);
         token = timeout.Token;
         MessageContractSqlServerPosition barrier = await provider.CaptureSqlServerHeartbeatBarrierAsync(
             token
@@ -71,30 +84,40 @@ internal sealed class MessageContractProviderFences(
                     .CdcSqlServerProviderPositionParser.ParseLsn(barrier.ChangeLsn, "$.changeLsn")
                     .Lsn!.Value
             );
-        while (true)
+        try
         {
-            var observed = await ReadStreamingOffsetAsync(token);
-            if (
-                observed is not null
-                && CoreCdc
-                    .CdcSqlServerProviderPositionParser.CompareCommittedOffsetToBarrier(
-                        position,
-                        observed.SqlServer
-                    )
-                    .Succeeded
-            )
+            while (true)
             {
-                MessageContractSqlServerPosition committed = new(
-                    observed.SqlServer.CommitLsn!,
-                    observed.SqlServer.ChangeLsn!,
-                    observed.SqlServer.EventSerialNo!.Value
-                );
-                await TestContext.Out.WriteLineAsync(
-                    $"{phase}: captured heartbeat barrier={barrier}; committed={committed}; matching server/database partition"
-                );
-                return new(phase, barrier, committed);
+                var observed = await ReadStreamingOffsetAsync(token);
+                if (
+                    observed is not null
+                    && CoreCdc
+                        .CdcSqlServerProviderPositionParser.CompareCommittedOffsetToBarrier(
+                            position,
+                            observed.SqlServer
+                        )
+                        .Succeeded
+                )
+                {
+                    MessageContractSqlServerPosition committed = new(
+                        observed.SqlServer.CommitLsn!,
+                        observed.SqlServer.ChangeLsn!,
+                        observed.SqlServer.EventSerialNo!.Value
+                    );
+                    await TestContext.Out.WriteLineAsync(
+                        $"{phase}: captured heartbeat barrier={barrier}; committed={committed}; matching server/database partition"
+                    );
+                    return new(phase, barrier, committed);
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(500), token);
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(500), token);
+        }
+        catch (OperationCanceledException)
+            when (timeout.IsCancellationRequested && !callerToken.IsCancellationRequested)
+        {
+            throw new AssertionException(
+                $"SQL Server {phase} committed source fence timed out; barrier={barrier.CommitLsn}/{barrier.ChangeLsn}/{barrier.EventSerialNo}. Details redacted."
+            );
         }
     }
 
