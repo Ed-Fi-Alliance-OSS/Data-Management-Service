@@ -660,10 +660,14 @@ function Invoke-Burst {
     $burstWindowEndUtc = [DateTime]::UtcNow
 
     # Stop the samplers only after the burst window closes, then verify their captures
-    # actually span it: file existence alone says nothing about coverage.
+    # actually span it: file existence alone says nothing about coverage. The short
+    # settle lets every capture (slowest tick ~1 s) record past the burst end; the stop
+    # then skips the remainder of the sampler window - the coverage validation judges
+    # the captures by their actual timestamps, so nothing is taken on trust.
     $samplerReport = $null
     if ($samplerState) {
-        $samplerReport = Stop-DmsSamplerSet -State $samplerState `
+        Start-Sleep -Seconds 5
+        $samplerReport = Stop-DmsSamplerSet -State $samplerState -SkipWindowWait `
             -BurstStartUtc $burstWindowStartUtc -BurstEndUtc $burstWindowEndUtc
     }
 

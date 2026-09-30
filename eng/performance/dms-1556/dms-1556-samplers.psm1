@@ -322,25 +322,33 @@ function Stop-DmsSamplerSet {
 
         [DateTime] $BurstStartUtc,
 
-        [DateTime] $BurstEndUtc
+        [DateTime] $BurstEndUtc,
+
+        # Stop the capture jobs now instead of waiting out the remainder of the sampler
+        # window. For a burst that finished well inside a generously sized window this
+        # trades no evidence away: the coverage validation below still judges the
+        # captures by their actual sample timestamps against the burst window, so a
+        # too-early stop surfaces as a requiredFailures entry, never silently. Callers
+        # should let the samplers record a few seconds past the burst end first.
+        [switch] $SkipWindowWait
     )
 
     $warnings = [System.Collections.Generic.List[string]]::new()
 
     # The bounded jobs (\watch counts, livemetrics duration, disk MaxSamples, the stats
     # deadline) self-terminate; wait out the remainder of the window plus tool-startup
-    # slack before declaring them stuck.
-    $elapsed = ([DateTime]::UtcNow - $State.StartedUtc).TotalSeconds
-    $remaining = [Math]::Max(5, [int]($State.DurationSeconds - $elapsed) + 30)
+    # slack before declaring them stuck, unless the caller opted into an early stop.
     $bounded = @($State.Jobs.GetEnumerator() | Where-Object { $_.Key -in @('activity', 'io', 'livemetrics', 'disk') } | ForEach-Object { $_.Value })
-    if ($bounded.Count -gt 0) {
+    if (-not $SkipWindowWait -and $bounded.Count -gt 0) {
+        $elapsed = ([DateTime]::UtcNow - $State.StartedUtc).TotalSeconds
+        $remaining = [Math]::Max(5, [int]($State.DurationSeconds - $elapsed) + 30)
         $null = Wait-Job -Job $bounded -Timeout $remaining
     }
 
     foreach ($entry in $State.Jobs.GetEnumerator()) {
         $job = $entry.Value
         if ($job.State -eq 'Running') {
-            if ($entry.Key -in @('activity', 'io', 'livemetrics', 'disk')) {
+            if (-not $SkipWindowWait -and $entry.Key -in @('activity', 'io', 'livemetrics', 'disk')) {
                 $warnings.Add("Sampler '$($entry.Key)' was still running after its window and was stopped; its capture may be truncated.")
             }
             Stop-Job -Job $job

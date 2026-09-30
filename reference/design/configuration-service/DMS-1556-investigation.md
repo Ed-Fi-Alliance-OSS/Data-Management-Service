@@ -68,3 +68,96 @@ pinned versions. Two nuances worth recording:
 
 No load, no database, no thread-pool interaction, no reproduction of the reported 500s:
 those are steps 0.3–0.5 (E1–E5/E7) and gates G1/G2. AC 1 remains evidence-gated.
+
+## 0.3 — E1 baseline → G1 (2026-09-30)
+
+### Environment
+
+- Stack: dms-local per spec §3.1 (`teardown-local-dms.ps1`; `setup-local-dms.ps1
+  -EnvironmentFile ./.env.e2e`; unchanged CMS image, self-contained identity,
+  database-backed keys, PostgreSQL 16.8, DMS running but idle). Diagnostics overlays
+  applied (`local-config-diagnostics.yml`, `local-postgresql-diagnostics.yml`) with CMS
+  at `Serilog Debug`; 87 profiles seeded (`Invoke-CmsProfileBurst.ps1 -Seed
+  -ProfileCount 87`).
+- Resource profiles (spec §3.1.8), applied by composing/removing
+  `eng/docker-compose/local-resource-runner-approx.yml`:
+  - **P-dev**: host 16 cores; CMS and PostgreSQL CPU unlimited; `Worker Min Limit`
+    from per-run dumps: **16**.
+  - **P-runner-approx**: CMS and PostgreSQL capped at 2 CPUs (`NanoCpus=2000000000`
+    verified), `DOTNET_PROCESSOR_COUNT=4`; `Worker Min Limit` from per-run dumps: **4**.
+- Command per profile: `Invoke-E1Baseline.ps1 -ResourceProfile <p-dev|p-runner-approx>`
+  → 5 runs × (`Invoke-CmsProfileBurst.ps1 -TotalRequests 87 -MaxConcurrency 87 -Rounds 5
+  -Cold -ValidateBodies -WithSamplers`), per-run CMS/PostgreSQL logs scoped to the run
+  window, one full dump per run collected after the run (outside timed windows, Q17).
+- Every run: measured peak overlap **87** in every round, sampler coverage complete
+  (`requiredFailures` empty, all 10 runs), zero transport errors. Raw captures (CSVs,
+  summaries, sampler files, logs, dumps) retained locally under
+  `eng/performance/dms-1556/artifacts/` for the Jira upload.
+
+### Results — P-dev (5 runs, catalog-87x87, cold + 4 warm)
+
+All 435 requests per run returned **HTTP 200 with validated bodies**; zero
+NpgsqlException / TimeoutException / JWKS-failure lines in CMS logs across all runs.
+Max p99 per run (worst round, ms): 1348, 1982, 2111, 1728, 2408 — always the cold round;
+warm rounds 220–790 ms p50. **Classification: neither × 5.**
+
+### Results — P-runner-approx (5 runs, catalog-87x87, cold + 4 warm)
+
+| Run | Cold round p50 / p99 (ms) | Warm rounds p50 range (ms) | Statuses (run total) | CMS Npgsql / Timeout / JWKS-fail lines | Classification |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 14843 / 14995 | 364–579 | 200×435 | 0 / 1 / 0 | R-slow (provisional) |
+| 2 | 15230 / 15350 | 412–544 | 200×435 | 0 / 1 / 0 | R-slow (provisional) |
+| 3 | 17007 / 17305 | 384–481 | 200×432, **401×3** | **12 / 14 / 12** | R-slow (provisional) |
+| 4 | 15489 / 15590 | 396–559 | 200×435 | 0 / 1 / 0 | R-slow (provisional) |
+| 5 | 15586 / 15681 | 465–492 | 200×435 | 0 / 2 / 0 | R-slow (provisional) |
+
+Observations (recorded as observations; attribution belongs to 0.4–0.6):
+
+- **The ~15 s cold-round plateau.** In every run, effectively all 87 cold-round requests
+  — including those admitted at t≈0 — completed together at ~15–17 s (p50 ≈ p99), then
+  every warm round was healthy (~0.5 s). The plateau sits exactly at Npgsql's default
+  `Timeout=15` window (F11), the same boundary the ticket's 500s reported.
+- **Run 3 reproduced the ticket's log signature without the 500.** Twelve
+  `Failed to fetch public keys for JWKS` Error lines during the cold round, carrying
+  `Npgsql.NpgsqlException (0x80004005): The operation has timed out` (connection open)
+  and `Exception while reading from stream ---> TimeoutException` — the exact CMS-side
+  signature in Jira. The JWKS traffic during a profile burst the harness never aims at
+  `/jwks` is consistent with self-referential metadata amplification (H5, F6) and/or
+  DMS's own metadata refresh; unattributed here.
+- **A new client-visible failure signature: 401 on valid tokens under load.** Run 3's
+  cold round returned 401 for three requests carrying the same valid token that
+  succeeded 84 times in the same round (completion at ~15.5 s; time-to-first-failure
+  15534 ms, completion-based). Their traces show key-format detection succeeding and
+  then only `Policy authentication schemes did not succeed` — **no** `Authentication
+  failed:` line, so the failure did not pass through `OnAuthenticationFailed`. That
+  matches `OnTokenValidated` → `ITokenManager.ValidateTokenAsync` swallowing the
+  token-status read's Npgsql timeout and returning `false` → `context.Fail("Token has
+  been revoked or is invalid.")`: a dependency outage misreported to the client as an
+  invalid token, with no server-side error record for those requests. This is the
+  diagnosability gap AC 4 names and the exact behavior mutation M3 / D-7's typed
+  rethrow target.
+- No HTTP 500 was observed in any run; the profile-path 500
+  (`ProfileRepository.GetProfile` → `OpenAsync` timeout) did not reproduce at 87/87 on
+  this host. A plausible (unproven) reason: this machine's NVMe/CPU clears the
+  connection backlog just inside the 15 s window even under the 2-CPU caps, where the
+  shared CI runner does not. Establishing that is E2/E7/CI territory.
+
+### Proposed G1 disposition
+
+**Partially reproduced (provisional)** per spec §3.6: R-slow in 5/5 P-runner-approx runs
+(zero in 5/5 P-dev runs), with the ticket's exact CMS log signature present in 1/5 runs
+and an additional client-visible availability failure (401s on valid tokens, silently
+translated from a dependency timeout). Under G1 this means attribution (0.4–0.5) may
+proceed, **AC 1 is not satisfied by this evidence alone**, and AC 2's envelope evidence
+must lean on E7 and CI after push. Neither-with-replan does not apply.
+
+### Deviations
+
+- The E1 driver (`Invoke-E1Baseline.ps1`) crashed after run 1 of the first P-dev batch
+  on a PowerShell strict-mode aggregation bug (an empty `requiredFailures` array
+  unwrapped to `$null`); the bug affected only the driver's summary aggregation, never
+  the harness, samplers, or captures. It was fixed and the full 5-run P-dev batch was
+  re-run from scratch; the orphaned first-attempt artifacts are not part of the index.
+- `Stop-DmsSamplerSet` gained a `-SkipWindowWait` option (used by the harness after a
+  5 s post-burst settle) so a generous sampler window does not idle after each run;
+  coverage is still judged from actual sample timestamps, and all 10 runs passed it.
