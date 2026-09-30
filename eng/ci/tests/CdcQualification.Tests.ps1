@@ -1826,6 +1826,20 @@ Describe 'CDC runbook failure diagnostics' {
 }
 
 Describe 'CDC qualification diagnostic destination' {
+    It 'rejects a checkout-local temporary root before creating even the external results directory' {
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        $destination = Join-Path $TestDrive 'external-results'
+        $driver = Join-Path $TestDrive 'local-temp.ps1'
+        @'
+param($Repo, $Destination)
+$env:TMPDIR = $Repo
+& (Join-Path $Repo 'eng/ci/Invoke-CdcQualification.ps1') -Lane Contract -ResultsDirectory $Destination
+'@ | Set-Content $driver
+        $output = & pwsh -NoProfile -File $driver $repo $destination 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 1
+        $output | Should -Match 'outside the repository'
+        Test-Path -LiteralPath $destination | Should -BeFalse
+    }
     It 'rejects a results directory inside the checkout before creating any files or running tests' {
         $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         $destination = Join-Path $repo ('cdc-forbidden-' + [guid]::NewGuid().ToString('N'))

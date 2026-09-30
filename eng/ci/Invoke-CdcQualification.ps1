@@ -23,12 +23,14 @@ $PSNativeCommandUseErrorActionPreference = $false
 Import-Module (Join-Path $PSScriptRoot 'cdc-qualification.psm1') -Force
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $destination = [IO.Path]::GetFullPath($ResultsDirectory)
-if ($destination -eq $repo -or $destination.StartsWith($repo + [IO.Path]::DirectorySeparatorChar)) {
-    throw 'Qualification diagnostics must be written outside the repository checkout.'
+$raw = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))))
+foreach ($path in @($destination, $raw)) {
+    if ($path -eq $repo -or $path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar)) {
+        throw 'Qualification diagnostics must be written outside the repository checkout.'
+    }
 }
 if (Test-Path -LiteralPath $destination) { throw 'Use a new results directory; previous evidence must not be overwritten.' }
 New-Item -ItemType Directory -Path $destination | Out-Null
-$raw = Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $raw | Out-Null
 if (-not $IsWindows) { & chmod 700 $raw }
 $reports = [System.Collections.Generic.List[object]]::new()
