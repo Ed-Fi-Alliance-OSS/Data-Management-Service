@@ -105,7 +105,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         /// its refresh service, and <see cref="TimeProvider"/>; and (step 2.3) the configuration manager and the shared
         /// bearer events. Only the self-contained store registrations call this, so nothing here exists in Keycloak
         /// mode. Every registration is a try-add, so registering twice still yields one of each. The bearer schemes
-        /// keep their current key resolution until steps 3.1–3.2 wire the manager and the events in.
+        /// take the manager and the events through <see cref="SigningKeyJwtBearerOptionsExtensions.UseSigningKeySnapshot"/>:
+        /// the default <c>Bearer</c> scheme since step 3.1; <c>DmsJwtBearer</c> keeps its own resolver until step 3.2.
         /// </summary>
         public static IServiceCollection AddSigningKeyServices(this IServiceCollection services)
         {

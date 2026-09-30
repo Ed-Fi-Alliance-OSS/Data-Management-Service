@@ -120,7 +120,7 @@ public class SigningKeyRegistrationStartupTests
         public void It_still_resolves_the_existing_token_manager() =>
             _tokenManager.Should().Be(typeof(OpenIddictTokenManager));
 
-        // Step 2.3: resolvable singletons, not yet wired into either scheme (steps 3.1-3.2).
+        // Step 2.3: one of each; the Bearer scheme's use of them is pinned in BearerSchemePipelineTests (step 3.1).
         [Test]
         public void It_registers_one_configuration_manager() =>
             _configurationManagerRegistrations.Should().Be(1);
