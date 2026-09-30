@@ -446,7 +446,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             string? keyId = ReadKeyId(rawToken);
             if (!string.IsNullOrEmpty(keyId) && !snapshot.ContainsKeyId(keyId))
             {
-                snapshot = await RefreshForUnknownKeyAsync(snapshot, keyId);
+                snapshot = await RefreshForUnknownKeyAsync(keyId);
             }
 
             var signingKeys = snapshot.Keys.ToDictionary(
@@ -481,13 +481,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
         /// <summary>
         /// Asks the provider for one unknown-key refresh, which it admits at most once per cooldown and only when the
-        /// retry gate is open, and returns the snapshot to verify against: the one current after the decision, or the
-        /// caller's when there is none.
+        /// retry gate is open, and returns the snapshot to verify against. That snapshot is obtained through
+        /// <see cref="ISigningKeySnapshotProvider.GetUsableAsync"/> again, never taken unchecked: the snapshot usable when
+        /// verification started may have crossed the maximum staleness during a refresh that then failed.
         /// </summary>
-        private async Task<SigningKeySnapshot> RefreshForUnknownKeyAsync(
-            SigningKeySnapshot snapshot,
-            string keyId
-        )
+        /// <exception cref="SigningKeysUnavailableException">No usable snapshot remains after the refresh.</exception>
+        private async Task<SigningKeySnapshot> RefreshForUnknownKeyAsync(string keyId)
         {
             SigningKeyUnknownKeyOutcome outcome = await _signingKeyProvider.TryRefreshForUnknownKeyAsync(
                 keyId,
@@ -500,7 +499,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 outcome
             );
 
-            return _signingKeyProvider.Current ?? snapshot;
+            return await _signingKeyProvider.GetUsableAsync(CancellationToken.None);
         }
 
         /// <summary>

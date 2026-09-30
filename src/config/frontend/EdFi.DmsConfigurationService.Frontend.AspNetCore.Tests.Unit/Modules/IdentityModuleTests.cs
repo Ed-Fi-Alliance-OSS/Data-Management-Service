@@ -1489,30 +1489,50 @@ public class RevocationOwnershipTests
     }
 
     /// <summary>
-    /// The real manager, reading its keys through a real snapshot provider over the faked repository. The provider
-    /// and the certificate store are left to the collector: idle, neither holds anything a test run needs released.
+    /// The real manager over the faked repository and secret hasher, with a real snapshot provider and certificate
+    /// store of its own. The factory's container creates this owner and disposes it, and with it the provider and the
+    /// store, when the factory is disposed.
     /// </summary>
-    private static OpenIddictTokenManager CreateTokenManager(
-        IOpenIddictTokenRepository tokenRepository,
-        IClientSecretHasher secretHasher
-    )
+    private sealed class RealTokenManagerOwner : IDisposable
     {
-        IOptions<OpenIddictIdentityOptions> options = Options.Create(
-            new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }
-        );
-        return new(
-            options,
-            NullLogger<OpenIddictTokenManager>.Instance,
-            secretHasher,
-            tokenRepository,
-            new SigningKeySnapshotProvider(
+        private readonly SigningKeySnapshotProvider _signingKeyProvider;
+        private readonly DevelopmentCertificateStore _developmentCertificateStore;
+
+        public RealTokenManagerOwner(
+            IOpenIddictTokenRepository tokenRepository,
+            IClientSecretHasher secretHasher
+        )
+        {
+            IOptions<OpenIddictIdentityOptions> options = Options.Create(
+                new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }
+            );
+            _signingKeyProvider = new SigningKeySnapshotProvider(
                 new DatabaseSigningKeySource(tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
                 options,
                 TimeProvider.System,
                 NullLogger<SigningKeySnapshotProvider>.Instance
-            ),
-            new DevelopmentCertificateStore(options, NullLogger<DevelopmentCertificateStore>.Instance)
-        );
+            );
+            _developmentCertificateStore = new DevelopmentCertificateStore(
+                options,
+                NullLogger<DevelopmentCertificateStore>.Instance
+            );
+            TokenManager = new OpenIddictTokenManager(
+                options,
+                NullLogger<OpenIddictTokenManager>.Instance,
+                secretHasher,
+                tokenRepository,
+                _signingKeyProvider,
+                _developmentCertificateStore
+            );
+        }
+
+        public OpenIddictTokenManager TokenManager { get; }
+
+        public void Dispose()
+        {
+            _signingKeyProvider.Dispose();
+            _developmentCertificateStore.Dispose();
+        }
     }
 
     /// <summary>
@@ -1524,14 +1544,24 @@ public class RevocationOwnershipTests
         A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
             .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
 
-    private static WebApplicationFactory<Program> CreateFactory(ITokenManager tokenManager) =>
+    /// <summary>
+    /// A host whose <see cref="ITokenManager"/> is the real manager over <paramref name="tokenRepository"/>. The owner
+    /// is registered through a factory, so the host's container owns it and disposes it with the host.
+    /// </summary>
+    private static WebApplicationFactory<Program> CreateFactory(
+        IOpenIddictTokenRepository tokenRepository,
+        IClientSecretHasher secretHasher
+    ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(collection =>
             {
                 collection.AddTestAuthentication();
-                collection.AddTransient(_ => tokenManager);
+                collection.AddSingleton(_ => new RealTokenManagerOwner(tokenRepository, secretHasher));
+                collection.AddTransient<ITokenManager>(services =>
+                    services.GetRequiredService<RealTokenManagerOwner>().TokenManager
+                );
             });
         });
 
@@ -1593,7 +1623,7 @@ public class RevocationOwnershipTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header, no form fields at all.
 
             _response = await _client.PostAsync(
@@ -1668,7 +1698,7 @@ public class RevocationOwnershipTests
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header — credentials go in the form body.
             _response = await PostRevocationWithFormCredentials(
                 _client,
@@ -1720,7 +1750,7 @@ public class RevocationOwnershipTests
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, _jti));
         }
@@ -1783,7 +1813,7 @@ public class RevocationOwnershipTests
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, NonCanonicalClientId, TestClientSecret);
 
             // The token carries the canonical client_id, because that is what minting stamps on
@@ -1823,7 +1853,7 @@ public class RevocationOwnershipTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header and no client_id/secret form fields.
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -1893,7 +1923,7 @@ public class RevocationOwnershipTests
                 .Returns((ApplicationInfo?)null);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, "unregistered-client", TestClientSecret);
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -1966,7 +1996,7 @@ public class RevocationOwnershipTests
             // bool-returning call to false anyway.
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(false);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, "wrong-secret");
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -2008,7 +2038,7 @@ public class RevocationOwnershipTests
                 .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = false });
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -2052,7 +2082,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OtherClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
 
             // The target token belongs to OwnerClientId; the caller authenticates as OtherClientId.
             _client = CreateClientWithCredentials(_factory, OtherClientId, TestClientSecret);
@@ -2112,7 +2142,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(
                 _client,
@@ -2150,7 +2180,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, "not-even-a-jwt");
         }

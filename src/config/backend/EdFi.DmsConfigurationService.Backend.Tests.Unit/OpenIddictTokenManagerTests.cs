@@ -2078,6 +2078,157 @@ public class OpenIddictTokenManagerTests
         public void It_carries_the_store_failure() => _thrown!.InnerException.Should().BeSameAs(_failure);
     }
 
+    // 2.2-c: a store that already reports itself unavailable (the SQL Server pool-exhaustion translation) passes through
+    // unchanged, neither re-wrapped nor turned into false.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenTheStatusStoreReportsItselfUnavailable
+        : OpenIddictTokenManagerTests
+    {
+        private readonly AuthenticationDependencyUnavailableException _failure = new(
+            AuthenticationDependencyCategory.TokenStatusStore,
+            "The token status store could not be read.",
+            new InvalidOperationException("pool timeout")
+        );
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (token, jti) = ArrangeTokenSignedByTheActiveKey();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).ThrowsAsync(_failure);
+
+            _thrown = await ExceptionFrom(() => CreateConfiguredTokenManager().ValidateTokenAsync(token));
+        }
+
+        [Test]
+        public void It_rethrows_the_store_exception() => _thrown.Should().BeSameAs(_failure);
+    }
+
+    /// <summary>
+    /// Loads a snapshot holding one key at fake time zero and advances time by <paramref name="age"/>. Every later key
+    /// read advances time by <paramref name="readDuration"/> and then fails. Then it validates a token whose key id the
+    /// snapshot lacks, and returns what validation returned or threw and how often the key store was read.
+    /// </summary>
+    private async Task<(
+        bool? Result,
+        Exception? Thrown,
+        int Reads
+    )> ValidateAnUnknownKeyAcrossAFailedRefreshAsync(TimeSpan age, TimeSpan readDuration)
+    {
+        FakeTimeProvider time = SigningKeyTestSupport.NewTime();
+        using RSA known = RSA.Create(2048);
+        using RSA unknown = RSA.Create(2048);
+        int[] reads = [0];
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                if (Interlocked.Increment(ref reads[0]) == 1)
+                {
+                    return Task.FromResult<IEnumerable<PublicKeyInfo>>([
+                        new PublicKeyInfo
+                        {
+                            KeyId = "known-key",
+                            PublicKey = known.ExportSubjectPublicKeyInfo(),
+                        },
+                    ]);
+                }
+
+                time.Advance(readDuration);
+                return Task.FromException<IEnumerable<PublicKeyInfo>>(
+                    new StoreUnavailableException("key store down")
+                );
+            });
+
+        using SigningKeySnapshotProvider provider = new(
+            new DatabaseSigningKeySource(_tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
+            Options.Create(new IdentityOptions()),
+            time,
+            NullLogger<SigningKeySnapshotProvider>.Instance
+        );
+        (await provider.GetUsableAsync(CancellationToken.None))
+            .ContainsKeyId("known-key")
+            .Should()
+            .BeTrue("the first read publishes the known key");
+        time.Advance(age);
+
+        string token = CreateSignedToken(
+            new RsaSecurityKey(unknown) { KeyId = "unknown-key" },
+            [new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())]
+        );
+        OpenIddictTokenManager manager = CreateConfiguredTokenManager(signingKeyProvider: provider);
+        try
+        {
+            return (await manager.ValidateTokenAsync(token), null, reads[0]);
+        }
+        catch (Exception exception)
+        {
+            return (null, exception, reads[0]);
+        }
+    }
+
+    // Past the cooldown the unknown key id gets its refresh, which fails. The snapshot is still fresh, so the token is
+    // rejected as an unknown key rather than reported as an outage.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenAnUnknownKeyRefreshFailsWithKeysStillUsable
+        : OpenIddictTokenManagerTests
+    {
+        private (bool? Result, Exception? Thrown, int Reads) _outcome;
+
+        [SetUp]
+        public async Task Act() =>
+            _outcome = await ValidateAnUnknownKeyAcrossAFailedRefreshAsync(
+                age: TimeSpan.FromSeconds(31),
+                readDuration: TimeSpan.Zero
+            );
+
+        [Test]
+        public void It_rejects_the_token() => _outcome.Result.Should().BeFalse();
+
+        [Test]
+        public void It_throws_nothing() => _outcome.Thrown.Should().BeNull();
+
+        [Test]
+        public void It_reads_the_key_store_for_the_refresh() => _outcome.Reads.Should().Be(2);
+
+        [Test]
+        public void It_does_not_query_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // One second short of the maximum staleness the snapshot is usable, and the refresh its unknown key id joins takes
+    // two seconds and fails. The snapshot is then expired, so verification reports the keys unavailable. Before this
+    // correction it verified against the expired snapshot and answered false, an invalid token.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenAFailedUnknownKeyRefreshCrossesTheMaximumStaleness
+        : OpenIddictTokenManagerTests
+    {
+        private (bool? Result, Exception? Thrown, int Reads) _outcome;
+
+        [SetUp]
+        public async Task Act() =>
+            _outcome = await ValidateAnUnknownKeyAcrossAFailedRefreshAsync(
+                age: TimeSpan.FromSeconds(3599),
+                readDuration: TimeSpan.FromSeconds(2)
+            );
+
+        [Test]
+        public void It_throws_signing_keys_unavailable() =>
+            _outcome.Thrown.Should().BeOfType<SigningKeysUnavailableException>();
+
+        [Test]
+        public void It_reports_the_snapshot_expired() =>
+            ((SigningKeysUnavailableException)_outcome.Thrown!)
+                .Reason.Should()
+                .Be(SigningKeysUnavailableReason.SnapshotExpired);
+
+        [Test]
+        public void It_makes_no_further_key_read() => _outcome.Reads.Should().Be(2);
+
+        [Test]
+        public void It_does_not_query_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
     // 2.2-c: only store failures are translated; any other exception keeps the existing invalid-token answer.
     [TestFixture]
     public class Given_ValidateTokenAsync_WhenTheStatusReadFailsForAnotherReason : OpenIddictTokenManagerTests
