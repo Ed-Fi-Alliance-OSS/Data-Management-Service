@@ -76,7 +76,10 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
   plus a standalone wrapper): `pg_stat_activity` grouped by datname/usename/
   application_name/state/wait_event_type/backend_type plus per-database `numbackends`
   (~250 ms) and `pg_stat_io`/`pg_stat_bgwriter` (~1 s), each over ONE persistent psql
-  `\watch` connection; a timestamped `docker stats` stream; Windows host disk counters
+  `\watch` connection whose application_name carries the shared attribution prefix plus
+  a per-set unique suffix (`dms1556-sampler-activity-<id>` / `dms1556-sampler-io-<id>`),
+  so cleanup terminates only its own set's sessions and overlapping sampler sets cannot
+  end each other's captures; a timestamped `docker stats` stream; Windows host disk counters
   (the runner equivalent is `/proc/diskstats`); and the dotnet-monitor `/livemetrics`
   capture. The required captures are explicit: pg-activity, pg-io, and docker-stats
   always; host-disk on Windows (reported as unsupported elsewhere); livemetrics when
@@ -96,11 +99,12 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
 ### Sampler connections and M-conn
 
 The PostgreSQL samplers hold exactly two persistent connections for the whole window,
-self-identified as `application_name=dms1556-sampler-activity` and
-`dms1556-sampler-io`, both to `dbname=postgres` — not to the CMS database. For M-conn:
+self-identified as `application_name=dms1556-sampler-activity-<id>` and
+`dms1556-sampler-io-<id>` (a unique suffix per sampler set), both to `dbname=postgres` —
+not to the CMS database. For M-conn:
 
 - `log_connections` lines for the samplers are the two session starts per run; exclude
-  them by those application names (or by database `postgres`).
+  them by the `dms1556-sampler-` application-name prefix (or by database `postgres`).
 - Per-database `numbackends` for the CMS database is unaffected by the samplers; the
   `postgres` database rows carry the constant +2 sampler offset.
 - `pg_stat_activity` rows retain datname/usename/application_name, so CMS connections

@@ -22,10 +22,13 @@ Microsoft.AspNetCore.Hosting, Npgsql) - one early sample of a provider does not 
 coverage merely because another provider continues through the burst.
 
 PostgreSQL sampling uses ONE persistent connection per stream (psql \watch inside the
-container) with a distinguishable application_name (dms1556-sampler-activity /
-dms1556-sampler-io), and the activity rows retain datname/usename/application_name, so
-sampler connections are self-identifying and excludable from M-conn instead of adding
-~5 anonymous connections per second to the connection-creation evidence.
+container) with a distinguishable application_name carrying the shared attribution
+prefix plus a per-set unique suffix (dms1556-sampler-activity-<id> /
+dms1556-sampler-io-<id>), and the activity rows retain datname/usename/application_name,
+so sampler connections are self-identifying and excludable from M-conn instead of adding
+~5 anonymous connections per second to the connection-creation evidence. Cleanup
+terminates ONLY the exact names stored in its own state, so overlapping sampler sets
+(e.g. a standalone capture beside a harness run) cannot end each other's sessions.
 #>
 
 Set-StrictMode -Version Latest
@@ -120,6 +123,13 @@ function Start-DmsSamplerSet {
     # bounded count, so the loop self-terminates and never spawns per-tick connections.
     # Output is unaligned, '|'-separated, one data row per line starting with now()::text;
     # stderr is merged into the file deliberately so a failing sampler is diagnosable.
+    # The application names keep the shared attribution prefix but carry a per-set unique
+    # suffix, so this set's cleanup can never terminate an overlapping set's sessions.
+    $setId = [guid]::NewGuid().ToString('N').Substring(0, 8)
+    $activityAppName = "dms1556-sampler-activity-$setId"
+    $ioAppName = "dms1556-sampler-io-$setId"
+    $activityConnInfo = "dbname=postgres application_name=$activityAppName"
+    $ioConnInfo = "dbname=postgres application_name=$ioAppName"
     $activityTicks = [int][Math]::Ceiling($DurationSeconds / 0.25)
     $activityQuery = "SELECT now()::text, 'activity', coalesce(datname,''), coalesce(usename,''), coalesce(application_name,''), coalesce(state,'(none)'), coalesce(wait_event_type,'(none)'), backend_type, count(*)::text FROM pg_stat_activity GROUP BY 1,2,3,4,5,6,7,8 UNION ALL SELECT now()::text, 'numbackends', datname, '', '', '', '', '', numbackends::text FROM pg_stat_database WHERE datname IS NOT NULL AND numbackends > 0"
     $activityInput = "$activityQuery`n\watch i=0.25 c=$activityTicks`n"
@@ -133,6 +143,8 @@ function Start-DmsSamplerSet {
         Jobs            = @{}
         PgContainerName = $PgContainerName
         PgUser          = $PgUser
+        # The exact application names owned by THIS set; cleanup terminates only these.
+        PgApplicationNames = @($activityAppName, $ioAppName)
         MonitorBaseUrl  = $MonitorBaseUrl
         MonitorPid      = $monitorPid
         MonitorRequired = [bool]$RequireMonitor
@@ -145,13 +157,13 @@ function Start-DmsSamplerSet {
     try {
         $state.Jobs.activity = Start-Job -Name "$Label-pg-activity" -ScriptBlock {
             $using:activityInput |
-                & docker exec -i $using:PgContainerName psql -U $using:PgUser -d 'dbname=postgres application_name=dms1556-sampler-activity' -X -q -A -t -F '|' 2>&1 |
+                & docker exec -i $using:PgContainerName psql -U $using:PgUser -d $using:activityConnInfo -X -q -A -t -F '|' 2>&1 |
                 Set-Content -LiteralPath ($using:paths).activity -Encoding utf8
         }
 
         $state.Jobs.io = Start-Job -Name "$Label-pg-io" -ScriptBlock {
             $using:ioInput |
-                & docker exec -i $using:PgContainerName psql -U $using:PgUser -d 'dbname=postgres application_name=dms1556-sampler-io' -X -q -A -t -F '|' 2>&1 |
+                & docker exec -i $using:PgContainerName psql -U $using:PgUser -d $using:ioConnInfo -X -q -A -t -F '|' 2>&1 |
                 Set-Content -LiteralPath ($using:paths).io -Encoding utf8
         }
 
@@ -384,9 +396,11 @@ function Remove-DmsSamplerSet {
     Emergency cleanup for a sampler set: stops and removes any jobs still owned by the
     state. Idempotent (a no-op after a successful Stop-DmsSamplerSet) and never throws,
     so calling it from a finally block cannot mask the original error. Killing a job
-    closes its docker client's pipes, which ends the in-container psql \watch session on
-    its next write and the docker stats stream immediately; the \watch counts bound them
-    regardless.
+    does NOT end its docker clients on Windows - they are orphaned with their pipes
+    still open (established during the lifecycle validation) - so the PostgreSQL sampler
+    sessions are terminated server-side via Stop-DmsPgSamplerSession, which also ends
+    the orphaned exec clients; the docker stats client exits on its own once its
+    reader is gone, and the \watch counts bound the pg sessions regardless.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Emergency cleanup of jobs this module started; must run unprompted from finally blocks.')]
     [CmdletBinding()]
@@ -422,14 +436,16 @@ function Remove-DmsSamplerSet {
 function Stop-DmsPgSamplerSession {
     <#
     .SYNOPSIS
-    Terminates any dms1556-sampler backends left in the PostgreSQL container. Killing a
-    sampler's PowerShell job can orphan its docker exec client (Windows does not kill
-    child processes with the job), and an orphaned client keeps the exec stream open, so
-    the in-container psql \watch session never sees a broken pipe; terminating it
-    server-side ends both the session and the orphaned client immediately. A no-op when
-    the sessions already exited (the \watch counts bound them regardless). Never throws.
+    Terminates THIS set's sampler backends in the PostgreSQL container, matched by the
+    exact application names stored in the state - never by prefix, so an overlapping
+    sampler set's sessions are left untouched. Killing a sampler's PowerShell job
+    orphans its docker exec client on Windows (child processes are not killed with the
+    job), and the orphaned client keeps the exec stream open, so the in-container psql
+    \watch session never sees a broken pipe; terminating it server-side ends both the
+    session and the orphaned client immediately. A no-op when the sessions already
+    exited (the \watch counts bound them regardless). Never throws.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Terminates only this module''s own self-identified sampler sessions; must run unprompted from finally blocks.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Terminates only this sampler set''s own self-identified sessions; must run unprompted from finally blocks.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -437,7 +453,11 @@ function Stop-DmsPgSamplerSession {
     )
 
     try {
-        $null = docker exec $State.PgContainerName psql -U $State.PgUser -d postgres -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name LIKE 'dms1556-sampler%'" 2>$null
+        # The names are module-generated (fixed prefix + hex suffix), so inlining them in
+        # the SQL literal is safe.
+        $nameList = (@($State.PgApplicationNames) | ForEach-Object { "'$_'" }) -join ', '
+        if (-not $nameList) { return }
+        $null = docker exec $State.PgContainerName psql -U $State.PgUser -d postgres -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name IN ($nameList)" 2>$null
     }
     catch {
         Write-Verbose "pg_terminate_backend sweep failed: $($_.Exception.Message)"
