@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -371,6 +372,47 @@ public class OpenIddictServiceCollectionExtensionsTests
             _provider.GetRequiredService<TimeProvider>().Should().BeSameAs(_time);
     }
 
+    // Step 2.3: the configuration manager and the shared bearer events are one singleton each, however often the
+    // signing-key services are registered.
+    [TestFixture]
+    public class Given_the_request_boundary_services_are_registered_twice
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildSigningKeyProvider(
+                new KeyRepositoryHarness(TimeProvider.System).Repository,
+                registrations: 2,
+                before: services => services.AddSingleton(A.Fake<ITokenManager>())
+            );
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_registers_one_configuration_manager() =>
+            _provider.GetServices<SigningKeyConfigurationManager>().Should().ContainSingle();
+
+        [Test]
+        public void It_shares_one_configuration_manager_instance() =>
+            _provider
+                .GetRequiredService<SigningKeyConfigurationManager>()
+                .Should()
+                .BeSameAs(_provider.GetRequiredService<SigningKeyConfigurationManager>());
+
+        [Test]
+        public void It_registers_one_bearer_events() =>
+            _provider.GetServices<SigningKeyBearerEvents>().Should().ContainSingle();
+
+        [Test]
+        public void It_shares_one_bearer_events_instance() =>
+            _provider
+                .GetRequiredService<SigningKeyBearerEvents>()
+                .Should()
+                .BeSameAs(_provider.GetRequiredService<SigningKeyBearerEvents>());
+    }
+
     // Each self-contained store registration adds the signing-key services, once however often it is called.
     [TestFixture("postgresql")]
     [TestFixture("postgresql-jwt-settings")]
@@ -429,5 +471,12 @@ public class OpenIddictServiceCollectionExtensionsTests
 
         [Test]
         public void It_registers_one_clock() => Count(typeof(TimeProvider)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_configuration_manager() =>
+            Count(typeof(SigningKeyConfigurationManager)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_bearer_events() => Count(typeof(SigningKeyBearerEvents)).Should().Be(1);
     }
 }

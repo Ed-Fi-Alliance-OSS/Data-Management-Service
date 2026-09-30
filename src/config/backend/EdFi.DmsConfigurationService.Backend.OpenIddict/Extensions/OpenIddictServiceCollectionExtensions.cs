@@ -102,10 +102,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         /// <summary>
         /// Registers the signing-key services (spec §4.3, step 2.1): the development-certificate store, both key
         /// sources, the source selected by <see cref="IdentityOptions.UseCertificates"/>, the one snapshot provider,
-        /// its refresh service, and <see cref="TimeProvider"/>. Only the self-contained store registrations call this,
-        /// so nothing here exists in Keycloak mode. Every registration is a try-add, so registering twice still yields
-        /// one provider and one refresh service. Nothing consumes the provider yet: the token manager and the bearer
-        /// schemes keep their current key resolution until steps 2.2–3.2.
+        /// its refresh service, and <see cref="TimeProvider"/>; and (step 2.3) the configuration manager and the shared
+        /// bearer events. Only the self-contained store registrations call this, so nothing here exists in Keycloak
+        /// mode. Every registration is a try-add, so registering twice still yields one of each. The bearer schemes
+        /// keep their current key resolution until steps 3.1–3.2 wire the manager and the events in.
         /// </summary>
         public static IServiceCollection AddSigningKeyServices(this IServiceCollection services)
         {
@@ -125,6 +125,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IHostedService, SigningKeyRefreshService>()
             );
+            services.TryAddSingleton<SigningKeyConfigurationManager>();
+            services.TryAddSingleton<SigningKeyBearerEvents>();
 
             return services;
         }

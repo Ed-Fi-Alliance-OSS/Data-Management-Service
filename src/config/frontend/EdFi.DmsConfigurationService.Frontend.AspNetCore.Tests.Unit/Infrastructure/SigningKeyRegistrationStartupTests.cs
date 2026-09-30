@@ -69,6 +69,10 @@ public class SigningKeyRegistrationStartupTests
         private int _providerRegistrations;
         private Type _source = null!;
         private Type _tokenManager = null!;
+        private SigningKeyConfigurationManager _configurationManager = null!;
+        private int _configurationManagerRegistrations;
+        private SigningKeyBearerEvents _bearerEvents = null!;
+        private int _bearerEventsRegistrations;
 
         [SetUp]
         public async Task Act()
@@ -85,6 +89,12 @@ public class SigningKeyRegistrationStartupTests
             _providerRegistrations = _factory.Services.GetServices<ISigningKeySnapshotProvider>().Count();
             _source = _factory.Services.GetRequiredService<ISigningKeySource>().GetType();
             _tokenManager = _factory.Services.GetRequiredService<ITokenManager>().GetType();
+            _configurationManager = _factory.Services.GetRequiredService<SigningKeyConfigurationManager>();
+            _configurationManagerRegistrations = _factory
+                .Services.GetServices<SigningKeyConfigurationManager>()
+                .Count();
+            _bearerEvents = _factory.Services.GetRequiredService<SigningKeyBearerEvents>();
+            _bearerEventsRegistrations = _factory.Services.GetServices<SigningKeyBearerEvents>().Count();
         }
 
         [TearDown]
@@ -109,6 +119,25 @@ public class SigningKeyRegistrationStartupTests
         [Test]
         public void It_still_resolves_the_existing_token_manager() =>
             _tokenManager.Should().Be(typeof(OpenIddictTokenManager));
+
+        // Step 2.3: resolvable singletons, not yet wired into either scheme (steps 3.1-3.2).
+        [Test]
+        public void It_registers_one_configuration_manager() =>
+            _configurationManagerRegistrations.Should().Be(1);
+
+        [Test]
+        public void It_shares_one_configuration_manager_instance() =>
+            _factory
+                .Services.GetRequiredService<SigningKeyConfigurationManager>()
+                .Should()
+                .BeSameAs(_configurationManager);
+
+        [Test]
+        public void It_registers_one_bearer_events() => _bearerEventsRegistrations.Should().Be(1);
+
+        [Test]
+        public void It_shares_one_bearer_events_instance() =>
+            _factory.Services.GetRequiredService<SigningKeyBearerEvents>().Should().BeSameAs(_bearerEvents);
     }
 
     [TestFixture]
@@ -170,6 +199,8 @@ public class SigningKeyRegistrationStartupTests
         private Type[] _refreshServices = [];
         private ISigningKeySnapshotProvider? _provider;
         private ISigningKeySource? _source;
+        private SigningKeyConfigurationManager? _configurationManager;
+        private SigningKeyBearerEvents? _bearerEvents;
 
         [SetUp]
         public void Act()
@@ -180,6 +211,8 @@ public class SigningKeyRegistrationStartupTests
             _refreshServices = RefreshServices(_factory);
             _provider = _factory.Services.GetService<ISigningKeySnapshotProvider>();
             _source = _factory.Services.GetService<ISigningKeySource>();
+            _configurationManager = _factory.Services.GetService<SigningKeyConfigurationManager>();
+            _bearerEvents = _factory.Services.GetService<SigningKeyBearerEvents>();
         }
 
         [TearDown]
@@ -193,5 +226,11 @@ public class SigningKeyRegistrationStartupTests
 
         [Test]
         public void It_registers_no_source() => _source.Should().BeNull();
+
+        [Test]
+        public void It_registers_no_configuration_manager() => _configurationManager.Should().BeNull();
+
+        [Test]
+        public void It_registers_no_bearer_events() => _bearerEvents.Should().BeNull();
     }
 }
