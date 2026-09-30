@@ -62,7 +62,10 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
   `-InterRoundDelaySeconds`, `-Cold`, `-ValidateBodies`, `-WithSamplers`). Each round
   summary records its `startUtc`/`endUtc` so captures can be sliced per round; the
   optional inter-round gap (default 0, as in E1) keeps sub-second warm rounds separable
-  in the 1 s counters. Per Q18 the in-flight interval runs from
+  in the 1 s counters. `-StackCaptureOffsetsSeconds`/`-StackCaptureRounds` (with
+  `-WithSamplers`) capture dotnet-monitor `/stacks` at fixed offsets into chosen rounds
+  on a thread job; each capture takes ~2.4 s and its requested/completed times are
+  recorded in the round summary. Per Q18 the in-flight interval runs from
   semaphore admission through response-body completion, the summary reports the measured
   peak overlap, and runs are labeled `catalog-87x87` / `stress-256x128` / `workload-TxN`.
   Each request runs under one deadline (`-RequestTimeoutSeconds`) started at admission
@@ -139,6 +142,27 @@ not to the CMS database. For M-conn:
   host disk, PostgreSQL errors/slow statements/checkpoints, and CMS warning/error lines
   classified by *scope* (request-scoped via `RequestPath`, background, unattributed).
   Scope says where a line was emitted, not what caused a response status.
+
+- `Set-Dms1556StackCondition.ps1` — step 0.5: recomposes CMS/PostgreSQL into one
+  condition (`baseline`, `e3-certificates`, `e4-threads`, `e5-pool16`, `headroom`); each
+  differs from `baseline` by exactly one overlay (`eng/docker-compose/local-control-*.yml`,
+  `local-postgresql-headroom.yml`). `-RecreateDb` also recreates PostgreSQL and then
+  restarts CMS (a recreated server terminates pooled connections); `-ClaimsMountSource`
+  keeps the `.e2e-claims` mount of a stack provisioned by `build-dms.ps1 E2ETest`. It
+  always brings up the dotnet-monitor sidecar first (CMS waits for it in suspend mode).
+- `Invoke-ControlBatch.ps1` — step 0.5 driver: one block of runs for one condition,
+  refusing to start unless the live container state matches the condition. Workloads
+  `cold-87x87` (E1 shape), `warm-87x87` (serial warm-up, then the first concurrent burst),
+  `warm-256x128` (stress; keep in its own blocks). Every run restarts CMS; round 1 gets
+  managed stacks at `-StackCaptureOffsetsSeconds` (default 2/8/14 s) aligned with
+  thread-pool threads/queue, pool busy, and connections received/authorized at the
+  capture instant; a dump follows outside the timed windows. Outputs
+  `e5-<block>-<condition>-index.json`, `-rounds.csv`, `-stacks.csv`.
+- `Invoke-Step05Sequence.ps1` — the matched-pair sequence as run for step 0.5.
+- `Invoke-E7Shard.ps1` — E7 overlay variant: runs a DMS E2E shard directly (same
+  test-process context as `build-dms.ps1 E2ETest`, `--no-build`) against an already
+  provisioned stack with samplers over the whole run, then summarizes the CMS side
+  (profile bursts, handshakes, thread pool, pool, log scopes, trx counts).
 
 ### Recomposing the resource profile
 

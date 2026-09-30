@@ -113,6 +113,18 @@ param(
     [Parameter(ParameterSetName = 'Burst')]
     [string] $MonitorBaseUrl = 'http://localhost:52323',
 
+    # Managed-stack captures (dotnet-monitor /stacks) at these offsets, in seconds from
+    # the start of each round listed in -StackCaptureRounds. Requires -WithSamplers (the
+    # sampler set owns the resolved monitor pid). Captures run sequentially on a thread
+    # job, so a slow capture delays the next one; the requested and completed times of
+    # each capture are recorded in the round summary. The next round starts only after
+    # the capture job finishes, so captures never overlap another round.
+    [Parameter(ParameterSetName = 'Burst')]
+    [double[]] $StackCaptureOffsetsSeconds = @(),
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [int[]] $StackCaptureRounds = @(1),
+
     # Containers the docker-stats sampler watches; override for stacks whose names differ
     # (e.g. adding the DMS container for E7 runs).
     [Parameter(ParameterSetName = 'Burst')]
@@ -586,9 +598,52 @@ function Invoke-Burst {
     for ($round = 1; $round -le $Rounds; $round++) {
         Write-Output "Round ${round}/${Rounds}: $TotalRequests requests, concurrency $MaxConcurrency..."
         $burstStartUtc = [DateTime]::UtcNow
+        $stackJob = $null
+        if ($StackCaptureOffsetsSeconds.Count -gt 0 -and $round -in $StackCaptureRounds) {
+            if ($null -eq $samplerState -or $null -eq $samplerState.MonitorPid) {
+                throw '-StackCaptureOffsetsSeconds requires -WithSamplers with a reachable dotnet-monitor sidecar.'
+            }
+            $stackMonitorPid = $samplerState.MonitorPid
+            $stackStartTicks = $burstStartUtc.Ticks
+            $stackPrefix = Join-Path $OutputDirectory "$runId-round$round-stacks"
+            $stackJob = Start-ThreadJob -ScriptBlock {
+                $monitorUrl = $using:MonitorBaseUrl
+                $monitorPid = $using:stackMonitorPid
+                $startTicks = $using:stackStartTicks
+                $prefix = $using:stackPrefix
+                foreach ($offset in $using:StackCaptureOffsetsSeconds) {
+                    $due = [DateTime]::new($startTicks + [TimeSpan]::FromSeconds($offset).Ticks, [DateTimeKind]::Utc)
+                    $waitMs = [int](($due - [DateTime]::UtcNow).TotalMilliseconds)
+                    if ($waitMs -gt 0) { Start-Sleep -Milliseconds $waitMs }
+                    $file = '{0}-t{1}.txt' -f $prefix, $offset
+                    $requestedUtc = [DateTime]::UtcNow
+                    $captureError = $null
+                    try {
+                        Invoke-WebRequest -Uri "$monitorUrl/stacks?pid=$monitorPid" -Headers @{ Accept = 'text/plain' } `
+                            -TimeoutSec 60 -OutFile $file
+                    }
+                    catch {
+                        $captureError = $_.Exception.Message
+                    }
+                    [pscustomobject]@{
+                        offsetSeconds = $offset
+                        requestedUtc  = $requestedUtc.ToString('o')
+                        completedUtc  = [DateTime]::UtcNow.ToString('o')
+                        file          = Split-Path -Leaf $file
+                        error         = $captureError
+                    }
+                }
+            }
+        }
         $results = [Dms1556.BurstRunner]::Run(
             $client, $BaseUrl, $profileIds, $TotalRequests, $MaxConcurrency, [bool]$ValidateBodies, $RequestTimeoutSeconds)
         $burstEndUtc = [DateTime]::UtcNow
+        $stackCaptures = @()
+        if ($stackJob) {
+            $null = Wait-Job -Job $stackJob -Timeout (($StackCaptureOffsetsSeconds | Measure-Object -Maximum).Maximum + 120)
+            $stackCaptures = @(Receive-Job -Job $stackJob -ErrorAction SilentlyContinue)
+            Remove-Job -Job $stackJob -Force
+        }
 
         $rows = [System.Collections.Generic.List[object]]::new()
         $bodyValidCount = 0
@@ -661,6 +716,7 @@ function Invoke-Burst {
             bodyValidCount       = if ($ValidateBodies) { $bodyValidCount } else { $null }
             bodyInvalidCount     = if ($ValidateBodies) { $bodyInvalidCount } else { $null }
             csv                  = (Split-Path -Leaf $csvPath)
+            stackCaptures        = $stackCaptures
         }
         $roundSummaries.Add($roundSummary)
         Write-Output ("  statuses: {0}; p50/p95/p99 ms: {1}/{2}/{3}; peak overlap: {4}" -f `

@@ -606,6 +606,249 @@ function Get-DmsContainerResourceRecord {
     }
 }
 
+function Measure-DmsPgHandshakeWindow {
+    <#
+    .SYNOPSIS
+    Connection-establishment timing for one client host over one window: for every
+    backend whose 'connection received' falls in the window, the time from received to
+    'connection authorized' (joined by backend pid; the SCRAM exchange plus backend
+    start-up), and offsets from StartUtc. Backends rejected before authorization (e.g.
+    53300) are counted separately. Optionally returns cumulative received/authorized
+    counts at given instants, to align with stack captures.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Events,
+        [Parameter(Mandatory)][DateTime] $StartUtc,
+        [Parameter(Mandatory)][DateTime] $EndUtc,
+        [Parameter(Mandatory)][string] $ClientHost,
+        [DateTime[]] $AtUtc = @()
+    )
+
+    $received = @($Events | Where-Object { $_.kind -eq 'received' -and $_.host -eq $ClientHost -and (Test-DmsInWindow -Utc $_.tsUtc -StartUtc $StartUtc -EndUtc $EndUtc) })
+    $authorizedByPid = @{}
+    $errorPids = @{}
+    foreach ($pgEvent in $Events) {
+        if ($pgEvent.kind -eq 'authorized' -and -not $authorizedByPid.ContainsKey($pgEvent.pid)) { $authorizedByPid[$pgEvent.pid] = $pgEvent.tsUtc }
+        if ($pgEvent.kind -eq 'error') { $errorPids[$pgEvent.pid] = $true }
+    }
+    $gaps = [System.Collections.Generic.List[double]]::new()
+    $authorizedOffsets = [System.Collections.Generic.List[double]]::new()
+    $authorizedTimes = [System.Collections.Generic.List[DateTime]]::new()
+    $rejected = 0
+    foreach ($r in $received) {
+        if ($authorizedByPid.ContainsKey($r.pid) -and $authorizedByPid[$r.pid] -ge $r.tsUtc) {
+            $gaps.Add(($authorizedByPid[$r.pid] - $r.tsUtc).TotalMilliseconds)
+            $authorizedOffsets.Add(($authorizedByPid[$r.pid] - $StartUtc).TotalSeconds)
+            $authorizedTimes.Add($authorizedByPid[$r.pid])
+        }
+        elseif ($errorPids.ContainsKey($r.pid)) { $rejected++ }
+    }
+    function Get-Quantile([System.Collections.Generic.List[double]] $Values, [double] $Q) {
+        if ($Values.Count -eq 0) { return $null }
+        $sorted = @($Values | Sort-Object)
+        return [Math]::Round($sorted[[int][Math]::Min($sorted.Count - 1, [Math]::Floor($Q * $sorted.Count))], 1)
+    }
+    $receivedOffsets = [System.Collections.Generic.List[double]]::new()
+    foreach ($r in $received) { $receivedOffsets.Add(($r.tsUtc - $StartUtc).TotalSeconds) }
+    $alignment = @(foreach ($instant in $AtUtc) {
+            [pscustomobject]@{
+                atUtc      = $instant.ToString('o')
+                received   = @($received | Where-Object { $_.tsUtc -le $instant }).Count
+                authorized = @($authorizedTimes | Where-Object { $_ -le $instant }).Count
+            }
+        })
+    return [pscustomobject]@{
+        received                = $received.Count
+        authorized              = $gaps.Count
+        rejectedBeforeAuthorization = $rejected
+        receivedOffsetP50Seconds = Get-Quantile $receivedOffsets 0.5
+        receivedToAuthorizedP50Ms = Get-Quantile $gaps 0.5
+        receivedToAuthorizedMaxMs = if ($gaps.Count -gt 0) { [Math]::Round(($gaps | Measure-Object -Maximum).Maximum, 1) } else { $null }
+        authorizedOffsetMinSeconds = if ($authorizedOffsets.Count -gt 0) { [Math]::Round(($authorizedOffsets | Measure-Object -Minimum).Minimum, 2) } else { $null }
+        authorizedOffsetP50Seconds = Get-Quantile $authorizedOffsets 0.5
+        alignment               = $alignment
+    }
+}
+
+function Get-DmsStackSummary {
+    <#
+    .SYNOPSIS
+    Classifies the threads of one dotnet-monitor /stacks text capture by what they are
+    doing (first matching rule wins):
+      - resolver-wait: a synchronous Task wait (Task.InternalWait) with
+        JsonWebTokenHandler.ValidateSignature below it, i.e. IdentityModel's synchronous
+        IssuerSigningKeyResolver call blocking on a Task (F1). resolverFrameVisible
+        counts the subset whose CMS resolver lambda frame is explicitly present; when it
+        is absent the wait appears directly under ValidateSignature (a JIT-inlined lambda
+        is the likely reason, not established here);
+      - other-sync-wait: any other synchronous Task wait (Program.Main excluded);
+      - scram-compute: Npgsql SCRAM/PBKDF2/HMAC frames on the stack;
+      - npgsql-active: other Npgsql frames;
+      - threadpool-idle: a worker parked in the thread pool's semaphore;
+      - runtime-infrastructure: named runtime/Kestrel/diagnostics threads and Main;
+      - other.
+    Also returns the thread-pool worker count and the most common frame signatures.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string] $Path)
+
+    $counts = [ordered]@{
+        'resolver-wait' = 0; 'other-sync-wait' = 0; 'scram-compute' = 0; 'npgsql-active' = 0
+        'threadpool-idle' = 0; 'runtime-infrastructure' = 0; 'other' = 0
+    }
+    $resolverFrameVisible = 0
+    $workers = 0
+    $signatures = @{}
+    $threads = 0
+    if (Test-Path -LiteralPath $Path) {
+        $text = [System.IO.File]::ReadAllText($Path)
+        foreach ($block in ($text -split '(?m)^(?=Thread: )')) {
+            # ReadAllText strips the capture's UTF-8 BOM, so blocks start at 'Thread: '.
+            if ($block -notmatch '^Thread: ') { continue }
+            $threads++
+            $lines = @($block -split "`n")
+            $header = $lines[0]
+            $frames = @($lines | Select-Object -Skip 1 | ForEach-Object { ($_.Trim() -replace '^[^!]+!', '') } | Where-Object { $_ -and $_ -ne '[NativeFrame]' })
+            $joined = $frames -join "`n"
+            if ($header -match '\.NET TP Worker') { $workers++ }
+            $category = if ($joined -match 'Task\.InternalWait' -and $joined -match 'JsonWebTokenHandler\.ValidateSignature') {
+                if ($joined -match 'EdFi\.DmsConfigurationService\.[^\n]*(ConfigureIdentityProvider|AddJwtAuthentication)[^\n]*>b__') { $resolverFrameVisible++ }
+                'resolver-wait'
+            }
+            elseif ($joined -match 'Task\.InternalWait' -and $joined -notmatch 'Program\.<Main>') { 'other-sync-wait' }
+            elseif ($joined -match 'Npgsql' -and $joined -match 'Scram|Pbkdf2|Rfc2898|HMAC|Hmac') { 'scram-compute' }
+            elseif ($joined -match 'Npgsql') { 'npgsql-active' }
+            elseif ($frames.Count -gt 0 -and $joined -match 'LowLevelLifoSemaphore|PortableThreadPool\+WorkerThread') { 'threadpool-idle' }
+            elseif ($header -match 'Kestrel|\.NET (Sockets|Timer|TP Gate|File Watcher|Counter|EventPipe|Finalizer)' -or $joined -match 'Program\.<Main>|CounterGroup|GateThread|TimerQueue|SocketAsyncEngine|FileSystemWatcher|Heartbeat') { 'runtime-infrastructure' }
+            else { 'other' }
+            $counts[$category]++
+            $signature = '{0}: {1}' -f $category, (($frames | Select-Object -First 3) -join ' < ')
+            $signatures[$signature] = [int]($signatures[$signature] ?? 0) + 1
+        }
+    }
+    return [pscustomobject]@{
+        path                 = $Path
+        threads              = $threads
+        threadPoolWorkers    = $workers
+        categories           = $counts
+        resolverFrameVisible = $resolverFrameVisible
+        topSignatures        = @($signatures.GetEnumerator() | Sort-Object -Property Value -Descending | Select-Object -First 5 | ForEach-Object { '{0}x {1}' -f $_.Value, $_.Key })
+    }
+}
+
+function Get-DmsLivemetricsValueAt {
+    <#
+    .SYNOPSIS
+    The livemetrics sample of one counter nearest to an instant (within 1.5 s), used to
+    align a stack capture with thread-pool and pool state. Counter names as in
+    Get-DmsLivemetricsWindowSummary ('pool-busy' / 'pool-idle' for the given database).
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][DateTime] $AtUtc,
+        [Parameter(Mandatory)][string] $Counter,
+        [string] $PoolDatabase = 'edfi_datamanagementservice'
+    )
+
+    $best = $null
+    $bestDistance = [double]::MaxValue
+    foreach ($line in [System.IO.File]::ReadLines($Path)) {
+        $match = [regex]::Match($line, $script:LivemetricsPattern)
+        if (-not $match.Success) { continue }
+        $name = $match.Groups['name'].Value
+        if ($Counter -in @('pool-busy', 'pool-idle')) {
+            $prefix = if ($Counter -eq 'pool-busy') { 'Busy Connections' } else { 'Idle Connections' }
+            if (-not ($name.StartsWith($prefix) -and $name.Contains("Database=$PoolDatabase;"))) { continue }
+        }
+        elseif ($name -ne $Counter) { continue }
+        $utc = ConvertTo-DmsUtc -Text $match.Groups['ts'].Value
+        if ($null -eq $utc) { continue }
+        $distance = [Math]::Abs(($utc - $AtUtc).TotalSeconds)
+        if ($distance -lt $bestDistance -and $distance -le 1.5) {
+            $bestDistance = $distance
+            $best = [double]::Parse($match.Groups['value'].Value, $script:Invariant)
+        }
+    }
+    return $best
+}
+
+function ConvertTo-DmsUtcInstant {
+    <#
+    .SYNOPSIS
+    UTC DateTime from a summary timestamp. ConvertFrom-Json already turns ISO strings
+    into DateTime values, and casting those to [string] drops the fractional seconds
+    that sub-second windows depend on, so DateTime values are converted directly.
+    #>
+    [CmdletBinding()]
+    [OutputType([DateTime])]
+    param([Parameter(Mandatory)][object] $Value)
+
+    if ($Value -is [DateTime]) { return $Value.ToUniversalTime() }
+    return ([DateTimeOffset]::Parse([string]$Value, $script:Invariant)).UtcDateTime
+}
+
+function ConvertTo-DmsFlatText {
+    <#
+    .SYNOPSIS
+    Renders a map (dictionary or object) as "k=v; k=v" for flat CSV columns.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([object] $Map)
+
+    if ($null -eq $Map) { return '' }
+    $pairs = if ($Map -is [System.Collections.IDictionary]) { $Map.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } }
+    else { $Map.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" } }
+    return (@($pairs) -join '; ')
+}
+
+function Measure-DmsVmClockOffset {
+    <#
+    .SYNOPSIS
+    Docker VM clock minus host clock (ms), from the lowest-round-trip of five probes into
+    the PostgreSQL container. docker exec start-up sits inside the round trip, so the
+    midpoint estimate is biased positive; the magnitude is what matters for padding.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([string] $PgContainerName = 'dms-postgresql')
+
+    $best = $null
+    for ($i = 0; $i -lt 5; $i++) {
+        $before = [DateTimeOffset]::UtcNow
+        $epoch = docker exec $PgContainerName psql -U postgres -d postgres -Atc 'select extract(epoch from clock_timestamp())' 2>$null
+        $after = [DateTimeOffset]::UtcNow
+        if ($LASTEXITCODE -ne 0 -or -not $epoch) { continue }
+        $roundTripMs = ($after - $before).TotalMilliseconds
+        $midpointMs = ($before.ToUnixTimeMilliseconds() + $after.ToUnixTimeMilliseconds()) / 2.0
+        $offsetMs = [double]::Parse([string]$epoch, $script:Invariant) * 1000.0 - $midpointMs
+        if ($null -eq $best -or $roundTripMs -lt $best.roundTripMs) {
+            $best = [pscustomobject]@{ offsetMs = [Math]::Round($offsetMs, 1); roundTripMs = [Math]::Round($roundTripMs, 1) }
+        }
+    }
+    return $best
+}
+
+function Get-DmsContainerIpAddress {
+    <#
+    .SYNOPSIS
+    First network IP address of a container (the client host PostgreSQL logs for it).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string] $ContainerName)
+
+    $addresses = docker inspect $ContainerName --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>$null
+    $first = @(([string]$addresses).Split(' ', [StringSplitOptions]::RemoveEmptyEntries)) | Select-Object -First 1
+    if (-not $first) { throw "Could not resolve the IP address of $ContainerName." }
+    return $first
+}
+
 function Get-DmsE2RoundEvidence {
     <#
     .SYNOPSIS
@@ -644,4 +887,4 @@ function Get-DmsE2RoundEvidence {
     }
 }
 
-Export-ModuleMember -Function ConvertTo-DmsUtc, ConvertFrom-DmsDockerSize, Get-DmsPgLogEvent, Measure-DmsPgConnectionWindow, Get-DmsPgActivityWindowSummary, Get-DmsLivemetricsWindowSummary, Get-DmsDockerStatsWindowSummary, Get-DmsPgIoWindowDelta, Get-DmsHostDiskWindowSummary, Get-DmsCmsLogWindowSummary, Get-DmsContainerResourceRecord, Get-DmsE2RoundEvidence
+Export-ModuleMember -Function ConvertTo-DmsUtc, ConvertFrom-DmsDockerSize, Get-DmsPgLogEvent, Measure-DmsPgConnectionWindow, Get-DmsPgActivityWindowSummary, Get-DmsLivemetricsWindowSummary, Get-DmsDockerStatsWindowSummary, Get-DmsPgIoWindowDelta, Get-DmsHostDiskWindowSummary, Get-DmsCmsLogWindowSummary, Get-DmsContainerResourceRecord, Get-DmsE2RoundEvidence, Measure-DmsPgHandshakeWindow, Get-DmsStackSummary, Get-DmsLivemetricsValueAt, ConvertTo-DmsUtcInstant, ConvertTo-DmsFlatText, Measure-DmsVmClockOffset, Get-DmsContainerIpAddress

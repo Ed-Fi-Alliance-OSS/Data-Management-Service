@@ -436,3 +436,271 @@ Inferred, not established here:
   CSV's first admission and last completion.
 - Raw captures (≈ 230 MB for the 21 points plus 21 dumps of ≈ 437 MB each) are retained
   locally under `eng/performance/dms-1556/artifacts/` for the Jira upload.
+
+Review qualifications carried forward from the 0.4 approval: the E2 round-1 condition is
+**pool growth plus first concurrent execution** (not pool growth in isolation), the
+catalog captures show **little I/O** (not literally none), and low PostgreSQL CPU plus
+delayed authorization do not by themselves prove where execution waited. Step 0.5
+supplies the stacks that speak to the last point.
+
+## 0.5 — E3/E4/E5 controls, stacks, headroom, E7 (2026-09-30)
+
+### What 0.5 can and cannot show
+
+Controls corroborate; stacks are the direct evidence (spec §3.5). Improvement under E4
+supports H1, and no improvement would not exclude it. E3 removes database-backed key
+retrieval **collectively** (both per-request key reads; the token-status read stays on
+the database), so it cannot separate blocking from round-trip cost. E5 changes **two**
+things at once: fewer physical connections and more waiting for a pooled connection
+(bounded by the same `Timeout=15`). No verdicts are assigned here (step 0.6). **G1 stays
+"partially reproduced (provisional)" and AC 1 remains unmet.**
+
+### Design and commands
+
+- Resource profile: P-runner-approx throughout (CPU caps and `DOTNET_PROCESSOR_COUNT=4`
+  verified by each block before it ran). Host noise as in 0.4 (four unrelated idle
+  containers).
+- **Matched pairs.** Each control block ran immediately after its own baseline block,
+  both in one sequence: `Invoke-Step05Sequence.ps1 -Repetitions 3`, which calls
+  `Set-Dms1556StackCondition.ps1 -Condition <c>` and then
+  `Invoke-ControlBatch.ps1 -Condition <c> -BlockLabel <pair>`. Every condition differs
+  from `baseline` by exactly one overlay: `local-control-e3-certificates.yml`
+  (certificate mode with the development certificate on the `/diag` volume),
+  `local-control-e4-threads.yml` (`DOTNET_ThreadPool_ForceMinWorkerThreads=0x80`),
+  `local-control-e5-pool16.yml` (`Maximum Pool Size=16` appended to the connection
+  string), and `local-postgresql-headroom.yml` (`max_connections=200`). Each block
+  verified the live container state against its label before running (certificate flag,
+  thread knob, pool size, `max_connections`, CPU caps).
+- **Consistent reset.** Every run starts from a CMS restart. `cold-87x87` is the E1
+  shape (token minted, restart, burst). `warm-87x87` is the E2 shape (restart, serial
+  warm-up of 87 requests at concurrency 1, then the **first concurrent burst after serial
+  warm-up**). Both run 5 rounds, 3 s apart, with body validation and the sampler coverage
+  gate, and alternate order per repetition. PostgreSQL was not restarted within the
+  catalog pairs; the stress pair recreated PostgreSQL before **both** of its blocks.
+- **Stacks.** dotnet-monitor `/stacks` at 2, 8, and 14 s into round 1 of every run,
+  classified by `Get-DmsStackSummary`. Each capture is aligned with the thread-pool
+  thread count and queue length, Npgsql busy connections, and PostgreSQL connections
+  received and authorized by the capture's request instant. One dump per run was taken
+  **after** the timed rounds (Q17).
+- **Headroom (separately labeled).** The slot-exhausted stress workload
+  (`warm-256x128`) ran as its own pair: baseline versus headroom, where the **only**
+  change is `max_connections` 100 → 200.
+- Coverage: every completed burst passed the coverage gate. `Worker Min Limit` from the
+  dumps: **4** in every baseline, E3, E5, and headroom run; **128 in every E4 run**
+  (E4's effective minimum verified, not assumed).
+
+### Results — round 1 (the stall) by condition
+
+Ranges are over 3 runs per cell. Every catalog request in every condition returned
+**HTTP 200 with a validated body**.
+
+| Pair / condition | Workload | Round-1 p50 (ms) | CMS connections created | Received → authorized p50 (ms) | Thread-pool threads max (queue max) | Pool busy max | PG CPU % max (mean) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| e3 / baseline | cold | 16429–16685 | 189–229¹ | 103–188¹ | 87 (14) | 86–87 | 155–184 (12–15) |
+| e3 / baseline | warm-first | 13820–14391 | 82–85 | 9053–10111 | 80–82 (64–68) | 85–88 | 74–79 (6–7) |
+| **e3 / certificates** | cold | **635–797** | 5–7 | 35–68 | 13–15 (3–6) | 1–8 | 8–14 (5–6) |
+| **e3 / certificates** | warm-first | **880–935** | 69–77 | 341–465 | 4–10 (41–58) | 25–37 | 57–65 (25–29) |
+| e4 / baseline | cold | 14582–15118 | 84–85 | 9580–10334 | 82–84 (11–15) | 84–87 | 47–77 (5–6) |
+| e4 / baseline | warm-first | 13553–14133 | 82–84 | 8872–9891 | 79–81 (66–68) | 83–84 | 47–72 (7) |
+| **e4 / threads (min 128)** | cold | **849–1095** | 53–76 | 7–15 | 104–108 (0–2) | 26–59 | 63–86 (26–30) |
+| **e4 / threads (min 128)** | warm-first | **168–244** | 7–11 | 7–11 | 34–42 (0) | 0–1 | 18–22 (10–12) |
+| e5 / baseline | cold | 14574–14826 | 83–84 | 9894–10302 | 82–83 (11) | 84–87 | 69–74 (6) |
+| e5 / baseline | warm-first | 13826–14572 | 84 | 9344–10008 | 80–83 (67–74) | 84–87 | 43–75 (6–7) |
+| **e5 / pool 16** | cold | **12656–15849** | 12–37 | 15–14551² | 75–87 (12–20) | 11–16 | 15–49 (3–4) |
+| **e5 / pool 16** | warm-first | **12232–14232** | 12–13 | 38–14052² | 74–82 (65–66) | 16 | 13–20 (2–3) |
+
+¹ The three pair-e3 cold baseline runs crossed the 15 s `Timeout`. Nothing was
+authorized before about 15.6 s, the first generation of connections was replaced
+(203–244 received for 87 requests), and the 103–188 ms median describes that second
+generation. Those runs also logged 14–15 request-scoped `Failed to fetch public keys
+for JWKS` (`NpgsqlException`) lines each while **every response was 200**; one E5 cold
+run shows the same (14 lines, all 200). F3 gives each request two key reads, and when
+the verification read fails the request is 401 (0.3). By elimination, these failures
+were the **resolver's** read, and signature validation still succeeded, presumably on
+the metadata keys F6 merges in. That last step is inferred, not observed.
+² E5's handshake timing is bimodal: three runs at 15–38 ms and three at 12–15 s. With
+only 12–13 physical connections, whether those few handshakes stalled varied by run,
+but **the round-1 stall occurred in all six**.
+
+Rounds 2–5 (steady state) were healthy in every condition, all 200. p50 ranges:
+baselines 107–231 ms (one e5-baseline round at 1681 ms), E4 159–305 ms, E5 106–242 ms,
+and E3 574–1134 ms. E3's steady state is slower because certificate mode loads the
+X.509 file on every key read (F10): rounds 2–5 CMS CPU peaked at 78–202 % (median
+139 %) versus 28–124 % (median 48 %) in the baselines. That is a property of the
+control, not of the stall.
+
+**Disk and PostgreSQL I/O (all catalog blocks):** host disk latency peaked at 7.8 ms;
+per round, `pg_stat_io` writes were 0–7, slow statements 0, checkpoints 0–1, and there
+were no PostgreSQL errors. Little I/O throughout.
+
+### Results — managed stacks during the stall
+
+Same pairs, round 1, captures at 2 and 8 s. The worker counts are thread-pool workers
+present at the instant; "resolver wait" is a synchronous `Task.InternalWait` under
+`JsonWebTokenHandler.ValidateSignature`, which is IdentityModel's synchronous
+`IssuerSigningKeyResolver` call (F1).
+
+| Condition (workloads) | At | TP workers | In resolver wait | Other threads | Threads / queue at capture | Connections received / authorized by then |
+| --- | --- | --- | --- | --- | --- | --- |
+| baseline, all 3 pairs (cold) | 2 s | 40–41 | **40–41** | 0 Npgsql, 0 SCRAM, 0 idle | 31–32 / 2–7 | 25–32 / 0–3 |
+| baseline, all 3 pairs (cold) | 8 s | 65 | **65** | 0 Npgsql, 0 SCRAM, 0 idle | 58 / 9–14 | 53–60 / 0–3 |
+| baseline, all 3 pairs (warm-first) | 2 s | 41 | **41** | 0 Npgsql, 0 SCRAM, 0 idle | 31–33 / 49–53 | 30–34 / 0–5 |
+| baseline, all 3 pairs (warm-first) | 8 s | 65–66 | **65–66** | 0–1 Npgsql, 0 SCRAM, 0–1 idle | 58–59 / 28–32 | 57–62 / 0–5 |
+| e5 / pool 16 (both) | 2 s | 40–41 | **40–41** | none | 31–33 / 3–54 | 12–13 / 0–8 |
+| e5 / pool 16 (both) | 8 s | 64–65 | **64–65** | none | 58–59 / 10–32 | 12–13 / 0–8 |
+| stress baseline and headroom (warm-first) | 2 / 8 / 14 s | 41 / 65–66 / 89–90 | **all** | none | 33 / 59 / 83 threads | e.g. 27–36 / 0–8 at 2 s |
+| e3 (both) / e4 (both) | 2 / 8 / 14 s | 4–15 / 34–108 | 0 | all idle | — | round 1 already over |
+
+- In every baseline, every thread-pool worker present at 2 s is blocked in the
+  signing-key resolver's synchronous wait, and at 8 s all but at most one are (one
+  warm-first run had one idle worker, another had one in Npgsql code). No worker is
+  in SCRAM computation. The pool grows about 4 threads per second (31–33 → 58–59
+  between the captures), and each new worker joins the resolver wait. Meanwhile
+  PostgreSQL has received 25–62 CMS connections and authorized at most 5: the pending
+  opens' continuations are queued (queue up to 53 in the warm-first workload) with no
+  free worker to run them.
+- The explicit CMS resolver frame (`WebApplicationBuilderExtensions…
+  <ConfigureIdentityProvider>b__8`) is visible on every waiting thread in cold runs, but
+  on only 21–27 threads in warm-first runs. There the wait appears directly under
+  `ValidateSignature`; a JIT-inlined lambda after tier-up (the warm-up executed it) is
+  the likely reason, not established. Both shapes block in the same synchronous wait
+  under `ValidateSignature`.
+- At 14 s the baseline workers are mostly idle (79–84 idle; in the pair-e3 cold runs
+  1–7 were still in the resolver wait), with round 1 about to release. In the three
+  pair-e3 cold runs, 76–77 connections were received and **none** had been authorized at
+  14 s even though most workers were idle and the queue held 10–11 items.
+  Those runs then crossed 15 s. Why authorization lags a free thread pool by up to a
+  second or more is **not established**.
+- E5 shows the same all-workers-in-resolver-wait picture with only 12–13 physical
+  connections and all 16 pool slots busy.
+
+### Results — stress pair (slot exhaustion versus headroom)
+
+| Condition | Runs | Round-1 statuses | Rounds 2–5 statuses | PG `53300` per round | Rounds 2–5 CMS creates |
+| --- | --- | --- | --- | --- | --- |
+| baseline (`max_connections=100`) | 3 | 200×737, 401×26, **500×5** | 200×3036, 401×22, **500×14** | 5–8 | 200–271 |
+| **headroom** (`max_connections=200`) | 3³ | 200×754, 401×11, **500×3** | **200×3072** | **0** | 0 |
+
+³ Headroom repetition 1 failed before any timed round: the warm-up's token request hit
+a CMS connection that the PostgreSQL recreate had just terminated
+(`57P01: terminating connection due to administrator command`). This was a sequencing
+bug in the condition script, fixed by restarting CMS after every PostgreSQL recreate. One
+replacement repetition ran under the fixed script (block `pair-headroom-rerun`), so
+headroom has repetitions 2, 3, and the replacement.
+
+Every non-200 in both blocks was joined by `correlationId`/`RequestId` to its CMS log
+lines (none uncorrelated):
+
+- **Headroom, 3 × 500:** all three are `ProfileRepository.GetProfile` → `OpenAsync` →
+  `AuthenticateSASL` → `NpgsqlException: Exception while reading from stream` → inner
+  `TimeoutException: Timeout during reading attempt`, the ticket's CMS-side signature,
+  here **with no slot exhaustion anywhere in the block**. The 11 × 401 are key reads (5)
+  and token-status reads (6) failing to open a connection within the timeout (SASL read
+  timeouts, a stream read timeout, and `Failed to connect … TimeoutException`).
+- **Baseline stress, 19 × 500:** round 1 has 3 × `AuthenticateSASL` timeout, 1 × stream
+  read timeout during open, and 1 × 53300; rounds 2–5 have 14 × 53300. The 48 × 401 split
+  between 53300 and open timeouts on the key and token-status reads.
+- Headroom therefore separates the two conditions the 0.4 stress trace confounded.
+  Slot exhaustion (53300) accounts for the steady-state failures and disappears with
+  headroom. The round-1 open timeouts, including the profile-path SASL-timeout 500s,
+  persist without it; they occur in the first burst, while the stacks show every worker
+  in the resolver wait. This is an **R-500-matching observation at the stress workload
+  (256/128)**. G1 is defined on the E1 catalog cold runs, and this step leaves its
+  disposition to review.
+
+### Results — E7 (real workload, shard 2)
+
+- **E7a, as specified:** `./build-dms.ps1 E2ETest -Configuration Release
+  -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e'
+  -TestFilter 'Category=@e2e-ci-shard-2'`. **220 passed, 0 failed, 2 skipped (19 m 54 s)**,
+  matching the known local baseline. `build-dms.ps1` tears the stack down and recomposes
+  it from its own compose set, so this run had **no** diagnostics or resource overlay: it
+  ran uncapped (P-dev-like) with Information-level CMS logs. From the saved CMS log, the
+  real workload issued **one** catalog burst about 9.5 min into the run: 87
+  `GET /v3/profiles/{id}` (85 completing in one second), all 200, with a maximum
+  server-side elapsed time of **404 ms**.
+- **E7b, overlay variant:** on the stack E7a provisioned, CMS and PostgreSQL were
+  recomposed to P-runner-approx with both diagnostics overlays
+  (`Set-Dms1556StackCondition.ps1 -Condition baseline -RecreateDb -ClaimsMountSource
+  eng/docker-compose/.e2e-claims`). Beforehand the config hash was matched to confirm
+  that only the overlays and the claims mount differ. DMS was restarted for the
+  recreated PostgreSQL. Shard 2 then ran through `Invoke-E7Shard.ps1` with the same
+  test-process context `build-dms.ps1` builds, `--no-build`, and samplers over the whole
+  run (coverage passed). **220 passed, 0 failed, 2 skipped (20 m 2 s).** The single
+  catalog burst came about 10 min in: 87 GETs, all 200, **maximum server-side elapsed
+  13.3 s**. 91 CMS connections were created, handshakes had a median of 6.5 s (72 over
+  1 s, 56 over 5 s), thread-pool threads grew 4 → 78 with a queue of up to 61, and pool
+  busy peaked at 86. There were no connection errors; the PostgreSQL `ERROR` lines in the
+  window are E2E test-data unique/foreign-key violations.
+- E7 limitations: E7b cannot run through `build-dms.ps1` (reason above). It reused E7a's
+  data without a reset, so the suite's profile creation met 87 existing names ("Profile
+  name must be unique" warnings; the tests still passed). No stacks were captured in E7
+  because the burst time is not known in advance. There was one run of each. The local
+  host is not the CI runner, so the CI envelope still needs CI after push.
+
+### Evidence vs inference
+
+Directly measured in this step:
+
+1. During every baseline stall (cold and first-concurrent-burst), all thread-pool
+   workers (at 8 s, all but at most one) are blocked in a synchronous wait under
+   IdentityModel's signing-key resolver call. The pool grows about 4 workers per second with queued work, and CMS connections
+   PostgreSQL has received stay unauthorized until the round releases.
+2. **E4** (worker minimum 128, verified from dumps) removes the stall: round 1 drops
+   from 13.6–15.1 s to 0.17–1.1 s, handshakes take 7–15 ms, all 200.
+3. **E3** (certificate-mode keys) removes the stall: round 1 drops to 0.6–0.9 s.
+4. **E5** (pool 16) does not: round 1 stays at 12.2–15.8 s with 12–13 physical
+   connections, and the stacks still show every worker in the resolver wait.
+5. At the stress workload, PostgreSQL headroom removes all steady-state failures
+   (53300) but not the first-burst open timeouts, including 3 profile-path
+   `AuthenticateSASL` timeout 500s.
+6. The real workload (shard 2) contains one catalog burst of 87 profile requests. It
+   completes in 0.4 s uncapped and takes up to 13.3 s under P-runner-approx, with the
+   same handshake and thread-pool signature.
+
+Bearing on the hypotheses (the attribution table and verdicts are step 0.6):
+
+- **H1:** direct evidence (point 1), corroborated by E4 (point 2). E3 is consistent but
+  cannot isolate blocking from round-trip cost. Blocking elsewhere is not indicated: no
+  other frame holds workers during the stall.
+- **H2:** bounding connections to 16 (E5) leaves the stall in place, so connection
+  volume is not what the stall waits on at the catalog workload. At the stress workload,
+  connection churn does saturate PostgreSQL's CPU, but only in the slot-exhausted
+  regime. Client-side SCRAM cost was never on a captured stack.
+- **H3:** little I/O, no checkpoints or slow statements in any catalog block.
+- **H4:** profile-dependent in both the harness (E1) and the real workload
+  (E7a 0.4 s versus E7b 13.3 s).
+- **H5:** not exercised by any control. No self-request appeared in any timed round
+  (0.4); nothing here adds evidence.
+
+### Remaining uncertainties
+
+- Why authorization completes up to about a second after the workers are free (the
+  t = 14 s captures), and why the pair-e3 cold runs crossed 15 s while the other cold
+  baselines released at 14.6–15.1 s.
+- E5's bimodal handshake timing with few connections.
+- Whether `/stacks` perturbs the stall. Each capture takes about 2.4 s; warm-first
+  round 1 was 13.6–14.4 s with captures here versus 12.8–13.9 s without them in 0.4. The
+  controls' effects (13–15 s → under 1.1 s) far exceed that difference.
+- Whether the inlined-resolver-frame explanation for warm-first stacks is right. It
+  does not change the classification.
+- The CI envelope: P-runner-approx approximates the runner, and CI after push remains
+  the envelope evidence (AC 2).
+
+### Deviations
+
+- E7 ran in two parts (E7a as specified without overlays, E7b with overlays through a
+  direct shard run), because `build-dms.ps1 E2ETest` recomposes the stack and cannot carry
+  the overlays.
+- Headroom repetition 1 is excluded (setup failure before any timed round) and replaced;
+  `Set-Dms1556StackCondition.ps1` was fixed to restart CMS after every PostgreSQL
+  recreate, and to always start the monitor sidecar and optionally keep the claims mount.
+- The `build-dms.ps1 Build -Configuration Release` run needed for E7 failed only in
+  `EdFi.DataManagementService.Tests.Integration` (the known NU1008 failure for worktrees
+  nested under the main checkout); the E2E assembly built. The build also rewrote
+  `src/config/frontend/…/packages.lock.json`, which was reverted.
+- E7a's teardown (`down -v`) removed the stack volumes, including the 87 DMS1556 seeded
+  profiles. The stack is left at `baseline` under P-runner-approx on E2E data; a later
+  harness run needs `-Seed` again.
+- Raw captures (control blocks, stacks, dumps, E7 logs and trx) are retained locally
+  under `eng/performance/dms-1556/artifacts/` for the Jira upload.
