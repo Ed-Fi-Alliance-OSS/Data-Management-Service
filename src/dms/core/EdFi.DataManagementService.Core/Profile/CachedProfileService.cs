@@ -205,8 +205,8 @@ internal class CachedProfileService(
                     );
 
                     // A failed fetch throws ProfileDataUnavailableException out of this factory, so it
-                    // is never cached. Only a completed fetch (null meaning CMS answered 404) reaches
-                    // the code below.
+                    // is never cached, and a CMS 404 for the application is such a failure. Only a
+                    // completed fetch reaches the code below.
                     ApplicationProfileInfo? appInfo = await profileCmsProvider.GetApplicationProfileInfoAsync(
                         applicationId,
                         tenantId

@@ -1561,10 +1561,14 @@ public class CachedProfileServiceTests
     /// or "no profiles"; the very next request recovers without waiting for expiry, and the
     /// successful result is cached.
     /// </summary>
-    [TestFixture(CatalogPath)]
-    [TestFixture(StudentProfilePath)]
-    [TestFixture(ApplicationPath)]
-    public class Given_A_Cms_Endpoint_That_Fails_Once(string failingPath) : Given_A_Cms_Backed_Profile_Service
+    [TestFixture(CatalogPath, HttpStatusCode.InternalServerError)]
+    [TestFixture(StudentProfilePath, HttpStatusCode.InternalServerError)]
+    [TestFixture(ApplicationPath, HttpStatusCode.InternalServerError)]
+    // The application id comes from a resolved client, so CMS not finding it is a failure too,
+    // never a cached "no profiles assigned".
+    [TestFixture(ApplicationPath, HttpStatusCode.NotFound)]
+    public class Given_A_Cms_Endpoint_That_Fails_Once(string failingPath, HttpStatusCode failureStatus)
+        : Given_A_Cms_Backed_Profile_Service
     {
         private Exception? _firstFailure;
         private ProfileResolutionResult _explicitResult = null!;
@@ -1575,7 +1579,7 @@ public class CachedProfileServiceTests
 
         protected override async Task Act()
         {
-            Cms.FailTimes(failingPath, InternalServerError, times: 1);
+            Cms.FailTimes(failingPath, CmsReply.Status(failureStatus), times: 1);
 
             _firstFailure = await CaptureFailure(() => ImplicitGet());
             _explicitResult = await ExplicitGet();

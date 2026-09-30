@@ -34,8 +34,8 @@ internal record CmsProfileResponseInternal(long Id, string Name, string Definiti
 /// <summary>
 /// Retrieves profile data from the Configuration Management Service API.
 /// Uses per-request headers for thread safety when making concurrent requests.
-/// A CMS 404 for an application or a single profile is the only outcome reported as absent
-/// (<c>null</c>). Every other failure is logged once here and thrown as
+/// A CMS 404 for a single profile is the only outcome reported as absent (<c>null</c>). Every
+/// other failure, including a 404 for the application, is logged once here and thrown as
 /// <see cref="ProfileDataUnavailableException" />, so a dependency failure is never mistaken for
 /// "no profile" and never cached as a successful result.
 /// </summary>
@@ -75,10 +75,17 @@ public class ConfigurationServiceProfileProvider(
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
 
+            // The application id came from this client's resolved application context, so CMS
+            // not knowing it means the two disagree (for example, the application was deleted
+            // while that context is still cached). Reading that as "no profiles assigned" would
+            // cache unprofiled access, so it fails closed like every other failure.
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                logger.LogWarning("Application not found for applicationId: {ApplicationId}", applicationId);
-                return null;
+                logger.LogError(
+                    "Application not found in CMS although its client resolved, for applicationId: {ApplicationId}",
+                    applicationId
+                );
+                throw ApplicationProfileInfoUnavailable(applicationId);
             }
 
             response.EnsureSuccessStatusCode();

@@ -494,29 +494,49 @@ public class ConfigurationServiceProfileProviderTests
         }
     }
 
+    /// <summary>
+    /// The application id comes from the client's resolved application context, so a CMS 404 for it
+    /// is a disagreement between DMS and CMS, not "no profiles assigned". Reading it as absent would
+    /// cache unprofiled access, so it must surface as unavailable.
+    /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_An_Application_Cms_Reports_Not_Found
     {
         private CmsProfileHttpDouble _cms = null!;
-        private ApplicationProfileInfo? _result;
+        private RecordingLogger<ConfigurationServiceProfileProvider> _logger = null!;
+        private Exception? _thrown;
 
         [SetUp]
         public async Task Setup()
         {
             _cms = new CmsProfileHttpDouble();
+            _logger = new RecordingLogger<ConfigurationServiceProfileProvider>();
             _cms.Serve("/v3/applications/7", CmsReply.Status(HttpStatusCode.NotFound));
 
-            _result = await _cms.CreateProvider().GetApplicationProfileInfoAsync(7, null);
+            try
+            {
+                await _cms.CreateProvider(_logger).GetApplicationProfileInfoAsync(7, null);
+            }
+            catch (Exception ex)
+            {
+                _thrown = ex;
+            }
         }
 
         [TearDown]
         public void TearDown() => _cms.Dispose();
 
         [Test]
-        public void It_returns_null()
+        public void It_throws_profile_data_unavailable()
         {
-            _result.Should().BeNull();
+            _thrown.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_logs_the_failure_once()
+        {
+            _logger.Records.Count(record => record.Level == LogLevel.Error).Should().Be(1);
         }
     }
 

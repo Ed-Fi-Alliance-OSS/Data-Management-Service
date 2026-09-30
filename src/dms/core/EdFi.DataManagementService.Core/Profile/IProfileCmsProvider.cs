@@ -41,8 +41,11 @@ public interface IProfileCmsProvider
     /// </summary>
     /// <param name="applicationId">The application ID</param>
     /// <param name="tenantId">Optional tenant ID for multi-tenant deployments</param>
-    /// <returns>Application profile info, or null only when CMS answered 404</returns>
-    /// <exception cref="ProfileDataUnavailableException">Any failure other than a CMS 404</exception>
+    /// <returns>Application profile info; null is treated as no profiles assigned</returns>
+    /// <exception cref="ProfileDataUnavailableException">
+    /// Any failure, including a CMS 404: the application id comes from a resolved client, so CMS
+    /// not finding it is never read as "no profiles assigned"
+    /// </exception>
     Task<ApplicationProfileInfo?> GetApplicationProfileInfoAsync(long applicationId, string? tenantId);
 
     /// <summary>
