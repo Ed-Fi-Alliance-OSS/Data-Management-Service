@@ -3,12 +3,58 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# The plugin tree, with host build output filtered out of it.
+#
+# The build stage below needs every source file under src/plugins, recursively, so that a file
+# added to either plugin project reaches the image without anyone editing this Dockerfile. A
+# directory copy is the only way to get that, and copying that tree straight from the parentdir
+# named context is unsafe: src/config/.dockerignore filters the default build context, but a named
+# context is filtered by a .dockerignore of its own and src/ has none. A direct directory copy
+# after a local solution build would carry the host's bin/, obj/ and results.sarif into the image,
+# and obj/ arriving after the restore would land on top of the Linux-generated
+# project.assets.json.
+#
+# So the tree is staged here and the generated directories are removed before the build stage
+# sees it. This is deliberately not solved with a src/.dockerignore, which would also change the
+# Data Management Service image's context, nor with COPY --exclude, which needs a labs Dockerfile
+# frontend. The stage reuses the SDK image the build stage already pulls, so it costs no extra
+# download.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.103-alpine3.23@sha256:9b4b31da5246f575086b1901e9871b189ae2a80eb42fe9234e9d000b51febd4b AS pluginsource
+
+WORKDIR /plugins
+
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/ ./
+
+RUN find . \( -type d \( -name bin -o -name obj \) \) -prune -exec rm -rf {} + && \
+    find . -type f -name results.sarif -delete
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0.103-alpine3.23@sha256:9b4b31da5246f575086b1901e9871b189ae2a80eb42fe9234e9d000b51febd4b AS build
 
+# /source is the common parent, holding only the files both trees share, and the Configuration
+# Service and plugin trees sit beside each other under it exactly as src/config sits beside
+# src/plugins in the repository. That layout is what lets MSBuild resolve each tree's own
+# Directory.Build.props while both find the same Directory.Packages.props and nuget.config one
+# level up, and it is why the working directory moves down to /source/config rather than every
+# Configuration Service path moving up.
 WORKDIR /source
+
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
+
+# The plugin tree the frontend references. Only the project files and lock files are copied here,
+# so that editing a source file does not invalidate the restore layer below. The sources themselves
+# arrive after the restore, from the pluginsource stage.
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/Directory.Build.props ./plugins/
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/EdFi.Api.Plugins/*.csproj plugins/EdFi.Api.Plugins/packages.lock.json ./plugins/EdFi.Api.Plugins/
+# hadolint ignore=DL3022
+COPY --from=parentdir plugins/EdFi.Api.Plugins.Hosting/*.csproj plugins/EdFi.Api.Plugins.Hosting/packages.lock.json ./plugins/EdFi.Api.Plugins.Hosting/
+
+WORKDIR /source/config
+
 COPY Directory.Build.props ./
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/*.csproj frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/packages.lock.json ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
@@ -20,7 +66,12 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/*.csproj backend/Ed
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/*.csproj datamodel/EdFi.DmsConfigurationService.DataModel/packages.lock.json ./datamodel/EdFi.DmsConfigurationService.DataModel/
 COPY contracts/EdFi.DmsConfigurationService.Secrets/*.csproj contracts/EdFi.DmsConfigurationService.Secrets/packages.lock.json ./contracts/EdFi.DmsConfigurationService.Secrets/
 
-RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj --locked-mode
+# The frontend's restore already walks its ProjectReference closure into the plugin tree. Hosting
+# is restored as well, mirroring the Data Management Service image, so the plugin tree's own lock
+# files are validated in --locked-mode on their own terms rather than only as the frontend
+# happens to reach them. Restoring Hosting covers the contract too, through its ProjectReference.
+RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj --locked-mode && \
+    dotnet restore ../plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj --locked-mode
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/ ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/ ./backend/EdFi.DmsConfigurationService.Backend/
@@ -31,13 +82,23 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ ./backend/EdFi.Dms
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfigurationService.DataModel/
 COPY contracts/EdFi.DmsConfigurationService.Secrets/ ./contracts/EdFi.DmsConfigurationService.Secrets/
 
+# Both plugin source trees, recursively, from the filtered stage above rather than from the named
+# context. A whole-tree copy is what keeps a newly added file - nested or not, in either project -
+# reaching the image without a change here.
+#
+# This lands after the restore, exactly as the Configuration Service source copies above do. It
+# cannot disturb that restore's output because the staged tree has had its obj/ removed.
+COPY --from=pluginsource /plugins/ /source/plugins/
+
 ARG VERSION=""
 
 # Version and InformationalVersion only. AssemblyVersion and FileVersion are deliberately not
 # passed, and nothing replaces them: a locally built image's Configuration Service assemblies carry
 # whatever Directory.Build.props declares, which nothing reads out of a development image, while
 # the release lane still stamps them through build-config.ps1 BuildAndPublish. The secrets contract
-# keeps its own declared version either way (see its csproj).
+# keeps its own declared version either way (see its csproj), and so does the plugin tree: its
+# AssemblyVersion comes from src/plugins/Directory.Build.props, which the loader's
+# newer-plugin-on-older-host preflight compares, and no global property here overrides it.
 RUN version_args=""; \
     if [ -n "$VERSION" ]; then \
         version_args="$version_args /p:Version=$VERSION /p:InformationalVersion=$VERSION"; \

@@ -130,7 +130,7 @@ jobs:
 
           while IFS= read -r file; do
             case "$file" in
-              src/Directory.Packages.props|src/nuget.config|src/config/Dockerfile|eng/docker-compose/*)
+              src/Directory.Packages.props|src/nuget.config|src/config/Dockerfile|src/plugins/*|eng/docker-compose/*)
                 fresh_build_required=true
                 ;;
             esac

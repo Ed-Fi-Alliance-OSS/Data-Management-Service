@@ -534,6 +534,15 @@
         "resolved": "9.0.11",
         "contentHash": "s8yUYuYYu+PAwvBdhLG1KyrGrk9gkYeuPxfAsXsTqqWyepwSyEw8hAaflW4nO98NG52YpYI1am2+9o+79h2RtQ=="
       },
+      "edfi.api.plugins": {
+        "type": "Project"
+      },
+      "edfi.api.plugins.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.Api.Plugins": "[1.1.0, )"
+        }
+      },
       "EdFi.Api.Secrets": {
         "type": "Project"
       },
