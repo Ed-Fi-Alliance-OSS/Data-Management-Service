@@ -1191,6 +1191,10 @@ public class SigningKeySnapshotProviderTests
             _afterRelease.StoreOperationOutstanding.Should().BeFalse();
 
         [Test]
+        public void It_changes_the_state_version_when_the_operation_finishes() =>
+            _afterRelease.StateVersion.Should().NotBe(_whileOutstanding.StateVersion);
+
+        [Test]
         public void It_recovers_with_a_new_load() =>
             _recovered.Keys.Select(key => key.KeyId).Should().Equal("key-new");
 
@@ -1293,6 +1297,119 @@ public class SigningKeySnapshotProviderTests
         [Test]
         public void It_applies_the_backoff() =>
             _status.NextAttemptAt.Should().Be(Start + TimeSpan.FromSeconds(16));
+    }
+
+    // Scheduler review finding 1: a conditional refresh decided from an older status is refused once another caller
+    // has changed the state, and calls nothing.
+    [TestFixture]
+    public class Given_a_conditional_refresh_after_the_state_changed
+    {
+        private KeyRepositoryHarness _harness = null!;
+        private SigningKeyRefreshOutcome _outcome = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            FakeTimeProvider time = NewTime();
+            _harness = new KeyRepositoryHarness(time);
+            _harness.ReturnsKeys("key-1");
+            using var provider = Provider(_harness, time);
+
+            long observed = provider.Status.StateVersion;
+            await provider.GetUsableAsync(CancellationToken.None).Bounded();
+            _outcome = await provider
+                .RefreshIfUnchangedAsync(SigningKeyRefreshTrigger.Timer, observed, CancellationToken.None)
+                .Bounded();
+        }
+
+        [Test]
+        public void It_refuses_because_the_state_changed() =>
+            _outcome
+                .Should()
+                .BeOfType<SigningKeyRefreshOutcome.Refused>()
+                .Which.Reason.Should()
+                .Be(SigningKeyRefusalReason.StateChanged);
+
+        [Test]
+        public void It_does_not_call_the_store() => _harness.Calls.Should().HaveCount(1);
+    }
+
+    [TestFixture]
+    public class Given_a_conditional_refresh_in_the_observed_state
+    {
+        private KeyRepositoryHarness _harness = null!;
+        private SigningKeyRefreshOutcome _outcome = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            FakeTimeProvider time = NewTime();
+            _harness = new KeyRepositoryHarness(time);
+            _harness.ReturnsKeys("key-1");
+            using var provider = Provider(_harness, time);
+
+            await provider.GetUsableAsync(CancellationToken.None).Bounded();
+            _outcome = await provider
+                .RefreshIfUnchangedAsync(
+                    SigningKeyRefreshTrigger.Timer,
+                    provider.Status.StateVersion,
+                    CancellationToken.None
+                )
+                .Bounded();
+        }
+
+        [Test]
+        public void It_loads() => _outcome.Should().BeOfType<SigningKeyRefreshOutcome.Succeeded>();
+
+        [Test]
+        public void It_calls_the_store() => _harness.Calls.Should().HaveCount(2);
+    }
+
+    [TestFixture]
+    public class Given_the_state_version_across_transitions
+    {
+        private SigningKeyProviderStatus _before = null!;
+        private SigningKeyProviderStatus _started = null!;
+        private SigningKeyProviderStatus _completed = null!;
+        private SigningKeyProviderStatus _disposed = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            FakeTimeProvider time = NewTime();
+            KeyRepositoryHarness harness = new(time);
+            var gate = harness.Gate();
+            var provider = Provider(harness, time);
+
+            _before = provider.Status;
+            Task<SigningKeySnapshot> load = provider.GetUsableAsync(CancellationToken.None);
+            await harness.WaitForCallsAsync(1);
+            _started = provider.Status;
+            gate.SetResult([KeyRepositoryHarness.Row("key-1")]);
+            await load.Bounded();
+            _completed = provider.Status;
+            provider.Dispose();
+            _disposed = provider.Status;
+        }
+
+        [Test]
+        public void It_changes_when_an_attempt_starts() =>
+            _started.StateVersion.Should().NotBe(_before.StateVersion);
+
+        [Test]
+        public void It_changes_when_an_attempt_completes() =>
+            _completed.StateVersion.Should().NotBe(_started.StateVersion);
+
+        [Test]
+        public void It_changes_at_disposal() =>
+            _disposed.StateVersion.Should().NotBe(_completed.StateVersion);
+
+        [Test]
+        public void It_reports_disposal_only_after_it() =>
+            new[] { _before, _started, _completed, _disposed }
+                .Select(status => status.ProviderDisposed)
+                .Should()
+                .Equal(false, false, false, true);
     }
 
     [TestFixture]

@@ -79,6 +79,19 @@ public interface ISigningKeySnapshotProvider
     );
 
     /// <summary>
+    /// As <see cref="RefreshAsync"/>, but only while the provider is still in the state a caller observed: when the
+    /// state has changed since the status carrying <paramref name="observedStateVersion"/> was read, returns
+    /// <see cref="SigningKeyRefreshOutcome.Refused"/> with <see cref="SigningKeyRefusalReason.StateChanged"/> and starts
+    /// nothing. The check is made under the gate lock, together with admission. The scheduler uses it so a decision
+    /// taken from one status cannot start a load after another caller has changed that state.
+    /// </summary>
+    Task<SigningKeyRefreshOutcome> RefreshIfUnchangedAsync(
+        SigningKeyRefreshTrigger trigger,
+        long observedStateVersion,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// For a token carrying a key id the current snapshot lacks: loads at most once per cooldown (measured from the
     /// last completed load) and only when the gate is open, then reports whether the key id is present.
     /// </summary>

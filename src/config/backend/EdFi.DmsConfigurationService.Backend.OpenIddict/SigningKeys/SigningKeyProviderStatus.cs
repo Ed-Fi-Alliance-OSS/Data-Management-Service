@@ -21,10 +21,13 @@ public sealed record SigningKeyProviderStatus
         DateTimeOffset nextAttemptAt,
         bool loadInFlight,
         SigningKeyRefreshOutcome? lastOutcome,
-        bool storeOperationOutstanding = false
+        bool storeOperationOutstanding = false,
+        long stateVersion = 0,
+        bool providerDisposed = false
     )
     {
         ArgumentOutOfRangeException.ThrowIfNegative(consecutiveFailures);
+        ArgumentOutOfRangeException.ThrowIfNegative(stateVersion);
         if ((state == SigningKeySnapshotState.None) != (current is null))
         {
             throw new ArgumentException(
@@ -40,6 +43,8 @@ public sealed record SigningKeyProviderStatus
         LoadInFlight = loadInFlight;
         LastOutcome = lastOutcome;
         StoreOperationOutstanding = storeOperationOutstanding;
+        StateVersion = stateVersion;
+        ProviderDisposed = providerDisposed;
     }
 
     public SigningKeySnapshotState State { get; }
@@ -63,4 +68,14 @@ public sealed record SigningKeyProviderStatus
 
     /// <summary>The outcome of the last completed attempt, or <see langword="null"/> before any attempt completes.</summary>
     public SigningKeyRefreshOutcome? LastOutcome { get; }
+
+    /// <summary>
+    /// Identifies the provider state this status describes; it changes at every transition (an attempt starting or
+    /// completing, an outstanding store operation ending, disposal). A conditional refresh passes it back so the
+    /// provider can refuse when the state is no longer the one observed.
+    /// </summary>
+    public long StateVersion { get; }
+
+    /// <summary>Whether the provider has been disposed; it then admits no attempt.</summary>
+    public bool ProviderDisposed { get; }
 }

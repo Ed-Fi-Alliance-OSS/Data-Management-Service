@@ -22,10 +22,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// </item>
 /// </list>
 /// An attempt starts only when it is due, the gate is eligible, no attempt is in flight, and no store operation is
-/// outstanding. While an attempt is in flight or an operation that outlived its deadline is still running, the loop
+/// outstanding, and only while the provider is still in the observed state: admission goes through
+/// <see cref="ISigningKeySnapshotProvider.RefreshIfUnchangedAsync"/> with the status's
+/// <see cref="SigningKeyProviderStatus.StateVersion"/>, so a request that changes the state after the read (for example
+/// by publishing fresh keys) makes the provider refuse, and the loop recomputes. While an attempt is in flight or an
+/// operation that outlived its deadline is still running, the loop
 /// waits for the state-change signal alone: no load can start before that operation ends, so an expired deadline is
 /// not a reason to wake. Otherwise it waits until the start time or the next signal. A signal only makes the loop
-/// recompute; it never starts a load by itself. A failed attempt, the startup attempt included, never stops the loop.
+/// recompute; it never starts a load by itself. A failed attempt, the startup attempt included, never stops the loop,
+/// whatever the exception (a source's <see cref="ObjectDisposedException"/> is an ordinary retrieval failure); only
+/// <see cref="SigningKeyProviderStatus.ProviderDisposed"/> does.
 /// </summary>
 public sealed class SigningKeyRefreshService : BackgroundService
 {
@@ -89,6 +95,12 @@ public sealed class SigningKeyRefreshService : BackgroundService
             // signal this pass waits on instead of being missed.
             Task signal = _provider.AttemptStateChanged;
             SigningKeyProviderStatus status = _provider.Status;
+            if (status.ProviderDisposed)
+            {
+                // Disposal is read from the provider itself, never inferred from an exception a source may throw.
+                return;
+            }
+
             DateTimeOffset now = _timeProvider.GetUtcNow();
             DateTimeOffset dueAt = DueAt(status);
 
@@ -113,18 +125,14 @@ public sealed class SigningKeyRefreshService : BackgroundService
             DateTimeOffset startAt = dueAt > status.NextAttemptAt ? dueAt : status.NextAttemptAt;
             if (now >= startAt)
             {
-                SigningKeyRefreshOutcome outcome = await _provider.RefreshAsync(
+                // Refused (StateChanged) when another caller changed the state since the read; the next pass recomputes.
+                await _provider.RefreshIfUnchangedAsync(
                     status.LastOutcome is null
                         ? SigningKeyRefreshTrigger.Startup
                         : SigningKeyRefreshTrigger.Timer,
+                    status.StateVersion,
                     stoppingToken
                 );
-                if (outcome is SigningKeyRefreshOutcome.Failed { Exception: ObjectDisposedException })
-                {
-                    // The provider is gone; every further attempt would fail at once without a state change.
-                    return;
-                }
-
                 wake = null;
                 continue;
             }

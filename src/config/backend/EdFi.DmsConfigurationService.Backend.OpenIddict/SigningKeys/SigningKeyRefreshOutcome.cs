@@ -102,4 +102,10 @@ public enum SigningKeyRefusalReason
     /// so no overlapping store call starts.
     /// </summary>
     OperationOutstanding,
+
+    /// <summary>
+    /// A conditional (scheduled) refresh found the provider's state changed since the caller observed it; nothing was
+    /// started, and the caller should recompute from the current status.
+    /// </summary>
+    StateChanged,
 }

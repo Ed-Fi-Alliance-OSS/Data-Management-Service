@@ -272,6 +272,20 @@ internal sealed class ObservedSnapshotProvider(ISigningKeySnapshotProvider inner
         return inner.RefreshAsync(trigger, cancellationToken);
     }
 
+    public Task<SigningKeyRefreshOutcome> RefreshIfUnchangedAsync(
+        SigningKeyRefreshTrigger trigger,
+        long observedStateVersion,
+        CancellationToken cancellationToken
+    )
+    {
+        lock (_refreshes)
+        {
+            _refreshes.Add(((Clock ?? TimeProvider.System).GetUtcNow(), trigger));
+        }
+
+        return inner.RefreshIfUnchangedAsync(trigger, observedStateVersion, cancellationToken);
+    }
+
     public Task<SigningKeyUnknownKeyOutcome> TryRefreshForUnknownKeyAsync(
         string keyId,
         CancellationToken cancellationToken

@@ -18,7 +18,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// then, so a caller that saw no usable snapshot but was overtaken by a publication uses the new snapshot instead of
 /// loading again. A load attempt, whatever its trigger, joins the attempt in flight. Otherwise it is refused while
 /// <c>now &lt; NextAttemptAt</c>, or while an earlier store operation is still running (see <b>Ownership</b>);
-/// otherwise it starts.
+/// otherwise it starts. A conditional refresh (<see cref="RefreshIfUnchangedAsync"/>) is first refused with
+/// <see cref="SigningKeyRefusalReason.StateChanged"/> when the state version differs from the one its caller observed;
+/// every transition (attempt start, completion, release of an outstanding operation, disposal) changes the version.
 /// </item>
 /// <item>
 /// <b>Deadline.</b> The store call runs on the thread pool, so synchronous work in a source cannot delay a caller, under
@@ -68,6 +70,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     private SigningKeyRefreshOutcome? _lastOutcome;
     private DateTimeOffset? _lastCompletedAt;
     private long _version;
+    private long _stateVersion;
     private TaskCompletionSource _stateChanged = NewSignal();
     private bool _disposed;
 
@@ -142,7 +145,9 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                     _nextAttemptAt,
                     _inFlight is not null,
                     _lastOutcome,
-                    _storeOperation is not null
+                    _storeOperation is not null,
+                    _stateVersion,
+                    _disposed
                 );
             }
         }
@@ -191,6 +196,14 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         CancellationToken cancellationToken
     ) => Admit(trigger, LoadNeed.Always).Attempt!.WaitAsync(cancellationToken);
 
+    public Task<SigningKeyRefreshOutcome> RefreshIfUnchangedAsync(
+        SigningKeyRefreshTrigger trigger,
+        long observedStateVersion,
+        CancellationToken cancellationToken
+    ) =>
+        Admit(trigger, LoadNeed.Always, observedStateVersion: observedStateVersion)
+            .Attempt!.WaitAsync(cancellationToken);
+
     public async Task<SigningKeyUnknownKeyOutcome> TryRefreshForUnknownKeyAsync(
         string keyId,
         CancellationToken cancellationToken
@@ -237,6 +250,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
             }
 
             _disposed = true;
+            _stateVersion++;
             _shutdown.Cancel();
             _shutdown.Dispose();
         }
@@ -245,13 +259,15 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     /// <summary>
     /// Decides, atomically with the gate, the cooldown, and the current snapshot, what a caller gets: a usable snapshot
     /// that makes a load unnecessary, the key already present, a suppressed refresh (no attempt), or an attempt to await
-    /// (joined, refused, or newly started).
+    /// (joined, refused, or newly started). With <paramref name="observedStateVersion"/>, a state other than the
+    /// observed one refuses before anything else is considered.
     /// </summary>
     private Admission Admit(
         SigningKeyRefreshTrigger trigger,
         LoadNeed need,
         bool enforceCooldown = false,
-        string? keyId = null
+        string? keyId = null,
+        long? observedStateVersion = null
     )
     {
         lock (_sync)
@@ -270,6 +286,11 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                         )
                     )
                 );
+            }
+
+            if (observedStateVersion is { } observed && observed != _stateVersion)
+            {
+                return new Admission(state, Attempt: Refused(SigningKeyRefusalReason.StateChanged));
             }
 
             if (
@@ -340,6 +361,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
 
         _inFlight = completion.Task;
         _storeOperation = operation;
+        _stateVersion++;
         _ = SuperviseAsync(new Attempt(trigger, started, operation, deadline, attemptToken, completion));
         return completion.Task;
     }
@@ -417,6 +439,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 _storeOperation = null;
             }
 
+            _stateVersion++;
             signal = _stateChanged;
             _stateChanged = NewSignal();
         }
@@ -467,6 +490,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
             _lastOutcome = outcome;
             _lastCompletedAt = now;
             _inFlight = null;
+            _stateVersion++;
             signal = _stateChanged;
             _stateChanged = NewSignal();
         }

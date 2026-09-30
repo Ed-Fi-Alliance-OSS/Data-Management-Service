@@ -710,6 +710,117 @@ public class SigningKeyRefreshServiceTests
             _scheduler.CallTimes.Should().Equal(Start, Start.AddSeconds(100), Start.AddSeconds(400));
     }
 
+    // (m) the service reads a status whose refresh deadline (300 s) has elapsed; before it is admitted, an unknown-kid
+    // request publishes fresh keys. Admission is conditional on the observed state, so the provider refuses and the
+    // service waits for the new deadline (600 s) instead of loading again.
+    [TestFixture]
+    public class Given_a_request_publishes_between_the_status_read_and_admission
+    {
+        private Scheduler _scheduler = null!;
+        private SigningKeyUnknownKeyOutcome? _requestOutcome;
+        private int _callsAfterTheRace;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _scheduler = new Scheduler();
+            _scheduler.Store.ReturnsKeys("key-1");
+            await _scheduler.StartAsync();
+            await _scheduler.Time.WaitForWaitAsync(Start.AddSeconds(300));
+
+            _scheduler.Store.ReturnsKeys("key-1", "key-2");
+            _scheduler.Observed.AfterStatusRead(
+                status =>
+                    status is { LastOutcome: SigningKeyRefreshOutcome.Succeeded, LoadInFlight: false }
+                    && _scheduler.Time.GetUtcNow() >= Start.AddSeconds(300),
+                () =>
+                {
+                    Task<SigningKeyUnknownKeyOutcome> request = _scheduler.Inner.TryRefreshForUnknownKeyAsync(
+                        "key-2",
+                        CancellationToken.None
+                    );
+                    _requestOutcome = request.Wait(TimeSpan.FromSeconds(10)) ? request.Result : null;
+                }
+            );
+            _scheduler.Time.Advance(TimeSpan.FromSeconds(300));
+            await _scheduler.Time.WaitForWaitAsync(Start.AddSeconds(600));
+            await Task.Delay(200);
+            _callsAfterTheRace = _scheduler.Store.Calls.Count;
+
+            _scheduler.Time.Advance(TimeSpan.FromSeconds(300));
+            await _scheduler.WaitForVersionAsync(3);
+        }
+
+        [TearDown]
+        public Task TearDown() => _scheduler.StopAsync();
+
+        [Test]
+        public void It_published_from_the_request_inside_the_window() =>
+            _requestOutcome.Should().Be(SigningKeyUnknownKeyOutcome.RefreshedFound);
+
+        [Test]
+        public void It_asked_for_admission_from_the_stale_status() =>
+            _scheduler
+                .Observed.Refreshes.Should()
+                .Contain((Start.AddSeconds(300), SigningKeyRefreshTrigger.Timer));
+
+        [Test]
+        public void It_starts_no_additional_load() => _callsAfterTheRace.Should().Be(2);
+
+        [Test]
+        public void It_reloads_at_the_new_deadline() =>
+            _scheduler.CallTimes.Should().Equal(Start, Start.AddSeconds(300), Start.AddSeconds(600));
+    }
+
+    // (n) a source that throws ObjectDisposedException while the provider is alive: an ordinary retrieval failure, so
+    // the service keeps running, retries at the retry deadline, and recovers without requests.
+    [TestFixture]
+    public class Given_a_source_that_throws_ObjectDisposedException_once
+    {
+        private Scheduler _scheduler = null!;
+        private SigningKeyRefreshOutcome? _firstOutcome;
+        private bool _runningAfterTheFailure;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _scheduler = new Scheduler();
+            _scheduler.Store.Behavior = ByCall(call =>
+                call == 1
+                    ? Task.FromException<IEnumerable<PublicKeyInfo>>(
+                        new ObjectDisposedException("DbConnection")
+                    )
+                    : Keys("key-1")
+            );
+            await _scheduler.StartAsync();
+            await _scheduler.WaitForFailuresAsync(1);
+            _firstOutcome = _scheduler.Inner.Status.LastOutcome;
+            await _scheduler.Time.WaitForWaitAsync(Start.AddSeconds(5));
+            _runningAfterTheFailure = !_scheduler.Service.ExecuteTask!.IsCompleted;
+
+            _scheduler.Time.Advance(TimeSpan.FromSeconds(5));
+            await _scheduler.WaitForVersionAsync(1);
+        }
+
+        [TearDown]
+        public Task TearDown() => _scheduler.StopAsync();
+
+        [Test]
+        public void It_records_a_retrieval_failure() =>
+            _firstOutcome
+                .Should()
+                .BeOfType<SigningKeyRefreshOutcome.Failed>()
+                .Which.Exception.Should()
+                .BeOfType<ObjectDisposedException>();
+
+        [Test]
+        public void It_keeps_running() => _runningAfterTheFailure.Should().BeTrue();
+
+        [Test]
+        public void It_recovers_at_the_retry_deadline() =>
+            _scheduler.CallTimes.Should().Equal(Start, Start.AddSeconds(5));
+    }
+
     [TestFixture]
     public class Given_the_lowest_refresh_jitter
     {

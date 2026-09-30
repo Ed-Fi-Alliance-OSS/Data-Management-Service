@@ -134,6 +134,24 @@ public class SigningKeysUnavailableExceptionTests
     }
 
     [TestFixture]
+    public class Given_a_refusal_because_the_state_changed
+    {
+        [Test]
+        public void It_says_the_state_changed_before_admission() =>
+            new SigningKeysUnavailableException(
+                SigningKeysUnavailableReason.NoSnapshot,
+                new SigningKeyRefreshOutcome.Refused(
+                    DateTimeOffset.UnixEpoch,
+                    SigningKeyRefusalReason.StateChanged
+                )
+            )
+                .Message.Should()
+                .Be(
+                    "No signing keys have been loaded, and the key state changed before the load was admitted."
+                );
+    }
+
+    [TestFixture]
     public class Given_a_token_status_store_failure
     {
         [Test]
