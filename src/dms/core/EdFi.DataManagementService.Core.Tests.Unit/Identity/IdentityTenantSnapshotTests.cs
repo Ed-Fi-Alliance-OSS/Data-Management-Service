@@ -618,6 +618,64 @@ public class IdentityTenantSnapshotTests
     }
 
     [TestFixture]
+    public class Given_The_Only_Waiter_Leaving_An_In_Flight_Refresh : IdentityTenantSnapshotTests
+    {
+        private IDataStoreProvider _dataStoreProvider = null!;
+        private Exception? _waiterException;
+        private TenantExistenceOutcome _nextCallerOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            var gate = new TaskCompletionSource<IList<string>>();
+            _dataStoreProvider = CreateDataStoreProvider();
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .ReturnsLazily(_ => gate.Task);
+            var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
+
+            using var waiterCts = new CancellationTokenSource();
+            Task<TenantExistenceOutcome> waiterTask = snapshot.CheckAsync("North", waiterCts.Token);
+            await Task.Delay(50);
+
+            await waiterCts.CancelAsync();
+            try
+            {
+                await waiterTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (OperationCanceledException exception)
+            {
+                _waiterException = exception;
+            }
+
+            gate.SetResult(["North"]);
+
+            _nextCallerOutcome = await snapshot
+                .CheckAsync("North", CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        [Test]
+        public void It_ends_the_waiter_with_its_own_cancellation()
+        {
+            _waiterException.Should().BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_answers_the_next_caller_from_the_refresh_the_waiter_left()
+        {
+            _nextCallerOutcome.Should().Be(TenantExistenceOutcome.Exists);
+        }
+
+        [Test]
+        public void It_loads_the_tenant_list_exactly_once()
+        {
+            A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
     public class Given_ApplicationStopping_During_An_In_Flight_Refresh : IdentityTenantSnapshotTests
     {
         private TenantExistenceOutcome _outcome;
@@ -687,7 +745,6 @@ public class IdentityTenantSnapshotTests
     {
         private TenantExistenceOutcome _outcome;
         private IDataStoreProvider _dataStoreProvider = null!;
-        private IConnectionStringDecryptionService _decryptionService = null!;
 
         [SetUp]
         public async Task Setup()
@@ -698,8 +755,6 @@ public class IdentityTenantSnapshotTests
                 .Returns(Task.FromResult<IList<string>>(["North"]));
             A.CallTo(() => _dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
                 .Throws(new InvalidOperationException("LoadDataStores must not be called"));
-            _decryptionService = A.Fake<IConnectionStringDecryptionService>();
-            A.CallTo(_decryptionService).Throws(new InvalidOperationException("must not be called"));
             var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             _outcome = await snapshot.CheckAsync("North", CancellationToken.None);
@@ -716,12 +771,6 @@ public class IdentityTenantSnapshotTests
         {
             A.CallTo(() => _dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
                 .MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_never_touches_the_connection_string_decryption_service()
-        {
-            A.CallTo(_decryptionService).MustNotHaveHappened();
         }
     }
 

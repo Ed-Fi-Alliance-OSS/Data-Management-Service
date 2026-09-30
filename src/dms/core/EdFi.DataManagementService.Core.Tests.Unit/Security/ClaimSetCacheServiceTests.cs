@@ -645,6 +645,47 @@ public class ClaimSetCacheServiceTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Cancelled_Caller_And_A_Warm_Cache : ClaimSetCacheServiceTests
+    {
+        private readonly IConfigurationServiceClaimSetProvider _securityMetadataProvider =
+            A.Fake<IConfigurationServiceClaimSetProvider>();
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .Returns([new ClaimSet("ClaimSet1", [])]);
+            var service = CreateService(_securityMetadataProvider, CreateMemoryCache(), TimeProvider.System);
+            await service.GetAllClaimSets("tenant-a");
+
+            using var cancelledSource = new CancellationTokenSource();
+            await cancelledSource.CancelAsync();
+            _exception = await CaptureExceptionAsync(
+                service.GetAllClaimSets("tenant-a", cancelledSource.Token)
+            );
+        }
+
+        [Test]
+        public void It_propagates_the_callers_cancellation_instead_of_answering_from_the_cache()
+        {
+            _exception.Should().BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_does_not_fetch_again()
+        {
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Fill_That_Completes_After_A_Reload_Invalidated_It : ClaimSetCacheServiceTests
     {
         private readonly List<ClaimSet> _preReloadClaims = [new("PreReload", [])];

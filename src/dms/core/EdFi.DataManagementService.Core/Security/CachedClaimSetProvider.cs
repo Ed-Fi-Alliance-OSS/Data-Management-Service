@@ -62,15 +62,16 @@ public class CachedClaimSetProvider(
         CancellationToken cancellationToken = default
     )
     {
+        // A caller that is already cancelled gets no answer, even a cached one, and never starts a
+        // fetch it can never observe.
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cacheKey = GetCacheKey(tenant);
 
         if (memoryCache.TryGetValue(cacheKey, out IList<ClaimSet>? cachedClaimSets))
         {
             return cachedClaimSets ?? [];
         }
-
-        // A caller that is already cancelled must not start a fetch it can never observe.
-        cancellationToken.ThrowIfCancellationRequested();
 
         Lazy<Task<IList<ClaimSet>>> fill = _inFlightFills.GetOrAdd(cacheKey, key => CreateFill(key, tenant));
 
