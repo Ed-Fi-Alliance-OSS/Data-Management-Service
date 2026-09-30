@@ -67,6 +67,14 @@ param(
     [ValidateRange(1, 100)]
     [int] $Rounds = 1,
 
+    # Idle gap between consecutive rounds (none after the last). Rounds of a warm burst
+    # last well under a second, while livemetrics counters are 1 s samples and pg_stat_io
+    # flushes about once per second; the gap keeps each round's samples and events
+    # separable. 0 (the default) keeps rounds back-to-back as in E1.
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateRange(0, 300)]
+    [int] $InterRoundDelaySeconds = 0,
+
     # Restart the CMS container before round 1 and wait for /health, so round 1 hits a
     # cold process. Later rounds in the same invocation are warm.
     [Parameter(ParameterSetName = 'Burst')]
@@ -580,6 +588,7 @@ function Invoke-Burst {
         $burstStartUtc = [DateTime]::UtcNow
         $results = [Dms1556.BurstRunner]::Run(
             $client, $BaseUrl, $profileIds, $TotalRequests, $MaxConcurrency, [bool]$ValidateBodies, $RequestTimeoutSeconds)
+        $burstEndUtc = [DateTime]::UtcNow
 
         $rows = [System.Collections.Generic.List[object]]::new()
         $bodyValidCount = 0
@@ -639,6 +648,8 @@ function Invoke-Burst {
 
         $roundSummary = [pscustomobject]@{
             round                = $round
+            startUtc             = $burstStartUtc.ToString('o')
+            endUtc               = $burstEndUtc.ToString('o')
             requests             = $results.Count
             statusHistogram      = $statusHistogram
             p50Ms                = Get-Percentile -SortedValues $durations -Percentile 50
@@ -655,6 +666,10 @@ function Invoke-Burst {
         Write-Output ("  statuses: {0}; p50/p95/p99 ms: {1}/{2}/{3}; peak overlap: {4}" -f `
             (($statusHistogram.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' '),
             $roundSummary.p50Ms, $roundSummary.p95Ms, $roundSummary.p99Ms, $roundSummary.measuredPeakOverlap)
+
+        if ($InterRoundDelaySeconds -gt 0 -and $round -lt $Rounds) {
+            Start-Sleep -Seconds $InterRoundDelaySeconds
+        }
     }
 
     $burstWindowEndUtc = [DateTime]::UtcNow
@@ -678,6 +693,7 @@ function Invoke-Burst {
         totalRequests   = $TotalRequests
         maxConcurrency  = $MaxConcurrency
         rounds          = $Rounds
+        interRoundDelaySeconds = $InterRoundDelaySeconds
         cold            = [bool]$Cold
         coldPreparation = $coldPreparation
         validateBodies  = [bool]$ValidateBodies

@@ -59,7 +59,10 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
 - `Invoke-CmsProfileBurst.ps1` — seed profiles (`-Seed -ProfileCount 87`, idempotent,
   writes `artifacts/profile-manifest.json` with id + definition + SHA-256 per profile)
   and replay the DMS catalog burst (`-TotalRequests`, `-MaxConcurrency`, `-Rounds`,
-  `-Cold`, `-ValidateBodies`, `-WithSamplers`). Per Q18 the in-flight interval runs from
+  `-InterRoundDelaySeconds`, `-Cold`, `-ValidateBodies`, `-WithSamplers`). Each round
+  summary records its `startUtc`/`endUtc` so captures can be sliced per round; the
+  optional inter-round gap (default 0, as in E1) keeps sub-second warm rounds separable
+  in the 1 s counters. Per Q18 the in-flight interval runs from
   semaphore admission through response-body completion, the summary reports the measured
   peak overlap, and runs are labeled `catalog-87x87` / `stress-256x128` / `workload-TxN`.
   Each request runs under one deadline (`-RequestTimeoutSeconds`) started at admission
@@ -116,6 +119,42 @@ not to the CMS database. For M-conn:
   value plus `docker inspect` of `DOTNET_ThreadPool_ForceMinWorkerThreads` /
   `DOTNET_PROCESSOR_COUNT`, and must be run **outside timed burst windows** so dump
   collection does not contaminate timeout evidence.
+
+- `Invoke-E1Baseline.ps1` — step 0.3 driver: `-Runs` cold+warm E1 runs for one resource
+  profile, per-run logs, dump, classification (`e1-<profile>-index.json`).
+- `Invoke-E2Sweep.ps1` — step 0.4 driver: the E2 warm concurrency sweep. For every point
+  (`-Points`, default the spec's seven `TxN` pairs) it restarts CMS, runs an untimed
+  serial warm-up (87 requests at `-WarmupConcurrency 1`, recorded as `…-warm`), then the
+  timed burst (`…-burst`: `-Rounds 5`, `-InterRoundDelaySeconds 3`, samplers, body
+  validation), captures the point's CMS/PostgreSQL logs, resolves the CMS container IP,
+  measures the host↔Docker-VM clock offset, analyzes every round, and takes one dump
+  outside the timed windows. Repetitions alternate ascending/descending point order.
+  Refuses to start when the container CPU limits do not match `-ResourceProfile`.
+  Outputs `e2-<profile>-index.json` and the flat `e2-<profile>-rounds.csv`.
+- `dms-1556-analysis.psm1` — pure window analysis over the captures, used by the E2
+  driver and usable on any retained run: M-conn from `log_connections` (connections the
+  CMS container IP created to the CMS database, samplers and every other client
+  reported separately), `pg_stat_activity` backends/states/waits, livemetrics
+  thread-pool and Npgsql pool counters, docker-stats CPU/BlockIO, `pg_stat_io` deltas,
+  host disk, PostgreSQL errors/slow statements/checkpoints, and CMS warning/error lines
+  classified by *scope* (request-scoped via `RequestPath`, background, unattributed).
+  Scope says where a line was emitted, not what caused a response status.
+
+### Recomposing the resource profile
+
+The E1/E2 stacks were composed with `.env.e2e` and `DMS_CONFIG_LOG_LEVEL=Debug`; confirm
+with `docker compose … config --hash config,db` against the running containers' labels
+before recreating. P-runner-approx:
+
+```powershell
+cd eng/docker-compose
+$env:DMS_CONFIG_LOG_LEVEL = 'Debug'
+docker compose -f postgresql.yml -f local-config.yml -f local-config-diagnostics.yml `
+  -f local-postgresql-diagnostics.yml -f local-resource-runner-approx.yml `
+  --env-file .env.e2e -p dms-local up -d --no-deps db config
+```
+
+Omit `local-resource-runner-approx.yml` (and recreate the same two services) for P-dev.
 
 ## Typical experiment run (spec §3.4)
 

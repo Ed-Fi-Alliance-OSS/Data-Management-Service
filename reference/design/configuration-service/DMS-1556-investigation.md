@@ -177,3 +177,262 @@ after push. Neither-with-replan does not apply.
 - `Stop-DmsSamplerSet` gained a `-SkipWindowWait` option (used by the harness after a
   5 s post-burst settle) so a generous sampler window does not idle after each run;
   coverage is still judged from actual sample timestamps, and all 10 runs passed it.
+
+## 0.4 — E2 concurrency sweep, M-conn, disk (2026-09-30)
+
+### What E2 can and cannot show
+
+E2 is a **warm** sweep by definition (spec §3.4). Healthy warm results cannot refute
+the cold-only behavior E1 recorded, and nothing below is read that way. This step
+measures how latency, connection creation and reuse, pool usage, PostgreSQL
+waits/CPU, disk, and thread-pool counters scale with measured overlap. It assigns no
+hypothesis verdicts (step 0.6) and runs no control (E3/E4/E5 are step 0.5). **G1 stays
+"partially reproduced (provisional)" and AC 1 remains unsatisfied.** One stress-point
+observation that matches the R-500 signature is recorded for review below; this step
+does not re-decide G1 on its basis.
+
+"Warm" is operationalized per point as: CMS restart (token minted first, as in E1),
+then an untimed serial warm-up of 87 requests at concurrency 1 covering every seeded
+profile, then 5 timed rounds 3 s apart. Round 1 is the first concurrent burst on a
+process whose pool holds only what the serial pass needed (3–4 connections at every
+point); rounds 2–5 run on the pool round 1 grew, because Npgsql keeps idle connections
+300 s. Because each point restarts CMS, a point's pool cannot carry over into the next
+point, and sweep order cannot shape the results.
+
+### Environment and commands
+
+- Stack as in 0.3 (dms-local, `.env.e2e`, `DMS_CONFIG_LOG_LEVEL=Debug`, both diagnostics
+  overlays), recomposed to **P-runner-approx** before the sweep with
+  `docker compose … -f local-resource-runner-approx.yml --env-file .env.e2e -p dms-local
+  up -d --no-deps db config` (the exact command is in the tooling README). Before
+  recreating, the running containers' compose config hashes were matched against
+  `docker compose … config --hash` to confirm the env file and log level. The driver
+  refuses to start unless both containers report the profile's CPU limit.
+- Verified: CMS and PostgreSQL `NanoCpus=2000000000`, CMS `DOTNET_PROCESSOR_COUNT=4`,
+  **`Worker Min Limit` = 4 from the dump at every one of the 21 points** (each dump taken
+  after the point's timed rounds, outside the timed windows, Q17). Host: 16 logical cores;
+  Docker VM `NCPU=16`, 15.2 GiB. PostgreSQL 16.8, `max_connections=100`,
+  `shared_buffers=16384` (8 kB pages), `checkpoint_timeout=300`, `max_wal_size=1024`.
+  The CMS connection string sets no pool keys, so Npgsql 8 defaults apply
+  (`Max Pool Size=100`, `Timeout=15`).
+- Host noise, recorded but not controlled: four unrelated, idle containers from other
+  work were running (two PostgreSQL, two SQL Server). The DMS container was running but
+  idle, and no non-harness request reached CMS in any timed round.
+- Clock: the Docker VM clock ran 37.6–48.0 ms ahead of the host in every point's probe
+  (probe round trip 100–124 ms, so the true skew is at most that). Windows are padded
+  (0.25 s for events and pg-activity, 1.5 s for 1 s counters) and rounds are 3 s apart,
+  so the skew cannot move a sample into the wrong round.
+- Command: `Invoke-E2Sweep.ps1 -ResourceProfile p-runner-approx -Repetitions 3`
+  (defaults: the spec's seven points, `-Rounds 5`, `-InterRoundDelaySeconds 3`,
+  `-WarmupConcurrency 1`). Repetitions 1 and 3 ran the points ascending, repetition 2
+  descending. Wall time was about 30 minutes.
+- Coverage: every one of the 21 timed bursts passed the sampler coverage gate
+  (`requiredFailures: []` in each burst summary). 11,670 timed requests in total.
+- Analysis: `dms-1556-analysis.psm1` slices every capture to each round's
+  `[startUtc, endUtc]` (new in the harness summary). M-conn counts `connection
+  authorized` lines whose client host is the CMS container's IP and whose database is the
+  CMS database (`edfi_datamanagementservice`). Sampler sessions are excluded by
+  application-name prefix, and every other client is reported separately. The only other
+  clients in any timed round were the PostgreSQL container's `pg_isready` health probes
+  (1–3 in 18 of the 105 rounds) and a single DMS connection to its own database.
+
+### Results — catalog points (T = 87)
+
+Ranges are across the 3 repetitions: round 1 is one round per repetition (n = 3), and
+rounds 2–5 are four per repetition (n = 12). Every request at every catalog point
+returned **HTTP 200 with a validated body** (7,830 of 7,830). CMS logged no
+request-scoped warnings or errors in any catalog round; the only background line was
+one `WorkerPollFailed` in round 1 of each 87x87 repetition.
+
+| Point | Round | p50 (ms) | p99 (ms) | Overlap | CMS conns created | CMS backends peak | Pool busy / busy+idle max | Thread-pool threads max (queue max) | PG CPU % max (mean) | PG active backends peak |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 87x4 | 1 | 8.6–9.6 | 50.5–62.2 | 4 | 0 | 4 | 0 / 4 | 8–9 (0) | 6.2–7.6 (4.4–5.2) | 0 |
+| 87x4 | 2–5 | 6.5–7.4 | 41.7–49.8 | 4 | 0 | 4 | 0–2 / 4 | 8–10 (0–1) | 7.4–10.6 | 0 |
+| 87x8 | 1 | 14.6–16.9 | 62.3–69.7 | 8 | 4–5 | 8 | 0 / 8 | 9 (0–1) | 10.3–12.2 (6.2–7.2) | 0 |
+| 87x8 | 2–5 | 10.9–12.6 | 50.6–75.5 | 8 | 0–1 | 8–9 | 0–1 / 8–9 | 14–16 (0–1) | 8.2–9.6 | 0–1 |
+| 87x16 | 1 | 51.5–65.9 | 93.2–217.3 | 16 | 10–13 | 14–16 | 0–8 / 14–16 | 13–16 (0–8) | 12.7–19.2 (7.4–13.2) | 0–2 |
+| 87x16 | 2–5 | 22.4–58.2 | 55.1–262.1 | 16 | 0 | 14–16 | 0–6 / 14–16 | 17–26 (0–1) | 6.7–10.2 | 0–1 |
+| 87x32 | 1 | 93.1–102.8 | 396.2–1493.8 | 32 | 26–27 | 30–31 | 22–31 / 30–31 | 16–27 (3–13) | 26.2–28.9 (8.7–12.5) | 0–2 |
+| 87x32 | 2–5 | 44.1–115.7 | 71.3–1885.1 | 32 | 0–3 | 30–33 | 0–30 / 30–33 | 25–33 (0–11) | 8.5–17.7 | 0–2 |
+| 87x64 | 1 | **7860–8962** | **7944–9050** | 64 | 60–62 | 64–66 | 60–63 / 64–66 | 57–61 (**39–48**) | 31.0–62.7 (7.6–8.1) | 5–12 |
+| 87x64 | 2–5 | 72.8–1086 | 106.8–1160 | 64 | 0 | 64–66 | 0–61 / 64–66 | 57–65 (0–4) | 6.7–13.1 | 0–2 |
+| 87x87 (catalog) | 1 | **12827–13839** | **12842–13862** | 87 | 80–83 | 84–87 | 84–87 / 84–87 | 76–80 (**64–66**) | 72.1–73.1 (6.8–7.2) | 2–12 |
+| 87x87 (catalog) | 2–5 | 155–219 | 171–231 | 87 | 0–1 | 85–87 | 0–58 / 85–87 | 76–80 (0–3) | 7.0–16.2 | 0–2 |
+
+PostgreSQL CPU is docker-stats `CPUPerc` (100 % = one CPU; the cap is 200 %). The
+thread-pool baseline before round 1 was 3–5 threads at every point.
+
+**Disk and PostgreSQL I/O, all catalog rounds:** zero checkpoints, zero slow statements
+(`log_min_duration_statement=250`), zero lock waits, and no PostgreSQL errors. Per round,
+the `pg_stat_io` deltas were 0–6 writes and 0–9 fsyncs, and docker BlockIO writes were at
+most 10 kB. Host `PhysicalDisk(_Total)` average latency peaked at 6.9 ms per transfer
+(one 87x64 round 1; every other catalog round ≤ 3.6 ms), with idle time ≥ 92.8 % in
+every round but one 87x4 sample at 68.3 %. That sample fell in a round with zero
+PostgreSQL writes and a 7 ms p50, so it is not attributable to the workload. Active CMS
+backends showed wait-event types only `(none)` (on-CPU) and `Client`, in single digits of
+backend-samples.
+
+### Results — M-conn: round 1 at 64 and 87 (direct evidence from `log_connections`)
+
+Round 1 at 87x64 and 87x87 has a distinctive shape, the same in all six runs:
+
+- **Completion is simultaneous.** Every request completes inside the last ~0.3–0.9 s of
+  the round (87x87 repetition 1: first/last completion at 12.56/12.85 s). p50 ≈ p99 in
+  the table above is that shape.
+- **Connections reach PostgreSQL early, and authentication completes only at the end.**
+  PostgreSQL logs `connection received` from the CMS IP throughout the round (median
+  arrival 1.3–3.9 s into it), but `connection authorized` for most of those backends
+  lands in the final second:
+
+  | Run | Round length (s) | Connections received | Received → authorized p50 / max (ms) |
+  | --- | --- | --- | --- |
+  | 87x64 rep 1 / 2 / 3 | 8.0 / 8.2 / 9.1 | 60 / 61 / 62 | 5812 / 5140 / 6355 (max 7040 / 5403 / 8799) |
+  | 87x87 rep 1 / 2 / 3 | 12.8 / 13.9 / 12.9 | 84 / 84 / 81 | 8060 / 9113 / 8988 (max 12540 / 13539 / 12543) |
+
+  Per-second timeline, 87x87 repetition 1: connection creates `2, 0×6, 5, 0×4, 76`
+  (seconds 0–12); thread-pool threads 16 → 75 in steps of 4–10 per second; thread-pool
+  queue 64 → 11; Npgsql busy connections 25 → 87; completions 0 until second 12, then 87.
+  The PostgreSQL log shows `connection authenticated: … method=scram-sha-256`
+  immediately before each `authorized`, so the time between `received` and
+  `authenticated` is the SCRAM exchange. PostgreSQL is waiting for the client during that
+  time: active backends ≤ 12 and mean PostgreSQL CPU about 7 %.
+- **The same signature in E1's cold rounds (re-read from the retained 0.3 captures with
+  the new analysis; no new runs).** P-runner-approx runs 1, 2, 4, 5: 86 connections
+  received each, received → authorized p50 9.96–10.51 s (max 14.2–14.7 s),
+  authorizations bunched at 14.3–15.1 s, thread-pool threads 3–5 → 80–83. Run 3, the
+  run with the key-fetch timeouts and 401s: 206 connections were received, most of them
+  after 15 s (received-offset p50 16.2 s), and the first authorizations came at 15.3 s,
+  past the `Timeout=15` boundary. The other four runs released just inside it. P-dev runs 1–5: received → authorized p50 77–129 ms (max ≤ 183 ms), cold
+  round 0.8–0.9 s, threads 3–4 → 52–67.
+- **Reuse.** In rounds 2–5, CMS created 0–1 connections per round at every catalog point
+  except 87x32 (0–3). Every request was served from the pool round 1 grew, and pool size
+  stayed ≈ measured overlap (busy+idle max 4 / 8–9 / 14–16 / 30–33 / 64–66 / 85–87). In
+  round 1 the physical creates track overlap minus the pre-burst pool:
+  4–5 / 10–13 / 26–27 / 60–62 / 80–83 for N = 8 / 16 / 32 / 64 / 87.
+  *Derived, not measured:* F3 counts four sequential pool acquisitions per authenticated
+  profile request (three authentication reads plus the profile query), so round 1 at
+  87x87 reuses about 1 − 83/(4 × 87) ≈ 76 % of acquisitions, and rounds 2–5 about 100 %.
+  The four-per-request figure comes from code inspection; Npgsql exposes no acquisition
+  counter.
+
+### Results — stress-256x128 (additional stress, Q18; separately identified)
+
+| Round | Statuses (3 repetitions summed) | p50 (ms) | p99 (ms) | CMS conns created / closed | Pool busy max | PG `53300 too many clients` | Thread-pool threads (queue) | PG CPU % max (mean) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 200×746, 401×13, **500×9** | 1265–2125 | 21324–21975 | 338–379 / 298–305 | **100** (= `Max Pool Size`) | 6–7 per round | 102–105 (107–114) | **202–205** (20–23) |
+| 2–5 | 200×3032, 401×31, **500×9** | 465–1670 | 1273–7360 | 164–341 / 194–344 | 85–100 | 6–9 per round | 102–129 (0–24) | 146–218 (34–131) |
+
+At the stress point the pool reaches `Max Pool Size=100`, which equals PostgreSQL's
+`max_connections=100`. Other clients (the sampler sessions, CMS's own `postgres`
+database pool, DMS) push PostgreSQL over its limit, and it rejects new sessions with
+`FATAL: sorry, too many clients already` **before authentication**. Rejected sessions
+never log `connection authorized`, so they are not counted as creates. CMS connections
+churn heavily: in each stress repetition's PostgreSQL log, 935–1,032 sessions to the
+CMS database lasted under 1 s (warm-up and inter-round gaps included). **Why
+those connections close is not established** (candidates are connectors broken by
+timeouts and rejection-driven retries). PostgreSQL CPU saturates the 2-CPU cap in round 1.
+
+**Manual correlation of all 62 non-200s** (response `correlationId` joined to the CMS
+log `RequestId`; every one had matching log lines):
+
+- **18 × HTTP 500, all on the profile path**: `RequestLoggingMiddleware` logged
+  `HttpRequestFailed` with the stack running through `ProfileModule.GetById` →
+  `ProfileRepository.GetProfile` → `NpgsqlConnection.OpenAsync` (F8's open outside the
+  `try`).
+  - 17 carry `PostgresException 53300: sorry, too many clients already`, a
+    connection-slot exhaustion that the ticket explicitly did **not** observe
+    (PostgreSQL logged no "too many connections" there).
+  - **1 matches the ticket's CMS-side signature exactly:** `ProfileRepository.GetProfile`
+    → `OpenAsync` → `PoolingDataSource.OpenNewConnector` → `NpgsqlConnector.Authenticate`
+    → `AuthenticateSASL` → `NpgsqlException: Exception while reading from stream` →
+    inner `TimeoutException: Timeout during reading attempt`, returned 500 after 19.8 s
+    (repetition 3, round 1). It occurred in a round where 53300 rejections were also
+    happening, so this run cannot separate the two conditions. It is recorded as an
+    **R-500-matching observation at the stress workload, confounded by slot
+    exhaustion**, for review. It does not by itself change G1, which the spec defines on
+    E1's cold catalog runs.
+- **44 × HTTP 401 on the valid burst token**, in two groups of 22:
+  - The E1 path (F3/F5): key retrieval failed (53300, read timeout, or connect failure),
+    `Failed to fetch public keys for JWKS` was logged, and the empty key list led to the
+    `missing or unknown 'kid' … available keys:` rejection.
+  - **The token-status path**, which 0.3 did not observe: `OpenIddictTokenManager` logged
+    `Token validation failed` with the exception raised from
+    `OpenIddictTokenRepository.GetTokenStatusAsync` →
+    `OpenIddictDataRepository.GetTokenStatusAsync` (20 with 53300, 2 with
+    `TimeoutException: Timeout during reading attempt`). This is today's behavior of
+    turning a token-status store failure into 401, the path D-7 / §4.7 change to 503.
+
+### Evidence vs inference
+
+Directly measured in this step:
+
+1. At T = 87 under P-runner-approx, the steady state is healthy at every overlap up to
+   87 (all-200, p99 ≤ 1.9 s, no new connections, low PostgreSQL CPU).
+2. The first concurrent burst on a warmed, small-pool process degrades sharply between
+   N = 32 and N = 64. At 64 and 87 it produces the E1 cold-round shape (all requests
+   complete together at 8–9 s and 13–14 s), with no timeouts and no non-200s.
+3. In those rounds CMS opens about N−4 physical connections, PostgreSQL receives them
+   early, the SCRAM exchange for most of them completes only in the round's final second
+   while PostgreSQL is mostly idle, and the CMS thread pool grows from ~4 threads to about
+   N at 4–10 threads per second with a queue of up to 66 items.
+4. The E1 P-runner-approx cold rounds show the same handshake signature. The E1 ~15 s
+   plateau therefore does not appear to be set by Npgsql's `Timeout=15`: the warm E2
+   plateau at 87 was 12.8–13.9 s with no timeout, and only E1 run 3's handshakes crossed
+   15 s.
+5. No catalog round shows disk, checkpoint, slow-statement, or lock-wait activity.
+
+Inferred, not established here:
+
+- That the handshake stalls because the CMS side cannot schedule the continuations of
+  its asynchronous opens until enough thread-pool threads exist (consistent with H1's
+  sync-over-async resolver, F1). No stacks were captured in this step. Whether the waiting
+  threads sit in `IssuerSigningKeyResolver` (F1), in another blocking frame, or in
+  client-side SCRAM computation is exactly what the 0.5 stacks and the E4 thread-minimum
+  control are designed to decide.
+- That on the shared CI runner, where the same growth would take longer, the handshake
+  crosses `Timeout=15` more often, producing the ticket's 500s. This is plausible from
+  E1 run 3 and the stress observation, but it is not measured here.
+- H2 (connection creation cost): physical creates do scale with overlap (point 3), but
+  PostgreSQL-side SCRAM compute is not what the rounds wait on at T = 87 (idle
+  PostgreSQL). The client-side share of SCRAM cost is unmeasured. At the stress point,
+  connection churn does saturate PostgreSQL's CPU. Neither observation is a verdict.
+- H3 (PostgreSQL/disk saturation): no supporting evidence at any catalog point. The
+  stress-point CPU saturation coincides with connection churn, not with I/O.
+- H5 (self-referential metadata): no discovery or JWKS self-request reached CMS in any
+  timed round. The F6 self-fetch happens once at the first authenticated request, which
+  in E2 falls inside the untimed warm-up (in E1 it was visible in the cold round).
+
+### Limitations
+
+- The concurrency-1 warm-up warms JIT for the serial paths only. Code reached only under
+  concurrency (pool growth, contended waits) may still be cold in round 1, so round 1
+  measures "pool growth plus first concurrency", not pool growth in isolation.
+- Rounds 2–5 of the catalog points last 0.2–1.2 s, so the 1 s counters give 1–3 samples
+  per round and instantaneous peaks (busy connections, active backends) can fall between
+  samples. Creates and disconnections come from event logs and are exact, and pool size
+  (busy+idle) is persistent state.
+- Npgsql's "Busy Connections" counts connectors checked out of the pool, including ones
+  still opening; it is not a count of connections executing SQL.
+- The stress point is confounded by `Max Pool Size` = `max_connections` = 100. It says
+  nothing about the ticket's environment beyond the one matching trace, and a follow-up
+  with pool or `max_connections` headroom would be needed to separate the conditions.
+- P-runner-approx approximates the CI runner and is not its envelope. Debug logging adds
+  CMS work at every point (constant across E1/E2), and the host ran unrelated idle
+  containers.
+- Scope classification of CMS warnings/errors (request-scoped / background /
+  unattributed) says where a line was emitted, not what caused a response. Only the
+  per-request join above ties a status to a cause.
+
+### Deviations
+
+- The sweep driver recorded `samplerRequiredFailures: null` for all 21 points in
+  `e2-p-runner-approx-index.json`: the same PowerShell empty-array unwrap as the E1
+  driver bug. The authoritative per-burst summaries all record `requiredFailures: []`,
+  and the console reported 0 failures per point. The driver is fixed; the sweep was not
+  re-run for a derived field.
+- The harness gained `-InterRoundDelaySeconds` (default 0, preserving E1 behavior) and
+  per-round `startUtc`/`endUtc` in its summary. Round 1 of E1 cannot be sliced this finely
+  from its own summary; the E1 re-read above derives the round-1 window from the round-1
+  CSV's first admission and last completion.
+- Raw captures (≈ 230 MB for the 21 points plus 21 dumps of ≈ 437 MB each) are retained
+  locally under `eng/performance/dms-1556/artifacts/` for the Jira upload.
