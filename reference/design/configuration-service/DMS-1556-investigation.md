@@ -831,9 +831,9 @@ Each link is marked **M** (measured directly) or **I** (inferred).
 | --- | --- | --- | --- | --- |
 | **H1** thread-pool starvation from the blocking resolver | Links 1–3 and 5 (EV-STK, EV-E2, EV-E3/E4/E5, EV-HR, EV-E1-RA) | **E4** removes the stall (round 1 13.6–15.1 s → 0.17–1.1 s; `Worker Min Limit` 128 verified, EV-DUMP). **E3** removes it (0.6–0.9 s) but cannot separate blocking from round-trip cost. **E5** leaves it in place, as H1 predicts: blocking does not depend on connection count. | **Supported** | The snapshot instant inside each ~2.4 s capture is unknown. The 14 s captures span the release, so the release order is unresolved. Link 4 is inferred (queue contents not captured). `/stacks` may perturb the stall by about 1 s, against control effects of 13 s or more. P-runner-approx is not the runner. No control is the fix, so the fix's effect is predicted here and measured only in Phase 4. |
 | **H2** connection-creation and SCRAM cost | Creates track overlap (80–83 at N = 87). Received → authorized takes 5–10 s while PostgreSQL is idle. No SCRAM computation in any capture inside the unauthorized phase; one worker in one release-spanning capture. At stress, `Max Pool Size` 100 = `max_connections` 100 → 53300 rejections, and churn saturates PostgreSQL CPU. | **E5**: with 12–13 physical connections the stall persists (12.2–15.8 s). **Headroom** removes the steady-state 53300s. E3 changes key retrieval as a whole and cannot isolate H2. | **Modifier**, narrowly: high connection counts are **not necessary** for the stall (E5). Slot exhaustion is a separate stress-workload failure (53300) that headroom removes. Not refuted. | E5 changes two things at once (fewer connections, more pool waiting), and its handshake timing is bimodal. The client-side SCRAM cost is known only from stacks. Why stress connections churn is not established. |
-| **H3** PostgreSQL / disk saturation | 0–1 checkpoints, no slow statements, no lock waits, `pg_stat_io` 0–7 writes per round, host disk latency ≤ 7.8 ms, active backends only on-CPU or waiting on `Client` | E4 removes the stall; H3 predicts no effect | **Refuted** for the catalog stall on this host | The host disk (NVMe) is not the runner's, and the runner's disk is unmeasured. The stress CPU saturation coincides with connection churn, not I/O. |
+| **H3** PostgreSQL / disk saturation | 0–1 checkpoints, no slow statements, no lock waits, `pg_stat_io` 0–7 writes per round, host disk latency ≤ 7.8 ms, active backends only on-CPU or waiting on `Client` | E4 removes the stall; H3 predicts no effect | **Refuted** for the measured catalog workloads on this host (scope clarified at G2) | The host disk (NVMe) is not the runner's, and the runner's disk is unmeasured. The stress CPU saturation coincides with connection churn, not I/O. |
 | **H4** runner contention | P-dev 0/5 stalls (cold p99 802–922 ms) versus P-runner-approx 5/5 (~15 s) (EV-E1-DEV/RA). E7a max 0.4 s versus E7b 13.3 s. | The profile pair itself | **Modifier**: resources decide whether the stall appears and how long it lasts. This fits H1: the release needs about N workers, and the pool starts from the worker minimum (16 on P-dev, 4 on P-runner-approx). | Each profile changes two knobs together (CPU cap and `DOTNET_PROCESSOR_COUNT`). The runner envelope is CI's to show. |
-| **H5** self-referential metadata amplification | No discovery or JWKS self-request in any timed E2+ round. The F6 self-fetch happens once per process. All `Failed to fetch` lines carry `/v3/profiles` request paths. The stall persists in warm-first, after the self-fetch (link 6). | E0(c): supplying a manager removes the backchannel (a design fact, not a control) | **Refuted as amplification** in the measured workloads | No control exercised it. F6 has an unmeasured side effect: merged metadata keys may have let pair-e3 cold requests validate after their resolver reads failed (0.5 footnote 1, inferred). That bears on I-5, not on the stall. |
+| **H5** self-referential metadata amplification | No discovery or JWKS self-request in any timed E2+ round. The F6 self-fetch happens once per process. All `Failed to fetch` lines carry `/v3/profiles` request paths. The stall persists in warm-first, after the self-fetch (link 6). | E0(c): supplying a manager removes the backchannel (a design fact, not a control) | **Not necessary for the stall** (warm-first), and no amplification was observed in the measured workloads. This does not universally disprove amplification (scope clarified at G2). | No control exercised it. F6 has an unmeasured side effect: merged metadata keys may have let pair-e3 cold requests validate after their resolver reads failed (0.5 footnote 1, inferred). That bears on I-5, not on the stall. |
 
 ### G1 record
 
@@ -907,7 +907,7 @@ choice (value or trade-off). **O** — optional; kept only by an earlier decisio
 | 9 | `MaxStaleness` fail-closed; no last-known-good or metadata fallback (Q13, I-5, V-3) | A (AC 3, "not indefinitely trusting retired keys") | It bounds trust after the last successful retrieval. Today's metadata merge is an unbounded side channel for key trust (inferred from the pair-e3 all-200 runs). | Retired keys trusted without bound during a key-store outage | **`T_max`, retirement bound** |
 | 10 | Retry gate with backoff (D-5) | P; AC 5 (interruption and recovery) | It limits repository traffic during an outage to one attempt per backoff interval, whatever the request rate, and it recovers with no requests. | Request-rate retries against a failing store | I-6 |
 | 11 | Cancellation overload on the repository, both engines (D-8) | C | `LoadTimeout` and waiter detachment need a cancellable read, and MSSQL shares the contract. | A hung load holds the gate until Npgsql's own timeout. | — |
-| 12 | JWKS from the provider: 503 on failure, `200 []` only for `Succeeded(0)` (3.3) | A (AC 4) | F5 | JWKS keeps masking failures as an empty key set. | I-8 |
+| 12 | JWKS from the provider: served from a usable snapshot even after a failed refresh; 503 only when no usable snapshot exists; `200 []` only for `Succeeded(0)` (3.3) | A (AC 4) | F5 | JWKS keeps masking failures as an empty key set. | I-8 |
 | 13 | `DmsJwtBearer` parity (3.2) | C (latent M) | It has the same blocking resolver (F2) and is registered by both stores, though no endpoint selects it. Its reflection call targets the `ValidateTokenAsync` that change 7 alters. | A latent copy of the measured defect and a second, divergent validation path | Same invariants as `Bearer` |
 | 14 | `DevelopmentCertificateStore` (D-10) | C | The hosted service's startup load creates the file concurrently with issuance in development-certificate mode (the round-2 race). | The issued token's `kid` can differ from the published certificate. | I-10 |
 | 15 | Parser move (§4.3.3); format-cache removal (Q7) | C; **O** | The sources parse keys outside the token manager, so the parser must move. Removing the cache is required by neither the mechanism nor an AC: with parsing once per load it no longer earns its keep. | Parser: nothing compiles. Cache: no functional effect. | — |
@@ -940,7 +940,10 @@ choice (value or trade-off). **O** — optional; kept only by an earlier decisio
 - I-1 issuer/audience/lifetime/signature: 3.1-c/j. I-9 missing-`kid`/forged-signature
   rejection: 3.1-j/k. Revocation still rejected: 3.1-b.
 - I-2 uncached status: 3.1-l, M3.
-- I-3 no 200 while a store is unavailable: 3.1-f/g/m.
+- I-3 (wording corrected at G2) authentication succeeds only with a usable snapshot
+  **and** a successful, valid token-status check. A failed key refresh keeps serving
+  usable keys until `MaxStaleness`. No usable snapshot, or a token-status failure,
+  answers 503: 3.1-f/g/m.
 - Rotation and retirement bounds `T_prop`/`T_max`: 1.5-h/i/o/p/q, 1.6-f, 3.1-e/h/m/q, 3.4-b/c.
 - I-5 no fallback: 3.1-o, M7.
 - I-6 bounded loads: 1.5-j/l, M4/M5.
@@ -984,10 +987,26 @@ approved. §4's mechanism assumptions stand, and no design section needs revisio
   in another synchronous wait.
 - The H2-dominant branch does not apply (E5), so connection-string guidance is not part
   of the fix. A docs-only operational note is proposed under G3.
-- The H3/H4-dominant and inconclusive branches do not apply: H3 is refuted locally, and
-  H4 is a modifier of H1.
+- The H3/H4-dominant and inconclusive branches do not apply: H3 is refuted for the
+  measured catalog workloads on this host, and H4 is a modifier of H1.
 - Phase 1 starts only after this review approves it. Phase 1 is the options step, and
   step 1.6 remains its own scheduler checkpoint.
+
+**G2 decision record (2026-09-30).** `e4c3afeb9` was approved as completing Phase 0,
+with G2 approved and no further investigation run required. P-G1, P-G2, P-G3 and P-7.4
+are in force (spec §0.00). Clarifications carried into the next commit:
+
+- H3 and H5 conclusions are limited to the measured workloads. Warm-first establishes
+  that metadata amplification is not necessary for the stall.
+- I-3 is reworded: a usable snapshot and a successful, valid token-status check. A key
+  refresh failure keeps serving usable keys until `MaxStaleness`. The JWKS wording is
+  made consistent.
+- The 10 s `LoadTimeout` is a policy informed by handshake measurements, not a measured
+  bound for the whole load operation.
+- The parser move stays focused.
+- Steps 1.1 and 1.2 form one checkpoint.
+
+Evidence archival (the Jira upload) remains outstanding.
 
 ### Proposed G3 decisions (settings)
 
@@ -996,7 +1015,7 @@ approved. §4's mechanism assumptions stand, and no design section needs revisio
 | `SigningKeyRefreshIntervalSeconds` | 300 (unchanged) | **Policy** (rotation/retirement propagation `T_prop`) | The only measured input is that a key read is cheap: one pooled query, with steady-round p50 ≤ 231 ms for requests making four sequential acquisitions (three authentication reads plus the profile query). So the interval is not load-constrained, and 300 s is chosen for propagation time, not cost. |
 | `SigningKeyMaxStalenessSeconds` | 3600 | **Policy, fixed by Q13** | Not re-decided |
 | `SigningKeyUnknownKeyRefreshCooldownSeconds` | 30 (unchanged) | **Security/availability policy** (I-6 flood bound versus the rotation 401 window) | No measurement bears on it. |
-| `SigningKeyLoadTimeoutSeconds` | 10 (unchanged) | **Policy informed by measurement** | Unstalled handshakes took 7–15 ms (E4), 35–68 ms (E3 cold), and 77–129 ms median, 183 ms max (P-dev). 10 s is more than 50 times the slowest, and it ends a load before the request-path `Timeout=15`. Stalled handshakes (5–15 s) are the defect, not a sizing input. |
+| `SigningKeyLoadTimeoutSeconds` | 10 (unchanged) | **Policy informed by handshake measurements** (not a measured bound for the complete load operation) | Unstalled handshakes took 7–15 ms (E4), 35–68 ms (E3 cold), and 77–129 ms median, 183 ms max (P-dev). 10 s is more than 50 times the slowest, and it ends a load before the request-path `Timeout=15`. Stalled handshakes (5–15 s) are the defect, not a sizing input. |
 | Backoff `min(5·2^(n−1), 60) s ± 20 %` | unchanged | **Availability policy** | No measurement bears on it; 4.1-O verifies recovery within `max backoff + LoadTimeout`. |
 | `Retry-After` | `min(RefreshInterval, 30)` = 30 s | **Policy** (Q3) | — |
 | `RefreshOnIssuerKeyNotFound` | `false` | **Decided (Q14)** | — |

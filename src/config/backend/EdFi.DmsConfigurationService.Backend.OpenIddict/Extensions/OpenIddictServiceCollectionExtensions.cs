@@ -4,8 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 {
@@ -67,7 +70,30 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:BearerTokenPerClientLimit",
                     5
                 );
+                options.SigningKeyRefreshIntervalSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyRefreshIntervalSeconds",
+                    300
+                );
+                options.SigningKeyMaxStalenessSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyMaxStalenessSeconds",
+                    3600
+                );
+                options.SigningKeyUnknownKeyRefreshCooldownSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyUnknownKeyRefreshCooldownSeconds",
+                    30
+                );
+                options.SigningKeyLoadTimeoutSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyLoadTimeoutSeconds",
+                    10
+                );
             });
+
+            // Invalid signing-key settings stop the host at startup instead of surfacing on the
+            // first authenticated request.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IValidateOptions<IdentityOptions>, SigningKeyOptionsValidator>()
+            );
+            services.AddOptions<IdentityOptions>().ValidateOnStart();
 
             return services;
         }
