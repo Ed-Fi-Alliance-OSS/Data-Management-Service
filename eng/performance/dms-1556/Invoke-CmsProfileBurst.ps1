@@ -105,6 +105,11 @@ param(
     [Parameter(ParameterSetName = 'Burst')]
     [string] $MonitorBaseUrl = 'http://localhost:52323',
 
+    # Containers the docker-stats sampler watches; override for stacks whose names differ
+    # (e.g. adding the DMS container for E7 runs).
+    [Parameter(ParameterSetName = 'Burst')]
+    [string[]] $SamplerStatsContainers = @('ed-fi-api-config-service', 'dms-postgresql'),
+
     [string] $OutputDirectory = (Join-Path $PSScriptRoot 'artifacts'),
 
     [string] $ManifestPath
@@ -553,18 +558,21 @@ function Invoke-Burst {
         }
     }
 
+    $samplerState = $null
+    try {
     # Samplers start only after the restart so they discover and bind to the NEW CMS
     # process, and the burst starts only once every sampler is verifiably producing data.
-    $samplerState = $null
+    # They start inside this try so the finally below owns their cleanup on ANY failure
+    # from readiness onward.
     if ($WithSamplers) {
         Import-Module (Join-Path $PSScriptRoot 'dms-1556-samplers.psm1') -Force
         $samplerState = Start-DmsSamplerSet -Label $runId -OutputDirectory $OutputDirectory `
-            -DurationSeconds $SamplerDurationSeconds -MonitorBaseUrl $MonitorBaseUrl -RequireMonitor
+            -DurationSeconds $SamplerDurationSeconds -MonitorBaseUrl $MonitorBaseUrl -RequireMonitor `
+            -StatsContainers $SamplerStatsContainers
         Wait-DmsSamplerSetReady -State $samplerState
         Write-Output 'Samplers ready (all captures producing data).'
     }
 
-    try {
     $roundSummaries = [System.Collections.Generic.List[object]]::new()
     $burstWindowStartUtc = [DateTime]::UtcNow
     for ($round = 1; $round -le $Rounds; $round++) {
@@ -692,6 +700,12 @@ function Invoke-Burst {
     }
     finally {
         $client.Dispose()
+        if ($null -ne $samplerState) {
+            # Idempotent emergency cleanup: a no-op after a successful Stop-DmsSamplerSet,
+            # otherwise it stops any still-owned sampler jobs. It never throws, so it
+            # cannot mask the error that brought us here.
+            Remove-DmsSamplerSet -State $samplerState
+        }
     }
 }
 

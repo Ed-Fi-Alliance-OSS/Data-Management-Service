@@ -9,6 +9,18 @@ explicitly around a cold restart: start (against the CURRENT CMS process), verif
 capture is producing data before the burst, and verify afterwards that the captures cover
 the whole burst window. Start-DiagnosticsSamplers.ps1 wraps these for standalone use.
 
+Lifecycle contract: whoever calls Start-DmsSamplerSet owns the returned state and must
+call Remove-DmsSamplerSet from a finally block. Stop-DmsSamplerSet is the graceful path
+(teardown + validation); Remove-DmsSamplerSet is the idempotent emergency path that
+never throws, so cleanup on a failure cannot mask the original error. Start itself
+cleans up any jobs it created if it fails partway through.
+
+Required captures: pg-activity, pg-io, and docker-stats always; host-disk on Windows
+(explicitly reported as unsupported elsewhere); livemetrics when the monitor is required,
+with window coverage checked PER required provider (System.Runtime,
+Microsoft.AspNetCore.Hosting, Npgsql) - one early sample of a provider does not count as
+coverage merely because another provider continues through the burst.
+
 PostgreSQL sampling uses ONE persistent connection per stream (psql \watch inside the
 container) with a distinguishable application_name (dms1556-sampler-activity /
 dms1556-sampler-io), and the activity rows retain datname/usename/application_name, so
@@ -19,12 +31,23 @@ sampler connections are self-identifying and excludable from M-conn instead of a
 Set-StrictMode -Version Latest
 
 $script:DataLinePattern = '^\d{4}-\d{2}-\d{2}[ T]'
+$script:CsvDataLinePattern = '^"\d{4}-\d{2}-\d{2}'
+$script:RequiredLivemetricsProviders = @('System.Runtime', 'Microsoft.AspNetCore.Hosting', 'Npgsql')
+$script:CaptureNameByJobKey = @{
+    activity    = 'pg-activity'
+    io          = 'pg-io'
+    stats       = 'docker-stats'
+    disk        = 'host-disk'
+    livemetrics = 'livemetrics'
+}
 
 function Start-DmsSamplerSet {
     <#
     .SYNOPSIS
     Starts the DMS-1556 sampler jobs against the CURRENT CMS process and returns the
-    state handle for Wait-DmsSamplerSetReady / Stop-DmsSamplerSet.
+    state handle for Wait-DmsSamplerSetReady / Stop-DmsSamplerSet. On a partial startup
+    failure it stops the jobs it already created before rethrowing. The caller owns the
+    returned state and must call Remove-DmsSamplerSet from a finally block.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Parameters are read inside Start-Job script blocks through $using:, which the analyzer does not track.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Starts local, bounded diagnostics sampling jobs; ShouldProcess prompting would break unattended burst coordination.')]
@@ -104,83 +127,99 @@ function Start-DmsSamplerSet {
     $ioQuery = "SELECT now()::text, 'pg_stat_io', row_to_json(x)::text FROM pg_stat_io x WHERE reads > 0 OR writes > 0 OR fsyncs > 0 UNION ALL SELECT now()::text, 'pg_stat_bgwriter', row_to_json(b)::text FROM pg_stat_bgwriter b"
     $ioInput = "$ioQuery`n\watch i=1 c=$DurationSeconds`n"
 
-    $jobs = @{}
-
-    $jobs.activity = Start-Job -Name "$Label-pg-activity" -ScriptBlock {
-        $using:activityInput |
-            & docker exec -i $using:PgContainerName psql -U $using:PgUser -d 'dbname=postgres application_name=dms1556-sampler-activity' -X -q -A -t -F '|' 2>&1 |
-            Set-Content -LiteralPath ($using:paths).activity -Encoding utf8
-    }
-
-    $jobs.io = Start-Job -Name "$Label-pg-io" -ScriptBlock {
-        $using:ioInput |
-            & docker exec -i $using:PgContainerName psql -U $using:PgUser -d 'dbname=postgres application_name=dms1556-sampler-io' -X -q -A -t -F '|' 2>&1 |
-            Set-Content -LiteralPath ($using:paths).io -Encoding utf8
-    }
-
-    # docker stats streams a refresh roughly every 500 ms when stdout is not a TTY; the
-    # job is stopped by Stop-DmsSamplerSet once the window closes.
-    $jobs.stats = Start-Job -Name "$Label-docker-stats" -ScriptBlock {
-        $containers = $using:StatsContainers
-        & docker stats --format '{{json .}}' @containers 2>$null | ForEach-Object {
-            # docker stats emits terminal control sequences (e.g. erase-line) even piped.
-            $line = ($_ -replace "`e\[[0-9;]*[A-Za-z]", '').Trim()
-            if ($line.StartsWith('{') -and $line.EndsWith('}')) {
-                '{{"tsUtc":"{0}","stat":{1}}}' -f ([DateTime]::UtcNow.ToString('o')), $line
-            }
-        } | Add-Content -LiteralPath ($using:paths).stats -Encoding utf8
-    }
-
-    if ($IsWindows) {
-        $jobs.disk = Start-Job -Name "$Label-host-disk" -ScriptBlock {
-            $counters = @(
-                '\PhysicalDisk(_Total)\Disk Transfers/sec'
-                '\PhysicalDisk(_Total)\Avg. Disk sec/Transfer'
-                '\PhysicalDisk(_Total)\% Idle Time'
-            )
-            Get-Counter -Counter $counters -SampleInterval 1 -MaxSamples $using:DurationSeconds | ForEach-Object {
-                foreach ($sample in $_.CounterSamples) {
-                    [pscustomobject]@{
-                        tsUtc   = $_.Timestamp.ToUniversalTime().ToString('o')
-                        counter = $sample.Path
-                        value   = [Math]::Round($sample.CookedValue, 4)
-                    }
-                }
-            } | Export-Csv -LiteralPath ($using:paths).disk -NoTypeInformation -Encoding utf8
-        }
-    }
-
-    if ($null -ne $monitorPid) {
-        $jobs.livemetrics = Start-Job -Name "$Label-livemetrics" -ScriptBlock {
-            try {
-                Invoke-WebRequest -Uri "$($using:MonitorBaseUrl)/livemetrics?pid=$($using:monitorPid)&durationSeconds=$($using:DurationSeconds)" `
-                    -OutFile ($using:paths).livemetrics -TimeoutSec (($using:DurationSeconds) + 30)
-            }
-            catch {
-                Set-Content -LiteralPath ($using:paths).livemetrics -Value ('livemetrics capture failed: {0}' -f $_.Exception.Message) -Encoding utf8
-            }
-        }
-    }
-
-    return @{
+    $state = @{
         Label           = $Label
         Paths           = $paths
-        Jobs            = $jobs
+        Jobs            = @{}
+        PgContainerName = $PgContainerName
+        PgUser          = $PgUser
         MonitorBaseUrl  = $MonitorBaseUrl
         MonitorPid      = $monitorPid
         MonitorRequired = [bool]$RequireMonitor
+        DiskSupported   = [bool]$IsWindows
         DurationSeconds = $DurationSeconds
         StartedUtc      = [DateTime]::UtcNow
+        CleanedUp       = $false
     }
+
+    try {
+        $state.Jobs.activity = Start-Job -Name "$Label-pg-activity" -ScriptBlock {
+            $using:activityInput |
+                & docker exec -i $using:PgContainerName psql -U $using:PgUser -d 'dbname=postgres application_name=dms1556-sampler-activity' -X -q -A -t -F '|' 2>&1 |
+                Set-Content -LiteralPath ($using:paths).activity -Encoding utf8
+        }
+
+        $state.Jobs.io = Start-Job -Name "$Label-pg-io" -ScriptBlock {
+            $using:ioInput |
+                & docker exec -i $using:PgContainerName psql -U $using:PgUser -d 'dbname=postgres application_name=dms1556-sampler-io' -X -q -A -t -F '|' 2>&1 |
+                Set-Content -LiteralPath ($using:paths).io -Encoding utf8
+        }
+
+        # docker stats streams a refresh roughly every 500 ms when stdout is not a TTY.
+        # The job bounds itself: breaking the pipeline at the deadline closes docker's
+        # stdout pipe and ends the docker process, so nothing owned by the job can
+        # outlive the window even if the parent never stops it.
+        $state.Jobs.stats = Start-Job -Name "$Label-docker-stats" -ScriptBlock {
+            $deadline = [DateTime]::UtcNow.AddSeconds(($using:DurationSeconds) + 15)
+            $containers = $using:StatsContainers
+            & docker stats --format '{{json .}}' @containers 2>$null | ForEach-Object {
+                if ([DateTime]::UtcNow -gt $deadline) { break }
+                # docker stats emits terminal control sequences (e.g. erase-line) even piped.
+                $line = ($_ -replace "`e\[[0-9;]*[A-Za-z]", '').Trim()
+                if ($line.StartsWith('{') -and $line.EndsWith('}')) {
+                    '{{"tsUtc":"{0}","stat":{1}}}' -f ([DateTime]::UtcNow.ToString('o')), $line
+                }
+            } | Add-Content -LiteralPath ($using:paths).stats -Encoding utf8
+        }
+
+        if ($state.DiskSupported) {
+            $state.Jobs.disk = Start-Job -Name "$Label-host-disk" -ScriptBlock {
+                $counters = @(
+                    '\PhysicalDisk(_Total)\Disk Transfers/sec'
+                    '\PhysicalDisk(_Total)\Avg. Disk sec/Transfer'
+                    '\PhysicalDisk(_Total)\% Idle Time'
+                )
+                Get-Counter -Counter $counters -SampleInterval 1 -MaxSamples $using:DurationSeconds | ForEach-Object {
+                    foreach ($sample in $_.CounterSamples) {
+                        [pscustomobject]@{
+                            tsUtc   = $_.Timestamp.ToUniversalTime().ToString('o')
+                            counter = $sample.Path
+                            value   = [Math]::Round($sample.CookedValue, 4)
+                        }
+                    }
+                } | Export-Csv -LiteralPath ($using:paths).disk -NoTypeInformation -Encoding utf8
+            }
+        }
+
+        if ($null -ne $monitorPid) {
+            $state.Jobs.livemetrics = Start-Job -Name "$Label-livemetrics" -ScriptBlock {
+                try {
+                    Invoke-WebRequest -Uri "$($using:MonitorBaseUrl)/livemetrics?pid=$($using:monitorPid)&durationSeconds=$($using:DurationSeconds)" `
+                        -OutFile ($using:paths).livemetrics -TimeoutSec (($using:DurationSeconds) + 30)
+                }
+                catch {
+                    Set-Content -LiteralPath ($using:paths).livemetrics -Value ('livemetrics capture failed: {0}' -f $_.Exception.Message) -Encoding utf8
+                }
+            }
+        }
+    }
+    catch {
+        # Partial startup: stop whatever was already created, then rethrow the original.
+        Remove-DmsSamplerSet -State $state
+        throw
+    }
+
+    return $state
 }
 
 function Wait-DmsSamplerSetReady {
     <#
     .SYNOPSIS
-    Blocks until every started capture has produced at least one data line, so a burst
+    Blocks until every required capture has produced at least one data line, so a burst
     launched afterwards is guaranteed to fall inside every sampler's window. Throws when
     a capture fails to produce data (a skipped or failed sampler must never look like a
-    successful invocation).
+    successful invocation). On a throw the caller's finally block is responsible for
+    Remove-DmsSamplerSet; this function does not clean up, so the state stays inspectable.
     #>
     [CmdletBinding()]
     param(
@@ -198,8 +237,14 @@ function Wait-DmsSamplerSetReady {
         if (-not (Test-DmsCaptureHasData -Path $State.Paths.activity -Pattern $script:DataLinePattern)) {
             $pending.Add('pg-activity')
         }
+        if (-not (Test-DmsCaptureHasData -Path $State.Paths.io -Pattern $script:DataLinePattern)) {
+            $pending.Add('pg-io')
+        }
         if (-not (Test-DmsCaptureHasData -Path $State.Paths.stats -Pattern '^\{"tsUtc"')) {
             $pending.Add('docker-stats')
+        }
+        if ($State.DiskSupported -and -not (Test-DmsCaptureHasData -Path $State.Paths.disk -Pattern $script:CsvDataLinePattern)) {
+            $pending.Add('host-disk')
         }
         if ($null -ne $State.MonitorPid -and -not (Test-DmsCaptureHasData -Path $State.Paths.livemetrics -Pattern '"timestamp"')) {
             $pending.Add('livemetrics')
@@ -209,9 +254,8 @@ function Wait-DmsSamplerSetReady {
             return
         }
 
-        $captureNameByJobKey = @{ activity = 'pg-activity'; stats = 'docker-stats'; livemetrics = 'livemetrics' }
         foreach ($entry in $State.Jobs.GetEnumerator()) {
-            $captureName = $captureNameByJobKey[$entry.Key]
+            $captureName = $script:CaptureNameByJobKey[$entry.Key]
             if ($captureName -and $entry.Value.State -in @('Failed', 'Completed') -and $pending -contains $captureName) {
                 $output = (Receive-Job -Job $entry.Value -Keep -ErrorAction SilentlyContinue) -join '; '
                 throw "Sampler '$($entry.Key)' ended before producing data (state $($entry.Value.State)). Job output: $output. Inspect $($State.Paths[$entry.Key]) for errors."
@@ -251,10 +295,11 @@ function Test-DmsCaptureHasData {
 function Stop-DmsSamplerSet {
     <#
     .SYNOPSIS
-    Waits out the sampler window, stops the streaming jobs, and validates the captures.
-    With a burst window supplied, coverage is required: the run's runtime evidence must
-    span [BurstStartUtc, BurstEndUtc]. Returns a report whose requiredFailures list is
-    non-empty when the evidence is unusable; the caller decides whether to throw.
+    Waits out the sampler window, stops the jobs, and validates the captures via
+    Get-DmsSamplerValidation. With a burst window supplied, coverage is required for
+    every required capture and per required livemetrics provider. Returns a report whose
+    requiredFailures list is non-empty when the evidence is unusable; the caller decides
+    whether to throw. After a successful Stop, Remove-DmsSamplerSet is a no-op.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Stops the local diagnostics sampling jobs this module started; ShouldProcess prompting would break unattended burst coordination.')]
     [CmdletBinding()]
@@ -268,11 +313,11 @@ function Stop-DmsSamplerSet {
         [DateTime] $BurstEndUtc
     )
 
-    $requiredFailures = [System.Collections.Generic.List[string]]::new()
     $warnings = [System.Collections.Generic.List[string]]::new()
 
-    # The bounded jobs (\watch counts, livemetrics duration) self-terminate; wait out the
-    # remainder of the window plus tool-startup slack before declaring them stuck.
+    # The bounded jobs (\watch counts, livemetrics duration, disk MaxSamples, the stats
+    # deadline) self-terminate; wait out the remainder of the window plus tool-startup
+    # slack before declaring them stuck.
     $elapsed = ([DateTime]::UtcNow - $State.StartedUtc).TotalSeconds
     $remaining = [Math]::Max(5, [int]($State.DurationSeconds - $elapsed) + 30)
     $bounded = @($State.Jobs.GetEnumerator() | Where-Object { $_.Key -in @('activity', 'io', 'livemetrics', 'disk') } | ForEach-Object { $_.Value })
@@ -283,7 +328,7 @@ function Stop-DmsSamplerSet {
     foreach ($entry in $State.Jobs.GetEnumerator()) {
         $job = $entry.Value
         if ($job.State -eq 'Running') {
-            if ($entry.Key -in @('activity', 'io', 'livemetrics')) {
+            if ($entry.Key -in @('activity', 'io', 'livemetrics', 'disk')) {
                 $warnings.Add("Sampler '$($entry.Key)' was still running after its window and was stopped; its capture may be truncated.")
             }
             Stop-Job -Job $job
@@ -300,66 +345,203 @@ function Stop-DmsSamplerSet {
         }
         Remove-Job -Job $job -Force
     }
+    Stop-DmsPgSamplerSession -State $State
+    $State.Jobs = @{}
+    $State.CleanedUp = $true
 
-    $activity = Get-DmsDelimitedCaptureSummary -Path $State.Paths.activity
-    $io = Get-DmsDelimitedCaptureSummary -Path $State.Paths.io
-    $stats = Get-DmsJsonlCaptureSummary -Path $State.Paths.stats -TimestampProperty 'tsUtc'
-    $livemetrics = $null
-    $providers = @()
-    if ($null -ne $State.MonitorPid) {
-        $livemetrics = Get-DmsJsonlCaptureSummary -Path $State.Paths.livemetrics -TimestampProperty 'timestamp'
-        if (Test-Path -LiteralPath $State.Paths.livemetrics) {
-            $providers = @(Select-String -LiteralPath $State.Paths.livemetrics -Pattern '"provider":"([^"]+)"' -AllMatches |
-                    ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+    $validationArguments = @{
+        Paths           = $State.Paths
+        MonitorPid      = $State.MonitorPid
+        MonitorRequired = $State.MonitorRequired
+        DiskSupported   = $State.DiskSupported
+    }
+    if ($PSBoundParameters.ContainsKey('BurstStartUtc')) { $validationArguments.BurstStartUtc = $BurstStartUtc }
+    if ($PSBoundParameters.ContainsKey('BurstEndUtc')) { $validationArguments.BurstEndUtc = $BurstEndUtc }
+    $validation = Get-DmsSamplerValidation @validationArguments
+
+    return [pscustomobject]@{
+        label                = $State.Label
+        monitorPid           = $State.MonitorPid
+        durationSeconds      = $State.DurationSeconds
+        files                = $State.Paths
+        pgActivity           = $validation.pgActivity
+        pgIo                 = $validation.pgIo
+        dockerStats          = $validation.dockerStats
+        hostDisk             = $validation.hostDisk
+        livemetrics          = $validation.livemetrics
+        # /livemetrics is the capture that supplies the runtime counters: System.Runtime
+        # (thread pool, lock contention, CPU, GC, working set), ASP.NET Core Hosting
+        # (current/failed requests) and Npgsql (connection pool usage).
+        livemetricsProviders = $validation.livemetricsProviders
+        requiredFailures     = @($validation.requiredFailures)
+        warnings             = @(@($warnings) + @($validation.warnings))
+    }
+}
+
+function Remove-DmsSamplerSet {
+    <#
+    .SYNOPSIS
+    Emergency cleanup for a sampler set: stops and removes any jobs still owned by the
+    state. Idempotent (a no-op after a successful Stop-DmsSamplerSet) and never throws,
+    so calling it from a finally block cannot mask the original error. Killing a job
+    closes its docker client's pipes, which ends the in-container psql \watch session on
+    its next write and the docker stats stream immediately; the \watch counts bound them
+    regardless.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Emergency cleanup of jobs this module started; must run unprompted from finally blocks.')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $State
+    )
+
+    if ($State.CleanedUp) {
+        return
+    }
+    foreach ($entry in @($State.Jobs.GetEnumerator())) {
+        try {
+            if ($entry.Value.State -eq 'Running') {
+                Stop-Job -Job $entry.Value -ErrorAction SilentlyContinue
+            }
+            Remove-Job -Job $entry.Value -Force -ErrorAction SilentlyContinue
+        }
+        catch {
+            Write-Verbose "Cleanup of sampler job '$($entry.Key)' failed: $($_.Exception.Message)"
+        }
+    }
+    try {
+        Stop-DmsPgSamplerSession -State $State
+    }
+    catch {
+        Write-Verbose "Terminating in-container sampler sessions failed: $($_.Exception.Message)"
+    }
+    $State.Jobs = @{}
+    $State.CleanedUp = $true
+}
+
+function Stop-DmsPgSamplerSession {
+    <#
+    .SYNOPSIS
+    Terminates any dms1556-sampler backends left in the PostgreSQL container. Killing a
+    sampler's PowerShell job can orphan its docker exec client (Windows does not kill
+    child processes with the job), and an orphaned client keeps the exec stream open, so
+    the in-container psql \watch session never sees a broken pipe; terminating it
+    server-side ends both the session and the orphaned client immediately. A no-op when
+    the sessions already exited (the \watch counts bound them regardless). Never throws.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Terminates only this module''s own self-identified sampler sessions; must run unprompted from finally blocks.')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $State
+    )
+
+    try {
+        $null = docker exec $State.PgContainerName psql -U $State.PgUser -d postgres -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name LIKE 'dms1556-sampler%'" 2>$null
+    }
+    catch {
+        Write-Verbose "pg_terminate_backend sweep failed: $($_.Exception.Message)"
+    }
+}
+
+function Get-DmsSamplerValidation {
+    <#
+    .SYNOPSIS
+    Pure validation of a sampler set's capture files: data presence for every required
+    capture, window coverage when a burst window is supplied, sampler attribution in
+    pg-activity, and per-required-provider coverage for livemetrics. Takes only paths
+    and flags so it is testable against synthetic capture files.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $Paths,
+
+        [object] $MonitorPid = $null,
+
+        [bool] $MonitorRequired = $false,
+
+        [bool] $DiskSupported = $true,
+
+        [DateTime] $BurstStartUtc,
+
+        [DateTime] $BurstEndUtc
+    )
+
+    $requiredFailures = [System.Collections.Generic.List[string]]::new()
+    $warnings = [System.Collections.Generic.List[string]]::new()
+    $hasWindow = ($PSBoundParameters.ContainsKey('BurstStartUtc') -and $PSBoundParameters.ContainsKey('BurstEndUtc'))
+
+    function Test-RequiredCapture {
+        param([string] $Name, [pscustomobject] $Summary)
+        if ($Summary.rows -eq 0) {
+            $requiredFailures.Add("$Name produced no data rows")
+        }
+        elseif ($hasWindow -and -not (Test-DmsWindowCovered -Summary $Summary -StartUtc $BurstStartUtc -EndUtc $BurstEndUtc)) {
+            $requiredFailures.Add("$Name does not cover the burst window (samples $($Summary.firstUtc)..$($Summary.lastUtc))")
         }
     }
 
-    $hasWindow = ($PSBoundParameters.ContainsKey('BurstStartUtc') -and $PSBoundParameters.ContainsKey('BurstEndUtc'))
-
-    if ($activity.rows -eq 0) {
-        $requiredFailures.Add('pg-activity produced no data rows')
-    }
-    elseif ($hasWindow -and -not (Test-DmsWindowCovered -Summary $activity -StartUtc $BurstStartUtc -EndUtc $BurstEndUtc)) {
-        $requiredFailures.Add("pg-activity does not cover the burst window (samples $($activity.firstUtc)..$($activity.lastUtc))")
-    }
+    $activity = Get-DmsDelimitedCaptureSummary -Path $Paths.activity
+    Test-RequiredCapture -Name 'pg-activity' -Summary $activity
     if ($activity.rows -gt 0 -and $activity.samplerRows -eq 0) {
         $requiredFailures.Add('pg-activity rows never show the dms1556-sampler application_name; sampler connections are not attributable/excludable')
     }
 
-    if ($State.MonitorRequired) {
-        if ($null -eq $livemetrics -or $livemetrics.rows -eq 0) {
-            $requiredFailures.Add('livemetrics produced no samples')
-        }
-        else {
-            if ($hasWindow -and -not (Test-DmsWindowCovered -Summary $livemetrics -StartUtc $BurstStartUtc -EndUtc $BurstEndUtc)) {
-                $requiredFailures.Add("livemetrics does not cover the burst window (samples $($livemetrics.firstUtc)..$($livemetrics.lastUtc))")
+    $io = Get-DmsDelimitedCaptureSummary -Path $Paths.io
+    Test-RequiredCapture -Name 'pg-io' -Summary $io
+
+    $stats = Get-DmsJsonlCaptureSummary -Path $Paths.stats -TimestampProperty 'tsUtc'
+    Test-RequiredCapture -Name 'docker-stats' -Summary $stats
+
+    $disk = $null
+    if ($DiskSupported) {
+        $disk = Get-DmsCsvCaptureSummary -Path $Paths.disk
+        Test-RequiredCapture -Name 'host-disk' -Summary $disk
+    }
+    else {
+        $disk = [pscustomobject]@{ path = $Paths.disk; rows = 0; firstUtc = $null; lastUtc = $null; skipped = 'not supported on this platform; collect /proc/diskstats on the runner instead' }
+    }
+
+    $livemetrics = $null
+    $providerSummaries = @()
+    if ($null -ne $MonitorPid -or $MonitorRequired) {
+        $livemetrics = Get-DmsLivemetricsSummary -Path $Paths.livemetrics
+        $providerSummaries = @($livemetrics.providers)
+        if ($MonitorRequired) {
+            if ($livemetrics.rows -eq 0) {
+                $requiredFailures.Add('livemetrics produced no samples')
             }
-            foreach ($required in @('System.Runtime', 'Microsoft.AspNetCore.Hosting', 'Npgsql')) {
-                if ($providers -notcontains $required) {
-                    $requiredFailures.Add("livemetrics is missing the '$required' provider; it is the capture that must supply those counters")
+            else {
+                # Coverage is checked per required provider: a provider whose samples
+                # stop before the burst ends is missing evidence even while another
+                # provider continues through the window.
+                foreach ($required in $script:RequiredLivemetricsProviders) {
+                    $providerSummary = $providerSummaries | Where-Object { $_.provider -eq $required }
+                    if ($null -eq $providerSummary -or $providerSummary.rows -eq 0) {
+                        $requiredFailures.Add("livemetrics is missing the '$required' provider; it is the capture that must supply those counters")
+                    }
+                    elseif ($hasWindow -and -not (Test-DmsWindowCovered -Summary $providerSummary -StartUtc $BurstStartUtc -EndUtc $BurstEndUtc)) {
+                        $requiredFailures.Add("livemetrics provider '$required' does not cover the burst window (samples $($providerSummary.firstUtc)..$($providerSummary.lastUtc))")
+                    }
                 }
             }
         }
     }
-
-    if ($io.rows -eq 0) { $warnings.Add('pg-io produced no data rows.') }
-    if ($stats.rows -eq 0) { $warnings.Add('docker-stats produced no data rows.') }
+    else {
+        $livemetrics = [pscustomobject]@{ path = $Paths.livemetrics; rows = 0; firstUtc = $null; lastUtc = $null; skipped = 'monitor disabled or unavailable (not required for this run)' }
+    }
 
     return [pscustomobject]@{
-        label            = $State.Label
-        monitorPid       = $State.MonitorPid
-        durationSeconds  = $State.DurationSeconds
-        files            = $State.Paths
-        pgActivity       = $activity
-        pgIo             = $io
-        dockerStats      = $stats
-        livemetrics      = $livemetrics
-        # /livemetrics is the capture that supplies the runtime counters: System.Runtime
-        # (thread pool, lock contention, CPU, GC, working set), ASP.NET Core Hosting
-        # (current/failed requests) and Npgsql (connection pool usage).
-        livemetricsProviders = $providers
-        requiredFailures = @($requiredFailures)
-        warnings         = @($warnings)
+        pgActivity           = $activity
+        pgIo                 = $io
+        dockerStats          = $stats
+        hostDisk             = $disk
+        livemetrics          = $livemetrics
+        livemetricsProviders = $providerSummaries
+        requiredFailures     = @($requiredFailures)
+        warnings             = @($warnings)
     }
 }
 
@@ -439,6 +621,92 @@ function Get-DmsJsonlCaptureSummary {
     }
 }
 
+function Get-DmsCsvCaptureSummary {
+    <#
+    .SYNOPSIS
+    Summarizes an Export-Csv capture whose first column is a quoted ISO timestamp
+    (row count plus first/last timestamps).
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string] $Path)
+
+    $rows = 0
+    $firstUtc = $null
+    $lastUtc = $null
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in [System.IO.File]::ReadLines($Path)) {
+            if ($line -notmatch $script:CsvDataLinePattern) { continue }
+            $rows++
+            $timestampText = $line.Split(',')[0].Trim('"')
+            $parsed = [DateTimeOffset]::MinValue
+            if ([DateTimeOffset]::TryParse($timestampText, [ref]$parsed)) {
+                $utc = $parsed.UtcDateTime
+                if ($null -eq $firstUtc -or $utc -lt $firstUtc) { $firstUtc = $utc }
+                if ($null -eq $lastUtc -or $utc -gt $lastUtc) { $lastUtc = $utc }
+            }
+        }
+    }
+    return [pscustomobject]@{
+        path     = $Path
+        rows     = $rows
+        firstUtc = if ($firstUtc) { $firstUtc.ToString('o') } else { $null }
+        lastUtc  = if ($lastUtc) { $lastUtc.ToString('o') } else { $null }
+    }
+}
+
+function Get-DmsLivemetricsSummary {
+    <#
+    .SYNOPSIS
+    Summarizes a dotnet-monitor livemetrics capture per provider: row count and
+    first/last sample timestamps for each provider seen, plus totals.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string] $Path)
+
+    $byProvider = @{}
+    $rows = 0
+    $firstUtc = $null
+    $lastUtc = $null
+    $pattern = '"timestamp"\s*:\s*"([^"]+)".*?"provider"\s*:\s*"([^"]+)"'
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in [System.IO.File]::ReadLines($Path)) {
+            $match = [regex]::Match($line, $pattern)
+            if (-not $match.Success) { continue }
+            $parsed = [DateTimeOffset]::MinValue
+            if (-not [DateTimeOffset]::TryParse($match.Groups[1].Value, [ref]$parsed)) { continue }
+            $rows++
+            $utc = $parsed.UtcDateTime
+            if ($null -eq $firstUtc -or $utc -lt $firstUtc) { $firstUtc = $utc }
+            if ($null -eq $lastUtc -or $utc -gt $lastUtc) { $lastUtc = $utc }
+            $provider = $match.Groups[2].Value
+            if (-not $byProvider.ContainsKey($provider)) {
+                $byProvider[$provider] = @{ rows = 0; first = $utc; last = $utc }
+            }
+            $entry = $byProvider[$provider]
+            $entry.rows++
+            if ($utc -lt $entry.first) { $entry.first = $utc }
+            if ($utc -gt $entry.last) { $entry.last = $utc }
+        }
+    }
+    $providers = @($byProvider.GetEnumerator() | Sort-Object -Property Key | ForEach-Object {
+            [pscustomobject]@{
+                provider = $_.Key
+                rows     = $_.Value.rows
+                firstUtc = $_.Value.first.ToString('o')
+                lastUtc  = $_.Value.last.ToString('o')
+            }
+        })
+    return [pscustomobject]@{
+        path      = $Path
+        rows      = $rows
+        firstUtc  = if ($firstUtc) { $firstUtc.ToString('o') } else { $null }
+        lastUtc   = if ($lastUtc) { $lastUtc.ToString('o') } else { $null }
+        providers = $providers
+    }
+}
+
 function Test-DmsWindowCovered {
     <#
     .SYNOPSIS
@@ -460,4 +728,4 @@ function Test-DmsWindowCovered {
     return ($first -le $StartUtc.ToUniversalTime()) -and ($last -ge $EndUtc.ToUniversalTime())
 }
 
-Export-ModuleMember -Function Start-DmsSamplerSet, Wait-DmsSamplerSetReady, Stop-DmsSamplerSet, Test-DmsCaptureHasData, Get-DmsDelimitedCaptureSummary, Get-DmsJsonlCaptureSummary, Test-DmsWindowCovered
+Export-ModuleMember -Function Start-DmsSamplerSet, Wait-DmsSamplerSetReady, Stop-DmsSamplerSet, Remove-DmsSamplerSet, Get-DmsSamplerValidation, Test-DmsCaptureHasData, Get-DmsDelimitedCaptureSummary, Get-DmsJsonlCaptureSummary, Get-DmsCsvCaptureSummary, Get-DmsLivemetricsSummary, Test-DmsWindowCovered

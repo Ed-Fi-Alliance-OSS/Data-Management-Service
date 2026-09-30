@@ -78,9 +78,17 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
   (~250 ms) and `pg_stat_io`/`pg_stat_bgwriter` (~1 s), each over ONE persistent psql
   `\watch` connection; a timestamped `docker stats` stream; Windows host disk counters
   (the runner equivalent is `/proc/diskstats`); and the dotnet-monitor `/livemetrics`
-  capture. Readiness is verified before a burst (every capture producing data) and a
-  validation report is produced afterwards; a skipped or failed capture is a reported
-  failure, never a silent gap. **`/livemetrics` is the capture that supplies the
+  capture. The required captures are explicit: pg-activity, pg-io, and docker-stats
+  always; host-disk on Windows (reported as unsupported elsewhere); livemetrics when
+  the monitor is required. Readiness (every required capture producing data) gates the
+  burst, and the post-run validation applies data-presence and burst-window coverage to
+  every required capture — for livemetrics **per required provider**, so one early
+  `Npgsql` sample does not pass merely because `System.Runtime` continues through the
+  burst. A skipped or failed capture is a reported `requiredFailures` entry, never a
+  silent gap. Lifecycle: callers own the sampler set under try/finally;
+  `Remove-DmsSamplerSet` is the idempotent emergency cleanup (a no-op after a graceful
+  `Stop-DmsSamplerSet`) and never masks the original error, and `Start-DmsSamplerSet`
+  cleans up its own partial startups. **`/livemetrics` is the capture that supplies the
   required runtime counters**: `System.Runtime` (thread pool, lock contention, CPU, GC,
   working set), `Microsoft.AspNetCore.Hosting` (current/failed requests), and `Npgsql`
   (connection pool), at the overlay's 1 s counter interval.

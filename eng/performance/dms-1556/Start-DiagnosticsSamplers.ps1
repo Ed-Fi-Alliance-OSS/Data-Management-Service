@@ -62,18 +62,28 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'dms-1556-samplers.psm1') -Force
 
-$state = Start-DmsSamplerSet -Label $Label -OutputDirectory $OutputDirectory `
-    -DurationSeconds $DurationSeconds -PgContainerName $PgContainerName -PgUser $PgUser `
-    -StatsContainers $StatsContainers -MonitorBaseUrl $MonitorBaseUrl -RequireMonitor:$RequireMonitor
+$state = $null
+try {
+    $state = Start-DmsSamplerSet -Label $Label -OutputDirectory $OutputDirectory `
+        -DurationSeconds $DurationSeconds -PgContainerName $PgContainerName -PgUser $PgUser `
+        -StatsContainers $StatsContainers -MonitorBaseUrl $MonitorBaseUrl -RequireMonitor:$RequireMonitor
 
-Wait-DmsSamplerSetReady -State $state
-Write-Output "Samplers ready; sampling for $DurationSeconds seconds..."
-Start-Sleep -Seconds $DurationSeconds
+    Wait-DmsSamplerSetReady -State $state
+    Write-Output "Samplers ready; sampling for $DurationSeconds seconds..."
+    Start-Sleep -Seconds $DurationSeconds
 
-$report = Stop-DmsSamplerSet -State $state
-$report | ConvertTo-Json -Depth 5 | Write-Output
+    $report = Stop-DmsSamplerSet -State $state
+    $report | ConvertTo-Json -Depth 6 | Write-Output
 
-if (@($report.requiredFailures).Count -gt 0) {
-    Write-Error "Required sampler captures failed: $(@($report.requiredFailures) -join '; ')"
-    exit 1
+    if (@($report.requiredFailures).Count -gt 0) {
+        Write-Error "Required sampler captures failed: $(@($report.requiredFailures) -join '; ')"
+        exit 1
+    }
+}
+finally {
+    if ($null -ne $state) {
+        # No-op after a successful Stop-DmsSamplerSet; otherwise stops any still-owned
+        # sampler jobs without masking the original error.
+        Remove-DmsSamplerSet -State $state
+    }
 }
