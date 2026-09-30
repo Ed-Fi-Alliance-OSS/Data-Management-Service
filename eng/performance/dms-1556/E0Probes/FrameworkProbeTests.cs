@@ -335,6 +335,11 @@ public class Given_a_completed_request_with_a_recording_manager : ProbeFixtureBa
 [TestFixture]
 public class Given_cancellation_during_a_gated_cold_load : ProbeFixtureBase
 {
+    // Diagnostic deadline: if cancellation does NOT propagate into
+    // GetConfigurationAsync — the failure this probe exists to detect — every wait below
+    // must fail loudly within this bound instead of hanging the run.
+    private static readonly TimeSpan _diagnosticDeadline = TimeSpan.FromSeconds(10);
+
     private Exception? _abortedRequestOutcome;
     private HttpResponseMessage _survivorResponse = null!;
 
@@ -345,6 +350,9 @@ public class Given_cancellation_during_a_gated_cold_load : ProbeFixtureBase
         Capture = new ProbeCapture();
         (App, Client) = await ProbeHost.StartAsync(Manager, Capture, Authority);
 
+        // The deadline is enforced from outside (polling bounds and Task.WaitAsync on the
+        // request tasks); the tokens under test — the aborted request's token and the
+        // survivor's default token — are left untouched.
         using CancellationTokenSource abortSource = new();
         Task<HttpResponseMessage> abortedRequest = Client.SendAsync(
             AuthorizedRequest(ScratchSigning.MintToken(Authority, ProbeHost.Audience)),
@@ -354,30 +362,82 @@ public class Given_cancellation_during_a_gated_cold_load : ProbeFixtureBase
             AuthorizedRequest(ScratchSigning.MintToken(Authority, ProbeHost.Audience))
         );
 
-        // Both requests must be waiting inside the manager before the abort.
-        while (Manager.CallCount < 2)
-        {
-            await Task.Delay(25);
-        }
-
-        abortSource.Cancel();
         try
         {
-            using var aborted = await abortedRequest;
-        }
-        catch (Exception ex)
-        {
-            _abortedRequestOutcome = ex;
-        }
+            // Both requests must be waiting inside the manager before the abort.
+            await WaitForAsync(() => Manager.CallCount >= 2, "both requests to reach GetConfigurationAsync");
 
-        // The canceled waiter must have detached before the load completes.
-        while (!Manager.WaiterOutcomes.Contains("canceled"))
+            abortSource.Cancel();
+            try
+            {
+                using HttpResponseMessage aborted = await abortedRequest.WaitAsync(_diagnosticDeadline);
+            }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException(
+                    "E0(d) diagnostic deadline: the aborted request did not complete within "
+                        + $"{_diagnosticDeadline.TotalSeconds:0} s of cancellation; cancellation "
+                        + "likely did not propagate into GetConfigurationAsync."
+                );
+            }
+            catch (Exception ex)
+            {
+                _abortedRequestOutcome = ex;
+            }
+
+            // The canceled waiter must have detached before the load completes.
+            await WaitForAsync(
+                () => Manager.WaiterOutcomes.Contains("canceled"),
+                "the aborted waiter to observe cancellation"
+            );
+
+            Manager.ReleaseGate();
+            _survivorResponse = await survivorRequest.WaitAsync(_diagnosticDeadline);
+        }
+        finally
         {
+            // Whatever failed above, release the shared gate and drain the requests so a
+            // deadline or assertion failure cannot leave in-flight requests behind or
+            // hang teardown; outcomes under test were already recorded where they matter.
+            // The survivor is drained only when its response was not captured — the
+            // captured response must stay undisposed for the assertions.
+            Manager.ReleaseGate();
+            await DrainAsync(abortedRequest);
+            if (_survivorResponse is null)
+            {
+                await DrainAsync(survivorRequest);
+            }
+        }
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition, string waitingFor)
+    {
+        DateTime deadlineUtc = DateTime.UtcNow.Add(_diagnosticDeadline);
+        while (!condition())
+        {
+            if (DateTime.UtcNow >= deadlineUtc)
+            {
+                throw new TimeoutException(
+                    $"E0(d) diagnostic deadline: timed out after {_diagnosticDeadline.TotalSeconds:0} s "
+                        + $"waiting for {waitingFor}; cancellation likely did not propagate into "
+                        + "GetConfigurationAsync."
+                );
+            }
             await Task.Delay(25);
         }
+    }
 
-        Manager.ReleaseGate();
-        _survivorResponse = await survivorRequest;
+    private static async Task DrainAsync(Task<HttpResponseMessage> request)
+    {
+        try
+        {
+            (await request.WaitAsync(TimeSpan.FromSeconds(5))).Dispose();
+        }
+        catch
+        {
+            // Draining only: cancellation, timeout, and pipeline exceptions are all
+            // acceptable here — the observable outcomes were recorded in Setup.
+        }
     }
 
     [OneTimeTearDown]

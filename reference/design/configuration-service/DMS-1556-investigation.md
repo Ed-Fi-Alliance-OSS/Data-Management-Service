@@ -59,8 +59,10 @@ pinned versions. Two nuances worth recording:
 - E0(a)1 confirms that without event-supplied results the manager's exception escapes the
   pipeline — the design's 503 mapping (D-3/D-9) is therefore *required*, not cosmetic, to
   avoid replacing today's 500s with different 500s.
-- E0(d)1's token **equality** (not merely linked cancellation) means the boundary and the
-  provider may key per-request behavior off the same token identity the handler uses.
+- E0(d)1's token **equality** establishes that the handler passes `RequestAborted` itself
+  — direct propagation with no detached or linked intermediate token. It establishes
+  nothing more: a cancellation token is not unique per request and must not be used as a
+  request identifier.
 
 ### What E0 deliberately does not show
 
