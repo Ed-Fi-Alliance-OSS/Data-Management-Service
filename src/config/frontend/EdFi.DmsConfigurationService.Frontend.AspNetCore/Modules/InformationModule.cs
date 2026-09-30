@@ -48,7 +48,7 @@ public class InformationModule(IOptions<AppSettings> appSettings) : IEndpointMod
     {
         var baseUrl =
             $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
-        var urls = new ApiUrls($"{baseUrl}/metadata/specifications");
+        var urls = new ApiUrls($"{baseUrl}/metadata/specifications", $"{baseUrl}/tenancy");
         var specificationVersion = appSettings.Value.SpecificationVersion.ToLowerInvariant();
         var response = new ApiInformation(
             ApiVersionDetails.Version,

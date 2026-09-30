@@ -16,8 +16,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
 /// Verifies that X-Forwarded-* headers are honored only from trusted reverse-proxy sources,
-/// asserting on the information endpoint's openApiMetadata URL which is built from the request
-/// scheme/host. A test-only startup filter sets the connection remote IP (TestServer leaves it
+/// asserting on the information endpoint's openApiMetadata and tenancy URLs, which are built from the
+/// request scheme/host. A test-only startup filter sets the connection remote IP (TestServer leaves it
 /// null) so trusted vs untrusted peers can be simulated deterministically.
 ///
 /// The ReverseProxy:UseForwardedHeaders flag and the trusted sources are read from configuration before the
@@ -52,7 +52,10 @@ public class Given_A_Reverse_Proxy_Configuration
         });
     }
 
-    private static async Task<string> GetOpenApiMetadataUrl(HttpClient client, string? remoteIp)
+    private static async Task<(string OpenApiMetadata, string Tenancy)> GetAdvertisedUrls(
+        HttpClient client,
+        string? remoteIp
+    )
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/");
         request.Headers.Add("X-Forwarded-Host", ForwardedHost);
@@ -65,7 +68,10 @@ public class Given_A_Reverse_Proxy_Configuration
         var response = await client.SendAsync(request);
         var content = await response.Content.ReadAsStringAsync();
         var info = JsonNode.Parse(content);
-        return info?["urls"]?["openApiMetadata"]?.GetValue<string>() ?? string.Empty;
+        return (
+            info?["urls"]?["openApiMetadata"]?.GetValue<string>() ?? string.Empty,
+            info?["urls"]?["tenancy"]?.GetValue<string>() ?? string.Empty
+        );
     }
 
     [Test]
@@ -76,9 +82,10 @@ public class Given_A_Reverse_Proxy_Configuration
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var url = await GetOpenApiMetadataUrl(client, remoteIp: "10.0.0.5");
+        var urls = await GetAdvertisedUrls(client, remoteIp: "10.0.0.5");
 
-        url.Should().Be("http://localhost/metadata/specifications");
+        urls.OpenApiMetadata.Should().Be("http://localhost/metadata/specifications");
+        urls.Tenancy.Should().Be("http://localhost/tenancy");
     }
 
     [Test]
@@ -90,9 +97,10 @@ public class Given_A_Reverse_Proxy_Configuration
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var url = await GetOpenApiMetadataUrl(client, remoteIp: "203.0.113.99");
+        var urls = await GetAdvertisedUrls(client, remoteIp: "203.0.113.99");
 
-        url.Should().Be("http://localhost/metadata/specifications");
+        urls.OpenApiMetadata.Should().Be("http://localhost/metadata/specifications");
+        urls.Tenancy.Should().Be("http://localhost/tenancy");
     }
 
     [Test]
@@ -104,9 +112,10 @@ public class Given_A_Reverse_Proxy_Configuration
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var url = await GetOpenApiMetadataUrl(client, remoteIp: "10.0.0.5");
+        var urls = await GetAdvertisedUrls(client, remoteIp: "10.0.0.5");
 
-        url.Should().Be($"https://{ForwardedHost}/metadata/specifications");
+        urls.OpenApiMetadata.Should().Be($"https://{ForwardedHost}/metadata/specifications");
+        urls.Tenancy.Should().Be($"https://{ForwardedHost}/tenancy");
     }
 
     [Test]
@@ -118,9 +127,10 @@ public class Given_A_Reverse_Proxy_Configuration
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var url = await GetOpenApiMetadataUrl(client, remoteIp: "10.10.5.5");
+        var urls = await GetAdvertisedUrls(client, remoteIp: "10.10.5.5");
 
-        url.Should().Be($"https://{ForwardedHost}/metadata/specifications");
+        urls.OpenApiMetadata.Should().Be($"https://{ForwardedHost}/metadata/specifications");
+        urls.Tenancy.Should().Be($"https://{ForwardedHost}/tenancy");
     }
 
     [Test]

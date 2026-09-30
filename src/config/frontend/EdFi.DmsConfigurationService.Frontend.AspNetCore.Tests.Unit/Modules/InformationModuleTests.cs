@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -193,15 +194,17 @@ public class InformationModuleTests
     }
 }
 
-[TestFixture("", "/")]
-[TestFixture("mt-config", "/mt-config")]
-[TestFixture("mt-config", "/mt-config/")]
+[TestFixture("", "/", "http://localhost/tenancy")]
+[TestFixture("mt-config", "/mt-config", "http://localhost/mt-config/tenancy")]
+[TestFixture("mt-config", "/mt-config/", "http://localhost/mt-config/tenancy")]
 public class Given_MultiTenancy_Is_Enabled_And_An_Information_Discovery_Request_Without_A_Tenant_Header(
     string pathBase,
-    string path
+    string path,
+    string expectedTenancyUrl
 ) : MultiTenantPipelineTestBase
 {
     private HttpStatusCode _statusCode;
+    private string _body = null!;
 
     [SetUp]
     public async Task Setup()
@@ -213,12 +216,185 @@ public class Given_MultiTenancy_Is_Enabled_And_An_Information_Discovery_Request_
         // No Tenant header and no credentials
         var response = await client.GetAsync(path);
         _statusCode = response.StatusCode;
+        _body = await response.Content.ReadAsStringAsync();
     }
 
     [Test]
     public void It_returns_200()
     {
         _statusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public void It_advertises_an_absolute_tenancy_url()
+    {
+        JsonNode.Parse(_body)!["urls"]!["tenancy"]!.GetValue<string>().Should().Be(expectedTenancyUrl);
+    }
+}
+
+[TestFixture]
+public class Given_MultiTenancy_Is_Disabled_And_An_Information_Request
+{
+    private string _body = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Test")
+        );
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/");
+        _body = await response.Content.ReadAsStringAsync();
+    }
+
+    [Test]
+    public void It_returns_the_information_body_with_only_urls_tenancy_added()
+    {
+        // Byte-for-byte: field names, order and values. Each value is serialized with the default
+        // encoder, the one the minimal API response uses, so escaping matches as well.
+        static string Json(string value) => JsonSerializer.Serialize(value);
+
+        _body
+            .Should()
+            .Be(
+                "{"
+                    + $"\"version\":{Json(ApiVersionDetails.Version)},"
+                    + $"\"applicationName\":{Json(ApiVersionDetails.ApplicationName)},"
+                    + $"\"informationalVersion\":{Json(ApiVersionDetails.InformationalVersion)},"
+                    + $"\"build\":{Json(ApiVersionDetails.Build)},"
+                    + "\"urls\":{"
+                    + "\"openApiMetadata\":\"http://localhost/metadata/specifications\","
+                    + "\"tenancy\":\"http://localhost/tenancy\""
+                    + "},"
+                    + "\"specificationVersion\":\"v3\""
+                    + "}"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_A_PathBase_And_An_Information_Request
+{
+    private string _body = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(configuration =>
+                configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["AppSettings:PathBase"] = "dms-config" }
+                )
+            );
+        });
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/dms-config");
+        _body = await response.Content.ReadAsStringAsync();
+    }
+
+    [Test]
+    public void It_advertises_the_tenancy_url_under_the_path_base()
+    {
+        JsonNode.Parse(_body)!["urls"]!["tenancy"]!
+            .GetValue<string>()
+            .Should()
+            .Be("http://localhost/dms-config/tenancy");
+    }
+}
+
+[TestFixture]
+public class Given_The_Advertised_Tenancy_Url_In_Single_Tenant_Mode
+{
+    private HttpStatusCode _statusCode;
+    private string _body = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Test")
+        );
+        using var client = factory.CreateClient();
+
+        // No credentials on either request
+        var information = await client.GetStringAsync("/");
+        var tenancyUrl = JsonNode.Parse(information)!["urls"]!["tenancy"]!.GetValue<string>();
+
+        var response = await client.GetAsync(tenancyUrl);
+        _statusCode = response.StatusCode;
+        _body = await response.Content.ReadAsStringAsync();
+    }
+
+    [Test]
+    public void It_returns_200()
+    {
+        _statusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public void It_returns_an_empty_tenants_array()
+    {
+        _body.Should().Be("""{"tenants":[]}""");
+    }
+}
+
+[TestFixture]
+public class Given_The_Advertised_Tenancy_Url_In_Multi_Tenant_Mode_Under_A_PathBase
+    : MultiTenantPipelineTestBase
+{
+    private string _tenancyUrl = null!;
+    private HttpStatusCode _statusCode;
+    private string _body = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        var tenantRepository = A.Fake<ITenantRepository>();
+        A.CallTo(() => tenantRepository.QueryTenant(A<PagingQuery>.Ignored))
+            .Returns(
+                new TenantQueryResult.Success([
+                    new TenantResponse { Id = 1, Name = "Tenant_A" },
+                    new TenantResponse { Id = 2, Name = "Tenant_B" },
+                ])
+            );
+
+        await using var factory = CreateMultiTenantFactory("mt-config", tenantRepository);
+        using var client = factory.CreateClient();
+
+        // The complete discovery path: no Tenant header and no credentials on either request.
+        var information = await client.GetStringAsync("/mt-config/");
+        _tenancyUrl = JsonNode.Parse(information)!["urls"]!["tenancy"]!.GetValue<string>();
+
+        var response = await client.GetAsync(_tenancyUrl);
+        _statusCode = response.StatusCode;
+        _body = await response.Content.ReadAsStringAsync();
+    }
+
+    [Test]
+    public void It_advertises_the_path_base_tenancy_url()
+    {
+        _tenancyUrl.Should().Be("http://localhost/mt-config/tenancy");
+    }
+
+    [Test]
+    public void It_returns_200()
+    {
+        _statusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public void It_lists_every_configured_tenant_name()
+    {
+        JsonNode.Parse(_body)!["tenants"]!
+            .AsArray()
+            .Select(name => name!.GetValue<string>())
+            .Should()
+            .BeEquivalentTo("Tenant_A", "Tenant_B");
     }
 }
 
