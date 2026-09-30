@@ -2410,7 +2410,7 @@ This section documents how developers run or debug DMS locally in an IDE (Visual
 The IDE debugging pattern follows the standard "Docker for infrastructure, local process for the application under development" model:
 
 - **Docker manages**: PostgreSQL (exposed on `localhost:5435`), Kafka (bootstrap server `localhost:9092`), the Configuration Service / identity provider (exposed on `localhost:8081`), and any optional supporting services (Kafka UI, OpenSearch).
-- **Developer runs**: the DMS ASP.NET Core process inside an IDE on a local port (e.g., `http://localhost:5198` or any available port). The IDE process connects outward to Docker services using `localhost` addresses rather than Docker-internal hostnames such as `dms-postgresql` or `ed-fi-api-config`.
+- **Developer runs**: the DMS ASP.NET Core process inside an IDE on a local port (e.g., `http://localhost:5198` or any available port). The IDE process connects to Docker services through published loopback ports. A dedicated `.env.ide` configures the self-contained issuer, metadata, and JWKS origin as `localhost:8081`.
 
 This separation means the DMS binary under the debugger is the live code being edited, while all persistence
 and auth services are stable and shared across debug sessions. The staged schema workspace is part of that
@@ -2449,7 +2449,7 @@ define a second non-Docker bootstrap path.
 +-----------------------------------------------------------+
 ```
 
-The local DMS process must resolve all service addresses using `localhost` and the externally exposed Docker ports. The Docker-internal hostnames (`dms-postgresql`, `ed-fi-api-config`) are not reachable from the host.
+The local DMS process uses `localhost` and externally exposed Docker ports for database, Config Service API, token-endpoint, OIDC metadata, and JWKS calls. For self-contained identity, copy the current `.env` (`.env.example` on a clean checkout) to `.env.ide` and apply the overrides in `eng/docker-compose/.env.ide.example`, then pass `-EnvironmentFile ./.env.ide` to every phase in that environment. When invoking a DMS start or bootstrap command, combine this file only with `-InfraOnly`; a containerized DMS cannot reach the Config Service through its own `localhost`. Other Docker-internal names such as `dms-postgresql` and `ed-fi-api-config` remain unavailable from the host.
 
 ### 12.2 Starting Infrastructure Without DMS
 
@@ -2516,8 +2516,8 @@ creates admin-scoped clients.
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |
 | `ConfigurationServiceSettings__EncryptionKey` | `<dms-config-database-encryption-key>` | Key used to decrypt data-store connection strings returned by the Config Service. Must match the Docker-hosted Config Service's `DatabaseSettings__EncryptionKey`; both are sourced from `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` in the docker-compose env file (`.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`). **DEV-ONLY**: This localhost key must not be reused in shared, remote, or production environments. |
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
-| `JwtAuthentication__Authority` | `http://ed-fi-api-config:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | Expected token issuer. It must equal the identity provider's `issuer` exactly, so it is not translated to a host-local URL (only `MetadataAddress` is). |
-| `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | OIDC discovery document URL for the selected identity provider. |
+| `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | Self-contained value must exactly match the localhost CMS issuer configured in `.env.ide`. |
+| `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | Self-contained metadata and its advertised JWKS URL must share the localhost origin. |
 | `JwtAuthentication__ClientRole` | `dms-client` | Required DMS client role issued by the Docker-managed local identity provider. Overrides the committed DMS default so IDE-hosted DMS uses the same role contract as Docker-hosted local DMS. |
 | `JwtAuthentication__RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role claim type emitted by the Docker-managed local identity provider. Keeps local IDE token validation aligned with the committed DMS default and maps `dms-client` into role claims. |
 | `AppSettings__UseApiSchemaPath` | `true` | Required for IDE-hosted DMS so it reads the staged schema workspace instead of falling back to the default packaged schema input. |
@@ -2551,7 +2551,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
     "AuthenticationService": "http://localhost:8081/connect/token"
   },
   "JwtAuthentication": {
-    "Authority": "http://ed-fi-api-config:8081",
+    "Authority": "http://localhost:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
@@ -2602,10 +2602,9 @@ For example, debugging the 2025 instance uses:
 }
 ```
 
-The authority and metadata-address values are not route-qualified in this design:
+The self-contained authority and metadata-address values stay on the localhost CMS issuer origin configured by `.env.ide`, including for a school-year-qualified token endpoint:
 
-- `JwtAuthentication:Authority` -> `http://ed-fi-api-config:8081` (the Configuration Service's issuer,
-  not a URL DMS calls)
+- `JwtAuthentication:Authority` -> `http://localhost:8081`
 - `JwtAuthentication:MetadataAddress` -> `http://localhost:8081/.well-known/openid-configuration`
 
 ### 12.4 Bootstrap with Local DMS
@@ -2637,15 +2636,15 @@ invocation:
 # Manual phase flow: provision the environment before starting or waiting for IDE-hosted DMS.
 pwsh eng/docker-compose/prepare-dms-schema.ps1
 pwsh eng/docker-compose/prepare-dms-claims.ps1
-pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
-pwsh eng/docker-compose/configure-local-data-store.ps1 -AddSmokeTestCredentials
-pwsh eng/docker-compose/provision-dms-schema.ps1
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -EnvironmentFile ./eng/docker-compose/.env.ide
+pwsh eng/docker-compose/configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./eng/docker-compose/.env.ide
+pwsh eng/docker-compose/provision-dms-schema.ps1 -EnvironmentFile ./eng/docker-compose/.env.ide
 
 # Start DMS in the IDE now, using the printed settings and staged schema path.
-pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./eng/docker-compose/.env.ide
 
 # Optional manual seed phase: target the same IDE-hosted DMS endpoint explicitly.
-pwsh eng/docker-compose/load-dms-seed-data.ps1 -DmsBaseUrl "http://localhost:5198"
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./eng/docker-compose/.env.ide
 ```
 
 When the infrastructure was started with a non-default identity provider, the matching seed phase must pass
