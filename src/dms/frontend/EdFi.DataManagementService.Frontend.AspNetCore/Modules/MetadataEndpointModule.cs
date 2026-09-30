@@ -322,7 +322,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             async (
                 HttpContext httpContext,
                 IMetadataRouteValidator metadataRouteValidator,
-                IApiService apiService
+                IApiService apiService,
+                IOptions<FrontendAppSettings> options
             ) =>
             {
                 if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
@@ -330,7 +331,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                     return;
                 }
 
-                await GetSections(httpContext, apiService);
+                await GetSections(httpContext, apiService, options);
             }
         );
         endpoints.MapGet(
@@ -586,7 +587,11 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
-    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetSections(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<FrontendAppSettings> appSettings
+    )
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
@@ -632,10 +637,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             // without the profile sections would publish a partial catalog.
             await WriteProfileDataUnavailableAsync(
                 httpContext,
-                AspNetCoreFrontend.ExtractTraceIdFrom(
-                    httpContext.Request,
-                    httpContext.RequestServices.GetRequiredService<IOptions<FrontendAppSettings>>()
-                )
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
             );
             return;
         }
