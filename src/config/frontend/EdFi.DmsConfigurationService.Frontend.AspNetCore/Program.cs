@@ -130,15 +130,29 @@ app.MapOpenApi();
 await app.RunAsync();
 
 /// <summary>
-/// Runs the plugin registration checks that can only be made once the container exists, over the
-/// audit input AddServices registered after every plugin hook had run. Every finding is written to
-/// Console.Error and any finding stops startup. This is deliberately not reported through
-/// ReportInvalidConfigurationMiddleware: a refused plugin registration is not a configuration section
-/// the host can keep running with.
+/// Emits the plugin inventory, then runs the plugin registration checks that can only be made once the
+/// container exists, all over the one audit input AddServices registered after every plugin hook had
+/// run. Every finding is written to Console.Error and any finding stops startup. This is deliberately
+/// not reported through ReportInvalidConfigurationMiddleware: a refused plugin registration is not a
+/// configuration section the host can keep running with.
 /// </summary>
 async Task AuditPluginRegistrations(WebApplication app)
 {
     PluginAuditInput auditInput = app.Services.GetRequiredService<PluginAuditInput>();
+
+    // First, so what each plugin brought into the process reaches an operator before any check below
+    // can abort startup naming a type rather than the plugin that supplied it. The per-file loaded
+    // flags are read at this moment, because an assembly first touched inside a contribution hook
+    // loaded after loading returned.
+    PluginInventoryLog.Emit(app.Logger, auditInput);
+
+    // Before the shared audit, whose last step activates the declared contracts: a registration this
+    // host has already refused on its shape is never constructed.
+    await AbortOnPluginRegistrationProblems(
+        PluginContractShapeCheck.Check(auditInput),
+        activationException: null
+    );
+
     PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(auditInput, app.Services);
 
     if (result.ScopeCleanupFailure is not null)
@@ -153,26 +167,37 @@ async Task AuditPluginRegistrations(WebApplication app)
         );
     }
 
-    if (result.Findings.Count == 0)
-    {
-        return;
-    }
-
-    foreach (PluginAuditFinding finding in result.Findings)
-    {
-        await Console.Error.WriteLineAsync($"Plugin registration problem: {finding.Message}");
-    }
-
-    throw new InvalidOperationException(
-        $"Startup aborted: {result.Findings.Count} plugin registration problem(s). Correct the plugin, "
-            + "or remove it from Plugins:Allowed, then restart: "
-            + string.Join(" | ", result.Findings.Select(finding => finding.Message)),
+    await AbortOnPluginRegistrationProblems(
+        [.. result.Findings.Select(finding => finding.Message)],
         // The first original activation exception, where there was one. The rest travel in the
-        // messages above; a wrapper that dropped every one of them would leave an operator with a
+        // messages; a wrapper that dropped every one of them would leave an operator with a
         // description of the failure and no stack.
         result
             .Findings.Select(finding => finding.ActivationException)
             .FirstOrDefault(activationException => activationException is not null)
+    );
+}
+
+/// <summary>
+/// Writes each plugin registration problem to Console.Error and stops startup if there is one.
+/// </summary>
+async Task AbortOnPluginRegistrationProblems(IReadOnlyList<string> problems, Exception? activationException)
+{
+    if (problems.Count == 0)
+    {
+        return;
+    }
+
+    foreach (string problem in problems)
+    {
+        await Console.Error.WriteLineAsync($"Plugin registration problem: {problem}");
+    }
+
+    throw new InvalidOperationException(
+        $"Startup aborted: {problems.Count} plugin registration problem(s). Correct the plugin, "
+            + "or remove it from Plugins:Allowed, then restart: "
+            + string.Join(" | ", problems),
+        activationException
     );
 }
 
