@@ -1675,7 +1675,7 @@ if (-not [string]::IsNullOrWhiteSpace($SeedDataPath)) {
 # Fail fast: resolve BulkLoadClient BEFORE credentials or workspace (Task 1 ordering)
 Write-Host "Resolving BulkLoadClient $(Format-LogSafeText $script:BulkLoadClientPackageVersion)..."
 $bulkLoadClientDll = Resolve-BootstrapBulkLoadClient
-Write-Host "BulkLoadClient resolved: $(Format-LogSafeText $bulkLoadClientDll)"
+Write-Host "BulkLoadClient resolved: $(Format-LogSafePath $bulkLoadClientDll)"
 
 # Fail fast: probe the CLI surface to confirm the XML loading interface is available
 Write-Host "Verifying BulkLoadClient XML-mode interface..."
@@ -1881,7 +1881,7 @@ function Invoke-SeedTierLoad {
 
     Write-Host "Materializing seed workspace for $(Format-LogSafeText $Tier.Name) tier..."
     $workspace = New-SeedWorkspace -BootstrapRoot $BootstrapRoot -SourceDirectories $tierSourceDirs -InterchangeNames $interchangeNames
-    Write-Host "Workspace ready at $(Format-LogSafeText $workspace.DataDirectory); staged $(Format-LogSafeText ($workspace.StagedFiles.Count)) XML file(s)."
+    Write-Host "Workspace ready at $(Format-LogSafePath $workspace.DataDirectory); staged $(Format-LogSafeText ($workspace.StagedFiles.Count)) XML file(s)."
 
     Write-Host "Invoking BulkLoadClient against $(Format-LogSafeText $Tier.Name) tier..."
     Invoke-BulkLoadClient `

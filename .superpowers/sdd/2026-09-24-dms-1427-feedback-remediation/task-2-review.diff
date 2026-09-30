@@ -1,0 +1,103 @@
+ eng/docker-compose/prepare-dms-schema.ps1                         | 2 +-
+ .../tests/BootstrapSchemaDeploymentSafety.Tests.ps1               | 8 ++++++++
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+diff --git a/eng/docker-compose/prepare-dms-schema.ps1 b/eng/docker-compose/prepare-dms-schema.ps1
+index 207d2dee..8863cfee 100644
+--- a/eng/docker-compose/prepare-dms-schema.ps1
++++ b/eng/docker-compose/prepare-dms-schema.ps1
+@@ -823,41 +823,41 @@ function Invoke-SchemaWorkspaceStaging {
+             if ($existingSchemaSection["workspaceFingerprint"] -ne $workspaceFingerprint) {
+                 throw (Get-BootstrapWorkspaceMismatchMessage -Reason "workspace fingerprint mismatch")
+             }
+ 
+             $existingFingerprint = Get-BootstrapWorkspaceFingerprint -Path $finalWorkspace
+             if ($existingFingerprint -ne $workspaceFingerprint) {
+                 throw (Get-BootstrapWorkspaceMismatchMessage -Reason "staged content drift")
+             }
+         } else {
+             if ($rootManifest.ContainsKey("claims") -or $rootManifest.ContainsKey("seed")) {
+                 throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest has stale claims/seed sections but ApiSchema workspace is missing")
+             }
+ 
+             New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+             Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace -ErrorAction Stop
+             $temporaryMoved = $true
+         }
+ 
+         Set-BootstrapManifestSection -Name "schema" -Value $schemaSection
+ 
+-        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafeText $finalWorkspace)"
++        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafePath $finalWorkspace)"
+         Write-Output "Effective schema hash: $effectiveSchemaHash"
+     } finally {
+         if (-not $temporaryMoved -and (Test-Path -LiteralPath $temporaryRoot)) {
+             Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+         }
+     }
+ }
+ 
+ # --- Standard-mode package resolution and staging ---
+ function Assert-RequestedPackageIdentity {
+     <#
+     .SYNOPSIS
+     Asserts that a validated package's manifest projectName and projectEndpointName match the
+     identity the request implies (the catalog ProjectToken/EndpointToken). Without this, a
+     mislabeled package - correct packageId but internally consistent manifest+schema for a
+     different project - would pass validation and stage the wrong project under the requested
+     selection. Both fields matter independently: the endpoint drives selectedExtensions and
+     routing, while the project name drives the staged directory layout and claims metadata
+     lookup.
+     #>
+diff --git a/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1 b/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1
+index f4563b7e..b8e7cf2e 100644
+--- a/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1
++++ b/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1
+@@ -2073,40 +2073,48 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
+         }
+ 
+         It "Format-LogSafePath preserves backslashes so Windows paths survive sanitization" {
+             . $script:repo.ProvisionScript
+ 
+             Format-LogSafePath "C:\work\ApiSchema" | Should -Be "C:\work\ApiSchema"
+             # Control characters that enable log forging are still stripped.
+             Format-LogSafePath "C:\work\ApiSchema`r`nINJECTED" | Should -Be "C:\work\ApiSchemaINJECTED"
+         }
+ 
+         It "Format-LogSafePath preserves printable path characters and strips only control characters" {
+             . $script:repo.ProvisionScript
+ 
+             # Spaces, parentheses, '#', hyphens, and backslashes are all path-legal and must survive.
+             Format-LogSafePath 'C:\Program Files (x86)\Ed-Fi\Api #1' | Should -Be 'C:\Program Files (x86)\Ed-Fi\Api #1'
+             Format-LogSafePath '/srv/ed fi/api (staging)/schema#2.json' | Should -Be '/srv/ed fi/api (staging)/schema#2.json'
+             # Tabs, carriage returns, and newlines are control characters and are removed.
+             Format-LogSafePath "a`tb`r`nc" | Should -Be "abc"
+         }
+ 
++        It "uses the path-safe formatter for the prepared workspace log" {
++            $prepareSchemaPath = Join-Path $script:sourceDockerComposeRoot "prepare-dms-schema.ps1"
++            $content = Get-Content -LiteralPath $prepareSchemaPath -Raw
++
++            $content | Should -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafePath \$finalWorkspace\)'
++            $content | Should -Not -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafeText \$finalWorkspace\)'
++        }
++
+         It "guidance preserves backslashes in Windows-style staged paths" {
+             . $script:repo.ProvisionScript
+ 
+             $schemaWorkspace = [pscustomobject]@{
+                 BootstrapManifestPath = "C:\work\.bootstrap\bootstrap-manifest.json"
+                 ApiSchemaManifestPath = "C:\work\.bootstrap\ApiSchema\bootstrap-api-schema-manifest.json"
+                 CoreSchemaPath = "C:\work\.bootstrap\ApiSchema\schemas\Ed-Fi\ApiSchema.json"
+                 ExtensionSchemaPaths = [string[]]@()
+                 EffectiveSchemaHash = "hash-xyz"
+                 WorkspaceFingerprint = "fp"
+             }
+ 
+             $joined = (Get-ProvisionIdeGuidance -SchemaWorkspace $schemaWorkspace -ProvisionedTargets @()) -join "`n"
+ 
+             # The path lines feed Format-LogSafePath directly, so backslashes survive on every platform.
+             $joined | Should -Match ([regex]::Escape("C:\work\.bootstrap\bootstrap-manifest.json"))
+             $joined | Should -Match ([regex]::Escape("C:\work\.bootstrap\ApiSchema\bootstrap-api-schema-manifest.json"))
+         }
+     }
+ 

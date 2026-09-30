@@ -666,7 +666,7 @@ try {
     Set-BootstrapManifestSection -Name "claims" -Value $claimsSection
     Set-BootstrapManifestSection -Name "seed" -Value $seedSection
 
-    Write-Output "Prepared claims workspace at $(Format-LogSafeText $finalWorkspace)"
+    Write-Output "Prepared claims workspace at $(Format-LogSafePath $finalWorkspace)"
     Write-Output "Claims mode: $claimsMode"
 } finally {
     if (-not $temporaryMoved -and (Test-Path -LiteralPath $temporaryRoot)) {

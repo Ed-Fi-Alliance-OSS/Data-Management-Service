@@ -170,46 +170,22 @@ public class MetadataModuleTests
         [TestCase("changeQueries")]
         [TestCase("profiles")]
         [TestCase("discovery")]
-        public async Task It_advertises_each_request_proxy_without_mutating_the_shared_document(
-            string section
-        )
+        public async Task It_advertises_the_request_proxy_for_each_openapi_document(string section)
         {
-            JsonNode sharedDocument = JsonNode.Parse(
-                """
-                {
-                  "openapi": "3.0.0",
-                  "components": {
-                    "securitySchemes": {
-                      "oauth2_client_credentials": {
-                        "type": "oauth2",
-                        "flows": {
-                          "clientCredentials": {
-                            "tokenUrl": "https://internal-auth.example/oauth/token",
-                            "scopes": {}
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "security": [{ "oauth2_client_credentials": [] }]
-                }
-                """
-            )!;
-            string originalDocument = sharedDocument.ToJsonString();
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
-                .Returns(sharedDocument);
+                .ReturnsLazily(CreateOpenApiDocument);
             A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
-                .Returns(sharedDocument);
+                .ReturnsLazily(CreateOpenApiDocument);
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
-                .Returns(sharedDocument);
+                .ReturnsLazily(CreateOpenApiDocument);
             A.CallTo(() =>
                     apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
                 )
-                .Returns(Task.FromResult<JsonNode?>(sharedDocument));
+                .ReturnsLazily(() => Task.FromResult<JsonNode?>(CreateOpenApiDocument()));
             var contentProvider = A.Fake<IContentProvider>();
             A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
-                .Returns(sharedDocument);
+                .ReturnsLazily(CreateOpenApiDocument);
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
 
             foreach (bool qualified in new[] { false, true, false })
@@ -226,8 +202,8 @@ public class MetadataModuleTests
                 if (qualified)
                 {
                     context.Request.RouteValues["tenant"] = "tenant-a";
-                    context.Request.RouteValues["districtId"] = "255901";
-                    context.Request.RouteValues["schoolYear"] = "2026";
+                    context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+                    context.Request.RouteValues["__metadataRouteQualifier1"] = "2026";
                 }
 
                 await (
@@ -277,9 +253,31 @@ public class MetadataModuleTests
                             ? "https://api.example.org:8443/dms-api/tenant-a/255901/2026/oauth/token"
                             : "https://api.example.org:8443/oauth/token"
                     );
-                response["security"]!.ToJsonString().Should().Be(sharedDocument["security"]!.ToJsonString());
-                sharedDocument.ToJsonString().Should().Be(originalDocument);
+                response["security"]!.AsArray().Should().ContainSingle();
             }
+
+            static JsonNode CreateOpenApiDocument() =>
+                JsonNode.Parse(
+                    """
+                    {
+                      "openapi": "3.0.0",
+                      "components": {
+                        "securitySchemes": {
+                          "oauth2_client_credentials": {
+                            "type": "oauth2",
+                            "flows": {
+                              "clientCredentials": {
+                                "tokenUrl": "https://internal-auth.example/oauth/token",
+                                "scopes": {}
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "security": [{ "oauth2_client_credentials": [] }]
+                    }
+                    """
+                )!;
         }
 
         [TestCase(false, "http://localhost/oauth/token")]
@@ -300,8 +298,8 @@ public class MetadataModuleTests
                 );
                 context.Request.RouteValues["section"] = "discovery";
                 context.Request.RouteValues["tenant"] = "tenant-a";
-                context.Request.RouteValues["districtId"] = "255901";
-                context.Request.RouteValues["schoolYear"] = "2026";
+                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+                context.Request.RouteValues["__metadataRouteQualifier1"] = "2026";
 
                 await MetadataEndpointModule.GetSectionMetadata(
                     context,

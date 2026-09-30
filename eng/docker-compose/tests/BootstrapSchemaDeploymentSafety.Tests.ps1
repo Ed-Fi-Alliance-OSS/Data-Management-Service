@@ -2090,12 +2090,64 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             Format-LogSafePath "a`tb`r`nc" | Should -Be "abc"
         }
 
-        It "uses the path-safe formatter for the prepared workspace log" {
-            $prepareSchemaPath = Join-Path $script:sourceDockerComposeRoot "prepare-dms-schema.ps1"
-            $content = Get-Content -LiteralPath $prepareSchemaPath -Raw
+        It "preserves backslashes when executing the <Label> path log" -ForEach @(
+            @{ Label = "prepared ApiSchema workspace"; File = "prepare-dms-schema.ps1"; Prefix = 'Prepared ApiSchema workspace at ' }
+            @{ Label = "prepared claims workspace"; File = "prepare-dms-claims.ps1"; Prefix = 'Prepared claims workspace at ' }
+            @{ Label = "provision core schema"; File = "provision-dms-schema.ps1"; Prefix = 'Schema workspace ready. Core schema: ' }
+            @{ Label = "resolved schema tool"; File = "provision-dms-schema.ps1"; Prefix = 'api-schema-tools resolved: ' }
+            @{ Label = "resolved BulkLoadClient"; File = "load-dms-seed-data.ps1"; Prefix = 'BulkLoadClient resolved: ' }
+            @{ Label = "seed workspace"; File = "load-dms-seed-data.ps1"; Prefix = 'Workspace ready at ' }
+            @{ Label = "bootstrap workspace removal"; File = "bootstrap-manifest.psm1"; Prefix = 'Removing bootstrap workspace at ' }
+        ) {
+            param($File, $Prefix)
 
-            $content | Should -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafePath \$finalWorkspace\)'
-            $content | Should -Not -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafeText \$finalWorkspace\)'
+            . $script:repo.ProvisionScript
+
+            $tokens = $null
+            $errors = $null
+            $path = Join-Path $script:sourceDockerComposeRoot $File
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $path,
+                [ref]$tokens,
+                [ref]$errors
+            )
+            $errors | Should -BeNullOrEmpty
+            $commands = @(
+                $ast.FindAll(
+                    {
+                        param($node)
+                        $node -is [System.Management.Automation.Language.CommandAst] `
+                            -and $node.Extent.Text.Contains($Prefix)
+                    },
+                    $true
+                )
+            )
+            $commands | Should -HaveCount 1
+
+            $windowsPath = 'C:\work tree\Ed-Fi\ApiSchema #1'
+            $statement = [scriptblock]::Create($commands[0].Extent.Text)
+            $output = & {
+                $statementVariables = @{
+                    finalWorkspace = $windowsPath
+                    schemaWorkspace = [pscustomobject]@{
+                        CoreSchemaPath = $windowsPath
+                        ExtensionSchemaPaths = @()
+                    }
+                    schemaTool = $windowsPath
+                    bulkLoadClientDll = $windowsPath
+                    workspace = [pscustomobject]@{
+                        DataDirectory = $windowsPath
+                        StagedFiles = @()
+                    }
+                    bootstrapDir = $windowsPath
+                }
+                $statementVariables.GetEnumerator() | ForEach-Object {
+                    Set-Variable -Name $_.Key -Value $_.Value
+                }
+                . $statement
+            } *>&1 | Out-String
+
+            $output | Should -Match ([regex]::Escape($windowsPath))
         }
 
         It "keeps the path-safe formatter available in isolated script execution" {

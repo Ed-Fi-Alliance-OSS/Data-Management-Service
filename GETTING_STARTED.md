@@ -100,12 +100,33 @@ configures the data store, provisions its schema, and then starts DMS. The .NET
 SDK is not required because build work occurs inside containers. Startup may
 take around a minute.
 
-Existing local images are reused by default. To rebuild them before startup,
-explicitly pass `-Rebuild` (or its shorter `-r` alias):
+Existing local images are reused by default, and stopping the stack (even with
+`-d -v`) does not remove them. After updating your checkout, rebuild them before
+startup by explicitly passing `-Rebuild` (or its shorter `-r` alias):
 
 ```powershell
 ./bootstrap-local-dms.ps1 -Rebuild
 ```
+
+### Recovering from the pre-release Docker setup
+
+The released Configuration Service does not migrate a database retained from
+the `dms-pre-8.0.1-alpha.0.48` setup. Keeping that database can make
+`/connect/token` return HTTP 500. Recovery is reset-only: save any intentional
+local `.env` values, stop the stack, delete its volumes and staged workspace,
+refresh `.env` from the current example, reapply the values you still need, and
+rebuild from the current checkout:
+
+```powershell
+./bootstrap-local-dms.ps1 -d -v
+Copy-Item .env.example .env -Force
+# Reapply intentional local secrets and overrides to .env.
+./bootstrap-local-dms.ps1 -Rebuild
+```
+
+The `-d -v` step permanently deletes the local Docker databases and their data.
+There is no supported in-place migration for that pre-release database, so this
+recovery path involves data loss.
 
 For advanced workflows that need phase-level control, the individual commands
 remain available. For example, `start-local-dms.ps1 -InfraOnly` starts the
@@ -133,11 +154,14 @@ token-proxy URL from `urls.oauth`. POST the client-credentials grant to that URL
 using HTTP Basic credentials:
 
 ```http
+###
 # @name discovery
 GET http://localhost:8080
 
+###
 @tokenUrl={{discovery.response.body.urls.oauth}}
 
+###
 POST {{tokenUrl}}
 Authorization: Basic <client-id>:<client-secret>
 Content-Type: application/x-www-form-urlencoded
@@ -146,7 +170,10 @@ grant_type=client_credentials
 ```
 
 The DMS token proxy accepts the client credentials through the `Authorization`
-header, not as form fields. Calling the Configuration Service `/connect/token`
+header, not as form fields. The example uses Rest Client syntax, which
+Base64-encodes `<client-id>:<client-secret>` before sending; other HTTP clients
+must send the standard Base64-encoded Basic value, for example with
+`curl -u <client-id>:<client-secret>`. Calling the Configuration Service `/connect/token`
 endpoint directly is a separate endpoint contract; see the working examples in
 [getting-started.http](./getting-started.http).
 
@@ -180,31 +207,19 @@ Explore the `.env` file you just created to see what configuration options are
 available; however, most of them should not be altered. After editing the
 `.env`, stop and then restart the containers.
 
-## Load Seed Data Using Database Template Package
+## Load Seed Data
 
-To load initial seed data into the database, set the appropriate database
-template package name using the .env variable:
-
-**Example:**
-
-```env
-DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
-```
-
-Then, run the following commands in PowerShell to start the local DMS instance,
-create the data store, and load the seed data. As of DMS-1153,
-`start-local-dms.ps1` no longer accepts `-LoadSeedData`; the database-template
-load is invoked directly from `setup-database-template.psm1`:
+The bootstrap wrapper can load the built-in Minimal or Populated seed data
+through the running API after it configures and provisions the data store. For
+example:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig
-./configure-local-data-store.ps1
-Import-Module ./setup-database-template.psm1
-LoadSeedData -EnvironmentFile ./.env
+./bootstrap-local-dms.ps1 -LoadSeedData -SeedTemplate Minimal
 ```
 
-This will ensure your environment is initialized with the required schema and
-data from the specified template package.
+Use `-SeedTemplate Populated` for the populated sample. The wrapper also accepts
+`-SeedDataPath` for developer-supplied XML interchange files; see
+`./bootstrap-local-dms.ps1 -Help` for that expert workflow.
 
 ## Stopping the Containers
 
@@ -212,12 +227,14 @@ When you are ready to stop the containers, append the `-d` ("down") flag to the
 command:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -d
+./bootstrap-local-dms.ps1 -d
 ```
 
-And to shut down and delete all data, add the `-v` ("volumes") flag. This is
-useful when you need to start over with a clean slate.
+And to shut down and delete all data, add the `-v` ("volumes") flag. This also
+removes the staged `.bootstrap/` workspace, which is useful when you need to
+start over with a clean slate. Pass the same infrastructure options you started
+with, such as `-DatabaseEngine`, so the command stops the same services.
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -d -v
+./bootstrap-local-dms.ps1 -d -v
 ```

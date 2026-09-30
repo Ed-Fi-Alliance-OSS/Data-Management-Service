@@ -958,13 +958,13 @@ function Invoke-BootstrapWrapper {
             # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
             # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
             # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
-            # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
-            # hint, and start-published-dms.ps1 does not declare the switch.
+            # it. Both start scripts accept the full writer-guidance suppression used by normal wrapper
+            # continuation; only the local script owns the separate wrapper-continuation hint.
+            if (-not $InfraOnly) {
+                $startArgs.SuppressWriterGuidance = $true
+            }
             if ($StartScriptName -eq "start-local-dms.ps1") {
                 $startArgs.SuppressWrapperContinuationGuidance = $true
-                if (-not $InfraOnly) {
-                    $startArgs.SuppressWriterGuidance = $true
-                }
                 if ($Rebuild) { $startArgs.r = $true }
             }
 

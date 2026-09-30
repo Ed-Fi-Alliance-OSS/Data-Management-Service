@@ -1837,7 +1837,7 @@ function Invoke-ProvisionDmsSchema {
 
     $schemaWorkspace = Resolve-BootstrapSchemaWorkspace
     $schemaPaths = [string[]]@($schemaWorkspace.CoreSchemaPath) + [string[]]@($schemaWorkspace.ExtensionSchemaPaths)
-    Write-Information "Schema workspace ready. Core schema: $(Format-LogSafeText $schemaWorkspace.CoreSchemaPath). Extensions: $($schemaWorkspace.ExtensionSchemaPaths.Count)." -InformationAction Continue
+    Write-Information "Schema workspace ready. Core schema: $(Format-LogSafePath $schemaWorkspace.CoreSchemaPath). Extensions: $($schemaWorkspace.ExtensionSchemaPaths.Count)." -InformationAction Continue
 
     # DMS-1151: bootstrap admin token acquisition. Per command-boundaries.md Section 3.4/Section 3.5,
     # configure-local-data-store.ps1 owns the /connect/register side effect for the bootstrap
@@ -1875,7 +1875,7 @@ function Invoke-ProvisionDmsSchema {
     # and reads no database and deploys no DDL; every topology check below still completes before
     # Invoke-DmsSchemaProvision is ever called.
     $schemaTool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
-    Write-Information "api-schema-tools resolved: $(Format-LogSafeText $schemaTool)." -InformationAction Continue
+    Write-Information "api-schema-tools resolved: $(Format-LogSafePath $schemaTool)." -InformationAction Continue
 
     $targets = @($selectedInstances | ForEach-Object {
         New-ProvisionTarget -Instance $_ -EnvValues $envValues -SchemaToolPath $schemaTool

@@ -752,7 +752,7 @@ function Remove-BootstrapWorkspaceIfRequested {
         return
     }
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
+        Write-Output "Removing bootstrap workspace at $(Format-LogSafePath $bootstrapDir)"
         # Remove-Item is non-terminating by default; promote to a terminating error so a failed
         # cleanup cannot leave a stale manifest behind for the next start to pick up.
         Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop

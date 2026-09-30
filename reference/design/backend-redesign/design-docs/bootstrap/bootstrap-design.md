@@ -1867,6 +1867,9 @@ wrapper (`bootstrap-local-dms.ps1`) for the happy path. Common invocations:
 # Full bootstrap via thin wrapper — effective package set (default DS 5.2: core + TPDM), no seed data
 pwsh eng/docker-compose/bootstrap-local-dms.ps1
 
+# Rebuild local application images before the full bootstrap
+pwsh eng/docker-compose/bootstrap-local-dms.ps1 -Rebuild
+
 # Full bootstrap with seed data (package-backed standard mode)
 pwsh eng/docker-compose/bootstrap-local-dms.ps1 -LoadSeedData -SeedTemplate Minimal
 

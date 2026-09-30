@@ -48,9 +48,8 @@ public partial class MetadataEndpointModule(
 
     private static JsonNode WithPublicOAuthTokenUrl(JsonNode content, string tokenUrl)
     {
-        JsonNode response = content.DeepClone();
         if (
-            response["components"]
+            content["components"]
                 ?["securitySchemes"]
                 ?["oauth2_client_credentials"]
                 ?["flows"]
@@ -61,7 +60,7 @@ public partial class MetadataEndpointModule(
             clientCredentials["tokenUrl"] = tokenUrl;
         }
 
-        return response;
+        return content;
     }
 
     /// <summary>

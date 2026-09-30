@@ -86,6 +86,7 @@ Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployme
             foreach ($fileName in @(
                 "bootstrap-wrapper.psm1",
                 "bootstrap-local-dms.ps1",
+                "bootstrap-published-dms.ps1",
                 "bootstrap-schema-catalog.psm1",
                 # The wrapper always composes the local-bootstrap data-standard overlay
                 # (default 5.2) onto the base env via env-utility, so every wrapper
@@ -123,6 +124,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 BootstrapRoot    = Join-Path $dockerComposeRoot ".bootstrap"
                 EnvFile          = $envFile
                 WrapperScript    = Join-Path $dockerComposeRoot "bootstrap-local-dms.ps1"
+                PublishedWrapperScript = Join-Path $dockerComposeRoot "bootstrap-published-dms.ps1"
             }
         }
 
@@ -174,10 +176,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 # When supplied, each invocation also records the forwarded engine and
                 # -SeparateConfigDatabase state to this separate file. Deliberately not the shared
                 # call log: several tests assert that log's exact line count and ordering.
-                [string]$ForwardLogPath
+                [string]$ForwardLogPath,
+
+                [ValidateSet("start-local-dms.ps1", "start-published-dms.ps1")]
+                [string]$FileName = "start-local-dms.ps1"
             )
 
-            $scriptPath = Join-Path $Directory "start-local-dms.ps1"
+            $scriptPath = Join-Path $Directory $FileName
             $forwardRecording = if ([string]::IsNullOrWhiteSpace($ForwardLogPath)) {
                 ""
             }
@@ -692,6 +697,26 @@ $failureStatement
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
 
             $output = & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                *>&1 | Out-String
+
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
+            $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
+            $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
+        }
+
+        It "suppresses initial terminal guidance before published DMS startup" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-published-start.txt"
+            New-RecordingStartScript `
+                -Directory $script:repo.DockerComposeRoot `
+                -CallLogPath $callLog `
+                -FileName "start-published-dms.ps1" | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $output = & $script:repo.PublishedWrapperScript `
                 -EnvironmentFile $script:repo.EnvFile `
                 *>&1 | Out-String
 
@@ -2926,13 +2951,17 @@ Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separ
             $script:gettingStarted | Should -Match '(?i)urls\.oauth'
             $script:gettingStarted | Should -Match '(?i)Authorization:\s*Basic'
             $script:gettingStarted | Should -Match 'grant_type=client_credentials'
-            $script:gettingStarted | Should -Not -Match '(?is)(?:DMS|proxy).{0,500}client_id\s*=.*client_secret\s*='
+            $script:gettingStarted | Should -Match '(?i)not as form fields'
         }
 
-        It "retains phase-level commands without adding historical upgrade guidance" {
+        It "documents the reset-only recovery for a retained pre-release database" {
             $script:gettingStarted | Should -Match 'start-local-dms\.ps1'
             $script:gettingStarted | Should -Match 'configure-local-data-store\.ps1'
-            $script:gettingStarted | Should -Not -Match '(?i)\b(?:migration|pre-release|prerelease|reset)\b'
+            $script:gettingStarted | Should -Match '(?i)pre-release'
+            $script:gettingStarted | Should -Match '(?i)data loss'
+            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1 -d -v'
+            $script:gettingStarted | Should -Match 'Copy-Item \.env\.example \.env -Force'
+            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1 -Rebuild'
         }
     }
 }

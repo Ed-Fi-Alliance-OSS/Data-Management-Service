@@ -1,0 +1,1580 @@
+ GETTING_STARTED.md                                 |  48 +++-
+ ...6-09-24-dms-1427-feedback-remediation-design.md | 144 ++++++++++++
+ eng/docker-compose/bootstrap-local-dms.ps1         |   8 +
+ eng/docker-compose/bootstrap-wrapper.psm1          |   8 +-
+ eng/docker-compose/prepare-dms-schema.ps1          |   2 +-
+ .../tests/BootstrapEntryPointWorkflow.Tests.ps1    | 109 ++++++++-
+ .../BootstrapSchemaDeploymentSafety.Tests.ps1      |   8 +
+ .../ChangeQueriesMetadataIntegrationTests.cs       |  54 ++++-
+ .../Modules/MetaDataModuleTests.cs                 | 259 +++++++++++++++++++++
+ .../Modules/DiscoveryEndpointModule.cs             |  21 +-
+ .../Modules/MetadataEndpointModule.cs              |  56 ++++-
+ 11 files changed, 681 insertions(+), 36 deletions(-)
+diff --git a/GETTING_STARTED.md b/GETTING_STARTED.md
+index 4f5babdf..612395d9 100644
+--- a/GETTING_STARTED.md
++++ b/GETTING_STARTED.md
+@@ -80,59 +80,85 @@ C4Deployment
+ ## Start the Containers
+ 
+ In a terminal, switch to the `eng/docker-compose` directory. Create a new file
+ `.env` as a copy of `.env.example`. There is no need to modify the file for
+ local execution. However, please change the passwords if using for anything
+ other than firewalled local development.
+ 
+ ```powershell
+ cd Data-Management-Service/eng/docker-compose
+ cp .env.example .env
+ ```
+ 
+-Now, start all of the required services, building from source code, with the
+-following command. The .NET SDK is not required, as the build will occur inside
+-a container.
++Start the complete local environment with the bootstrap wrapper:
+ 
+ ```powershell
+-./start-local-dms.ps1 -EnableConfig
++./bootstrap-local-dms.ps1
+ ```
+ 
+-This may take around a minute to startup. This script not only starts the
+-containers, it also calls an additional script for configuring Keycloak.
++The wrapper stages the schema and claims workspaces, starts the infrastructure,
++configures the data store, provisions its schema, and then starts DMS. The .NET
++SDK is not required because build work occurs inside containers. Startup may
++take around a minute.
+ 
+-Next, create the initial data store. As of DMS-1153, `start-local-dms.ps1` is
+-infrastructure-only and no longer creates one automatically; the DMS container
+-keeps restarting until at least one data store is registered in the
+-Configuration Service:
++Existing local images are reused by default. To rebuild them before startup,
++explicitly pass `-Rebuild` (or its shorter `-r` alias):
+ 
+ ```powershell
+-./configure-local-data-store.ps1
++./bootstrap-local-dms.ps1 -Rebuild
+ ```
+ 
++For advanced workflows that need phase-level control, the individual commands
++remain available. For example, `start-local-dms.ps1 -InfraOnly` starts the
++infrastructure without DMS, and `configure-local-data-store.ps1` registers or
++selects the data store. Their help and terminal guidance describe the inputs for
++the subsequent provisioning and DMS-start phases.
++
+ Once started, try the following HTTP request, which will load the Ed-Fi
+ Discovery API endpoint from the DMS.
+ 
+ ```shell
+ curl http://localhost:8080
+ ```
+ 
+ ## Interacting with the Two Services
+ 
+ Please open [getting-started.http](./getting-started.http) for detailed
+ instructions and sample HTTP commands. If using the Rest Client extension, you
+ can right-click on any command to generate a Curl command. Alternatively, you
+ can create a code snippet in one of more than a dozen supported languages,
+ including C# and Python.
+ 
++To authenticate with DMS, first call the Discovery endpoint and read the DMS
++token-proxy URL from `urls.oauth`. POST the client-credentials grant to that URL
++using HTTP Basic credentials:
++
++```http
++# @name discovery
++GET http://localhost:8080
++
++@tokenUrl={{discovery.response.body.urls.oauth}}
++
++POST {{tokenUrl}}
++Authorization: Basic <client-id>:<client-secret>
++Content-Type: application/x-www-form-urlencoded
++
++grant_type=client_credentials
++```
++
++The DMS token proxy accepts the client credentials through the `Authorization`
++header, not as form fields. Calling the Configuration Service `/connect/token`
++endpoint directly is a separate endpoint contract; see the working examples in
++[getting-started.http](./getting-started.http).
++
+ For the most part, interacting with the Data Management Service is the same as
+ interacting with the Ed-Fi ODS/API. The following ODS/API documentation pertains
+ to the Data Management Service and will provide additional background
+ information on developing client integrations:
+ 
+ * [Basics](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/basics)
+ * [Authentication](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/authentication)
+ * [Date and Datetime
+   Elements](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/date-datetime-elements)
+ * [Descriptor
+   References](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/descriptor-references)
+ * [Error Handling and Best
+diff --git a/docs/superpowers/specs/2026-09-24-dms-1427-feedback-remediation-design.md b/docs/superpowers/specs/2026-09-24-dms-1427-feedback-remediation-design.md
+new file mode 100644
+index 00000000..102308a8
+--- /dev/null
++++ b/docs/superpowers/specs/2026-09-24-dms-1427-feedback-remediation-design.md
+@@ -0,0 +1,144 @@
++# DMS-1427: Feedback Remediation Design
++
++## Status and authority
++
++This is the approved implementation-ready design for DMS-1427. The story
++(`.plans/ref/DMS-1427.md`) and the EDFI-2881 feedback
++(`.plans/ref/EDFI-2881.md`) are authoritative. The human and nano pre-specs,
++and their review report, are supporting analysis only.
++
++The branch inspected is `DMS-1427` at `aeb211a3fab6e1719e71a24a9a5df3e4e690c8d4`.
++No tests were run while developing this specification.
++
++## Scope
++
++Correct the EDFI-2881 observations that remain applicable on this branch:
++
++1. Make local-image rebuilding explicit on the normal local bootstrap entry
++   point and clarify the normal local bootstrap path.
++2. Advertise the public DMS OAuth proxy, rather than the container-internal
++   upstream URL, in every served OpenAPI document.
++3. Correct Windows-safe prepared-workspace logging.
++4. Prevent wrapper-managed normal startup from printing terminal InfraOnly
++   guidance before it starts DMS.
++5. Clarify normal bootstrap and DMS token-proxy Basic authentication in the
++   user-facing getting-started material.
++
++## Exclusions and approved decisions
++
++- Do not add database migration, compatibility, startup-detector, or general
++  historical-upgrade work.
++- Do not weaken effective-schema-hash checks or the staged-workspace mismatch
++  stop. Guarded automatic replacement remains DMS-1271 scope.
++- Do not change `AppSettings.AuthenticationService`: it remains the internal
++  DMS-to-identity-provider forwarding target.
++- Do not redesign CMS `/health`, add proxy form-body client credentials, or
++  otherwise change those public contracts.
++- Do not add automatic image rebuilding, a second build mechanism, or broad
++  documentation reorganization.
++
++## Chosen design
++
++### Local bootstrap and documentation
++
++Add `-Rebuild` with `-r` alias to `bootstrap-local-dms.ps1` and its shared
++wrapper path. When supplied, the wrapper forwards the existing rebuild switch
++only to its initial `start-local-dms.ps1` infrastructure invocation, which
++already executes `docker compose build --no-cache`. The default remains
++non-rebuild. `bootstrap-published-dms.ps1` is out of scope because the reported
++failure is local-image reuse.
++
++Update `GETTING_STARTED.md` to make `bootstrap-local-dms.ps1` the normal local
++startup command. Preserve phase commands as advanced/manual guidance. Document
++the explicit `-Rebuild` option as the way to rebuild local images when needed,
++without adding separate historical-upgrade guidance.
++
++The guide will state that API clients obtain the DMS proxy URL from Discovery
++and submit `grant_type=client_credentials` with HTTP Basic credentials. It
++will distinguish that DMS contract from direct CMS `/connect/token` use and
++will not imply support for form-body `client_id` or `client_secret`.
++
++### Public OpenAPI OAuth URL
++
++The frontend metadata layer owns client-visible URLs. Reuse Discovery's
++request-derived route-prefix logic to construct the public DMS OAuth proxy URL:
++
++```
++Request.RootUrl() + tenant/route-qualifier prefix + "/oauth/token"
++```
++
++This preserves PathBase, actual route values, and placeholders where Discovery
++uses them. Use the value when loading the file-backed Discovery specification.
++For the Resource, Descriptor, Change-Queries, and profile Resource generated
++OpenAPI documents, replace the client-credentials security scheme's `tokenUrl`
++in the response document before serialization.
++
++The endpoint receives response-local deep clones from `IApiService`, so this
++frontend mutation neither changes cached specifications nor expands the
++`IApiService` interface. Core `ApiService` continues to use
++`AuthenticationService` for internal runtime behavior; the metadata endpoint
++only prevents that internal Docker hostname from reaching clients.
++
++### Bootstrap output and safe path logging
++
++For a wrapper-owned normal run (not the terminal `-InfraOnly` workflow), pass
++the existing full writer-guidance suppression to the initial
++`start-local-dms.ps1 -InfraOnly` call. The wrapper subsequently configures,
++provisions, and invokes `-DmsOnly`, so it must not print "DMS service was not
++started" or manual IDE next steps first. Direct/manual `start-local-dms.ps1
++-InfraOnly` and wrapper terminal-IDE flows retain their guidance.
++
++At the prepared ApiSchema workspace log site, replace `Format-LogSafeText` with
++the existing `Format-LogSafePath`. The latter removes control characters but
++retains legal Windows path characters, including backslashes.
++
++## Components and data flows
++
++| Concern | Components | Resulting flow |
++| --- | --- | --- |
++| Local rebuild | `bootstrap-local-dms.ps1` -> `bootstrap-wrapper.psm1` -> `start-local-dms.ps1` | Explicit `-Rebuild` forwards to the existing no-cache local image build; omitted switch does not build. |
++| Public OAuth metadata | `DiscoveryEndpointModule`, `MetadataEndpointModule`, `ContentProvider`, `IApiService` response values | Request URL and route context produce a public DMS proxy URL; every served OpenAPI response advertises it while forwarding stays internal. |
++| Normal bootstrap output | `bootstrap-wrapper.psm1`, `start-local-dms.ps1` | Wrapper suppresses terminal InfraOnly writer output only on its normal continuation path, then performs DMS-only startup. |
++| Safe logging | `prepare-dms-schema.ps1`, `bootstrap-manifest.psm1` | Prepared workspace path is control-character sanitized without losing backslashes. |
++| Operator guidance | `GETTING_STARTED.md` | Normal bootstrap, explicit local rebuild, and Basic proxy instructions align with script/runtime behavior. |
++
++## Failure handling and regression safeguards
++
++- Rebuild failure continues to surface the existing Docker build error and
++  stops the wrapper before configure/provision/DMS-only work.
++- A stale workspace, package identity mismatch, effective-schema mismatch, or
++  fingerprint mismatch continues to fail before Docker/CMS side effects; this
++  design does not automatically replace workspace content.
++- No database migration or runtime compatibility behavior is introduced.
++- Metadata URL generation must retain PathBase and tenant/qualifier behavior;
++  it must not emit `AuthenticationService` or a container hostname to clients.
++- Manual InfraOnly output is a compatibility contract. Suppression is limited
++  to the wrapper's normal path, not direct command use or terminal IDE flows.
++- The DMS OAuth proxy remains HTTP Basic-only for client credentials; existing
++  malformed-header/error behavior remains unchanged.
++
++## Acceptance mapping and verification
++
++The story has no explicit acceptance criteria. These synthesized requirements
++cover each distinct EDFI-2881 observation.
++
++| Requirement | Design | Meaningful verification |
++| --- | --- | --- |
++| REQ-1: image upgrade path | Public local-wrapper rebuild pass-through; focused normal-bootstrap/rebuild guidance | Extend `BootstrapEntryPointWorkflow.Tests.ps1` to prove `-Rebuild` reaches only initial local startup, default does not; review the documented normal and rebuild commands. |
++| REQ-2: database migration feedback | No change | No migration, compatibility detector, runtime test, or user-facing documentation is added. |
++| REQ-3: client-reachable OAuth metadata | Request-derived public proxy URL applied to Discovery plus all generated OpenAPI responses | Frontend metadata tests cover unqualified, PathBase, and tenant/route-qualified requests; assert exact public `tokenUrl` and absence of the configured internal hostname for Resources, Descriptors, Change Queries, profiles, and Discovery. |
++| REQ-4: CMS health observation | No change | Preserve existing health response and tests; no consumer requirement justifies a contract change. |
++| REQ-5: DMS proxy credentials | Getting-started Basic/proxy clarification only | Retain existing `TokenEndpointModuleTests` Basic and malformed-header behavior; inspect the guide's Discovery-to-Basic flow. |
++| REQ-6: Windows path logging | Use `Format-LogSafePath` at the prepared-workspace call site | Extend `BootstrapSchemaDeploymentSafety.Tests.ps1` with a printable Windows path containing backslashes/punctuation and a control character; assert path preservation and control removal. |
++| REQ-7: misleading normal-bootstrap guidance | Full writer-guidance suppression for wrapper normal path only | Extend `BootstrapEntryPointWorkflow.Tests.ps1` to prove normal wrapper output omits the terminal InfraOnly block but reaches DMS-only startup, while direct InfraOnly guidance remains. |
++
++## Dependencies, deviations, and blockers
++
++Relevant design constraints are DMS-1151 schema/workspace safety,
++DMS-1153's phase ownership and terminal InfraOnly behavior, and DMS-1271's
++ownership of guarded workspace replacement. DMS-1428 is the only identified
++stored epic sibling but concerns Document Cache administration and has no
++dependency on this story.
++
++There are no remaining design blockers. Implementation planning may begin only
++after the user approves this written specification.
+diff --git a/eng/docker-compose/bootstrap-local-dms.ps1 b/eng/docker-compose/bootstrap-local-dms.ps1
+index de806e8b..17f49457 100644
+--- a/eng/docker-compose/bootstrap-local-dms.ps1
++++ b/eng/docker-compose/bootstrap-local-dms.ps1
+@@ -93,24 +93,29 @@
+     `-SeedTemplate` (enforced by the seed phase).
+ 
+ .PARAMETER AdditionalNamespacePrefix
+     Additional namespace prefixes for SeedLoader vendor authorization. Forwarded to the
+     seed phase and to `load-dms-seed-data.ps1` in the IDE continuation shape.
+ 
+ .PARAMETER EnvironmentFile
+     Env file forwarded to all phase commands so they share local-settings resolution.
+ 
+ .PARAMETER IdentityProvider
+     Forwarded to all phase commands for OAuth endpoint selection.
+ 
++.PARAMETER Rebuild
++    Rebuild local DMS container images before the initial infrastructure startup. The switch is
++    forwarded only to the first `start-local-dms.ps1 -InfraOnly` invocation and is not repeated
++    for the later `-DmsOnly` startup.
++
+ .PARAMETER EnableKafkaCdc
+     Run the deployment controller after schema provisioning and before DMS or seed writes.
+     Requires -SeparateConfigDatabase, -CdcSettingsPath and a dedicated -DataStoreDatabaseName.
+     The supplied DataManagement:DocumentCache target must match the configure phase's selected ID.
+ 
+ .PARAMETER CdcSettingsPath
+     Explicit DMS and CDC settings JSON. Bootstrap snapshots the settings with the ordinary staged
+     schema and selected Compose environment. DMS_CDC__ environment overrides are rejected so the
+     controller and eventual DMS receive the same target configuration. Protect this credential file.
+ 
+ .PARAMETER CdcBindingStatePath
+     Original durable controller state root (defaults to .cdc-state beside these scripts for CDC).
+@@ -227,24 +232,27 @@ param(
+     [string]$SeedDataPath,
+ 
+     [string[]]$AdditionalNamespacePrefix = @(),
+ 
+     [string]$EnvironmentFile,
+ 
+     # Default is left unset so the phase commands fall back to the env file's
+     # DMS_CONFIG_IDENTITY_PROVIDER value via Resolve-IdentityProvider. Pass explicitly
+     # only to override the env-file resolution.
+     [ValidateSet("keycloak", "self-contained")]
+     [string]$IdentityProvider,
+ 
++    [Alias("r")]
++    [Switch]$Rebuild,
++
+     [Switch]$EnableKafkaUI,
+ 
+     [Switch]$EnableKafkaCdc,
+     [string]$CdcBindingStatePath,
+     [string]$CdcSettingsPath,
+     [string]$DataStoreDatabaseName,
+ 
+     [Switch]$EnableSwaggerUI,
+ 
+     [Switch]$EnableConfig,
+ 
+     [Switch]$AddExtensionSecurityMetadata,
+diff --git a/eng/docker-compose/bootstrap-wrapper.psm1 b/eng/docker-compose/bootstrap-wrapper.psm1
+index 304f7eb0..5aea10a3 100644
+--- a/eng/docker-compose/bootstrap-wrapper.psm1
++++ b/eng/docker-compose/bootstrap-wrapper.psm1
+@@ -508,25 +508,26 @@ function Invoke-BootstrapWrapper {
+         [string]$IdentityProvider,
+ 
+         [Switch]$EnableKafkaUI,
+ 
+         [Switch]$EnableKafkaCdc,
+         [string]$CdcBindingStatePath,
+         [string]$CdcSettingsPath,
+         [string]$DataStoreDatabaseName,
+ 
+         # Shared E2E composition preserves its already selected package surface and prepares
+         # its separate snapshot before admission. Ordinary bootstrap keeps its defaults.
+         [switch]$UseEnvironmentFileSchemaSettings,
+-        [switch]$RebuildLocalImages,
++        [Alias("RebuildLocalImages")]
++        [switch]$Rebuild,
+         [scriptblock]$BeforeCdcAdmission,
+         [string]$OriginalEnvironmentFile,
+ 
+         [Switch]$EnableSwaggerUI,
+ 
+         [Switch]$EnableConfig,
+ 
+         [Switch]$AddExtensionSecurityMetadata,
+ 
+         [Switch]$NoDataStore,
+ 
+         [Switch]$AddSmokeTestCredentials,
+@@ -941,25 +942,28 @@ function Invoke-BootstrapWrapper {
+             if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
+             $startArgs.EnvironmentFile = $effectiveEnvFile
+             # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
+             # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
+             # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
+             # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
+             # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
+             # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
+             # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
+             # hint, and start-published-dms.ps1 does not declare the switch.
+             if ($StartScriptName -eq "start-local-dms.ps1") {
+                 $startArgs.SuppressWrapperContinuationGuidance = $true
+-                if ($RebuildLocalImages) { $startArgs.r = $true }
++                if (-not $InfraOnly) {
++                    $startArgs.SuppressWriterGuidance = $true
++                }
++                if ($Rebuild) { $startArgs.r = $true }
+             }
+ 
+             # Reset the native exit-code sentinel so the check below reflects only this start invocation and
+             # not a stale value left by an earlier command. The start scripts signal failure by throwing;
+             # docker-compose paths set a real exit code that overwrites this reset.
+             $global:LASTEXITCODE = 0
+             & "$PSScriptRoot/$StartScriptName" @startArgs
+             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                 throw "$StartScriptName failed with exit code $LASTEXITCODE."
+             }
+ 
+             $configureScriptPath = "$PSScriptRoot/configure-local-data-store.ps1"
+diff --git a/eng/docker-compose/prepare-dms-schema.ps1 b/eng/docker-compose/prepare-dms-schema.ps1
+index 207d2dee..8863cfee 100644
+--- a/eng/docker-compose/prepare-dms-schema.ps1
++++ b/eng/docker-compose/prepare-dms-schema.ps1
+@@ -831,25 +831,25 @@ function Invoke-SchemaWorkspaceStaging {
+         } else {
+             if ($rootManifest.ContainsKey("claims") -or $rootManifest.ContainsKey("seed")) {
+                 throw (Get-BootstrapWorkspaceMismatchMessage -Reason "manifest has stale claims/seed sections but ApiSchema workspace is missing")
+             }
+ 
+             New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+             Move-Item -LiteralPath $temporaryRoot -Destination $finalWorkspace -ErrorAction Stop
+             $temporaryMoved = $true
+         }
+ 
+         Set-BootstrapManifestSection -Name "schema" -Value $schemaSection
+ 
+-        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafeText $finalWorkspace)"
++        Write-Output "Prepared ApiSchema workspace at $(Format-LogSafePath $finalWorkspace)"
+         Write-Output "Effective schema hash: $effectiveSchemaHash"
+     } finally {
+         if (-not $temporaryMoved -and (Test-Path -LiteralPath $temporaryRoot)) {
+             Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+         }
+     }
+ }
+ 
+ # --- Standard-mode package resolution and staging ---
+ function Assert-RequestedPackageIdentity {
+     <#
+     .SYNOPSIS
+diff --git a/eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1 b/eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1
+index ba1c435f..9671a19b 100644
+--- a/eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1
++++ b/eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1
+@@ -179,38 +179,43 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
+ 
+             $scriptPath = Join-Path $Directory "start-local-dms.ps1"
+             $forwardRecording = if ([string]::IsNullOrWhiteSpace($ForwardLogPath)) {
+                 ""
+             }
+             else {
+                 "Add-Content -LiteralPath '$ForwardLogPath' -Value `"`$label engine=`$DatabaseEngine separate=`$(`$SeparateConfigDatabase.IsPresent)`""
+             }
+             @"
+ param(
+     [switch] `$InfraOnly,
+     [switch] `$DmsOnly,
++    [switch] `$r,
+     [switch] `$EnableConfig,
++    [switch] `$SuppressWriterGuidance,
+     [string] `$EnvironmentFile,
+     [string] `$IdentityProvider,
+     [string] `$DmsBaseUrl,
+     [string] `$DatabaseEngine,
+     [switch] `$SeparateConfigDatabase,
+     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+ )
+ `$hasDmsBaseUrl = `$PSBoundParameters.ContainsKey('DmsBaseUrl') -and -not [string]::IsNullOrWhiteSpace(`$DmsBaseUrl)
+ `$label = if (`$InfraOnly -and `$hasDmsBaseUrl) { "start-infra-healthwait" }
+           elseif (`$InfraOnly) { "start-infra" }
+           elseif (`$DmsOnly)  { "start-dms" }
+           else                { "start-legacy" }
+-Add-Content -LiteralPath '$CallLogPath' -Value "`$label DmsBaseUrl=`$DmsBaseUrl"
++Add-Content -LiteralPath '$CallLogPath' -Value "`$label DmsBaseUrl=`$DmsBaseUrl rebuild=`$(`$r.IsPresent) writerGuidanceSuppressed=`$(`$SuppressWriterGuidance.IsPresent)"
++if (`$InfraOnly -and -not `$hasDmsBaseUrl -and -not `$SuppressWriterGuidance) {
++    Write-Output "Infrastructure phase complete. DMS service was not started."
++}
+ $forwardRecording
+ "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
+             return $scriptPath
+         }
+ 
+         function script:New-RecordingConfigureScript {
+             param(
+                 [Parameter(Mandatory)]
+                 [string]$Directory,
+ 
+                 [Parameter(Mandatory)]
+                 [string]$CallLogPath,
+@@ -575,30 +580,55 @@ $failureStatement
+         It "rejects -DmsBaseUrl with -DmsOnly at the param-parse level" {
+             $startScript = Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
+             {
+                 & $startScript -DmsOnly -DmsBaseUrl "http://localhost:8080"
+             } | Should -Throw "*-DmsBaseUrl is not valid with -DmsOnly*"
+         }
+     }
+ 
+     # =========================================================================
+     # R2 - bootstrap-local-dms.ps1 and bootstrap-published-dms.ps1 param surfaces
+     # =========================================================================
+     Context "wrapper entry-script parameter surfaces" {
+-        It "bootstrap-local-dms.ps1 declares -InfraOnly and -DmsBaseUrl" {
++        It "bootstrap-local-dms.ps1 declares -InfraOnly, -DmsBaseUrl, and -Rebuild" {
+             $params = Get-DeclaredScriptParameters -Path (
+                 Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
+             )
+             $params | Should -Contain "InfraOnly"
+             $params | Should -Contain "DmsBaseUrl"
++            $params | Should -Contain "Rebuild"
++        }
++
++        It "bootstrap-local-dms.ps1 exposes -r as the public alias for -Rebuild" {
++            $tokens = $null
++            $errors = $null
++            $scriptPath = Join-Path $script:sourceDockerComposeRoot "bootstrap-local-dms.ps1"
++            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
++                $scriptPath,
++                [ref]$tokens,
++                [ref]$errors
++            )
++            if ($errors.Count -gt 0) {
++                throw "Failed to parse $scriptPath"
++            }
++
++            $rebuildParameter = $ast.ParamBlock.Parameters |
++                Where-Object { $_.Name.VariablePath.UserPath -eq "Rebuild" }
++            $aliases = @(
++                $rebuildParameter.Attributes |
++                    Where-Object { $_.TypeName.Name -eq "Alias" } |
++                    ForEach-Object { $_.PositionalArguments.Value }
++            )
++
++            $aliases | Should -Contain "r"
+         }
+ 
+         It "bootstrap-published-dms.ps1 does not declare -InfraOnly or -DmsBaseUrl" {
+             $params = Get-DeclaredScriptParameters -Path (
+                 Join-Path $script:sourceDockerComposeRoot "bootstrap-published-dms.ps1"
+             )
+             $params | Should -Not -Contain "InfraOnly"
+             $params | Should -Not -Contain "DmsBaseUrl"
+         }
+     }
+ 
+     # =========================================================================
+@@ -626,24 +656,61 @@ $failureStatement
+             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+ 
+             {
+                 & $script:repo.WrapperScript `
+                     -EnvironmentFile $script:repo.EnvFile `
+                     -InfraOnly `
+                     -LoadSeedData `
+                     -SeedDataPath $script:repo.DockerComposeRoot
+             } | Should -Throw "*-LoadSeedData with -InfraOnly requires -DmsBaseUrl*"
+         }
+     }
+ 
++    Context "normal local wrapper startup controls" {
++        It "forwards explicit rebuild only to the initial infrastructure startup and suppresses its terminal guidance" {
++            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
++            $callLog = Join-Path $script:repo.RepoRoot "call-log-rebuild.txt"
++            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
++            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
++            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
++
++            $output = & $script:repo.WrapperScript `
++                -EnvironmentFile $script:repo.EnvFile `
++                -Rebuild `
++                *>&1 | Out-String
++
++            $log = @(Get-Content -LiteralPath $callLog)
++            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=True writerGuidanceSuppressed=True"
++            $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
++            $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
++        }
++
++        It "does not rebuild by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
++            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
++            $callLog = Join-Path $script:repo.RepoRoot "call-log-default-start.txt"
++            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
++            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
++            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
++
++            $output = & $script:repo.WrapperScript `
++                -EnvironmentFile $script:repo.EnvFile `
++                *>&1 | Out-String
++
++            $log = @(Get-Content -LiteralPath $callLog)
++            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
++            $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
++            $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
++        }
++    }
++
+     # =========================================================================
+     # R4 - Wrapper -InfraOnly shape: configure + provision, no -DmsOnly, IDE guidance
+     # =========================================================================
+     Context "wrapper -InfraOnly pre-DMS terminal shape" {
+         BeforeAll {
+             # The start script's continuation-fragment builder, lifted from the real file so the rows
+             # below exercise production text rather than a copy. Dot-sourcing start-local-dms.ps1 is not
+             # an option - it is a straight-line script that would start Docker - so the single function
+             # is extracted, the same way this suite reaches other in-script helpers.
+             function script:Get-ScriptFunctionText {
+                 param(
+                     [Parameter(Mandatory)] [string]$ScriptPath,
+@@ -767,33 +834,35 @@ param(
+             New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+ 
+             $output = & $script:repo.WrapperScript `
+                 -EnvironmentFile $script:repo.EnvFile `
+                 -InfraOnly `
+                 *>&1 | Out-String
+ 
+             $log = @(Get-Content -LiteralPath $callLog)
+ 
+             # configure and provision must appear
+             $log | Should -Contain "configure smoke=False"
+             $log | Should -Contain "provision"
++            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
+ 
+             # -DmsOnly start must NOT appear
+             $log | Where-Object { $_ -like "start-dms*" } | Should -BeNullOrEmpty
+ 
+             # seed must NOT be invoked (no -LoadSeedData)
+             $log | Where-Object { $_ -like "seed*" } | Should -BeNullOrEmpty
+ 
+             # IDE guidance must mention appsettings or DmsBaseUrl workflow hint
+             $output | Should -Match "(?i)(appsettings|DmsBaseUrl|IDE)"
++            $output | Should -Match "Infrastructure phase complete\. DMS service was not started\." -Because "terminal InfraOnly startup retains direct/manual writer guidance"
+ 
+             # AC: terminal output must not present a second start-local-dms.ps1 run as a resume
+             # mechanism; the fresh wrapper continuation invocation is the supported follow-up.
+             $output | Should -Not -Match "start-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl" -Because "terminal guidance must not present a second start-local-dms.ps1 run as a resume mechanism (DMS-1153 AC)"
+ 
+             # The follow-up wrapper hint must carry -NoDataStore: the terminal run already created
+             # the data store, and a plain wrapper re-run creates a duplicate (verified live).
+             $output | Should -Match "bootstrap-local-dms\.ps1\s+-InfraOnly\s+-DmsBaseUrl\s+<url>\s+-NoDataStore" -Because "the continuation hint must reuse the data store the terminal run created, not duplicate it"
+ 
+             # Shared mode must not advertise a topology switch it was not started with.
+             $output | Should -Not -Match "-NoDataStore\s+-SeparateConfigDatabase" -Because "the hint records the topology this run actually used"
+         }
+@@ -1117,24 +1186,25 @@ param(
+             # Inside a wrapper-owned run this script is handed an already-derived -EnvironmentFile and is
+             # deliberately not given the wrapper's -DataStandardVersion, so it cannot describe the input a
+             # fresh wrapper run would compose from. The wrapper prints that command instead.
+             $guidance = @(Get-InfraOnlyTerminalGuidance `
+                 -DatabaseEngine "mssql" `
+                 -EffectiveEnvironmentFile "/repo/eng/docker-compose/.derived/.env.custom.mssql.topology" `
+                 -BaseEnvironmentFile "/repo/eng/docker-compose/.derived/.env.custom.mssql.topology" `
+                 -SeparateConfigDatabase `
+                 -SuppressWrapperContinuationGuidance)
+ 
+             @(Get-PrintedWrapperContinuationArgumentList -Line $guidance).Count |
+                 Should -Be 0 -Because "the wrapper owns this hint and holds the state needed to build it"
++            $guidance | Should -Contain "Infrastructure phase complete. DMS service was not started." -Because "direct InfraOnly guidance remains available for manual phase execution"
+             $guidance -join "`n" | Should -Not -Match "wrapper-managed health-wait" -Because "the preamble must go with the command it introduces"
+             $guidance -join "`n" | Should -Match "configure-local-data-store\.ps1" -Because "the manual phase next-steps are unaffected"
+             $guidance -join "`n" | Should -Match "provision-dms-schema\.ps1"
+         }
+ 
+         It "a wrapper run with a custom base env, a non-default data standard, MSSQL and separate topology advertises exactly one continuation, bound to that state" {
+             # End to end over the pair that produced the contradiction: the wrapper suppresses the start
+             # script's hint (recorded from the real forwarded argument) and prints its own, and the whole
+             # transcript is then searched for EVERY bootstrap-local-dms.ps1 continuation. More than one, or
+             # one that binds to a derived path / the default data standard, fails here.
+             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+             $callLog = Join-Path $script:repo.RepoRoot "call-log-single-hint.txt"
+@@ -1297,25 +1367,25 @@ param(
+             { & $script:repo.WrapperScript `
+                 -EnvironmentFile $script:repo.EnvFile `
+                 -InfraOnly `
+                 -AddSmokeTestCredentials } | Should -Not -Throw
+ 
+             $log = @(Get-Content -LiteralPath $callLog)
+ 
+             # smoke flag forwarded to configure, not to start
+             $log | Should -Contain "configure smoke=True"
+ 
+             # start-infra invocation must NOT carry any DmsBaseUrl
+             $startLine = $log | Where-Object { $_ -like "start-infra*" } | Select-Object -First 1
+-            $startLine | Should -Match "DmsBaseUrl=$"
++            $startLine | Should -Match "DmsBaseUrl= rebuild="
+         }
+     }
+ 
+     # =========================================================================
+     # R4b - Wrapper schema/claims staging phase (claims-completion before infra)
+     #   A schema-only manifest (prepare-dms-schema.ps1 run without prepare-dms-claims.ps1)
+     #   is an incomplete bootstrap state: start-local-dms.ps1 activates staged claims and runs
+     #   the claims-ready gate, both of which require the claims/seed sections. The wrapper must
+     #   complete the claims staging BEFORE any infrastructure side effects rather than letting
+     #   the gate throw after Docker/CMS startup.
+     # =========================================================================
+     Context "wrapper schema/claims staging phase" {
+@@ -1422,25 +1492,25 @@ param(
+             $log = @(Get-Content -LiteralPath $callLog)
+ 
+             # Exactly four entries: start-infra, configure, provision, start-infra-healthwait
+             $log.Count | Should -Be 4
+ 
+             # Order: [0]=start-infra, [1]=configure, [2]=provision, [3]=start-infra-healthwait
+             $log[0] | Should -Match "^start-infra "
+             $log[1] | Should -Match "^configure "
+             $log[2] | Should -Be "provision"
+             $log[3] | Should -Match "^start-infra-healthwait "
+ 
+             # First start invocation must NOT carry a DmsBaseUrl
+-            $log[0] | Should -Match "DmsBaseUrl=$"
++            $log[0] | Should -Match "DmsBaseUrl= rebuild="
+ 
+             # Health-wait invocation must carry the DmsBaseUrl
+             $log[3] | Should -Match "DmsBaseUrl=http://localhost:8080"
+         }
+ 
+         It "with -LoadSeedData, -DmsBaseUrl is forwarded to seed phase after health-wait" {
+             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+             $callLog = Join-Path $script:repo.RepoRoot "call-log-seed.txt"
+             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+             New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+             New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+@@ -2067,25 +2137,25 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
+             $log[0] | Should -Match "DatabaseEngine=mssql"
+             $log[0] | Should -Match ([regex]::Escape("EnvironmentFile=$($script:repo.EnvFile)"))
+         }
+ 
+         It "-d forwards only the compose-shape whitelist; every other declared option stays behind" {
+             # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
+             # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
+             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
+             $forwarded = @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine')
+             $excluded = @(
+                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
+                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
+-                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials',
++                'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials', 'Rebuild',
+                 # -SeparateConfigDatabase changes which database CMS targets, never which compose
+                 # files a teardown must cover: local-config.yml is unconditional in
+                 # start-local-dms.ps1's compose set. So it is excluded, like the other
+                 # non-compose-shaping options.
+                 'SeparateConfigDatabase', 'DataStoreDatabaseName'
+             )
+             $rejectedCdc = @('EnableKafkaCdc', 'CdcSettingsPath', 'CdcBindingStatePath')
+ 
+             # Completeness guard: every parameter the entry script declares must be classified here
+             # as a teardown switch, forwarded, or excluded (and bound below), so a new parameter
+             # fails this assertion and forces an explicit forwarding decision.
+             $declared = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
+@@ -2102,24 +2172,25 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
+                 -LoadSeedData `
+                 -SeedTemplate Minimal `
+                 -SeedDataPath (Join-Path $script:repo.RepoRoot "seed-data") `
+                 -AdditionalNamespacePrefix "uri://example.org" `
+                 -SchoolYearRange "2025-2026" `
+                 -DataStandardVersion 6.1 `
+                 -InfraOnly `
+                 -DmsBaseUrl "http://localhost:5198" `
+                 -EnableConfig `
+                 -AddExtensionSecurityMetadata `
+                 -NoDataStore `
+                 -AddSmokeTestCredentials `
++                -Rebuild `
+                 -SeparateConfigDatabase `
+                 -DataStoreDatabaseName ignored_by_teardown `
+                 -d
+ 
+             $log = @(Get-Content -LiteralPath $callLog)
+ 
+             $log.Count | Should -Be 1
+             $log[0] | Should -Match 'Rest=$' -Because "no argument outside the compose-shape whitelist may reach start-local-dms.ps1 teardown"
+         }
+     }
+ 
+     Context "bootstrap-local-dms.ps1 teardown fail-fast validation (DMS-1272)" {
+@@ -2759,24 +2830,52 @@ Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separ
+                 Should -Contain "engine=$_ separate=True" -Because "the start script must receive both the engine and the topology switch the public wrapper was invoked with"
+         }
+ 
+         It "bootstrap-published-dms.ps1 does not forward -SeparateConfigDatabase when it was not requested, for <_>" -ForEach @('postgresql', 'mssql') {
+             $script:publishedForwardRepo = New-PublishedForwardProbeRepo
+ 
+             & $script:publishedForwardRepo.WrapperScript -DatabaseEngine $_ *>&1 | Out-Null
+ 
+             @(Get-Content -LiteralPath $script:publishedForwardRepo.ForwardLogPath) |
+                 Should -Contain "engine=$_ separate=False" -Because "shared mode must remain the default all the way through the public wrapper"
+         }
+     }
++
++    Context "getting-started local bootstrap guidance (DMS-1427)" {
++        BeforeAll {
++            $script:gettingStarted = Get-Content -LiteralPath (
++                Join-Path $script:sourceRepoRoot "GETTING_STARTED.md"
++            ) -Raw
++        }
++
++        It "documents the normal wrapper and explicit local-image rebuild commands" {
++            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1'
++            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1\s+-Rebuild'
++            $script:gettingStarted | Should -Match '(?is)`-Rebuild`.{0,100}`-r`\s+alias'
++        }
++
++        It "documents the Discovery-to-DMS HTTP Basic token flow" {
++            $script:gettingStarted | Should -Match '(?i)Discovery'
++            $script:gettingStarted | Should -Match '(?i)urls\.oauth'
++            $script:gettingStarted | Should -Match '(?i)Authorization:\s*Basic'
++            $script:gettingStarted | Should -Match 'grant_type=client_credentials'
++            $script:gettingStarted | Should -Not -Match '(?is)(?:DMS|proxy).{0,500}client_id\s*=.*client_secret\s*='
++        }
++
++        It "retains phase-level commands without adding historical upgrade guidance" {
++            $script:gettingStarted | Should -Match 'start-local-dms\.ps1'
++            $script:gettingStarted | Should -Match 'configure-local-data-store\.ps1'
++            $script:gettingStarted | Should -Not -Match '(?i)\b(?:migration|pre-release|prerelease|reset)\b'
++        }
++    }
+ }
+ 
+ # Unload exactly the module instances staged under the workspaces THIS run created and
+ # recorded - the roots in $script:ownedWorkspaceRoot - and nothing else. Containment respects
+ # directory boundaries (exact root, or root plus a separator), so a lookalike sibling such as
+ # '<owned-root>-other' or a caller's own 'dms-1153-*' directory never matches. The staged
+ # instances are usually NESTED inside a staged wrapper module, so enumeration must be
+ # Get-Module -All. Cleanup failure is loud: owned residue fails this suite with the surviving
+ # paths named, because later suites that bind -ModuleName mocks would otherwise fail on state
+ # this file left behind.
+ AfterAll {
+     $ownedRoots = @($script:ownedWorkspaceRoot | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+diff --git a/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1 b/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1
+index f4563b7e..b8e7cf2e 100644
+--- a/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1
++++ b/eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1
+@@ -2081,24 +2081,32 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
+         }
+ 
+         It "Format-LogSafePath preserves printable path characters and strips only control characters" {
+             . $script:repo.ProvisionScript
+ 
+             # Spaces, parentheses, '#', hyphens, and backslashes are all path-legal and must survive.
+             Format-LogSafePath 'C:\Program Files (x86)\Ed-Fi\Api #1' | Should -Be 'C:\Program Files (x86)\Ed-Fi\Api #1'
+             Format-LogSafePath '/srv/ed fi/api (staging)/schema#2.json' | Should -Be '/srv/ed fi/api (staging)/schema#2.json'
+             # Tabs, carriage returns, and newlines are control characters and are removed.
+             Format-LogSafePath "a`tb`r`nc" | Should -Be "abc"
+         }
+ 
++        It "uses the path-safe formatter for the prepared workspace log" {
++            $prepareSchemaPath = Join-Path $script:sourceDockerComposeRoot "prepare-dms-schema.ps1"
++            $content = Get-Content -LiteralPath $prepareSchemaPath -Raw
++
++            $content | Should -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafePath \$finalWorkspace\)'
++            $content | Should -Not -Match 'Prepared ApiSchema workspace at \$\(Format-LogSafeText \$finalWorkspace\)'
++        }
++
+         It "guidance preserves backslashes in Windows-style staged paths" {
+             . $script:repo.ProvisionScript
+ 
+             $schemaWorkspace = [pscustomobject]@{
+                 BootstrapManifestPath = "C:\work\.bootstrap\bootstrap-manifest.json"
+                 ApiSchemaManifestPath = "C:\work\.bootstrap\ApiSchema\bootstrap-api-schema-manifest.json"
+                 CoreSchemaPath = "C:\work\.bootstrap\ApiSchema\schemas\Ed-Fi\ApiSchema.json"
+                 ExtensionSchemaPaths = [string[]]@()
+                 EffectiveSchemaHash = "hash-xyz"
+                 WorkspaceFingerprint = "fp"
+             }
+ 
+diff --git a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs
+index 6e82479c..bafe72bd 100644
+--- a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs
++++ b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/ChangeQueriesMetadataIntegrationTests.cs
+@@ -1,65 +1,87 @@
+ // SPDX-License-Identifier: Apache-2.0
+ // Licensed to the Ed-Fi Alliance under one or more agreements.
+ // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ // See the LICENSE and NOTICES files in the project root for more information.
+ 
+ using System.Net;
+ using System.Text.Json.Nodes;
+ using EdFi.DataManagementService.Core.ApiSchema;
++using EdFi.DataManagementService.Core.Configuration;
+ using EdFi.DataManagementService.Core.External.Model;
+ using EdFi.DataManagementService.Core.Profile;
+ using FakeItEasy;
+ using FluentAssertions;
+ using Microsoft.AspNetCore.Hosting;
+ using Microsoft.AspNetCore.Mvc.Testing;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using Microsoft.Extensions.DependencyInjection.Extensions;
+ using NUnit.Framework;
+ using static EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.OpenApi.ChangeQueriesOpenApiDocumentTestHelper;
+ 
+ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
+ 
+ [TestFixture]
+ [NonParallelizable]
+ public class Given_real_ApiSchema_change_queries_metadata
+ {
+     private const string AuthenticationService = "https://auth.example.org/oauth/token";
+ 
+-    [Test]
+-    public async Task It_serves_the_core_standalone_document_with_server_and_security_metadata()
++    [TestCase(false, "http://localhost/changeQueries/v1", "http://localhost/oauth/token")]
++    [TestCase(
++        true,
++        "http://localhost/dms-api/{tenant}/{districtId}/{schoolYear}/changeQueries/v1",
++        "http://localhost/dms-api/tenant-a/255901/2026/oauth/token"
++    )]
++    public async Task It_serves_the_core_standalone_document_with_server_and_security_metadata(
++        bool qualified,
++        string expectedServerUrl,
++        string expectedTokenUrl
++    )
+     {
+         await using var factory = CreateFactory(
+-            CreateApiSchemaNodes(coreChangeQueries: true, extensionChangeQueries: false)
++            CreateApiSchemaNodes(coreChangeQueries: true, extensionChangeQueries: false),
++            qualified
++                ? new Dictionary<string, string?>
++                {
++                    ["AppSettings:PathBase"] = "dms-api",
++                    ["AppSettings:MultiTenancy"] = "true",
++                    ["AppSettings:RouteQualifierSegments"] = "districtId,schoolYear",
++                }
++                : null
+         );
+         using var client = factory.CreateClient();
+ 
+-        var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
++        var response = await client.GetAsync(
++            qualified
++                ? "/dms-api/tenant-a/255901/2026/metadata/changequeries/v1/swagger.json"
++                : "/metadata/changequeries/v1/swagger.json"
++        );
+         string content = await response.Content.ReadAsStringAsync();
+         JsonNode json = JsonNode.Parse(content)!;
+ 
+         response.StatusCode.Should().Be(HttpStatusCode.OK);
+         json["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Change Queries API");
+         json["paths"]!["/availableChangeVersions"]!["get"]!["summary"]!
+             .GetValue<string>()
+             .Should()
+             .Be("Core available change versions");
+-        json["servers"]![0]!["url"]!.GetValue<string>().Should().Be("http://localhost/changeQueries/v1");
++        json["servers"]![0]!["url"]!.GetValue<string>().Should().Be(expectedServerUrl);
+         json["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]!["clientCredentials"]![
+             "tokenUrl"
+         ]!
+             .GetValue<string>()
+             .Should()
+-            .Be(AuthenticationService);
++            .Be(expectedTokenUrl);
+         json["security"]!.AsArray().Should().ContainSingle();
+     }
+ 
+     [Test]
+     public async Task It_starts_and_omits_change_queries_metadata_when_the_core_document_is_missing()
+     {
+         await using var factory = CreateFactory(
+             CreateApiSchemaNodes(coreChangeQueries: false, extensionChangeQueries: false)
+         );
+         using var client = factory.CreateClient();
+ 
+         var specificationsResponse = await client.GetAsync("/metadata/specifications");
+@@ -145,24 +167,44 @@ public class Given_real_ApiSchema_change_queries_metadata
+                     );
+ 
+                     if (configuration is not null)
+                     {
+                         configurationBuilder.AddInMemoryCollection(configuration);
+                     }
+                 }
+             );
+             builder.ConfigureServices(services =>
+             {
+                 TestMockHelper.AddEssentialMocks(services);
+ 
++                var dataStoreProvider = A.Fake<IDataStoreProvider>();
++                var dataStore = new DataStore(
++                    1,
++                    "Test",
++                    "TestInstance",
++                    "test-connection-string",
++                    new Dictionary<RouteQualifierName, RouteQualifierValue>
++                    {
++                        [new("districtId")] = new("255901"),
++                        [new("schoolYear")] = new("2026"),
++                    }
++                );
++                A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).Returns([dataStore]);
++                A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
++                    .Returns([dataStore]);
++                A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(["tenant-a"]);
++                A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys()).Returns(["tenant-a"]);
++                A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>._)).Returns(true);
++                services.Replace(ServiceDescriptor.Singleton(dataStoreProvider));
++
+                 services.Replace(ServiceDescriptor.Singleton(CreateApiSchemaProvider(apiSchemaNodes)));
+ 
+                 var profileService = A.Fake<IProfileService>();
+                 A.CallTo(() => profileService.GetProfileNamesAsync(A<string?>._))
+                     .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+                 services.Replace(ServiceDescriptor.Singleton(profileService));
+             });
+         });
+     }
+ 
+     private static IApiSchemaProvider CreateApiSchemaProvider(ApiSchemaDocumentNodes apiSchemaNodes)
+     {
+diff --git a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs
+index 4cd87a85..9546d34b 100644
+--- a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs
++++ b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Modules/MetaDataModuleTests.cs
+@@ -55,24 +55,283 @@ public class MetadataModuleTests
+     )
+     {
+         var options = new FrontendAppSettings
+         {
+             AuthenticationService = "http://localhost/oauth",
+             CorrelationIdHeader = "X-Correlation-Id",
+             Datastore = "postgresql",
+         };
+         configure?.Invoke(options);
+         return Options.Create(options);
+     }
+ 
++    [TestFixture]
++    public class Given_OpenApi_documents_with_internal_authentication_urls
++    {
++        [TestCase("section", false, "http://localhost/dms-api/{section}/oauth/token")]
++        [TestCase("profileName", false, "http://localhost/dms-api/{profileName}/oauth/token")]
++        [TestCase("section", true, "http://localhost/dms-api/255901/oauth/token")]
++        [TestCase("profileName", true, "http://localhost/dms-api/255901/oauth/token")]
++        public async Task It_distinguishes_mapped_endpoint_parameters_from_route_qualifiers(
++            string qualifierName,
++            bool qualified,
++            string expectedTokenUrl
++        )
++        {
++            bool discovery = qualifierName is "section";
++            string endpointPattern = discovery
++                ? "/metadata/specifications/{section}-spec.json"
++                : "/metadata/specifications/profiles/{profileName}/resources-spec.json";
++            if (qualified)
++            {
++                endpointPattern = "/{__metadataRouteQualifier0}" + endpointPattern;
++            }
++            var context = CreateHttpContext("/metadata/specifications", "/dms-api");
++            context.SetEndpoint(
++                new RouteEndpoint(
++                    _ => Task.CompletedTask,
++                    RoutePatternFactory.Parse(endpointPattern),
++                    0,
++                    EndpointMetadataCollection.Empty,
++                    "Metadata"
++                )
++            );
++            context.Request.RouteValues[qualifierName] = discovery ? "discovery" : "StudentProfile";
++            if (qualified)
++            {
++                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
++            }
++
++            var options = FrontendOptions(settings => settings.RouteQualifierSegments = qualifierName);
++            var dataStoreProvider = A.Fake<IDataStoreProvider>();
++            JsonNode document = JsonNode.Parse(
++                """
++                {
++                  "openapi": "3.0.0",
++                  "components": {
++                    "securitySchemes": {
++                      "oauth2_client_credentials": {
++                        "type": "oauth2",
++                        "flows": {
++                          "clientCredentials": {
++                            "tokenUrl": "https://internal-auth.example/oauth/token",
++                            "scopes": {}
++                          }
++                        }
++                      }
++                    }
++                  }
++                }
++                """
++            )!;
++            if (discovery)
++            {
++                var contentProvider = A.Fake<IContentProvider>();
++                A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
++                    .Returns(document);
++                await MetadataEndpointModule.GetSectionMetadata(
++                    context,
++                    contentProvider,
++                    options,
++                    dataStoreProvider
++                );
++            }
++            else
++            {
++                var apiService = A.Fake<IApiService>();
++                A.CallTo(() =>
++                        apiService.GetProfileOpenApiSpecificationAsync(
++                            "StudentProfile",
++                            A<string?>._,
++                            A<JsonArray>._
++                        )
++                    )
++                    .Returns(Task.FromResult<JsonNode?>(document));
++                await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
++                    context,
++                    "StudentProfile",
++                    dataStoreProvider,
++                    apiService,
++                    options
++                );
++            }
++
++            JsonNode response = (await ReadJsonResponseAsync(context))!;
++            response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
++                "clientCredentials"
++            ]!["tokenUrl"]!
++                .GetValue<string>()
++                .Should()
++                .Be(expectedTokenUrl);
++        }
++
++        [TestCase("resources")]
++        [TestCase("descriptors")]
++        [TestCase("changeQueries")]
++        [TestCase("profiles")]
++        [TestCase("discovery")]
++        public async Task It_advertises_each_request_proxy_without_mutating_the_shared_document(
++            string section
++        )
++        {
++            JsonNode sharedDocument = JsonNode.Parse(
++                """
++                {
++                  "openapi": "3.0.0",
++                  "components": {
++                    "securitySchemes": {
++                      "oauth2_client_credentials": {
++                        "type": "oauth2",
++                        "flows": {
++                          "clientCredentials": {
++                            "tokenUrl": "https://internal-auth.example/oauth/token",
++                            "scopes": {}
++                          }
++                        }
++                      }
++                    }
++                  },
++                  "security": [{ "oauth2_client_credentials": [] }]
++                }
++                """
++            )!;
++            string originalDocument = sharedDocument.ToJsonString();
++            var apiService = A.Fake<IApiService>();
++            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
++                .Returns(sharedDocument);
++            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
++                .Returns(sharedDocument);
++            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
++                .Returns(sharedDocument);
++            A.CallTo(() =>
++                    apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
++                )
++                .Returns(Task.FromResult<JsonNode?>(sharedDocument));
++            var contentProvider = A.Fake<IContentProvider>();
++            A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
++                .Returns(sharedDocument);
++            var dataStoreProvider = A.Fake<IDataStoreProvider>();
++
++            foreach (bool qualified in new[] { false, true, false })
++            {
++                var context = CreateHttpContext("/metadata/specifications", qualified ? "/dms-api" : "");
++                context.Request.Scheme = "https";
++                context.Request.Host = new HostString("api.example.org", 8443);
++                context.Request.RouteValues["section"] = "discovery";
++                var options = FrontendOptions(settings =>
++                {
++                    settings.MultiTenancy = qualified;
++                    settings.RouteQualifierSegments = qualified ? "districtId,schoolYear" : "";
++                });
++                if (qualified)
++                {
++                    context.Request.RouteValues["tenant"] = "tenant-a";
++                    context.Request.RouteValues["districtId"] = "255901";
++                    context.Request.RouteValues["schoolYear"] = "2026";
++                }
++
++                await (
++                    section switch
++                    {
++                        "resources" => MetadataEndpointModule.GetResourceOpenApiSpec(
++                            context,
++                            apiService,
++                            dataStoreProvider,
++                            options
++                        ),
++                        "descriptors" => MetadataEndpointModule.GetDescriptorOpenApiSpec(
++                            context,
++                            apiService,
++                            dataStoreProvider,
++                            options
++                        ),
++                        "changeQueries" => MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
++                            context,
++                            apiService,
++                            dataStoreProvider,
++                            options
++                        ),
++                        "profiles" => MetadataEndpointModule.GetProfileResourceOpenApiSpec(
++                            context,
++                            "StudentProfile",
++                            dataStoreProvider,
++                            apiService,
++                            options
++                        ),
++                        _ => MetadataEndpointModule.GetSectionMetadata(
++                            context,
++                            contentProvider,
++                            options,
++                            dataStoreProvider
++                        ),
++                    }
++                );
++                JsonNode response = (await ReadJsonResponseAsync(context))!;
++                response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
++                    "clientCredentials"
++                ]!["tokenUrl"]!
++                    .GetValue<string>()
++                    .Should()
++                    .Be(
++                        qualified
++                            ? "https://api.example.org:8443/dms-api/tenant-a/255901/2026/oauth/token"
++                            : "https://api.example.org:8443/oauth/token"
++                    );
++                response["security"]!.ToJsonString().Should().Be(sharedDocument["security"]!.ToJsonString());
++                sharedDocument.ToJsonString().Should().Be(originalDocument);
++            }
++        }
++
++        [TestCase(false, "http://localhost/oauth/token")]
++        [TestCase(true, "http://localhost/dms-api/tenant-a/255901/2026/oauth/token")]
++        public async Task It_supplies_the_public_proxy_url_to_file_backed_discovery(
++            bool qualified,
++            string expectedTokenUrl
++        )
++        {
++            string workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
++            try
++            {
++                FileModeWorkspaceBuilder.BuildWorkspace(workspaceRoot);
++                var (provider, _) = FileModeWorkspaceBuilder.BuildProvider(workspaceRoot);
++                var context = CreateHttpContext(
++                    "/metadata/specifications/discovery-spec.json",
++                    qualified ? "/dms-api" : ""
++                );
++                context.Request.RouteValues["section"] = "discovery";
++                context.Request.RouteValues["tenant"] = "tenant-a";
++                context.Request.RouteValues["districtId"] = "255901";
++                context.Request.RouteValues["schoolYear"] = "2026";
++
++                await MetadataEndpointModule.GetSectionMetadata(
++                    context,
++                    provider,
++                    FrontendOptions(settings =>
++                    {
++                        settings.MultiTenancy = qualified;
++                        settings.RouteQualifierSegments = qualified ? "districtId,schoolYear" : "";
++                    }),
++                    A.Fake<IDataStoreProvider>()
++                );
++
++                JsonNode response = (await ReadJsonResponseAsync(context))!;
++                response["token"]!.GetValue<string>().Should().Be(expectedTokenUrl);
++            }
++            finally
++            {
++                Directory.Delete(workspaceRoot, recursive: true);
++            }
++        }
++    }
++
+     [TestFixture]
+     public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
+     {
+         [TestCase("/tenant1/metadata")]
+         [TestCase("/tenant1/metadata/dependencies")]
+         [TestCase("/tenant1/metadata/specifications")]
+         public async Task It_returns_not_found_instead_of_matching_discovery(string requestPath)
+         {
+             // Arrange
+             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+             {
+                 builder.UseEnvironment("Test");
+diff --git a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/DiscoveryEndpointModule.cs b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/DiscoveryEndpointModule.cs
+index 3d38da11..dcb3887d 100644
+--- a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/DiscoveryEndpointModule.cs
++++ b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/DiscoveryEndpointModule.cs
+@@ -1,24 +1,25 @@
+ // SPDX-License-Identifier: Apache-2.0
+ // Licensed to the Ed-Fi Alliance under one or more agreements.
+ // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ // See the LICENSE and NOTICES files in the project root for more information.
+ 
+ using System.Net;
+ using System.Text.Json.Nodes;
+ using EdFi.DataManagementService.Core.External.Interface;
+ using EdFi.DataManagementService.Core.External.Model;
+ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+ using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
++using Microsoft.AspNetCore.Routing;
+ using Microsoft.Extensions.Options;
+ 
+ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+ 
+ /// <summary>
+ /// Provides the Discovery API endpoint that returns metadata about the data store,
+ /// including version information, data models, and available API URLs.
+ /// </summary>
+ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointModule
+ {
+     /// <summary>
+     /// Maps the discovery endpoint to the root path and optionally with tenant and route qualifiers.
+@@ -166,27 +167,28 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
+         {
+             return tenant;
+         }
+         return null;
+     }
+ 
+     /// <summary>
+     /// Builds the route qualifier prefix for URLs.
+     /// When multi-tenancy is enabled, includes tenant as the first segment.
+     /// If segments are present in the request, uses actual values.
+     /// If segments are not present in request, uses placeholders.
+     /// </summary>
+-    private static string BuildRouteQualifierPrefix(
++    internal static string BuildRouteQualifierPrefix(
+         HttpContext httpContext,
+-        IOptions<AppSettings> appSettings
++        IOptions<AppSettings> appSettings,
++        bool useMetadataRouteValues = false
+     )
+     {
+         string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
+         bool multiTenancy = appSettings.Value.MultiTenancy;
+ 
+         List<string> prefixSegments = [];
+ 
+         // Add tenant segment if multi-tenancy is enabled
+         if (multiTenancy)
+         {
+             if (
+                 httpContext.Request.RouteValues.TryGetValue("tenant", out object? tenantValue)
+@@ -194,28 +196,39 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
+                 && !string.IsNullOrWhiteSpace(tenant)
+             )
+             {
+                 prefixSegments.Add(tenant);
+             }
+             else
+             {
+                 prefixSegments.Add("{tenant}");
+             }
+         }
+ 
+         // Add route qualifier segments
+-        foreach (string segmentName in routeQualifierSegments)
++        for (int index = 0; index < routeQualifierSegments.Length; index++)
+         {
++            string segmentName = routeQualifierSegments[index];
++            // Metadata routes use positional aliases to avoid collisions with endpoint parameters.
++            // On mapped routes, absent aliases mean an unqualified request, not named qualifiers.
++            string routeValueName =
++                useMetadataRouteValues
++                && (
++                    httpContext.GetEndpoint() is RouteEndpoint
++                    || httpContext.Request.RouteValues.ContainsKey($"__metadataRouteQualifier{index}")
++                )
++                    ? $"__metadataRouteQualifier{index}"
++                    : segmentName;
+             if (
+-                httpContext.Request.RouteValues.TryGetValue(segmentName, out object? value)
++                httpContext.Request.RouteValues.TryGetValue(routeValueName, out object? value)
+                 && value is string stringValue
+                 && !string.IsNullOrWhiteSpace(stringValue)
+             )
+             {
+                 // Use actual value from route
+                 prefixSegments.Add(stringValue);
+             }
+             else
+             {
+                 // Use placeholder
+                 prefixSegments.Add($"{{{segmentName}}}");
+             }
+diff --git a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs
+index 9f1be774..2f34f64a 100644
+--- a/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs
++++ b/src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/MetadataEndpointModule.cs
+@@ -16,24 +16,55 @@ using EdFi.DataManagementService.Core.External.Model;
+ using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+ using Microsoft.Extensions.Options;
+ using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
+ 
+ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+ 
+ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSettings) : IEndpointModule
+ {
+     private const string DataOpenApiRouteBase = "data";
+     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
+ 
++    private static string GetPublicOAuthTokenUrl(
++        HttpContext httpContext,
++        IOptions<FrontendAppSettings> appSettings
++    )
++    {
++        string prefix = DiscoveryEndpointModule.BuildRouteQualifierPrefix(
++            httpContext,
++            appSettings,
++            useMetadataRouteValues: true
++        );
++        return $"{httpContext.Request.RootUrl()}{prefix}/oauth/token";
++    }
++
++    private static JsonNode WithPublicOAuthTokenUrl(JsonNode content, string tokenUrl)
++    {
++        JsonNode response = content.DeepClone();
++        if (
++            response["components"]
++                ?["securitySchemes"]
++                ?["oauth2_client_credentials"]
++                ?["flows"]
++                ?["clientCredentials"]
++            is JsonObject clientCredentials
++        )
++        {
++            clientCredentials["tokenUrl"] = tokenUrl;
++        }
++
++        return response;
++    }
++
+     /// <summary>
+     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
+     /// </summary>
+     private static JsonArray GetServers(
+         HttpContext httpContext,
+         IDataStoreProvider dataStoreProvider,
+         IOptions<FrontendAppSettings> appSettings,
+         string openApiRouteBase
+     )
+     {
+         string baseUrl = httpContext.Request.RootUrl();
+ 
+@@ -496,61 +527,67 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
+         }
+     }
+ 
+     internal static async Task GetResourceOpenApiSpec(
+         HttpContext httpContext,
+         IApiService apiService,
+         IDataStoreProvider dataStoreProvider,
+         IOptions<FrontendAppSettings> appSettings
+     )
+     {
+         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
+         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
+-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
++        await httpContext.Response.WriteAsSerializedJsonAsync(
++            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
++        );
+     }
+ 
+     internal static async Task GetDescriptorOpenApiSpec(
+         HttpContext httpContext,
+         IApiService apiService,
+         IDataStoreProvider dataStoreProvider,
+         IOptions<FrontendAppSettings> appSettings
+     )
+     {
+         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
+         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
+-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
++        await httpContext.Response.WriteAsSerializedJsonAsync(
++            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
++        );
+     }
+ 
+     internal static async Task GetChangeQueriesOpenApiSpec(
+         HttpContext httpContext,
+         IApiService apiService,
+         IDataStoreProvider dataStoreProvider,
+         IOptions<FrontendAppSettings> appSettings
+     )
+     {
+         JsonArray servers = GetServers(
+             httpContext,
+             dataStoreProvider,
+             appSettings,
+             ChangeQueriesOpenApiRouteBase
+         );
+         JsonNode? content = apiService.GetChangeQueriesOpenApiSpecification(servers);
+ 
+         if (content is null)
+         {
+             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+             return;
+         }
+ 
+-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
++        await httpContext.Response.WriteAsSerializedJsonAsync(
++            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
++        );
+     }
+ 
+     /// <summary>
+     /// Returns resource OpenAPI spec for a specific profile (cached).
+     /// </summary>
+     internal static async Task GetProfileResourceOpenApiSpec(
+         HttpContext httpContext,
+         string profileName,
+         IDataStoreProvider dataStoreProvider,
+         IApiService apiService,
+         IOptions<FrontendAppSettings> appSettings
+     )
+@@ -561,25 +598,27 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
+         JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
+             profileName,
+             tenant,
+             servers
+         );
+ 
+         if (content is null)
+         {
+             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+             return;
+         }
+ 
+-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
++        await httpContext.Response.WriteAsSerializedJsonAsync(
++            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
++        );
+     }
+ 
+     internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
+     {
+         var baseUrl = httpContext.Request.UrlWithPathSegment();
+         List<RouteInformation> sections = [];
+         foreach (var section in _sections)
+         {
+             sections.Add(
+                 new RouteInformation(
+                     section.name,
+                     $"{baseUrl}/{section.name.ToLower()}-spec.json",
+@@ -633,34 +672,37 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
+         if (
+             !httpContext.Request.RouteValues.TryGetValue("section", out object? sectionValue)
+             || sectionValue is not string sectionValueString
+             || string.IsNullOrWhiteSpace(sectionValueString)
+         )
+         {
+             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+             await httpContext.Response.WriteAsync(_errorResourcePath);
+             return;
+         }
+ 
+         string section = sectionValueString.ToLowerInvariant();
+-        string? rootUrl = httpContext.Request.RootUrl();
+-        string oAuthUrl = options.Value.AuthenticationService;
++        string rootUrl = httpContext.Request.RootUrl();
++        string oAuthUrl = GetPublicOAuthTokenUrl(httpContext, options);
+         if (
+             Array.Exists(
+                 _sections,
+                 x => x.name.ToLowerInvariant().Equals(section, StringComparison.InvariantCultureIgnoreCase)
+             )
+         )
+         {
+-            var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
++            JsonNode content = WithPublicOAuthTokenUrl(
++                contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl),
++                oAuthUrl
++            );
+             content["servers"] = GetServers(httpContext, dataStoreProvider, options, DataOpenApiRouteBase);
+             await httpContext.Response.WriteAsSerializedJsonAsync(content);
+         }
+         else
+         {
+             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+             await httpContext.Response.WriteAsync(_errorResourcePath);
+         }
+     }
+ }
+ 
+ public record RouteInformation(string name, string endpointUri, string prefix);

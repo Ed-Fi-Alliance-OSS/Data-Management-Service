@@ -96,6 +96,14 @@ default (PostgreSQL) compose file and will not remove the other engine's named d
 ./bootstrap-local-dms.ps1 -d -v
 ```
 
+Teardown does not remove locally built images, so the turnkey start reuses them by default. After
+updating the checkout, pass `-Rebuild` (alias `-r`) to rebuild the local images before the
+infrastructure starts:
+
+```pwsh
+./bootstrap-local-dms.ps1 -Rebuild
+```
+
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
