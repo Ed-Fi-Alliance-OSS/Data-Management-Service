@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -1487,16 +1488,32 @@ public class RevocationOwnershipTests
         return new JwtSecurityTokenHandler().WriteToken(jwt);
     }
 
+    /// <summary>
+    /// The real manager, reading its keys through a real snapshot provider over the faked repository. The provider
+    /// and the certificate store are left to the collector: idle, neither holds anything a test run needs released.
+    /// </summary>
     private static OpenIddictTokenManager CreateTokenManager(
         IOpenIddictTokenRepository tokenRepository,
         IClientSecretHasher secretHasher
-    ) =>
-        new(
-            Options.Create(new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
+    )
+    {
+        IOptions<OpenIddictIdentityOptions> options = Options.Create(
+            new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }
+        );
+        return new(
+            options,
             NullLogger<OpenIddictTokenManager>.Instance,
             secretHasher,
-            tokenRepository
+            tokenRepository,
+            new SigningKeySnapshotProvider(
+                new DatabaseSigningKeySource(tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
+                options,
+                TimeProvider.System,
+                NullLogger<SigningKeySnapshotProvider>.Instance
+            ),
+            new DevelopmentCertificateStore(options, NullLogger<DevelopmentCertificateStore>.Instance)
         );
+    }
 
     /// <summary>
     /// Registers <paramref name="clientId"/> as a real, approved application so
@@ -1638,7 +1655,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -1690,7 +1707,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -1749,7 +1766,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2025,7 +2042,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2079,7 +2096,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, _) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {

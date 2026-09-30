@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -21,18 +22,25 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
     /// <summary>
     /// Database-agnostic implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
     /// Uses IOpenIddictTokenRepository for database operations to support multiple database providers.
+    /// Verification keys come from the shared signing-key snapshot (DMS-1556 D-1), never from a per-call key read, and the
+    /// development certificate is obtained from the shared <see cref="DevelopmentCertificateStore"/> (D-10).
     /// </summary>
     public class OpenIddictTokenManager(
         IOptions<IdentityOptions> identityOptions,
         ILogger<OpenIddictTokenManager> logger,
         IClientSecretHasher secretHasher,
-        IOpenIddictTokenRepository tokenRepository
+        IOpenIddictTokenRepository tokenRepository,
+        ISigningKeySnapshotProvider signingKeyProvider,
+        DevelopmentCertificateStore developmentCertificateStore
     ) : ITokenManager, ITokenRevocationManager
     {
         private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
         private readonly ILogger<OpenIddictTokenManager> _logger = logger;
         private readonly IClientSecretHasher _secretHasher = secretHasher;
         private readonly IOpenIddictTokenRepository _tokenRepository = tokenRepository;
+        private readonly ISigningKeySnapshotProvider _signingKeyProvider = signingKeyProvider;
+        private readonly DevelopmentCertificateStore _developmentCertificateStore =
+            developmentCertificateStore;
 
         /// <summary>
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
@@ -75,33 +83,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         {
             if (_identityOptions.Value.UseDevelopmentCertificates)
             {
-                var certPath = _identityOptions.Value.DevCertificatePath;
-                var certPassword = _identityOptions.Value.DevCertificatePassword;
-                X509Certificate2 cert;
-                if (!System.IO.File.Exists(certPath))
-                {
-                    using var rsa = RSA.Create(2048);
-                    var certRequest = new CertificateRequest(
-                        "CN=DevCert",
-                        rsa,
-                        System.Security.Cryptography.HashAlgorithmName.SHA256,
-                        System.Security.Cryptography.RSASignaturePadding.Pkcs1
-                    );
-                    cert = certRequest.CreateSelfSigned(
-                        DateTimeOffset.UtcNow.AddDays(-1),
-                        DateTimeOffset.UtcNow.AddYears(1)
-                    );
-                    var bytes = cert.Export(X509ContentType.Pfx, certPassword);
-                    await System.IO.File.WriteAllBytesAsync(certPath, bytes);
-                }
-                else
-                {
-                    cert = X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
-                }
+                // The shared store is the only code that creates the development certificate, so the key id issued
+                // here is always the thumbprint the validation snapshot publishes (I-10), even on a first start where
+                // the refresh service and this mint race to create the file.
+                X509Certificate2 cert = await _developmentCertificateStore.GetAsync(CancellationToken.None);
                 var signingKey = new X509SecurityKey(cert);
-                return await Task.FromResult(
-                    new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint }
-                );
+                return new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint };
             }
             else
             {
@@ -443,18 +430,28 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Verifies a token's signature, issuer, audience and lifetime against the currently
-        /// active public keys, returning the parsed token, or <c>null</c> when it fails.
+        /// Verifies a token's signature, issuer, audience and lifetime against the signing-key
+        /// snapshot, returning the parsed token, or <c>null</c> when it fails. A token whose
+        /// <c>kid</c> the snapshot lacks gets one gated unknown-key refresh first (spec §4.4);
+        /// when that refresh is refused or finds nothing, verification fails as for any unknown key.
         ///
         /// Shared by <see cref="ValidateTokenAsync"/> and <see cref="RevokeTokenAsync"/>, which
         /// apply different database status gates afterwards — do not move a status check in here.
         /// </summary>
+        /// <exception cref="SigningKeysUnavailableException">No usable snapshot exists.</exception>
         private async Task<TokenVerification> VerifyTokenAsync(string rawToken)
         {
-            var publicKeys = await GetPublicKeysAsync();
-            var signingKeys = publicKeys.ToDictionary(
-                k => k.KeyId,
-                k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
+            SigningKeySnapshot snapshot = await _signingKeyProvider.GetUsableAsync(CancellationToken.None);
+
+            string? keyId = ReadKeyId(rawToken);
+            if (!string.IsNullOrEmpty(keyId) && !snapshot.ContainsKeyId(keyId))
+            {
+                snapshot = await RefreshForUnknownKeyAsync(snapshot, keyId);
+            }
+
+            var signingKeys = snapshot.Keys.ToDictionary(
+                entry => entry.KeyId,
+                entry => entry.CreateSecurityKey()
             );
 
             var verification = JwtTokenValidator.ValidateToken(
@@ -480,6 +477,74 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             }
 
             return verification;
+        }
+
+        /// <summary>
+        /// Asks the provider for one unknown-key refresh, which it admits at most once per cooldown and only when the
+        /// retry gate is open, and returns the snapshot to verify against: the one current after the decision, or the
+        /// caller's when there is none.
+        /// </summary>
+        private async Task<SigningKeySnapshot> RefreshForUnknownKeyAsync(
+            SigningKeySnapshot snapshot,
+            string keyId
+        )
+        {
+            SigningKeyUnknownKeyOutcome outcome = await _signingKeyProvider.TryRefreshForUnknownKeyAsync(
+                keyId,
+                CancellationToken.None
+            );
+
+            _logger.LogWarning(
+                "Token key id {KeyId} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}",
+                LoggingUtility.SanitizeForLog(keyId),
+                outcome
+            );
+
+            return _signingKeyProvider.Current ?? snapshot;
+        }
+
+        /// <summary>
+        /// The <c>kid</c> header of a token, read without any validation, or <c>null</c> when the token cannot be
+        /// parsed; <see cref="JwtTokenValidator"/> then rejects it.
+        /// </summary>
+        private static string? ReadKeyId(string rawToken)
+        {
+            var handler = new JwtSecurityTokenHandler();
+            if (!handler.CanReadToken(rawToken))
+            {
+                return null;
+            }
+
+            try
+            {
+                return handler.ReadJwtToken(rawToken).Header.Kid;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Reads a token's status. A store failure is not a verdict on the token, so it becomes the typed dependency
+        /// exception instead of an answer (spec D-7): the driver reports connection and command failures as
+        /// <see cref="DbException"/>, and timeouts and cancellation as <see cref="TimeoutException"/> or
+        /// <see cref="OperationCanceledException"/>.
+        /// </summary>
+        private async Task<string?> GetTokenStatusAsync(Guid tokenId)
+        {
+            try
+            {
+                return await _tokenRepository.GetTokenStatusAsync(tokenId);
+            }
+            catch (Exception ex) when (ex is DbException or TimeoutException or OperationCanceledException)
+            {
+                throw new AuthenticationDependencyUnavailableException(
+                    AuthenticationDependencyCategory.TokenStatusStore,
+                    "The token status store could not be read.",
+                    ex
+                );
+            }
         }
 
         /// <summary>
@@ -526,8 +591,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Validates a JWT token and checks its status in the database
+        /// Validates a JWT token and checks its status in the database. Returns <c>false</c> for a token that is
+        /// invalid, revoked, or unknown to the store.
         /// </summary>
+        /// <exception cref="AuthenticationDependencyUnavailableException">
+        /// The signing keys or the token status could not be read, so no verdict was reached. Never reported as
+        /// <c>false</c>, which callers would answer as an invalid token.
+        /// </exception>
         public async Task<bool> ValidateTokenAsync(string rawToken)
         {
             try
@@ -543,12 +613,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 var jti = jwtToken.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 if (!string.IsNullOrEmpty(jti))
                 {
-                    var status = await _tokenRepository.GetTokenStatusAsync(Guid.Parse(jti));
+                    var status = await GetTokenStatusAsync(Guid.Parse(jti));
                     return status == "valid";
                 }
                 return false;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not AuthenticationDependencyUnavailableException)
             {
                 _logger.LogWarning(ex, "Token validation failed");
                 return false;
@@ -607,6 +677,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
                 return false;
             }
+            catch (AuthenticationDependencyUnavailableException ex)
+            {
+                // RFC 7009 answers 200 whatever happens, so the category is logged here or it is lost.
+                _logger.LogError(ex, "Failed to revoke token: the {Category} is unavailable", ex.Category);
+                return false;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to revoke token");
@@ -615,130 +691,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// Returns all active public keys for JWKS endpoint
+        /// Returns the public keys of the signing-key snapshot for the JWKS endpoint. An empty result means the store
+        /// genuinely holds no active key; a failed retrieval is never reported as an empty set (I-8).
         /// </summary>
+        /// <exception cref="SigningKeysUnavailableException">No usable snapshot exists.</exception>
         public async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync()
         {
-            if (_identityOptions.Value.UseCertificates)
-            {
-                return await GetPublicKeysFromCertificatesAsync();
-            }
-            else
-            {
-                return await GetPublicKeysFromDatabaseAsync();
-            }
-        }
-
-        /// <summary>
-        /// Gets public keys from X.509 certificates (existing implementation)
-        /// </summary>
-        private async Task<
-            IEnumerable<(RSAParameters RsaParameters, string KeyId)>
-        > GetPublicKeysFromCertificatesAsync()
-        {
-            if (_identityOptions.Value.UseDevelopmentCertificates)
-            {
-                var certPath = _identityOptions.Value.DevCertificatePath;
-                var certPassword = _identityOptions.Value.DevCertificatePassword;
-                X509Certificate2 cert;
-                if (!System.IO.File.Exists(certPath))
-                {
-                    using var rsa = RSA.Create(2048);
-                    var certRequest = new CertificateRequest(
-                        "CN=DevCert",
-                        rsa,
-                        System.Security.Cryptography.HashAlgorithmName.SHA256,
-                        System.Security.Cryptography.RSASignaturePadding.Pkcs1
-                    );
-                    cert = certRequest.CreateSelfSigned(
-                        DateTimeOffset.UtcNow.AddDays(-1),
-                        DateTimeOffset.UtcNow.AddYears(1)
-                    );
-                    var bytes = cert.Export(X509ContentType.Pfx, certPassword);
-                    await System.IO.File.WriteAllBytesAsync(certPath, bytes);
-                }
-                else
-                {
-                    cert = X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
-                }
-                using var pubRsa = cert.GetRSAPublicKey();
-                return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
-            }
-            else
-            {
-                var certPath = _identityOptions.Value.CertificatePath;
-                var certPassword = _identityOptions.Value.CertificatePassword;
-                if (string.IsNullOrEmpty(certPath))
-                {
-                    throw new InvalidOperationException(
-                        "CertificatePath must be set when not using development certificates."
-                    );
-                }
-                var cert = string.IsNullOrEmpty(certPassword)
-                    ? X509CertificateLoader.LoadCertificateFromFile(certPath)
-                    : X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
-                using var pubRsa = cert.GetRSAPublicKey();
-                return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
-            }
-        }
-
-        /// <summary>
-        /// Gets public keys from database (OpenIddictKey table)
-        /// </summary>
-        private async Task<
-            IEnumerable<(RSAParameters RsaParameters, string KeyId)>
-        > GetPublicKeysFromDatabaseAsync()
-        {
-            var keys = new List<(RSAParameters, string)>();
-            try
-            {
-                var keyRecords = await _tokenRepository.GetActivePublicKeysAsync();
-                foreach (var record in keyRecords)
-                {
-                    try
-                    {
-                        PublicKeyFormat keyFormat = PublicKeyMaterialParser.DetectFormat(
-                            record.PublicKey,
-                            _logger
-                        );
-
-                        _logger.LogDebug(
-                            "Key {KeyId} format detected as: {Format}",
-                            LoggingUtility.SanitizeForLog(record.KeyId),
-                            keyFormat
-                        );
-
-                        if (keyFormat == PublicKeyFormat.Unknown)
-                        {
-                            _logger.LogWarning(
-                                "Unknown key format for key ID: {KeyId}",
-                                LoggingUtility.SanitizeForLog(record.KeyId)
-                            );
-                            continue; // Skip this key
-                        }
-
-                        keys.Add(
-                            (
-                                PublicKeyMaterialParser.ImportPublicParameters(record.PublicKey, keyFormat),
-                                record.KeyId
-                            )
-                        );
-                    }
-                    catch (Exception keyEx)
-                    {
-                        _logger.LogError(
-                            keyEx,
-                            "Failed to process key with ID {KeyId}",
-                            LoggingUtility.SanitizeForLog(record.KeyId)
-                        );
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to fetch public keys for JWKS");
-            }
-            return keys;
+            SigningKeySnapshot snapshot = await _signingKeyProvider.GetUsableAsync(CancellationToken.None);
+            return [.. snapshot.Keys.Select(entry => (RsaParameters: entry.PublicParameters, entry.KeyId))];
         }
     }
 

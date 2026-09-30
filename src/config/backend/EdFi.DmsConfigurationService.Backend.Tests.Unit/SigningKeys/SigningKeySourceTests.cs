@@ -96,6 +96,64 @@ public class SigningKeySourceTests
         public void It_counts_both_unusable_rows() => _result.DiscardedCount.Should().Be(2);
     }
 
+    // Moved from the token manager's tests at step 2.2, where the key loop used to live.
+    [TestFixture]
+    public class Given_a_database_row_in_an_unknown_format
+    {
+        private ILogger<DatabaseSigningKeySource> _logger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            KeyRepositoryHarness harness = new(NewTime());
+            harness.Returns(KeyRepositoryHarness.Garbage("garbage"), KeyRepositoryHarness.Row("key-1"));
+            _logger = A.Fake<ILogger<DatabaseSigningKeySource>>();
+            A.CallTo(() => _logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+            await new DatabaseSigningKeySource(harness.Repository, _logger).LoadAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_warns_about_the_unknown_format() =>
+            MessagesAt(_logger, LogLevel.Warning).Should().Equal("Unknown key format for key ID: garbage");
+    }
+
+    // The format cache was keyed by key id, so a key id whose stored bytes changed encoding kept the first format it was
+    // seen with, failed to import, and was skipped. With the cache removed (DMS-1556 Q7) every load detects afresh.
+    // Moved from the token manager's tests at step 2.2: the manager now serves a snapshot, so only a second load of the
+    // source sees the new encoding.
+    [TestFixture]
+    public class Given_a_key_id_reencoded_between_loads
+    {
+        private RSAParameters _reencoded;
+        private SigningKeySourceResult _secondLoad = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using RSA first = RSA.Create(2048);
+            using RSA second = RSA.Create(2048);
+            _reencoded = second.ExportParameters(false);
+            KeyRepositoryHarness harness = new(NewTime());
+            DatabaseSigningKeySource source = DatabaseSource(harness);
+
+            harness.Returns(
+                new PublicKeyInfo { KeyId = "key-1", PublicKey = first.ExportSubjectPublicKeyInfo() }
+            );
+            await source.LoadAsync(CancellationToken.None);
+            harness.Returns(new PublicKeyInfo { KeyId = "key-1", PublicKey = second.ExportRSAPublicKey() });
+            _secondLoad = await source.LoadAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_returns_the_key_on_the_second_load() =>
+            _secondLoad.Entries.Select(entry => entry.KeyId).Should().Equal("key-1");
+
+        [Test]
+        public void It_imports_the_reencoded_key_material() =>
+            _secondLoad.Entries[0].PublicParameters.Modulus.Should().Equal(_reencoded.Modulus);
+    }
+
     [TestFixture]
     public class Given_a_repository_that_throws
     {
