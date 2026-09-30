@@ -20,11 +20,13 @@ using static EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.IdentityC
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
-/// Proves that a request already in flight when the host begins a graceful shutdown still gets its
-/// answer: the shutdown signal fires while the request's claim-set fetch is blocked at the
-/// Configuration Service, and the fetch, which serves every resource route as well, must complete
-/// rather than fail the draining request. The host runs on real Kestrel over loopback, because
-/// Kestrel, unlike the in-memory test server, keeps serving in-flight requests after shutdown begins.
+/// Proves that a claim-set fetch already in flight when the host begins a graceful shutdown still
+/// completes, so the draining request that needs it gets its answer rather than a failure: the
+/// shutdown signal fires while the fetch is blocked at the Configuration Service. The same cache serves
+/// every resource route. The identity tenant refresh is deliberately different: it stops when shutdown
+/// begins, so a request waiting on it is answered from a still-fresh snapshot or with 503. The host
+/// runs on real Kestrel over loopback, because Kestrel,
+/// unlike the in-memory test server, keeps serving in-flight requests after shutdown begins.
 /// </summary>
 public class IdentityShutdownDrainTests
 {

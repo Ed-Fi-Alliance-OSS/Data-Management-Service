@@ -32,10 +32,11 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <param name="_maxRequestLineSize">
 /// The fallback maximum HTTP request-line size used when the current request's
 /// <see cref="FrontendRequest.MaxRequestLineSize" /> is null - a request-line budget the frontend did
-/// not report. <see cref="IdentityRequestTokenRule.Evaluate" /> prefers the per-request value read from
-/// the running server (for example Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>) whenever the
-/// frontend supplies one, and falls back to this constructor value - the documented .NET default of
-/// 8,192 bytes - only when it does not.
+/// not report. <see cref="IdentityRequestTokenRule.Evaluate" /> prefers the per-request budget the
+/// frontend derives from the running server (for example Kestrel's
+/// <c>KestrelServerLimits.MaxRequestLineSize</c>, less any path prefix it adds) whenever it supplies
+/// one, and falls back to this constructor value - the documented .NET default of 8,192 bytes - only
+/// when it does not.
 /// </param>
 internal sealed class IdentityHandler(
     IdentityProviderBoundary _boundary,
@@ -74,8 +75,8 @@ internal sealed class IdentityHandler(
 
         // BuildContext throws InvalidOperationException on a route-qualifier name collision under
         // case-insensitive comparison - a host configuration defect. The frontend's startup options
-        // validation already refuses such a configuration before the host starts, so reaching it
-        // here is a genuine host bug rather than a client or provider fault. It is deliberately left uncaught here, not routed through the
+        // validation already rejects such a configuration, and a host in that state never maps these
+        // routes, so reaching it here is a genuine host bug rather than a client or provider fault. It is deliberately left uncaught here, not routed through the
         // provider boundary, so CoreExceptionLoggingMiddleware's general handler logs it as an
         // unexpected condition.
         IdentityRequestContext context = BuildContext(requestInfo);

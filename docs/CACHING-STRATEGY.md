@@ -412,18 +412,16 @@ doesn't accept requests until JWT authentication is fully functional. When `Bypa
 
 ## Stampede Protection
 
-DMS uses `Microsoft.Extensions.Caching.Hybrid` (HybridCache) to provide stampede
-protection for frequently accessed caches. Stampede protection ensures that
-when multiple concurrent requests experience a cache miss, only one request
-executes the factory function to fetch data while others wait for the result.
+Stampede protection ensures that when multiple concurrent requests experience a cache miss, only one fetch runs while the others wait for its result.
+The application-context and Configuration Service token caches get it from `Microsoft.Extensions.Caching.Hybrid` (HybridCache).
+The claim-set cache and the identity tenant snapshot share one in-flight fetch task instead, so a caller that stops waiting never aborts the fetch the others still need.
 
 ### How It Works
 
-1. **First request** experiences cache miss and acquires internal lock
-2. **Subsequent concurrent requests** for the same key wait on the lock
-3. **Factory executes once**, result is cached
-4. **All waiting requests** receive the cached result
-5. **Lock is released**
+1. **First request** experiences a cache miss and starts the fetch
+2. **Subsequent concurrent requests** for the same key wait on that same fetch
+3. **The fetch runs once**, and its result is cached
+4. **All waiting requests** receive that result
 
 This prevents the "thundering herd" problem where N concurrent requests
 could trigger N redundant backend calls, potentially overwhelming the

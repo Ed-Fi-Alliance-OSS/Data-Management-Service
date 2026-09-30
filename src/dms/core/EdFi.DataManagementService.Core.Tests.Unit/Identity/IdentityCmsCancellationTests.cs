@@ -102,7 +102,7 @@ public class IdentityCmsCancellationTests
             await handler.GateReached.WaitAsync(TimeSpan.FromSeconds(5));
 
             // Started while the gate is held, so this paired request joins the same in-flight CMS
-            // lookup (or queues behind the same per-key lock) rather than starting an independent one.
+            // lookup (or the same shared cache fill) rather than starting an independent one.
             Task<IFrontendResponse> liveWaiterTask = apiService.IdentityGetById(
                 BuildFrontendRequest("uid-live"),
                 "uid-live",

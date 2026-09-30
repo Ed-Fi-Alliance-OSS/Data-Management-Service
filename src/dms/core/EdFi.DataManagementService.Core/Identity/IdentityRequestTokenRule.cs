@@ -77,8 +77,9 @@ internal static class IdentityRequestTokenRule
     /// Evaluates whether <paramref name="token" /> can be composed into a poll path under
     /// <paramref name="composedPathPrefix" /> (the route-qualified <c>.../identities/results</c> path,
     /// with no trailing slash and no token) without exceeding <paramref name="maxRequestLineSize" />,
-    /// the server's configured <c>KestrelServerLimits.MaxRequestLineSize</c> (or the frontend's
-    /// equivalent), read at request time rather than hard-coded.
+    /// the request-line budget the frontend reports in <see cref="EdFi.DataManagementService.Core.External.Frontend.FrontendRequest.MaxRequestLineSize" />
+    /// (the server's configured maximum less any frontend path prefix), read at request time rather
+    /// than hard-coded.
     /// </summary>
     public static IdentityRequestTokenEvaluation Evaluate(
         string? token,

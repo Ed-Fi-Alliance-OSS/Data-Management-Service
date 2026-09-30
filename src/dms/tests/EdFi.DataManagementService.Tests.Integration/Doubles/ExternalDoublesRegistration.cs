@@ -50,11 +50,6 @@ internal static class ExternalDoublesRegistration
     /// example a <c>FakeTimeProvider</c>), so a scenario can advance a cache or snapshot freshness window
     /// mid-test. Null keeps the production <c>TimeProvider.System</c> registration.
     /// </param>
-    /// <param name="connectionStringDecryptionServiceOverride">
-    /// When supplied, replaces the host's singleton <c>IConnectionStringDecryptionService</c>, for example
-    /// with one that throws, so a scenario can prove a request path never reaches CMS connection-string
-    /// decryption. Null keeps the production decryption service.
-    /// </param>
     public static void RegisterAll(
         IServiceCollection services,
         FixtureContext fixture,
@@ -75,8 +70,7 @@ internal static class ExternalDoublesRegistration
         IConfigurationServiceApplicationProvider? applicationContextConfigurationProvider = null,
         IDataStoreProvider? dataStoreProviderOverride = null,
         IJwtValidationService? jwtValidationServiceOverride = null,
-        TimeProvider? timeProviderOverride = null,
-        IConnectionStringDecryptionService? connectionStringDecryptionServiceOverride = null
+        TimeProvider? timeProviderOverride = null
     )
     {
         if (
@@ -197,12 +191,6 @@ internal static class ExternalDoublesRegistration
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton(timeProviderOverride);
-        }
-
-        if (connectionStringDecryptionServiceOverride is not null)
-        {
-            services.RemoveAll<IConnectionStringDecryptionService>();
-            services.AddSingleton(connectionStringDecryptionServiceOverride);
         }
     }
 }

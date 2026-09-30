@@ -7,11 +7,11 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
-using EdFi.DataManagementService.Tests.Integration.Postgresql;
+using EdFi.DataManagementService.Tests.Integration.Mssql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
 using Microsoft.Extensions.Time.Testing;
 
-namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
+namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
 /// Proves request-time datastore independence on an initialized, identity-enabled host. After one
@@ -21,10 +21,10 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 /// <c>LoadTenants</c> and reaches the operation-unsupported capability gate - because the identity
 /// pipeline never resolves a physical data store at all (<see cref="Identity.IdentityTenantSnapshotTests" />
 /// proves the same independence at the unit level) - while the poisoned <c>LoadDataStores</c> is never
-/// called during that request. Follows <see cref="Given_Postgresql_ApplicationContextIntegration" />'s
+/// called during that request. Follows <see cref="Given_Mssql_ApplicationContextIntegration" />'s
 /// MultiTenancy/BypassAuthorization shape.
 /// </summary>
-public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlApiIntegrationTestBase
+public sealed class Given_Mssql_IdentityDatastoreIndependence : MssqlApiIntegrationTestBase
 {
     private const string Tenant = "identity-datastore-independence-tenant";
 

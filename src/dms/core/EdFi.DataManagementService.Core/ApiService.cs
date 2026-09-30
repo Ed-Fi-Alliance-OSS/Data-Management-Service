@@ -1349,7 +1349,7 @@ internal class ApiService : IApiService
 
         try
         {
-            // Clear the existing cache for this tenant using HybridCache invalidation
+            // Clear the cached claim sets for this tenant
             await _cachedClaimSetProvider.InvalidateCacheAsync(tenant);
             _logger.LogInformation("Claimsets cache cleared successfully");
 

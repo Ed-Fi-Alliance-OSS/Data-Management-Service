@@ -149,13 +149,6 @@ public abstract class ApiIntegrationTestBase
     /// </summary>
     protected virtual TimeProvider? TimeProviderOverride => null;
 
-    /// <summary>
-    /// When supplied, replaces the host's singleton <c>IConnectionStringDecryptionService</c>, so a
-    /// scenario can prove a request path never reaches CMS connection-string decryption. Null keeps the
-    /// production decryption service every other scenario relies on.
-    /// </summary>
-    protected virtual IConnectionStringDecryptionService? ConnectionStringDecryptionServiceOverride => null;
-
     /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
     protected virtual bool EnableDocumentCacheReadAcceleration => false;
 
@@ -347,7 +340,6 @@ public abstract class ApiIntegrationTestBase
         var additionalHostSettings = AdditionalHostSettings;
         var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
         var timeProviderOverride = TimeProviderOverride;
-        var connectionStringDecryptionServiceOverride = ConnectionStringDecryptionServiceOverride;
         MutableNamespacePrefixJwtValidationService? jwtValidationServiceOverride =
             CreateJwtValidationService();
         IDataStoreProvider? dataStoreProviderOverride = CreateDataStoreProvider(
@@ -456,8 +448,7 @@ public abstract class ApiIntegrationTestBase
                     applicationContextConfigurationProviderOverride,
                     dataStoreProviderOverride,
                     jwtValidationServiceOverride,
-                    timeProviderOverride,
-                    connectionStringDecryptionServiceOverride
+                    timeProviderOverride
                 );
 
                 if (queryRecorder is not null)

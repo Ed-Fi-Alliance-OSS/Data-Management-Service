@@ -471,10 +471,10 @@ public class ClaimSetCacheServiceTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_An_Aborted_Waiter_On_The_Per_Key_Lock : ClaimSetCacheServiceTests
+    public class Given_An_Aborted_Waiter_On_A_Shared_Fill : ClaimSetCacheServiceTests
     {
         [Test]
-        public async Task It_Stops_Waiting_On_The_Lock_While_A_Live_Waiter_Still_Completes()
+        public async Task It_Stops_Waiting_On_The_Fill_While_A_Live_Waiter_Still_Completes()
         {
             var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
             var gate = new TaskCompletionSource();
@@ -497,18 +497,18 @@ public class ClaimSetCacheServiceTests
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
-            // Holder: acquires the per-key lock and blocks inside the factory until the gate opens.
+            // Holder: starts the shared fill, which blocks inside the fetch until the gate opens.
             Task<IList<ClaimSet>> holderTask = service.GetAllClaimSets();
             await Task.Delay(50);
 
-            // Aborted waiter: queues behind the lock and never acquires it.
+            // Aborted waiter: joins the same fill and stops waiting when cancelled.
             using var abortedCts = new CancellationTokenSource();
             Task<IList<ClaimSet>> abortedWaiterTask = service.GetAllClaimSets(
                 cancellationToken: abortedCts.Token
             );
             await Task.Delay(50);
 
-            // Live waiter: also queues behind the lock, without cancelling.
+            // Live waiter: also joins the fill, without cancelling.
             Task<IList<ClaimSet>> liveWaiterTask = service.GetAllClaimSets();
             await Task.Delay(50);
 
@@ -519,8 +519,8 @@ public class ClaimSetCacheServiceTests
             await act.Should().ThrowAsync<OperationCanceledException>();
             stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
 
-            // The live waiter is still queued behind the holder - the aborted waiter leaving the
-            // queue does not let it skip ahead of the holder still fetching.
+            // The live waiter is still waiting on the fill - the aborted waiter leaving does not
+            // complete it early or abort the fetch it still needs.
             liveWaiterTask.IsCompleted.Should().BeFalse();
 
             gate.SetResult();

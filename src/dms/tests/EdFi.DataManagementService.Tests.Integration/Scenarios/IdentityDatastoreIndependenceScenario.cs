@@ -6,8 +6,14 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Tests.Integration.Doubles;
+using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -94,4 +100,129 @@ internal static class IdentityDatastoreIndependenceScenario
             .Should()
             .Be(IdentityFailureResponse.OperationNotSupportedType);
     }
+}
+
+/// <summary>
+/// Wraps <see cref="AllowAllClaimSetProvider" />'s CRUD-on-every-fixture-resource claim set and adds the
+/// CMS-seeded identity service claim (<c>http://ed-fi.org/identity/claims/services/identity</c>),
+/// granting <c>Create</c> and <c>Read</c> under <c>NoFurtherAuthorizationRequired</c>, under the same
+/// claim set name the default fake JWT issues (<see cref="ExternalDoublesConstants.SmokeClaimSetName" />)
+/// so one authorized client can serve both the warmup resource request and the identity request.
+/// </summary>
+internal sealed class IdentityGrantingClaimSetProvider(FixtureContext fixture) : IClaimSetProvider
+{
+    private readonly AllowAllClaimSetProvider _inner = new(fixture);
+
+    public async Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        IList<ClaimSet> claimSets = await _inner.GetAllClaimSets(tenant, cancellationToken);
+
+        return
+        [
+            .. claimSets.Select(claimSet =>
+                claimSet with
+                {
+                    ResourceClaims =
+                    [
+                        .. claimSet.ResourceClaims,
+                        new ResourceClaim(
+                            $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity",
+                            "Create",
+                            [
+                                new AuthorizationStrategy(
+                                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                                ),
+                            ]
+                        ),
+                        new ResourceClaim(
+                            $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity",
+                            "Read",
+                            [
+                                new AuthorizationStrategy(
+                                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                                ),
+                            ]
+                        ),
+                    ],
+                }
+            ),
+        ];
+    }
+}
+
+/// <summary>
+/// An <see cref="IDataStoreProvider" /> serving one configured data store normally until
+/// <see cref="PoisonLoadDataStores" /> is called, after which <see cref="LoadDataStores" /> always
+/// throws. <see cref="LoadTenants" /> always succeeds regardless of poisoning, matching the design's
+/// separation between tenant-name lookup and datastore configuration.
+/// <see cref="LoadDataStoresCallCount" /> lets a scenario prove a request never called it, and
+/// <see cref="LoadTenantsCallCount" /> lets it prove a request did refresh the tenant snapshot.
+/// </summary>
+internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDataStoreProvider
+{
+    private DataStore? _dataStore;
+    private volatile bool _shouldThrowOnLoadDataStores;
+    private int _loadDataStoresCallCount;
+    private int _loadTenantsCallCount;
+
+    /// <summary>How many times LoadDataStores has been called, across the lifetime of this instance.</summary>
+    public int LoadDataStoresCallCount => Volatile.Read(ref _loadDataStoresCallCount);
+
+    /// <summary>How many times LoadTenants has been called, across the lifetime of this instance.</summary>
+    public int LoadTenantsCallCount => Volatile.Read(ref _loadTenantsCallCount);
+
+    public void Configure(long id, string connectionString) =>
+        _dataStore = new DataStore(
+            id,
+            "default",
+            "identity-datastore-independence",
+            connectionString,
+            new Dictionary<RouteQualifierName, RouteQualifierValue>()
+        );
+
+    /// <summary>Makes every later call to LoadDataStores throw.</summary>
+    public void PoisonLoadDataStores() => _shouldThrowOnLoadDataStores = true;
+
+    public Task<IList<DataStore>> LoadDataStores(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Interlocked.Increment(ref _loadDataStoresCallCount);
+
+        if (_shouldThrowOnLoadDataStores)
+        {
+            throw new InvalidOperationException(
+                "PoisonableRecordingDataStoreProvider.LoadDataStores was poisoned for this test and must "
+                    + "never be called by the identity pipeline."
+            );
+        }
+
+        return Task.FromResult<IList<DataStore>>(_dataStore is null ? [] : [_dataStore]);
+    }
+
+    public Task RefreshInstancesIfExpiredAsync(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    ) => Task.CompletedTask;
+
+    public IReadOnlyList<DataStore> GetAll(string? tenant = null) => _dataStore is null ? [] : [_dataStore];
+
+    public DataStore? GetById(long id, string? tenant = null) =>
+        _dataStore is { } dataStore && dataStore.Id == id ? dataStore : null;
+
+    public bool IsLoaded(string? tenant = null) => _dataStore is not null;
+
+    public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _loadTenantsCallCount);
+        return Task.FromResult<IList<string>>([tenant]);
+    }
+
+    public bool TenantExists(string tenant) => true;
+
+    public IReadOnlyList<string> GetLoadedTenantKeys() => [tenant];
 }
