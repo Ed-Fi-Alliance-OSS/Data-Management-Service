@@ -239,21 +239,21 @@ C-1 all of §4 conditional on G2. C-2 `MetadataAddress` documented inert. C-3 se
 ### 4.3 Components (`Backend.OpenIddict` unless noted)
 
 1. `Backend/AuthenticationDependencyUnavailableException` (`Category`: `SigningKeyStore` | `TokenStatusStore`) and `SigningKeys/SigningKeysUnavailableException`.
-2. `SigningKeys/SigningKeySnapshot` (immutable; `Keys`, `RetrievedAt`, `Version`, `Source`), `SigningKeyEntry`, `SigningKeyRefreshOutcome`, `SigningKeyProviderStatus`.
+2. `SigningKeys/SigningKeySnapshot` (immutable; `Keys`, `RetrievedAt`, `Version`, `Source`), `SigningKeyEntry`, `SigningKeyRefreshOutcome`, `SigningKeyProviderStatus`. The key material (key id, modulus, exponent) is private to the entry and never handed out. Consumers receive **detached projections**: `PublicParameters` (copied arrays, for JWKS) and `CreateSecurityKey()` / `SigningKeySnapshot.CreateSecurityKeys()` (a new `RsaSecurityKey` from fresh copies on every call). A consumer that mutates a projection, including `SecurityKey.KeyId` or the RSA arrays, cannot change the snapshot, `ContainsKeyId`, or later projections.
 3. `SigningKeys/PublicKeyMaterialParser` (moved; no format cache).
 4. `SigningKeys/DevelopmentCertificateStore` (D-10) and `SigningKeys/CertificateSigningKeySource` / `DatabaseSigningKeySource` behind `ISigningKeySource`.
 5. `SigningKeys/ISigningKeySnapshotProvider` / `SigningKeySnapshotProvider` (§4.4): `Current`, `Status`, `GetUsableAsync(ct)`, `RefreshAsync(trigger, ct)`, `TryRefreshForUnknownKeyAsync(kid, ct)`, `NextAttemptAt`, and `AttemptStateChanged` (a signal the scheduler awaits).
 6. `SigningKeys/SigningKeyRefreshService : BackgroundService` — deadline-driven loop (§4.4 "Scheduling"), `TimeProvider`-based waits, startup attempt non-fatal.
-7. `SigningKeys/SigningKeyConfigurationManager` — `GetConfigurationAsync(ct)` → `provider.GetUsableAsync(ct)` → one cached `OpenIdConnectConfiguration` per snapshot version; `RequestRefresh()` → gated unknown-key refresh (unreachable with Q14; kept for interface completeness).
+7. `SigningKeys/SigningKeyConfigurationManager` — `GetConfigurationAsync(ct)` → `provider.GetUsableAsync(ct)` → one cached `OpenIdConnectConfiguration` per snapshot version, whose `SigningKeys` come from one `CreateSecurityKeys()` call made when that version is first seen (a detached set the manager owns; the per-version reuse is preserved); `RequestRefresh()` → gated unknown-key refresh (unreachable with Q14; kept for interface completeness).
 8. `SigningKeys/SigningKeyBearerEvents` — shared handlers (§4.6) composed onto each scheme's `JwtBearerEvents`, preserving each scheme's existing logging in `OnChallenge`/`OnAuthenticationFailed` for non-dependency failures (those are logged and left without a result, so today's rethrow behavior is unchanged).
 9. `OpenIddictTokenManager`: `GetPublicKeysAsync` projects the snapshot; `VerifyTokenAsync` uses snapshot keys with one gated unknown-kid refresh; `ValidateTokenAsync` translates `DbException`/`TimeoutException`/`OperationCanceledException` from `GetTokenStatusAsync` into the typed exception and rethrows typed exceptions before its general catch; `LoadActiveSigningKeyFromCertificatesAsync` obtains the development certificate from `DevelopmentCertificateStore` (D-10) — its only change; database issuance untouched.
 10. Frontend: `Bearer` supplies the manager and shared events; `JwtAuthenticationExtensions` does the same for `DmsJwtBearer`; `JwksEndpointModule` uses the provider.
 11. Registration split by step: 2.1 (sources, store, provider, hosted service, `TimeProvider`), 2.3 (manager, events).
 12. Options: `SigningKeyRefreshIntervalSeconds` (300), `SigningKeyMaxStalenessSeconds` (3600, Q13), `SigningKeyUnknownKeyRefreshCooldownSeconds` (30), `SigningKeyLoadTimeoutSeconds` (10); validated fail-fast. They are `IdentitySettings:` keys bound onto `IdentityOptions`, checked by `SigningKeyOptionsValidator` at host start (`ValidateOnStart`), and consumed only through `SigningKeySettings.FromIdentityOptions`, which applies the same validator and throws `OptionsValidationException`. Validation rules (step 1.1; policy, proposed for review with the checkpoint):
-    - RefreshInterval: 30–86,400 s.
-    - MaxStaleness: between 2 × RefreshInterval and 86,400 s. A snapshot must outlive one failed refresh cycle, and `T_max` stays bounded.
+    - RefreshInterval: 30–43,200 s. The cap is half the staleness cap, so every accepted interval admits a valid MaxStaleness (approved at the 1.1+1.2 review).
+    - MaxStaleness: between 2 × RefreshInterval and 86,400 s. Twice the interval gives retry headroom: a snapshot whose scheduled refresh fails stays usable for at least one more interval while retries run. It does not guarantee recovery through an outage. `T_max` stays bounded.
     - Cooldown: 1–3,600 s. Zero would disable I-6.
-    - LoadTimeout: 1–60 s and less than RefreshInterval, so scheduled attempts never overlap.
+    - LoadTimeout: 1–60 s and less than RefreshInterval. This is a policy constraint that keeps one load well inside one interval. Overlapping loads are prevented by the provider's single-flight gate (D-5), not by this rule.
 
     Every failure is reported, and each message names its `IdentitySettings:` key.
 

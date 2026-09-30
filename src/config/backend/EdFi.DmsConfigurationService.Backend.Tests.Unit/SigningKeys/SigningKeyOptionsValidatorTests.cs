@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -83,12 +83,14 @@ public class SigningKeyOptionsValidatorTests
             _result
                 .Failures.Should()
                 .Equal(
-                    "IdentitySettings:SigningKeyRefreshIntervalSeconds must be between 30 and 86400; it is 29."
+                    "IdentitySettings:SigningKeyRefreshIntervalSeconds must be between 30 and 43200; it is 29."
                 );
     }
 
+    // 43,201 s is the first interval no max staleness can satisfy: twice it exceeds the 86,400 s staleness cap. It
+    // must fail as an out-of-range interval, not as an unsatisfiable staleness rule.
     [TestFixture]
-    public class Given_a_refresh_interval_above_the_maximum
+    public class Given_a_refresh_interval_just_above_the_maximum
     {
         private ValidateOptionsResult _result = null!;
 
@@ -97,7 +99,7 @@ public class SigningKeyOptionsValidatorTests
             _result = Validate(
                 new IdentityOptions
                 {
-                    SigningKeyRefreshIntervalSeconds = 86_401,
+                    SigningKeyRefreshIntervalSeconds = 43_201,
                     SigningKeyMaxStalenessSeconds = 86_400,
                 }
             );
@@ -107,7 +109,32 @@ public class SigningKeyOptionsValidatorTests
             _result
                 .Failures.Should()
                 .Equal(
-                    "IdentitySettings:SigningKeyRefreshIntervalSeconds must be between 30 and 86400; it is 86401."
+                    "IdentitySettings:SigningKeyRefreshIntervalSeconds must be between 30 and 43200; it is 43201."
+                );
+    }
+
+    [TestFixture]
+    public class Given_the_maximum_refresh_interval_with_a_max_staleness_just_below_twice_it
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Act() =>
+            _result = Validate(
+                new IdentityOptions
+                {
+                    SigningKeyRefreshIntervalSeconds = 43_200,
+                    SigningKeyMaxStalenessSeconds = 86_399,
+                }
+            );
+
+        [Test]
+        public void It_reports_the_staleness_rule() =>
+            _result
+                .Failures.Should()
+                .Equal(
+                    "IdentitySettings:SigningKeyMaxStalenessSeconds must be between 2 x "
+                        + "IdentitySettings:SigningKeyRefreshIntervalSeconds (86400) and 86400; it is 86399."
                 );
     }
 
@@ -196,7 +223,7 @@ public class SigningKeyOptionsValidatorTests
             _result
                 .Failures.Should()
                 .Equal(
-                    "IdentitySettings:SigningKeyRefreshIntervalSeconds must be between 30 and 86400; it is 0.",
+                    "IdentitySettings:SigningKeyRefreshIntervalSeconds must be between 30 and 43200; it is 0.",
                     "IdentitySettings:SigningKeyMaxStalenessSeconds must be between 60 and 86400; it is 0."
                 );
     }

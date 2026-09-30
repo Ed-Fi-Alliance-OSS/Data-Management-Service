@@ -18,14 +18,19 @@ public sealed class SigningKeyOptionsValidator : IValidateOptions<IdentityOption
 {
     private const string Section = "IdentitySettings";
 
-    public const int MinimumRefreshIntervalSeconds = 30;
-    public const int MaximumRefreshIntervalSeconds = 86_400;
-
     /// <summary>
     /// The largest accepted staleness bound. <c>MaxStaleness</c> is how long a key retired during a key-store outage can
     /// still be trusted (<c>T_max</c>), so it is bounded rather than open-ended.
     /// </summary>
     public const int MaximumMaxStalenessSeconds = 86_400;
+
+    public const int MinimumRefreshIntervalSeconds = 30;
+
+    /// <summary>
+    /// Half of <see cref="MaximumMaxStalenessSeconds"/>, so every accepted refresh interval admits a valid max staleness
+    /// (at least twice the interval).
+    /// </summary>
+    public const int MaximumRefreshIntervalSeconds = MaximumMaxStalenessSeconds / 2;
 
     public const int MinimumCooldownSeconds = 1;
     public const int MaximumCooldownSeconds = 3_600;
@@ -58,9 +63,10 @@ public sealed class SigningKeyOptionsValidator : IValidateOptions<IdentityOption
             MaximumLoadTimeoutSeconds
         );
 
-        // A snapshot must outlive one whole failed refresh cycle: a healthy instance whose next scheduled reload fails
-        // still serves overdue keys until the following one, instead of failing closed between two refreshes. The
-        // relational rules are checked only when their terms are in range, so each failure is reported once.
+        // Policy: max staleness of at least twice the refresh interval gives retry headroom. A snapshot whose
+        // scheduled refresh fails stays usable for at least one more interval while retries run. It does not guarantee
+        // recovery through an outage. The relational rules are checked only when their terms are in range, so each
+        // failure is reported once.
         if (refreshIntervalInRange)
         {
             long minimumMaxStaleness = 2L * options.SigningKeyRefreshIntervalSeconds;
@@ -88,7 +94,8 @@ public sealed class SigningKeyOptionsValidator : IValidateOptions<IdentityOption
             );
         }
 
-        // A load must end before the next scheduled one is due, so scheduled attempts never overlap.
+        // Policy: a single load is bounded well inside one refresh interval. Overlapping loads are prevented by the
+        // provider's single-flight gate, not by this rule.
         if (
             refreshIntervalInRange
             && loadTimeoutInRange

@@ -46,6 +46,8 @@ public enum SigningKeySnapshotState
 /// </summary>
 public sealed class SigningKeySnapshot
 {
+    private readonly SigningKeyEntry[] _entries;
+
     public SigningKeySnapshot(
         IEnumerable<SigningKeyEntry> keys,
         DateTimeOffset retrievedAt,
@@ -62,8 +64,8 @@ public sealed class SigningKeySnapshot
             throw new ArgumentException("A snapshot cannot contain a null key.", nameof(keys));
         }
 
+        _entries = entries;
         Keys = entries.AsReadOnly();
-        SecurityKeys = Array.ConvertAll(entries, entry => entry.SecurityKey).AsReadOnly();
         RetrievedAt = retrievedAt;
         Version = version;
         Source = source;
@@ -72,8 +74,12 @@ public sealed class SigningKeySnapshot
     /// <summary>The keys, in retrieval order.</summary>
     public IReadOnlyList<SigningKeyEntry> Keys { get; }
 
-    /// <summary>The keys as token validation consumes them, in the same order as <see cref="Keys"/>.</summary>
-    public IReadOnlyList<SecurityKey> SecurityKeys { get; }
+    /// <summary>
+    /// Creates detached validation keys, one per entry and in the same order as <see cref="Keys"/>. Every call returns
+    /// new instances, so a caller that changes them cannot affect the snapshot, its lookups, or its JWKS projection.
+    /// </summary>
+    public IReadOnlyList<SecurityKey> CreateSecurityKeys() =>
+        Array.ConvertAll(_entries, entry => entry.CreateSecurityKey());
 
     /// <summary>When the retrieval that produced this snapshot completed.</summary>
     public DateTimeOffset RetrievedAt { get; }

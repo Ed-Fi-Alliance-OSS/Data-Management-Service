@@ -41,15 +41,16 @@ public class SigningKeyEntryTests
         public void It_keeps_the_key_id() => _entry.KeyId.Should().Be("key-1");
 
         [Test]
-        public void It_gives_the_security_key_the_key_id() => _entry.SecurityKey.KeyId.Should().Be("key-1");
+        public void It_gives_the_validation_key_the_key_id() =>
+            _entry.CreateSecurityKey().KeyId.Should().Be("key-1");
 
         [Test]
         public void It_is_unaffected_by_later_changes_to_the_input() =>
             _entry.PublicParameters.Modulus.Should().Equal(_originalModulus);
 
         [Test]
-        public void It_builds_the_security_key_from_the_original_modulus() =>
-            ((RsaSecurityKey)_entry.SecurityKey).Parameters.Modulus.Should().Equal(_originalModulus);
+        public void It_builds_the_validation_key_from_the_original_modulus() =>
+            ((RsaSecurityKey)_entry.CreateSecurityKey()).Parameters.Modulus.Should().Equal(_originalModulus);
 
         [Test]
         public void It_returns_a_copy_of_the_parameters()
@@ -61,6 +62,10 @@ public class SigningKeyEntryTests
         }
 
         [Test]
+        public void It_creates_a_new_validation_key_each_time() =>
+            _entry.CreateSecurityKey().Should().NotBeSameAs(_entry.CreateSecurityKey());
+
+        [Test]
         public void It_exposes_no_private_material()
         {
             RSAParameters returned = _entry.PublicParameters;
@@ -68,6 +73,56 @@ public class SigningKeyEntryTests
             new object?[] { returned.D, returned.P, returned.Q, returned.DP, returned.DQ, returned.InverseQ }
                 .Should()
                 .OnlyContain(value => value == null);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_consumer_mutates_a_validation_key
+    {
+        private byte[] _originalModulus = null!;
+        private byte[] _originalExponent = null!;
+        private SigningKeyEntry _entry = null!;
+
+        [SetUp]
+        public void Act()
+        {
+            RSAParameters source = PublicParameters(out _);
+            _originalModulus = (byte[])source.Modulus!.Clone();
+            _originalExponent = (byte[])source.Exponent!.Clone();
+            _entry = SigningKeyEntry.FromRsaPublicParameters("key-1", source);
+
+            // SecurityKey.KeyId is settable, and RsaSecurityKey.Parameters returns a struct whose arrays are the key's
+            // own: both are ways a consumer could corrupt a shared key.
+            var handedOut = (RsaSecurityKey)_entry.CreateSecurityKey();
+            handedOut.KeyId = "attacker";
+            handedOut.Parameters.Modulus![0] ^= 0xFF;
+            handedOut.Parameters.Exponent![0] ^= 0xFF;
+        }
+
+        [Test]
+        public void It_keeps_the_entry_key_id() => _entry.KeyId.Should().Be("key-1");
+
+        [Test]
+        public void It_gives_later_validation_keys_the_original_key_id() =>
+            _entry.CreateSecurityKey().KeyId.Should().Be("key-1");
+
+        [Test]
+        public void It_gives_later_validation_keys_the_original_modulus() =>
+            ((RsaSecurityKey)_entry.CreateSecurityKey()).Parameters.Modulus.Should().Equal(_originalModulus);
+
+        [Test]
+        public void It_gives_later_validation_keys_the_original_exponent() =>
+            ((RsaSecurityKey)_entry.CreateSecurityKey())
+                .Parameters.Exponent.Should()
+                .Equal(_originalExponent);
+
+        [Test]
+        public void It_keeps_the_jwks_projection_unchanged()
+        {
+            RSAParameters projected = _entry.PublicParameters;
+
+            projected.Modulus.Should().Equal(_originalModulus);
+            projected.Exponent.Should().Equal(_originalExponent);
         }
     }
 

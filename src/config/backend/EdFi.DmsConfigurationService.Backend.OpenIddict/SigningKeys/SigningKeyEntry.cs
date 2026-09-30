@@ -9,9 +9,11 @@ using Microsoft.IdentityModel.Tokens;
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 
 /// <summary>
-/// One public signing key in a <see cref="SigningKeySnapshot"/>: its key id, the RSA public parameters (the JWKS
-/// projection), and the <see cref="SecurityKey"/> token validation uses. Immutable: the parameters are copied on the
-/// way in and on the way out, so no caller can alter a published key.
+/// One public signing key in a <see cref="SigningKeySnapshot"/>: its key id and RSA public parameters. The
+/// authoritative material is private and never handed out. Every projection is a detached copy: the JWKS parameters
+/// (<see cref="PublicParameters"/>) and the validation key (<see cref="CreateSecurityKey"/>). A caller that changes a
+/// projection, including a <see cref="SecurityKey"/>'s mutable <see cref="SecurityKey.KeyId"/> or its RSA arrays,
+/// changes only its own copy, never the entry, later projections, or <see cref="SigningKeySnapshot.ContainsKeyId"/>.
 /// </summary>
 public sealed class SigningKeyEntry
 {
@@ -23,23 +25,21 @@ public sealed class SigningKeyEntry
         KeyId = keyId;
         _modulus = modulus;
         _exponent = exponent;
-        SecurityKey = new RsaSecurityKey(
-            new RSAParameters { Modulus = (byte[])modulus.Clone(), Exponent = (byte[])exponent.Clone() }
-        )
-        {
-            KeyId = keyId,
-        };
     }
 
     /// <summary>The key id tokens reference in their <c>kid</c> header.</summary>
     public string KeyId { get; }
 
-    /// <summary>The key as token validation consumes it, carrying <see cref="KeyId"/>.</summary>
-    public SecurityKey SecurityKey { get; }
-
     /// <summary>A copy of the public parameters (modulus and exponent only).</summary>
     public RSAParameters PublicParameters =>
         new() { Modulus = (byte[])_modulus.Clone(), Exponent = (byte[])_exponent.Clone() };
+
+    /// <summary>
+    /// Creates a new, detached validation key carrying <see cref="KeyId"/>. Each call returns a new instance built from
+    /// fresh copies of the parameters. A consumer that reuses one set of keys per snapshot version (the configuration
+    /// manager, spec §4.3.7) creates them once and owns them.
+    /// </summary>
+    public SecurityKey CreateSecurityKey() => new RsaSecurityKey(PublicParameters) { KeyId = KeyId };
 
     /// <summary>
     /// Creates an entry from RSA public parameters.

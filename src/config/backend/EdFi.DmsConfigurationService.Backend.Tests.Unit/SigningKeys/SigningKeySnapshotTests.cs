@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using FluentAssertions;
+using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
 
@@ -48,8 +49,8 @@ public class SigningKeySnapshotTests
             _snapshot.Keys.Select(key => key.KeyId).Should().Equal("key-1", "key-2");
 
         [Test]
-        public void It_lists_the_security_keys_in_the_same_order() =>
-            _snapshot.SecurityKeys.Select(key => key.KeyId).Should().Equal("key-1", "key-2");
+        public void It_creates_validation_keys_in_the_same_order() =>
+            _snapshot.CreateSecurityKeys().Select(key => key.KeyId).Should().Equal("key-1", "key-2");
 
         [Test]
         public void It_keeps_the_version() => _snapshot.Version.Should().Be(7);
@@ -66,6 +67,61 @@ public class SigningKeySnapshotTests
     {
         [Test]
         public void It_is_a_valid_empty_snapshot() => Snapshot().Keys.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_consumer_mutates_the_validation_keys_it_was_given
+    {
+        private SigningKeySnapshot _snapshot = null!;
+        private IReadOnlyList<SecurityKey> _handedOut = null!;
+        private byte[] _originalModulus = null!;
+        private byte[] _originalExponent = null!;
+
+        [SetUp]
+        public void Act()
+        {
+            _snapshot = Snapshot(Entry("key-1"));
+            _originalModulus = _snapshot.Keys[0].PublicParameters.Modulus!;
+            _originalExponent = _snapshot.Keys[0].PublicParameters.Exponent!;
+
+            _handedOut = _snapshot.CreateSecurityKeys();
+            var key = (RsaSecurityKey)_handedOut[0];
+            key.KeyId = "attacker";
+            key.Parameters.Modulus![0] ^= 0xFF;
+            key.Parameters.Exponent![0] ^= 0xFF;
+        }
+
+        [Test]
+        public void It_still_finds_the_original_key_id() =>
+            _snapshot.ContainsKeyId("key-1").Should().BeTrue();
+
+        [Test]
+        public void It_does_not_find_the_injected_key_id() =>
+            _snapshot.ContainsKeyId("attacker").Should().BeFalse();
+
+        [Test]
+        public void It_creates_later_validation_keys_with_the_original_key_id() =>
+            _snapshot.CreateSecurityKeys().Select(key => key.KeyId).Should().Equal("key-1");
+
+        [Test]
+        public void It_creates_later_validation_keys_with_the_original_parameters()
+        {
+            var later = (RsaSecurityKey)_snapshot.CreateSecurityKeys()[0];
+
+            later.Parameters.Modulus.Should().Equal(_originalModulus);
+            later.Parameters.Exponent.Should().Equal(_originalExponent);
+        }
+
+        [Test]
+        public void It_keeps_the_jwks_projection_unchanged()
+        {
+            _snapshot.Keys[0].PublicParameters.Modulus.Should().Equal(_originalModulus);
+            _snapshot.Keys[0].PublicParameters.Exponent.Should().Equal(_originalExponent);
+        }
+
+        [Test]
+        public void It_creates_new_instances_each_time() =>
+            _snapshot.CreateSecurityKeys()[0].Should().NotBeSameAs(_handedOut[0]);
     }
 
     [TestFixture]
