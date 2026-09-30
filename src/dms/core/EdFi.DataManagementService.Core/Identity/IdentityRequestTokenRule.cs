@@ -120,7 +120,9 @@ internal static class IdentityRequestTokenRule
 
         // "GET ", " HTTP/1.1", and "\r\n" bound the request-line overhead around the composed path:
         // method, a separating space, the path itself, another space, the HTTP version token, and the
-        // terminating CRLF, which Kestrel counts against MaxRequestLineSize.
+        // terminating CRLF, which Kestrel counts against MaxRequestLineSize. This models the HTTP/1.1
+        // request line DMS receives behind its TLS-terminating proxy; HTTP/2 and HTTP/3 instead total
+        // the :method, :scheme, :authority, and :path pseudo-headers.
         int composedRequestLineLength =
             composedPathPrefix.Length
             + 1

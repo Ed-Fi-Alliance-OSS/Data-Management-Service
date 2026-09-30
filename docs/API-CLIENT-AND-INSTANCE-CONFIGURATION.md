@@ -154,6 +154,7 @@ initial client's. To act on that client, read it with
 
 What the resulting token can *do* is governed by the DMS identity surface under `/identity/v2/identities`, which DMS maps only when `AppSettings:EnableIdentityManagement` is `true` (see [Configuration](./CONFIGURATION.md)).
 With the surface enabled, the token reaches the identity operations its claim set grants, and it grants no resource access.
+Those operations run only when an identity provider plugin is registered; without one, each answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
 This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
 
 ### Context-Based Routing

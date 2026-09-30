@@ -37,7 +37,7 @@ public class IdentityRequestAbortTests
         string gateUrlSubstring
     )
     {
-        private Host _host = null!;
+        private StubHost _host = null!;
         private Exception? _clientException;
         private ServerOutcome _cancelledOutcome = null!;
         private bool _identityServiceTouchedBeforeRelease;

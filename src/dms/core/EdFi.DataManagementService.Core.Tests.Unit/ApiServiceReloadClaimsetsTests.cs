@@ -14,7 +14,6 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -72,7 +71,6 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             memoryCache,
             cacheSettings,
             TimeProvider.System,
-            A.Fake<IHostApplicationLifetime>(),
             NullLogger<CachedClaimSetProvider>.Instance
         );
 
@@ -252,7 +250,6 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             memoryCache,
             cacheSettings,
             TimeProvider.System,
-            A.Fake<IHostApplicationLifetime>(),
             NullLogger<CachedClaimSetProvider>.Instance
         );
 

@@ -32,7 +32,7 @@ public class LoggingMiddleware
         var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
         // Redact an identity get-by-id or results-poll identifier before sanitizing, so the
         // scope Path property and every rendered message template below carry the redacted value,
-        // never the real identifier. Every other path - including the other four identity routes,
+        // never the real identifier. Every other path - including the other three identity routes,
         // which carry no identifier - passes through unchanged.
         var redactedPath = RedactPath(context.Request.Path);
         var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(redactedPath);

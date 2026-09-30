@@ -6,7 +6,7 @@
 Describe "Identity management toggle wiring" {
     # -ForEach arrays are evaluated at discovery time, before any BeforeAll runs, so the paths
     # are computed inline from $PSScriptRoot rather than from a script-scoped variable.
-    It "carries AppSettings__EnableIdentityManagement beside AppSettings__EnableManagementEndpoints in <_>" -ForEach @(
+    It "wires AppSettings__EnableIdentityManagement to DMS_ENABLE_IDENTITY_MANAGEMENT, defaulting to false like AppSettings__EnableManagementEndpoints, in <_>" -ForEach @(
         (Join-Path $PSScriptRoot "../local-dms.yml"),
         (Join-Path $PSScriptRoot "../published-dms.yml"),
         (Join-Path $PSScriptRoot "../../azure-vm/compose/docker-compose.yml")
@@ -19,7 +19,7 @@ Describe "Identity management toggle wiring" {
         $content | Should -Match 'AppSettings__EnableManagementEndpoints:\s*"?\$\{DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false\}"?'
     }
 
-    It "carries DMS_ENABLE_IDENTITY_MANAGEMENT=false beside DMS_ENABLE_MANAGEMENT_ENDPOINTS in <_>" -ForEach @(
+    It "defaults DMS_ENABLE_IDENTITY_MANAGEMENT to false, like DMS_ENABLE_MANAGEMENT_ENDPOINTS, in <_>" -ForEach @(
         (Join-Path $PSScriptRoot "../.env.example"),
         (Join-Path $PSScriptRoot "../../azure-vm/compose/.env.example")
     ) {

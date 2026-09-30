@@ -33,7 +33,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructu
 /// <summary>
 /// No identity operation identifier reaches any property or rendered message of a log event, at
 /// either DMS layer or in the framework's own hosting-diagnostics events, while a resource route (the
-/// negative control) and the other four identity routes are unaffected. Exception detail attached to
+/// negative control) and the other three identity routes are unaffected. Exception detail attached to
 /// the identity provider boundary's Debug event is outside that guarantee by design and is not
 /// scanned here.
 /// </summary>

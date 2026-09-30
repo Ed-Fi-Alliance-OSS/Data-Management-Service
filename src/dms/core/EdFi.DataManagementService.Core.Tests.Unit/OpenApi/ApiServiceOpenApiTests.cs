@@ -16,7 +16,6 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -56,7 +55,6 @@ public class ApiServiceOpenApiTests
             CreateMemoryCache(),
             new CacheSettings(),
             TimeProvider.System,
-            A.Fake<IHostApplicationLifetime>(),
             NullLogger<CachedClaimSetProvider>.Instance
         );
 

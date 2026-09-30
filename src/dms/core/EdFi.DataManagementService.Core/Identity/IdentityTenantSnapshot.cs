@@ -20,9 +20,10 @@ namespace EdFi.DataManagementService.Core.Identity;
 /// snapshot at most once per 5 seconds, so repeated unknown names cannot drive back-to-back full-list
 /// fetches; the refresh runs on its own <see cref="CancellationTokenSource" /> linked to
 /// <see cref="IHostApplicationLifetime.ApplicationStopping" /> with a 30-second budget, never on a
-/// caller's own token, so one caller leaving never aborts a fill another caller still needs. A failed
-/// refresh answers <see cref="TenantExistenceOutcome.Unavailable" /> to every live waiter and refuses
-/// to start a new refresh for 5 seconds, matching the precedent double-checked-refresh shape in
+/// caller's own token, so one caller leaving never aborts a fill another caller still needs. When a
+/// refresh fails, its waiters are answered from the snapshot if it is still fresh and
+/// <see cref="TenantExistenceOutcome.Unavailable" /> otherwise, and no new refresh starts for 5
+/// seconds, matching the precedent double-checked-refresh shape in
 /// <see cref="ConfigurationServiceDataStoreProvider.RefreshInstancesIfExpiredAsync" /> and the
 /// atomic snapshot swap in <see cref="DocumentCache.DocumentCacheTargetRegistry.RefreshAsync" />.
 /// Captures no request-scoped service.

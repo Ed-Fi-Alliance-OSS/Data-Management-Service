@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// carry the identifier verbatim in both their <c>Path</c> and <c>RequestPath</c> properties and in
 /// the rendered message. The match is case-insensitive and tolerates a single trailing slash
 /// on the route, mirroring how ASP.NET Core routing matches these paths before this filter ever sees
-/// them. Every other route, including the other four identity routes (none of which carries an
+/// them. Every other route, including the other three identity routes (none of which carries an
 /// identifier) and their trailing-slash forms, keeps its framework events unchanged.
 /// </summary>
 /// <remarks>

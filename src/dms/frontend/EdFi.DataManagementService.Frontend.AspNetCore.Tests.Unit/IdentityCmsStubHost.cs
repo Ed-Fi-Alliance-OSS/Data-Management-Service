@@ -44,7 +44,7 @@ internal static class IdentityCmsStubHost
     public const string CallerHeader = "X-Identity-Test-Caller";
     private static readonly Guid _stableClientUuid = Guid.Parse("33333333-3333-4333-8333-333333333333");
 
-    public sealed record Host(
+    public sealed record StubHost(
         WebApplicationFactory<Program> Factory,
         CmsStub Cms,
         IIdentityService IdentityService,
@@ -256,7 +256,7 @@ internal static class IdentityCmsStubHost
     public static HttpResponseMessage NullTenantList() =>
         new(HttpStatusCode.OK) { Content = new StringContent("null", Encoding.UTF8, "application/json") };
 
-    public static Host Create(CmsStub cms)
+    public static StubHost Create(CmsStub cms)
     {
         var responseHandler = new ConfigurationServiceResponseHandler(
             NullLogger<ConfigurationServiceResponseHandler>.Instance
@@ -331,7 +331,7 @@ internal static class IdentityCmsStubHost
             });
         });
 
-        return new Host(factory, cms, identityService, outcomes);
+        return new StubHost(factory, cms, identityService, outcomes);
     }
 
     private static IJwtValidationService CreateJwtValidationService()

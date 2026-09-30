@@ -25,7 +25,7 @@ public class IdentityTenantExistenceEndToEndTests
     private const string TenantNotFoundDetail = "The specified tenant could not be found.";
     private const string ServiceUnavailableType = "urn:ed-fi:api:service-unavailable";
 
-    private Host _host = null!;
+    private StubHost _host = null!;
     private HttpStatusCode _status;
     private JsonNode? _body;
 

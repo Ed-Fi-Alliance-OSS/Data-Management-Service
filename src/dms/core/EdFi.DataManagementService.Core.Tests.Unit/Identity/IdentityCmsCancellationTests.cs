@@ -212,7 +212,6 @@ public class IdentityCmsCancellationTests
                 memoryCache,
                 cacheSettings,
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 

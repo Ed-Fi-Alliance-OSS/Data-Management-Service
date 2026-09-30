@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -50,7 +49,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
             _claims = await _service.GetAllClaimSets();
@@ -97,7 +95,6 @@ public class ClaimSetCacheServiceTests
                 memoryCache,
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -187,7 +184,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
         }
@@ -263,7 +259,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -299,7 +294,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -333,7 +327,6 @@ public class ClaimSetCacheServiceTests
                 memoryCache,
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -372,7 +365,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -408,7 +400,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -445,7 +436,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -504,7 +494,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -571,7 +560,6 @@ public class ClaimSetCacheServiceTests
                 CreateMemoryCache(),
                 CreateCacheSettings(),
                 TimeProvider.System,
-                A.Fake<IHostApplicationLifetime>(),
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -631,7 +619,6 @@ public class ClaimSetCacheServiceTests
         IConfigurationServiceClaimSetProvider securityMetadataProvider,
         IMemoryCache memoryCache,
         TimeProvider timeProvider,
-        IHostApplicationLifetime? lifetime = null,
         CacheSettings? cacheSettings = null
     ) =>
         new(
@@ -639,7 +626,6 @@ public class ClaimSetCacheServiceTests
             memoryCache,
             cacheSettings ?? CreateCacheSettings(),
             timeProvider,
-            lifetime ?? A.Fake<IHostApplicationLifetime>(),
             NullLogger<CachedClaimSetProvider>.Instance
         );
 
@@ -844,57 +830,6 @@ public class ClaimSetCacheServiceTests
         public void It_starts_a_new_fetch_on_the_next_call()
         {
             _fetchesAfterRetry.Should().Be(2);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Host_Shutdown_During_A_Fill : ClaimSetCacheServiceTests
-    {
-        private CancellationToken _fillToken;
-        private Exception? _exception;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            using var stoppingCts = new CancellationTokenSource();
-            var lifetime = A.Fake<IHostApplicationLifetime>();
-            A.CallTo(() => lifetime.ApplicationStopping).Returns(stoppingCts.Token);
-            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
-            var neverCompletes = new TaskCompletionSource<IList<ClaimSet>>();
-            A.CallTo(() =>
-                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
-                )
-                .ReturnsLazily(
-                    (string? _, CancellationToken token) =>
-                    {
-                        _fillToken = token;
-                        return neverCompletes.Task;
-                    }
-                );
-
-            var service = CreateService(
-                securityMetadataProvider,
-                CreateMemoryCache(),
-                new FakeTimeProvider(),
-                lifetime
-            );
-
-            Task<IList<ClaimSet>> caller = service.GetAllClaimSets();
-            await stoppingCts.CancelAsync();
-            _exception = await CaptureExceptionAsync(caller);
-        }
-
-        [Test]
-        public void It_cancels_the_fetch_token()
-        {
-            _fillToken.IsCancellationRequested.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_fails_the_waiting_caller_instead_of_hanging()
-        {
-            _exception.Should().BeAssignableTo<OperationCanceledException>();
         }
     }
 

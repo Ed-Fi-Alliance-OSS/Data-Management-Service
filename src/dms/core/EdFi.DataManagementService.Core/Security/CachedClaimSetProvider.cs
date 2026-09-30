@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
@@ -23,7 +22,6 @@ public class CachedClaimSetProvider(
     IMemoryCache memoryCache,
     CacheSettings cacheSettings,
     TimeProvider timeProvider,
-    IHostApplicationLifetime hostApplicationLifetime,
     ILogger<CachedClaimSetProvider> logger
 ) : IClaimSetProvider
 {
@@ -87,9 +85,9 @@ public class CachedClaimSetProvider(
     }
 
     /// <summary>
-    /// Fetches and caches one tenant's claim sets on a token linked only to
-    /// <see cref="IHostApplicationLifetime.ApplicationStopping" /> with a 30-second budget, never any
-    /// caller's token.
+    /// Fetches and caches one tenant's claim sets on a token bounded only by a 30-second budget, never
+    /// any caller's token. Host shutdown does not cancel it, so a request still draining when shutdown
+    /// begins gets its claim sets instead of a failure.
     /// </summary>
     private async Task<IList<ClaimSet>> FillAsync(
         string cacheKey,
@@ -110,11 +108,7 @@ public class CachedClaimSetProvider(
                 LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
 
-            using var budgetCts = new CancellationTokenSource(FillTimeout, timeProvider);
-            using var fillCts = CancellationTokenSource.CreateLinkedTokenSource(
-                budgetCts.Token,
-                hostApplicationLifetime.ApplicationStopping
-            );
+            using var fillCts = new CancellationTokenSource(FillTimeout, timeProvider);
 
             // WaitAsync bounds the fill even against a provider that does not observe cancellation.
             var claimSets = await claimSetProvider

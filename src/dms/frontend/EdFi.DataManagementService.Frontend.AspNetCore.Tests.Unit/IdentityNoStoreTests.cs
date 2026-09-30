@@ -188,9 +188,10 @@ public class IdentityNoStoreTests
             _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         }
 
-        // The rejection happens before routing reaches the identity pipeline, so no-store here
-        // comes from the host-wide SecurityHeadersMiddleware; this pins that an identity 429 is
-        // still never cacheable and carries the directive once.
+        // IdentityResponseCachePolicyMiddleware, registered after routing and before the rate limiter,
+        // sets no-store first; the host-wide SecurityHeadersMiddleware also marks every non-2xx
+        // response no-store. This pins that an identity 429 is never cacheable and carries the
+        // directive once, not which of the two middlewares set it.
         [Test]
         public void It_is_not_cacheable()
         {
