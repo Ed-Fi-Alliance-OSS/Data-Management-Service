@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
@@ -13,8 +14,11 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using FakeItEasy;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -251,12 +255,84 @@ internal sealed class RecordingBackchannelHandler : HttpMessageHandler
 }
 
 /// <summary>
-/// The application with its real <c>Bearer</c> scheme, real token manager, real snapshot provider and real refresh
-/// service, over <see cref="PipelineTokenStore"/>, a faked profile repository and fake time (spec §5 step 3.1). The
-/// provider is wrapped by <see cref="CountingSnapshotProvider"/> and the scheme's configuration manager by
-/// <see cref="CountingConfigurationManager"/>; the scheme's backchannel handler is
-/// <see cref="RecordingBackchannelHandler"/>. The manager is wrapped after every other post-configuration, so a scheme
-/// left without a manager would get the framework's HTTP manager, wrapped, and it would send over the backchannel.
+/// Stands in for the <see cref="ILogger{JwtBearerHandler}"/> the <c>DmsJwtBearer</c> scheme's own challenge and
+/// authentication-failed events resolve from the request services, and records what they log.
+/// </summary>
+internal sealed class RecordingJwtBearerHandlerLogger : ILogger<JwtBearerHandler>
+{
+    private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+
+    public IReadOnlyCollection<(LogLevel Level, string Message)> Entries => [.. _entries];
+
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    ) => _entries.Enqueue((logLevel, formatter(state, exception)));
+}
+
+/// <summary>
+/// Serves <see cref="BearerPipelineHost.DmsJwtBearerProbePath"/> ahead of the application's own middleware. The probe
+/// carries the attribute production code uses to select the <c>DmsJwtBearer</c> scheme
+/// (<see cref="JwtAuthenticationExtensions.CreateJwtAuthorizeAttribute"/>) and runs through the real authorization
+/// middleware, which authenticates and challenges with that scheme only. The application's authentication middleware,
+/// which would run the default <c>Bearer</c> scheme, is never reached on this path. No production endpoint selects the
+/// scheme (F2), so this is the only way to reach it through the pipeline.
+/// </summary>
+internal sealed class DmsJwtBearerProbeStartupFilter(Action onProbeReached) : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+        app =>
+        {
+            app.Map(
+                BearerPipelineHost.DmsJwtBearerProbePath,
+                branch =>
+                {
+                    Endpoint probe = new(
+                        async context =>
+                        {
+                            onProbeReached();
+                            string? scheme = context
+                                .Features.Get<IAuthenticateResultFeature>()
+                                ?.AuthenticateResult?.Ticket?.AuthenticationScheme;
+                            await context.Response.WriteAsync(scheme ?? string.Empty);
+                        },
+                        new EndpointMetadataCollection(
+                            JwtAuthenticationExtensions.CreateJwtAuthorizeAttribute()
+                        ),
+                        "DmsJwtBearer probe"
+                    );
+                    branch.Use(
+                        (context, nextMiddleware) =>
+                        {
+                            context.SetEndpoint(probe);
+                            return nextMiddleware(context);
+                        }
+                    );
+                    branch.UseAuthorization();
+                    branch.Run(probe.RequestDelegate!);
+                }
+            );
+            next(app);
+        };
+}
+
+/// <summary>
+/// The application with its real bearer schemes, real token manager, real snapshot provider and real refresh service,
+/// over <see cref="PipelineTokenStore"/>, a faked profile repository and fake time (spec §5 steps 3.1 and 3.2). The
+/// provider is wrapped by <see cref="CountingSnapshotProvider"/> and the configuration manager of the scheme under test
+/// (<c>Bearer</c> by default, or <c>DmsJwtBearer</c>) by <see cref="CountingConfigurationManager"/>; that scheme's
+/// backchannel handler is <see cref="RecordingBackchannelHandler"/>. The manager is wrapped after every other
+/// post-configuration, so a scheme left without a manager would get the framework's HTTP manager, wrapped, and it would
+/// send over the backchannel. The name of the scheme behind every message-received event is recorded in
+/// <see cref="SchemesAuthenticating"/>, so a fixture can show which scheme ran.
 /// Arrange <see cref="Store"/> before <see cref="StartAsync"/>: the refresh service's startup load begins with the host.
 /// </summary>
 internal sealed class BearerPipelineHost : IDisposable
@@ -264,6 +340,7 @@ internal sealed class BearerPipelineHost : IDisposable
     public const string Issuer = "http://localhost/realms/dms";
     public const string Audience = "account";
     public const string ConfigServiceRole = "test-role";
+    public const string DmsJwtBearerProbePath = "/dms-jwt-bearer-probe";
 
     /// <summary>
     /// The role claim as <c>JwtTokenGenerator</c> issues it and the production settings expect it. The Test settings'
@@ -278,11 +355,14 @@ internal sealed class BearerPipelineHost : IDisposable
         "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly ConcurrentQueue<string> _schemesAuthenticating = new();
     private HttpClient? _client;
     private CountingConfigurationManager? _manager;
+    private int _probeHits;
 
-    public BearerPipelineHost()
+    public BearerPipelineHost(string scheme = JwtBearerDefaults.AuthenticationScheme)
     {
+        Scheme = scheme;
         A.CallTo(() => Profiles.GetProfile(A<int>._))
             .ReturnsLazily(
                 (int id) =>
@@ -324,20 +404,52 @@ internal sealed class BearerPipelineHost : IDisposable
                 );
 
                 services.Configure<JwtBearerOptions>(
-                    JwtBearerDefaults.AuthenticationScheme,
+                    scheme,
                     options => options.BackchannelHttpHandler = Backchannel
                 );
                 services.PostConfigure<JwtBearerOptions>(
-                    JwtBearerDefaults.AuthenticationScheme,
+                    scheme,
                     options =>
                     {
                         _manager = new CountingConfigurationManager(options.ConfigurationManager!);
                         options.ConfigurationManager = _manager;
                     }
                 );
+
+                foreach (
+                    string recorded in new[]
+                    {
+                        JwtBearerDefaults.AuthenticationScheme,
+                        JwtAuthenticationExtensions.JwtSchemeName,
+                    }
+                )
+                {
+                    services.PostConfigure<JwtBearerOptions>(
+                        recorded,
+                        options =>
+                        {
+                            Func<MessageReceivedContext, Task> messageReceived = options
+                                .Events
+                                .OnMessageReceived;
+                            options.Events.OnMessageReceived = context =>
+                            {
+                                _schemesAuthenticating.Enqueue(context.Scheme.Name);
+                                return messageReceived(context);
+                            };
+                        }
+                    );
+                }
+
+                services.AddSingleton<ILogger<JwtBearerHandler>>(HandlerLogger);
+                services.AddTransient<IStartupFilter>(_ => new DmsJwtBearerProbeStartupFilter(() =>
+                    Interlocked.Increment(ref _probeHits)
+                ));
             });
         });
     }
+
+    /// <summary>The scheme whose configuration manager and backchannel are observed.</summary>
+    public string Scheme { get; }
 
     /// <summary>Starts at the same instant in every fixture; only the provider and the refresh service read it.</summary>
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
@@ -348,9 +460,19 @@ internal sealed class BearerPipelineHost : IDisposable
 
     public RecordingBackchannelHandler Backchannel { get; } = new();
 
+    /// <summary>What the <c>DmsJwtBearer</c> scheme's own challenge and authentication-failed events logged.</summary>
+    public RecordingJwtBearerHandlerLogger HandlerLogger { get; } = new();
+
+    /// <summary>The scheme behind each message-received event, in order.</summary>
+    public IReadOnlyCollection<string> SchemesAuthenticating => [.. _schemesAuthenticating];
+
+    /// <summary>How many requests reached the <c>DmsJwtBearer</c> probe endpoint.</summary>
+    public int ProbeHits => Volatile.Read(ref _probeHits);
+
     /// <summary>The scheme's configuration manager, once the scheme's options exist.</summary>
     public CountingConfigurationManager Manager =>
-        _manager ?? throw new InvalidOperationException("The Bearer scheme's options have not been built.");
+        _manager
+        ?? throw new InvalidOperationException($"The {Scheme} scheme's options have not been built.");
 
     public CountingSnapshotProvider Provider =>
         (CountingSnapshotProvider)_factory.Services.GetRequiredService<ISigningKeySnapshotProvider>();
@@ -380,9 +502,16 @@ internal sealed class BearerPipelineHost : IDisposable
     public Task<HttpResponseMessage> GetProfileAsync(string? token) =>
         SendAsync(token is null ? null : new AuthenticationHeaderValue("Bearer", token));
 
-    public Task<HttpResponseMessage> SendAsync(AuthenticationHeaderValue? authorization)
+    /// <summary>Requests the probe endpoint, which only the <c>DmsJwtBearer</c> scheme authenticates.</summary>
+    public Task<HttpResponseMessage> GetDmsJwtBearerProbeAsync(string token) =>
+        SendAsync(new AuthenticationHeaderValue("Bearer", token), DmsJwtBearerProbePath);
+
+    public Task<HttpResponseMessage> SendAsync(
+        AuthenticationHeaderValue? authorization,
+        string path = "/v3/profiles/7"
+    )
     {
-        HttpRequestMessage request = new(HttpMethod.Get, "/v3/profiles/7");
+        HttpRequestMessage request = new(HttpMethod.Get, path);
         request.Headers.Authorization = authorization;
         return Client.SendAsync(request);
     }

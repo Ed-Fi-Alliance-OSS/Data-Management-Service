@@ -106,7 +106,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         /// bearer events. Only the self-contained store registrations call this, so nothing here exists in Keycloak
         /// mode. Every registration is a try-add, so registering twice still yields one of each. The bearer schemes
         /// take the manager and the events through <see cref="SigningKeyJwtBearerOptionsExtensions.UseSigningKeySnapshot"/>:
-        /// the default <c>Bearer</c> scheme since step 3.1; <c>DmsJwtBearer</c> keeps its own resolver until step 3.2.
+        /// the default <c>Bearer</c> scheme since step 3.1 and <c>DmsJwtBearer</c> since step 3.2.
         /// </summary>
         public static IServiceCollection AddSigningKeyServices(this IServiceCollection services)
         {

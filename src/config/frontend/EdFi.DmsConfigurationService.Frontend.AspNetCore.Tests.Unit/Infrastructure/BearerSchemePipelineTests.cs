@@ -32,17 +32,17 @@ public class BearerSchemePipelineTests
 {
     private static readonly TimeSpan _pastCooldown = TimeSpan.FromSeconds(31);
 
-    private static async Task<JsonObject> BodyOf(HttpResponseMessage response) =>
+    internal static async Task<JsonObject> BodyOf(HttpResponseMessage response) =>
         JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
 
-    private static string? RetryAfter(HttpResponseMessage response) =>
+    internal static string? RetryAfter(HttpResponseMessage response) =>
         response.Headers.TryGetValues("Retry-After", out var values) ? string.Join(",", values) : null;
 
-    private static string Challenge(HttpResponseMessage response) =>
+    internal static string Challenge(HttpResponseMessage response) =>
         string.Join(",", response.Headers.WwwAuthenticate.Select(header => header.Scheme));
 
     /// <summary>A 401 from the scheme's ordinary challenge, not a dependency 503.</summary>
-    private static void ShouldBeAnOrdinaryUnauthorized(HttpResponseMessage response)
+    internal static void ShouldBeAnOrdinaryUnauthorized(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         Challenge(response).Should().Be("Bearer");
@@ -50,7 +50,7 @@ public class BearerSchemePipelineTests
     }
 
     /// <summary>The dependency answer (D-9): 503, Retry-After, and the generic problem body (I-7).</summary>
-    private static async Task ShouldBeADependency503(HttpResponseMessage response)
+    internal static async Task ShouldBeADependency503(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         RetryAfter(response).Should().Be("30");
@@ -693,7 +693,7 @@ public class BearerSchemePipelineTests
             RetryAfter(_response).Should().BeNull();
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string identityProvider) =>
+    internal static WebApplicationFactory<Program> CreateFactory(string identityProvider) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
