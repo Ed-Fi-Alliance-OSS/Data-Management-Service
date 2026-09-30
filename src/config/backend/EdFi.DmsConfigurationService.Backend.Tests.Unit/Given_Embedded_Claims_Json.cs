@@ -97,6 +97,23 @@ public class Given_Embedded_Claims_Json
         from actionName in new[] { "Create", "Update" }
         select new TestCaseData(resourceClaimUri, actionName);
 
+    // Resources the Ed-Fi-Data-Standard v6.1.0 Populated sample writes that do not exist in DS 5.2,
+    // so the inventory above, checked against ds52, cannot cover them.
+    private static readonly string[] Ds61OnlySeedLoaderInventory =
+    [
+        // Populated: SpecialEducation.xml
+        "http://ed-fi.org/identity/claims/ed-fi/IDEAEvent",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEP",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEPGoal",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEPServiceDelivery",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEPServicePrescription",
+    ];
+
+    public static IEnumerable<TestCaseData> Ds61OnlySeedLoaderGrantSource =>
+        from resourceClaimUri in Ds61OnlySeedLoaderInventory
+        from actionName in new[] { "Create", "Update" }
+        select new TestCaseData(resourceClaimUri, actionName);
+
     // The claim sets a default deployment loads. The E2E claim sets are defined only by the
     // test-owned claims fragments, never by the shipped Claims.json.
     private static readonly string[] ShippedClaimSetNames =
@@ -391,8 +408,26 @@ public class Given_Embedded_Claims_Json
         string actionName
     )
     {
+        AssertSeedLoaderGrant(_claims["claimsHierarchy"]!, resourceClaimUri, actionName);
+    }
+
+    [TestCaseSource(nameof(Ds61OnlySeedLoaderGrantSource))]
+    public void It_grants_SeedLoader_the_ds61_only_action_with_inherited_authorization(
+        string resourceClaimUri,
+        string actionName
+    )
+    {
+        AssertSeedLoaderGrant(LoadEmbeddedClaims("ds61")["claimsHierarchy"]!, resourceClaimUri, actionName);
+    }
+
+    private static void AssertSeedLoaderGrant(
+        JsonNode claimsHierarchy,
+        string resourceClaimUri,
+        string actionName
+    )
+    {
         SeedLoaderGrant? result = FindSeedLoaderGrant(
-            _claims["claimsHierarchy"]!,
+            claimsHierarchy,
             resourceClaimUri,
             actionName,
             new SeedLoaderGrant(HasAction: false, HasOverride: false)
