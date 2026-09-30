@@ -249,31 +249,67 @@ public class VendorModuleTests
             }
             """;
 
+        private const string WhitespacePrefixesBody = """
+            {
+              "id": 1,
+              "company": "Test Company",
+              "contactName": "Test Contact",
+              "contactEmailAddress": "test@example.com",
+              "namespacePrefixes": "   "
+            }
+            """;
+
+        private const string PaddedPrefixesBody = """
+            {
+              "id": 1,
+              "company": "Test Company",
+              "contactName": "Test Contact",
+              "contactEmailAddress": "test@example.com",
+              "namespacePrefixes": " , prefix1, , prefix2 , "
+            }
+            """;
+
         [Test]
         public Task Post_WithEmptyNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
-            AssertPostAcceptsEmptyPrefixesAsync(EmptyPrefixesBody);
+            AssertPostAcceptsPrefixesAsync(EmptyPrefixesBody, "");
 
         [Test]
         public Task Post_WithOmittedNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
-            AssertPostAcceptsEmptyPrefixesAsync(OmittedPrefixesBody);
+            AssertPostAcceptsPrefixesAsync(OmittedPrefixesBody, "");
 
         [Test]
         public Task Put_WithEmptyNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
-            AssertPutAcceptsEmptyPrefixesAsync(EmptyPrefixesBody);
+            AssertPutAcceptsPrefixesAsync(EmptyPrefixesBody, "");
 
         [Test]
         public Task Put_WithOmittedNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
-            AssertPutAcceptsEmptyPrefixesAsync(OmittedPrefixesBody);
+            AssertPutAcceptsPrefixesAsync(OmittedPrefixesBody, "");
 
         [Test]
-        public Task Post_WithNullNamespacePrefixes_ShouldRejectWithoutPersistence() =>
-            AssertNullPrefixesRejectedAsync(HttpMethod.Post);
+        public Task Post_WithNullNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPostAcceptsPrefixesAsync(NullPrefixesBody, "");
 
         [Test]
-        public Task Put_WithNullNamespacePrefixes_ShouldRejectWithoutPersistence() =>
-            AssertNullPrefixesRejectedAsync(HttpMethod.Put);
+        public Task Put_WithNullNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPutAcceptsPrefixesAsync(NullPrefixesBody, "");
 
-        private async Task AssertPostAcceptsEmptyPrefixesAsync(string body)
+        [Test]
+        public Task Post_WithWhitespaceNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPostAcceptsPrefixesAsync(WhitespacePrefixesBody, "");
+
+        [Test]
+        public Task Put_WithWhitespaceNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(WhitespacePrefixesBody, "");
+
+        [Test]
+        public Task Post_WithPaddedNamespacePrefixes_ShouldPassCanonicalValueToRepository() =>
+            AssertPostAcceptsPrefixesAsync(PaddedPrefixesBody, "prefix1,prefix2");
+
+        [Test]
+        public Task Put_WithPaddedNamespacePrefixes_ShouldPassCanonicalValueToRepository() =>
+            AssertPutAcceptsPrefixesAsync(PaddedPrefixesBody, "prefix1,prefix2");
+
+        private async Task AssertPostAcceptsPrefixesAsync(string body, string expectedPrefixes)
         {
             List<VendorInsertCommand> commands = [];
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
@@ -287,10 +323,10 @@ public class VendorModuleTests
             );
 
             response.StatusCode.Should().Be(HttpStatusCode.Created);
-            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().BeEmpty();
+            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
         }
 
-        private async Task AssertPutAcceptsEmptyPrefixesAsync(string body)
+        private async Task AssertPutAcceptsPrefixesAsync(string body, string expectedPrefixes)
         {
             List<VendorUpdateCommand> commands = [];
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
@@ -304,28 +340,52 @@ public class VendorModuleTests
             );
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().BeEmpty();
+            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
         }
 
-        private async Task AssertNullPrefixesRejectedAsync(HttpMethod method)
+        private async Task AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(
+            string body,
+            string expectedPrefixes
+        )
         {
-            Fake.ClearRecordedCalls(_vendorRepository);
-            using var client = SetUpClient();
-            using var request = new HttpRequestMessage(
-                method,
-                method == HttpMethod.Post ? "/v3/vendors" : "/v3/vendors/1"
-            )
-            {
-                Content = new StringContent(NullPrefixesBody, Encoding.UTF8, "application/json"),
-            };
-
-            var response = await client.SendAsync(request);
-
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .MustNotHaveHappened();
+            Guid clientUuid = Guid.NewGuid();
+            List<VendorUpdateCommand> commands = [];
+            List<string> providerPrefixes = [];
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .Returns(
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Test Company",
+                            "Test Contact",
+                            "test@example.com",
+                            "uri://old.org",
+                            [new VendorApiClient(51, "client-51", clientUuid, 10)]
+                        )
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        clientUuid.ToString(),
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => providerPrefixes.Add(call.GetArgument<string>(1)!))
+                .Returns(new ClientUpdateResult.Success(clientUuid));
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(51, clientUuid, clientUuid))
+                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .MustNotHaveHappened();
+                .Invokes(call => commands.Add(call.GetArgument<VendorUpdateCommand>(0)!))
+                .Returns(new VendorUpdateResult.Success());
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(body, Encoding.UTF8, "application/json")
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
+            providerPrefixes.Should().Equal(expectedPrefixes);
         }
     }
 
