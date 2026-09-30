@@ -48,6 +48,9 @@ public class Given_a_host_booted_with_the_both_phases_fixture_plugin_allowlisted
         "Acme.CmsContributor.CmsContributorConfigurationSource";
     private const string SecretLookingKey = "AcmeVault:ClientSecret";
     private const string SecretLookingValue = "acme-vault-7f3c9e1b-plugin-secret";
+    private const string PluginOwnServiceType = "Acme.CmsContributor.CmsContributorGreeter";
+    private const string PluginOptionsType = "Acme.CmsContributor.CmsContributorOptions";
+    private const string PluginGreeting = "greetings-from-acme-cms-contributor";
 
     private static readonly string _pluginRoot = Path.Combine(AppContext.BaseDirectory, "PluginFixtures");
 
@@ -153,6 +156,35 @@ public class Given_a_host_booted_with_the_both_phases_fixture_plugin_allowlisted
     }
 
     [Test]
+    public void It_resolves_the_plugins_own_service_reading_its_bound_options()
+    {
+        // The type is the plugin's, so it is found among the plugin's attributed additions by name
+        // rather than referenced.
+        Type ownService = _factory
+            .Services.GetRequiredService<PluginAuditInput>()
+            .Records.Single()
+            .Additions.Select(descriptor => descriptor.ServiceType)
+            .Single(serviceType => serviceType.FullName == PluginOwnServiceType);
+
+        _factory.Services.GetRequiredService(ownService).ToString().Should().Be(PluginGreeting);
+    }
+
+    [Test]
+    public void It_attributes_the_plugins_options_configuration_to_the_plugin()
+    {
+        _factory
+            .Services.GetRequiredService<PluginAuditInput>()
+            .Records.Single()
+            .Additions.Select(descriptor => descriptor.ServiceType)
+            .Should()
+            .Contain(serviceType =>
+                serviceType.IsGenericType
+                && serviceType.GetGenericTypeDefinition() == typeof(IConfigureOptions<>)
+                && serviceType.GetGenericArguments()[0].FullName == PluginOptionsType
+            );
+    }
+
+    [Test]
     public void It_emits_one_information_inventory_event_for_the_plugin()
     {
         InventoryEvents
@@ -195,7 +227,7 @@ public class Given_a_host_booted_with_the_both_phases_fixture_plugin_allowlisted
     }
 
     [Test]
-    public void It_lists_the_resolver_and_the_hosted_service_among_the_registered_services()
+    public void It_lists_the_resolver_its_own_service_and_the_hosted_service_among_the_registered_services()
     {
         InventoryEvents
             .Single()
@@ -207,6 +239,14 @@ public class Given_a_host_booted_with_the_both_phases_fixture_plugin_allowlisted
                 new PluginRegisteredServiceEntry(
                     typeof(ISecretResolver).FullName!,
                     "Acme.CmsContributor.CmsContributorSecretResolver",
+                    "Singleton",
+                    false
+                )
+            )
+            .And.ContainEquivalentOf(
+                new PluginRegisteredServiceEntry(
+                    PluginOwnServiceType,
+                    PluginOwnServiceType,
                     "Singleton",
                     false
                 )

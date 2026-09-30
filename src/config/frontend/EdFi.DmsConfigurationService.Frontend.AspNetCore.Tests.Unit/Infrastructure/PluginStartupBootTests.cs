@@ -46,6 +46,9 @@ internal sealed class CmsPluginBoot : IDisposable
     internal const string PluginName = "Acme.CmsContributor";
     internal const string SecretLookingKey = "AcmeVault:ClientSecret";
     internal const string SecretLookingValue = "acme-vault-7f3c9e1b-plugin-secret";
+
+    /// <summary>The real host service type the fixture's guard behaviors act on, named as it does.</summary>
+    internal const string HostServiceTypeName = "EdFi.DmsConfigurationService.Backend.Deploy.IDatabaseDeploy";
     private const string BehaviorKey = "Fixture:Acme.CmsContributor:Behavior";
 
     /// <summary>Where PluginCmsFixtures.targets publishes the fixture plugin.</summary>
@@ -813,5 +816,98 @@ public class Given_a_boot_whose_plugin_claims_the_client_secret_hasher_once(
             .GetType()
             .FullName.Should()
             .Be("Acme.CmsContributor.CmsContributorClientSecretHasher");
+    }
+}
+
+/// <summary>
+/// A plugin that adds a registration for a Configuration Service service type which is no declared
+/// contract, beside a valid secret resolver claim. Adding passes the wrapper; the audit's displacement
+/// check is what refuses it.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_boot_whose_plugin_claims_a_host_owned_service_type
+{
+    private const string AuditProblem =
+        $"plugin '{CmsPluginBoot.PluginName}' registered '{CmsPluginBoot.HostServiceTypeName}', which the "
+        + "host owns and declares no plugin contract for.";
+
+    private CmsPluginBoot _boot = null!;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp() =>
+        _boot = CmsPluginBoot.Run(CmsPluginBoot.StageRoot, CmsPluginBoot.PluginName, "claimHostService");
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown() => _boot.Dispose();
+
+    [Test]
+    public void It_fails_host_creation_before_any_client_exists()
+    {
+        _boot.StartupException.Should().NotBeNull();
+        _boot.ClientCreated.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_fails_on_the_audits_displacement_finding_naming_the_plugin_and_the_type()
+    {
+        _boot
+            .Find<InvalidOperationException>()!
+            .Message.Should()
+            .StartWith("Startup aborted: 1 plugin registration problem(s).")
+            .And.Contain(AuditProblem);
+    }
+
+    [Test]
+    public void It_writes_the_finding_to_the_diagnostic_channel()
+    {
+        _boot.Diagnostics.Should().Contain($"Plugin registration problem: {AuditProblem}");
+    }
+}
+
+/// <summary>
+/// A plugin that removes, or overwrites through the indexer, the descriptor the Configuration Service
+/// registered for one of its own service types. The wrapper refuses the call inside the hook.
+/// </summary>
+[TestFixture("removeHostService")]
+[TestFixture("overwriteHostService")]
+[NonParallelizable]
+public class Given_a_boot_whose_plugin_displaces_a_host_owned_descriptor(string behavior)
+{
+    private CmsPluginBoot _boot = null!;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp() =>
+        _boot = CmsPluginBoot.Run(CmsPluginBoot.StageRoot, CmsPluginBoot.PluginName, behavior);
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown() => _boot.Dispose();
+
+    [Test]
+    public void It_fails_host_creation_before_any_client_exists()
+    {
+        _boot.StartupException.Should().NotBeNull();
+        _boot.ClientCreated.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_fails_on_the_wrappers_host_owned_descriptor_refusal()
+    {
+        PluginCompositionException failure = _boot.Find<PluginCompositionException>()!;
+
+        failure.Should().NotBeNull();
+        failure.Reason.Should().Be(PluginCompositionFailure.HostOwnedDescriptorDisplaced);
+        failure.PluginName.Should().Be(CmsPluginBoot.PluginName);
+    }
+
+    [Test]
+    public void It_writes_the_refusal_naming_the_plugin_and_the_type_to_the_diagnostic_channel()
+    {
+        _boot
+            .Diagnostics.Should()
+            .Contain(
+                $"plugin composition refused: plugin '{CmsPluginBoot.PluginName}' removed or overwrote the "
+                    + $"pre-existing host descriptor for '{CmsPluginBoot.HostServiceTypeName}'."
+            );
     }
 }

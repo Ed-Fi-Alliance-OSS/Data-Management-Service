@@ -53,5 +53,12 @@
     -->
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.Api.Plugins.Hosting.Tests.Unit" />
+        <!--
+            The Configuration Service's frontend tests, for the host-owned predicate and the recording
+            wrapper against real CMS service types. A refused plugin hook ends the boot before any test
+            callback sees the service collection, so whether a refusal left the collection untouched
+            can only be shown by driving the wrapper directly.
+        -->
+        <InternalsVisibleTo Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit" />
     </ItemGroup>
 </Project>

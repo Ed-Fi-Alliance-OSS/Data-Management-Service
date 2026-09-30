@@ -24,5 +24,7 @@
         <ProjectReference Include="..\..\..\..\..\config\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+        <!-- For the options the plugin binds from its own section, beside the declared contract. -->
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     </ItemGroup>
 </Project>
