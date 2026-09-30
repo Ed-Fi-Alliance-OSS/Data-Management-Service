@@ -61,7 +61,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public string EncryptionKey { get; set; } = string.Empty;
 
         /// <summary>
-        /// Maximum size of key format cache.
+        /// Formerly the maximum size of the key format cache. No longer read: the cache was removed (DMS-1556, Q7) and
+        /// key formats are detected on every load. The setting still binds, so existing configuration keeps working.
         /// </summary>
         public int KeyFormatCacheSize { get; set; } = 100;
 

@@ -3,12 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,19 +33,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private readonly ILogger<OpenIddictTokenManager> _logger = logger;
         private readonly IClientSecretHasher _secretHasher = secretHasher;
         private readonly IOpenIddictTokenRepository _tokenRepository = tokenRepository;
-
-        // Cache for key formats with a maximum size limit to prevent unbounded growth
-        private readonly ConcurrentDictionary<string, KeyFormat> _keyFormatCache = new();
-        private readonly object _cacheLock = new object();
-
-        // Key format enumeration to cache detected formats
-        private enum KeyFormat
-        {
-            SubjectPublicKeyInfo,
-            Pkcs1,
-            Base64Encoded,
-            Unknown,
-        }
 
         /// <summary>
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
@@ -705,37 +692,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             var keys = new List<(RSAParameters, string)>();
             try
             {
-                int maxCacheSize = _identityOptions.Value.KeyFormatCacheSize;
                 var keyRecords = await _tokenRepository.GetActivePublicKeysAsync();
                 foreach (var record in keyRecords)
                 {
                     try
                     {
-                        using var rsa = RSA.Create();
-
-                        // Check if we've already determined the format for this key
-                        KeyFormat keyFormat;
-
-                        // Try to get from cache first
-                        if (!_keyFormatCache.TryGetValue(record.KeyId, out keyFormat))
-                        {
-                            // Cache miss, detect format
-                            keyFormat = DetectKeyFormat(record.PublicKey);
-
-                            // Atomically check cache size, remove if needed, and add new entry
-                            lock (_cacheLock)
-                            {
-                                if (_keyFormatCache.Count >= maxCacheSize)
-                                {
-                                    var keyToRemove = _keyFormatCache.Keys.FirstOrDefault();
-                                    if (keyToRemove != null)
-                                    {
-                                        _keyFormatCache.TryRemove(keyToRemove, out _);
-                                    }
-                                }
-                                _keyFormatCache.TryAdd(record.KeyId, keyFormat);
-                            }
-                        }
+                        PublicKeyFormat keyFormat = PublicKeyMaterialParser.DetectFormat(
+                            record.PublicKey,
+                            _logger
+                        );
 
                         _logger.LogDebug(
                             "Key {KeyId} format detected as: {Format}",
@@ -743,32 +708,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                             keyFormat
                         );
 
-                        // Import the key using the detected format
-                        switch (keyFormat)
+                        if (keyFormat == PublicKeyFormat.Unknown)
                         {
-                            case KeyFormat.SubjectPublicKeyInfo:
-                                rsa.ImportSubjectPublicKeyInfo(record.PublicKey, out _);
-                                break;
-
-                            case KeyFormat.Pkcs1:
-                                rsa.ImportRSAPublicKey(record.PublicKey, out _);
-                                break;
-
-                            case KeyFormat.Base64Encoded:
-                                var publicKeyString = System.Text.Encoding.UTF8.GetString(record.PublicKey);
-                                var decodedKey = Convert.FromBase64String(publicKeyString);
-                                rsa.ImportSubjectPublicKeyInfo(decodedKey, out _);
-                                break;
-
-                            default:
-                                _logger.LogWarning(
-                                    "Unknown key format for key ID: {KeyId}",
-                                    LoggingUtility.SanitizeForLog(record.KeyId)
-                                );
-                                continue; // Skip this key
+                            _logger.LogWarning(
+                                "Unknown key format for key ID: {KeyId}",
+                                LoggingUtility.SanitizeForLog(record.KeyId)
+                            );
+                            continue; // Skip this key
                         }
 
-                        keys.Add((rsa.ExportParameters(false), record.KeyId));
+                        keys.Add(
+                            (
+                                PublicKeyMaterialParser.ImportPublicParameters(record.PublicKey, keyFormat),
+                                record.KeyId
+                            )
+                        );
                     }
                     catch (Exception keyEx)
                     {
@@ -785,59 +739,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 _logger.LogError(ex, "Failed to fetch public keys for JWKS");
             }
             return keys;
-        }
-
-        /// <summary>
-        /// Detects the format of a public key
-        /// </summary>
-        private KeyFormat DetectKeyFormat(byte[] keyData)
-        {
-            try
-            {
-                // Try importing as SubjectPublicKeyInfo (X.509) format
-                using (var rsa = RSA.Create())
-                {
-                    try
-                    {
-                        rsa.ImportSubjectPublicKeyInfo(keyData, out _);
-                        return KeyFormat.SubjectPublicKeyInfo;
-                    }
-                    catch
-                    {
-                        // Not in SPKI format, continue to next check
-                    }
-
-                    // Try importing as PKCS#1 format
-                    try
-                    {
-                        rsa.ImportRSAPublicKey(keyData, out _);
-                        return KeyFormat.Pkcs1;
-                    }
-                    catch
-                    {
-                        // Not in PKCS#1 format, continue to next check
-                    }
-
-                    // Try as Base64 encoded string
-                    try
-                    {
-                        var publicKeyString = System.Text.Encoding.UTF8.GetString(keyData);
-                        var decodedKey = Convert.FromBase64String(publicKeyString);
-                        rsa.ImportSubjectPublicKeyInfo(decodedKey, out _);
-                        return KeyFormat.Base64Encoded;
-                    }
-                    catch
-                    {
-                        // Not a Base64 encoded string
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error while detecting key format");
-            }
-
-            return KeyFormat.Unknown;
         }
     }
 

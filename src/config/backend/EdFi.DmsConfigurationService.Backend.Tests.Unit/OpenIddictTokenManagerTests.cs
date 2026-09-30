@@ -1714,4 +1714,72 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
     }
+
+    // The format cache was keyed by key id, so a key id whose stored bytes changed encoding kept the first format it was
+    // seen with, failed to import, and was skipped. With the cache removed (DMS-1556 Q7) every load detects afresh.
+    [TestFixture]
+    public class Given_GetPublicKeysAsync_WhenAKeyIdIsReencodedBetweenLoads : OpenIddictTokenManagerTests
+    {
+        private RSAParameters _reencoded;
+        private List<(RSAParameters RsaParameters, string KeyId)> _secondLoad = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using RSA first = RSA.Create(2048);
+            using RSA second = RSA.Create(2048);
+            _reencoded = second.ExportParameters(false);
+
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .ReturnsNextFromSequence(
+                    Task.FromResult<IEnumerable<PublicKeyInfo>>([
+                        new PublicKeyInfo { KeyId = "key-1", PublicKey = first.ExportSubjectPublicKeyInfo() },
+                    ]),
+                    Task.FromResult<IEnumerable<PublicKeyInfo>>([
+                        new PublicKeyInfo { KeyId = "key-1", PublicKey = second.ExportRSAPublicKey() },
+                    ])
+                );
+
+            await _tokenManager.GetPublicKeysAsync();
+            _secondLoad = [.. await _tokenManager.GetPublicKeysAsync()];
+        }
+
+        [Test]
+        public void It_returns_the_key_on_the_second_load() =>
+            _secondLoad.Select(key => key.KeyId).Should().Equal("key-1");
+
+        [Test]
+        public void It_imports_the_reencoded_key_material() =>
+            _secondLoad[0].RsaParameters.Modulus.Should().Equal(_reencoded.Modulus);
+    }
+
+    [TestFixture]
+    public class Given_GetPublicKeysAsync_WithAnUnparseableKeyBesideAValidOne : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private List<(RSAParameters RsaParameters, string KeyId)> _keys = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using RSA rsa = RSA.Create(2048);
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            A.CallTo(() => _logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns([
+                    new PublicKeyInfo { KeyId = "garbage", PublicKey = [1, 2, 3] },
+                    new PublicKeyInfo { KeyId = "key-1", PublicKey = rsa.ExportSubjectPublicKeyInfo() },
+                ]);
+
+            _keys = [.. await CreateConfiguredTokenManager(_logger).GetPublicKeysAsync()];
+        }
+
+        [Test]
+        public void It_skips_the_unparseable_key() => _keys.Select(key => key.KeyId).Should().Equal("key-1");
+
+        [Test]
+        public void It_warns_about_the_unknown_format() =>
+            LogMessagesAt(_logger, LogLevel.Warning).Should().Equal("Unknown key format for key ID: garbage");
+    }
 }
