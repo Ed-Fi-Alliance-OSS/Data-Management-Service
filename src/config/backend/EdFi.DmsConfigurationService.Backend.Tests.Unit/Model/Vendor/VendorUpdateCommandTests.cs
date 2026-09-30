@@ -181,7 +181,7 @@ public class VendorUpdateCommandTests
     }
 
     [Test]
-    public void Validate_WithNullNamespacePrefixes_ShouldFailWithLengthMessage()
+    public void Validate_WithNullNamespacePrefixes_ShouldFailWithNullMessage()
     {
         var command = new VendorUpdateCommand
         {
@@ -200,7 +200,33 @@ public class VendorUpdateCommandTests
             .Which.Should()
             .Match<FluentValidation.Results.ValidationFailure>(error =>
                 error.PropertyName == "NamespacePrefixes"
-                && error.ErrorMessage == "Each NamespacePrefix length must be 128 characters or fewer."
+                && error.ErrorMessage
+                    == "NamespacePrefixes cannot be null. Supply a comma-separated string of namespace prefixes, or an empty string for a vendor with no namespace prefixes."
+            );
+    }
+
+    [Test]
+    public void Validate_WithWhitespaceOnlyNamespacePrefixes_ShouldFailValidation()
+    {
+        var command = new VendorUpdateCommand
+        {
+            Id = 1,
+            Company = "ValidCompany",
+            ContactName = "ValidContactName",
+            ContactEmailAddress = "valid@example.com",
+            NamespacePrefixes = "   ",
+        };
+
+        var result = _validator.Validate(command);
+
+        result
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<FluentValidation.Results.ValidationFailure>(error =>
+                error.PropertyName == "NamespacePrefixes"
+                && error.ErrorMessage
+                    == "NamespacePrefixes must be empty or contain at least one non-whitespace character."
             );
     }
 

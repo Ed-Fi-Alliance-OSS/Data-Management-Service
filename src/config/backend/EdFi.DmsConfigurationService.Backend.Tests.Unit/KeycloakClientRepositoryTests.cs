@@ -1283,6 +1283,28 @@ public class KeycloakClientRepositoryTests
     }
 
     [TestFixture]
+    public class Given_a_namespace_claim_update_restoring_a_cleared_claim : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ClientProtocolMapper namespaceMapper = NamespaceClaims(_storedClient).Single();
+            namespaceMapper.Config["claim.value"] = "\"\"";
+            namespaceMapper.Config["jsonType.label"] = "JSON";
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_restores_the_non_empty_value_as_a_string_claim()
+        {
+            ClientProtocolMapper mapper = NamespaceClaims(AppliedClient()).Should().ContainSingle().Subject;
+            mapper.Config["claim.value"].Should().Be(NewPrefixes);
+            mapper.Config["jsonType.label"].Should().Be("String");
+        }
+    }
+
+    [TestFixture]
     public class Given_a_namespace_claim_update_adding_a_missing_claim : NamespaceClaimUpdateTestBase
     {
         [SetUp]
