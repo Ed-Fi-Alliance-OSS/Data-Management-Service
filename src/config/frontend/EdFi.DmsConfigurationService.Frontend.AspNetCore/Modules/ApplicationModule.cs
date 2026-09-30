@@ -27,7 +27,7 @@ public class ApplicationModule : IEndpointModule
         endpoints.MapSecuredPost("/v3/applications/", InsertApplication);
         endpoints.MapSecuredGet("/v3/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
         // Limited access: DMS reads an application's profile assignments through this endpoint, so the
-        // service-account scope that covers every other DMS read must cover it too.
+        // limited scope its service account uses for its other reads must cover it too.
         endpoints.MapLimitedAccess($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);

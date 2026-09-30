@@ -21,8 +21,8 @@ public class ProfileModule : IEndpointModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        // Limited access on the reads: DMS builds its profile catalog from them, so the service-account
-        // scope that covers every other DMS read must cover them too.
+        // Limited access on the reads: DMS builds its profile catalog from them, so the limited scope
+        // its service account uses for its other reads must cover them too.
         endpoints.MapLimitedAccess("/v3/profiles/", GetAll);
         endpoints.MapSecuredPost("/v3/profiles/", InsertProfile);
         endpoints.MapLimitedAccess($"/v3/profiles/{{id}}", GetById);

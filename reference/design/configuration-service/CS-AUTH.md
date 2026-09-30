@@ -203,7 +203,7 @@ Authorization is scope-based. Three scopes are defined:
 |---|---|
 | `edfi_admin_api/full_access` | Full access to all CMS API endpoints |
 | `edfi_admin_api/readonly_access` | Read-only access to all CMS API endpoints |
-| `edfi_admin_api/authMetadata_readonly_access` | Read access to the endpoints the DMS API consumes (see `MapLimitedAccess` below) |
+| `edfi_admin_api/authMetadata_readonly_access` | Read access to the `MapLimitedAccess` endpoints below: every Configuration Service read a single-tenant DMS makes. A multi-tenant DMS also reads `GET /v3/tenants/`, which is `MapSecuredGet`, so it needs `readonly_access` |
 
 ## Endpoint Authorization Model
 
@@ -215,7 +215,7 @@ Scope requirements are applied per HTTP method via extension helpers:
 | `MapSecuredPost` | `full_access` only | All POST endpoints |
 | `MapSecuredPut` | `full_access` only | All PUT endpoints |
 | `MapSecuredDelete` | `full_access` only | All DELETE endpoints |
-| `MapLimitedAccess` | Any of the three scopes | GET endpoints the DMS API consumes: `/v3/authorizationMetadata`, `/v3/claimSets`, `/v3/apiClients`, `/v3/dataStores`, `/v3/dataStoreContexts`, `/v3/dataStoreDerivatives`, `/v3/applications/{id}`, `/v3/profiles`, `/v3/profiles/{id}` |
+| `MapLimitedAccess` | Any of the three scopes | Exactly these GET routes: `/v3/authorizationMetadata`, `/v3/claimSets/`, `/v3/apiClients/`, `/v3/apiClients/{id}`, `/v3/dataStores/`, `/v3/dataStores/{id}`, `/v3/dataStoreContexts/`, `/v3/dataStoreContexts/{id}`, `/v3/dataStoreDerivatives/`, `/v3/dataStoreDerivatives/{id}`, `/v3/applications/{id}`, `/v3/profiles/`, `/v3/profiles/{id}` |
 | `MapPublic` | Anonymous | Health, JWKS, discovery endpoints |
 
 ## Roles
