@@ -166,12 +166,11 @@ Create `Given_a_namespace_claim_update_clearing_the_existing_claim` from `Namesp
 _result.Should().BeOfType<ClientUpdateResult.Success>();
 ((ClientUpdateResult.Success)_result).ClientUuid.Should().Be(Guid.Parse(_clientUuid));
 NamespaceClaims(AppliedClient()).Should().ContainSingle();
-ClaimValue(AppliedClient(), "namespacePrefixes").Should().BeEmpty();
 ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
 ClaimValue(AppliedClient(), "dataStoreIds").Should().Be("7,8");
 ```
 
-Also call `AssertClientIdentityPreserved()` and assert the existing UUID is updated exactly once. Assert `claim.value` is the two-character JSON string literal `""` and `jsonType.label` is `JSON`; the existing replacement fixture must continue asserting the non-empty value and `String` type.
+Also call `AssertClientIdentityPreserved()` and assert the existing UUID is updated exactly once. Assert the mapper's stored `claim.value` is the two-character JSON string literal `""` and `jsonType.label` is `JSON`; the existing replacement fixture must continue asserting the non-empty value and `String` type.
 
 - [ ] **Step 2: Add the OpenIddict empty-update fixture**
 
