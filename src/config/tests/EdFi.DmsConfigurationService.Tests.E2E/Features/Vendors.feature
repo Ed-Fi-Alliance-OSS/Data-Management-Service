@@ -639,3 +639,73 @@ Feature: Vendors endpoints
              Then it should respond with 204
              When a GET request is made to "/v3/apiClients/{a1Key}"
              Then it should respond with 404
+
+        @MssqlRepresentative
+        Scenario: 20 Application for a no-prefix vendor receives a present empty namespace claim
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 20 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": ""
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "s20VendorId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {s20VendorId},
+                   "applicationName": "Scenario 20 Application",
+                   "claimSetName": "Claim06",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "s20"
+             When a token is requested with the credentials captured as "s20" and scope "Claim06"
+             Then it should respond with 200
+              And the token has an empty namespacePrefixes claim
+
+        @MssqlRepresentative
+        Scenario: 21 Clearing vendor prefixes updates existing clients to a present empty namespace claim
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 21 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://dms-1532.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "s21VendorId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {s21VendorId},
+                   "applicationName": "Scenario 21 Application",
+                   "claimSetName": "Claim06",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "s21"
+             When a token is requested with the credentials captured as "s21" and scope "Claim06"
+             Then it should respond with 200
+              And the token carries "uri://dms-1532.org" in the namespacePrefixes claim
+             When a PUT request is made to "/v3/vendors/{s21VendorId}" with
+                  """
+                    {
+                        "id": {s21VendorId},
+                        "company": "Scenario 21 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": ""
+                    }
+                  """
+             Then it should respond with 204
+             When a token is requested with the credentials captured as "s21" and scope "Claim06"
+             Then it should respond with 200
+              And the token has an empty namespacePrefixes claim
