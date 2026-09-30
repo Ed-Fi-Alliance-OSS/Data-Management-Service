@@ -753,8 +753,6 @@ public class IdentityTenantSnapshotTests
             _dataStoreProvider = CreateDataStoreProvider();
             A.CallTo(() => _dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .Returns(Task.FromResult<IList<string>>(["North"]));
-            A.CallTo(() => _dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
-                .Throws(new InvalidOperationException("LoadDataStores must not be called"));
             var snapshot = CreateSnapshot(_dataStoreProvider, timeProvider);
 
             _outcome = await snapshot.CheckAsync("North", CancellationToken.None);
@@ -767,10 +765,12 @@ public class IdentityTenantSnapshotTests
         }
 
         [Test]
-        public void It_never_calls_LoadDataStores()
+        public void It_calls_nothing_on_the_provider_but_LoadTenants()
         {
-            A.CallTo(() => _dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
-                .MustNotHaveHappened();
+            Fake.GetCalls(_dataStoreProvider)
+                .Select(call => call.Method.Name)
+                .Should()
+                .Equal(nameof(IDataStoreProvider.LoadTenants));
         }
     }
 

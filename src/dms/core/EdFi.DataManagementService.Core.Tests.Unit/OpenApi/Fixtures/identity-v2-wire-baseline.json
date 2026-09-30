@@ -500,12 +500,27 @@
             "type": "string"
           },
           "BirthLocation": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Location"
+            "additionalProperties": true,
+            "nullable": true,
+            "properties": {
+              "City": {
+                "nullable": true,
+                "type": "string"
+              },
+              "Country": {
+                "nullable": true,
+                "type": "string"
+              },
+              "InternationalProvince": {
+                "nullable": true,
+                "type": "string"
+              },
+              "StateAbbreviation": {
+                "nullable": true,
+                "type": "string"
               }
-            ],
-            "nullable": true
+            },
+            "type": "object"
           },
           "BirthOrder": {
             "format": "int32",
@@ -694,12 +709,27 @@
             "type": "string"
           },
           "BirthLocation": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Location"
+            "additionalProperties": true,
+            "nullable": true,
+            "properties": {
+              "City": {
+                "nullable": true,
+                "type": "string"
+              },
+              "Country": {
+                "nullable": true,
+                "type": "string"
+              },
+              "InternationalProvince": {
+                "nullable": true,
+                "type": "string"
+              },
+              "StateAbbreviation": {
+                "nullable": true,
+                "type": "string"
               }
-            ],
-            "nullable": true
+            },
+            "type": "object"
           },
           "BirthOrder": {
             "format": "int32",
@@ -739,6 +769,10 @@
             "type": "array"
           },
           "Status": {
+            "enum": [
+              "Incomplete",
+              "Complete"
+            ],
             "type": "string"
           }
         },

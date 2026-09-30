@@ -16,12 +16,12 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 /// <summary>
 /// Proves request-time datastore independence on an initialized, identity-enabled host. After one
 /// resource request and one identity request have served normally, the CMS data-store surface is
-/// poisoned (<c>LoadDataStores</c> throws) and the identity tenant snapshot's 60-second freshness window
-/// is advanced past expiry, yet an authorized identity request still refreshes the snapshot through
-/// <c>LoadTenants</c> and reaches the operation-unsupported capability gate - because the identity
-/// pipeline never resolves a physical data store at all (<see cref="Identity.IdentityTenantSnapshotTests" />
-/// proves the same independence at the unit level) - while the poisoned <c>LoadDataStores</c> is never
-/// called during that request. Follows <see cref="Given_Postgresql_ApplicationContextIntegration" />'s
+/// poisoned (every datastore member but <c>LoadTenants</c> throws) and the identity tenant snapshot's
+/// 60-second freshness window is advanced past expiry, yet an authorized identity request still
+/// refreshes the snapshot through <c>LoadTenants</c> and reaches the operation-unsupported capability
+/// gate - because the identity pipeline never resolves a physical data store at all
+/// (<see cref="Identity.IdentityTenantSnapshotTests" /> proves the same independence at the unit
+/// level) - while no poisoned member is called during that request. Follows <see cref="Given_Postgresql_ApplicationContextIntegration" />'s
 /// MultiTenancy/BypassAuthorization shape.
 /// </summary>
 public sealed class Given_Postgresql_IdentityDatastoreIndependence : PostgresqlApiIntegrationTestBase

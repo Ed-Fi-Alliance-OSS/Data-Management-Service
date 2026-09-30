@@ -12,30 +12,20 @@ using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.ChangeQueriesOpe
 namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
-/// Walks the pinned ODS reference fixture (<c>Fixtures/ods-7.3.2-identity-openapi.json</c>,
-/// see <c>Fixtures/PROVENANCE.md</c>) against the served identity OpenAPI document.
-/// For each of the six ODS component names, every ODS property must exist in the DMS component with
-/// an equal <c>type</c> and <c>format</c> (and, for a <c>$ref</c>, the same target name). Every other
-/// difference between the two documents - scoped to paths, operations, response codes, headers, media
-/// types, <c>required</c>, <c>nullable</c>, <c>additionalProperties</c>, extra components, and
-/// <c>x-edfi-*</c> extensions - must be explained by an entry in
-/// <see cref="AllowedDifferenceCategories" />. An unexplained difference fails
-/// the test, which is what a negative control proves by adding an undeclared difference to a scratch
-/// copy of the served document and watching this test fail.
+/// Compares the pinned ODS reference fixture (<c>Fixtures/ods-7.3.2-identity-openapi.json</c>, see
+/// <c>Fixtures/PROVENANCE.md</c>) with the served identity OpenAPI document, node by node in both
+/// directions: every key either document adds or drops and every value that differs, anywhere in
+/// the two documents - paths, operations, parameters, request bodies, responses, headers, media
+/// types, component schemas and the properties, types, formats, enums and array items nested inside
+/// them. Shared responses and headers are inlined first, so a <c>$ref</c> to one compares as its
+/// content; a schema <c>$ref</c> compares as its target name. Every difference must be explained by
+/// an entry in <see cref="Ledger" />, or the test fails naming it.
 /// </summary>
 public class IdentityOpenApiOdsCompatibilityTests
 {
     private const string OdsFixturePath = "OpenApi/Fixtures/ods-7.3.2-identity-openapi.json";
 
-    private static readonly string[] SharedComponentNames =
-    [
-        "IdentityCreateRequest",
-        "IdentityResponse",
-        "IdentitySearchRequest",
-        "IdentitySearchResponse",
-        "IdentitySearchResponses",
-        "Location",
-    ];
+    private const string SchemaRefPrefix = "#/components/schemas/";
 
     /// <summary>
     /// Component schema names the served document adds beyond the six ODS names. D-16 covers the
@@ -57,533 +47,575 @@ public class IdentityOpenApiOdsCompatibilityTests
         "SecurityConfigurationProblemDetails",
     };
 
+    private static readonly HashSet<string> AddedProblemStatusCodes = new(StringComparer.Ordinal)
+    {
+        "400",
+        "401",
+        "403",
+        "404",
+        "415",
+        "429",
+        "500",
+        "503",
+    };
+
+    private static readonly HashSet<string> DeclaredResponseHeaders = new(StringComparer.Ordinal)
+    {
+        "Cache-Control",
+        "Location",
+    };
+
+    private enum DifferenceKind
+    {
+        Added,
+        Removed,
+        Changed,
+        ItemAdded,
+        ItemRemoved,
+    }
+
     /// <summary>
-    /// The divergence ledger, encoded as predicates over the difference descriptors
-    /// <see cref="ComputeRemainingDifferences" /> produces. Every computed difference must match at
-    /// least one entry here or the test fails; the ledger id is folded into the failure message.
+    /// One difference at <paramref name="Path" />, the segments leading to the node in both documents.
+    /// <paramref name="Ods" /> and <paramref name="Dms" /> are the two values there, null on the side
+    /// that lacks the node; for an item difference they are the array item itself.
     /// </summary>
-    private static readonly List<(
-        string LedgerId,
-        Func<string, bool> IsAllowed
-    )> AllowedDifferenceCategories =
+    private sealed record Difference(DifferenceKind Kind, string[] Path, JsonNode? Ods, JsonNode? Dms)
+    {
+        /// <summary>The kind and the JSON Pointer to the node, for example <c>Added /paths/~1identities/post</c>.</summary>
+        public override string ToString() =>
+            $"{Kind} /{string.Join('/', Path.Select(segment => segment.Replace("~", "~0").Replace("/", "~1")))}";
+    }
+
+    /// <summary>
+    /// The divergence ledger: every computed difference must match at least one entry, or the test
+    /// fails naming it. D-numbers refer to the identity design's divergence ledger.
+    /// </summary>
+    private static readonly List<(string LedgerId, Func<Difference, bool> IsAllowed)> Ledger =
     [
         (
             "D-1: the ODS 501 (not implemented) response is absent because DMS always implements identity",
-            diff =>
-                diff.StartsWith("response-code-removed:", StringComparison.Ordinal)
-                && diff.EndsWith(":501", StringComparison.Ordinal)
+            difference =>
+                difference is { Kind: DifferenceKind.Removed, Path: ["paths", _, _, "responses", "501"] }
         ),
         (
-            "D-11/D3: DMS adds 400/401/403/404/415/429/500/503 problem responses the ODS fixture does not declare for that operation",
-            diff =>
-                diff.StartsWith("response-code-added:", StringComparison.Ordinal)
-                && (
-                    diff.EndsWith(":400", StringComparison.Ordinal)
-                    || diff.EndsWith(":401", StringComparison.Ordinal)
-                    || diff.EndsWith(":403", StringComparison.Ordinal)
-                    || diff.EndsWith(":404", StringComparison.Ordinal)
-                    || diff.EndsWith(":415", StringComparison.Ordinal)
-                    || diff.EndsWith(":429", StringComparison.Ordinal)
-                    || diff.EndsWith(":500", StringComparison.Ordinal)
-                    || diff.EndsWith(":503", StringComparison.Ordinal)
+            "D-1/D-11/D-12: DMS declares its host problem responses where the ODS fixture declares none for that operation",
+            difference =>
+                difference is { Kind: DifferenceKind.Added, Path: ["paths", _, _, "responses", var status] }
+                && AddedProblemStatusCodes.Contains(status)
+        ),
+        (
+            "D-10 and no-store: DMS declares Location and Cache-Control response headers where the ODS fixture declares none",
+            difference =>
+                difference
+                    is {
+                        Kind: DifferenceKind.Added,
+                        Path: ["paths", _, _, "responses", _, "headers"],
+                        Dms: JsonObject headers,
+                    }
+                && headers.All(header => DeclaredResponseHeaders.Contains(header.Key))
+        ),
+        (
+            "D-4/D-5: DMS problem responses carry typed application/problem+json bodies where the ODS fixture declares none or an untyped JSON body",
+            difference =>
+                difference
+                    is {
+                        Kind: DifferenceKind.Added,
+                        Path: ["paths", _, _, "responses", _, "content", "application/problem+json"],
+                    }
+                || (
+                    difference
+                        is {
+                            Kind: DifferenceKind.Added,
+                            Path: ["paths", _, _, "responses", _, "content"],
+                            Dms: JsonObject content,
+                        }
+                    && content.All(mediaType => mediaType.Key == "application/problem+json")
                 )
-        ),
-        (
-            "Location/Cache-Control headers: DMS declares response headers everywhere the ODS fixture is silent",
-            diff =>
-                diff.StartsWith("header-added:", StringComparison.Ordinal)
-                && (
-                    diff.EndsWith(":Cache-Control", StringComparison.Ordinal)
-                    || diff.EndsWith(":Location", StringComparison.Ordinal)
-                )
-        ),
-        (
-            "problem schemas: DMS carries application/problem+json bodies where the ODS fixture declares none or an untyped application/json body",
-            diff =>
-                diff.StartsWith("media-type-added:", StringComparison.Ordinal)
-                && diff.EndsWith(":application/problem+json", StringComparison.Ordinal)
+                || difference
+                    is {
+                        Kind: DifferenceKind.Removed,
+                        Path: [
+                            "paths",
+                            _,
+                            _,
+                            "responses",
+                            "400",
+                            "content",
+                            "application/json"
+                            or "text/json",
+                        ],
+                        Ods: JsonObject { Count: 0 },
+                    }
         ),
         (
             "response media type narrowing: DMS success bodies drop the ODS fixture's parallel text/json media type",
-            diff =>
-                diff.StartsWith("media-type-removed:", StringComparison.Ordinal)
-                && diff.EndsWith(":text/json", StringComparison.Ordinal)
+            difference =>
+                difference
+                    is {
+                        Kind: DifferenceKind.Removed,
+                        Path: ["paths", _, _, "responses", "200", "content", "text/json"],
+                    }
         ),
         (
-            "problem schemas: DMS replaces the ODS fixture's untyped application/json 400 body with a typed ProblemDetails body",
-            diff =>
-                diff.StartsWith("media-type-removed:", StringComparison.Ordinal)
-                && diff.EndsWith(":application/json", StringComparison.Ordinal)
-                && diff.Contains(":400:", StringComparison.Ordinal)
-        ),
-        (
-            "D-16: DMS splits the ODS fixture's shared IdentitySearchResponse into Complete/Incomplete result-state variants",
-            diff =>
+            "D-16: find/search 200 references only the complete shape and results 200 either result-state shape",
+            difference =>
                 (
-                    diff.StartsWith("response-schema-ref-removed:", StringComparison.Ordinal)
-                    && diff.EndsWith(":IdentitySearchResponse", StringComparison.Ordinal)
+                    difference
+                        is {
+                            Kind: DifferenceKind.Changed,
+                            Path: [
+                                "paths",
+                                "/identities/find"
+                                or "/identities/search",
+                                "post",
+                                "responses",
+                                "200",
+                                "content",
+                                "application/json",
+                                "schema",
+                                "$ref",
+                            ],
+                        }
+                    && StringValue(difference.Ods) == SchemaRefPrefix + "IdentitySearchResponse"
+                    && StringValue(difference.Dms) == SchemaRefPrefix + "IdentitySearchResponseComplete"
                 )
                 || (
-                    diff.StartsWith("response-schema-ref-added:", StringComparison.Ordinal)
-                    && (
-                        diff.EndsWith(":IdentitySearchResponseComplete", StringComparison.Ordinal)
-                        || diff.EndsWith(":IdentitySearchResponseIncomplete", StringComparison.Ordinal)
-                    )
+                    difference
+                        is {
+                            Kind: DifferenceKind.Removed,
+                            Path: [
+                                "paths",
+                                "/identities/results/{id}",
+                                "get",
+                                "responses",
+                                "200",
+                                "content",
+                                "application/json",
+                                "schema",
+                                "$ref",
+                            ],
+                        }
+                    && StringValue(difference.Ods) == SchemaRefPrefix + "IdentitySearchResponse"
+                )
+                || (
+                    difference
+                        is {
+                            Kind: DifferenceKind.Added,
+                            Path: [
+                                "paths",
+                                "/identities/results/{id}",
+                                "get",
+                                "responses",
+                                "200",
+                                "content",
+                                "application/json",
+                                "schema",
+                                "oneOf",
+                            ],
+                            Dms: JsonArray members,
+                        }
+                    && members
+                        .Select(member => StringValue(member?["$ref"]))
+                        .Order(StringComparer.Ordinal)
+                        .SequenceEqual([
+                            SchemaRefPrefix + "IdentitySearchResponseComplete",
+                            SchemaRefPrefix + "IdentitySearchResponseIncomplete",
+                        ])
                 )
         ),
         (
             "D-16/problem schemas: DMS adds result-state and problem-detail component schemas the ODS fixture does not declare",
-            diff =>
-                diff.StartsWith("component-added:", StringComparison.Ordinal)
-                && AllowedExtraComponentNames.Contains(diff["component-added:".Length..])
+            difference =>
+                difference is { Kind: DifferenceKind.Added, Path: ["components", "schemas", var name] }
+                && AllowedExtraComponentNames.Contains(name)
         ),
         (
             "D-14: DMS declares required where the Swagger 2.0-converted ODS fixture declares none",
-            diff => diff.StartsWith("required-added:", StringComparison.Ordinal)
+            difference =>
+                difference is { Kind: DifferenceKind.Added, Path: ["components", "schemas", _, "required"] }
+        ),
+        (
+            "D-14: IdentityResponse.UniqueId is a required non-empty string",
+            difference =>
+                difference
+                    is {
+                        Kind: DifferenceKind.Added,
+                        Path: [
+                            "components",
+                            "schemas",
+                            "IdentityResponse",
+                            "properties",
+                            "UniqueId",
+                            "minLength",
+                        ],
+                        Dms: JsonValue minLength,
+                    }
+                && minLength.TryGetValue(out int length)
+                && length == 1
         ),
         (
             "D-15: DMS marks nullable where the Swagger 2.0-converted ODS fixture has no nullable keyword",
-            diff => diff.StartsWith("nullable-added:", StringComparison.Ordinal)
+            difference =>
+                difference
+                    is {
+                        Kind: DifferenceKind.Added,
+                        Path: ["components", "schemas", _, "properties", _, "nullable"],
+                    }
+                && IsTrue(difference.Dms)
+        ),
+        (
+            "D-15: each request BirthLocation is an inline nullable object with Location's properties, because OpenAPI 3.0.3 ignores nullable beside a $ref",
+            difference =>
+                difference.Path
+                    is [
+                        "components",
+                        "schemas",
+                        "IdentityCreateRequest"
+                        or "IdentitySearchRequest",
+                        "properties",
+                        "BirthLocation",
+                        var keyword,
+                    ]
+                && (
+                    (
+                        difference.Kind == DifferenceKind.Removed
+                        && keyword == "$ref"
+                        && StringValue(difference.Ods) == SchemaRefPrefix + "Location"
+                    )
+                    || (
+                        difference.Kind == DifferenceKind.Added
+                        && keyword is "type" or "nullable" or "properties" or "additionalProperties"
+                    )
+                )
         ),
         (
             "DMS declares additionalProperties: true; the Swagger 2.0-converted ODS fixture leaves it unset",
-            diff => diff.StartsWith("additionalProperties-added:", StringComparison.Ordinal)
+            difference =>
+                difference
+                    is {
+                        Kind: DifferenceKind.Added,
+                        Path: ["components", "schemas", _, "additionalProperties"],
+                    }
+                && IsTrue(difference.Dms)
         ),
         (
             "x-edfi-identity-contract-version: the serve-time stamp is absent from the static ODS fixture",
-            diff => diff == "root-extension-added:x-edfi-identity-contract-version"
+            difference =>
+                difference is { Kind: DifferenceKind.Added, Path: ["x-edfi-identity-contract-version"] }
+        ),
+        (
+            "documentation: DMS writes its own summary and description prose and examples, none of which reaches the wire",
+            difference =>
+                (difference.Path is [.., var parent, "summary" or "description"] && parent != "properties")
+                || difference
+                    is { Kind: DifferenceKind.Added, Path: [.., "content", _, "example" or "examples"] }
+        ),
+        (
+            "code generation metadata: DMS names operations in its own operationId convention, declares no tags, and drops the Swagger 2.0 x-bodyName hint",
+            difference =>
+                difference is { Kind: DifferenceKind.Changed, Path: ["paths", _, _, "operationId"] }
+                || difference is { Kind: DifferenceKind.Removed, Path: ["tags"] or ["paths", _, _, "tags"] }
+                || difference
+                    is { Kind: DifferenceKind.Removed, Path: ["paths", _, _, "requestBody", "x-bodyName"] }
+        ),
+        (
+            "deployment URLs: the served server URL and OAuth token URL come from the running host",
+            difference =>
+                difference is { Kind: DifferenceKind.Changed, Path: ["servers", _, "url"] }
+                || difference
+                    is {
+                        Kind: DifferenceKind.Changed,
+                        Path: ["components", "securitySchemes", _, "flows", _, "tokenUrl"],
+                    }
         ),
     ];
+
+    private static string? StringValue(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+    private static bool IsTrue(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue(out bool flag) && flag;
+
+    private static JsonObject LoadOdsDocument() =>
+        JsonNode.Parse(File.ReadAllText(OdsFixturePath))!.AsObject();
+
+    private static JsonObject BuildServedDocument()
+    {
+        ApiSchemaDocumentNodes apiSchemaDocumentNodes = new ApiSchemaBuilder()
+            .WithStartProject("ed-fi", "5.0.0")
+            .WithOpenApiBaseDocuments(
+                resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
+                descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API")
+            )
+            .WithEndProject()
+            .AsApiSchemaNodes();
+
+        ApiService apiService = ApiServiceOpenApiTests.CreateApiService(apiSchemaDocumentNodes);
+
+        return apiService
+            .GetIdentityOpenApiSpecification([new JsonObject { ["url"] = "http://example.org/identity/v2" }])
+            .AsObject();
+    }
+
+    /// <summary>The differences between the two documents that no ledger entry explains.</summary>
+    private static List<Difference> ComputeUnexplainedDifferences(JsonObject ods, JsonObject dms)
+    {
+        List<Difference> differences = [];
+        CompareNodes(InlineSharedComponents(ods), InlineSharedComponents(dms), [], differences);
+
+        return differences.Where(difference => !Ledger.Exists(entry => entry.IsAllowed(difference))).ToList();
+    }
+
+    /// <summary>
+    /// Returns a copy with every <c>$ref</c> to a shared response, header, parameter, or request body
+    /// replaced by the content it names, and those component maps dropped, so a path that references
+    /// a shared response compares with the other document's inline one. Schema references are kept.
+    /// </summary>
+    private static JsonNode InlineSharedComponents(JsonObject document)
+    {
+        JsonNode Inline(JsonNode node) =>
+            node switch
+            {
+                JsonObject obj
+                    when StringValue(obj["$ref"]) is { } reference
+                        && reference.StartsWith("#/components/", StringComparison.Ordinal)
+                        && !reference.StartsWith(SchemaRefPrefix, StringComparison.Ordinal) => Inline(
+                    Resolve(reference, document)
+                ),
+                JsonObject obj => new JsonObject(
+                    obj.Select(pair =>
+                        KeyValuePair.Create(pair.Key, pair.Value is null ? null : Inline(pair.Value))
+                    )
+                ),
+                JsonArray array => new JsonArray([
+                    .. array.Select(item => item is null ? null : Inline(item)),
+                ]),
+                _ => node.DeepClone(),
+            };
+
+        JsonObject inlined = Inline(document).AsObject();
+        if (inlined["components"] is JsonObject components)
+        {
+            foreach (string sharedMap in new[] { "responses", "headers", "parameters", "requestBodies" })
+            {
+                components.Remove(sharedMap);
+            }
+        }
+        return inlined;
+    }
+
+    private static JsonNode Resolve(string reference, JsonObject document)
+    {
+        JsonNode current = document;
+        foreach (string segment in reference[2..].Split('/'))
+        {
+            current = current[segment.Replace("~1", "/").Replace("~0", "~")]!;
+        }
+        return current;
+    }
+
+    /// <summary>
+    /// Records every difference between <paramref name="ods" /> and <paramref name="dms" />. Arrays of
+    /// scalars (<c>required</c>, <c>enum</c>) compare as sets, arrays of named objects
+    /// (<c>parameters</c>) by name, and any other array position by position.
+    /// </summary>
+    private static void CompareNodes(
+        JsonNode? ods,
+        JsonNode? dms,
+        string[] path,
+        List<Difference> differences
+    )
+    {
+        switch (ods, dms)
+        {
+            case (JsonObject odsObject, JsonObject dmsObject):
+                CompareMaps(ToMap(odsObject), ToMap(dmsObject), path, differences);
+                break;
+
+            case (JsonArray odsArray, JsonArray dmsArray)
+                when odsArray.Concat(dmsArray).All(item => item is JsonValue):
+                differences.AddRange(
+                    odsArray
+                        .Where(item => !dmsArray.Any(other => JsonNode.DeepEquals(item, other)))
+                        .Select(item => new Difference(DifferenceKind.ItemRemoved, path, item, null))
+                );
+                differences.AddRange(
+                    dmsArray
+                        .Where(item => !odsArray.Any(other => JsonNode.DeepEquals(item, other)))
+                        .Select(item => new Difference(DifferenceKind.ItemAdded, path, null, item))
+                );
+                break;
+
+            case (JsonArray odsArray, JsonArray dmsArray)
+                when odsArray.Concat(dmsArray).All(item => StringValue(item?["name"]) is not null):
+                CompareMaps(
+                    odsArray.ToDictionary(item => StringValue(item!["name"])!, item => item),
+                    dmsArray.ToDictionary(item => StringValue(item!["name"])!, item => item),
+                    path,
+                    differences
+                );
+                break;
+
+            case (JsonArray odsArray, JsonArray dmsArray) when odsArray.Count == dmsArray.Count:
+                for (int index = 0; index < odsArray.Count; index++)
+                {
+                    CompareNodes(odsArray[index], dmsArray[index], [.. path, $"{index}"], differences);
+                }
+                break;
+
+            default:
+                if (!JsonNode.DeepEquals(ods, dms))
+                {
+                    differences.Add(new Difference(DifferenceKind.Changed, path, ods, dms));
+                }
+                break;
+        }
+    }
+
+    private static Dictionary<string, JsonNode?> ToMap(JsonObject obj) =>
+        obj.ToDictionary(pair => pair.Key, pair => pair.Value);
+
+    private static void CompareMaps(
+        Dictionary<string, JsonNode?> ods,
+        Dictionary<string, JsonNode?> dms,
+        string[] path,
+        List<Difference> differences
+    )
+    {
+        foreach ((string key, JsonNode? odsValue) in ods)
+        {
+            if (dms.TryGetValue(key, out JsonNode? dmsValue))
+            {
+                CompareNodes(odsValue, dmsValue, [.. path, key], differences);
+            }
+            else
+            {
+                differences.Add(new Difference(DifferenceKind.Removed, [.. path, key], odsValue, null));
+            }
+        }
+
+        differences.AddRange(
+            dms.Where(pair => !ods.ContainsKey(pair.Key))
+                .Select(pair => new Difference(DifferenceKind.Added, [.. path, pair.Key], null, pair.Value))
+        );
+    }
 
     [TestFixture]
     public class Given_The_Served_Identity_Document_Compared_To_The_Pinned_Ods_Fixture
     {
-        private JsonObject _odsDocument = null!;
-        private JsonObject _dmsDocument = null!;
+        private List<Difference> _unexplained = null!;
 
         [SetUp]
         public void Setup()
         {
-            string odsJson = File.ReadAllText(OdsFixturePath);
-            _odsDocument = JsonNode.Parse(odsJson)!.AsObject();
-            _dmsDocument = BuildServedDocument().AsObject();
-        }
-
-        [TestCaseSource(typeof(IdentityOpenApiOdsCompatibilityTests), nameof(SharedComponentNames))]
-        public void It_has_every_ods_property_present_with_equal_type_and_format(string componentName)
-        {
-            JsonObject odsProperties =
-                _odsDocument["components"]!["schemas"]![componentName]!["properties"]?.AsObject() ?? [];
-            JsonObject dmsProperties = _dmsDocument["components"]!["schemas"]![componentName]![
-                "properties"
-            ]!.AsObject();
-
-            foreach ((string propertyName, JsonNode? odsPropertyNode) in odsProperties)
-            {
-                dmsProperties
-                    .Should()
-                    .ContainKey(propertyName, $"{componentName}.{propertyName} must be present in DMS");
-
-                JsonObject odsProperty = odsPropertyNode!.AsObject();
-                JsonObject dmsProperty = dmsProperties[propertyName]!.AsObject();
-
-                if (odsProperty["type"] is not null)
-                {
-                    odsProperty["type"]!
-                        .GetValue<string>()
-                        .Should()
-                        .Be(
-                            dmsProperty["type"]?.GetValue<string>(),
-                            $"{componentName}.{propertyName} type must match"
-                        );
-                }
-
-                if (odsProperty["format"] is not null)
-                {
-                    odsProperty["format"]!
-                        .GetValue<string>()
-                        .Should()
-                        .Be(
-                            dmsProperty["format"]?.GetValue<string>(),
-                            $"{componentName}.{propertyName} format must match"
-                        );
-                }
-
-                string? odsRefTarget = ExtractRefTargetName(odsProperty);
-                if (odsRefTarget is not null)
-                {
-                    ExtractRefTargetName(dmsProperty)
-                        .Should()
-                        .Be(
-                            odsRefTarget,
-                            $"{componentName}.{propertyName} must reference the same component"
-                        );
-                }
-            }
+            _unexplained = ComputeUnexplainedDifferences(LoadOdsDocument(), BuildServedDocument());
         }
 
         [Test]
-        public void It_explains_every_remaining_difference_with_the_encoded_ledger()
+        public void It_explains_every_difference_with_the_encoded_ledger()
         {
-            List<string> differences = ComputeRemainingDifferences(_odsDocument, _dmsDocument);
-
-            List<string> unexplained = differences
-                .Where(difference =>
-                    !AllowedDifferenceCategories.Exists(category => category.IsAllowed(difference))
-                )
-                .ToList();
-
-            unexplained
+            _unexplained
+                .Select(difference => difference.ToString())
                 .Should()
-                .BeEmpty(
-                    "every difference between the pinned ODS fixture and the served identity document must "
-                        + "be named in the encoded ledger; unexplained: "
-                        + string.Join(", ", unexplained)
-                );
+                .BeEmpty("every difference from the pinned ODS fixture must be named in the encoded ledger");
         }
+    }
 
-        private static JsonNode BuildServedDocument()
+    /// <summary>
+    /// Negative controls: each case adds one undeclared difference to the served document, of a kind
+    /// the ledger names nowhere, and the comparison must report exactly that difference.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Undeclared_Difference_In_The_Served_Document
+    {
+        private static IEnumerable<TestCaseData> Mutations()
         {
-            ApiSchemaDocumentNodes apiSchemaDocumentNodes = new ApiSchemaBuilder()
-                .WithStartProject("ed-fi", "5.0.0")
-                .WithOpenApiBaseDocuments(
-                    resourcesDoc: MinimalOpenApiDocument("Ed-Fi Resources API"),
-                    descriptorsDoc: MinimalOpenApiDocument("Ed-Fi Descriptors API")
-                )
-                .WithEndProject()
-                .AsApiSchemaNodes();
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms =>
+                        Schema(dms, "IdentityResponse")["properties"]!.AsObject()["Nickname"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                        }
+                ),
+                new[] { "Added /components/schemas/IdentityResponse/properties/Nickname" }
+            ).SetName("It_reports_a_property_only_DMS_declares");
 
-            ApiService apiService = ApiServiceOpenApiTests.CreateApiService(apiSchemaDocumentNodes);
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms => Schema(dms, "IdentityResponse")["properties"]!.AsObject().Remove("Score")
+                ),
+                new[] { "Removed /components/schemas/IdentityResponse/properties/Score" }
+            ).SetName("It_reports_a_property_only_ODS_declares");
 
-            return apiService.GetIdentityOpenApiSpecification([
-                new JsonObject { ["url"] = "http://example.org/identity/v2" },
-            ]);
-        }
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms => Schema(dms, "Location")["properties"]!["City"]!["type"] = "integer"
+                ),
+                new[] { "Changed /components/schemas/Location/properties/City/type" }
+            ).SetName("It_reports_a_nested_type_change");
 
-        /// <summary>
-        /// Computes every difference between the two documents across the dimensions above: paths,
-        /// operations, response codes, headers, media types, <c>required</c>, <c>nullable</c>,
-        /// <c>additionalProperties</c>, extra components, and root <c>x-*</c> extensions. Each entry is a
-        /// terse, stable descriptor string the allow-list matches by prefix/suffix.
-        /// </summary>
-        private static List<string> ComputeRemainingDifferences(JsonObject ods, JsonObject dms)
-        {
-            List<string> differences = [];
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms => Schema(dms, "IdentityResponse")["properties"]!["BirthDate"]!["format"] = "date"
+                ),
+                new[] { "Changed /components/schemas/IdentityResponse/properties/BirthDate/format" }
+            ).SetName("It_reports_a_format_change");
 
-            JsonObject odsPaths = ods["paths"]!.AsObject();
-            JsonObject dmsPaths = dms["paths"]!.AsObject();
-            HashSet<string> odsPathKeys = odsPaths.Select(pair => pair.Key).ToHashSet();
-            HashSet<string> dmsPathKeys = dmsPaths.Select(pair => pair.Key).ToHashSet();
-
-            differences.AddRange(odsPathKeys.Except(dmsPathKeys).Select(path => $"path-removed:{path}"));
-            differences.AddRange(dmsPathKeys.Except(odsPathKeys).Select(path => $"path-added:{path}"));
-
-            foreach (string path in odsPathKeys.Intersect(dmsPathKeys))
-            {
-                AddOperationDifferences(
-                    differences,
-                    path,
-                    odsPaths[path]!.AsObject(),
-                    dmsPaths[path]!.AsObject(),
-                    ods,
-                    dms
-                );
-            }
-
-            AddComponentSchemaDifferences(differences, ods, dms);
-            AddRootExtensionDifferences(differences, ods, dms);
-
-            return differences;
-        }
-
-        private static void AddOperationDifferences(
-            List<string> differences,
-            string path,
-            JsonObject odsOperations,
-            JsonObject dmsOperations,
-            JsonObject ods,
-            JsonObject dms
-        )
-        {
-            HashSet<string> odsMethods = odsOperations.Select(pair => pair.Key).ToHashSet();
-            HashSet<string> dmsMethods = dmsOperations.Select(pair => pair.Key).ToHashSet();
-
-            differences.AddRange(
-                odsMethods.Except(dmsMethods).Select(method => $"operation-removed:{path}:{method}")
-            );
-            differences.AddRange(
-                dmsMethods.Except(odsMethods).Select(method => $"operation-added:{path}:{method}")
-            );
-
-            foreach (string method in odsMethods.Intersect(dmsMethods))
-            {
-                AddResponseDifferences(
-                    differences,
-                    path,
-                    method,
-                    odsOperations[method]!["responses"]!.AsObject(),
-                    dmsOperations[method]!["responses"]!.AsObject(),
-                    ods,
-                    dms
-                );
-            }
-        }
-
-        private static void AddResponseDifferences(
-            List<string> differences,
-            string path,
-            string method,
-            JsonObject odsResponses,
-            JsonObject dmsResponses,
-            JsonObject ods,
-            JsonObject dms
-        )
-        {
-            HashSet<string> odsStatuses = odsResponses.Select(pair => pair.Key).ToHashSet();
-            HashSet<string> dmsStatuses = dmsResponses.Select(pair => pair.Key).ToHashSet();
-
-            differences.AddRange(
-                odsStatuses
-                    .Except(dmsStatuses)
-                    .Select(status => $"response-code-removed:{path}:{method}:{status}")
-            );
-            differences.AddRange(
-                dmsStatuses
-                    .Except(odsStatuses)
-                    .Select(status => $"response-code-added:{path}:{method}:{status}")
-            );
-
-            foreach (string status in odsStatuses.Intersect(dmsStatuses))
-            {
-                JsonObject odsResponse = Resolve(odsResponses[status]!, ods).AsObject();
-                JsonObject dmsResponse = Resolve(dmsResponses[status]!, dms).AsObject();
-
-                HashSet<string> odsHeaders =
-                    (odsResponse["headers"] as JsonObject)?.Select(pair => pair.Key).ToHashSet() ?? [];
-                HashSet<string> dmsHeaders =
-                    (dmsResponse["headers"] as JsonObject)?.Select(pair => pair.Key).ToHashSet() ?? [];
-
-                differences.AddRange(
-                    odsHeaders
-                        .Except(dmsHeaders)
-                        .Select(header => $"header-removed:{path}:{method}:{status}:{header}")
-                );
-                differences.AddRange(
-                    dmsHeaders
-                        .Except(odsHeaders)
-                        .Select(header => $"header-added:{path}:{method}:{status}:{header}")
-                );
-
-                HashSet<string> odsMedia =
-                    (odsResponse["content"] as JsonObject)?.Select(pair => pair.Key).ToHashSet() ?? [];
-                HashSet<string> dmsMedia =
-                    (dmsResponse["content"] as JsonObject)?.Select(pair => pair.Key).ToHashSet() ?? [];
-
-                differences.AddRange(
-                    odsMedia
-                        .Except(dmsMedia)
-                        .Select(media => $"media-type-removed:{path}:{method}:{status}:{media}")
-                );
-                differences.AddRange(
-                    dmsMedia
-                        .Except(odsMedia)
-                        .Select(media => $"media-type-added:{path}:{method}:{status}:{media}")
-                );
-
-                if (status == "200")
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms =>
+                        Schema(dms, "IdentitySearchResponses")["properties"]!["Responses"]!["items"] =
+                            new JsonObject { ["type"] = "string" }
+                ),
+                new[]
                 {
-                    AddResponseSchemaRefDifferences(differences, path, method, odsResponse, dmsResponse);
+                    "Removed /components/schemas/IdentitySearchResponses/properties/Responses/items/$ref",
+                    "Added /components/schemas/IdentitySearchResponses/properties/Responses/items/type",
                 }
-            }
+            ).SetName("It_reports_an_array_item_change");
+
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms =>
+                        Schema(dms, "IdentitySearchResponse")["properties"]!["Status"]!["enum"]!
+                            .AsArray()
+                            .Add("Pending")
+                ),
+                new[] { "ItemAdded /components/schemas/IdentitySearchResponse/properties/Status/enum" }
+            ).SetName("It_reports_a_widened_enum");
+
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms =>
+                        dms["paths"]!["/identities"]!["post"]!["requestBody"]!["content"]!.AsObject()[
+                            "application/xml"
+                        ] = new JsonObject()
+                ),
+                new[] { "Added /paths/~1identities/post/requestBody/content/application~1xml" }
+            ).SetName("It_reports_a_request_media_type");
+
+            yield return new TestCaseData(
+                (Action<JsonObject>)(
+                    dms => dms["paths"]!["/identities/{id}"]!["get"]!["parameters"]![0]!["required"] = false
+                ),
+                new[] { "Changed /paths/~1identities~1{id}/get/parameters/id/required" }
+            ).SetName("It_reports_a_parameter_change");
         }
 
-        private static void AddResponseSchemaRefDifferences(
-            List<string> differences,
-            string path,
-            string method,
-            JsonObject odsResponse,
-            JsonObject dmsResponse
-        )
+        private static JsonObject Schema(JsonObject document, string name) =>
+            document["components"]!["schemas"]![name]!.AsObject();
+
+        [TestCaseSource(nameof(Mutations))]
+        public void It_reports_the_difference(Action<JsonObject> mutate, string[] expectedDifferences)
         {
-            JsonNode? odsSchema = odsResponse["content"]?["application/json"]?["schema"];
-            JsonNode? dmsSchema = dmsResponse["content"]?["application/json"]?["schema"];
+            JsonObject dms = BuildServedDocument();
+            mutate(dms);
 
-            if (odsSchema is null || dmsSchema is null)
-            {
-                return;
-            }
-
-            HashSet<string> odsTargets = ExtractResponseSchemaRefTargets(odsSchema);
-            HashSet<string> dmsTargets = ExtractResponseSchemaRefTargets(dmsSchema);
-
-            differences.AddRange(
-                odsTargets
-                    .Except(dmsTargets)
-                    .Select(target => $"response-schema-ref-removed:{path}:{method}:200:{target}")
-            );
-            differences.AddRange(
-                dmsTargets
-                    .Except(odsTargets)
-                    .Select(target => $"response-schema-ref-added:{path}:{method}:200:{target}")
-            );
-        }
-
-        private static void AddComponentSchemaDifferences(
-            List<string> differences,
-            JsonObject ods,
-            JsonObject dms
-        )
-        {
-            JsonObject odsSchemas = ods["components"]!["schemas"]!.AsObject();
-            JsonObject dmsSchemas = dms["components"]!["schemas"]!.AsObject();
-            HashSet<string> odsSchemaNames = odsSchemas.Select(pair => pair.Key).ToHashSet();
-            HashSet<string> dmsSchemaNames = dmsSchemas.Select(pair => pair.Key).ToHashSet();
-
-            differences.AddRange(
-                odsSchemaNames.Except(dmsSchemaNames).Select(name => $"component-removed:{name}")
-            );
-            differences.AddRange(
-                dmsSchemaNames.Except(odsSchemaNames).Select(name => $"component-added:{name}")
-            );
-
-            foreach (string name in SharedComponentNames)
-            {
-                JsonObject odsSchema = odsSchemas[name]!.AsObject();
-                JsonObject dmsSchema = dmsSchemas[name]!.AsObject();
-
-                bool odsAdditionalProperties = odsSchema["additionalProperties"]?.GetValue<bool>() ?? false;
-                bool dmsAdditionalProperties = dmsSchema["additionalProperties"]?.GetValue<bool>() ?? false;
-                if (dmsAdditionalProperties && !odsAdditionalProperties)
-                {
-                    differences.Add($"additionalProperties-added:{name}");
-                }
-
-                HashSet<string> odsRequired =
-                    (odsSchema["required"] as JsonArray)?.Select(node => node!.GetValue<string>()).ToHashSet()
-                    ?? [];
-                HashSet<string> dmsRequired =
-                    (dmsSchema["required"] as JsonArray)?.Select(node => node!.GetValue<string>()).ToHashSet()
-                    ?? [];
-
-                differences.AddRange(
-                    odsRequired.Except(dmsRequired).Select(property => $"required-removed:{name}:{property}")
-                );
-                differences.AddRange(
-                    dmsRequired.Except(odsRequired).Select(property => $"required-added:{name}:{property}")
-                );
-
-                JsonObject dmsProperties = dmsSchema["properties"]!.AsObject();
-                foreach ((string propertyName, JsonNode? dmsPropertyNode) in dmsProperties)
-                {
-                    if (dmsPropertyNode!.AsObject()["nullable"]?.GetValue<bool>() == true)
-                    {
-                        differences.Add($"nullable-added:{name}:{propertyName}");
-                    }
-                }
-            }
-        }
-
-        private static void AddRootExtensionDifferences(
-            List<string> differences,
-            JsonObject ods,
-            JsonObject dms
-        )
-        {
-            HashSet<string> odsExtensionKeys = ods.Select(pair => pair.Key)
-                .Where(key => key.StartsWith("x-", StringComparison.Ordinal))
-                .ToHashSet();
-            HashSet<string> dmsExtensionKeys = dms.Select(pair => pair.Key)
-                .Where(key => key.StartsWith("x-", StringComparison.Ordinal))
-                .ToHashSet();
-
-            differences.AddRange(
-                odsExtensionKeys.Except(dmsExtensionKeys).Select(key => $"root-extension-removed:{key}")
-            );
-            differences.AddRange(
-                dmsExtensionKeys.Except(odsExtensionKeys).Select(key => $"root-extension-added:{key}")
-            );
-        }
-
-        /// <summary>
-        /// Resolves one level of local <c>$ref</c> against the supplied document, or returns the node
-        /// unchanged when it is not a reference.
-        /// </summary>
-        private static JsonNode Resolve(JsonNode node, JsonObject document)
-        {
-            string? refValue = (node as JsonObject)?["$ref"]?.GetValue<string>();
-            if (refValue is null)
-            {
-                return node;
-            }
-
-            JsonNode current = document;
-            foreach (string segment in refValue[2..].Split('/'))
-            {
-                current = current[segment]!;
-            }
-            return current;
-        }
-
-        private static HashSet<string> ExtractResponseSchemaRefTargets(JsonNode schemaNode)
-        {
-            if (schemaNode is not JsonObject schema)
-            {
-                return [];
-            }
-
-            if (schema["$ref"] is JsonValue refValue && refValue.TryGetValue(out string? reference))
-            {
-                return [RefTargetName(reference)];
-            }
-
-            if (schema["oneOf"] is JsonArray oneOf)
-            {
-                return oneOf.Select(member => RefTargetName(member!["$ref"]!.GetValue<string>())).ToHashSet();
-            }
-
-            return [];
-        }
-
-        /// <summary>
-        /// Extracts the <c>$ref</c> target name from a property schema, whether the reference is direct
-        /// (<c>{"$ref": ...}</c>), wrapped for nullability (<c>{"allOf": [{"$ref": ...}], "nullable": true}</c>),
-        /// or nested under an array's <c>items</c>. Returns null for a property with no reference.
-        /// </summary>
-        private static string? ExtractRefTargetName(JsonObject propertySchema)
-        {
-            JsonObject candidate =
-                propertySchema["type"]?.GetValue<string>() == "array"
-                && propertySchema["items"] is JsonObject itemsSchema
-                    ? itemsSchema
-                    : propertySchema;
-
-            if (
-                candidate["$ref"] is JsonValue directRef
-                && directRef.TryGetValue(out string? directReference)
-            )
-            {
-                return RefTargetName(directReference);
-            }
-
-            if (
-                candidate["allOf"] is JsonArray allOf
-                && allOf.Count == 1
-                && allOf[0] is JsonObject soleMember
-                && soleMember["$ref"] is JsonValue soleRefValue
-                && soleRefValue.TryGetValue(out string? soleReference)
-            )
-            {
-                return RefTargetName(soleReference);
-            }
-
-            return null;
-        }
-
-        private static string RefTargetName(string reference)
-        {
-            const string prefix = "#/components/schemas/";
-            reference.Should().StartWith(prefix);
-            return reference[prefix.Length..];
+            ComputeUnexplainedDifferences(LoadOdsDocument(), dms)
+                .Select(difference => difference.ToString())
+                .Should()
+                .BeEquivalentTo(expectedDifferences);
         }
     }
 }

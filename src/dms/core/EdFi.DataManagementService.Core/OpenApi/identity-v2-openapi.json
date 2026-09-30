@@ -561,12 +561,27 @@
             "nullable": true
           },
           "BirthLocation": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Location"
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "City": {
+                "type": "string",
+                "nullable": true
+              },
+              "StateAbbreviation": {
+                "type": "string",
+                "nullable": true
+              },
+              "InternationalProvince": {
+                "type": "string",
+                "nullable": true
+              },
+              "Country": {
+                "type": "string",
+                "nullable": true
               }
-            ],
-            "nullable": true
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true
@@ -605,12 +620,27 @@
             "nullable": true
           },
           "BirthLocation": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Location"
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "City": {
+                "type": "string",
+                "nullable": true
+              },
+              "StateAbbreviation": {
+                "type": "string",
+                "nullable": true
+              },
+              "InternationalProvince": {
+                "type": "string",
+                "nullable": true
+              },
+              "Country": {
+                "type": "string",
+                "nullable": true
               }
-            ],
-            "nullable": true
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true
@@ -716,7 +746,11 @@
         "type": "object",
         "properties": {
           "Status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "Incomplete",
+              "Complete"
+            ]
           },
           "SearchResponses": {
             "type": "array",

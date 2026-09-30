@@ -200,7 +200,7 @@ internal sealed class IdentityTenantSnapshot(
             Volatile.Write(ref _lastFailure, new FailureRecord(timeProvider.GetUtcNow()));
             logger.LogError(
                 ex,
-                "Identity tenant snapshot refresh failed; reporting unavailable to live callers for {CooldownSeconds}s",
+                "Identity tenant snapshot refresh failed; callers are answered from the snapshot while it is fresh and as unavailable otherwise, and no refresh starts for {CooldownSeconds}s",
                 FailureCooldown.TotalSeconds
             );
             return false;

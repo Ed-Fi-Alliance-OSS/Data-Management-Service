@@ -491,6 +491,49 @@ public class IdentityOpenApiDocumentTests
         }
     }
 
+    /// <summary>
+    /// Each request schema declares <c>BirthLocation</c> inline, because OpenAPI 3.0.3 ignores
+    /// <c>nullable</c> beside a <c>$ref</c>, so the inline copy must stay identical to
+    /// <c>Location</c> apart from admitting <c>null</c>.
+    /// </summary>
+    [TestFixture("IdentityCreateRequest")]
+    [TestFixture("IdentitySearchRequest")]
+    [Parallelizable]
+    public class Given_A_Request_Schema_BirthLocation_Property(string schemaName)
+    {
+        private JsonObject _birthLocation = null!;
+        private JsonObject _location = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _birthLocation = Schemas[schemaName]!["properties"]!["BirthLocation"]!.AsObject();
+            _location = Schemas["Location"]!.AsObject();
+        }
+
+        [Test]
+        public void It_is_a_nullable_object()
+        {
+            _birthLocation["type"]!.GetValue<string>().Should().Be("object");
+            _birthLocation["nullable"]!.GetValue<bool>().Should().BeTrue();
+        }
+
+        [Test]
+        public void It_declares_exactly_the_Location_properties()
+        {
+            JsonNode.DeepEquals(_birthLocation["properties"], _location["properties"]).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_declares_the_Location_additionalProperties()
+        {
+            JsonNode
+                .DeepEquals(_birthLocation["additionalProperties"], _location["additionalProperties"])
+                .Should()
+                .BeTrue();
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Request_And_Response_Schemas

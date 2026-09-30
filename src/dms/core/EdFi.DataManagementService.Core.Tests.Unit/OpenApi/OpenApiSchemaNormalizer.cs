@@ -10,11 +10,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.OpenApi;
 
 /// <summary>
 /// Converts an OpenAPI 3.0 component schema into a JSON Schema draft <c>JsonSchema.Net</c> accepts.
-/// OpenAPI's <c>nullable: true</c> has no JSON Schema equivalent, so a property typed
-/// <c>{"type": "string", "nullable": true}</c> becomes <c>{"type": ["string", "null"]}</c>, and a
-/// nullable <c>$ref</c> wrapped for OpenAPI 3.0's syntax as
-/// <c>{"allOf": [{"$ref": "..."}], "nullable": true}</c> becomes
-/// <c>{"anyOf": [{"$ref": "..."}, {"type": "null"}]}</c>. Every <c>$ref</c> target
+/// OpenAPI's <c>nullable: true</c> has no JSON Schema equivalent, so a schema typed
+/// <c>{"type": "string", "nullable": true}</c> becomes <c>{"type": ["string", "null"]}</c>. OpenAPI 3.0.3
+/// gives <c>nullable</c> effect only beside an explicit <c>type</c>, so a <c>nullable</c> with no
+/// <c>type</c>, such as one beside an <c>allOf</c> or a <c>$ref</c>, is dropped and admits no
+/// <c>null</c>, exactly as a strict OpenAPI 3.0.3 validator treats it. Every <c>$ref</c> target
 /// <c>#/components/schemas/X</c> is rewritten to <c>#/$defs/X</c>, and the full component schema map is
 /// copied into the built document's <c>$defs</c> so every rewritten reference resolves.
 /// </summary>
@@ -44,8 +44,8 @@ internal static class OpenApiSchemaNormalizer
     }
 
     /// <summary>
-    /// Recursively rewrites <c>$ref</c> targets and converts <c>nullable: true</c> into a JSON
-    /// Schema-native shape. Exposed for the normalizer's own negative-control test.
+    /// Recursively rewrites <c>$ref</c> targets and converts a typed <c>nullable: true</c> into a JSON
+    /// Schema-native shape. Exposed for the normalizer's own negative-control tests.
     /// </summary>
     public static JsonNode Normalize(JsonNode node)
     {
@@ -73,20 +73,6 @@ internal static class OpenApiSchemaNormalizer
 
         bool isNullable = obj["nullable"]?.GetValue<bool>() == true;
         obj.Remove("nullable");
-
-        if (
-            isNullable
-            && obj["allOf"] is JsonArray allOf
-            && allOf.Count == 1
-            && allOf[0] is JsonObject soleMember
-            && soleMember.ContainsKey("$ref")
-        )
-        {
-            JsonObject refNode = (JsonObject)Normalize(soleMember.DeepClone());
-            obj.Remove("allOf");
-            obj["anyOf"] = new JsonArray(refNode, new JsonObject { ["type"] = "null" });
-            isNullable = false;
-        }
 
         NormalizeChildMap(obj, "properties");
         NormalizeChild(obj, "items");
@@ -123,18 +109,7 @@ internal static class OpenApiSchemaNormalizer
         if (obj["type"] is JsonValue typeValue && typeValue.TryGetValue(out string? typeString))
         {
             obj["type"] = new JsonArray(typeString, "null");
-            return;
         }
-
-        if (obj["$ref"] is not null)
-        {
-            JsonObject refNode = new() { ["$ref"] = obj["$ref"]!.DeepClone() };
-            obj.Remove("$ref");
-            obj["anyOf"] = new JsonArray(refNode, new JsonObject { ["type"] = "null" });
-            return;
-        }
-
-        obj["type"] = "null";
     }
 
     private static void NormalizeChildMap(JsonObject obj, string propertyName)

@@ -214,6 +214,53 @@ public class IdentityOpenApiSchemaConformanceTests
         }
     }
 
+    /// <summary>
+    /// Requests use <c>null</c> or omission for an unknown standard attribute, <c>BirthLocation</c>
+    /// included, so both request schemas must admit <c>BirthLocation: null</c> under OpenAPI 3.0.3's
+    /// own <c>nullable</c> rules while still requiring an object otherwise.
+    /// </summary>
+    [TestFixture("IdentityCreateRequest")]
+    [TestFixture("IdentitySearchRequest")]
+    [Parallelizable]
+    public class Given_A_Request_Schema_BirthLocation(string schemaName)
+    {
+        private JsonSchema _schema = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _schema = OpenApiSchemaNormalizer.BuildJsonSchema(
+                Schemas,
+                new JsonObject { ["$ref"] = $"#/components/schemas/{schemaName}" }
+            );
+        }
+
+        [Test]
+        public void It_accepts_null()
+        {
+            _schema.Evaluate(JsonNode.Parse("""{"BirthLocation":null}""")).IsValid.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_accepts_an_object_with_null_children()
+        {
+            _schema
+                .Evaluate(
+                    JsonNode.Parse(
+                        """{"BirthLocation":{"City":null,"StateAbbreviation":null,"InternationalProvince":null,"Country":null}}"""
+                    )
+                )
+                .IsValid.Should()
+                .BeTrue();
+        }
+
+        [Test]
+        public void It_rejects_a_string()
+        {
+            _schema.Evaluate(JsonNode.Parse("""{"BirthLocation":"Austin"}""")).IsValid.Should().BeFalse();
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Pinned_400_Examples
@@ -326,46 +373,55 @@ public class IdentityOpenApiSchemaConformanceTests
             }
         }
 
+        /// <summary>
+        /// OpenAPI 3.0.3 ignores <c>nullable</c> without a sibling <c>type</c>, so wrapping a reference
+        /// as <c>{"allOf": [{"$ref": ...}], "nullable": true}</c> does not admit <c>null</c> for a strict
+        /// validator. The normalizer must reject it too, or it would hide that pattern from every
+        /// conformance test above.
+        /// </summary>
         [TestFixture]
         [Parallelizable]
-        public class Given_A_Nullable_Ref_Wrapped_In_AllOf
+        public class Given_A_Nullable_Keyword_Beside_An_AllOf_Reference
         {
-            private JsonNode _normalized = null!;
+            private EvaluationResults _nullResult = null!;
+            private EvaluationResults _objectResult = null!;
 
             [SetUp]
             public void Setup()
             {
-                JsonObject nullableRefSchema = new()
+                JsonObject componentSchemas = new()
+                {
+                    ["Location"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject { ["City"] = new JsonObject { ["type"] = "string" } },
+                    },
+                };
+                JsonObject nullableAllOfSchema = new()
                 {
                     ["allOf"] = new JsonArray(new JsonObject { ["$ref"] = "#/components/schemas/Location" }),
                     ["nullable"] = true,
                 };
 
-                _normalized = OpenApiSchemaNormalizer.Normalize(nullableRefSchema);
+                JsonSchema schema = OpenApiSchemaNormalizer.BuildJsonSchema(
+                    componentSchemas,
+                    nullableAllOfSchema
+                );
+
+                _nullResult = schema.Evaluate(null);
+                _objectResult = schema.Evaluate(JsonNode.Parse("""{"City":"Austin"}"""));
             }
 
             [Test]
-            public void It_removes_allOf()
+            public void It_rejects_null()
             {
-                _normalized["allOf"].Should().BeNull();
+                _nullResult.IsValid.Should().BeFalse();
             }
 
             [Test]
-            public void It_removes_nullable()
+            public void It_accepts_the_referenced_object()
             {
-                _normalized["nullable"].Should().BeNull();
-            }
-
-            [Test]
-            public void It_rewrites_the_ref_into_the_first_anyOf_member()
-            {
-                _normalized["anyOf"]![0]!["$ref"]!.GetValue<string>().Should().Be("#/$defs/Location");
-            }
-
-            [Test]
-            public void It_adds_a_null_type_as_the_second_anyOf_member()
-            {
-                _normalized["anyOf"]![1]!["type"]!.GetValue<string>().Should().Be("null");
+                _objectResult.IsValid.Should().BeTrue();
             }
         }
     }

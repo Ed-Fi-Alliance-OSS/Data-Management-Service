@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
@@ -17,36 +19,67 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Identity;
 
 /// <summary>
-/// Pins provider lifetime and resolution: a
-/// provider registered scoped, whose own dependency is also scoped, resolves once per request scope,
-/// and the same instance serves both the capability gate
-/// (<see cref="IdentityOperationCapabilityMiddleware" />) and whatever later reads
-/// <see cref="RequestInfo.IdentityProvider" /> for invocation - so a provider can never observe a
-/// <c>Capabilities</c> value that differs from the one its call was gated on. A singleton test fixture
-/// cannot detect a captured-scope defect, so this fixture specifically exercises scoped registrations.
+/// Pins provider lifetime and resolution: a provider registered scoped, whose own dependency is
+/// also scoped, resolves once per request scope, and
+/// <see cref="IdentityOperationCapabilityMiddleware" /> and <see cref="IdentityHandler" /> serve one
+/// request with the one instance the gate resolved and the one <c>Capabilities</c> value it read -
+/// so a provider can never observe a <c>Capabilities</c> value that differs from the one its call
+/// was gated on. A singleton test fixture cannot detect a captured-scope defect, so this fixture
+/// specifically exercises scoped registrations.
 /// </summary>
 public class IdentityProviderResolutionTests
 {
+    private const string PollPathPrefix = "/identity/v2/identities/results";
+
     /// <summary>
-    /// A scoped dependency the identity provider stub below captures, so instance identity can be
-    /// traced back to a particular DI scope rather than to a shared singleton.
+    /// A scoped dependency the identity provider stub below captures, so the stub is a scoped
+    /// registration with its own scoped dependency rather than a self-contained one.
     /// </summary>
-    private sealed class ScopedMarker
+    private sealed class ScopedMarker;
+
+    /// <summary>Records every provider instance activated in one test and what each one was asked.</summary>
+    private sealed class ProviderLedger
     {
-        public Guid Id { get; } = Guid.NewGuid();
+        public List<RecordingIdentityService> Activated { get; } = [];
+
+        public int CapabilityReads { get; set; }
+
+        public List<RecordingIdentityService> FindCalledOn { get; } = [];
     }
 
-    private sealed class ScopedIdentityServiceWithScopedDependency(ScopedMarker marker) : IIdentityService
+    /// <summary>
+    /// Advertises <c>Find | Results</c> on the first <c>Capabilities</c> read across the ledger and
+    /// <c>Find</c> alone on every later read, and answers find with a request token, which the handler
+    /// accepts only while the gated capabilities include <c>Results</c>. A second read anywhere in
+    /// the request therefore turns the handler's <c>202</c> into a provider-contract-violation <c>502</c>.
+    /// </summary>
+    private sealed class RecordingIdentityService : IIdentityService
     {
-        public ScopedMarker Marker { get; } = marker;
+        private readonly ProviderLedger _ledger;
 
-        public IdentityCapabilities Capabilities => IdentityCapabilities.Create;
+        public RecordingIdentityService(ScopedMarker marker, ProviderLedger ledger)
+        {
+            _ = marker;
+            _ledger = ledger;
+            ledger.Activated.Add(this);
+        }
+
+        public IdentityCapabilities Capabilities
+        {
+            get
+            {
+                _ledger.CapabilityReads++;
+                return _ledger.CapabilityReads == 1
+                    ? IdentityCapabilities.Find | IdentityCapabilities.Results
+                    : IdentityCapabilities.Find;
+            }
+        }
 
         public Task<IdentityResult> CreateAsync(
             JsonObject request,
             IdentityRequestContext context,
             CancellationToken cancellationToken
-        ) => Task.FromResult(new IdentityResult { Status = IdentityResultStatus.Success, Payload = "id" });
+        ) => throw new NotSupportedException();
 
         public Task<IdentityResult> GetByIdAsync(
             string uniqueId,
@@ -58,7 +91,17 @@ public class IdentityProviderResolutionTests
             IReadOnlyList<string> uniqueIds,
             IdentityRequestContext context,
             CancellationToken cancellationToken
-        ) => throw new NotSupportedException();
+        )
+        {
+            _ledger.FindCalledOn.Add(this);
+            return Task.FromResult(
+                new IdentityAsyncResult
+                {
+                    Status = IdentityResultStatus.Success,
+                    RequestToken = "job-token-1",
+                }
+            );
+        }
 
         public Task<IdentityAsyncResult> SearchAsync(
             IReadOnlyList<JsonObject> requests,
@@ -73,110 +116,89 @@ public class IdentityProviderResolutionTests
         ) => throw new NotSupportedException();
     }
 
-    private static IServiceProvider CreateScopedRegistrationRootProvider() =>
-        new ServiceCollection()
-            .AddScoped<ScopedMarker>()
-            .AddScoped<IIdentityService, ScopedIdentityServiceWithScopedDependency>()
-            .BuildServiceProvider();
-
-    [TestFixture]
-    public class Given_A_Provider_Resolved_Within_One_Request_Scope : IdentityProviderResolutionTests
+    private static ServiceProvider CreateRootProvider(ServiceLifetime providerLifetime, ProviderLedger ledger)
     {
-        private ScopedIdentityServiceWithScopedDependency? _gateInstance;
-        private ScopedIdentityServiceWithScopedDependency? _invocationInstance;
+        var services = new ServiceCollection().AddScoped<ScopedMarker>();
+        services.Add(
+            new ServiceDescriptor(
+                typeof(IIdentityService),
+                serviceProvider => new RecordingIdentityService(
+                    serviceProvider.GetRequiredService<ScopedMarker>(),
+                    ledger
+                ),
+                providerLifetime
+            )
+        );
+        return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Runs the capability gate and then the handler over one find request, the order the identity
+    /// pipeline runs them in. A scoped registration proves the design's scoped-with-scoped-dependency
+    /// provider serves the request; a transient registration hands out a new instance on every
+    /// resolution, so it is the one that fails if the handler resolves a provider of its own.
+    /// </summary>
+    [TestFixture(ServiceLifetime.Scoped)]
+    [TestFixture(ServiceLifetime.Transient)]
+    public class Given_The_Capability_Gate_And_The_Handler_Serving_One_Request(
+        ServiceLifetime providerLifetime
+    ) : IdentityProviderResolutionTests
+    {
+        private ProviderLedger _ledger = null!;
+        private IFrontendResponse _response = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            IServiceProvider root = CreateScopedRegistrationRootProvider();
+            _ledger = new ProviderLedger();
+            using ServiceProvider root = CreateRootProvider(providerLifetime, _ledger);
             using IServiceScope scope = root.CreateScope();
 
             var requestInfo = No.RequestInfo("resolution-trace", scope.ServiceProvider);
-            requestInfo.IdentityOperation = IdentityOperation.Create;
+            requestInfo.IdentityOperation = IdentityOperation.Find;
+            requestInfo.IdentityPollPathPrefix = PollPathPrefix;
+            requestInfo.ParsedBody = new JsonArray("a");
+            requestInfo.ClientAuthorizations = No.ClientAuthorizations with { ClientId = "client-1" };
 
             var boundary = new IdentityProviderBoundary(NullLogger<IdentityProviderBoundary>.Instance);
             var middleware = new IdentityOperationCapabilityMiddleware(
                 boundary,
                 NullLogger<IdentityOperationCapabilityMiddleware>.Instance
             );
+            var handler = new IdentityHandler(
+                boundary,
+                IdentityHandler.DefaultMaxRequestLineSize,
+                NullLogger<IdentityHandler>.Instance
+            );
 
-            await middleware.Execute(requestInfo, TestHelper.NullNext);
+            await middleware.Execute(requestInfo, () => handler.Execute(requestInfo, TestHelper.NullNext));
 
-            _gateInstance = (ScopedIdentityServiceWithScopedDependency?)requestInfo.IdentityProvider;
-
-            // A later reader (IdentityHandler in the real pipeline) resolves nothing new: it uses the
-            // instance the gate already captured on RequestInfo.
-            _invocationInstance = (ScopedIdentityServiceWithScopedDependency?)requestInfo.IdentityProvider;
+            _response = requestInfo.FrontendResponse;
         }
 
         [Test]
-        public void It_resolves_a_non_null_provider()
+        public void It_answers_202_with_the_poll_Location()
         {
-            _gateInstance.Should().NotBeNull();
+            _response.StatusCode.Should().Be(202);
+            _response.LocationHeaderPath.Should().Be($"{PollPathPrefix}/job-token-1");
         }
 
         [Test]
-        public void It_uses_the_same_instance_for_a_later_read()
+        public void It_reads_the_capabilities_exactly_once()
         {
-            ReferenceEquals(_gateInstance, _invocationInstance).Should().BeTrue();
-        }
-    }
-
-    [TestFixture]
-    public class Given_Two_Different_Request_Scopes : IdentityProviderResolutionTests
-    {
-        private IIdentityService _firstProvider = null!;
-        private IIdentityService _secondProvider = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            IServiceProvider root = CreateScopedRegistrationRootProvider();
-
-            using IServiceScope firstScope = root.CreateScope();
-            using IServiceScope secondScope = root.CreateScope();
-
-            _firstProvider = firstScope.ServiceProvider.GetRequiredService<IIdentityService>();
-            _secondProvider = secondScope.ServiceProvider.GetRequiredService<IIdentityService>();
+            _ledger.CapabilityReads.Should().Be(1);
         }
 
         [Test]
-        public void It_resolves_two_different_instances()
+        public void It_activates_exactly_one_provider()
         {
-            ReferenceEquals(_firstProvider, _secondProvider).Should().BeFalse();
-        }
-    }
-
-    [TestFixture]
-    public class Given_The_Same_Scope_Resolved_Twice : IdentityProviderResolutionTests
-    {
-        private ScopedIdentityServiceWithScopedDependency _first = null!;
-        private ScopedIdentityServiceWithScopedDependency _second = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            IServiceProvider root = CreateScopedRegistrationRootProvider();
-            using IServiceScope scope = root.CreateScope();
-
-            _first = (ScopedIdentityServiceWithScopedDependency)
-                scope.ServiceProvider.GetRequiredService<IIdentityService>();
-            _second = (ScopedIdentityServiceWithScopedDependency)
-                scope.ServiceProvider.GetRequiredService<IIdentityService>();
+            _ledger.Activated.Should().ContainSingle();
         }
 
         [Test]
-        public void It_returns_the_same_instance()
+        public void It_invokes_the_provider_the_gate_resolved()
         {
-            // Scoped resolution within one scope returns the same instance - the defect a singleton
-            // test fixture could never expose.
-            ReferenceEquals(_first, _second).Should().BeTrue();
-        }
-
-        [Test]
-        public void It_carries_the_same_scoped_dependency()
-        {
-            _first.Marker.Id.Should().Be(_second.Marker.Id);
+            _ledger.FindCalledOn.Should().ContainSingle().Which.Should().BeSameAs(_ledger.Activated[0]);
         }
     }
 
@@ -189,7 +211,7 @@ public class IdentityProviderResolutionTests
         [SetUp]
         public void Setup()
         {
-            IServiceProvider root = CreateScopedRegistrationRootProvider();
+            using ServiceProvider root = CreateRootProvider(ServiceLifetime.Scoped, new ProviderLedger());
             using IServiceScope firstScope = root.CreateScope();
             using IServiceScope secondScope = root.CreateScope();
 

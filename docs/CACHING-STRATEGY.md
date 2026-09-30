@@ -158,6 +158,11 @@ A reload advances a per-key generation, so a fetch that started before the reloa
 
 - TTL-based expiration after the configured duration
 - Manual invalidation via `/management/reload-claimsets` management endpoint
+- A reload is replica-local and exact-spelling only: it clears the entry on the one DMS replica
+  that serves it, and only for the tenant spelling the request names.
+  Other replicas keep their entries, and so does another spelling of the same tenant on that
+  replica (`north` after a reload for `North`), until each entry expires.
+  Draining or restarting every replica clears all cached variants.
 - Requires `AppSettings:EnableManagementEndpoints: true` to map the DMS claimset management
   route surface.
 - Requires a valid `AppSettings:ManagementEndpoints:RequiredRole`; the endpoints are not mapped

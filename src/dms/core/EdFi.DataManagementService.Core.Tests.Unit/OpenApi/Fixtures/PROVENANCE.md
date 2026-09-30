@@ -16,5 +16,5 @@ which is a Swagger 2.0 document.
 The pinned fixture is the Swagger 2.0 source after the ODS runtime's own conversion to OpenAPI 3.0.1,
 which is why it carries `openapi: 3.0.1` rather than `swagger: 2.0`.
 
-`IdentityOpenApiOdsCompatibilityTests` walks this fixture against the served DMS identity document and
-asserts every remaining difference is named in its encoded ledger.
+`IdentityOpenApiOdsCompatibilityTests` compares this fixture with the served DMS identity document node
+by node, in both directions, and asserts every difference is named in its encoded ledger.

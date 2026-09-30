@@ -56,12 +56,11 @@ internal static class IdentityDatastoreIndependenceScenario
         // genuinely expires it.
         await AssertOperationNotSupportedAsync(harness, tenant);
 
-        int loadDataStoresCallCountBeforeTheIdentityRequest = dataStoreProvider.LoadDataStoresCallCount;
         int loadTenantsCallCountBeforeTheIdentityRequest = dataStoreProvider.LoadTenantsCallCount;
 
         // Poison the datastore configuration surface, then push the identity tenant snapshot's
         // 60-second freshness window into the past so the next identity request must refresh it.
-        dataStoreProvider.PoisonLoadDataStores();
+        dataStoreProvider.PoisonDatastoreSurface();
         timeProvider.Advance(TimeSpan.FromSeconds(61));
 
         await AssertOperationNotSupportedAsync(harness, tenant);
@@ -74,15 +73,11 @@ internal static class IdentityDatastoreIndependenceScenario
                 "the expired identity tenant snapshot must refresh through LoadTenants"
             );
 
-        // The poisoned LoadDataStores was never reached by the identity request: the identity pipeline
-        // maps no ResolveDataStoreMiddleware step and resolves tenant existence through LoadTenants
-        // alone.
+        // No datastore member was reached by the identity request: the identity pipeline maps no
+        // ResolveDataStoreMiddleware step and resolves tenant existence through LoadTenants alone.
         dataStoreProvider
-            .LoadDataStoresCallCount.Should()
-            .Be(
-                loadDataStoresCallCountBeforeTheIdentityRequest,
-                "the identity pipeline must never call LoadDataStores"
-            );
+            .PoisonedCallCount.Should()
+            .Be(0, "the identity pipeline must never read or report datastore configuration");
     }
 
     private static async Task AssertOperationNotSupportedAsync(ApiIntegrationHarness harness, string tenant)
@@ -155,21 +150,21 @@ internal sealed class IdentityGrantingClaimSetProvider(FixtureContext fixture) :
 
 /// <summary>
 /// An <see cref="IDataStoreProvider" /> serving one configured data store normally until
-/// <see cref="PoisonLoadDataStores" /> is called, after which <see cref="LoadDataStores" /> always
-/// throws. <see cref="LoadTenants" /> always succeeds regardless of poisoning, matching the design's
-/// separation between tenant-name lookup and datastore configuration.
-/// <see cref="LoadDataStoresCallCount" /> lets a scenario prove a request never called it, and
-/// <see cref="LoadTenantsCallCount" /> lets it prove a request did refresh the tenant snapshot.
+/// <see cref="PoisonDatastoreSurface" /> is called, after which every member that reads or reports
+/// datastore configuration throws and is counted in <see cref="PoisonedCallCount" />.
+/// <see cref="LoadTenants" /> always succeeds regardless of poisoning, matching the design's
+/// separation between tenant-name lookup and datastore configuration, and
+/// <see cref="LoadTenantsCallCount" /> lets a scenario prove a request did refresh the tenant snapshot.
 /// </summary>
 internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDataStoreProvider
 {
     private DataStore? _dataStore;
-    private volatile bool _shouldThrowOnLoadDataStores;
-    private int _loadDataStoresCallCount;
+    private volatile bool _poisoned;
+    private int _poisonedCallCount;
     private int _loadTenantsCallCount;
 
-    /// <summary>How many times LoadDataStores has been called, across the lifetime of this instance.</summary>
-    public int LoadDataStoresCallCount => Volatile.Read(ref _loadDataStoresCallCount);
+    /// <summary>How many datastore members were called after <see cref="PoisonDatastoreSurface" />.</summary>
+    public int PoisonedCallCount => Volatile.Read(ref _poisonedCallCount);
 
     /// <summary>How many times LoadTenants has been called, across the lifetime of this instance.</summary>
     public int LoadTenantsCallCount => Volatile.Read(ref _loadTenantsCallCount);
@@ -183,38 +178,44 @@ internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDat
             new Dictionary<RouteQualifierName, RouteQualifierValue>()
         );
 
-    /// <summary>Makes every later call to LoadDataStores throw.</summary>
-    public void PoisonLoadDataStores() => _shouldThrowOnLoadDataStores = true;
+    /// <summary>Makes every later call to a member other than LoadTenants throw.</summary>
+    public void PoisonDatastoreSurface() => _poisoned = true;
 
     public Task<IList<DataStore>> LoadDataStores(
         string? tenant = null,
         CancellationToken cancellationToken = default
     )
     {
-        Interlocked.Increment(ref _loadDataStoresCallCount);
-
-        if (_shouldThrowOnLoadDataStores)
-        {
-            throw new InvalidOperationException(
-                "PoisonableRecordingDataStoreProvider.LoadDataStores was poisoned for this test and must "
-                    + "never be called by the identity pipeline."
-            );
-        }
-
+        ThrowIfPoisoned(nameof(LoadDataStores));
         return Task.FromResult<IList<DataStore>>(_dataStore is null ? [] : [_dataStore]);
     }
 
     public Task RefreshInstancesIfExpiredAsync(
         string? tenant = null,
         CancellationToken cancellationToken = default
-    ) => Task.CompletedTask;
+    )
+    {
+        ThrowIfPoisoned(nameof(RefreshInstancesIfExpiredAsync));
+        return Task.CompletedTask;
+    }
 
-    public IReadOnlyList<DataStore> GetAll(string? tenant = null) => _dataStore is null ? [] : [_dataStore];
+    public IReadOnlyList<DataStore> GetAll(string? tenant = null)
+    {
+        ThrowIfPoisoned(nameof(GetAll));
+        return _dataStore is null ? [] : [_dataStore];
+    }
 
-    public DataStore? GetById(long id, string? tenant = null) =>
-        _dataStore is { } dataStore && dataStore.Id == id ? dataStore : null;
+    public DataStore? GetById(long id, string? tenant = null)
+    {
+        ThrowIfPoisoned(nameof(GetById));
+        return _dataStore is { } dataStore && dataStore.Id == id ? dataStore : null;
+    }
 
-    public bool IsLoaded(string? tenant = null) => _dataStore is not null;
+    public bool IsLoaded(string? tenant = null)
+    {
+        ThrowIfPoisoned(nameof(IsLoaded));
+        return _dataStore is not null;
+    }
 
     public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
     {
@@ -222,7 +223,32 @@ internal sealed class PoisonableRecordingDataStoreProvider(string tenant) : IDat
         return Task.FromResult<IList<string>>([tenant]);
     }
 
-    public bool TenantExists(string tenant) => true;
+    public bool TenantExists(string tenant)
+    {
+        ThrowIfPoisoned(nameof(TenantExists));
+        return true;
+    }
 
-    public IReadOnlyList<string> GetLoadedTenantKeys() => [tenant];
+    public IReadOnlyList<string> GetLoadedTenantKeys()
+    {
+        ThrowIfPoisoned(nameof(GetLoadedTenantKeys));
+        return [tenant];
+    }
+
+    /// <summary>
+    /// Counts and throws once poisoned. The count still catches a caller that swallows the exception.
+    /// </summary>
+    private void ThrowIfPoisoned(string memberName)
+    {
+        if (!_poisoned)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _poisonedCallCount);
+        throw new InvalidOperationException(
+            $"PoisonableRecordingDataStoreProvider.{memberName} was poisoned for this test and must never be "
+                + "called by the identity pipeline."
+        );
+    }
 }
