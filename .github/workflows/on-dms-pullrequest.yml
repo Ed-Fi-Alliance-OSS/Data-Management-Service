@@ -1615,15 +1615,15 @@ jobs:
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/cdc-qualification
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory "$env:RUNNER_TEMP/cdc-qualification"
 
       - name: Record unavailable qualification environment
         if: failure()
         run: |
-          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
-            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+          if (-not (Test-Path "$env:RUNNER_TEMP/cdc-qualification/qualification.json")) {
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/cdc-qualification" | Out-Null
             @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
-              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+              ConvertTo-Json -AsArray | Set-Content "$env:RUNNER_TEMP/cdc-qualification/qualification.json"
           }
 
       - name: Upload structured CDC qualification evidence
@@ -1631,7 +1631,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cdc-qualification-Contract-All-${{ github.run_attempt }}
-          path: TestResults/cdc-qualification/**
+          path: ${{ runner.temp }}/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
 

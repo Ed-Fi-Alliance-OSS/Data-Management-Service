@@ -13,6 +13,9 @@ param(
 Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provider; Procedure = $Procedure }) {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
+        $script:runbookProgress = @{}
+        $script:runbookCase = 'suite'
+        Set-CdcRunbookOperation -Operation ownership-check -Phase Setup
         Import-Module (Join-Path $PSScriptRoot 'cdc-fixture-inputs.psm1') -Force
         $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         Import-Module (Join-Path $script:repo 'eng/docker-compose/env-utility.psm1') -DisableNameChecking
@@ -28,13 +31,15 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         if ($LASTEXITCODE -ne 0 -or $published.Count -or $publishedVolumes.Count) { throw 'EnvironmentUnavailable: published fixture requires no existing dms-published resources.' }
         $script:originalLocation = Get-Location
         Set-Location $script:repo
-        $script:results = [Collections.Generic.List[object]]::new()
         function Invoke-PrivateScript {
             param([string] $Id, [string] $Code, [int] $TimeoutSeconds = 600)
             $path = Join-Path $script:fixture ($Id + '.ps1')
             $Code | Set-Content -LiteralPath $path
             & chmod 600 $path
+            $phase = if ($Id -eq 'cdc-stack-teardown') { 'Teardown' } elseif ($Id -match 'infrastructure|settings') { 'Setup' } else { 'Test' }
+            Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
             $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-NonInteractive', '-File', $path) -InputText '' -TimeoutSeconds $TimeoutSeconds
+            Complete-CdcRunbookOperation $result
             $result.StandardOutput | Set-Content (Join-Path $script:fixture "$Id.stdout")
             $result.StandardError | Set-Content (Join-Path $script:fixture "$Id.stderr")
             & chmod 600 (Join-Path $script:fixture "$Id.stdout") (Join-Path $script:fixture "$Id.stderr")
@@ -44,6 +49,8 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
     }
 
     BeforeEach {
+        $script:runbookCase = $Id
+        Set-CdcRunbookOperation -Operation ownership-check -Phase Setup
         foreach ($ownedProject in @('dms-local', 'dms-published')) {
             $remaining = @(& docker ps -aq --filter "label=com.docker.compose.project=$ownedProject")
             if ($LASTEXITCODE -ne 0 -or $remaining.Count) { throw 'A preceding live case retained its deployment; preserve it for diagnosis instead of preparing another environment.' }
@@ -64,6 +71,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
             @{ Id = 'cdc-sqlserver-e2e-setup'; E2e = $true; Published = $false; SqlServer = $true }
         }
     ) {
+        Set-CdcRunbookOperation -Operation fixture-inputs -Phase Setup
         $prefix = if ($SqlServer) { 'cdc-sqlserver' } else { 'cdc-pg' }
         $providerName = if ($SqlServer) { 'sqlserver' } else { 'postgresql' }
         $stateName = if ($SqlServer) { 'state-sqlserver' } else { 'state-pg' }
@@ -106,6 +114,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         if ($E2e) {
             # Assert first-start initialization before the E2E wrapper stages its bootstrap claims.
             # Restarting CMS later cannot add missing claim sets to already-populated tables.
+            Set-CdcRunbookOperation -Operation verify-claims -Phase Setup
             $claims = if ($SqlServer) {
                 Invoke-CdcFixtureSql -Database 'edfi_configurationservice' -Sql "SELECT ClaimSetName FROM dmscs.ClaimSet WHERE ClaimSetName LIKE 'E2E-%';"
             } else {
@@ -123,6 +132,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
                 'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
             ) -Because 'E2E claims must be loaded on the first CMS startup'
         }
+        Set-CdcRunbookOperation -Operation provider-principal -Phase Setup
         Initialize-CdcFixturePrincipal -SqlServer $SqlServer -Inputs $inputs
         $settings = Get-CdcRunbookCode "$prefix-settings"
         $settings = $settings.Replace("'.local/cdc/", "'$local/").Replace("'./.local/cdc/", "'$local/")
@@ -149,6 +159,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         }
         $result.FailureKind | Should -Be 'None'
         $result.ExitCode | Should -Be 0 -Because 'only the shipped wrapper may authorize and launch writers'
+        Set-CdcRunbookOperation -Operation verify-deployment
         $inventoryPath = Join-Path $script:repo "eng/docker-compose/.cdc-deployments/$project.json"
         $inventory = Get-Content $inventoryPath -Raw | ConvertFrom-Json
         $inventory.Entries.Count | Should -Be 1
@@ -172,6 +183,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         (Invoke-WebRequest 'http://127.0.0.1:8080/health').StatusCode | Should -Be 200
         $qualified = Get-Content (Join-Path $script:repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
         (& docker inspect "$project-kafka-cdc-worker-1" --format '{{.Config.Image}}') | Should -Be $qualified.image
+        Set-CdcRunbookOperation -Operation verify-capture
         if ($SqlServer) {
             $capture = Invoke-CdcFixtureSql -Database $database -Sql @'
 SELECT STRING_AGG(OBJECT_NAME(source_object_id), ',') WITHIN GROUP (ORDER BY OBJECT_NAME(source_object_id)) FROM cdc.change_tables;
@@ -220,6 +232,7 @@ REVERT;
             $LASTEXITCODE | Should -Be 0
         }
         if ($E2e -and $SqlServer) {
+            Set-CdcRunbookOperation -Operation verify-snapshot
             $snapshot = Invoke-CdcFixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
             $snapshot.ExitCode | Should -Be 0
             ($snapshot.StandardOutput.Trim() -split '\r?\n') | Should -Be @('1', '0')
@@ -231,6 +244,7 @@ REVERT;
             $smoke.StandardOutput | Should -Match 'Passed:\s+2'
             $smoke.StandardOutput | Should -Match 'Skipped:\s+0'
         }
+        Set-CdcRunbookOperation -Operation image-evidence
         $applicationContainers = @(& docker ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=dms')
         $LASTEXITCODE | Should -Be 0
         $applicationContainers.Count | Should -Be 1
@@ -240,7 +254,6 @@ REVERT;
         $configurationImage = & docker inspect ed-fi-api-config-service --format '{{.Image}}'
         $LASTEXITCODE | Should -Be 0
         $configurationImage | Should -Match '^sha256:[a-f0-9]{64}$'
-        $script:results.Add(@{ TestId = "CDC-DOC $Id"; SnippetId = $Id; Outcome = 'Passed' })
         # Fixed assertions and image IDs only; no settings, SIDs, credentials or raw output.
         @{
             SnippetId = $Id; WrapperAttempts = $attempt; Provider = $providerName
@@ -265,6 +278,7 @@ REVERT;
         if ($Published) { $teardown = $teardown.Replace('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1') }
         (Invoke-PrivateScript 'cdc-stack-teardown' $teardown).ExitCode | Should -Be 0
         Test-Path $inventoryPath | Should -BeFalse
+        Set-CdcRunbookOperation -Operation retire-workspace -Phase Teardown
         $workspace = Join-Path $script:repo 'eng/docker-compose/.bootstrap'
         if (Test-Path $workspace) { Move-Item $workspace (Join-Path $script:fixture 'retired-bootstrap') }
         # Remove only this case's temporary tags after successful teardown; failed cases retain them.
@@ -272,12 +286,11 @@ REVERT;
             & docker image rm $publishedImageTag
             $LASTEXITCODE | Should -Be 0
         }
+        Complete-CdcRunbookOperation
     }
 
     AfterAll {
-        if ($script:results -and $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
-            @{ Cases = @($script:results) } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY "cdc-runbook-live-$($Procedure.ToLowerInvariant()).json")
-        }
+        Save-CdcRunbookProgress
         if ($script:originalLocation) { Set-Location $script:originalLocation }
     }
 }
