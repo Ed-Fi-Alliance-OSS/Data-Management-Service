@@ -46,6 +46,12 @@ services:
       DotnetMonitor_Storage__DefaultSharedPath: /diag
       DotnetMonitor_InProcessFeatures__Enabled: "true"
       DotnetMonitor_InProcessFeatures__CallStacks__Enabled: "true"
+      # /livemetrics supplies the runtime counters the investigation needs: the default
+      # providers (System.Runtime thread pool/GC/CPU, Microsoft.AspNetCore.Hosting
+      # requests) plus Npgsql connection-pool counters, at 1 s resolution so short burst
+      # windows resolve.
+      DotnetMonitor_GlobalCounter__IntervalSeconds: "1"
+      DotnetMonitor_Metrics__Providers__0__ProviderName: Npgsql
     ports:
       - "127.0.0.1:${CMS_MONITOR_PORT:-52323}:52323"
     volumes:

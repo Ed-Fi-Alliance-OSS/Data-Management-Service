@@ -89,6 +89,22 @@ param(
     [Parameter(ParameterSetName = 'Burst')]
     [string] $RunLabel,
 
+    # Coordinated evidence mode: after any -Cold restart, start the diagnostics samplers
+    # against the (new) CMS process, wait until every sampler is producing data, run the
+    # burst, then stop the samplers and FAIL the run unless the runtime captures cover
+    # the entire burst window. Requires the local-config-diagnostics.yml sidecar.
+    [Parameter(ParameterSetName = 'Burst')]
+    [switch] $WithSamplers,
+
+    # Sampler window; must exceed the expected total burst duration or the coverage
+    # check fails (deliberately: incomplete evidence is reported, not masked).
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateRange(10, 3600)]
+    [int] $SamplerDurationSeconds = 180,
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [string] $MonitorBaseUrl = 'http://localhost:52323',
+
     [string] $OutputDirectory = (Join-Path $PSScriptRoot 'artifacts'),
 
     [string] $ManifestPath
@@ -274,11 +290,14 @@ namespace Dms1556
     {
         // The client is created once per harness invocation and shared across rounds,
         // mirroring DMS's long-lived HttpClient: warm rounds reuse pooled connections
-        // instead of paying connection setup again every round.
-        public static HttpClient CreateClient(string token, int requestTimeoutSeconds)
+        // instead of paying connection setup again every round. HttpClient.Timeout is
+        // disabled: with HttpCompletionOption.ResponseHeadersRead it stops covering the
+        // request once headers arrive, so the deadline is instead a per-request
+        // CancellationTokenSource in RunAsync that spans send AND body read.
+        public static HttpClient CreateClient(string token)
         {
             var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds);
+            client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             return client;
         }
@@ -292,9 +311,10 @@ namespace Dms1556
             int[] profileIds,
             int totalRequests,
             int maxConcurrency,
-            bool captureBodies)
+            bool captureBodies,
+            int requestTimeoutSeconds)
         {
-            return RunAsync(client, baseUrl, profileIds, totalRequests, maxConcurrency, captureBodies)
+            return RunAsync(client, baseUrl, profileIds, totalRequests, maxConcurrency, captureBodies, requestTimeoutSeconds)
                 .GetAwaiter().GetResult();
         }
 
@@ -304,7 +324,8 @@ namespace Dms1556
             int[] profileIds,
             int totalRequests,
             int maxConcurrency,
-            bool captureBodies)
+            bool captureBodies,
+            int requestTimeoutSeconds)
         {
             var gate = new SemaphoreSlim(maxConcurrency);
             var results = new RequestResult[totalRequests];
@@ -322,35 +343,50 @@ namespace Dms1556
                         ProfileId = profileIds[index % profileIds.Length]
                     };
                     result.AdmittedUtc = DateTime.UtcNow;
-                    try
+                    // One deadline per request, started at admission, covering the send
+                    // and the body read: HttpClient.Timeout would stop at the response
+                    // headers with ResponseHeadersRead, letting a stalled body hold a
+                    // semaphore slot indefinitely.
+                    using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(requestTimeoutSeconds)))
                     {
-                        using (var response = await client
-                            .GetAsync(baseUrl + "/v3/profiles/" + result.ProfileId, HttpCompletionOption.ResponseHeadersRead)
-                            .ConfigureAwait(false))
+                        try
                         {
-                            string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                            using (var response = await client
+                                .GetAsync(baseUrl + "/v3/profiles/" + result.ProfileId, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
+                                .ConfigureAwait(false))
+                            {
+                                string body = await response.Content.ReadAsStringAsync(deadline.Token).ConfigureAwait(false);
+                                result.BodyCompletedUtc = DateTime.UtcNow;
+                                result.StatusCode = (int)response.StatusCode;
+                                // Non-200 bodies are always kept: they carry the correlation id.
+                                result.Body = (captureBodies || result.StatusCode != 200) ? body : null;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
                             result.BodyCompletedUtc = DateTime.UtcNow;
-                            result.StatusCode = (int)response.StatusCode;
-                            // Non-200 bodies are always kept: they carry the correlation id.
-                            result.Body = (captureBodies || result.StatusCode != 200) ? body : null;
+                            result.StatusCode = 0;
+                            if (ex is OperationCanceledException && deadline.IsCancellationRequested)
+                            {
+                                result.Error = "RequestDeadlineExceeded: no response-body completion within "
+                                    + requestTimeoutSeconds + " s of admission";
+                            }
+                            else
+                            {
+                                var baseline = ex is AggregateException agg && agg.InnerException != null ? agg.InnerException : ex;
+                                string message = baseline.Message ?? string.Empty;
+                                int newline = message.IndexOfAny(new[] { '\r', '\n' });
+                                if (newline >= 0)
+                                {
+                                    message = message.Substring(0, newline);
+                                }
+                                result.Error = baseline.GetType().Name + ": " + message;
+                            }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        result.BodyCompletedUtc = DateTime.UtcNow;
-                        result.StatusCode = 0;
-                        var baseline = ex is AggregateException agg && agg.InnerException != null ? agg.InnerException : ex;
-                        string message = baseline.Message ?? string.Empty;
-                        int newline = message.IndexOfAny(new[] { '\r', '\n' });
-                        if (newline >= 0)
+                        finally
                         {
-                            message = message.Substring(0, newline);
+                            gate.Release();
                         }
-                        result.Error = baseline.GetType().Name + ": " + message;
-                    }
-                    finally
-                    {
-                        gate.Release();
                     }
                     result.DurationMs = (result.BodyCompletedUtc - result.AdmittedUtc).TotalMilliseconds;
                     results[index] = result;
@@ -487,27 +523,55 @@ function Invoke-Burst {
     $runId = '{0}-{1}' -f $RunLabel, ([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))
     $runStartedUtc = [DateTime]::UtcNow.ToString('o')
 
+    Add-BurstRunnerType
+
+    # The token is minted BEFORE any cold restart and reused afterwards, mirroring the
+    # intended workload: DMS bursts with a cached token, so token issuance (a signing-key
+    # read plus token-state writes) must not warm CMS's database connections between the
+    # restart and the measured burst. The token is database-backed and survives the
+    # restart. This preparation order is recorded in the summary.
+    $tokenMintedUtc = [DateTime]::UtcNow.ToString('o')
+    $token = Get-AccessToken
+    $client = [Dms1556.BurstRunner]::CreateClient($token)
+
+    $coldPreparation = $null
     if ($Cold) {
-        Write-Output "Cold run: restarting $CmsContainerName..."
+        Write-Output "Cold run: restarting $CmsContainerName (token already minted)..."
+        $restartedUtc = [DateTime]::UtcNow.ToString('o')
         docker restart $CmsContainerName | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "docker restart $CmsContainerName failed with exit code $LASTEXITCODE."
         }
+        # Unauthenticated readiness only: /health does not touch the token or key paths.
         Wait-CmsHealthy
         Write-Output 'CMS healthy after restart.'
+        $coldPreparation = [pscustomobject]@{
+            order          = 'token-minted-before-restart'
+            tokenMintedUtc = $tokenMintedUtc
+            restartedUtc   = $restartedUtc
+            healthyUtc     = [DateTime]::UtcNow.ToString('o')
+        }
     }
 
-    Add-BurstRunnerType
-    $token = Get-AccessToken
-    $client = [Dms1556.BurstRunner]::CreateClient($token, $RequestTimeoutSeconds)
+    # Samplers start only after the restart so they discover and bind to the NEW CMS
+    # process, and the burst starts only once every sampler is verifiably producing data.
+    $samplerState = $null
+    if ($WithSamplers) {
+        Import-Module (Join-Path $PSScriptRoot 'dms-1556-samplers.psm1') -Force
+        $samplerState = Start-DmsSamplerSet -Label $runId -OutputDirectory $OutputDirectory `
+            -DurationSeconds $SamplerDurationSeconds -MonitorBaseUrl $MonitorBaseUrl -RequireMonitor
+        Wait-DmsSamplerSetReady -State $samplerState
+        Write-Output 'Samplers ready (all captures producing data).'
+    }
 
     try {
     $roundSummaries = [System.Collections.Generic.List[object]]::new()
+    $burstWindowStartUtc = [DateTime]::UtcNow
     for ($round = 1; $round -le $Rounds; $round++) {
         Write-Output "Round ${round}/${Rounds}: $TotalRequests requests, concurrency $MaxConcurrency..."
         $burstStartUtc = [DateTime]::UtcNow
         $results = [Dms1556.BurstRunner]::Run(
-            $client, $BaseUrl, $profileIds, $TotalRequests, $MaxConcurrency, [bool]$ValidateBodies)
+            $client, $BaseUrl, $profileIds, $TotalRequests, $MaxConcurrency, [bool]$ValidateBodies, $RequestTimeoutSeconds)
 
         $rows = [System.Collections.Generic.List[object]]::new()
         $bodyValidCount = 0
@@ -519,10 +583,13 @@ function Invoke-Burst {
                 $isValid = $false
                 if ($r.StatusCode -eq 200 -and $r.Body) {
                     try {
+                        # Ordinal, not PowerShell -eq: -eq compares strings
+                        # case-insensitively, which would accept a definition that
+                        # differs from the manifest only in case.
                         $parsed = $r.Body | ConvertFrom-Json
                         $isValid = ([int]$parsed.id -eq [int]$expected.id) -and
-                            ($parsed.name -eq $expected.name) -and
-                            ($parsed.definition -eq $expected.definition)
+                            [string]::Equals([string]$parsed.name, [string]$expected.name, [StringComparison]::Ordinal) -and
+                            [string]::Equals([string]$parsed.definition, [string]$expected.definition, [StringComparison]::Ordinal)
                     }
                     catch {
                         $isValid = $false
@@ -553,9 +620,12 @@ function Invoke-Burst {
             $statusHistogram[[string]$group.Name] = $group.Count
         }
         $durations = [double[]]@($results | ForEach-Object { $_.DurationMs } | Sort-Object)
-        $failures = @($results | Where-Object { $_.StatusCode -ne 200 } | Sort-Object -Property AdmittedUtc)
+        # Time-to-first-failure is when the first failure was OBSERVED (its completion),
+        # not when that request was admitted: a request admitted at t=0 that fails after
+        # 15 s is a failure at ~15 s, not at ~0.
+        $failures = @($results | Where-Object { $_.StatusCode -ne 200 } | Sort-Object -Property BodyCompletedUtc)
         $timeToFirstFailureMs = if ($failures.Count -gt 0) {
-            [Math]::Round(($failures[0].AdmittedUtc - $burstStartUtc).TotalMilliseconds, 1)
+            [Math]::Round(($failures[0].BodyCompletedUtc - $burstStartUtc).TotalMilliseconds, 1)
         }
         else { $null }
 
@@ -579,6 +649,16 @@ function Invoke-Burst {
             $roundSummary.p50Ms, $roundSummary.p95Ms, $roundSummary.p99Ms, $roundSummary.measuredPeakOverlap)
     }
 
+    $burstWindowEndUtc = [DateTime]::UtcNow
+
+    # Stop the samplers only after the burst window closes, then verify their captures
+    # actually span it: file existence alone says nothing about coverage.
+    $samplerReport = $null
+    if ($samplerState) {
+        $samplerReport = Stop-DmsSamplerSet -State $samplerState `
+            -BurstStartUtc $burstWindowStartUtc -BurstEndUtc $burstWindowEndUtc
+    }
+
     $summary = [pscustomobject]@{
         runId           = $runId
         workload        = $RunLabel
@@ -587,16 +667,28 @@ function Invoke-Burst {
         maxConcurrency  = $MaxConcurrency
         rounds          = $Rounds
         cold            = [bool]$Cold
+        coldPreparation = $coldPreparation
         validateBodies  = [bool]$ValidateBodies
         manifest        = $ManifestPath
         seededProfiles  = $manifestProfiles.Count
         startedUtc      = $runStartedUtc
+        burstWindow     = [pscustomobject]@{
+            startUtc = $burstWindowStartUtc.ToString('o')
+            endUtc   = $burstWindowEndUtc.ToString('o')
+        }
         cmsEnvironment  = Get-CmsEnvironmentRecord
         roundSummaries  = $roundSummaries
+        samplerReport   = $samplerReport
     }
     $summaryPath = Join-Path $OutputDirectory "$runId-summary.json"
-    $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding utf8
+    $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding utf8
     Write-Output "Summary written to $summaryPath"
+
+    # Fail AFTER the summary is written so the partial evidence is retained, but fail:
+    # a run whose required runtime captures do not cover the burst window is not evidence.
+    if ($samplerReport -and @($samplerReport.requiredFailures).Count -gt 0) {
+        throw "Required sampler captures failed: $(@($samplerReport.requiredFailures) -join '; ')"
+    }
     }
     finally {
         $client.Dispose()
