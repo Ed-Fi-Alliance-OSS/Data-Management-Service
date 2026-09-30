@@ -55,7 +55,9 @@ public sealed class CmsContributorPlugin : EdFiApiPlugin
 
     public override void ContributeServices(IServiceCollection services, IConfiguration configuration)
     {
-        switch (configuration[BehaviorKey])
+        string? behavior = configuration[BehaviorKey];
+
+        switch (behavior)
         {
             case "throwFromServices":
                 throw new InvalidOperationException("the fixture service hook failed on purpose");
@@ -67,8 +69,64 @@ public sealed class CmsContributorPlugin : EdFiApiPlugin
                 break;
         }
 
-        services.AddSingleton<ISecretResolver, CmsContributorSecretResolver>();
+        AddSecretResolver(services, behavior);
+        AddClientSecretHasher(services, behavior);
         services.AddHostedService<CmsContributorHostedService>();
+    }
+
+    /// <summary>
+    /// The secret resolver, as a singleton unless the behavior asks for a shape the host refuses or for
+    /// a second claim on the contract.
+    /// </summary>
+    private static void AddSecretResolver(IServiceCollection services, string? behavior)
+    {
+        switch (behavior)
+        {
+            case "scopedResolver":
+                services.AddScoped<ISecretResolver, CmsContributorSecretResolver>();
+                break;
+
+            case "transientResolver":
+                services.AddTransient<ISecretResolver, CmsContributorSecretResolver>();
+                break;
+
+            case "keyedResolver":
+                services.AddKeyedSingleton<ISecretResolver, CmsContributorSecretResolver>("acme-vault");
+                break;
+
+            case "resolverTwice":
+                services.AddSingleton<ISecretResolver, CmsContributorSecretResolver>();
+                services.AddSingleton<ISecretResolver, CmsContributorSecretResolver>();
+                break;
+
+            default:
+                services.AddSingleton<ISecretResolver, CmsContributorSecretResolver>();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The client secret hasher, registered only when the behavior asks for one in a shape the host
+    /// refuses. The default leaves the host's own hasher in place.
+    /// </summary>
+    private static void AddClientSecretHasher(IServiceCollection services, string? behavior)
+    {
+        switch (behavior)
+        {
+            case "scopedHasher":
+                services.AddScoped<IClientSecretHasher, CmsContributorClientSecretHasher>();
+                break;
+
+            case "transientHasher":
+                services.AddTransient<IClientSecretHasher, CmsContributorClientSecretHasher>();
+                break;
+
+            case "keyedHasher":
+                services.AddKeyedSingleton<IClientSecretHasher, CmsContributorClientSecretHasher>(
+                    "acme-hasher"
+                );
+                break;
+        }
     }
 }
 
@@ -95,6 +153,19 @@ public sealed class CmsContributorSecretResolver : ISecretResolver
 {
     public ValueTask<string> ResolveAsync(SecretReference reference, CancellationToken cancellationToken) =>
         throw new NotSupportedException("the fixture resolver is registered, never called");
+}
+
+/// <summary>The plugin's client secret hasher. Hashes nothing: only its registration is under test.</summary>
+public sealed class CmsContributorClientSecretHasher : IClientSecretHasher
+{
+    public Task<string> HashSecretAsync(string plainTextSecret) =>
+        throw new NotSupportedException("the fixture hasher is registered, never called");
+
+    public Task<bool> VerifySecretAsync(string plainTextSecret, string hashedSecret) =>
+        throw new NotSupportedException("the fixture hasher is registered, never called");
+
+    public bool IsSecretHashed(string secret) =>
+        throw new NotSupportedException("the fixture hasher is registered, never called");
 }
 
 /// <summary>

@@ -3,14 +3,18 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Text.Json;
 using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using EdFi.DmsConfigurationService.Secrets;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -30,6 +34,11 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// Console.Error is process-wide, so it is redirected only for the length of the boot and restored in a
 /// finally block. Every fixture using this is NonParallelizable for the same reason.
 /// </para>
+/// <para>
+/// Every log record the host writes during the boot is also marked on the same redirected channel, as
+/// one <c>[log Level EventName]</c> line, so a case can order a log event against a line the host
+/// wrote to Console.Error in a single timeline rather than across two unrelated captures.
+/// </para>
 /// </remarks>
 internal sealed class CmsPluginBoot : IDisposable
 {
@@ -46,7 +55,8 @@ internal sealed class CmsPluginBoot : IDisposable
         Exception? startupException,
         string diagnostics,
         bool clientCreated,
-        IReadOnlyList<ServiceDescriptor> auditInputDescriptors
+        IReadOnlyList<ServiceDescriptor> auditInputDescriptors,
+        IReadOnlyList<CapturedLog> logs
     )
     {
         Factory = factory;
@@ -54,6 +64,7 @@ internal sealed class CmsPluginBoot : IDisposable
         Diagnostics = diagnostics;
         ClientCreated = clientCreated;
         AuditInputDescriptors = auditInputDescriptors;
+        Logs = logs;
     }
 
     internal WebApplicationFactory<Program> Factory { get; }
@@ -61,8 +72,14 @@ internal sealed class CmsPluginBoot : IDisposable
     /// <summary>What host creation threw, or null when the host started.</summary>
     internal Exception? StartupException { get; }
 
-    /// <summary>Everything written to Console.Error while the host was being created.</summary>
+    /// <summary>
+    /// Everything written to Console.Error while the host was being created, with a marker line for
+    /// each log record at the point it was written.
+    /// </summary>
     internal string Diagnostics { get; }
+
+    /// <summary>Every log record the host wrote while it was being created, with its structured state.</summary>
+    internal IReadOnlyList<CapturedLog> Logs { get; }
 
     /// <summary>Whether a client existed at any point, which is the precondition for any request.</summary>
     internal bool ClientCreated { get; }
@@ -77,6 +94,11 @@ internal sealed class CmsPluginBoot : IDisposable
     {
         List<ServiceDescriptor> auditInputDescriptors = [];
 
+        // Not disposed: a log record written after the boot, by a host the fixture still holds, must not
+        // hit a disposed writer. The timeline stops marking once the boot has ended.
+        StringWriter error = new();
+        TimelineLoggerProvider timeline = new(TextWriter.Synchronized(error));
+
         WebApplicationFactory<Program> factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
             builder =>
             {
@@ -84,6 +106,7 @@ internal sealed class CmsPluginBoot : IDisposable
                 builder.UseSetting("Plugins:Directory", pluginRoot);
                 builder.UseSetting("Plugins:Allowed", allowed);
                 builder.UseSetting(BehaviorKey, behavior);
+                builder.ConfigureServices(services => services.AddSingleton<ILoggerProvider>(timeline));
                 // Test services are applied after Program's own registrations, so this sees the
                 // collection as AddServices left it.
                 builder.ConfigureTestServices(services =>
@@ -95,8 +118,7 @@ internal sealed class CmsPluginBoot : IDisposable
         );
 
         TextWriter originalError = Console.Error;
-        using StringWriter error = new();
-        Console.SetError(error);
+        Console.SetError(timeline.Channel);
 
         Exception? startupException = null;
         bool clientCreated = false;
@@ -115,6 +137,7 @@ internal sealed class CmsPluginBoot : IDisposable
         finally
         {
             Console.SetError(originalError);
+            timeline.StopMarking();
         }
 
         return new CmsPluginBoot(
@@ -122,7 +145,8 @@ internal sealed class CmsPluginBoot : IDisposable
             startupException,
             error.ToString(),
             clientCreated,
-            auditInputDescriptors
+            auditInputDescriptors,
+            timeline.Entries
         );
     }
 
@@ -159,7 +183,77 @@ internal sealed class CmsPluginBoot : IDisposable
         return string.Join('\n', messages);
     }
 
+    /// <summary>
+    /// Everything this boot put on a channel an operator reads: the diagnostic channel, every log
+    /// record's structured state rendered as JSON, and the startup exception chain.
+    /// </summary>
+    internal string CapturedText() =>
+        Diagnostics
+        + string.Join(
+            '\n',
+            Logs.Select(entry =>
+                JsonSerializer.Serialize(
+                    entry.State.ToDictionary(pair => pair.Key, pair => pair.Value?.ToString())
+                )
+                + JsonSerializer.Serialize(entry.State.Values)
+                + entry.Exception
+            )
+        )
+        + ExceptionText();
+
     public void Dispose() => Factory.Dispose();
+
+    /// <summary>
+    /// Captures each log record with its structured state and marks it on the shared channel.
+    /// </summary>
+    private sealed class TimelineLoggerProvider(TextWriter channel) : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<CapturedLog> _entries = new();
+        private volatile bool _marking = true;
+
+        internal TextWriter Channel { get; } = channel;
+
+        internal IReadOnlyList<CapturedLog> Entries => [.. _entries];
+
+        internal void StopMarking() => _marking = false;
+
+        public ILogger CreateLogger(string categoryName) => new TimelineLogger(categoryName, this);
+
+        public void Dispose() { }
+
+        private sealed class TimelineLogger(string category, TimelineLoggerProvider provider) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                Dictionary<string, object?> values = [];
+                if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
+                {
+                    foreach ((string key, object? value) in pairs)
+                    {
+                        values[key] = value;
+                    }
+                }
+
+                provider._entries.Enqueue(new CapturedLog(category, logLevel, eventId, values, exception));
+
+                if (provider._marking)
+                {
+                    provider.Channel.WriteLine($"[log {logLevel} {eventId.Name}]");
+                }
+            }
+        }
+    }
 }
 
 [TestFixture]
@@ -419,5 +513,151 @@ public class Given_a_boot_whose_plugin_registers_its_own_audit_input
             .GetType()
             .FullName.Should()
             .Be("Acme.CmsContributor.CmsContributorSecretResolver");
+    }
+}
+
+/// <summary>
+/// A plugin registering one of the Configuration Service's declared contracts in a shape the host
+/// refuses: scoped, transient, or under a service key.
+/// </summary>
+[TestFixture("scopedResolver", "EdFi.DmsConfigurationService.Secrets.ISecretResolver", "as Scoped.")]
+[TestFixture("transientResolver", "EdFi.DmsConfigurationService.Secrets.ISecretResolver", "as Transient.")]
+[TestFixture(
+    "keyedResolver",
+    "EdFi.DmsConfigurationService.Secrets.ISecretResolver",
+    "under the service key 'acme-vault'."
+)]
+[TestFixture("scopedHasher", "EdFi.DmsConfigurationService.Secrets.IClientSecretHasher", "as Scoped.")]
+[TestFixture("transientHasher", "EdFi.DmsConfigurationService.Secrets.IClientSecretHasher", "as Transient.")]
+[TestFixture(
+    "keyedHasher",
+    "EdFi.DmsConfigurationService.Secrets.IClientSecretHasher",
+    "under the service key 'acme-hasher'."
+)]
+[NonParallelizable]
+public class Given_a_boot_whose_plugin_registers_a_declared_contract_in_a_refused_shape(
+    string behavior,
+    string contract,
+    string shape
+)
+{
+    private CmsPluginBoot _boot = null!;
+
+    private string Problem =>
+        $"plugin '{CmsPluginBoot.PluginName}' registered the plugin contract '{contract}' {shape}";
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp() =>
+        _boot = CmsPluginBoot.Run(CmsPluginBoot.StageRoot, CmsPluginBoot.PluginName, behavior);
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown() => _boot.Dispose();
+
+    [Test]
+    public void It_fails_host_creation_before_any_client_exists()
+    {
+        _boot.StartupException.Should().NotBeNull();
+        _boot.ClientCreated.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_stops_startup_on_exactly_that_problem()
+    {
+        _boot
+            .Find<InvalidOperationException>()!
+            .Message.Should()
+            .StartWith("Startup aborted: 1 plugin registration problem(s).")
+            .And.Contain(Problem);
+    }
+
+    [Test]
+    public void It_writes_the_problem_naming_the_plugin_the_contract_and_the_shape_to_the_diagnostic_channel()
+    {
+        _boot.Diagnostics.Should().Contain($"Plugin registration problem: {Problem}");
+    }
+}
+
+/// <summary>
+/// A plugin whose registrations pass the Configuration Service's own shape check and fail the shared
+/// audit: it claims the replace-cardinality secret resolver contract twice.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_boot_whose_plugin_registration_fails_the_audit
+{
+    private const string AuditProblem =
+        $"accepts one implementation and plugin '{CmsPluginBoot.PluginName}' registered 2.";
+
+    private CmsPluginBoot _boot = null!;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp() =>
+        _boot = CmsPluginBoot.Run(CmsPluginBoot.StageRoot, CmsPluginBoot.PluginName, "resolverTwice");
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown() => _boot.Dispose();
+
+    [Test]
+    public void It_fails_host_creation_before_any_client_exists()
+    {
+        _boot.StartupException.Should().NotBeNull();
+        _boot.ClientCreated.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_fails_on_the_audits_cardinality_finding()
+    {
+        _boot
+            .Find<InvalidOperationException>()!
+            .Message.Should()
+            .StartWith("Startup aborted: 1 plugin registration problem(s).")
+            .And.Contain(AuditProblem);
+    }
+
+    [Test]
+    public void It_emits_one_information_inventory_event_for_the_plugin()
+    {
+        _boot
+            .Logs.Where(entry => entry.EventId.Name == "PluginInventory")
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<CapturedLog>(entry =>
+                entry.Level == LogLevel.Information
+                && (string?)entry.State["PluginName"] == CmsPluginBoot.PluginName
+            );
+    }
+
+    [Test]
+    public void It_emits_the_inventory_event_before_the_audit_failure()
+    {
+        int inventory = _boot.Diagnostics.IndexOf(
+            "[log Information PluginInventory]",
+            StringComparison.Ordinal
+        );
+        int failure = _boot.Diagnostics.IndexOf(
+            $"Plugin registration problem: the plugin contract",
+            StringComparison.Ordinal
+        );
+
+        inventory.Should().BeGreaterThanOrEqualTo(0, "the inventory event is written");
+        failure.Should().BeGreaterThanOrEqualTo(0, "the audit failure is written");
+        inventory.Should().BeLessThan(failure);
+    }
+
+    [Test]
+    public void It_does_not_write_the_value_its_configuration_phase_supplied()
+    {
+        // Asserted as booleans so that a failure does not print the captured text.
+        string captured = _boot.CapturedText();
+
+        captured
+            .Contains(CmsPluginBoot.SecretLookingKey, StringComparison.Ordinal)
+            .Should()
+            .BeFalse("the key must not be written");
+        captured
+            .Contains(CmsPluginBoot.SecretLookingValue, StringComparison.Ordinal)
+            .Should()
+            .BeFalse("the value must not be written");
     }
 }
