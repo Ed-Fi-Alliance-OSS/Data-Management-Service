@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.Api.Plugins;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,8 +16,16 @@ namespace Acme.CmsContributor;
 /// Exercises both composition phases against the Configuration Service: its configuration hook adds a
 /// source supplying a value the host reads, and its service hook registers a secret resolver.
 /// </summary>
+/// <remarks>
+/// What either hook does beyond that is chosen by <see cref="BehaviorKey"/> in the host's
+/// configuration, so one published fixture serves every boot case. With the key absent both hooks do
+/// only what is described above.
+/// </remarks>
 public sealed class CmsContributorPlugin : EdFiApiPlugin
 {
+    /// <summary>The host configuration key that picks a behavior. Named for this plugin alone.</summary>
+    public const string BehaviorKey = "Fixture:Acme.CmsContributor:Behavior";
+
     /// <summary>The origin this plugin supplies for the key the host's CORS policy reads.</summary>
     public const string SwaggerUiOrigin = "https://acme-cms-contributor.example";
 
@@ -34,10 +43,30 @@ public sealed class CmsContributorPlugin : EdFiApiPlugin
     public override void ContributeConfiguration(
         IConfigurationBuilder configurationBuilder,
         IConfiguration bootstrapConfiguration
-    ) => configurationBuilder.Add(new CmsContributorConfigurationSource());
+    )
+    {
+        if (bootstrapConfiguration[BehaviorKey] == "throwFromConfiguration")
+        {
+            throw new InvalidOperationException("the fixture configuration hook failed on purpose");
+        }
+
+        configurationBuilder.Add(new CmsContributorConfigurationSource());
+    }
 
     public override void ContributeServices(IServiceCollection services, IConfiguration configuration)
     {
+        switch (configuration[BehaviorKey])
+        {
+            case "throwFromServices":
+                throw new InvalidOperationException("the fixture service hook failed on purpose");
+
+            case "decoyAudit":
+                // A plugin's own audit input, registered before the host registers its own. The host's
+                // is last, and a single-service resolve takes the last registration.
+                services.AddSingleton(new PluginAuditInput(new PluginContractRegistry([]), [], []));
+                break;
+        }
+
         services.AddSingleton<ISecretResolver, CmsContributorSecretResolver>();
         services.AddHostedService<CmsContributorHostedService>();
     }

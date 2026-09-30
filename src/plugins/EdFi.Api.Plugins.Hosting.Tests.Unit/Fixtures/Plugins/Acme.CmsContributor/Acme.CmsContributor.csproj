@@ -16,6 +16,11 @@
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <!--
+            For the decoy audit input. A plugin can construct one of these, and the host's has to win
+            anyway by being registered last rather than by being unconstructible.
+        -->
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj" />
         <ProjectReference Include="..\..\..\..\..\config\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />

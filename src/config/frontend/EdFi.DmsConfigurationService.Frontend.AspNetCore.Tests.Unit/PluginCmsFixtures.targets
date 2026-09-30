@@ -48,10 +48,13 @@
         <!-- The props the fixture inherits from the fixture tree it sits in. -->
         <PluginStagedFixtureInput Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props" />
 
-        <!-- Every project the fixture references: the plugin contract and the secrets contract. -->
+        <!--
+            Every project the fixture references: the plugin contract, the plugin hosting assembly it
+            names the decoy audit input from, and the secrets contract.
+        -->
         <PluginStagedFixtureInput
-            Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/**/*;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/**/*"
-            Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/obj/**;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/bin/**;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/obj/**"
+            Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/**/*;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/**/*;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/**/*"
+            Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/obj/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/obj/**;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/bin/**;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/obj/**"
         />
 
         <!--
