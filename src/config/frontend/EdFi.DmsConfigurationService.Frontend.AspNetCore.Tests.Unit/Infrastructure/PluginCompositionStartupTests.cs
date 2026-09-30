@@ -54,13 +54,10 @@ public class Given_a_host_booted_with_no_plugins_allowlisted
     [Test]
     public void It_registers_one_audit_input_as_a_singleton_instance()
     {
-        _auditInputDescriptors
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .Match<ServiceDescriptor>(d =>
-                d.Lifetime == ServiceLifetime.Singleton && d.ImplementationInstance != null
-            );
+        ServiceDescriptor descriptor = _auditInputDescriptors.Should().ContainSingle().Subject;
+
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        descriptor.ImplementationInstance.Should().NotBeNull();
     }
 
     [Test]
