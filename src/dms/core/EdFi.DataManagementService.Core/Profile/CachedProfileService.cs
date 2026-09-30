@@ -708,7 +708,7 @@ internal class CachedProfileService(
                         if (profileResponse is null)
                         {
                             logger.LogWarning(
-                                "Listed profile was not found in CMS (deleted, or rejected by CMS validation). ProfileId: {ProfileId}, Tenant: {Tenant}",
+                                "Listed profile was deleted in CMS before its definition was fetched. ProfileId: {ProfileId}, Tenant: {Tenant}",
                                 profileId,
                                 LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                             );

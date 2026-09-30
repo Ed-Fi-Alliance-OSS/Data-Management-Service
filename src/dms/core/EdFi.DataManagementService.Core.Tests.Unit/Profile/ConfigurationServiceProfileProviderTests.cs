@@ -410,9 +410,9 @@ public class ConfigurationServiceProfileProviderTests
     }
 
     /// <summary>
-    /// CMS answers 404 both for a deleted profile and for a stored profile that fails its XSD
-    /// validation. Through the production response handler that must still read as "this profile is
-    /// absent"; otherwise one invalid profile would make the whole catalog permanently unavailable.
+    /// A listed profile deleted before its detail is fetched gets a CMS 404. Through the production
+    /// response handler that must still read as "this profile is absent", so the catalog skips it
+    /// instead of failing the whole attempt.
     /// </summary>
     [TestFixture]
     [Parallelizable]

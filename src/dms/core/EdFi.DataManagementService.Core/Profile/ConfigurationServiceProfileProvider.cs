@@ -150,9 +150,10 @@ public class ConfigurationServiceProfileProvider(
 
             using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/profiles/{profileId}");
             SetRequestHeaders(request, token, tenantId);
-            // CMS also answers 404 for a stored profile that fails its XSD validation. Letting the
-            // response handler throw for it would make every catalog holding such a profile
-            // permanently unavailable instead of skipping that one profile.
+            // A profile listed by GET /v3/profiles can still be deleted before its detail is fetched.
+            // That 404 means the profile is gone, so the catalog skips it rather than failing the
+            // whole attempt. (CMS leaves XSD-invalid profiles out of the list, so they never reach
+            // this fetch.)
             request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
