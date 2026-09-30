@@ -1234,6 +1234,43 @@ public class KeycloakClientRepositoryTests
     }
 
     [TestFixture]
+    public class Given_a_namespace_claim_update_clearing_the_existing_claim : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync("");
+
+        [Test]
+        public void It_returns_success_carrying_the_stored_uuid()
+        {
+            _result.Should().BeOfType<ClientUpdateResult.Success>();
+            ((ClientUpdateResult.Success)_result).ClientUuid.Should().Be(Guid.Parse(_clientUuid));
+        }
+
+        [Test]
+        public void It_updates_the_existing_client_once()
+        {
+            AssertClientIdentityPreserved();
+            _clientUpdates.Should().HaveCount(1);
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_keeps_one_empty_namespace_claim()
+        {
+            NamespaceClaims(AppliedClient()).Should().ContainSingle();
+            ClaimValue(AppliedClient(), "namespacePrefixes").Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_preserves_the_other_claims()
+        {
+            ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
+            ClaimValue(AppliedClient(), "dataStoreIds").Should().Be("7,8");
+        }
+    }
+
+    [TestFixture]
     public class Given_a_namespace_claim_update_adding_a_missing_claim : NamespaceClaimUpdateTestBase
     {
         [SetUp]
