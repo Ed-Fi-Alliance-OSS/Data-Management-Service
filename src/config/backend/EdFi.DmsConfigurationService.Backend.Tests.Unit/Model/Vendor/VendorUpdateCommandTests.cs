@@ -181,7 +181,7 @@ public class VendorUpdateCommandTests
     }
 
     [Test]
-    public void Validate_WithNullNamespacePrefixes_ShouldFailWithNullMessage()
+    public void Validate_WithNullNamespacePrefixes_ShouldPassAsEmpty()
     {
         var command = new VendorUpdateCommand
         {
@@ -194,19 +194,12 @@ public class VendorUpdateCommandTests
 
         var result = _validator.Validate(command);
 
-        result
-            .Errors.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Match<FluentValidation.Results.ValidationFailure>(error =>
-                error.PropertyName == "NamespacePrefixes"
-                && error.ErrorMessage
-                    == "NamespacePrefixes cannot be null. Supply a comma-separated string of namespace prefixes, or an empty string for a vendor with no namespace prefixes."
-            );
+        result.IsValid.Should().BeTrue();
+        command.NamespacePrefixes.Should().BeEmpty();
     }
 
     [Test]
-    public void Validate_WithWhitespaceOnlyNamespacePrefixes_ShouldFailValidation()
+    public void Validate_WithWhitespaceOnlyNamespacePrefixes_ShouldPassAsEmpty()
     {
         var command = new VendorUpdateCommand
         {
@@ -219,15 +212,44 @@ public class VendorUpdateCommandTests
 
         var result = _validator.Validate(command);
 
-        result
-            .Errors.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Match<FluentValidation.Results.ValidationFailure>(error =>
-                error.PropertyName == "NamespacePrefixes"
-                && error.ErrorMessage
-                    == "NamespacePrefixes must be empty or contain at least one non-whitespace character."
-            );
+        result.IsValid.Should().BeTrue();
+        command.NamespacePrefixes.Should().BeEmpty();
+    }
+
+    [Test]
+    public void Validate_WithDelimiterOnlyNamespacePrefixes_ShouldPassAsEmpty()
+    {
+        var command = new VendorUpdateCommand
+        {
+            Id = 1,
+            Company = "ValidCompany",
+            ContactName = "ValidContactName",
+            ContactEmailAddress = "valid@example.com",
+            NamespacePrefixes = " , , ",
+        };
+
+        var result = _validator.Validate(command);
+
+        result.IsValid.Should().BeTrue();
+        command.NamespacePrefixes.Should().BeEmpty();
+    }
+
+    [Test]
+    public void Validate_WithEmptyAndPaddedNamespacePrefixes_ShouldCanonicalizeEffectivePrefixes()
+    {
+        var command = new VendorUpdateCommand
+        {
+            Id = 1,
+            Company = "ValidCompany",
+            ContactName = "ValidContactName",
+            ContactEmailAddress = "valid@example.com",
+            NamespacePrefixes = " , prefix1, , prefix2 , ",
+        };
+
+        var result = _validator.Validate(command);
+
+        result.IsValid.Should().BeTrue();
+        command.NamespacePrefixes.Should().Be("prefix1,prefix2");
     }
 
     [Test]

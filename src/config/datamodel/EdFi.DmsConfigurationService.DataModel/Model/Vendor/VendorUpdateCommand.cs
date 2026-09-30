@@ -19,15 +19,6 @@ public class VendorUpdateCommand : VendorInsertCommand
             RuleFor(v => v.ContactName).MaximumLength(128);
             RuleFor(v => v.ContactEmailAddress).EmailAddress().MaximumLength(320);
             RuleFor(v => v.NamespacePrefixes)
-                .Cascade(CascadeMode.Stop)
-                .NotNull()
-                .WithMessage(
-                    "NamespacePrefixes cannot be null. Supply a comma-separated string of namespace prefixes, or an empty string for a vendor with no namespace prefixes."
-                )
-                .Must(s => s.Length is 0 || !string.IsNullOrWhiteSpace(s))
-                .WithMessage(
-                    "NamespacePrefixes must be empty or contain at least one non-whitespace character."
-                )
                 .Must(s =>
                 {
                     var split = s.Split(

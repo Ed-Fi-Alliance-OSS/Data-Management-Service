@@ -3,16 +3,32 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
 public class VendorInsertCommand
 {
+    private string _namespacePrefixes = "";
+
     public string Company { get; set; } = "";
     public string ContactName { get; set; } = "";
     public string ContactEmailAddress { get; set; } = "";
-    public string NamespacePrefixes { get; set; } = "";
+
+    [AllowNull]
+    public string NamespacePrefixes
+    {
+        get => _namespacePrefixes;
+        set =>
+            _namespacePrefixes = string.Join(
+                ',',
+                (value ?? "").Split(
+                    ',',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                )
+            );
+    }
 
     public class Validator : AbstractValidator<VendorInsertCommand>
     {
@@ -22,15 +38,6 @@ public class VendorInsertCommand
             RuleFor(v => v.ContactName).NotEmpty().MaximumLength(128);
             RuleFor(v => v.ContactEmailAddress).NotEmpty().EmailAddress().MaximumLength(320);
             RuleFor(v => v.NamespacePrefixes)
-                .Cascade(CascadeMode.Stop)
-                .NotNull()
-                .WithMessage(
-                    "NamespacePrefixes cannot be null. Supply a comma-separated string of namespace prefixes, or an empty string for a vendor with no namespace prefixes."
-                )
-                .Must(s => s.Length is 0 || !string.IsNullOrWhiteSpace(s))
-                .WithMessage(
-                    "NamespacePrefixes must be empty or contain at least one non-whitespace character."
-                )
                 .Must(s =>
                 {
                     var split = s.Split(
