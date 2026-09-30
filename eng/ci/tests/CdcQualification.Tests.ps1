@@ -163,7 +163,7 @@ exit $LASTEXITCODE
         $records.ExitCode | Should -Be @(0, 17, 17, 17)
         $records.Attempt | Should -Be @(1, 1, 2, 3)
         @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 4
-        @(Get-ChildItem $destination -Name | Sort-Object) | Should -Be @('image-pulls.jsonl', 'qualification.json')
+        @(Get-ChildItem $destination -Name | Sort-Object) | Should -Be @('image-pulls.jsonl', 'qualification.json', 'runtime-inputs.json')
         (Get-ChildItem $destination -File | Get-Content -Raw) -join '' | Should -Not -Match 'private-token'
     }
 }
@@ -508,7 +508,7 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledJob | Should -Match 'Invoke-CdcQualification.ps1 -Lane.*-Suite.*-PullImages'
         $script:scheduledJob | Should -Match "Status = 'EnvironmentUnavailable'"
         $script:scheduledJob | Should -Match 'if: always\(\)'
-        $script:scheduledJob | Should -Match 'path: TestResults/cdc-qualification/\*\*'
+        $script:scheduledJob | Should -Match 'path: \$\{\{ runner.temp \}\}/cdc-qualification/\*\*'
         $script:scheduledJob | Should -Match 'name: cdc-qualification-.*github.run_attempt'
         $script:scheduledJob | Should -Match 'if-no-files-found: error'
     }
@@ -563,7 +563,7 @@ Describe 'CDC qualification CI scheduling' {
         $script:job | Should -Match "outputs.cdc_relevant == 'true'"
         $script:job | Should -Match 'Invoke-CdcQualification.ps1 -Lane'
         $script:job | Should -Match 'if: always\(\)'
-        $script:job | Should -Match 'path: TestResults/cdc-qualification/\*\*'
+        $script:job | Should -Match 'path: \$\{\{ runner.temp \}\}/cdc-qualification/\*\*'
         $script:job | Should -Match 'name: cdc-qualification-.*github.run_attempt'
     }
 }
@@ -1478,16 +1478,17 @@ Describe 'CDC API E2E prerequisite summary' {
         $fallback | Should -Not -BeNullOrEmpty
         $upload = [regex]::Match($job, '(?ms)^      - name: Upload structured CDC qualification evidence\r?\n.*?(?=^      - name:|\z)').Value
         $upload | Should -Match 'if: always\(\)\r?\n        uses: actions/upload-artifact@'
-        $upload | Should -Match 'path: TestResults/cdc-qualification/\*\*'
+        $upload | Should -Match 'path: \$\{\{ runner.temp \}\}/cdc-qualification/\*\*'
         $upload | Should -Not -Match 'private|RUNNER_TEMP|\.log|\.trx|\.env|handoff'
         $workspace = Join-Path $TestDrive $Provider
         $null = New-Item -ItemType Directory -Path $workspace
-        $destination = Join-Path $workspace 'TestResults/cdc-qualification'
+        $destination = Join-Path $workspace 'cdc-qualification'
         $driver = Join-Path $TestDrive 'missing-ownership.ps1'
         @'
 param($Runner, $Workspace, $Command)
 Set-Location $Workspace
 [Environment]::CurrentDirectory = $Workspace
+$env:RUNNER_TEMP = $Workspace
 $env:CDC_RUNBOOK_OWNED_STACK = ''
 function global:docker { throw 'Prerequisite rejection must precede Docker.' }
 function global:dotnet { throw 'Prerequisite rejection must precede builds/tests.' }
@@ -1499,7 +1500,9 @@ exit $LASTEXITCODE
         Test-Path (Join-Path $destination 'qualification.json') | Should -BeTrue
         $summaryHash = (Get-FileHash (Join-Path $destination 'qualification.json')).Hash
         Push-Location $workspace
-        try { & ([scriptblock]::Create($fallback)) } finally { Pop-Location }
+        $savedRunnerTemp = $env:RUNNER_TEMP
+        try { $env:RUNNER_TEMP = $workspace; & ([scriptblock]::Create($fallback)) }
+        finally { $env:RUNNER_TEMP = $savedRunnerTemp; Pop-Location }
         (Get-FileHash (Join-Path $destination 'qualification.json')).Hash | Should -Be $summaryHash
         $report = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json | Where-Object Name -eq "$Provider-ApiE2E")[0]
         $report.InvocationId | Should -Match '^[a-f0-9-]{36}$'
@@ -1678,5 +1681,157 @@ Describe 'CDC API E2E bounded diagnostics export' {
             $safe.OwnedCounts.container | Should -Be 2
             Should -Invoke Invoke-NativeCommandWithInput -Times 2 -Exactly
         }
+    }
+}
+
+Describe 'CDC runbook failure diagnostics' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+        . (Join-Path $PSScriptRoot '../../docker-compose/tests/cdc-runbook-snippets.ps1')
+        Import-Module (Join-Path $PSScriptRoot '../../docker-compose/env-utility.psm1') -DisableNameChecking
+    }
+    BeforeEach {
+        $script:diagnosticRoot = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid().ToString('N')))
+        $script:private = New-Item -ItemType Directory (Join-Path $script:diagnosticRoot 'raw')
+        $script:published = Join-Path $script:diagnosticRoot 'published'
+        $script:savedEvidence = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:private.FullName
+        $script:runbookProgress = @{}
+        $script:runbookCase = 'cdc-managed-start'
+        Remove-Variable runbookOperation -Scope Script -ErrorAction SilentlyContinue
+    }
+    AfterEach {
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:savedEvidence
+        Remove-Variable runbookProgress,runbookOperation,runbookOperationCase,runbookCase,runbookTimer -Scope Script -ErrorAction SilentlyContinue
+    }
+    It 'exports the assertion location and independent teardown failure without assertion values' {
+        $config = New-PesterConfiguration
+        $config.Run.Container = New-PesterContainer -ScriptBlock {
+            Describe 'injected failures' {
+                It 'CDC-DOC cdc-managed-start' { 'opaque-credential' | Should -Be 'private-document' }
+                AfterAll { throw 'unlabelled-cleanup-secret' }
+            }
+        }
+        $config.Run.PassThru = $true
+        $config.Output.Verbosity = 'None'
+        $nested = Invoke-Pester -Configuration $config
+        $report = Get-CdcRunbookPesterReport -Tests @($nested.Tests) -PesterResult $nested -QualificationProfile MssqlLifecycle
+        $report | ConvertTo-Json -Depth 15 | Set-Content (Join-Path $script:private 'cdc-runbook-live-lifecycle.json')
+        ConvertTo-Json -InputObject @($report.Failures) -Depth 10 | Set-Content (Join-Path $script:private 'cdc-runbook-failures.json')
+        Export-CdcQualificationEvidence $script:private $script:published
+        $cases = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $failures = Get-Content (Join-Path $script:published 'cdc-runbook-failures.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $report.Status | Should -Be 'Failed'
+        $cases[0].Failures[0].Category | Should -Be 'AssertionFailed'
+        $cases[0].Failures[0].Source | Should -Be 'eng/ci/tests/CdcQualification.Tests.ps1'
+        $line = $cases[0].Failures[0].Line
+        (Get-Content $PSCommandPath)[$line - 1] | Should -Match 'opaque-credential.*Should -Be'
+        $cases[0].Failures[0].Phase | Should -Be 'Test'
+        $failures[0].Category | Should -Be 'BlockFailed'
+        $failures[0].Phase | Should -Be 'Teardown'
+        (Get-ChildItem $script:published -File | Get-Content -Raw) -join '' | Should -Not -Match 'opaque|private-document|unlabelled|/home/|ScriptStackTrace'
+    }
+    It 'reports BeforeAll failure even though the required test never runs' {
+        $config = New-PesterConfiguration
+        $config.Run.Container = New-PesterContainer -ScriptBlock {
+            Describe 'failed setup' {
+                BeforeAll { throw 'private setup secret' }
+                It 'CDC-DOC cdc-managed-start' { throw 'must not run' }
+            }
+        }
+        $config.Run.PassThru = $true
+        $config.Output.Verbosity = 'None'
+        $nested = Invoke-Pester -Configuration $config
+        $report = Get-CdcRunbookPesterReport -Tests @($nested.Tests) -PesterResult $nested -QualificationProfile MssqlLifecycle
+        $report.Status | Should -Be 'Failed'
+        $report.Cases[0].Outcome | Should -Be 'NotPassed'
+        $report.Failures[0].Phase | Should -Be 'Setup'
+        $report.Failures[0].Category | Should -Be 'BlockFailed'
+        $report.Failures[0].Source | Should -Be 'eng/ci/tests/CdcQualification.Tests.ps1'
+        ($report | ConvertTo-Json -Depth 15) | Should -Not -Match 'private setup|must not run'
+    }
+    It 'persists the operation before invocation and exports timeout timing without process output' {
+        Mock Invoke-NativeCommandWithInput {
+            $progress = Get-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'runbook-progress.json') -Raw | ConvertFrom-Json
+            $progress.'cdc-managed-start'[0].Status | Should -Be 'Running'
+            $progress.'cdc-managed-start'[0].Operation | Should -Be 'cdc-managed-start'
+            [pscustomobject]@{ ExitCode = -1; FailureKind = 'None'; TimedOut = $true; StandardOutput = 'opaque process output'; StandardError = 'private error' }
+        }
+        $null = Invoke-CdcRunbookLiveWrapper -Id cdc-managed-start -FixtureRoot $script:private -TimeoutSeconds 2
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        $report | ConvertTo-Json -Depth 15 | Set-Content (Join-Path $script:private 'cdc-runbook-live-lifecycle.json')
+        Export-CdcQualificationEvidence $script:private $script:published
+        $cases = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $operation = $cases[0].Operations[0]
+        $operation.Operation | Should -Be 'cdc-managed-start'
+        $operation.FailureKind | Should -Be 'Timeout'
+        $operation.ExitCode | Should -Be -1
+        $operation.TimeoutSeconds | Should -Be 2
+        $operation.ElapsedMilliseconds | Should -BeGreaterOrEqual 0
+        $operation.Status | Should -Be 'Completed'
+        @(Get-ChildItem $script:published -Name) | Should -Be @('cdc-runbook-live-lifecycle.json')
+        (Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw) | Should -Not -Match 'opaque|private error|StandardOutput'
+    }
+    It 'keeps process failure when progress collection also fails' {
+        Mock Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ ExitCode = 17; FailureKind = 'StartFailure'; StandardOutput = ''; StandardError = 'private' }
+        }
+        # Existing parent, but a file occupies the expected temporary output path.
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $script:private 'not-a-directory'
+        Set-Content $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'occupied'
+        $result = Invoke-CdcRunbookLiveWrapper -Id cdc-managed-start -FixtureRoot $script:private
+        $result.ExitCode | Should -Be 17
+        $result.FailureKind | Should -Be 'StartFailure'
+        $script:runbookProgress.CollectionFailed | Should -BeTrue
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:private.FullName
+        Save-CdcRunbookProgress
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        $report.Cases[0].Operations[0].ExitCode | Should -Be 17
+        $report.Failures[0].Category | Should -Be 'CollectionFailed'
+    }
+    It 'does not mark an interrupted case complete when the next case starts' {
+        Set-CdcRunbookOperation -Operation verify-deployment
+        $script:runbookCase = 'cdc-pg-e2e-setup'
+        Set-CdcRunbookOperation -Operation ownership-check -Phase Setup
+        Complete-CdcRunbookOperation
+        $progress = Get-Content (Join-Path $script:private 'runbook-progress.json') -Raw | ConvertFrom-Json
+        $progress.'cdc-managed-start'[0].Status | Should -Be 'Running'
+        $progress.'cdc-pg-e2e-setup'[0].Status | Should -Be 'Completed'
+        $progress.'cdc-pg-e2e-setup'[0].PSObject.Properties.Name | Should -Not -Contain ExitCode
+    }
+    It 'preserves the primary assertion when artifact export fails' {
+        $report = [ordered]@{ Status = 'Failed'; Cases = @(@{ TestId = 'CDC-DOC cdc-managed-start';
+            SnippetId = 'cdc-managed-start'; Outcome = 'NotPassed';
+            Failures = @(@{ Phase = 'Test'; Category = 'AssertionFailed'; Line = 17 }) }); Failures = @() }
+        Mock -ModuleName cdc-qualification Export-CdcQualificationEvidence { throw 'opaque export secret' }
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $report.Status | Should -Be 'Failed'
+        $report.Cases[0].Failures[0].Category | Should -Be 'AssertionFailed'
+        $report.Cases[0].Failures[0].Line | Should -Be 17
+        $report.ExportFailure | Should -Be 'ExportFailed'
+        ($report | ConvertTo-Json -Depth 10) | Should -Not -Match 'opaque export secret'
+        Should -Invoke -ModuleName cdc-qualification Export-CdcQualificationEvidence -Times 1 -Exactly
+    }
+    It 'rejects arbitrary diagnostic strings at the final export boundary' {
+        @{
+            Cases = @(@{ TestId = 'CDC-DOC cdc-managed-start'; SnippetId = 'cdc-managed-start'; Outcome = 'NotPassed'
+                Failures = @(@{ Phase = 'private'; Category = 'opaque'; Source = '/home/private.ps1'; Line = 'secret'; Message = 'raw' })
+                Operations = @(@{ Operation = 'cdc-secret-credential'; FailureKind = 'password'; ExitCode = 'secret'; ElapsedMilliseconds = -1 }) })
+        } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:private 'cdc-runbook-live-lifecycle.json')
+        Export-CdcQualificationEvidence $script:private $script:published
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $json | Should -Not -Match 'private|opaque|secret|raw|password|ElapsedMilliseconds'
+        ($json | ConvertFrom-Json -NoEnumerate)[0].Outcome | Should -Be 'NotPassed'
+    }
+}
+
+Describe 'CDC qualification diagnostic destination' {
+    It 'rejects a results directory inside the checkout before creating any files or running tests' {
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        $destination = Join-Path $repo ('cdc-forbidden-' + [guid]::NewGuid().ToString('N'))
+        $output = & pwsh -NoProfile -File (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Lane Contract -ResultsDirectory $destination 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 1
+        $output | Should -Match 'outside the repository'
+        Test-Path -LiteralPath $destination | Should -BeFalse
     }
 }

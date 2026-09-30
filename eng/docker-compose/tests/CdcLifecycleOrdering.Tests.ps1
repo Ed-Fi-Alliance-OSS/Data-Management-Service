@@ -1824,3 +1824,31 @@ $global:LASTEXITCODE = 0
         Test-CdcInfrastructureInvocation | Should -BeFalse
     }
 }
+
+Describe 'Live runbook SQL Server lifecycle fixture commands' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot 'cdc-fixture-inputs.psm1') -Force
+        # Execute the actual nested adapter without provisioning a full live stack.
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1'), [ref]$null, [ref]$null)
+        $adapter = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-OwnedSql' }, $true)
+        . ([scriptblock]::Create($adapter.Extent.Text))
+    }
+    It 'uses the shared SQL transport with session options before the requested SQL' {
+        $Provider = 'Mssql'
+        Mock -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ FailureKind = 'None'; ExitCode = 0; StandardOutput = "  17`n" }
+        }
+        Invoke-OwnedSql -Database 'owned-target' -Sql 'SELECT 17;' | Should -Be '17'
+        Should -Invoke -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter {
+            $FilePath -eq 'docker' -and $ArgumentList[-1] -eq 'owned-target' -and
+            $InputText -eq "SET NOCOUNT ON;`nSET QUOTED_IDENTIFIER ON;`nSELECT 17;"
+        }
+    }
+    It 'does not accept a failed SQL process as an observation' {
+        $Provider = 'Mssql'
+        Mock -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ FailureKind = 'None'; ExitCode = 1; StandardOutput = '' }
+        }
+        { Invoke-OwnedSql -Database 'owned-target' -Sql 'SELECT 17;' } | Should -Throw
+    }
+}

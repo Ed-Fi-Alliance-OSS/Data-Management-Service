@@ -90,10 +90,59 @@ function Invoke-CdcRunbookLiveWrapper {
         $value = $invocation.Parameters[$key]
         if ($value -isnot [Management.Automation.SwitchParameter] -and $value -isnot [bool]) { $arguments.Add([string]$value) }
     }
+    $phase = if ($Id -match 'bootstrap|e2e-setup') { 'Setup' } else { 'Test' }
+    Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
     $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList $arguments.ToArray() -InputText '' -TimeoutSeconds $TimeoutSeconds
+    Complete-CdcRunbookOperation $result
     $prefix = Join-Path $FixtureRoot ($Id + '-' + [guid]::NewGuid().ToString('N'))
     $result.StandardOutput | Set-Content -LiteralPath "$prefix.stdout"
     $result.StandardError | Set-Content -LiteralPath "$prefix.stderr"
     if (-not $IsWindows) { & chmod 600 "$prefix.stdout" "$prefix.stderr" }
     return [pscustomobject]@{ SnippetId = $Id; ExitCode = $result.ExitCode; FailureKind = $result.FailureKind; LogPrefix = $prefix }
+}
+
+# Live fixture progress is private input to the allowlisted qualification exporter.
+# Persist before invoking work so a killed child still has an attributable operation.
+function Save-CdcRunbookProgress {
+    if (-not $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) { return }
+    $path = Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'runbook-progress.json'
+    $temporary = "$path.tmp"
+    try {
+        $script:runbookProgress | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporary -ErrorAction Stop
+        [IO.File]::Move($temporary, $path, $true)
+    } catch {
+        # Diagnostic collection must never replace an assertion/process failure.
+        $script:runbookProgress.CollectionFailed = $true
+    }
+}
+
+function Set-CdcRunbookOperation {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Records test-only progress in the private temporary diagnostic directory; never changes deployment state.')]
+    param([string] $Operation, [ValidateSet('Setup', 'Test', 'Teardown')][string] $Phase = 'Test', [int] $TimeoutSeconds = 0)
+    if (-not (Get-Variable runbookProgress -Scope Script -ErrorAction SilentlyContinue)) { return }
+    if ((Get-Variable runbookOperation -Scope Script -ErrorAction SilentlyContinue) -and $script:runbookOperationCase -eq $script:runbookCase -and $script:runbookOperation.Status -eq 'Running') {
+        $script:runbookOperation.Status = 'Completed'
+        $script:runbookOperation.ElapsedMilliseconds = $script:runbookTimer.ElapsedMilliseconds
+    }
+    $script:runbookOperationCase = $script:runbookCase
+    $script:runbookOperation = [ordered]@{ Operation = $Operation; Phase = $Phase; Status = 'Running' }
+    if ($TimeoutSeconds -gt 0) { $script:runbookOperation.TimeoutSeconds = $TimeoutSeconds }
+    if (-not $script:runbookProgress.Contains($script:runbookCase)) { $script:runbookProgress[$script:runbookCase] = @() }
+    $script:runbookProgress[$script:runbookCase] += $script:runbookOperation
+    $script:runbookTimer = [Diagnostics.Stopwatch]::StartNew()
+    Save-CdcRunbookProgress
+}
+
+function Complete-CdcRunbookOperation {
+    param($Result)
+    if (-not (Get-Variable runbookOperation -Scope Script -ErrorAction SilentlyContinue)) { return }
+    $script:runbookOperation.Status = 'Completed'
+    $script:runbookOperation.ElapsedMilliseconds = $script:runbookTimer.ElapsedMilliseconds
+    if ($null -ne $Result) {
+        $script:runbookOperation.ExitCode = $Result.ExitCode
+        $timedOut = $Result.PSObject.Properties['TimedOut'] -and $Result.TimedOut
+        $script:runbookOperation.TimedOut = [bool]$timedOut
+        $script:runbookOperation.FailureKind = if ($timedOut -and $Result.FailureKind -eq 'None') { 'Timeout' } else { $Result.FailureKind }
+    }
+    Save-CdcRunbookProgress
 }
