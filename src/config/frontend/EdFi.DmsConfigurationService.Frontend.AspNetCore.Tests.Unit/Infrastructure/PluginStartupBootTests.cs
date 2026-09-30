@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using EdFi.Api.Plugins.Hosting;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using EdFi.DmsConfigurationService.Secrets;
@@ -90,7 +91,16 @@ internal sealed class CmsPluginBoot : IDisposable
     /// </summary>
     internal IReadOnlyList<ServiceDescriptor> AuditInputDescriptors { get; }
 
-    internal static CmsPluginBoot Run(string pluginRoot, string allowed, string behavior = "")
+    /// <param name="settings">
+    /// Further host settings a case depends on, written the same way and at the same point as the
+    /// plugin settings, so Program's registration branches see them.
+    /// </param>
+    internal static CmsPluginBoot Run(
+        string pluginRoot,
+        string allowed,
+        string behavior = "",
+        IReadOnlyDictionary<string, string>? settings = null
+    )
     {
         List<ServiceDescriptor> auditInputDescriptors = [];
 
@@ -106,6 +116,10 @@ internal sealed class CmsPluginBoot : IDisposable
                 builder.UseSetting("Plugins:Directory", pluginRoot);
                 builder.UseSetting("Plugins:Allowed", allowed);
                 builder.UseSetting(BehaviorKey, behavior);
+                foreach ((string key, string value) in settings ?? new Dictionary<string, string>())
+                {
+                    builder.UseSetting(key, value);
+                }
                 builder.ConfigureServices(services => services.AddSingleton<ILoggerProvider>(timeline));
                 // Test services are applied after Program's own registrations, so this sees the
                 // collection as AddServices left it.
@@ -659,5 +673,145 @@ public class Given_a_boot_whose_plugin_registration_fails_the_audit
             .Contains(CmsPluginBoot.SecretLookingValue, StringComparison.Ordinal)
             .Should()
             .BeFalse("the value must not be written");
+    }
+}
+
+/// <summary>
+/// Two plugins each claiming the replace-cardinality secret resolver contract once. Neither is wrong
+/// alone, so the audit names both and leaves the choice to the operator.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_a_boot_where_two_plugins_each_claim_the_secret_resolver
+{
+    private const string SecondPluginName = "Acme.CmsSecondResolver";
+
+    private const string AuditProblem =
+        "the plugin contract 'EdFi.DmsConfigurationService.Secrets.ISecretResolver' accepts one "
+        + $"implementation and 2 were registered by plugin '{CmsPluginBoot.PluginName}', plugin "
+        + $"'{SecondPluginName}'.";
+
+    private CmsPluginBoot _boot = null!;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp() =>
+        _boot = CmsPluginBoot.Run(CmsPluginBoot.StageRoot, $"{CmsPluginBoot.PluginName},{SecondPluginName}");
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown() => _boot.Dispose();
+
+    [Test]
+    public void It_fails_host_creation_before_any_client_exists()
+    {
+        _boot.StartupException.Should().NotBeNull();
+        _boot.ClientCreated.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_fails_on_the_audits_cardinality_finding_naming_the_contract_and_both_plugins()
+    {
+        _boot
+            .Find<InvalidOperationException>()!
+            .Message.Should()
+            .StartWith("Startup aborted: 1 plugin registration problem(s).")
+            .And.Contain(AuditProblem);
+    }
+
+    [Test]
+    public void It_writes_the_finding_to_the_diagnostic_channel()
+    {
+        _boot.Diagnostics.Should().Contain($"Plugin registration problem: {AuditProblem}");
+    }
+}
+
+/// <summary>
+/// A plugin claiming the client secret hasher contract once, as a singleton, on each deployment shape
+/// the host reaches: self-contained identity over PostgreSQL, where the host registers its own default
+/// twice, and Keycloak, where it registers it once. A replace contract counts plugin claims, not host
+/// defaults, so both boots succeed and the plugin's hasher is the one resolved.
+/// </summary>
+[TestFixture("self-contained", 2)]
+[TestFixture("keycloak", 1)]
+[NonParallelizable]
+public class Given_a_boot_whose_plugin_claims_the_client_secret_hasher_once(
+    string identityProvider,
+    int hostDefaults
+)
+{
+    private CmsPluginBoot _boot = null!;
+    private PluginAuditInput _input = null!;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        _boot = CmsPluginBoot.Run(
+            CmsPluginBoot.StageRoot,
+            CmsPluginBoot.PluginName,
+            "singletonHasher",
+            new Dictionary<string, string>
+            {
+                ["AppSettings:Datastore"] = "postgresql",
+                ["AppSettings:IdentityProvider"] = identityProvider,
+            }
+        );
+        _input = _boot.Factory.Services.GetRequiredService<PluginAuditInput>();
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown() => _boot.Dispose();
+
+    [Test]
+    public void It_starts_the_host_without_a_registration_problem()
+    {
+        _boot.StartupException.Should().BeNull();
+        _boot.ClientCreated.Should().BeTrue();
+        _boot.Diagnostics.Should().NotContain("Plugin registration problem");
+    }
+
+    [Test]
+    public void It_leaves_the_hosts_own_defaults_for_that_shape_on_the_collection()
+    {
+        IEnumerable<ServiceDescriptor> pluginAdditions = _input.Records.SelectMany(record =>
+            record.Additions
+        );
+
+        _input
+            .DescriptorsAfterContribution.Where(descriptor =>
+                descriptor.ServiceType == typeof(IClientSecretHasher) && !pluginAdditions.Contains(descriptor)
+            )
+            .Should()
+            .HaveCount(hostDefaults)
+            .And.OnlyContain(descriptor =>
+                descriptor.ImplementationType == typeof(ClientSecretHasher)
+                && descriptor.Lifetime == ServiceLifetime.Singleton
+            );
+    }
+
+    [Test]
+    public void It_attributes_exactly_one_singleton_hasher_claim_to_the_plugin()
+    {
+        PluginContributionRecord record = _input.Records.Should().ContainSingle().Subject;
+
+        record.PluginName.Should().Be(CmsPluginBoot.PluginName);
+        ServiceDescriptor claim = record
+            .Additions.Where(descriptor => descriptor.ServiceType == typeof(IClientSecretHasher))
+            .Should()
+            .ContainSingle()
+            .Subject;
+        claim.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        claim.IsKeyedService.Should().BeFalse();
+        claim
+            .ImplementationType!.FullName.Should()
+            .Be("Acme.CmsContributor.CmsContributorClientSecretHasher");
+    }
+
+    [Test]
+    public void It_resolves_the_plugins_hasher()
+    {
+        _boot
+            .Factory.Services.GetRequiredService<IClientSecretHasher>()
+            .GetType()
+            .FullName.Should()
+            .Be("Acme.CmsContributor.CmsContributorClientSecretHasher");
     }
 }

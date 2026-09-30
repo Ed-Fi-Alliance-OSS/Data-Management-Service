@@ -106,13 +106,18 @@ public sealed class CmsContributorPlugin : EdFiApiPlugin
     }
 
     /// <summary>
-    /// The client secret hasher, registered only when the behavior asks for one in a shape the host
-    /// refuses. The default leaves the host's own hasher in place.
+    /// The client secret hasher, registered only when the behavior asks for one: once as a singleton,
+    /// the shape the host accepts, or in a shape the host refuses. The default leaves the host's own
+    /// hasher in place.
     /// </summary>
     private static void AddClientSecretHasher(IServiceCollection services, string? behavior)
     {
         switch (behavior)
         {
+            case "singletonHasher":
+                services.AddSingleton<IClientSecretHasher, CmsContributorClientSecretHasher>();
+                break;
+
             case "scopedHasher":
                 services.AddScoped<IClientSecretHasher, CmsContributorClientSecretHasher>();
                 break;

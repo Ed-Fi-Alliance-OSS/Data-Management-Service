@@ -1,13 +1,14 @@
 <Project>
     <!--
-        Publishes the fixture plugin whose criteria are about the Configuration Service's own contracts
-        into this project's output as a real plugin directory. Its sources live beside the plugin
+        Publishes the fixture plugins whose criteria are about the Configuration Service's own contracts
+        into this project's output as real plugin directories. Its sources live beside the plugin
         hosting tests' own fixtures, because that is where fixture plugins live and because the tree
         already carries the props that keep a test asset out of the analyzer set; only the staging
         happens here.
 
-        One fixture rather than an import of the hosting project's fixture list, which is dozens of
-        directories no test here reads.
+        Acme.CmsContributor serves every boot case; Acme.CmsSecondResolver exists only so that two plugins
+        can each claim the secret resolver once. These two rather than an import of the hosting project's
+        fixture list, which is dozens of directories no test here reads.
 
         This file is the two lists and nothing else. Deciding freshness, pruning and publishing are in
         src/dms/PluginFixtureStaging.targets, imported at the bottom, which is where those mechanics are
@@ -19,6 +20,9 @@
     <ItemGroup>
         <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/Acme.CmsContributor.csproj">
             <StagedName>Acme.CmsContributor</StagedName>
+        </PluginStagedFixture>
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/Acme.CmsSecondResolver.csproj">
+            <StagedName>Acme.CmsSecondResolver</StagedName>
         </PluginStagedFixture>
     </ItemGroup>
 
@@ -39,18 +43,22 @@
         <!-- The staging rules themselves. -->
         <PluginStagedFixtureInput Include="$(MSBuildThisFileFullPath)" />
 
-        <!-- The staged fixture's own directory. A fixture added above needs its directory added here too. -->
+        <!-- Each staged fixture's own directory. A fixture added above needs its directory added here too. -->
         <PluginStagedFixtureInput
             Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/**/*"
             Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/obj/**"
         />
+        <PluginStagedFixtureInput
+            Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/**/*"
+            Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/obj/**"
+        />
 
-        <!-- The props the fixture inherits from the fixture tree it sits in. -->
+        <!-- The props the fixtures inherit from the fixture tree they sit in. -->
         <PluginStagedFixtureInput Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props" />
 
         <!--
-            Every project the fixture references: the plugin contract, the plugin hosting assembly it
-            names the decoy audit input from, and the secrets contract.
+            Every project the fixtures reference: the plugin contract, the plugin hosting assembly
+            Acme.CmsContributor names the decoy audit input from, and the secrets contract.
         -->
         <PluginStagedFixtureInput
             Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/**/*;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/**/*;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/**/*"
