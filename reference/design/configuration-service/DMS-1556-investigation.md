@@ -477,11 +477,14 @@ things at once: fewer physical connections and more waiting for a pooled connect
   warm-up**). Both run 5 rounds, 3 s apart, with body validation and the sampler coverage
   gate, and alternate order per repetition. PostgreSQL was not restarted within the
   catalog pairs; the stress pair recreated PostgreSQL before **both** of its blocks.
-- **Stacks.** dotnet-monitor `/stacks` at 2, 8, and 14 s into round 1 of every run,
-  classified by `Get-DmsStackSummary`. Each capture is aligned with the thread-pool
-  thread count and queue length, Npgsql busy connections, and PostgreSQL connections
-  received and authorized by the capture's request instant. One dump per run was taken
-  **after** the timed rounds (Q17).
+- **Stacks.** dotnet-monitor `/stacks` was requested at 2, 8, and 14 s into round 1 of
+  every run and classified by `Get-DmsStackSummary`. A capture takes about 2.4 s, and the
+  snapshot happens at an unknown instant inside it, so each capture is recorded as the
+  **interval** `[requested, completed]` (`Get-DmsStackCaptureRecord`). The record gives
+  PostgreSQL connections received and authorized at **both** boundaries, plus the
+  thread-pool thread and queue counts and Npgsql busy connections as ranges over the
+  livemetrics samples inside the interval. One dump per run was taken **after** the
+  timed rounds (Q17).
 - **Headroom (separately labeled).** The slot-exhausted stress workload
   (`warm-256x128`) ran as its own pair: baseline versus headroom, where the **only**
   change is `max_connections` 100 → 200.
@@ -509,10 +512,10 @@ Ranges are over 3 runs per cell. Every catalog request in every condition return
 | **e5 / pool 16** | cold | **12656–15849** | 12–37 | 15–14551² | 75–87 (12–20) | 11–16 | 15–49 (3–4) |
 | **e5 / pool 16** | warm-first | **12232–14232** | 12–13 | 38–14052² | 74–82 (65–66) | 16 | 13–20 (2–3) |
 
-¹ The three pair-e3 cold baseline runs crossed the 15 s `Timeout`. Nothing was
-authorized before about 15.6 s, the first generation of connections was replaced
-(203–244 received for 87 requests), and the 103–188 ms median describes that second
-generation. Those runs also logged 14–15 request-scoped `Failed to fetch public keys
+¹ The three pair-e3 cold baseline runs crossed the 15 s `Timeout`. The first
+authorization came at 15.6 s in each, 203–244 connections were received for 87 requests
+(most after 15 s, received-offset median 15.6–16.1 s), and the 103–188 ms median
+describes those late connections. Those runs also logged 14–15 request-scoped `Failed to fetch public keys
 for JWKS` (`NpgsqlException`) lines each while **every response was 200**; one E5 cold
 run shows the same (14 lines, all 200). F3 gives each request two key reads, and when
 the verification read fails the request is 401 (0.3). By elimination, these failures
@@ -535,42 +538,55 @@ were no PostgreSQL errors. Little I/O throughout.
 
 ### Results — managed stacks during the stall
 
-Same pairs, round 1, captures at 2 and 8 s. The worker counts are thread-pool workers
-present at the instant; "resolver wait" is a synchronous `Task.InternalWait` under
-`JsonWebTokenHandler.ValidateSignature`, which is IdentityModel's synchronous
-`IssuerSigningKeyResolver` call (F1).
+Same pairs, round 1. Each capture is the interval `[requested, completed]` in seconds
+from the round start; the snapshot lies somewhere inside it. "Resolver wait" is a
+synchronous `Task.InternalWait` under `JsonWebTokenHandler.ValidateSignature`, which is
+IdentityModel's synchronous `IssuerSigningKeyResolver` call (F1). "Parked" requires the
+parked-worker signature (only `LowLevelLifoSemaphore` waits above `WorkerThreadStart`).
+Every capture also shows 7 dedicated runtime threads (Main, Kestrel heartbeat, socket
+event loop, timer, gate, counters, file watcher), omitted below. Counter ranges come
+from the 2–3 livemetrics samples inside each interval.
 
-| Condition (workloads) | At | TP workers | In resolver wait | Other threads | Threads / queue at capture | Connections received / authorized by then |
-| --- | --- | --- | --- | --- | --- | --- |
-| baseline, all 3 pairs (cold) | 2 s | 40–41 | **40–41** | 0 Npgsql, 0 SCRAM, 0 idle | 31–32 / 2–7 | 25–32 / 0–3 |
-| baseline, all 3 pairs (cold) | 8 s | 65 | **65** | 0 Npgsql, 0 SCRAM, 0 idle | 58 / 9–14 | 53–60 / 0–3 |
-| baseline, all 3 pairs (warm-first) | 2 s | 41 | **41** | 0 Npgsql, 0 SCRAM, 0 idle | 31–33 / 49–53 | 30–34 / 0–5 |
-| baseline, all 3 pairs (warm-first) | 8 s | 65–66 | **65–66** | 0–1 Npgsql, 0 SCRAM, 0–1 idle | 58–59 / 28–32 | 57–62 / 0–5 |
-| e5 / pool 16 (both) | 2 s | 40–41 | **40–41** | none | 31–33 / 3–54 | 12–13 / 0–8 |
-| e5 / pool 16 (both) | 8 s | 64–65 | **64–65** | none | 58–59 / 10–32 | 12–13 / 0–8 |
-| stress baseline and headroom (warm-first) | 2 / 8 / 14 s | 41 / 65–66 / 89–90 | **all** | none | 33 / 59 / 83 threads | e.g. 27–36 / 0–8 at 2 s |
-| e3 (both) / e4 (both) | 2 / 8 / 14 s | 4–15 / 34–108 | 0 | all idle | — | round 1 already over |
+| Condition (workloads) | Capture interval (s) | TP workers | Resolver wait | Parked | Active (Npgsql / other) | Received: request → completion | Authorized: request → completion | Threads / queue across interval |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline, 3 pairs (cold) | 2.0 → 4.3–4.5 | 40–41 | **40–41** | 0 | 0 / 0 | 25–32 → 38–45 | **0–3 → 0–3** | 31–42 / 2–7 |
+| baseline, 3 pairs (cold) | 8.0 → 10.4–10.5 | 65 | **65** | 0 | 0 / 0 | 53–60 → 62–70 | **0–3 → 0–3** | 58–66 / 9–14 |
+| baseline, 3 pairs (warm-first) | 2.0 → 4.4–4.5 | 41 | **41** | 0 | 0 / 0 | 30–34 → 42–46 | **0–5 → 0–5** | 31–43 / 39–53 |
+| baseline, 3 pairs (warm-first) | 8.0 → 10.4–10.5 | 65–66 | **65–66** | 0 | 0–1 / 0–1 | 57–62 → 67–73 | **0–5 → 0–5** | 58–67 / 21–32 |
+| baseline, 3 pairs (cold) | 14.0 → 16.3–16.5 | 82–87 | 0–7 | 80–84 | 0–2 / 0–1 | 76–84 → 86–220 | 0–3 → **83–191** | 82–87 / 0–14 |
+| baseline, 3 pairs (warm-first) | 14.0 → 16.4–16.5 | 79–83 | 0 | 79–83 | 0 / 0 | 82–86 → 82–86 | 0–85 → 82–85 | 79–83 / 0 |
+| e5 / pool 16 (both) | 2.0 → 4.4–4.5 | 40–41 | **40–41** | 0 | 0 / 0 | 12–13 → 12–13 | 0–8 → 0–8 | 31–43 / 3–54 |
+| e5 / pool 16 (both) | 8.0 → 10.4–10.5 | 64–65 | **64–65** | 0 | 0 / 0 | 12–13 → 12–13 | 0–8 → 0–8 | 58–67 / 10–32 |
+| stress baseline + headroom | 2.0 → 4.5 | 41 | **41** | 0 | 0 / 0 | 27–36 → 39–51 | 0–8 → 0–8 | 33–43 / 76–96 |
+| stress baseline + headroom | 8.0 → 10.4–10.5 | 65–66 | **65–66** | 0 | 0 / 0–1 | 54–66 → 64–77 | 0–8 → 0–8 | 59–67 / 56–76 |
+| stress baseline + headroom | 14.0 → 16.4–16.5 | 89–90 | **89–90** | 0 | 0 / 0 | 78–91 → 90–109 | 0–8 → 0–8 | 83–91 / 36–71 |
+| e3 (both) / e4 (both) | all three | 4–15 / 34–108 | 0 | all | 0 / 0 | unchanged | unchanged | round 1 ended before each capture |
 
-- In every baseline, every thread-pool worker present at 2 s is blocked in the
-  signing-key resolver's synchronous wait, and at 8 s all but at most one are (one
-  warm-first run had one idle worker, another had one in Npgsql code). No worker is
-  in SCRAM computation. The pool grows about 4 threads per second (31–33 → 58–59
-  between the captures), and each new worker joins the resolver wait. Meanwhile
-  PostgreSQL has received 25–62 CMS connections and authorized at most 5: the pending
-  opens' continuations are queued (queue up to 53 in the warm-first workload) with no
-  free worker to run them.
+- **The 2 s and 8 s captures lie entirely inside the unauthorized phase.** Authorizations
+  are the same at both boundaries of every baseline, E5, and stress capture (at most 8,
+  and at most 5 in the catalog baselines), and the round ends after the capture. Within
+  those intervals every thread-pool worker is in the signing-key resolver's synchronous
+  wait, except that one warm-first 8 s capture has one worker in Npgsql code and another
+  has one worker initializing its dispatch state. No worker is parked or in SCRAM
+  computation. The pool grows about 4 threads per second (31–33 at 2 s, 58–59 at 8 s),
+  and each new worker joins the resolver wait. Meanwhile PostgreSQL has received 25–73
+  CMS connections, and the pending opens' continuations stay queued (queue up to 53 in
+  the warm-first workload) with no free worker to run them.
+- **The baseline catalog 14 s captures span the release.** In the cold runs,
+  authorizations rise from 0–3 at the request to 83–191 at completion, and in the
+  warm-first runs round 1 ended before or during the capture. Their parked workers
+  therefore cannot be placed before or after authorization. **The earlier claim that
+  workers were free while authorizations stayed at zero, and the "post-release login
+  lag" drawn from it, are withdrawn:** they came from aligning each capture to its
+  request instant.
+- The stress 14 s captures still show every worker in the resolver wait with at most
+  8 authorizations at either boundary: at 256/128 the stall outlasts the 14 s capture.
 - The explicit CMS resolver frame (`WebApplicationBuilderExtensions…
   <ConfigureIdentityProvider>b__8`) is visible on every waiting thread in cold runs, but
   on only 21–27 threads in warm-first runs. There the wait appears directly under
   `ValidateSignature`; a JIT-inlined lambda after tier-up (the warm-up executed it) is
   the likely reason, not established. Both shapes block in the same synchronous wait
   under `ValidateSignature`.
-- At 14 s the baseline workers are mostly idle (79–84 idle; in the pair-e3 cold runs
-  1–7 were still in the resolver wait), with round 1 about to release. In the three
-  pair-e3 cold runs, 76–77 connections were received and **none** had been authorized at
-  14 s even though most workers were idle and the queue held 10–11 items.
-  Those runs then crossed 15 s. Why authorization lags a free thread pool by up to a
-  second or more is **not established**.
 - E5 shows the same all-workers-in-resolver-wait picture with only 12–13 physical
   connections and all 16 pool slots busy.
 
@@ -605,8 +621,9 @@ lines (none uncorrelated):
   headroom. The round-1 open timeouts, including the profile-path SASL-timeout 500s,
   persist without it; they occur in the first burst, while the stacks show every worker
   in the resolver wait. This is an **R-500-matching observation at the stress workload
-  (256/128)**. G1 is defined on the E1 catalog cold runs, and this step leaves its
-  disposition to review.
+  (256/128)**. G1 is defined on the E1 catalog cold runs and stays "partially
+  reproduced (provisional)"; these headroom timeout reproductions are preserved for the
+  explicit G1/G2 assessment in 0.6.
 
 ### Results — E7 (real workload, shard 2)
 
@@ -642,10 +659,13 @@ lines (none uncorrelated):
 
 Directly measured in this step:
 
-1. During every baseline stall (cold and first-concurrent-burst), all thread-pool
-   workers (at 8 s, all but at most one) are blocked in a synchronous wait under
-   IdentityModel's signing-key resolver call. The pool grows about 4 workers per second with queued work, and CMS connections
-   PostgreSQL has received stay unauthorized until the round releases.
+1. In every baseline stall (cold and first concurrent burst), the stack captures that
+   lie entirely inside the unauthorized phase (2.0–4.5 s and 8.0–10.5 s) show every
+   thread-pool worker, all but one in two captures, blocked in a synchronous wait under
+   IdentityModel's signing-key resolver call. The pool grows about 4 workers per second
+   with queued work, and the CMS connections PostgreSQL has received stay unauthorized
+   until the round releases. The 14 s captures span the release and say nothing about
+   the order of worker release and authorization.
 2. **E4** (worker minimum 128, verified from dumps) removes the stall: round 1 drops
    from 13.6–15.1 s to 0.17–1.1 s, handshakes take 7–15 ms, all 200.
 3. **E3** (certificate-mode keys) removes the stall: round 1 drops to 0.6–0.9 s.
@@ -654,19 +674,23 @@ Directly measured in this step:
 5. At the stress workload, PostgreSQL headroom removes all steady-state failures
    (53300) but not the first-burst open timeouts, including 3 profile-path
    `AuthenticateSASL` timeout 500s.
-6. The real workload (shard 2) contains one catalog burst of 87 profile requests. It
-   completes in 0.4 s uncapped and takes up to 13.3 s under P-runner-approx, with the
-   same handshake and thread-pool signature.
+6. Observationally, the real workload (shard 2) contains one catalog burst of 87
+   profile requests. It completed in 0.4 s uncapped (E7a) and took up to 13.3 s under
+   P-runner-approx (E7b), with the same handshake and thread-pool signature. E7b ran on
+   reused data and without stacks, so it corroborates the shape and establishes nothing
+   by itself.
 
 Bearing on the hypotheses (the attribution table and verdicts are step 0.6):
 
 - **H1:** direct evidence (point 1), corroborated by E4 (point 2). E3 is consistent but
   cannot isolate blocking from round-trip cost. Blocking elsewhere is not indicated: no
   other frame holds workers during the stall.
-- **H2:** bounding connections to 16 (E5) leaves the stall in place, so connection
-  volume is not what the stall waits on at the catalog workload. At the stress workload,
-  connection churn does saturate PostgreSQL's CPU, but only in the slot-exhausted
-  regime. Client-side SCRAM cost was never on a captured stack.
+- **H2:** bounding connections to 16 (E5) leaves the stall in place, so high connection
+  counts are **not necessary** for the stall at the catalog workload. That does not
+  eliminate every connection-related contribution: E5 also adds pool waiting, and its
+  few handshakes still stalled in half the runs. At the stress workload, connection churn
+  saturates PostgreSQL's CPU, but only in the slot-exhausted regime. No SCRAM computation
+  appeared on any captured stack.
 - **H3:** little I/O, no checkpoints or slow statements in any catalog block.
 - **H4:** profile-dependent in both the harness (E1) and the real workload
   (E7a 0.4 s versus E7b 13.3 s).
@@ -675,9 +699,14 @@ Bearing on the hypotheses (the attribution table and verdicts are step 0.6):
 
 ### Remaining uncertainties
 
-- Why authorization completes up to about a second after the workers are free (the
-  t = 14 s captures), and why the pair-e3 cold runs crossed 15 s while the other cold
-  baselines released at 14.6–15.1 s.
+- The order of worker release and connection authorization at the end of a stall is
+  not resolved: the only captures near the release (14 s) span it. A capture closer to
+  the release, or finer-grained counters, would be needed. Also open: why the pair-e3
+  cold runs crossed 15 s while the other cold baselines released at 14.6–15.1 s.
+- A stack capture is an interval of about 2.4 s whose snapshot instant is unknown.
+  Statements about a capture hold only where the aligned quantities are constant
+  across the interval (true of the 2 s and 8 s baseline captures, not of the catalog
+  14 s captures).
 - E5's bimodal handshake timing with few connections.
 - Whether `/stacks` perturbs the stall. Each capture takes about 2.4 s; warm-first
   round 1 was 13.6–14.4 s with captures here versus 12.8–13.9 s without them in 0.4. The
@@ -704,3 +733,34 @@ Bearing on the hypotheses (the attribution table and verdicts are step 0.6):
   harness run needs `-Seed` again.
 - Raw captures (control blocks, stacks, dumps, E7 logs and trx) are retained locally
   under `eng/performance/dms-1556/artifacts/` for the Jira upload.
+
+### Review corrections (after `5095625a3`; analysis only, no workload rerun)
+
+Two analysis defects were found in review and corrected. The stack tables were
+regenerated from the retained captures with `Invoke-ControlBatchStackReanalysis.ps1`
+(126 capture records, the same set as before); the superseded tables are kept beside
+them as `e5-*-stacks.superseded.csv`.
+
+1. **Capture alignment.** Stack contents had been joined to connection counts and
+   counters at the capture's *request* instant, although retrieval takes about 2.4 s.
+   Each capture is now the interval `[requested, completed]`, with connection counts at
+   both boundaries and counter ranges across it (`Get-DmsStackCaptureRecord`,
+   `Get-DmsLivemetricsIntervalSummary`); the point lookup was removed. Validation case:
+   pair-e3 baseline cold repetition 1, 14 s capture, spans 14.01–16.46 s, and
+   authorizations rise from **0 to 191** inside it (received 77 → 220). Its 84 parked
+   workers therefore do not show free workers while authorizations were zero, and that
+   claim is withdrawn above. The same run's 2 s (2.01–4.40 s) and 8 s (8.01–10.48 s)
+   captures keep 0 authorizations at both boundaries.
+2. **Idle classification.** Any `PortableThreadPool+WorkerThread` frame had been
+   classified as idle, which includes ordinary worker dispatch. `threadpool-parked` now
+   requires the parked-worker signature: only `LowLevelLifoSemaphore` waits above
+   `WorkerThreadStart` (3,651 threads in the retained captures match it exactly).
+   Dedicated runtime threads are `runtime-infrastructure`, and other execution is
+   `active-other`. Per-thread validation against retained examples, all passing:
+   socket-completion dispatch without Npgsql frames → active-other; socket completion
+   running an Npgsql continuation → npgsql-active; `JobDatabaseSession.ReleaseAfterAsync`
+   → active-other; worker initialization (`ThreadPoolWorkQueue.CreateThreadLocals`) →
+   active-other; the gate thread creating workers → runtime-infrastructure; a parked
+   worker → threadpool-parked; a resolver wait → resolver-wait. Four of the 126
+   captures change, one thread each (three executing workers and the gate thread, all
+   previously counted as idle); no resolver-wait count changes.

@@ -154,10 +154,18 @@ not to the CMS database. For M-conn:
   refusing to start unless the live container state matches the condition. Workloads
   `cold-87x87` (E1 shape), `warm-87x87` (serial warm-up, then the first concurrent burst),
   `warm-256x128` (stress; keep in its own blocks). Every run restarts CMS; round 1 gets
-  managed stacks at `-StackCaptureOffsetsSeconds` (default 2/8/14 s) aligned with
-  thread-pool threads/queue, pool busy, and connections received/authorized at the
-  capture instant; a dump follows outside the timed windows. Outputs
-  `e5-<block>-<condition>-index.json`, `-rounds.csv`, `-stacks.csv`.
+  managed stacks requested at `-StackCaptureOffsetsSeconds` (default 2/8/14 s). A
+  capture takes ~2.4 s and its snapshot instant is unknown, so each is recorded as the
+  interval `[requested, completed]`: connections received/authorized at both boundaries
+  and thread-pool threads/queue and pool busy as ranges across it
+  (`Get-DmsStackCaptureRecord`). Threads are classified as resolver-wait,
+  other-sync-wait, scram-compute, npgsql-active, threadpool-parked (strict parked-worker
+  signature only), runtime-infrastructure, or active-other. A dump follows outside the
+  timed windows. Outputs `e5-<block>-<condition>-index.json`, `-rounds.csv`,
+  `-stacks.csv`.
+- `Invoke-ControlBatchStackReanalysis.ps1` — rebuilds every retained block's
+  `-stacks.csv` from the retained captures with the current analysis module (no
+  workload); keeps the previous table as `-stacks.superseded.csv`.
 - `Invoke-Step05Sequence.ps1` — the matched-pair sequence as run for step 0.5.
 - `Invoke-E7Shard.ps1` — E7 overlay variant: runs a DMS E2E shard directly (same
   test-process context as `build-dms.ps1 E2ETest`, `--no-build`) against an already

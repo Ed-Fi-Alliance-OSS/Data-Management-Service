@@ -686,9 +686,15 @@ function Get-DmsStackSummary {
       - other-sync-wait: any other synchronous Task wait (Program.Main excluded);
       - scram-compute: Npgsql SCRAM/PBKDF2/HMAC frames on the stack;
       - npgsql-active: other Npgsql frames;
-      - threadpool-idle: a worker parked in the thread pool's semaphore;
-      - runtime-infrastructure: named runtime/Kestrel/diagnostics threads and Main;
-      - other.
+      - threadpool-parked: a worker whose ONLY frames above
+        PortableThreadPool+WorkerThread.WorkerThreadStart are LowLevelLifoSemaphore
+        waits - the parked-worker signature. A worker frame alone is not idleness: the
+        same WorkerThreadStart frame sits under every work item a worker dispatches;
+      - runtime-infrastructure: dedicated, non-worker threads (Main, Kestrel heartbeat,
+        socket event loop, timer, thread-pool gate, counters, file watcher), including
+        the gate thread while it creates workers;
+      - active-other: anything else, e.g. a worker dispatching socket completions,
+        initializing thread-locals, or running application code.
     Also returns the thread-pool worker count and the most common frame signatures.
     #>
     [CmdletBinding()]
@@ -697,7 +703,7 @@ function Get-DmsStackSummary {
 
     $counts = [ordered]@{
         'resolver-wait' = 0; 'other-sync-wait' = 0; 'scram-compute' = 0; 'npgsql-active' = 0
-        'threadpool-idle' = 0; 'runtime-infrastructure' = 0; 'other' = 0
+        'threadpool-parked' = 0; 'runtime-infrastructure' = 0; 'active-other' = 0
     }
     $resolverFrameVisible = 0
     $workers = 0
@@ -713,7 +719,10 @@ function Get-DmsStackSummary {
             $header = $lines[0]
             $frames = @($lines | Select-Object -Skip 1 | ForEach-Object { ($_.Trim() -replace '^[^!]+!', '') } | Where-Object { $_ -and $_ -ne '[NativeFrame]' })
             $joined = $frames -join "`n"
-            if ($header -match '\.NET TP Worker') { $workers++ }
+            $isWorker = $header -match '\.NET TP Worker'
+            if ($isWorker) { $workers++ }
+            $startIndex = [Array]::FindIndex([string[]]$frames, [Predicate[string]] { param($frame) $frame -match 'PortableThreadPool\+WorkerThread\.WorkerThreadStart' })
+            $isParked = $startIndex -gt 0 -and @($frames[0..($startIndex - 1)] | Where-Object { $_ -notmatch '^System\.Threading\.LowLevelLifoSemaphore\.' }).Count -eq 0
             $category = if ($joined -match 'Task\.InternalWait' -and $joined -match 'JsonWebTokenHandler\.ValidateSignature') {
                 if ($joined -match 'EdFi\.DmsConfigurationService\.[^\n]*(ConfigureIdentityProvider|AddJwtAuthentication)[^\n]*>b__') { $resolverFrameVisible++ }
                 'resolver-wait'
@@ -721,9 +730,9 @@ function Get-DmsStackSummary {
             elseif ($joined -match 'Task\.InternalWait' -and $joined -notmatch 'Program\.<Main>') { 'other-sync-wait' }
             elseif ($joined -match 'Npgsql' -and $joined -match 'Scram|Pbkdf2|Rfc2898|HMAC|Hmac') { 'scram-compute' }
             elseif ($joined -match 'Npgsql') { 'npgsql-active' }
-            elseif ($frames.Count -gt 0 -and $joined -match 'LowLevelLifoSemaphore|PortableThreadPool\+WorkerThread') { 'threadpool-idle' }
-            elseif ($header -match 'Kestrel|\.NET (Sockets|Timer|TP Gate|File Watcher|Counter|EventPipe|Finalizer)' -or $joined -match 'Program\.<Main>|CounterGroup|GateThread|TimerQueue|SocketAsyncEngine|FileSystemWatcher|Heartbeat') { 'runtime-infrastructure' }
-            else { 'other' }
+            elseif ($isParked) { 'threadpool-parked' }
+            elseif (-not $isWorker -and ($header -match 'Kestrel|\.NET (Sockets|Timer|TP Gate|File Watcher|Counter|EventPipe|Finalizer)' -or $joined -match 'Program\.<Main>|CounterGroup\.PollForValues|GateThread\.GateThreadStart|TimerQueue\.TimerThread|SocketAsyncEngine\.EventLoop|FileSystemWatcher|Heartbeat\.TimerLoop')) { 'runtime-infrastructure' }
+            else { 'active-other' }
             $counts[$category]++
             $signature = '{0}: {1}' -f $category, (($frames | Select-Object -First 3) -join ' < ')
             $signatures[$signature] = [int]($signatures[$signature] ?? 0) + 1
@@ -739,42 +748,113 @@ function Get-DmsStackSummary {
     }
 }
 
-function Get-DmsLivemetricsValueAt {
+function Get-DmsLivemetricsIntervalSummary {
     <#
     .SYNOPSIS
-    The livemetrics sample of one counter nearest to an instant (within 1.5 s), used to
-    align a stack capture with thread-pool and pool state. Counter names as in
-    Get-DmsLivemetricsWindowSummary ('pool-busy' / 'pool-idle' for the given database).
+    Minimum, maximum, and sample count of the thread-pool thread count, thread-pool
+    queue length, and Npgsql busy connections (one database) for livemetrics samples
+    stamped inside [StartUtc, EndUtc]. Used for a stack capture, which is an INTERVAL
+    (request to completion, ~2.4 s), never an instant: no sample stands in for "the"
+    state at the capture. Counters are 1 s snapshots, so an interval can hold 1-3
+    samples or none (then the values are null).
     #>
     [CmdletBinding()]
-    [OutputType([object])]
+    [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)][string] $Path,
-        [Parameter(Mandatory)][DateTime] $AtUtc,
-        [Parameter(Mandatory)][string] $Counter,
+        [Parameter(Mandatory)][DateTime] $StartUtc,
+        [Parameter(Mandatory)][DateTime] $EndUtc,
         [string] $PoolDatabase = 'edfi_datamanagementservice'
     )
 
-    $best = $null
-    $bestDistance = [double]::MaxValue
-    foreach ($line in [System.IO.File]::ReadLines($Path)) {
-        $match = [regex]::Match($line, $script:LivemetricsPattern)
-        if (-not $match.Success) { continue }
-        $name = $match.Groups['name'].Value
-        if ($Counter -in @('pool-busy', 'pool-idle')) {
-            $prefix = if ($Counter -eq 'pool-busy') { 'Busy Connections' } else { 'Idle Connections' }
-            if (-not ($name.StartsWith($prefix) -and $name.Contains("Database=$PoolDatabase;"))) { continue }
-        }
-        elseif ($name -ne $Counter) { continue }
-        $utc = ConvertTo-DmsUtc -Text $match.Groups['ts'].Value
-        if ($null -eq $utc) { continue }
-        $distance = [Math]::Abs(($utc - $AtUtc).TotalSeconds)
-        if ($distance -lt $bestDistance -and $distance -le 1.5) {
-            $bestDistance = $distance
-            $best = [double]::Parse($match.Groups['value'].Value, $script:Invariant)
+    $values = @{ threads = [System.Collections.Generic.List[double]]::new(); queue = [System.Collections.Generic.List[double]]::new(); busy = [System.Collections.Generic.List[double]]::new() }
+    if (Test-Path -LiteralPath $Path) {
+        foreach ($line in [System.IO.File]::ReadLines($Path)) {
+            $match = [regex]::Match($line, $script:LivemetricsPattern)
+            if (-not $match.Success) { continue }
+            $name = $match.Groups['name'].Value
+            $key = if ($name -eq 'threadpool-thread-count') { 'threads' }
+            elseif ($name -eq 'threadpool-queue-length') { 'queue' }
+            elseif ($name.StartsWith('Busy Connections') -and $name.Contains("Database=$PoolDatabase;")) { 'busy' }
+            else { $null }
+            if ($null -eq $key) { continue }
+            $utc = ConvertTo-DmsUtc -Text $match.Groups['ts'].Value
+            if ($null -eq $utc -or -not (Test-DmsInWindow -Utc $utc -StartUtc $StartUtc -EndUtc $EndUtc)) { continue }
+            $values[$key].Add([double]::Parse($match.Groups['value'].Value, $script:Invariant))
         }
     }
-    return $best
+    function Get-Range([System.Collections.Generic.List[double]] $List) {
+        if ($List.Count -eq 0) { return $null }
+        $min = ($List | Measure-Object -Minimum).Minimum
+        $max = ($List | Measure-Object -Maximum).Maximum
+        if ($min -eq $max) { return '{0:0.#}' -f $min }
+        return '{0:0.#}-{1:0.#}' -f $min, $max
+    }
+    return [pscustomobject]@{
+        samples      = $values.threads.Count
+        threadsRange = Get-Range $values.threads
+        queueRange   = Get-Range $values.queue
+        poolBusyRange = Get-Range $values.busy
+    }
+}
+
+function Get-DmsStackCaptureRecord {
+    <#
+    .SYNOPSIS
+    One stack capture as an interval record: the classification of the captured threads,
+    the capture's [requested, completed] offsets from the round start (the snapshot
+    happened somewhere inside, at an unknown instant), PostgreSQL connections received
+    and authorized from the client host by EACH boundary, livemetrics ranges across the
+    interval, and whether the round ended before, inside, or after the interval.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][object] $Capture,
+        [Parameter(Mandatory)][string] $StackPath,
+        [Parameter(Mandatory)][DateTime] $RoundStartUtc,
+        [Parameter(Mandatory)][DateTime] $RoundEndUtc,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]] $PgEvents,
+        [Parameter(Mandatory)][string] $ClientHost,
+        [Parameter(Mandatory)][string] $LivemetricsPath,
+        [string] $PoolDatabase = 'edfi_datamanagementservice'
+    )
+
+    $requested = ConvertTo-DmsUtcInstant $Capture.requestedUtc
+    $completed = ConvertTo-DmsUtcInstant $Capture.completedUtc
+    $stack = Get-DmsStackSummary -Path $StackPath
+    $handshake = Measure-DmsPgHandshakeWindow -Events $PgEvents -StartUtc $RoundStartUtc -EndUtc $RoundEndUtc.AddSeconds(0.25) `
+        -ClientHost $ClientHost -AtUtc @($requested, $completed)
+    $atRequest = $handshake.alignment[0]
+    $atCompletion = $handshake.alignment[1]
+    $counters = Get-DmsLivemetricsIntervalSummary -Path $LivemetricsPath -StartUtc $requested -EndUtc $completed -PoolDatabase $PoolDatabase
+    $roundEnd = if ($RoundEndUtc -le $requested) { 'before-capture' } elseif ($RoundEndUtc -ge $completed) { 'after-capture' } else { 'inside-capture' }
+    return [pscustomobject][ordered]@{
+        offsetSeconds          = $Capture.offsetSeconds
+        requestedS             = [Math]::Round(($requested - $RoundStartUtc).TotalSeconds, 2)
+        completedS             = [Math]::Round(($completed - $RoundStartUtc).TotalSeconds, 2)
+        roundEnd               = $roundEnd
+        captureError           = $Capture.error
+        threads                = $stack.threads
+        tpWorkers              = $stack.threadPoolWorkers
+        resolverWait           = $stack.categories['resolver-wait']
+        resolverFrameVisible   = $stack.resolverFrameVisible
+        otherSyncWait          = $stack.categories['other-sync-wait']
+        scramCompute           = $stack.categories['scram-compute']
+        npgsqlActive           = $stack.categories['npgsql-active']
+        tpParked               = $stack.categories['threadpool-parked']
+        runtimeInfrastructure  = $stack.categories['runtime-infrastructure']
+        activeOther            = $stack.categories['active-other']
+        receivedAtRequest      = $atRequest.received
+        authorizedAtRequest    = $atRequest.authorized
+        receivedAtCompletion   = $atCompletion.received
+        authorizedAtCompletion = $atCompletion.authorized
+        counterSamples         = $counters.samples
+        tpThreadsRange         = $counters.threadsRange
+        tpQueueRange           = $counters.queueRange
+        poolBusyRange          = $counters.poolBusyRange
+        file                   = Split-Path -Leaf $StackPath
+    }
 }
 
 function ConvertTo-DmsUtcInstant {
@@ -887,4 +967,4 @@ function Get-DmsE2RoundEvidence {
     }
 }
 
-Export-ModuleMember -Function ConvertTo-DmsUtc, ConvertFrom-DmsDockerSize, Get-DmsPgLogEvent, Measure-DmsPgConnectionWindow, Get-DmsPgActivityWindowSummary, Get-DmsLivemetricsWindowSummary, Get-DmsDockerStatsWindowSummary, Get-DmsPgIoWindowDelta, Get-DmsHostDiskWindowSummary, Get-DmsCmsLogWindowSummary, Get-DmsContainerResourceRecord, Get-DmsE2RoundEvidence, Measure-DmsPgHandshakeWindow, Get-DmsStackSummary, Get-DmsLivemetricsValueAt, ConvertTo-DmsUtcInstant, ConvertTo-DmsFlatText, Measure-DmsVmClockOffset, Get-DmsContainerIpAddress
+Export-ModuleMember -Function ConvertTo-DmsUtc, ConvertFrom-DmsDockerSize, Get-DmsPgLogEvent, Measure-DmsPgConnectionWindow, Get-DmsPgActivityWindowSummary, Get-DmsLivemetricsWindowSummary, Get-DmsDockerStatsWindowSummary, Get-DmsPgIoWindowDelta, Get-DmsHostDiskWindowSummary, Get-DmsCmsLogWindowSummary, Get-DmsContainerResourceRecord, Get-DmsE2RoundEvidence, Measure-DmsPgHandshakeWindow, Get-DmsStackSummary, Get-DmsLivemetricsIntervalSummary, Get-DmsStackCaptureRecord, ConvertTo-DmsUtcInstant, ConvertTo-DmsFlatText, Measure-DmsVmClockOffset, Get-DmsContainerIpAddress

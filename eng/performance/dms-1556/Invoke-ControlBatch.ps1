@@ -23,9 +23,11 @@ same way in every condition):
   warm-256x128 - the E2 stress shape (slot-exhaustion prone; keep it in its own blocks).
 Each burst: -Rounds rounds, -InterRoundDelaySeconds apart, samplers with coverage gate,
 body validation, managed stacks at -StackCaptureOffsetsSeconds into round 1. After the
-run: container logs, per-round evidence, round-1 handshake timing aligned with every
-stack capture (thread-pool threads/queue, pool busy, connections received/authorized
-at the capture's request time), then one dump OUTSIDE the timed windows (Q17).
+run: container logs, per-round evidence and handshake timing, one interval record per
+stack capture (Get-DmsStackCaptureRecord: thread classification; connections
+received/authorized at the capture's request AND completion boundaries; thread-pool and
+pool-busy ranges across the ~2.4 s capture), then one dump OUTSIDE the timed windows
+(Q17).
 
 Repetitions alternate the workload order. Outputs e5-<block>-<condition>-index.json,
 -rounds.csv, and -stacks.csv. Nothing here assigns a verdict.
@@ -229,8 +231,7 @@ for ($rep = 1; $rep -le $Repetitions; $rep++) {
                 $end = ConvertTo-DmsUtcInstant $round.endUtc
                 $evidence = Get-DmsE2RoundEvidence -StartUtc $start -EndUtc $end -Captures $captures -PgEvents $pgEvents `
                     -CmsDatabase $CmsDatabase -CmsClientHost $cmsHost -CmsContainer $CmsContainerName -PgContainer $PgContainerName
-                $stackInstants = @(@($round.stackCaptures) | Where-Object { $_ } | ForEach-Object { ConvertTo-DmsUtcInstant $_.requestedUtc })
-                $handshake = Measure-DmsPgHandshakeWindow -Events $pgEvents -StartUtc $start -EndUtc $end.AddSeconds(0.25) -ClientHost $cmsHost -AtUtc $stackInstants
+                $handshake = Measure-DmsPgHandshakeWindow -Events $pgEvents -StartUtc $start -EndUtc $end.AddSeconds(0.25) -ClientHost $cmsHost
                 if ([int]$round.round -eq 1) { $handshakeRound1 = $handshake }
                 $roundEvidence.Add([pscustomobject]@{ round = [int]$round.round; summary = $round; evidence = $evidence; handshake = $handshake })
 
@@ -259,29 +260,14 @@ for ($rep = 1; $rep -le $Repetitions; $rep++) {
                     })
 
                 foreach ($capture in @(@($round.stackCaptures) | Where-Object { $_ })) {
-                    $at = ConvertTo-DmsUtcInstant $capture.requestedUtc
-                    $stackPath = Join-Path $OutputDirectory $capture.file
-                    $stack = Get-DmsStackSummary -Path $stackPath
-                    $aligned = @($handshake.alignment | Where-Object { (ConvertTo-DmsUtcInstant $_.atUtc) -eq $at }) | Select-Object -First 1
-                    $stackRows.Add([pscustomobject][ordered]@{
-                            block = $BlockLabel; condition = $Condition; workload = $workload; rep = $rep; round = [int]$round.round
-                            offsetSeconds = $capture.offsetSeconds
-                            requestedAfterRoundStartS = [Math]::Round(($at - $start).TotalSeconds, 2)
-                            captureMs = [Math]::Round(((ConvertTo-DmsUtcInstant $capture.completedUtc) - $at).TotalMilliseconds, 0)
-                            roundEndedBeforeCapture = ($end -lt $at)
-                            captureError = $capture.error
-                            threads = $stack.threads; tpWorkers = $stack.threadPoolWorkers
-                            resolverWait = $stack.categories['resolver-wait']; resolverFrameVisible = $stack.resolverFrameVisible
-                            otherSyncWait = $stack.categories['other-sync-wait']; scramCompute = $stack.categories['scram-compute']
-                            npgsqlActive = $stack.categories['npgsql-active']; tpIdle = $stack.categories['threadpool-idle']
-                            other = $stack.categories['other']
-                            tpThreadsAt = Get-DmsLivemetricsValueAt -Path $captures.livemetrics -AtUtc $at -Counter 'threadpool-thread-count'
-                            tpQueueAt = Get-DmsLivemetricsValueAt -Path $captures.livemetrics -AtUtc $at -Counter 'threadpool-queue-length'
-                            poolBusyAt = Get-DmsLivemetricsValueAt -Path $captures.livemetrics -AtUtc $at -Counter 'pool-busy' -PoolDatabase $CmsDatabase
-                            connReceivedBy = if ($aligned) { $aligned.received } else { $null }
-                            connAuthorizedBy = if ($aligned) { $aligned.authorized } else { $null }
-                            file = $capture.file
-                        })
+                    # A capture is an interval ([requested, completed], ~2.4 s); the record
+                    # reports connection counts at both boundaries and counter ranges across it.
+                    $record = Get-DmsStackCaptureRecord -Capture $capture -StackPath (Join-Path $OutputDirectory $capture.file) `
+                        -RoundStartUtc $start -RoundEndUtc $end -PgEvents $pgEvents -ClientHost $cmsHost `
+                        -LivemetricsPath $captures.livemetrics -PoolDatabase $CmsDatabase
+                    $row = [ordered]@{ block = $BlockLabel; condition = $Condition; workload = $workload; rep = $rep; round = [int]$round.round }
+                    foreach ($property in $record.PSObject.Properties) { $row[$property.Name] = $property.Value }
+                    $stackRows.Add([pscustomobject]$row)
                 }
             }
         }
