@@ -796,13 +796,34 @@ Feature: TrackedChangeEndpoints report resource deletes and key changes.
                       }
                       """
 
-            # NOTE: The "NamespaceBased ReadChanges with a client that has no namespace prefixes => 403"
-            # failure path is verified at the integration level
-            # (RelationalChangeQueryRepositoryTests.ReadChanges_returns_no_prefixes_failure_when_namespace_based_has_no_prefixes)
-            # and at the unit level
-            # (NamespaceAuthorizationFailureResponseTests.It_renders_the_no_prefixes_configured_problem_details).
-            # It is intentionally NOT reproduced here because the E2E client-provisioning path cannot
-            # create a client with zero namespace prefixes: CMS vendor creation enforces a non-empty
-            # NamespacePrefixes (FluentValidation NotEmpty on VendorInsertCommand.NamespacePrefixes), and
-            # the JWT namespacePrefixes claim is derived from that vendor value. A scenario authorizing
-            # with namespacePrefixes "" fails at vendor creation, not at the /deletes authorization check.
+            @e2e-ci-shard-3
+            @MssqlRepresentative
+            @ResetClaimsetsAfterScenario
+            @reset-data-before-scenario
+            Scenario: 19 NamespaceBased ReadChanges with no namespace prefixes returns invalid-client ProblemDetails
+                Given a claim set is uploaded to CMS that grants "CrisisTypeDescriptor" access to "E2E-ReadChangesNoNamespacePrefixesClaimSet" using authorization strategy "NamespaceBased"
+                  And the claim set upload to CMS should be successful
+                Given the claimSet "E2E-ReadChangesNoNamespacePrefixesClaimSet" is authorized with namespacePrefixes ""
+                 When a GET request is made to "/ed-fi/crisisTypeDescriptors/deletes"
+                 Then it should respond with 403
+                  And the response headers include
+                      """
+                      {
+                          "content-type": "application/problem+json"
+                      }
+                      """
+                  And the response body has a non-empty correlationId
+                  And the response body is
+                      """
+                      {
+                          "type": "urn:ed-fi:api:security:authorization:namespace:invalid-client:no-namespaces",
+                          "title": "Authorization Denied",
+                          "status": 403,
+                          "detail": "There was a problem authorizing the request. The caller has not been configured correctly for accessing resources authorized by Namespace.",
+                          "correlationId": null,
+                          "validationErrors": {},
+                          "errors": [
+                              "The API client has been given permissions on a resource that uses the 'NamespaceBased' authorization strategy but the client doesn't have any namespace prefixes assigned."
+                          ]
+                      }
+                      """
