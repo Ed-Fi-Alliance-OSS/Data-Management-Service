@@ -648,25 +648,19 @@ filename without extension as the effective claim-set name for composed attachme
 - `isParent: false` (or omitted) - attaches a claimset entry to an existing leaf resource claim and may
   supply `authorizationStrategyOverridesForCrud`.
 
-Fragment files extend the claims hierarchy, and CMS composition may add to the top-level `claimSets`
-collection loaded from embedded `Claims.json` in one case: when a fragment has at least one non-parent
-resource claim, its effective claim-set name (the top-level `name`, or the filename fallback) carries those
-grants. If embedded `Claims.json` does not already declare that name (compared case-insensitively), CMS
-registers it as a system-reserved claim set, so it gets a `ClaimSet` row and `authorizationMetadata` like any
-embedded claim set. Parent-only fragments register nothing; their top-level names are labels. In practice
-this means:
+Fragment files therefore extend the claims hierarchy; they do not replace or augment the top-level
+`claimSets` collection loaded from embedded `Claims.json`. Under the current CMS additive-fragment
+behavior, the embedded top-level claim-set definitions remain authoritative and fragments compose only into
+the hierarchy. In practice this means:
 
 - a fragment may create or extend resource-claim nodes,
 - a fragment may attach actions to claim set names that already exist in embedded `Claims.json`,
-- a fragment with non-parent entries defines its own claim set when that name is not already declared.
+- a fragment may not, by itself, introduce a brand-new top-level claim set definition that
+  `Add-Application` can select later.
 
-Bootstrap staging is stricter than CMS composition. `prepare-dms-claims.ps1` bounds bootstrap-managed and
-`-ClaimsDirectoryPath` fragments to claim sets already present in embedded `Claims.json`, and fails fast on
-an unknown name. The one exception is the test-only `-IncludeE2EClaimSets` switch, which only the Kafka CDC
-E2E setup passes: it stages the test-owned E2E fragments and treats their six top-level names as effective
-claim sets, without relaxing the rule for any other fragment. Supporting arbitrary new claim set definitions
-through bootstrap staging would require a separate full-file `Claims.json` replacement path (filesystem
-mode), which is outside this story.
+DMS-916 therefore bounds `-ClaimsDirectoryPath` to additive fragments that target claim sets already
+present in embedded `Claims.json`. Supporting arbitrary new claim set definitions would require a separate
+full-file `Claims.json` replacement path (filesystem mode), which is outside this story.
 
 The extension claimset files live in
 `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. Docker Compose
@@ -1229,9 +1223,7 @@ dotnet $bulkLoadClientDll `
 **Step 6. Clean up.** Remove the seed workspace on success (leave it on failure to aid debugging).
 
 > **Seed rerun tolerance.** When `load-dms-seed-data.ps1` is invoked against a database that already contains seed
-> data (e.g., re-running bootstrap without `-v` teardown), a re-POSTed resource is an upsert of the existing
-> record, which DMS authorizes as `Update`; the `SeedLoader` `Update` grants (Section 7.2) let it answer
-> `200 OK`. Duplicate resources that DMS cannot resolve as an upsert are expected to produce
+> data (e.g., re-running bootstrap without `-v` teardown), duplicate resources are expected to produce
 > `409 Conflict` responses from the DMS API. Bootstrap may pass `--continue-on-error`, but rerun tolerance is
 > a required BulkLoadClient contract for Story 02 delivery, not a guaranteed DMS-916 behavior until ODS-6738
 > delivers and verifies it. Under that contract, BulkLoadClient classifies duplicate-resource `409 Conflict`
@@ -1500,19 +1492,18 @@ already present there and must not invent a synthetic
 
 | Resource claim URI pattern | Authorization strategy source | Operations |
 |---|---|---|
-| `http://ed-fi.org/identity/claims/domains/systemDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| `http://ed-fi.org/identity/claims/domains/managedDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| `http://ed-fi.org/identity/claims/ed-fi/schoolYearType` | Explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` | Create, Update |
-| `http://ed-fi.org/identity/claims/domains/educationOrganizations` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| `http://ed-fi.org/identity/claims/ed-fi/school` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| `http://ed-fi.org/identity/claims/ed-fi/course` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| `http://ed-fi.org/identity/claims/ed-fi/student` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| `http://ed-fi.org/identity/claims/ed-fi/studentSchoolAssociation` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create, Update |
-| *(extension resource claims per selected built-in extension seed source)* | Inherited from the extension claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant unless a future design names a specific closed-enum exception | Create, Update |
+| `http://ed-fi.org/identity/claims/domains/systemDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/domains/managedDescriptors` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/schoolYearType` | Explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` | Create |
+| `http://ed-fi.org/identity/claims/domains/educationOrganizations` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/school` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/course` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/student` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| `http://ed-fi.org/identity/claims/ed-fi/studentSchoolAssociation` | Inherited from the claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant | Create |
+| *(extension resource claims per selected built-in extension seed source)* | Inherited from the extension claim hierarchy; no `authorizationStrategyOverrides` on the `SeedLoader` grant unless a future design names a specific closed-enum exception | Create |
 
 > **Note:** Read (GET) access is not required by the bootstrap seed-loading contract. BulkLoadClient uses
-> POST for seed records. A POST that finds an existing record is authorized as `Update`, not `Create`, so
-> every grant carries `Update` alongside `Create` and a rerun against a seeded database is answered `200`; duplicate detection and `--continue-on-error` handling for `409 Conflict` responses
+> POST for seed records; duplicate detection and `--continue-on-error` handling for `409 Conflict` responses
 > remain part of the required BulkLoadClient rerun-tolerance contract in Section 6.1.2.
 
 **schoolYearType override exception:** SeedLoader grants on every other resource claim above resolve their
@@ -1520,15 +1511,15 @@ runtime authorization strategy by inheriting from the claim hierarchy (`Namespac
 `RelationshipsWithEdOrgsAndPeople`, etc.); the SeedLoader Application's namespace prefixes and EdOrg IDs
 then continue to gate writes at runtime. `schoolYearType` is the one exception: its parent
 `http://ed-fi.org/identity/claims/domains/edFiTypes` defines a `defaultAuthorization` with only the `Read`
-action, so a SeedLoader `Create` or `Update` grant on `schoolYearType` would otherwise inherit zero
-strategies and 403 the Story-02 REST precondition POST. The original bootstrap design did not contemplate
+action, so a SeedLoader `Create` grant on `schoolYearType` would otherwise inherit zero strategies and
+403 the Story-02 REST precondition POST. The original bootstrap design did not contemplate
 `schoolYearType` as a write endpoint because v5.x models it as a closed XSD enumeration that cannot be
 loaded through any bulk interchange XSD; Story 02 introduced the REST precondition to materialize
 `SchoolYearType` rows for the configured year range
 (see [`02-api-seed-delivery.md`](../../epics/16-bootstrap/02-api-seed-delivery.md) acceptance criteria for
-`Minimal`/`Populated`). The SeedLoader `Create` and `Update` grants on `schoolYearType` therefore declare
-an explicit `authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` — and these are the
-only SeedLoader grants in the embedded `Claims.json` that may carry an override. The
+`Minimal`/`Populated`). The SeedLoader `Create` grant on `schoolYearType` therefore declares an explicit
+`authorizationStrategyOverrides` entry of `NoFurtherAuthorizationRequired` — and this is the only
+SeedLoader grant in the embedded `Claims.json` that may carry an override. The
 `Given_Embedded_Claims_Json` unit fixture enforces both halves of this rule (no overrides on any other
 SeedLoader grant; an explicit override on `schoolYearType`).
 
@@ -1556,7 +1547,7 @@ Extensions in DMS map to two concerns: (1) security metadata (claimsets) and (2)
 (ApiSchema overlays). Today the two concerns use different startup paths and neither has a single
 selection abstraction.
 
-**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims`, stages `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets` plus the test-owned E2E fragments from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments` into `eng/docker-compose/.e2e-claims`, and the Config Service compose startup mounts that directory to that path, so the E2E claim sets are loaded too. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
+**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims` and the Config Service compose startup mounts `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets` to that path. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
 
 **ApiSchema overlays** are configured through package-backed environment variables:
 `USE_API_SCHEMA_PATH=true`, `API_SCHEMA_PATH=/app/ApiSchema`, and `SCHEMA_PACKAGES=...`. At container
@@ -2410,7 +2401,7 @@ This section documents how developers run or debug DMS locally in an IDE (Visual
 The IDE debugging pattern follows the standard "Docker for infrastructure, local process for the application under development" model:
 
 - **Docker manages**: PostgreSQL (exposed on `localhost:5435`), Kafka (bootstrap server `localhost:9092`), the Configuration Service / identity provider (exposed on `localhost:8081`), and any optional supporting services (Kafka UI, OpenSearch).
-- **Developer runs**: the DMS ASP.NET Core process inside an IDE on a local port (e.g., `http://localhost:5198` or any available port). The IDE process connects outward to Docker services using `localhost` addresses rather than Docker-internal hostnames such as `dms-postgresql` or `ed-fi-api-config`.
+- **Developer runs**: the DMS ASP.NET Core process inside an IDE on a local port (e.g., `http://localhost:5198` or any available port). The IDE process connects to Docker services through published loopback ports. A dedicated `.env.ide` configures the self-contained issuer, metadata, and JWKS origin as `localhost:8081`.
 
 This separation means the DMS binary under the debugger is the live code being edited, while all persistence
 and auth services are stable and shared across debug sessions. The staged schema workspace is part of that
@@ -2449,7 +2440,7 @@ define a second non-Docker bootstrap path.
 +-----------------------------------------------------------+
 ```
 
-The local DMS process must resolve all service addresses using `localhost` and the externally exposed Docker ports. The Docker-internal hostnames (`dms-postgresql`, `ed-fi-api-config`) are not reachable from the host.
+The local DMS process uses `localhost` and externally exposed Docker ports for database, Config Service API, token-endpoint, OIDC metadata, and JWKS calls. For self-contained identity, copy the current `.env` (`.env.example` on a clean checkout) to `.env.ide` and apply the overrides in `eng/docker-compose/.env.ide.example`, then pass `-EnvironmentFile ./.env.ide` to every phase in that environment. When invoking a DMS start or bootstrap command, combine this file only with `-InfraOnly`; a containerized DMS cannot reach the Config Service through its own `localhost`. Other Docker-internal names such as `dms-postgresql` and `ed-fi-api-config` remain unavailable from the host.
 
 ### 12.2 Starting Infrastructure Without DMS
 
@@ -2516,8 +2507,8 @@ creates admin-scoped clients.
 | `ConfigurationServiceSettings__Scope` | `edfi_admin_api/readonly_access` | OAuth scope for Config Service read access. |
 | `ConfigurationServiceSettings__EncryptionKey` | `<dms-config-database-encryption-key>` | Key used to decrypt data-store connection strings returned by the Config Service. Must match the Docker-hosted Config Service's `DatabaseSettings__EncryptionKey`; both are sourced from `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` in the docker-compose env file (`.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`). **DEV-ONLY**: This localhost key must not be reused in shared, remote, or production environments. |
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
-| `JwtAuthentication__Authority` | `http://ed-fi-api-config:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | Expected token issuer. It must equal the identity provider's `issuer` exactly, so it is not translated to a host-local URL (only `MetadataAddress` is). |
-| `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | OIDC discovery document URL for the selected identity provider. |
+| `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | Self-contained value must exactly match the localhost CMS issuer configured in `.env.ide`. |
+| `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | Self-contained metadata and its advertised JWKS URL must share the localhost origin. |
 | `JwtAuthentication__ClientRole` | `dms-client` | Required DMS client role issued by the Docker-managed local identity provider. Overrides the committed DMS default so IDE-hosted DMS uses the same role contract as Docker-hosted local DMS. |
 | `JwtAuthentication__RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role claim type emitted by the Docker-managed local identity provider. Keeps local IDE token validation aligned with the committed DMS default and maps `dms-client` into role claims. |
 | `AppSettings__UseApiSchemaPath` | `true` | Required for IDE-hosted DMS so it reads the staged schema workspace instead of falling back to the default packaged schema input. |
@@ -2551,7 +2542,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
     "AuthenticationService": "http://localhost:8081/connect/token"
   },
   "JwtAuthentication": {
-    "Authority": "http://ed-fi-api-config:8081",
+    "Authority": "http://localhost:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
@@ -2602,10 +2593,9 @@ For example, debugging the 2025 instance uses:
 }
 ```
 
-The authority and metadata-address values are not route-qualified in this design:
+The self-contained authority and metadata-address values stay on the localhost CMS issuer origin configured by `.env.ide`, including for a school-year-qualified token endpoint:
 
-- `JwtAuthentication:Authority` -> `http://ed-fi-api-config:8081` (the Configuration Service's issuer,
-  not a URL DMS calls)
+- `JwtAuthentication:Authority` -> `http://localhost:8081`
 - `JwtAuthentication:MetadataAddress` -> `http://localhost:8081/.well-known/openid-configuration`
 
 ### 12.4 Bootstrap with Local DMS
@@ -2637,15 +2627,15 @@ invocation:
 # Manual phase flow: provision the environment before starting or waiting for IDE-hosted DMS.
 pwsh eng/docker-compose/prepare-dms-schema.ps1
 pwsh eng/docker-compose/prepare-dms-claims.ps1
-pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly
-pwsh eng/docker-compose/configure-local-data-store.ps1 -AddSmokeTestCredentials
-pwsh eng/docker-compose/provision-dms-schema.ps1
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -EnvironmentFile ./eng/docker-compose/.env.ide
+pwsh eng/docker-compose/configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./eng/docker-compose/.env.ide
+pwsh eng/docker-compose/provision-dms-schema.ps1 -EnvironmentFile ./eng/docker-compose/.env.ide
 
 # Start DMS in the IDE now, using the printed settings and staged schema path.
-pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"
+pwsh eng/docker-compose/start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./eng/docker-compose/.env.ide
 
 # Optional manual seed phase: target the same IDE-hosted DMS endpoint explicitly.
-pwsh eng/docker-compose/load-dms-seed-data.ps1 -DmsBaseUrl "http://localhost:5198"
+pwsh eng/docker-compose/load-dms-seed-data.ps1 -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./eng/docker-compose/.env.ide
 ```
 
 When the infrastructure was started with a non-default identity provider, the matching seed phase must pass

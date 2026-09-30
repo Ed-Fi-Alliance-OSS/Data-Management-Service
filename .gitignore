@@ -70,6 +70,7 @@ eng/docker-compose/.cdc-api-e2e.lock
 eng/docker-compose/.cdc-state
 eng/docker-compose/.derived/
 eng/docker-compose/.env.perf-hostpg
+eng/docker-compose/.env.ide
 .dms-dotnet-diagnostics/
 
 # Local data-load credentials
