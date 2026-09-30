@@ -115,6 +115,9 @@
         "resolved": "10.0.1",
         "contentHash": "DO8XrJkp5x4PddDuc/CH37yDBCs9BYN6ijlKyR3vMb55BP1Vwh90vOX8bNfnKxr5B2qEI3D8bvbY1fFbDveDHQ=="
       },
+      "EdFi.Api.Secrets": {
+        "type": "Project"
+      },
       "edfi.dmsconfigurationservice.datamodel": {
         "type": "Project",
         "dependencies": {

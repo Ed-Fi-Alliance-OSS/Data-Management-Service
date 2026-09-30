@@ -703,9 +703,13 @@
         "resolved": "8.0.0",
         "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
+      "EdFi.Api.Secrets": {
+        "type": "Project"
+      },
       "edfi.dmsconfigurationservice.backend": {
         "type": "Project",
         "dependencies": {
+          "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
           "JsonSchema.Net": "[7.2.2, )",
           "Microsoft.AspNetCore.Http.Abstractions": "[2.2.0, )",
@@ -726,6 +730,7 @@
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.35, )",
+          "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.OpenIddict": "[1.0.0, )",
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
@@ -746,6 +751,7 @@
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.35, )",
+          "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.1, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
@@ -762,6 +768,7 @@
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.35, )",
+          "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.OpenIddict": "[1.0.0, )",
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
@@ -790,6 +797,7 @@
       "edfi.dmsconfigurationservice.frontend.aspnetcore": {
         "type": "Project",
         "dependencies": {
+          "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.Keycloak": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.Mssql": "[1.0.0, )",

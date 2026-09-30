@@ -797,6 +797,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 | `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a single client may hold (self-contained only). A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement. | _(not used)_ | `5` |
+| `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** the limit takes effect immediately, so a client
 > already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
@@ -834,6 +835,11 @@ all until the oldest of those tokens expires, even once the fault behind the cra
 A deployment that starts DMS before its data stores are registered hits this. Raising the limit,
 or giving DMS a client id it does not share, is the fix; the symptom is a sizing problem, not a
 Configuration Service outage.
+
+> **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
+> count is not stored with a hashed secret, so verification always derives at the currently
+> configured count. Raising (or lowering) the value makes every client secret hashed at the old
+> count fail verification; the remedy is to re-issue those client secrets.
 
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 

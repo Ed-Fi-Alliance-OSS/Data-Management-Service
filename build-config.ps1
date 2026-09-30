@@ -55,7 +55,9 @@ param(
     $DmsCSVersion = "8.0.0",
 
     # Normalized four-part assembly version (Major.Minor.Patch.Height, e.g. "0.7.1.83").
-    # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion.
+    # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion by the Compile
+    # and PublishApi steps. DockerBuild deliberately ignores it (see src/config/Dockerfile), and the
+    # EdFi.Api.Secrets contract keeps its own declared version either way.
     # Derived from $DmsCSVersion by the CI pipeline for prerelease builds.
     [string]
     $DmsCSAssemblyVersion = "",
@@ -508,15 +510,19 @@ function DockerBuild {
         $versionArgs += "--build-arg"
         $versionArgs += "VERSION=$DmsCSVersion"
     }
-    if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
-    {
-        $versionArgs += "--build-arg"
-        $versionArgs += "ASSEMBLY_VERSION=$DmsCSAssemblyVersion"
-    }
 
+    # --load: under a docker-container buildx builder (as in CI) the result otherwise stays only in the
+    # build cache, and DockerRun and the image version proof both need the tagged local image.
     Push-Location src/config/
-    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
-    Pop-Location
+    try {
+        &docker buildx build --load -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker buildx build failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function DockerRun {
