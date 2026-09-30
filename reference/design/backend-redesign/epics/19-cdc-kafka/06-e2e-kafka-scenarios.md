@@ -94,6 +94,31 @@ portions of `CDC-INV-03`, `CDC-INV-06`, `CDC-INV-07`, and `CDC-INV-11`. Retain r
 inputs and bounded, sanitized setup, projection, connector, consumer-boundary, recovery,
 and teardown diagnostics, including failures.
 
+## Implementation Notes
+
+### Execution Evidence Retention
+
+Generated CDC execution evidence has been archived outside the repository. The
+checked-in reports under `reference/cdc-documentation/evidence/`, including prior
+DMS-1326 runs and DMS-1325 API E2E runs, have been removed along with dated pass
+counts, failed-attempt histories, and task-numbered evidence links in the documentation.
+This resolves the review concern about conflicting directory naming conventions by
+removing individual execution archives from source control.
+
+The repository retains reproducible tests, qualification/export tooling, scenario
+and invariant mappings, and operational guidance. The qualification index at
+`reference/cdc-documentation/cdc-inv-evidence.md` now documents test mappings and
+result-recording requirements. Documentation references have been updated, marked
+runbook commands and examples are unchanged, and the former evidence directory is
+ignored to prevent accidental re-addition.
+
+Future generated reports and sanitized diagnostics belong in CI artifacts or durable
+external storage. Record a concise qualification summary, tested revision, provider,
+outcome, and durable artifact reference in the relevant PR or release record. Retain
+release acceptance evidence beyond ordinary CI artifact expiration when needed.
+The acceptance requirement to retain evidence, including failures, still applies;
+it does not require committing individual runs to Git.
+
 ## Out of Scope
 
 Exhaustive resource, message-format, concurrency, consumer-bootstrap, ACL, and

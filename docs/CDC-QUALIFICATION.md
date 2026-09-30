@@ -46,8 +46,9 @@ use the pinned Kafka image's client tools and privately scoped broker JMX; admin
 and denied-consumer samples retain only selected fields. Missing or duplicate cases fail
 qualification even if the remaining suite passed. The PostgreSQL MessageContract lane
 also requires all six DMS-1324 consumer broker cases. No lane or production adapter was added.
-See [T20's final procedure reconciliation](../reference/cdc-documentation/cdc-inv-evidence.md#final-reconciliation-t20)
-for retained prior-provider results, images/revisions and the consumer unit/broker split.
+See the [procedure-to-test mappings](../reference/cdc-documentation/cdc-inv-evidence.md#procedure-evidence)
+for the consumer unit/broker split. Store generated reports outside the repository
+and link retained artifacts from the relevant PR or release record with their tested revision.
 
 All 15 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History and MessageContract for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
 
@@ -93,10 +94,7 @@ workspace; the CLI loads complete matching settings and inspects live
 provider, broker, worker, offsets and metrics. Its invocation-owned projector is
 not started by status/watch, so projection health remains unavailable. Separate
 in-process assertions qualify fresh readiness and invalidation of retained telemetry.
-Neither layer certifies the unobserved interval. Marked recovery commands passed
-[PostgreSQL T21](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21)
-and [SQL Server T22](../reference/cdc-documentation/cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22),
-with nine live cases and eleven marked invocations per provider. SQL Server task
+Neither layer certifies the unobserved interval. SQL Server task
 failure uses a temporary password change on the fixture-owned login, restored
 before controller inspection; this is a test fault, not an operator procedure.
 
@@ -118,9 +116,7 @@ size settings, preserves the broker override and invokes `cdc-validate`; its uns
 projector remains unavailable even though pre-start eligibility succeeds. Original
 fixtures retain seven interruption boundaries, changed-scope rejection, producer failure
 recovery and Compose replacement/persistence coverage. Missing/skipped/duplicate required
-cases fail the separate report guard. [PostgreSQL T23 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
-and [SQL Server T24 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
-qualify this procedure with 20 live cases and nine marked invocations per provider.
+cases fail the separate report guard.
 
 The provider History selection requires all 25 packaged-history cases and six
 provider-cleanup/retirement cases. The history fixture binds the exact
@@ -134,10 +130,7 @@ cleanup using original state. It also executes `cdc-restamp-handoff-status` and
 `cdc-disclosure-containment-result`. Retained historical exposure, peer topics and
 shared offset storage are checked independently of the successful CLI result.
 Missing, skipped or duplicate required cases fail separate History/Cleanup guards.
-[PostgreSQL T25 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
-and [SQL Server T26 evidence](../reference/cdc-documentation/cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26)
-record this live qualification. Shared-volume
-teardown ordering remains separately qualified by the wrapper tests; controller
+Shared-volume teardown ordering has separate wrapper tests; controller
 cleanup supplies no platform purge or independent consumer-store evidence.
 
 Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, checked against their declared worker policy. The controller fixture allows one minute for observation freshness across live read-back and offline shutdown; expiry cases use explicit shorter windows. SQL Server setup commands and provider calls allow three minutes; the complete invocation allows five minutes for multi-step setup and worker read-back. Each invocation isolates its temporary files from prior test runs. CI provisions those history servers; controller fixtures own and remove their separate resources.

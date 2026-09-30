@@ -18,8 +18,9 @@ scenario selectors, resets between phases, retries, or report-resume modes.
 
 Full qualification requires all eight scenarios to pass through the `ApiE2E`
 setup/test/teardown/export path on both PostgreSQL and SQL Server. Focused helper
-tests provide development coverage. Retained provider runs and their tested revisions
-are indexed in the [API-to-Kafka evidence](../../../../../reference/cdc-documentation/cdc-inv-evidence.md#api-to-kafka-scenario-traceability-dms-1325).
+tests provide development coverage. The [scenario index](../../../../../reference/cdc-documentation/cdc-inv-evidence.md#api-to-kafka-scenario-traceability-dms-1325)
+maps each flow to its invariants. Store exported reports outside the repository and
+record their tested revisions and artifact references in the relevant PR or release record.
 
 The runner supplies these environment variables:
 
