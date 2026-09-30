@@ -4,7 +4,7 @@
 
 **Goal:** Allow CMS vendor POST and PUT requests to accept empty or omitted namespace prefixes while preserving the length limit, present-empty token claim, and DMS fail-closed authorization behavior.
 
-**Architecture:** Remove only the two FluentValidation `NotEmpty` rules. Keep the existing binding defaults, repository behavior, identity-provider mapper paths, and DMS authorization path unchanged, and pin those boundaries with focused unit, hosted HTTP/OpenAPI, and real-stack E2E tests.
+**Architecture:** Remove the two FluentValidation `NotEmpty` rules. Keep existing binding defaults, repository behavior, OpenIddict mapping, and DMS authorization unchanged. For empty namespace prefixes only, configure Keycloak's existing hardcoded mapper with `claim.value` equal to the JSON string literal `""` and `jsonType.label` equal to `JSON`, preserving the empty claim through Keycloak 26.1. Pin the contract with focused unit, hosted HTTP/OpenAPI, and real-stack E2E tests.
 
 **Tech Stack:** .NET 10, C#, FluentValidation, NUnit, FluentAssertions, FakeItEasy, ASP.NET Core `WebApplicationFactory`, Reqnroll, Keycloak, OpenIddict, PostgreSQL, SQL Server.
 
@@ -16,7 +16,7 @@
 - Reject explicit JSON `null`; do not normalize it to empty.
 - Retain the exact 128-character per-prefix limit and message: `Each NamespacePrefix length must be 128 characters or fewer.`
 - Tokens for no-prefix clients must contain one present `namespacePrefixes` claim whose value is `""`.
-- Do not change vendor persistence, DMS-1356 update ordering/compensation, identity-provider production code, DMS claim parsing, namespace planning, or ProblemDetails formatting unless new evidence forces design re-approval.
+- Do not change vendor persistence, DMS-1356 update ordering/compensation, OpenIddict production behavior, DMS claim parsing, namespace planning, or ProblemDetails formatting. The approved Keycloak empty-value encoding is the sole provider-production change.
 - Do not add migrations, generated DDL, mapping changes, or change `SchemaHashConstants.RelationalMappingVersion`.
 - Do not add public documentation, null parity, claim-set compatibility validation, validator abstractions, or unrelated cleanup.
 - Follow .NET 10 style, keep variables non-nullable, use `is null`/`is not null`, and use `System.Text.Json`.
@@ -38,6 +38,7 @@
 
 - `src/config/datamodel/EdFi.DmsConfigurationService.DataModel/Model/Vendor/VendorInsertCommand.cs` — remove insert validation's non-empty requirement only.
 - `src/config/datamodel/EdFi.DmsConfigurationService.DataModel/Model/Vendor/VendorUpdateCommand.cs` — remove update validation's non-empty requirement only.
+- `src/config/backend/EdFi.DmsConfigurationService.Backend.Keycloak/KeycloakClientRepository.cs` — encode only an empty `namespacePrefixes` mapper value as the two-character JSON string literal `""` with JSON type so Keycloak emits a present empty-string claim.
 
 **Contract and regression files modified**
 
@@ -52,7 +53,7 @@
 - `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Security/JwtValidationServiceTests.cs`
 - `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/ChangeQueries/TrackedChangeEndpoints.feature`
 
-`JwtTokenValidator.TryGetClaimValues` already distinguishes a missing claim from a present empty value. Reuse it; do not add a namespace-specific parser or change `ValidateNamespace`.
+Inspect the raw JWT payload JSON for a property of string kind and value `""`; do not use `ValidateNamespace`, because splitting with `RemoveEmptyEntries` cannot distinguish an empty claim from a missing claim.
 
 ### Task 1: Change the CMS vendor request contract
 
@@ -155,9 +156,9 @@ git commit -m "feat: allow empty vendor namespace prefixes"
 **Interfaces:**
 
 - Consumes: `IIdentityProviderRepository.UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes)` and existing mapper-update fixtures.
-- Produces: Regression proof that `""` leaves exactly one empty namespace mapper without changing client identity or unrelated claims. No runtime interface changes.
+- Produces: Regression proof that `""` leaves exactly one JSON-typed namespace mapper configured with the JSON string literal `""`, without changing client identity or unrelated claims. Non-empty values retain the existing String mapper. The production adjustment is scoped to Keycloak's namespace-prefix mapper.
 
-- [ ] **Step 1: Add the Keycloak empty-update fixture**
+- [ ] **Step 1: Extend the Keycloak clearing fixture to specify the wire-safe encoding**
 
 Create `Given_a_namespace_claim_update_clearing_the_existing_claim` from `NamespaceClaimUpdateTestBase`, call `await ActUpdateAsync("")`, and assert:
 
@@ -170,13 +171,13 @@ ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
 ClaimValue(AppliedClient(), "dataStoreIds").Should().Be("7,8");
 ```
 
-Also call `AssertClientIdentityPreserved()` and assert the existing UUID is updated exactly once.
+Also call `AssertClientIdentityPreserved()` and assert the existing UUID is updated exactly once. Assert `claim.value` is the two-character JSON string literal `""` and `jsonType.label` is `JSON`; the existing replacement fixture must continue asserting the non-empty value and `String` type.
 
 - [ ] **Step 2: Add the OpenIddict empty-update fixture**
 
 Extend the test-only `ActUpdateAsync` helper to accept a named optional `namespacePrefixes` argument while preserving existing calls, then create `Given_UpdateClientNamespaceClaimAsync_Clearing_The_Existing_Claim`. Call `await ActUpdateAsync(namespacePrefixes: "")` and assert success with the unchanged UUID, one namespace mapper whose `claim.value` is empty, preserved education-organization/data-store mappers, and transaction commit without rollback.
 
-- [ ] **Step 3: Run the provider unit fixtures**
+- [ ] **Step 3: Run the provider unit fixtures and observe the new Keycloak assertion fail**
 
 Run:
 
@@ -184,13 +185,21 @@ Run:
 dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj --filter "FullyQualifiedName~namespace_claim_update|FullyQualifiedName~UpdateClientNamespaceClaimAsync"
 ```
 
-Expected: PASS. These are characterization tests; if either fails, investigate the current provider path and return to design approval before changing provider production code.
+Expected before the production edit: the Keycloak clearing fixture fails because the mapper retains an empty `claim.value` with String type; OpenIddict tests pass. After the production edit below, the full filter passes.
 
-- [ ] **Step 4: Commit provider regression coverage**
+- [ ] **Step 4: Encode only empty Keycloak namespace values for the built-in JSON mapper**
+
+In `NamespacePrefixProtocolMapper`, keep the existing String configuration for non-empty input. For empty input, set `claim.value` to the JSON string literal `""` and `jsonType.label` to `JSON`. Do not alter education-organization, data-store, or role mappers.
+
+- [ ] **Step 5: Re-run the provider fixtures**
+
+Run the filter from Step 3. Expected: PASS, including the empty Keycloak encoding, unchanged non-empty String mapper, and OpenIddict empty mapper tests.
+
+- [ ] **Step 6: Commit provider regression and production change**
 
 ```powershell
-git add src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/KeycloakClientRepositoryTests.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictClientRepositoryTests.cs
-git commit -m "test: cover empty namespace mapper updates"
+git add src/config/backend/EdFi.DmsConfigurationService.Backend.Keycloak/KeycloakClientRepository.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/KeycloakClientRepositoryTests.cs src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictClientRepositoryTests.cs
+git commit -m "fix: preserve empty namespace claim in Keycloak"
 ```
 
 ### Task 3: Prove CMS creates and clears present-empty token claims
@@ -202,12 +211,12 @@ git commit -m "test: cover empty namespace mapper updates"
 
 **Interfaces:**
 
-- Consumes: Existing credential-capture/token-request steps and `JwtTokenValidator.TryGetClaimValues(string token, string claimType, out IReadOnlyList<string> values)`.
-- Produces: A Reqnroll assertion that distinguishes one present empty namespace claim from an omitted claim, plus real-provider create and clear scenarios.
+- Consumes: Existing credential-capture/token-request steps and raw JWT access-token payloads.
+- Produces: A Reqnroll assertion that distinguishes a present JSON string claim with value `""` from an omitted claim, plus real-provider create and clear scenarios.
 
 - [ ] **Step 1: Add a present-empty namespace claim step**
 
-Add `Then the token has an empty namespacePrefixes claim`. Parse `access_token` from the current response, call `TryGetClaimValues(accessToken, "namespacePrefixes", out IReadOnlyList<string> values)`, assert the call is true, and assert `values.Should().ContainSingle().Which.Should().BeEmpty()`.
+Add `Then the token has an empty namespacePrefixes claim`. Parse `access_token` from the current response, decode its payload with `System.Text.Json`, and assert the payload contains `namespacePrefixes` with `JsonValueKind.String` and value `""`. Include the parsed payload in the missing-property assertion for actionable diagnostics.
 
 Do not use `ValidateNamespace`, because its split with `RemoveEmptyEntries` cannot distinguish empty from missing.
 
@@ -351,7 +360,7 @@ git diff --stat
 git status --short
 ```
 
-Confirm the only production changes are the two removed `.NotEmpty()` calls plus optional `is not null` modernization. Confirm there are no repository, migration, mapping-version, provider-production, DMS-production, or public-documentation changes.
+Confirm the only production changes are the two removed `.NotEmpty()` calls plus optional `is not null` modernization and the empty-only Keycloak namespace-mapper encoding. Confirm there are no repository, migration, mapping-version, OpenIddict-production, DMS-production, or public-documentation changes.
 
 - [ ] **Step 4: Commit formatting only if it changed tracked files**
 

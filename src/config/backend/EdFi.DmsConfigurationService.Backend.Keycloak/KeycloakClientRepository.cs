@@ -473,7 +473,7 @@ public class KeycloakClientRepository(
             return;
         }
 
-        namespaceClaim.Config["claim.value"] = namespacePrefixes;
+        ConfigureNamespacePrefixesClaim(namespaceClaim, namespacePrefixes);
         protocolMappers.RemoveAll(mapper =>
             !ReferenceEquals(mapper, namespaceClaim) && HasClaimName(mapper, "namespacePrefixes")
         );
@@ -903,7 +903,24 @@ public class KeycloakClientRepository(
 
     private ClientProtocolMapper NamespacePrefixProtocolMapper(string value)
     {
-        return ProtocolMapper("Namespace Prefixes", "namespacePrefixes", value);
+        ClientProtocolMapper mapper = ProtocolMapper("Namespace Prefixes", "namespacePrefixes", value);
+        ConfigureNamespacePrefixesClaim(mapper, value);
+        return mapper;
+    }
+
+    private static void ConfigureNamespacePrefixesClaim(ClientProtocolMapper mapper, string value)
+    {
+        if (value.Length is 0)
+        {
+            // Keycloak omits empty protocol-mapper config values. Encode the empty string as JSON so
+            // the configured value remains non-empty while the hardcoded mapper emits an empty claim.
+            mapper.Config["claim.value"] = "\"\"";
+            mapper.Config["jsonType.label"] = "JSON";
+            return;
+        }
+
+        mapper.Config["claim.value"] = value;
+        mapper.Config["jsonType.label"] = "String";
     }
 
     private ClientProtocolMapper EducationOrganizationProtocolMapper(string value)

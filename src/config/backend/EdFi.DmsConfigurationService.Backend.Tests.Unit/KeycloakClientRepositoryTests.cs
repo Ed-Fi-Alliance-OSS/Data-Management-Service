@@ -1060,6 +1060,12 @@ public class KeycloakClientRepositoryTests
         {
             _clientUuid = Guid.NewGuid().ToString();
             _clientUpdates = [];
+            ClientProtocolMapper namespaceMapper = ClaimMapper(
+                "Namespace Prefixes",
+                "namespacePrefixes",
+                "uri://ed-fi.org"
+            );
+            namespaceMapper.Config["jsonType.label"] = "String";
 
             _storedClient = new Client
             {
@@ -1072,7 +1078,7 @@ public class KeycloakClientRepositoryTests
                 ProtocolMappers =
                 [
                     MapperWithoutClaimName(),
-                    ClaimMapper("Namespace Prefixes", "namespacePrefixes", "uri://ed-fi.org"),
+                    namespaceMapper,
                     ClaimMapper("Education Organization Ids", "educationOrganizationIds", "100"),
                     ClaimMapper("Data Store IDs", "dataStoreIds", "7,8"),
                 ],
@@ -1172,6 +1178,10 @@ public class KeycloakClientRepositoryTests
             ClaimValue(AppliedClient(), "namespacePrefixes").Should().Be(NewPrefixes);
 
         [Test]
+        public void It_keeps_non_empty_namespace_prefixes_as_a_string_claim() =>
+            NamespaceClaims(AppliedClient()).Single().Config["jsonType.label"].Should().Be("String");
+
+        [Test]
         public void It_leaves_exactly_one_namespace_claim() =>
             NamespaceClaims(AppliedClient()).Should().ContainSingle();
 
@@ -1259,7 +1269,9 @@ public class KeycloakClientRepositoryTests
         public void It_keeps_one_empty_namespace_claim()
         {
             NamespaceClaims(AppliedClient()).Should().ContainSingle();
-            ClaimValue(AppliedClient(), "namespacePrefixes").Should().BeEmpty();
+            ClientProtocolMapper mapper = NamespaceClaims(AppliedClient()).Single();
+            mapper.Config["claim.value"].Should().Be("\"\"");
+            mapper.Config["jsonType.label"].Should().Be("JSON");
         }
 
         [Test]
@@ -1663,14 +1675,18 @@ public class KeycloakClientRepositoryTests
                 });
         }
 
-        protected async Task ActCreateAsync(string clientId = ClientKey, bool isApproved = true) =>
+        protected async Task ActCreateAsync(
+            string clientId = ClientKey,
+            bool isApproved = true,
+            string namespacePrefixes = "uri://ed-fi.org"
+        ) =>
             _result = await _repository.CreateClientAsync(
                 clientId,
                 ClientSecret,
                 RoleName,
                 "Display Name",
                 ScopeName,
-                "uri://ed-fi.org",
+                namespacePrefixes,
                 "255901",
                 [2, 1],
                 isApproved
@@ -1929,6 +1945,24 @@ public class KeycloakClientRepositoryTests
         [Test]
         public void It_assigns_the_role_after_creating_the_client() =>
             _callOrder.Should().Equal("create-client", "service-account", "role-mapping");
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_with_empty_namespace_prefixes : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActCreateAsync(namespacePrefixes: "");
+
+        [Test]
+        public void It_configures_a_json_encoded_empty_namespace_string()
+        {
+            ClientProtocolMapper mapper = _createdClients
+                .Single()
+                .ProtocolMappers.Single(mapper => mapper.Config["claim.name"] == "namespacePrefixes");
+
+            mapper.Config["claim.value"].Should().Be("\"\"");
+            mapper.Config["jsonType.label"].Should().Be("JSON");
+        }
     }
 
     /// <summary>

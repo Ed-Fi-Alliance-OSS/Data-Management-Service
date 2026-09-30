@@ -24,17 +24,21 @@ Allow `POST /v3/vendors` and `PUT /v3/vendors/{id}` to accept an empty string or
 - The existing 128-character CMS limit remains authoritative; the story does not adopt Admin API's different validation.
 - AC4 is documented in the ticket outcome and executable regression evidence. No new public OpenAPI or operator prose is required.
 - A client with no prefixes receives a present but empty `namespacePrefixes` claim. The claim is not omitted and empty prefixes never grant namespace-derived access.
+- Keycloak requires a provider-specific representation for that empty claim: configure its existing hardcoded mapper with `claim.value` set to the two-character JSON string literal `""` (not an empty config value) and `jsonType.label` set to `JSON`. This is the smallest verified way to preserve the required empty string through Keycloak 26.1's mapper configuration and token path.
 
 ## Scope
 
 ### Production change
 
-Change only these validators:
+Change these validators and the narrowly-scoped Keycloak namespace mapper configuration:
 
 - `src/config/datamodel/EdFi.DmsConfigurationService.DataModel/Model/Vendor/VendorInsertCommand.cs`
 - `src/config/datamodel/EdFi.DmsConfigurationService.DataModel/Model/Vendor/VendorUpdateCommand.cs`
+- `src/config/backend/EdFi.DmsConfigurationService.Backend.Keycloak/KeycloakClientRepository.cs`
 
 Remove `.NotEmpty()` from each `NamespacePrefixes` rule. Retain the existing split/trim/length predicate and validation message. The predicate continues to reject `null`; omission continues to bind to the existing `""` property default. If the touched expression is mechanically modernized from `!= null` to `is not null`, that is a style-only change with no contract effect.
+
+For the Keycloak `namespacePrefixes` hardcoded mapper only, use a non-empty JSON-encoded mapper configuration when the requested value is empty: `claim.value` is the two-character string `""`, and `jsonType.label` is `JSON`. Keycloak 26.1's Admin REST update omits an empty mapper config value; its hardcoded mapper parses the JSON string literal to an empty string and emits that string claim. Non-empty namespace prefixes keep the existing `String` mapping. OpenIddict and all other Keycloak claim mappers remain unchanged.
 
 ### Verification change
 
@@ -45,7 +49,7 @@ Add or adjust focused coverage in the existing validator, frontend module, provi
 - No database schema, migration, repository, generated DDL, or relational mapping change.
 - No `SchemaHashConstants.RelationalMappingVersion` change.
 - No changes to `VendorModule.Update` ordering, locks, UUID synchronization, compensation, or responses.
-- No changes to identity-provider production code, token generation, `ApiClientDetailsProvider`, namespace planning, or failure-response formatting unless implementation evidence contradicts the verified current behavior and the design is re-approved.
+- No changes to OpenIddict production code, DMS token generation/consumption, `ApiClientDetailsProvider`, namespace planning, or failure-response formatting. The approved Keycloak namespace-mapper encoding above is the sole provider-production exception.
 - No vendor/claim-set authorization-strategy compatibility validation.
 - No explicit-null normalization.
 - No public documentation prose or examples.
@@ -55,15 +59,16 @@ Add or adjust focused coverage in the existing validator, frontend module, provi
 
 The smallest responsible design is a validator-only runtime change with cross-boundary regression proof.
 
-Both relational repositories already normalize an empty string to zero vendor-prefix rows and return an empty string on read. Both identity providers already create and update a namespace mapper with the supplied string, including `""`. OpenIddict token generation emits mapper values even when empty; Keycloak's hardcoded String mapper is configured for access-token inclusion. DMS already defaults a missing claim to `""`, splits with `RemoveEmptyEntries`, and therefore produces zero `NamespacePrefix` values for either an empty or missing claim.
+Both relational repositories already normalize an empty string to zero vendor-prefix rows and return an empty string on read. OpenIddict emits its mapper value when empty. Keycloak 26.1 does not retain an empty hardcoded-mapper `claim.value` through its Admin REST configuration path, so the mapper sees no value and omits the claim. A JSON-typed hardcoded mapper with `claim.value` set to the two-character JSON string literal `""` preserves the empty string; a live Keycloak 26.1 token probe verified the raw claim. DMS already splits the resulting empty string with `RemoveEmptyEntries` and produces zero `NamespacePrefix` values.
 
-Changing those downstream components would duplicate established behavior and risk changing security semantics. Extracting the two matching validator predicates into a new abstraction would add indirection for two small rules whose command validators otherwise have distinct contracts.
+Changing DMS parsing or authorization would risk changing security semantics. Extracting the two matching validator predicates into a new abstraction would add indirection for two small rules whose command validators otherwise have distinct contracts.
 
 Rejected alternatives:
 
 1. **Endpoint normalization or nullable request DTOs.** This would duplicate existing defaults, add mapping code, and expand or obscure the approved `null` behavior.
 2. **Omit empty claims or special-case them in DMS.** This would conflict with AC3's present-empty claim and modify already-correct security code.
 3. **Prevent a no-prefix vendor from using NamespaceBased.** This directly contradicts AC4 and Admin API compatibility; DMS authorization must fail closed at request time instead.
+4. **Ship a custom Keycloak protocol-mapper extension or manage per-service-account attributes.** Both can represent an empty claim, but add deployment/provider infrastructure or service-account lifecycle and compensation logic. The verified JSON-typed built-in mapper avoids both.
 
 ## Contracts, components, and data flows
 
@@ -86,11 +91,11 @@ Rejected alternatives:
 1. CMS reads the vendor's stored empty namespace string.
 2. `ApplicationModule` and `ApiClientModule` pass that string independently from the claim-set name to `CreateClientAsync`.
 3. No compatibility check is added between vendor prefixes and claim-set strategies.
-4. Keycloak and OpenIddict create a present mapper whose claim name is `namespacePrefixes` and whose value is `""`.
+4. OpenIddict retains its existing empty mapper value. Keycloak creates/updates its namespace mapper with JSON type and the JSON string literal `""` only when the requested prefix string is empty; non-empty values retain the `String` mapper.
 
 ### Token consumption and authorization
 
-1. The issued access token contains `namespacePrefixes: ""`.
+1. The issued access token contains exactly one JSON string claim, `namespacePrefixes: ""`, for both providers.
 2. `ApiClientDetailsProvider` produces an empty namespace-prefix collection without parsing failure.
 3. If the selected action invokes NamespaceBased, namespace planning returns `NoPrefixesConfigured` before issuing a database authorization query.
 4. DMS responds with HTTP 403 and type `urn:ed-fi:api:security:authorization:namespace:invalid-client:no-namespaces`.
@@ -103,7 +108,7 @@ Rejected alternatives:
 - **Mixed comma input:** retain current `RemoveEmptyEntries | TrimEntries` behavior; this story does not redefine the prefix grammar.
 - **Provider failures:** use the existing DMS-1356 classification, compensation, sanitization, and logging. Do not introduce empty-prefix-specific error handling.
 - **Authorization:** verify the exact fail-closed 403 and type. Do not assert merely that access is unsuccessful.
-- **Claim representation:** tests must distinguish a present empty claim from an omitted claim.
+- **Claim representation:** tests inspect the raw JWT payload and distinguish a present empty string from an omitted claim. A Keycloak mapper-unit assertion must pin the JSON-typed encoding; real-provider E2E remains the end-to-end contract check.
 - **HTTP behavior:** tests must exercise JSON binding through the hosted endpoint. Direct validator or repository tests alone do not prove omission behavior.
 - **Storage:** existing PostgreSQL and SQL Server empty-prefix fixtures are sufficient. Duplicate repository tests are unnecessary unless implementation uncovers a specific regression.
 - **OpenAPI:** assert that the served POST and PUT request schemas do not list `namespacePrefixes` as required. No schema transformer is planned. If the assertion exposes a current mismatch, stop and obtain design approval before adding schema infrastructure.
@@ -147,14 +152,14 @@ Extend the existing namespace-update fixtures in:
 - `OpenIddictClientRepositoryTests.cs`
 - `KeycloakClientRepositoryTests.cs`
 
-Pass `""` through `UpdateClientNamespaceClaimAsync` and assert exactly one namespace mapper remains with an empty value, client identity remains stable, unrelated mappers remain intact, and the normal success/commit path is used.
+Pass `""` through `UpdateClientNamespaceClaimAsync` and assert exactly one namespace mapper remains with Keycloak's JSON-typed empty-string encoding; client identity remains stable, unrelated mappers remain intact, and the normal success/commit path is used. Also retain assertions that non-empty namespace values continue to use the existing `String` configuration.
 
 Extend the CMS E2E vendor/application flow and JWT helper to prove, on both configured provider variants:
 
 - Creating an application for a no-prefix vendor yields a token with a present empty `namespacePrefixes` claim.
 - Updating a vendor from a non-empty prefix to `""` updates existing client tokens to the same present empty claim.
 
-Use the generic claim-reading pattern already present in `JwtTokenValidator`; do not use `ValidateNamespace`, because splitting with `RemoveEmptyEntries` cannot distinguish an empty claim from a missing claim.
+Inspect the raw JWT payload JSON for a property of string kind and value `""`; do not use `ValidateNamespace`, because splitting with `RemoveEmptyEntries` cannot distinguish an empty claim from a missing claim and the claim reader should not obscure the provider's serialized contract.
 
 ### DMS consumption and effective access
 
@@ -176,7 +181,7 @@ Tag the scenario for the normal PostgreSQL shard and `@MssqlRepresentative`. Cur
 |---|---|---|
 | AC1: POST and PUT accept empty or absent prefixes | Remove `.NotEmpty()` in both command validators; existing defaults and repositories handle empty values | Validator cases plus four hosted HTTP cases. Existing PostgreSQL/MSSQL storage fixtures remain reference evidence. |
 | AC2: supplied prefix maximum remains enforced | Retain the split/trim predicate and message | Exact 128 success and 129 failure for insert/update; retain endpoint error-body coverage. |
-| AC3: token has an empty claim and DMS treats it as no prefixes | Preserve both providers' mapper behavior, token generation, and `ApiClientDetailsProvider` parsing | Provider update tests, real-provider CMS create/clear token E2E, and an explicit-empty DMS JWT validation fixture. |
+| AC3: token has an empty claim and DMS treats it as no prefixes | Preserve OpenIddict behavior; encode Keycloak's empty hardcoded mapper value as JSON; leave DMS token consumption unchanged | Keycloak mapper configuration tests, real-provider CMS create/clear token E2E inspecting raw JWT payload, and an explicit-empty DMS JWT validation fixture. |
 | AC4: no-prefix vendor plus NamespaceBased is allowed and effective access is explicit | Add no CMS cross-validation; preserve DMS `NoPrefixesConfigured` authorization outcome | End-to-end provisioning succeeds, token issuance succeeds, and the NamespaceBased request returns the exact 403/type. Record the approved ticket-outcome wording below. |
 
 ## Dependencies, deviations, and blockers
@@ -192,6 +197,7 @@ Tag the scenario for the normal PostgreSQL shard and `@MssqlRepresentative`. Cur
 - Explicit `null` remains invalid even though Admin API accepts it.
 - CMS keeps the 128-character limit rather than adopting Admin API's differing create/edit validation.
 - Ticket-outcome wording plus automated evidence satisfies AC4; no public prose is added.
+- Keycloak's `namespacePrefixes` mapper configuration changes only for empty values because live Keycloak 26.1 evidence showed that an empty `claim.value` is removed before token mapping. JSON encoding preserves AC3 while leaving non-empty values and other mappers unchanged.
 
 ### Remaining blockers
 
@@ -207,10 +213,10 @@ Use this substantive outcome when closing DMS-1532:
 
 ## Reconciliation notes and supporting artifacts
 
-The supporting [human pre-spec](../../../.plans/pre-spec/DMS-1532-pre-spec.md), [nano pre-spec](../../../.plans/pre-spec/DMS-1532-pre-spec-nano.md), and [review report](../../../.plans/ref/DMS-1532-pre-spec-review/pre-spec-review.md) agree on the validator delta but differ from current code in consequential areas. This specification carries forward the review's repository-verified corrections:
+The supporting [human pre-spec](../../../.plans/pre-spec/DMS-1532-pre-spec.md), [nano pre-spec](../../../.plans/pre-spec/DMS-1532-pre-spec-nano.md), and [review report](../../../.plans/ref/DMS-1532-pre-spec-review/pre-spec-review.md) agree on the validator delta but differ from current code in consequential areas. This specification carries forward the review's repository-verified corrections and the subsequently approved Keycloak behavior correction:
 
 - Current PUT is provider-first and repository-last under the implemented DMS-1356 design, not the database-first flow described by both pre-specs.
-- OpenIddict and Keycloak empty-claim behavior is resolved by their current mapper and token paths.
+- OpenIddict's empty-claim behavior is preserved. Keycloak 26.1's hardcoded mapper code accepts empty strings, but the Admin REST configuration path omits empty config values; the JSON-typed representation is verified against a real issued token.
 - DMS's zero-prefix result is the exact no-namespaces 403, not an inferred generic authorization denial.
 - The story's claimed focused empty-prefix DMS unit test was not found. The current missing-claim test is retained and a distinct empty-claim case is required.
 - DMS-428 relocated the rule; it did not introduce `.NotEmpty()`. Historical intent is not used as a requirement.
