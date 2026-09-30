@@ -349,6 +349,13 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             authorization?.NamespacePrefixParameterization
         );
 
+        if (authorization?.OwnershipTokenParameterization is { } ownershipTokenParameterization)
+        {
+            // The names are reserved by the allocator's authorization collection, so they cannot collide
+            // with a filter parameter.
+            OwnershipTokenParameterValueBinder.Bind(parameterValues, ownershipTokenParameterization);
+        }
+
         return parameterValues;
     }
 

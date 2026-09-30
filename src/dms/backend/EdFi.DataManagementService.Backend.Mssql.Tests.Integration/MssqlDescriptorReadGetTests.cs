@@ -207,7 +207,7 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
             .Should()
             .BeEquivalentTo(
                 new GetResult.GetFailureNotImplemented(
-                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
+                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased', 'NoFurtherAuthorizationRequired', and/or 'OwnershipBased' are currently supported."
                 )
             );
     }

@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Descriptor_Write_Handler_Namespace_Authorization
+public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DocumentUuid _documentUuid = new(
@@ -77,7 +77,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_post_with_an_unsupported_strategy_without_executing_sql(
         string authorizationStrategyName
     )
@@ -128,7 +127,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_put_with_an_unsupported_strategy_without_executing_sql(
         string authorizationStrategyName
     )
@@ -312,9 +310,9 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     /// <summary>
     /// A descriptor create stamps <c>CreatedByOwnershipTokenId</c> exactly as a regular-resource create does.
-    /// Ownership <em>enforcement</em> for descriptors remains a 501 for this ticket, but stamping is
-    /// unconditional and does not wait for it: an unstamped descriptor could never be reached by ownership
-    /// authorization once it is enabled.
+    /// Stamping is unconditional and never consults configured strategies: these creates run under
+    /// NamespaceBased alone, so no ownership verdict is involved, and a client with no creator token still
+    /// stamps null.
     /// </summary>
     [TestCase(SqlDialect.Pgsql, "\"CreatedByOwnershipTokenId\"")]
     [TestCase(SqlDialect.Mssql, "[CreatedByOwnershipTokenId]")]
@@ -1050,7 +1048,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                 authorizationStrategies:
                 [
                     DeleteCustomViewStrategy(),
-                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly),
                 ]
             )
         );
@@ -1535,8 +1533,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     [Test]
     public async Task It_validates_a_descriptor_delete_custom_view_configured_before_an_unsupported_strategy()
     {
-        // OwnershipBased executes last regardless of configured position, so every resolved view is validated
-        // before its 501.
+        // A relationship strategy fails closed with a 501 on descriptors, and every resolved view is validated
+        // before it.
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
@@ -1547,7 +1545,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                 authorizationStrategies:
                 [
                     DeleteCustomViewStrategy(),
-                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly),
                 ]
             )
         );
@@ -1873,13 +1871,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     /// <summary>
-    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor write configured with
-    /// OwnershipBased fails closed with 501 even when NamespaceBased is configured alongside it and the
-    /// client has no namespace prefixes. Reporting the namespace 403 first would answer as though the
-    /// caller's prefixes refused a check that was never enforced.
+    /// Descriptor POST, PUT and DELETE enforce OwnershipBased, so they take the regular-resource precedence:
+    /// with no namespace prefixes the namespace 403 is reported before any session opens, because
+    /// Namespace-based executes ahead of Ownership-based among the AND strategies.
     /// </summary>
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1895,12 +1892,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_put_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_put_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1916,12 +1917,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1937,7 +1942,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
@@ -3070,6 +3079,14 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
         public Queue<NamespaceAuthorizationExecutionResult> NamespaceResults { get; } = [];
 
+        /// <summary>
+        /// Answers for the stored-stamp ownership checks, in order. An empty queue authorizes, so every test that
+        /// relies on a check not running asserts <see cref="OwnershipCallCount"/> as well.
+        /// </summary>
+        public Queue<OwnershipAuthorizationExecutionResult> OwnershipResults { get; } = [];
+
+        public int OwnershipCallCount { get; private set; }
+
         public List<RelationalCommand> Commands { get; } = [];
 
         /// <summary>
@@ -3111,6 +3128,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                         ? new NamespaceAuthorizationExecutionResult.Authorized()
                         : NamespaceResults.Dequeue();
                 return (TResult)(object)namespaceResult;
+            }
+
+            if (typeof(TResult) == typeof(OwnershipAuthorizationExecutionResult))
+            {
+                OwnershipCallCount++;
+                OwnershipAuthorizationExecutionResult ownershipResult =
+                    OwnershipResults.Count == 0
+                        ? new OwnershipAuthorizationExecutionResult.Authorized()
+                        : OwnershipResults.Dequeue();
+                return (TResult)(object)ownershipResult;
             }
 
             IReadOnlyList<InMemoryRelationalResultSet> resultSets =

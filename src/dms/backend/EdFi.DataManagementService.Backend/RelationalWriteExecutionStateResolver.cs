@@ -42,6 +42,12 @@ internal sealed class RelationalWriteExecutionStateResolver(
             ),
         };
 
+    /// <remarks>
+    /// A create whose ownership verdict denies it owes that 403 or token-cap 500 ahead of its If-Match 412,
+    /// exactly like a proposed authorization failure, so the precondition is deferred behind the second
+    /// command that returns the verdict. Gated on the create target: a shared-policy POST carries the verdict
+    /// on either branch, and an update never owes it.
+    /// </remarks>
     public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(
         RelationalWriteExecutorRequest request
     ) =>
@@ -49,7 +55,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
             request.WritePrecondition,
             request.ProposedRelationshipAuthorization,
             request.StoredNamespaceAuthorization,
-            request.ProposedNamespaceAuthorization
+            request.ProposedNamespaceAuthorization,
+            hasPendingCreateOwnershipFailure: request.TargetContext is RelationalWriteTargetContext.CreateNew
+                && request.DeferredCreateOwnershipFailureResult is not null
         );
 
     /// <summary>
@@ -74,6 +82,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
             : evaluation;
     }
 
+    // The create ownership verdict is left out deliberately. This decision only shapes the current-state
+    // hydration planned ahead of the target, which runs only for an existing target, and an existing target
+    // never owes the create verdict; counting it here would change first-phase SQL for no outcome.
     private static EtagPreconditionEvaluation GetUnresolvedEtagPreconditionEvaluation(
         RelationalWriteExecutorInput input
     ) =>
@@ -81,7 +92,8 @@ internal sealed class RelationalWriteExecutionStateResolver(
             input.WritePrecondition,
             GetUnresolvedProposedRelationshipAuthorization(input),
             input.StoredNamespaceAuthorization,
-            input.ProposedNamespaceAuthorization
+            input.ProposedNamespaceAuthorization,
+            hasPendingCreateOwnershipFailure: false
         );
 
     private static RelationshipAuthorizationResult? GetUnresolvedProposedRelationshipAuthorization(
@@ -113,13 +125,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
         WritePrecondition writePrecondition,
         RelationshipAuthorizationResult? proposedRelationshipAuthorization,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        bool hasPendingCreateOwnershipFailure
     ) =>
         HasEtagPrecondition(writePrecondition)
         && (
             proposedRelationshipAuthorization is not null
             || storedNamespaceAuthorization is not null
             || proposedNamespaceAuthorization is not null
+            || hasPendingCreateOwnershipFailure
         )
             ? EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             : EtagPreconditionEvaluation.BeforeProposedAuthorization;
