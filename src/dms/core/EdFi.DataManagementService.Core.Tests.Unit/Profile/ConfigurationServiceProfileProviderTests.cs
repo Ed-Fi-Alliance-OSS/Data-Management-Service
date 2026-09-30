@@ -628,7 +628,7 @@ public class ConfigurationServiceProfileProviderTests
     }
 
     /// <summary>
-    /// Every failure other than a CMS 404 on a detail or application fetch must surface as
+    /// Every failure other than a CMS 404 on a detail fetch must surface as
     /// <see cref="ProfileDataUnavailableException" />, never as "absent" (null) or "no profiles" (an
     /// empty list). A 404 on the list endpoint is a failure too. The cause is kept, and the failure is
     /// logged once and wrapped once.

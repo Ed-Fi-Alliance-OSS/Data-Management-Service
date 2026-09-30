@@ -22,9 +22,10 @@ public record CmsProfileResponse(long Id, string Name, string Definition);
 
 /// <summary>
 /// Thrown when profile data could not be fetched from the Configuration Management Service for any
-/// reason other than CMS reporting the item as not found: a non-404 status, a timeout, a transport
-/// failure, a token failure, or a malformed or null response body. It must never be read as "no
-/// profile applies"; the core pipeline answers it with a retriable 503.
+/// reason other than CMS answering 404 for a single profile's definition: a non-404 status, a 404
+/// for the application or the profile list, a timeout, a transport failure, a token failure, or a
+/// malformed or null response body. It must never be read as "no profile applies"; the core
+/// pipeline answers it with a retriable 503.
 /// </summary>
 /// <param name="message">A log-safe description of the failure</param>
 /// <param name="innerException">The underlying cause</param>
