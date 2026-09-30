@@ -20,10 +20,13 @@ dms-local stack, and after each run:
     Worker Min Limit (Q17), unless -SkipDumps;
   - snapshots the container resource settings (cpu limits, DOTNET_PROCESSOR_COUNT,
     DOTNET_ThreadPool_ForceMinWorkerThreads) and host processor count;
-  - classifies the run under the spec's spec section 3.2 definitions: R-500 (a 500 whose window has
-    the correlated CMS signals), R-500-uncorrelated (a 500 without them - listed for
-    manual review, not silently promoted), R-slow (no 500, any round p99 >= 5 s), or
-    neither. R-slow evidence is provisional per the spec.
+  - classifies the run under the spec's section 3.2 definitions via
+    Get-DmsE1RunClassification: any 500 is 'R-500-pending-manual' (R-500 requires the
+    500 to correlate with profile-path/JWKS evidence by request, path, or stack, and no
+    automated count establishes that - a background WorkerPollFailed timeout in the same
+    window must never promote a 500); otherwise R-slow (any round p99 >= 5 s, provisional
+    per the spec) or neither. The signal counts recorded alongside exclude
+    WorkerPollFailed lines and report them separately, as input to the manual review.
 
 Writes e1-<profile>-index.json summarizing every run. Individual run failures (including
 sampler-coverage failures) are recorded and the remaining runs continue.
@@ -66,6 +69,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $null = New-Item -ItemType Directory -Force -Path $OutputDirectory
+Import-Module (Join-Path $PSScriptRoot 'dms-1556-samplers.psm1') -Force
 
 function Get-ContainerResourceRecord {
     [CmdletBinding()]
@@ -79,18 +83,6 @@ function Get-ContainerResourceRecord {
         cpuLimit  = if ($nanoCpus -and $nanoCpus -ne '0') { [Math]::Round([long]$nanoCpus / 1e9, 2) } else { 'unlimited' }
         env       = @($envLines | Where-Object { $_ -match '^(DOTNET_ThreadPool|DOTNET_PROCESSOR_COUNT|DOTNET_Diagnostic)' })
     }
-}
-
-function Get-LogSignalCount {
-    [CmdletBinding()]
-    [OutputType([int])]
-    param(
-        [Parameter(Mandatory)][string] $Path,
-        [Parameter(Mandatory)][string] $Pattern
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) { return 0 }
-    return @(Select-String -LiteralPath $Path -Pattern $Pattern -SimpleMatch).Count
 }
 
 $environmentRecord = [pscustomobject]@{
@@ -129,9 +121,12 @@ for ($run = 1; $run -le $Runs; $run++) {
     docker logs --since $runStartIso $CmsContainerName 2>&1 | Set-Content -LiteralPath $cmsLogPath -Encoding utf8
     docker logs --since $runStartIso $PgContainerName 2>&1 | Set-Content -LiteralPath $pgLogPath -Encoding utf8
 
-    $cmsNpgsql = Get-LogSignalCount -Path $cmsLogPath -Pattern 'NpgsqlException'
-    $cmsTimeout = Get-LogSignalCount -Path $cmsLogPath -Pattern 'TimeoutException'
-    $cmsJwksFailures = Get-LogSignalCount -Path $cmsLogPath -Pattern 'Failed to fetch public keys'
+    # Request-correlated signal counts exclude the background job worker's poll-failure
+    # lines, which share the exception types but cannot correlate with any request.
+    $cmsNpgsql = Get-DmsLogSignalCount -Path $cmsLogPath -Pattern 'NpgsqlException' -ExcludePattern 'WorkerPollFailed'
+    $cmsTimeout = Get-DmsLogSignalCount -Path $cmsLogPath -Pattern 'TimeoutException' -ExcludePattern 'WorkerPollFailed'
+    $cmsKeyFetchFailures = Get-DmsLogSignalCount -Path $cmsLogPath -Pattern 'Failed to fetch public keys'
+    $cmsWorkerPollFailures = Get-DmsLogSignalCount -Path $cmsLogPath -Pattern 'WorkerPollFailed'
 
     # One dump per run, collected OUTSIDE the timed burst window (Q17).
     $workerMinLimit = $null
@@ -180,12 +175,8 @@ for ($run = 1; $run -le $Runs; $run++) {
     $has500 = [int]($statusTotals['500'] ?? 0) -gt 0
     $transportErrors = [int]($statusTotals['0'] ?? 0)
     $maxP99 = if ($p99PerRound.Count -gt 0) { ($p99PerRound | Measure-Object -Maximum).Maximum } else { $null }
-    $correlatedSignals = $cmsNpgsql + $cmsTimeout + $cmsJwksFailures
 
-    $classification = if ($has500 -and $correlatedSignals -gt 0) { 'R-500' }
-    elseif ($has500) { 'R-500-uncorrelated' }
-    elseif ($null -ne $maxP99 -and $maxP99 -ge 5000) { 'R-slow(provisional)' }
-    else { 'neither' }
+    $classification = Get-DmsE1RunClassification -Has500 $has500 -MaxP99Ms $maxP99
 
     $record = [pscustomobject]@{
         run                 = $run
@@ -200,7 +191,8 @@ for ($run = 1; $run -le $Runs; $run++) {
         peakOverlapPerRound = $peakOverlapPerRound
         cmsNpgsqlExceptions = $cmsNpgsql
         cmsTimeoutExceptions = $cmsTimeout
-        cmsJwksFetchFailures = $cmsJwksFailures
+        cmsKeyFetchFailures = $cmsKeyFetchFailures
+        cmsWorkerPollFailures = $cmsWorkerPollFailures
         workerMinLimit      = $workerMinLimit
         samplerCoverageFailures = $coverageFailures
         classification      = $classification

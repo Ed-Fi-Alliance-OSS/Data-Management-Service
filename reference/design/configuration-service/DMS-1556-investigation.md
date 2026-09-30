@@ -97,19 +97,25 @@ those are steps 0.3–0.5 (E1–E5/E7) and gates G1/G2. AC 1 remains evidence-ga
 ### Results — P-dev (5 runs, catalog-87x87, cold + 4 warm)
 
 All 435 requests per run returned **HTTP 200 with validated bodies**; zero
-NpgsqlException / TimeoutException / JWKS-failure lines in CMS logs across all runs.
-Max p99 per run (worst round, ms): 1348, 1982, 2111, 1728, 2408 — always the cold round;
-warm rounds 220–790 ms p50. **Classification: neither × 5.**
+request-correlated NpgsqlException / TimeoutException / key-fetch-failure lines in CMS
+logs across all runs. Cold-round p99 was 802–922 ms; the worst round of every run was a
+**warm** one (round 2 in four runs, round 3 in run 1) at 1348–2408 ms p99, with the
+remaining warm rounds at 237–743 ms p99. **Classification: neither × 5.**
 
 ### Results — P-runner-approx (5 runs, catalog-87x87, cold + 4 warm)
 
-| Run | Cold round p50 / p99 (ms) | Warm rounds p50 range (ms) | Statuses (run total) | CMS Npgsql / Timeout / JWKS-fail lines | Classification |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 14843 / 14995 | 364–579 | 200×435 | 0 / 1 / 0 | R-slow (provisional) |
-| 2 | 15230 / 15350 | 412–544 | 200×435 | 0 / 1 / 0 | R-slow (provisional) |
-| 3 | 17007 / 17305 | 384–481 | 200×432, **401×3** | **12 / 14 / 12** | R-slow (provisional) |
-| 4 | 15489 / 15590 | 396–559 | 200×435 | 0 / 1 / 0 | R-slow (provisional) |
-| 5 | 15586 / 15681 | 465–492 | 200×435 | 0 / 2 / 0 | R-slow (provisional) |
+| Run | Cold round p50 / p99 (ms) | Warm rounds p50 range (ms) | Statuses (run total) | CMS request-correlated Npgsql / Timeout / key-fetch-failure lines¹ | Background worker-poll timeouts¹ | Classification |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 14843 / 14995 | 364–579 | 200×435 | 0 / 0 / 0 | 1 | R-slow (provisional) |
+| 2 | 15230 / 15350 | 412–544 | 200×435 | 0 / 0 / 0 | 1 | R-slow (provisional) |
+| 3 | 17007 / 17305 | 384–481 | 200×432, **401×3** | **12 / 12 / 12** | 2 | R-slow (provisional) |
+| 4 | 15489 / 15590 | 396–559 | 200×435 | 0 / 0 / 0 | 1 | R-slow (provisional) |
+| 5 | 15586 / 15681 | 465–492 | 200×435 | 0 / 0 / 0 | 2 | R-slow (provisional) |
+
+¹ Counted from the run-window CMS logs with `WorkerPollFailed` lines excluded from the
+request-correlated Npgsql/Timeout columns and reported separately: the background job
+worker's poll timeouts share the exception types but correlate with no request, so they
+can support neither R-500 nor the mechanism.
 
 Observations (recorded as observations; attribution belongs to 0.4–0.6):
 
@@ -121,21 +127,30 @@ Observations (recorded as observations; attribution belongs to 0.4–0.6):
   `Failed to fetch public keys for JWKS` Error lines during the cold round, carrying
   `Npgsql.NpgsqlException (0x80004005): The operation has timed out` (connection open)
   and `Exception while reading from stream ---> TimeoutException` — the exact CMS-side
-  signature in Jira. The JWKS traffic during a profile burst the harness never aims at
-  `/jwks` is consistent with self-referential metadata amplification (H5, F6) and/or
-  DMS's own metadata refresh; unattributed here.
-- **A new client-visible failure signature: 401 on valid tokens under load.** Run 3's
-  cold round returned 401 for three requests carrying the same valid token that
-  succeeded 84 times in the same round (completion at ~15.5 s; time-to-first-failure
-  15534 ms, completion-based). Their traces show key-format detection succeeding and
-  then only `Policy authentication schemes did not succeed` — **no** `Authentication
-  failed:` line, so the failure did not pass through `OnAuthenticationFailed`. That
-  matches `OnTokenValidated` → `ITokenManager.ValidateTokenAsync` swallowing the
-  token-status read's Npgsql timeout and returning `false` → `context.Fail("Token has
-  been revoked or is invalid.")`: a dependency outage misreported to the client as an
-  invalid token, with no server-side error record for those requests. This is the
-  diagnosability gap AC 4 names and the exact behavior mutation M3 / D-7's typed
-  rethrow target.
+  signature in Jira. **All twelve lines carry `/config/v3/profiles/{id}` request
+  paths**: the message is emitted by the shared key-fetch helper
+  (`GetPublicKeysFromDatabaseAsync`, F5) during in-request key retrieval, so its text
+  alone establishes neither `/jwks` endpoint traffic nor metadata amplification (H5
+  remains an open hypothesis with no supporting evidence from this step).
+- **A client-visible failure signature: 401 on valid tokens under load.** Run 3's cold
+  round returned 401 for three requests (profiles 3, 44, 45) carrying the same valid
+  token that succeeded 84 times in the same round (completion at ~15.5 s;
+  time-to-first-failure 15534 ms, completion-based). The correlated traces pin the
+  mechanism precisely: framework token validation **succeeded** (`JWT token validated
+  successfully`), then the **second per-request key retrieval** (F3) inside
+  `OnTokenValidated` → `ValidateTokenAsync` → `VerifyTokenAsync` timed out;
+  `GetPublicKeysFromDatabaseAsync` swallowed it (F5), logging `Failed to fetch public
+  keys for JWKS` at Error and returning an **empty key list**, and verification then
+  rejected the token with the Warning `"Token validation failed" verification
+  (signature or key id): "missing or unknown 'kid' header (…); available keys: "` —
+  available keys empty — producing `context.Fail` and 401. Server-side records exist
+  (the Error and Warning above); the failure is nonetheless misreported to the *client*
+  as an invalid token. This is the swallowed-empty-key-set behavior F5/I-8 name and the
+  duplicate key acquisition F3 documents — the design's D-4 (`Failed(Retrieval)` is
+  never `Succeeded(0)`) and single-snapshot retrieval (D-2) target exactly this path
+  (AC 3/4). An earlier draft of this section attributed these 401s to a token-status
+  read timeout with no server-side record; the correlated traces contradict that, and
+  it is corrected here.
 - No HTTP 500 was observed in any run; the profile-path 500
   (`ProfileRepository.GetProfile` → `OpenAsync` timeout) did not reproduce at 87/87 on
   this host. A plausible (unproven) reason: this machine's NVMe/CPU clears the
@@ -146,10 +161,11 @@ Observations (recorded as observations; attribution belongs to 0.4–0.6):
 
 **Partially reproduced (provisional)** per spec §3.6: R-slow in 5/5 P-runner-approx runs
 (zero in 5/5 P-dev runs), with the ticket's exact CMS log signature present in 1/5 runs
-and an additional client-visible availability failure (401s on valid tokens, silently
-translated from a dependency timeout). Under G1 this means attribution (0.4–0.5) may
-proceed, **AC 1 is not satisfied by this evidence alone**, and AC 2's envelope evidence
-must lean on E7 and CI after push. Neither-with-replan does not apply.
+and an additional client-visible availability failure: 401s on valid tokens, produced by
+the verification-time key retrieval timing out and being swallowed into an empty key
+set (F3/F5). Under G1 this means attribution (0.4–0.5) may proceed, **AC 1 is not
+satisfied by this evidence alone**, and AC 2's envelope evidence must lean on E7 and CI
+after push. Neither-with-replan does not apply.
 
 ### Deviations
 

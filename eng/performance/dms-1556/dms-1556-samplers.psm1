@@ -735,6 +735,54 @@ function Get-DmsLivemetricsSummary {
     }
 }
 
+function Get-DmsLogSignalCount {
+    <#
+    .SYNOPSIS
+    Counts log lines matching Pattern, optionally skipping lines that also match
+    ExcludePattern - e.g. counting TimeoutException lines while excluding background
+    WorkerPollFailed noise that cannot establish request-path correlation.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $Pattern,
+        [string] $ExcludePattern
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) { return 0 }
+    $matched = @(Select-String -LiteralPath $Path -Pattern $Pattern -SimpleMatch)
+    if ($ExcludePattern) {
+        $matched = @($matched | Where-Object { $_.Line -notmatch [regex]::Escape($ExcludePattern) })
+    }
+    return $matched.Count
+}
+
+function Get-DmsE1RunClassification {
+    <#
+    .SYNOPSIS
+    Classifies one E1 run under spec section 3.2. Deliberately takes NO log-signal
+    inputs: R-500 requires the 500 to correlate with the profile-path/JWKS evidence by
+    request, path, or stack, and no automated count establishes that (a background
+    worker timeout in the same window must never promote a 500). Any 500 therefore
+    returns 'R-500-pending-manual' for manual classification against the correlated
+    logs. R-slow evidence is provisional per the spec.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][bool] $Has500,
+
+        # Null when the run produced no summary (e.g. the harness failed before rounds).
+        [object] $MaxP99Ms = $null
+    )
+
+    if ($Has500) { return 'R-500-pending-manual' }
+    if ($null -eq $MaxP99Ms) { return 'unclassified(no summary)' }
+    if ([double]$MaxP99Ms -ge 5000) { return 'R-slow(provisional)' }
+    return 'neither'
+}
+
 function Test-DmsWindowCovered {
     <#
     .SYNOPSIS
@@ -756,4 +804,4 @@ function Test-DmsWindowCovered {
     return ($first -le $StartUtc.ToUniversalTime()) -and ($last -ge $EndUtc.ToUniversalTime())
 }
 
-Export-ModuleMember -Function Start-DmsSamplerSet, Wait-DmsSamplerSetReady, Stop-DmsSamplerSet, Remove-DmsSamplerSet, Get-DmsSamplerValidation, Test-DmsCaptureHasData, Get-DmsDelimitedCaptureSummary, Get-DmsJsonlCaptureSummary, Get-DmsCsvCaptureSummary, Get-DmsLivemetricsSummary, Test-DmsWindowCovered
+Export-ModuleMember -Function Start-DmsSamplerSet, Wait-DmsSamplerSetReady, Stop-DmsSamplerSet, Remove-DmsSamplerSet, Get-DmsSamplerValidation, Test-DmsCaptureHasData, Get-DmsDelimitedCaptureSummary, Get-DmsJsonlCaptureSummary, Get-DmsCsvCaptureSummary, Get-DmsLivemetricsSummary, Test-DmsWindowCovered, Get-DmsLogSignalCount, Get-DmsE1RunClassification
