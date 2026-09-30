@@ -112,6 +112,8 @@ param (
 
     [switch]$SuppressWriterGuidance,
     [string]$CdcDmsComposeFile,
+    # Private E2E rollout; accepted only inside the admitted lifecycle invocation.
+    [switch]$CdcApiE2E,
 
     [string]$CdcBindingStatePath,
     [string]$CdcSettingsPath,
@@ -235,6 +237,11 @@ if ($DbOnly -and $r) {
 }
 
 Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+if ($CdcApiE2E -and (-not (Test-CdcInfrastructureInvocation) -or -not $DmsOnly -or
+    -not $CdcDmsComposeFile -or -not $CdcBindingStatePath -or $d -or $r)) {
+    throw 'CDC API E2E rollout requires the admitted DMS-only setup path.'
+}
+
 if (-not (Test-CdcInfrastructureInvocation)) {
     if (Test-CdcDeployment -Project 'dms-local') {
         Invoke-CdcDeploymentLifecycle -Project 'dms-local' -StartScript $PSCommandPath -Parameters (@{} + $PSBoundParameters)
@@ -840,6 +847,11 @@ else {
     }
 
     if ($DmsOnly) {
+        if ($CdcApiE2E) {
+            Import-Module (Join-Path $PSScriptRoot 'e2e-cdc.psm1')
+            $cdcHttpConfiguration = Invoke-E2ECdcHttpPreparation -ComposeFiles $files -EnvironmentFile $EnvironmentFile -Project dms-local
+            $dmsUrl = Resolve-E2ECdcHttpBaseUrl -Configuration $cdcHttpConfiguration
+        }
         Write-Output "Starting DMS service only..."
         $dmsServices = @("dms")
         if ($EnableSwaggerUI) {
@@ -853,6 +865,10 @@ else {
 
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
+        if ($CdcApiE2E) {
+            $null = Write-E2ECdcApiHandoff -Project dms-local -StatePath $CdcBindingStatePath `
+                -HttpComposePath $CdcDmsComposeFile -EffectiveConfiguration $cdcHttpConfiguration
+        }
 
         return
     }

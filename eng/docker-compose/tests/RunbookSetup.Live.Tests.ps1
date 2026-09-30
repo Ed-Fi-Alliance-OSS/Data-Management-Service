@@ -13,6 +13,7 @@ param(
 Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provider; Procedure = $Procedure }) {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
+        Import-Module (Join-Path $PSScriptRoot 'cdc-fixture-inputs.psm1') -Force
         $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         Import-Module (Join-Path $script:repo 'eng/docker-compose/env-utility.psm1') -DisableNameChecking
         if ($env:CDC_RUNBOOK_OWNED_STACK -ne '1') { throw 'EnvironmentUnavailable: CDC_RUNBOOK_OWNED_STACK=1 requires an exclusively owned disposable local stack.' }
@@ -71,29 +72,11 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $local = Join-Path $script:fixture '.local/cdc'
         $null = New-Item -ItemType Directory -Path $local -Force
         & chmod 700 $script:fixture (Split-Path $local) $local
-        $source = if ($E2e) { '.env.e2e' } else { '.env.example' }
-        $environmentName = if ($E2e) { '.env.e2e' } else { '.env' }
-        $environmentFile = Join-Path $script:fixture $environmentName
-        Copy-Item (Join-Path $script:repo "eng/docker-compose/$source") $environmentFile
-        $password = [guid]::NewGuid().ToString('N') + 'Ab1!'
-        $connectorPassword = [guid]::NewGuid().ToString('N') + 'Ab1!'
-        $environmentText = Get-Content $environmentFile -Raw
-        $fixtureValues = @{ POSTGRES_USER = 'postgres'; POSTGRES_PASSWORD = $password; POSTGRES_PORT = '5435'; CDC_DATABASE_PASSWORD = $connectorPassword }
         $providerImage = if ($SqlServer) { $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE } else { $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }
-        $providerImage | Should -Not -BeNullOrEmpty
-        $imageVariable = if ($SqlServer) { 'MSSQL_IMAGE' } else { 'POSTGRES_IMAGE' }
-        $fixtureValues[$imageVariable] = $providerImage
-        $databaseContainer = if ($SqlServer) { 'dms-mssql' } else { 'dms-postgresql' }
         $providerImageId = & docker image inspect $providerImage --format '{{.Id}}'
         $LASTEXITCODE | Should -Be 0
         $providerImageId | Should -Match '^sha256:[a-f0-9]{64}$'
-        # Cold plugin scans need headroom on high-core qualification hosts. Keep the
-        # declared worker policy and Compose heap identical from initial creation.
-        if ($Procedure -eq 'Lifecycle') { $fixtureValues.CDC_WORKER_HEAP_MIB = '1024' }
-        if ($SqlServer) {
-            $fixtureValues.MSSQL_SA_PASSWORD = $password; $fixtureValues.MSSQL_PORT = '1435'
-            $fixtureValues.DMS_DATASTORE = 'mssql'; $fixtureValues.DMS_CONFIG_DATASTORE = 'mssql'
-        }
+        $fixtureValues = @{}
         $publishedImageTags = @()
         if ($Published) {
             # Fixture-packaged branch images exercise the published wrapper with matching code/schema.
@@ -105,19 +88,12 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
                 $publishedImageTags += $publishedImageTag
             }
         }
-        foreach ($pair in $fixtureValues.GetEnumerator()) {
-            $pattern = '(?m)^' + [regex]::Escape($pair.Key) + '=.*$'
-            $assignment = "$($pair.Key)=$($pair.Value)"
-            if ([regex]::IsMatch($environmentText, $pattern)) { $environmentText = [regex]::Replace($environmentText, $pattern, $assignment) }
-            else { $environmentText += "`n$assignment`n" }
-        }
-        $environmentText | Set-Content $environmentFile
-        & chmod 600 $environmentFile
-        $values = ReadValuesFromEnvFile $environmentFile
-        $database = if ($E2e) { $values.E2E_DATABASE_NAME } else { 'edfi_cdc' }
+        $inputs = New-CdcFixtureInput -Repo $script:repo -FixtureRoot $script:fixture -SqlServer $SqlServer -E2e $E2e `
+            -ProviderImage $providerImage -LargeWorker ($Procedure -eq 'Lifecycle') -AdditionalValues $fixtureValues
+        $environmentFile = $inputs.EnvironmentFile; $settingsPath = $inputs.SettingsPath; $statePath = $inputs.StatePath
+        $values = $inputs.Values; $inputPath = $inputs.InputPath; $database = $inputs.Database; $imageVariable = $inputs.ImageVariable
         $suffix = if ($E2e) { '-e2e' } else { '' }
-        $settingsPath = Join-Path $local "$providerName$suffix.json"
-        $statePath = Join-Path $local "$stateName$suffix"
+        $databaseContainer = if ($SqlServer) { 'dms-mssql' } else { 'dms-postgresql' }
         # Infrastructure snippet with the documented E2E environment/claims substitutions.
         $infra = (Get-CdcRunbookCode "$prefix-infrastructure").Replace('./eng/docker-compose/.env', $environmentFile)
         if ($E2e) { $infra = $infra.Replace('-InfraOnly', '-InfraOnly -AddExtensionSecurityMetadata') }
@@ -127,18 +103,11 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $LASTEXITCODE | Should -Be 0
         (& docker inspect $databaseContainer --format '{{.Image}}') | Should -Be $providerImageId
         $LASTEXITCODE | Should -Be 0
-        # Deployment-owned role preparation only. No target database, capture artifact or grant repair.
-        function Invoke-FixtureSql {
-            param([string] $Sql, [string] $Database = 'master')
-            # Container-owned secret, never a password argument or output artifact.
-            return Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-mssql', 'sh', '-c',
-                'SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -d "$1"', 'sqlcmd', $Database) -InputText ("SET NOCOUNT ON;`n" + $Sql)
-        }
         if ($E2e) {
             # Assert first-start initialization before the E2E wrapper stages its bootstrap claims.
             # Restarting CMS later cannot add missing claim sets to already-populated tables.
             $claims = if ($SqlServer) {
-                Invoke-FixtureSql -Database 'edfi_configurationservice' -Sql "SELECT ClaimSetName FROM dmscs.ClaimSet WHERE ClaimSetName LIKE 'E2E-%';"
+                Invoke-CdcFixtureSql -Database 'edfi_configurationservice' -Sql "SELECT ClaimSetName FROM dmscs.ClaimSet WHERE ClaimSetName LIKE 'E2E-%';"
             } else {
                 $claimsSql = 'SELECT "ClaimSetName" FROM "dmscs"."ClaimSet" WHERE "ClaimSetName" LIKE ''E2E-%'';'
                 Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'edfi_configurationservice', '-At', '-v', 'ON_ERROR_STOP=1') -InputText $claimsSql
@@ -154,39 +123,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
                 'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
             ) -Because 'E2E claims must be loaded on the first CMS startup'
         }
-        if ($SqlServer) {
-            $server = (& docker inspect dms-mssql | ConvertFrom-Json)[0]
-            ($server.Config.Env -ccontains "MSSQL_SA_PASSWORD=$password") | Should -BeTrue -Because 'the effective engine overlay must preserve the declared fixture credential'
-            $server = $null
-            $sql = "IF DB_ID(N'$database') IS NOT NULL THROW 51000, 'Target must be absent', 1; CREATE LOGIN cdc_reader WITH PASSWORD = '$connectorPassword';"
-            $role = Invoke-FixtureSql $sql
-        } else {
-            $sql = "CREATE ROLE cdc_reader WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$connectorPassword';"
-            $role = Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1') -InputText $sql
-        }
-        $role.FailureKind | Should -Be 'None'
-        $role.ExitCode | Should -Be 0
-        $base = Get-Content (Join-Path $script:repo 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json') -Raw | ConvertFrom-Json -AsHashtable
-        $base.ConfigurationServiceSettings.BaseUrl = 'http://127.0.0.1:8081'
-        $base.ConfigurationServiceSettings.ClientId = $values.CONFIG_SERVICE_CLIENT_ID
-        $base.ConfigurationServiceSettings.ClientSecret = $values.CONFIG_SERVICE_CLIENT_SECRET
-        $base.ConfigurationServiceSettings.Scope = $values.CONFIG_SERVICE_CLIENT_SCOPE
-        $base.ConfigurationServiceSettings.EncryptionKey = $values.DMS_CONFIG_DATABASE_ENCRYPTION_KEY
-        $base.AppSettings.AuthenticationService = 'http://127.0.0.1:8081/connect/token'
-        $base.JwtAuthentication.Authority = 'http://127.0.0.1:8081'
-        $base.JwtAuthentication.MetadataAddress = 'http://127.0.0.1:8081/.well-known/openid-configuration'
-        $base | ConvertTo-Json -Depth 64 | Set-Content (Join-Path $local 'dms-base.json')
-        $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-        $builder['Database'] = $database; $builder['Password'] = $password
-        if ($SqlServer) {
-            $builder['Server'] = '127.0.0.1,1435'; $builder['User Id'] = 'sa'
-            $builder['Encrypt'] = 'true'; $builder['TrustServerCertificate'] = 'true'; $builder['Command Timeout'] = '180'
-        } else {
-            $builder['Host'] = '127.0.0.1'; $builder['Port'] = '5435'; $builder['Username'] = 'postgres'
-        }
-        $inputPath = Join-Path $script:fixture 'setup-connection.txt'
-        $builder.ConnectionString | Set-Content $inputPath
-        & chmod 600 $inputPath (Join-Path $local 'dms-base.json')
+        Initialize-CdcFixturePrincipal -SqlServer $SqlServer -Inputs $inputs
         $settings = Get-CdcRunbookCode "$prefix-settings"
         $settings = $settings.Replace("'.local/cdc/", "'$local/").Replace("'./.local/cdc/", "'$local/")
         $settings = $settings.Replace("Join-Path `$repoRoot '$local/", "'$local/")
@@ -236,7 +173,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $qualified = Get-Content (Join-Path $script:repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
         (& docker inspect "$project-kafka-cdc-worker-1" --format '{{.Config.Image}}') | Should -Be $qualified.image
         if ($SqlServer) {
-            $capture = Invoke-FixtureSql -Database $database -Sql @'
+            $capture = Invoke-CdcFixtureSql -Database $database -Sql @'
 SELECT STRING_AGG(OBJECT_NAME(source_object_id), ',') WITHIN GROUP (ORDER BY OBJECT_NAME(source_object_id)) FROM cdc.change_tables;
 SELECT COUNT(*) FROM cdc.change_tables WHERE source_object_id = OBJECT_ID(N'dms.DocumentProjectionWork');
 SELECT COUNT(*) FROM sys.database_principals WHERE name = N'cdc_reader' AND type = 'S' AND sid = SUSER_SID(N'cdc_reader');
@@ -283,7 +220,7 @@ REVERT;
             $LASTEXITCODE | Should -Be 0
         }
         if ($E2e -and $SqlServer) {
-            $snapshot = Invoke-FixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
+            $snapshot = Invoke-CdcFixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
             $snapshot.ExitCode | Should -Be 0
             ($snapshot.StandardOutput.Trim() -split '\r?\n') | Should -Be @('1', '0')
         }

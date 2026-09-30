@@ -9,7 +9,7 @@
 param(
     [ValidateSet('All', 'Kafka', 'Postgresql', 'Mssql')]
     [string] $Lane = 'All',
-    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')]
+    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E')]
     [string] $Suite = 'All'
 )
 

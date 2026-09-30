@@ -174,6 +174,11 @@ public abstract class Given_MessageContractKafkaFixture
 [Category("CdcMessageContractKafka")]
 [Category("PostgresqlIntegration")]
 [Property("ScenarioId", "MC-KAFKA-HARNESS-PG")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-06")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
+[Property("CdcInvariant", "CDC-INV-09")]
 public sealed class Given_MessageContractKafkaFixturePostgresql : Given_MessageContractKafkaFixture
 {
     protected override CdcProvider Provider => CdcProvider.Postgresql;
@@ -184,6 +189,11 @@ public sealed class Given_MessageContractKafkaFixturePostgresql : Given_MessageC
 [Category("CdcMessageContractKafka")]
 [Category("MssqlIntegration")]
 [Property("ScenarioId", "MC-KAFKA-HARNESS-SQL")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-06")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
+[Property("CdcInvariant", "CDC-INV-09")]
 public sealed class Given_MessageContractKafkaFixtureSqlServer : Given_MessageContractKafkaFixture
 {
     protected override CdcProvider Provider => CdcProvider.SqlServer;
@@ -191,6 +201,8 @@ public sealed class Given_MessageContractKafkaFixtureSqlServer : Given_MessageCo
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public sealed class Given_MessageContractKafkaBoundaries
 {
     [TestCase(-1, 0, 0)]

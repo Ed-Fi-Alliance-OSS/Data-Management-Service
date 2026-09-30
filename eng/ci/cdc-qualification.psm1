@@ -4,6 +4,8 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'cdc-api-e2e.ps1')
+. (Join-Path $PSScriptRoot 'cdc-api-diagnostics.ps1')
 
 function Invoke-CdcQualificationImagePull {
     <# .SYNOPSIS
@@ -162,9 +164,13 @@ function Export-CdcQualificationEvidence {
     <# .SYNOPSIS
     Publishes result metadata and structured attachments without raw assertion output.
     #>
-    param([string] $RawDirectory, [string] $Destination)
+    param([string] $RawDirectory, [string] $Destination, [Collections.IDictionary] $ApiRunner)
 
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    if ($null -ne $ApiRunner) {
+        Export-CdcApiEvidence -Path (Join-Path $RawDirectory 'scenario.json') -Destination $Destination -Runner $ApiRunner
+        return # ApiE2E uses only the bounded allowlist; never recurse into private inputs or raw TRX.
+    }
     $attachmentPattern = '^(?:cdc-runbook-|cdc-message-contract-|admission-evidence-|cdc-controller-|managed-lifecycle-|native-recovery-|cdc-history-|record-size-|\d+-)[a-zA-Z0-9_.-]+\.json$'
     foreach ($file in Get-ChildItem -LiteralPath $RawDirectory -Filter '*.trx' -Recurse) {
         [xml] $trx = Get-Content -LiteralPath $file.FullName -Raw
@@ -259,6 +265,7 @@ function Get-CdcQualificationProviderSuite {
         $filters[$phase] = "Category=$($categories[$phase])&Category=$($Provider)Integration"
     }
     $filters['MessageContract'] = "(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=$($Provider)Integration"
+    $filters['ApiE2E'] = 'FullyQualifiedName~Given_CdcApiE2E'
     return $filters
 }
 
@@ -456,4 +463,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport
+Export-ModuleMember -Function New-CdcApiRunnerReport, Get-CdcApiScenarioReport, Invoke-CdcApiQualification, Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport
