@@ -20,7 +20,8 @@ public sealed record SigningKeyProviderStatus
         int consecutiveFailures,
         DateTimeOffset nextAttemptAt,
         bool loadInFlight,
-        SigningKeyRefreshOutcome? lastOutcome
+        SigningKeyRefreshOutcome? lastOutcome,
+        bool storeOperationOutstanding = false
     )
     {
         ArgumentOutOfRangeException.ThrowIfNegative(consecutiveFailures);
@@ -38,6 +39,7 @@ public sealed record SigningKeyProviderStatus
         NextAttemptAt = nextAttemptAt;
         LoadInFlight = loadInFlight;
         LastOutcome = lastOutcome;
+        StoreOperationOutstanding = storeOperationOutstanding;
     }
 
     public SigningKeySnapshotState State { get; }
@@ -52,6 +54,12 @@ public sealed record SigningKeyProviderStatus
     public DateTimeOffset NextAttemptAt { get; }
 
     public bool LoadInFlight { get; }
+
+    /// <summary>
+    /// Whether a store operation is running, including one that outlived its attempt's deadline. While one is, the gate
+    /// starts no other.
+    /// </summary>
+    public bool StoreOperationOutstanding { get; }
 
     /// <summary>The outcome of the last completed attempt, or <see langword="null"/> before any attempt completes.</summary>
     public SigningKeyRefreshOutcome? LastOutcome { get; }

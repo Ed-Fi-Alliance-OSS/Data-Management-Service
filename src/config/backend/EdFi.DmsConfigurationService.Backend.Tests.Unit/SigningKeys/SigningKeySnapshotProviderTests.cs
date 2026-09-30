@@ -47,6 +47,7 @@ public class SigningKeySnapshotProviderTests
                     .Range(0, 32)
                     .Select(_ => Task.Run(() => provider.GetUsableAsync(CancellationToken.None))),
             ];
+            await _harness.WaitForCallsAsync(1);
             await Task.Delay(100);
             _callsWhileGated = _harness.Calls.Count;
 
@@ -158,6 +159,7 @@ public class SigningKeySnapshotProviderTests
             using var provider = Provider(_harness, time);
 
             Task<SigningKeySnapshot> caller = provider.GetUsableAsync(CancellationToken.None);
+            await _harness.WaitForCallsAsync(1);
             time.Advance(TimeSpan.FromSeconds(10));
 
             Func<Task> wait = () => caller.Bounded();
@@ -210,7 +212,9 @@ public class SigningKeySnapshotProviderTests
 
             time.Advance(TimeSpan.FromSeconds(301));
             _harness.ReturnsKeys("key-1", "key-2");
+            Task reloaded = provider.AttemptStateChanged;
             _served = await provider.GetUsableAsync(CancellationToken.None);
+            await reloaded.WaitAsync(TimeSpan.FromSeconds(10));
             _afterwards = provider.Current;
 
             // The reload published a fresh snapshot, so this call needs no load.
@@ -245,7 +249,9 @@ public class SigningKeySnapshotProviderTests
 
             time.Advance(TimeSpan.FromSeconds(301));
             _harness.Fails(new TimeoutException());
+            Task failed = provider.AttemptStateChanged;
             await provider.GetUsableAsync(CancellationToken.None); // overdue: the reload fails, gate closes for 5 s
+            await failed.WaitAsync(TimeSpan.FromSeconds(10));
 
             time.Advance(TimeSpan.FromSeconds(4));
             _served = await provider.GetUsableAsync(CancellationToken.None);
@@ -773,7 +779,9 @@ public class SigningKeySnapshotProviderTests
 
             harness.Fails(new TimeoutException());
             time.Advance(TimeSpan.FromSeconds(3600));
+            Task failed = provider.AttemptStateChanged;
             _servedAtTheBound = await provider.GetUsableAsync(CancellationToken.None);
+            await failed.WaitAsync(TimeSpan.FromSeconds(10)); // the background reload at the bound fails
 
             time.Advance(TimeSpan.FromTicks(1));
             Func<Task> call = () => provider.GetUsableAsync(CancellationToken.None);
@@ -1060,6 +1068,7 @@ public class SigningKeySnapshotProviderTests
                 SigningKeyRefreshTrigger.Timer,
                 CancellationToken.None
             );
+            await _harness.WaitForCallsAsync(1);
             provider.Dispose();
             _outcome = await refresh.Bounded();
         }
@@ -1075,5 +1084,270 @@ public class SigningKeySnapshotProviderTests
                 .BeOfType<SigningKeyRefreshOutcome.Failed>()
                 .Which.Kind.Should()
                 .Be(SigningKeyFailureKind.Retrieval);
+    }
+
+    // Review finding 1: a store operation that ignores cancellation outlives its deadline and the whole backoff. The
+    // single-flight slot keeps owning it: the timeout is recorded once, no overlapping store call starts, and its late
+    // result is discarded. Recovery follows once it finishes.
+    [TestFixture]
+    public class Given_a_store_operation_that_outlives_its_deadline_and_the_backoff
+    {
+        private KeyRepositoryHarness _harness = null!;
+        private SigningKeysUnavailableException _timeout = null!;
+        private SigningKeyProviderStatus _afterTimeout = null!;
+        private SigningKeysUnavailableException _requestWhileOutstanding = null!;
+        private SigningKeyRefreshOutcome _refreshWhileOutstanding = null!;
+        private int _callsWhileOutstanding;
+        private SigningKeyProviderStatus _whileOutstanding = null!;
+        private SigningKeySnapshot? _afterLateResult;
+        private SigningKeyProviderStatus _afterRelease = null!;
+        private SigningKeySnapshot _recovered = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            FakeTimeProvider time = NewTime();
+            _harness = new KeyRepositoryHarness(time);
+            TaskCompletionSource<IEnumerable<PublicKeyInfo>> blocked = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int calls = 0;
+            _harness.Behavior = _ =>
+                Interlocked.Increment(ref calls) == 1
+                    ? blocked.Task // ignores its token
+                    : Task.FromResult<IEnumerable<PublicKeyInfo>>([KeyRepositoryHarness.Row("key-new")]);
+            using var provider = Provider(_harness, time);
+
+            // 0 s: cold request; 10 s: the deadline ends the attempt, the operation keeps running.
+            Task<SigningKeySnapshot> cold = provider.GetUsableAsync(CancellationToken.None);
+            await _harness.WaitForCallsAsync(1);
+            time.Advance(TimeSpan.FromSeconds(10));
+            Func<Task> coldWait = () => cold.Bounded();
+            _timeout = (await coldWait.Should().ThrowAsync<SigningKeysUnavailableException>()).Which;
+            _afterTimeout = provider.Status;
+
+            // 16 s: past the 5 s backoff, with the first operation still running.
+            time.Advance(TimeSpan.FromSeconds(6));
+            Func<Task> request = () => provider.GetUsableAsync(CancellationToken.None);
+            _requestWhileOutstanding = (
+                await request.Should().ThrowAsync<SigningKeysUnavailableException>()
+            ).Which;
+            _refreshWhileOutstanding = await provider.RefreshAsync(
+                SigningKeyRefreshTrigger.Timer,
+                CancellationToken.None
+            );
+            _callsWhileOutstanding = _harness.Calls.Count;
+            _whileOutstanding = provider.Status;
+
+            // The first operation finally answers; its result is late and discarded.
+            Task released = provider.AttemptStateChanged;
+            blocked.SetResult([KeyRepositoryHarness.Row("key-late")]);
+            await released.WaitAsync(TimeSpan.FromSeconds(10));
+            _afterLateResult = provider.Current;
+            _afterRelease = provider.Status;
+
+            _recovered = await provider.GetUsableAsync(CancellationToken.None).Bounded();
+        }
+
+        [Test]
+        public void It_fails_the_caller_at_the_deadline() =>
+            _timeout
+                .Outcome.Should()
+                .BeOfType<SigningKeyRefreshOutcome.Failed>()
+                .Which.Exception.Should()
+                .BeOfType<TimeoutException>();
+
+        [Test]
+        public void It_keeps_owning_the_running_operation() =>
+            _afterTimeout.StoreOperationOutstanding.Should().BeTrue();
+
+        [Test]
+        public void It_refuses_requests_while_the_operation_runs() =>
+            _requestWhileOutstanding
+                .Outcome.Should()
+                .BeOfType<SigningKeyRefreshOutcome.Refused>()
+                .Which.Reason.Should()
+                .Be(SigningKeyRefusalReason.OperationOutstanding);
+
+        [Test]
+        public void It_refuses_scheduled_refreshes_while_the_operation_runs() =>
+            _refreshWhileOutstanding
+                .Should()
+                .BeOfType<SigningKeyRefreshOutcome.Refused>()
+                .Which.Reason.Should()
+                .Be(SigningKeyRefusalReason.OperationOutstanding);
+
+        [Test]
+        public void It_starts_no_overlapping_store_call() => _callsWhileOutstanding.Should().Be(1);
+
+        [Test]
+        public void It_records_the_timeout_once() => _whileOutstanding.ConsecutiveFailures.Should().Be(1);
+
+        [Test]
+        public void It_discards_the_late_result() => _afterLateResult.Should().BeNull();
+
+        [Test]
+        public void It_releases_the_slot_when_the_operation_finishes() =>
+            _afterRelease.StoreOperationOutstanding.Should().BeFalse();
+
+        [Test]
+        public void It_recovers_with_a_new_load() =>
+            _recovered.Keys.Select(key => key.KeyId).Should().Equal("key-new");
+
+        [Test]
+        public void It_made_exactly_two_store_calls() => _harness.Calls.Should().HaveCount(2);
+    }
+
+    // Review finding 2: caller A reads "no snapshot", then (inside its first clock read) caller B loads and publishes.
+    // A's decision to load is made again under the gate lock, so A uses B's snapshot; a second, redundant load would
+    // fail here and wrongly answer A as unavailable.
+    [TestFixture]
+    public class Given_a_caller_overtaken_by_a_publication
+    {
+        private KeyRepositoryHarness _harness = null!;
+        private SigningKeySnapshot? _overtaking;
+        private SigningKeySnapshot _overtaken = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            InterceptingTimeProvider time = new(Start);
+            _harness = new KeyRepositoryHarness(time);
+            int calls = 0;
+            _harness.Behavior = _ =>
+                Interlocked.Increment(ref calls) == 1
+                    ? Task.FromResult<IEnumerable<PublicKeyInfo>>([KeyRepositoryHarness.Row("key-1")])
+                    : Task.FromException<IEnumerable<PublicKeyInfo>>(new TimeoutException("redundant load"));
+            using var provider = Provider(_harness, time);
+
+            time.OnNextUtcNow(() =>
+                _overtaking = provider
+                    .GetUsableAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(10))
+                    .GetAwaiter()
+                    .GetResult()
+            );
+            _overtaken = await provider.GetUsableAsync(CancellationToken.None).Bounded();
+        }
+
+        [Test]
+        public void It_reads_the_store_once() => _harness.Calls.Should().HaveCount(1);
+
+        [Test]
+        public void It_gives_the_overtaken_caller_the_published_snapshot() =>
+            _overtaken.Should().BeSameAs(_overtaking);
+
+        [Test]
+        public void It_published_the_key() => _overtaken.ContainsKeyId("key-1").Should().BeTrue();
+    }
+
+    // Review finding 3: a source whose synchronous work runs past the load deadline and then returns a completed result.
+    // With a delivered deadline the attempt ends on cancellation; with a late timer only the elapsed-time check on the
+    // result can reject it.
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_a_source_that_crosses_the_deadline_before_answering(bool deadlineTimerFires)
+    {
+        private SigningKeySnapshot _before = null!;
+        private SigningKeyRefreshOutcome _outcome = null!;
+        private SigningKeyProviderStatus _status = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            FakeTimeProvider time = deadlineTimerFires ? NewTime() : new LateTimerTimeProvider(Start);
+            KeyRepositoryHarness harness = new(time);
+            harness.ReturnsKeys("key-1");
+            using var provider = Provider(harness, time);
+            _before = await provider.GetUsableAsync(CancellationToken.None);
+
+            harness.Behavior = _ =>
+            {
+                time.Advance(TimeSpan.FromSeconds(11));
+                return Task.FromResult<IEnumerable<PublicKeyInfo>>([KeyRepositoryHarness.Row("key-2")]);
+            };
+            _outcome = await provider
+                .RefreshAsync(SigningKeyRefreshTrigger.Timer, CancellationToken.None)
+                .Bounded();
+            _status = provider.Status;
+        }
+
+        [Test]
+        public void It_rejects_the_late_result_as_a_timeout() =>
+            _outcome
+                .Should()
+                .BeOfType<SigningKeyRefreshOutcome.Failed>()
+                .Which.Exception.Should()
+                .BeOfType<TimeoutException>();
+
+        [Test]
+        public void It_is_a_retrieval_failure() =>
+            ((SigningKeyRefreshOutcome.Failed)_outcome).Kind.Should().Be(SigningKeyFailureKind.Retrieval);
+
+        [Test]
+        public void It_keeps_the_previous_snapshot() => _status.Current.Should().BeSameAs(_before);
+
+        [Test]
+        public void It_counts_one_failure() => _status.ConsecutiveFailures.Should().Be(1);
+
+        [Test]
+        public void It_applies_the_backoff() =>
+            _status.NextAttemptAt.Should().Be(Start + TimeSpan.FromSeconds(16));
+    }
+
+    [TestFixture]
+    public class Given_a_source_that_blocks_synchronously
+    {
+        private ManualResetEventSlim _release = null!;
+        private bool _returnedPromptly;
+        private SigningKeysUnavailableException _exception = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // A new event per test: TearDown disposes it, and NUnit reuses the fixture instance across tests.
+            _release = new ManualResetEventSlim();
+            FakeTimeProvider time = NewTime();
+            KeyRepositoryHarness harness = new(time);
+            harness.Behavior = _ =>
+            {
+                _release.Wait(TimeSpan.FromSeconds(30));
+                return Task.FromResult<IEnumerable<PublicKeyInfo>>([KeyRepositoryHarness.Row("key-1")]);
+            };
+            using var provider = Provider(harness, time);
+
+            // StartNew keeps the outer task: it completes when GetUsableAsync returns, not when its task completes.
+            Task<Task<SigningKeySnapshot>> invocation = Task.Factory.StartNew(
+                () => provider.GetUsableAsync(CancellationToken.None),
+                CancellationToken.None,
+                TaskCreationOptions.None,
+                TaskScheduler.Default
+            );
+            _returnedPromptly =
+                await Task.WhenAny(invocation, Task.Delay(TimeSpan.FromSeconds(5))) == invocation;
+
+            await harness.WaitForCallsAsync(1);
+            time.Advance(TimeSpan.FromSeconds(10));
+            Func<Task> wait = () => invocation.Result.Bounded();
+            _exception = (await wait.Should().ThrowAsync<SigningKeysUnavailableException>()).Which;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _release.Set();
+            _release.Dispose();
+        }
+
+        [Test]
+        public void It_does_not_run_the_source_on_the_callers_thread() => _returnedPromptly.Should().BeTrue();
+
+        [Test]
+        public void It_fails_the_caller_at_the_deadline() =>
+            _exception
+                .Outcome.Should()
+                .BeOfType<SigningKeyRefreshOutcome.Failed>()
+                .Which.Exception.Should()
+                .BeOfType<TimeoutException>();
     }
 }

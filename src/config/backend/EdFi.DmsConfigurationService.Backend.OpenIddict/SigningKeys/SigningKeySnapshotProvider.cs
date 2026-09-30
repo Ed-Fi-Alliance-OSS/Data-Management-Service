@@ -14,23 +14,35 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// The snapshot provider and its load gate (spec §4.4).
 /// <list type="bullet">
 /// <item>
-/// A load attempt, whatever its trigger, joins the attempt in flight; otherwise it is refused while
-/// <c>now &lt; NextAttemptAt</c>; otherwise it starts under a token that the load deadline
-/// (<see cref="SigningKeySettings.LoadTimeout"/>) and disposal both cancel. The deadline bounds the attempt even when
-/// the store ignores the token.
+/// <b>Admission.</b> Whether a request needs a load at all is decided under the gate lock against the snapshot as it is
+/// then, so a caller that saw no usable snapshot but was overtaken by a publication uses the new snapshot instead of
+/// loading again. A load attempt, whatever its trigger, joins the attempt in flight. Otherwise it is refused while
+/// <c>now &lt; NextAttemptAt</c>, or while an earlier store operation is still running (see <b>Ownership</b>);
+/// otherwise it starts.
 /// </item>
 /// <item>
-/// Any exception from the source is <c>Failed(Retrieval)</c>, whatever its type: drivers report cancellation and
-/// timeouts differently. Records that were read but none of which can be used are <c>Failed(Processing)</c>. A failure
-/// never replaces the current snapshot.
+/// <b>Deadline.</b> The store call runs on the thread pool, so synchronous work in a source cannot delay a caller, under
+/// a token that the load deadline (<see cref="SigningKeySettings.LoadTimeout"/>) and disposal cancel. The attempt ends
+/// at the deadline even when the store ignores the token, and a result that arrives at or after the deadline is
+/// rejected. Either way the timeout is recorded once, as <c>Failed(Retrieval)</c>, with backoff.
 /// </item>
 /// <item>
-/// Success publishes the snapshot, resets the failure count, and opens the gate immediately. Failure increments the
-/// count and closes the gate for <c>min(5·2^(n−1), 60) s ± 20 %</c>.
+/// <b>Ownership.</b> The single-flight slot owns the store operation until the operation itself finishes, not just until
+/// its attempt ends. While an operation that outlived its deadline is still running, no other store call starts: the
+/// gate refuses with <see cref="SigningKeyRefusalReason.OperationOutstanding"/>. When it finishes, its result is
+/// discarded and <see cref="AttemptStateChanged"/> fires. Every recovery bound therefore assumes the underlying store
+/// operation terminates; the database drivers honor the token (step 1.4), and certificate reads are finite.
 /// </item>
 /// <item>
-/// A waiter's cancellation token cancels only its own wait: the shared load keeps running, and the failure count is
-/// untouched.
+/// <b>Classification.</b> Any exception from the source is <c>Failed(Retrieval)</c>, whatever its type: drivers report
+/// cancellation and timeouts differently. Records that were read but none of which can be used are
+/// <c>Failed(Processing)</c>. A failure never replaces the current snapshot. Success publishes the snapshot, resets the
+/// failure count, and opens the gate immediately. Failure increments the count and closes the gate for
+/// <c>min(5·2^(n−1), 60) s ± 20 %</c>.
+/// </item>
+/// <item>
+/// <b>Waiters.</b> A waiter's cancellation token cancels only its own wait: the shared load keeps running, and the
+/// failure count is untouched.
 /// </item>
 /// </list>
 /// </summary>
@@ -50,12 +62,14 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
 
     private SigningKeySnapshot? _current;
     private Task<SigningKeyRefreshOutcome>? _inFlight;
+    private Task<SigningKeySourceResult>? _storeOperation;
     private DateTimeOffset _nextAttemptAt = DateTimeOffset.MinValue;
     private int _consecutiveFailures;
     private SigningKeyRefreshOutcome? _lastOutcome;
     private DateTimeOffset? _lastCompletedAt;
     private long _version;
     private TaskCompletionSource _stateChanged = NewSignal();
+    private bool _disposed;
 
     /// <param name="random">
     /// Source of the backoff jitter; <see cref="Random.Shared"/> when omitted. Only read under the provider's lock.
@@ -76,6 +90,19 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         _timeProvider = timeProvider;
         _logger = logger;
         _random = random ?? Random.Shared;
+    }
+
+    /// <summary>Which snapshot states make a load unnecessary for a caller.</summary>
+    private enum LoadNeed
+    {
+        /// <summary>Load regardless of the snapshot (scheduled refresh, unknown key).</summary>
+        Always,
+
+        /// <summary>A background reload for an overdue snapshot: unnecessary once a fresh one is published.</summary>
+        UnlessFresh,
+
+        /// <summary>A request that needs keys now: unnecessary once any usable snapshot is published.</summary>
+        UnlessUsable,
     }
 
     public SigningKeySnapshot? Current => Volatile.Read(ref _current);
@@ -114,7 +141,8 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                     _consecutiveFailures,
                     _nextAttemptAt,
                     _inFlight is not null,
-                    _lastOutcome
+                    _lastOutcome,
+                    _storeOperation is not null
                 );
             }
         }
@@ -122,30 +150,36 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
 
     public async Task<SigningKeySnapshot> GetUsableAsync(CancellationToken cancellationToken)
     {
+        // Lock-free fast path. It only ever returns a snapshot; every decision to load is made again under the lock.
         SigningKeySnapshot? snapshot = Current;
         SigningKeySnapshotState state = StateOf(snapshot, _timeProvider.GetUtcNow());
 
-        switch (state)
+        if (state == SigningKeySnapshotState.Fresh)
         {
-            case SigningKeySnapshotState.Fresh:
-                return snapshot!;
-
-            case SigningKeySnapshotState.Overdue:
-                // The attempt task never faults, so it can be left unobserved; the gate may refuse it.
-                _ = StartOrJoin(SigningKeyRefreshTrigger.Request);
-                return snapshot!;
+            return snapshot!;
         }
 
-        SigningKeyRefreshOutcome outcome = await StartOrJoin(SigningKeyRefreshTrigger.Request)
-            .WaitAsync(cancellationToken);
+        if (state == SigningKeySnapshotState.Overdue)
+        {
+            // The attempt task never faults, so it can be left unobserved; the gate may refuse it.
+            _ = Admit(SigningKeyRefreshTrigger.Request, LoadNeed.UnlessFresh);
+            return snapshot!;
+        }
 
+        Admission admission = Admit(SigningKeyRefreshTrigger.Request, LoadNeed.UnlessUsable);
+        if (admission.Usable is not null)
+        {
+            return admission.Usable;
+        }
+
+        SigningKeyRefreshOutcome outcome = await admission.Attempt!.WaitAsync(cancellationToken);
         if (outcome is SigningKeyRefreshOutcome.Succeeded succeeded)
         {
             return succeeded.Snapshot;
         }
 
         throw new SigningKeysUnavailableException(
-            state == SigningKeySnapshotState.None
+            admission.State == SigningKeySnapshotState.None
                 ? SigningKeysUnavailableReason.NoSnapshot
                 : SigningKeysUnavailableReason.SnapshotExpired,
             outcome
@@ -155,7 +189,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     public Task<SigningKeyRefreshOutcome> RefreshAsync(
         SigningKeyRefreshTrigger trigger,
         CancellationToken cancellationToken
-    ) => StartOrJoin(trigger).WaitAsync(cancellationToken);
+    ) => Admit(trigger, LoadNeed.Always).Attempt!.WaitAsync(cancellationToken);
 
     public async Task<SigningKeyUnknownKeyOutcome> TryRefreshForUnknownKeyAsync(
         string keyId,
@@ -164,23 +198,23 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     {
         ArgumentException.ThrowIfNullOrEmpty(keyId);
 
-        if (Current?.ContainsKeyId(keyId) == true)
+        Admission admission = Admit(
+            SigningKeyRefreshTrigger.UnknownKey,
+            LoadNeed.Always,
+            enforceCooldown: true,
+            keyId: keyId
+        );
+        if (admission.KeyPresent)
         {
             return SigningKeyUnknownKeyOutcome.AlreadyPresent;
         }
 
-        if (
-            !TryStartOrJoin(
-                SigningKeyRefreshTrigger.UnknownKey,
-                enforceCooldown: true,
-                out Task<SigningKeyRefreshOutcome> attempt
-            )
-        )
+        if (admission.Attempt is null)
         {
             return SigningKeyUnknownKeyOutcome.SuppressedCooldown;
         }
 
-        return await attempt.WaitAsync(cancellationToken) switch
+        return await admission.Attempt.WaitAsync(cancellationToken) switch
         {
             SigningKeyRefreshOutcome.Refused => SigningKeyUnknownKeyOutcome.RefusedGate,
             SigningKeyRefreshOutcome.Failed => SigningKeyUnknownKeyOutcome.RefreshFailed,
@@ -190,115 +224,215 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         };
     }
 
-    /// <summary>Cancels an attempt in flight; later attempts fail.</summary>
+    /// <summary>
+    /// Cancels the store operation in flight. Later admissions fail without calling the store or changing any state.
+    /// </summary>
     public void Dispose()
     {
-        _shutdown.Cancel();
-        _shutdown.Dispose();
-    }
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
 
-    private Task<SigningKeyRefreshOutcome> StartOrJoin(SigningKeyRefreshTrigger trigger)
-    {
-        TryStartOrJoin(trigger, enforceCooldown: false, out Task<SigningKeyRefreshOutcome> attempt);
-        return attempt;
+            _disposed = true;
+            _shutdown.Cancel();
+            _shutdown.Dispose();
+        }
     }
 
     /// <summary>
-    /// Joins the attempt in flight or starts one, atomically with the gate and (for unknown-kid refreshes) cooldown
-    /// checks. When the gate is closed, <paramref name="attempt"/> is a completed
-    /// <see cref="SigningKeyRefreshOutcome.Refused"/>. Returns <see langword="false"/> only when the cooldown suppresses
-    /// the refresh.
+    /// Decides, atomically with the gate, the cooldown, and the current snapshot, what a caller gets: a usable snapshot
+    /// that makes a load unnecessary, the key already present, a suppressed refresh (no attempt), or an attempt to await
+    /// (joined, refused, or newly started).
     /// </summary>
-    private bool TryStartOrJoin(
+    private Admission Admit(
         SigningKeyRefreshTrigger trigger,
-        bool enforceCooldown,
-        out Task<SigningKeyRefreshOutcome> attempt
+        LoadNeed need,
+        bool enforceCooldown = false,
+        string? keyId = null
     )
     {
-        TaskCompletionSource<SigningKeyRefreshOutcome> completion;
         lock (_sync)
         {
-            if (_inFlight is not null)
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            SigningKeySnapshotState state = StateOf(_current, now);
+
+            if (_disposed)
             {
-                attempt = _inFlight;
-                return true;
+                return new Admission(
+                    state,
+                    Attempt: Task.FromResult<SigningKeyRefreshOutcome>(
+                        new SigningKeyRefreshOutcome.Failed(
+                            SigningKeyFailureKind.Retrieval,
+                            new ObjectDisposedException(nameof(SigningKeySnapshotProvider))
+                        )
+                    )
+                );
             }
 
-            DateTimeOffset now = _timeProvider.GetUtcNow();
+            if (
+                (
+                    need == LoadNeed.UnlessUsable
+                    && state is SigningKeySnapshotState.Fresh or SigningKeySnapshotState.Overdue
+                ) || (need == LoadNeed.UnlessFresh && state == SigningKeySnapshotState.Fresh)
+            )
+            {
+                return new Admission(state, Usable: _current);
+            }
+
+            if (keyId is not null && _current?.ContainsKeyId(keyId) == true)
+            {
+                return new Admission(state, KeyPresent: true);
+            }
+
+            if (_inFlight is not null)
+            {
+                return new Admission(state, Attempt: _inFlight);
+            }
+
             if (
                 enforceCooldown
                 && _lastCompletedAt is { } lastCompleted
                 && now - lastCompleted < _settings.UnknownKeyRefreshCooldown
             )
             {
-                attempt = Task.FromResult<SigningKeyRefreshOutcome>(
-                    new SigningKeyRefreshOutcome.Refused(_nextAttemptAt)
-                );
-                return false;
+                return new Admission(state);
             }
 
             if (now < _nextAttemptAt)
             {
-                attempt = Task.FromResult<SigningKeyRefreshOutcome>(
-                    new SigningKeyRefreshOutcome.Refused(_nextAttemptAt)
-                );
-                return true;
+                return new Admission(state, Attempt: Refused(SigningKeyRefusalReason.RetryDelay));
             }
 
-            completion = new TaskCompletionSource<SigningKeyRefreshOutcome>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
-            _inFlight = completion.Task;
-        }
+            if (_storeOperation is not null)
+            {
+                return new Admission(state, Attempt: Refused(SigningKeyRefusalReason.OperationOutstanding));
+            }
 
-        // Started outside the lock: a source that completes synchronously re-enters the lock to publish.
-        _ = RunAttemptAsync(trigger, completion);
-        attempt = completion.Task;
-        return true;
+            return new Admission(state, Attempt: StartAttemptUnderLock(trigger));
+        }
     }
 
-    private async Task RunAttemptAsync(
-        SigningKeyRefreshTrigger trigger,
-        TaskCompletionSource<SigningKeyRefreshOutcome> completion
-    )
+    private Task<SigningKeyRefreshOutcome> Refused(SigningKeyRefusalReason reason) =>
+        Task.FromResult<SigningKeyRefreshOutcome>(
+            new SigningKeyRefreshOutcome.Refused(_nextAttemptAt, reason)
+        );
+
+    private Task<SigningKeyRefreshOutcome> StartAttemptUnderLock(SigningKeyRefreshTrigger trigger)
     {
         long started = _timeProvider.GetTimestamp();
+        CancellationTokenSource deadline = new(_settings.LoadTimeout, _timeProvider);
+        CancellationTokenSource attemptToken = CancellationTokenSource.CreateLinkedTokenSource(
+            deadline.Token,
+            _shutdown.Token
+        );
+        TaskCompletionSource<SigningKeyRefreshOutcome> completion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        // On the thread pool, so no synchronous part of the source runs on (and delays) the caller.
+        Task<SigningKeySourceResult> operation = Task.Run(
+            () => _source.LoadAsync(attemptToken.Token),
+            CancellationToken.None
+        );
+
+        _inFlight = completion.Task;
+        _storeOperation = operation;
+        _ = SuperviseAsync(new Attempt(trigger, started, operation, deadline, attemptToken, completion));
+        return completion.Task;
+    }
+
+    /// <summary>
+    /// Ends the attempt at the store's answer or at the deadline, whichever comes first. The store operation stays owned
+    /// by the gate until it finishes.
+    /// </summary>
+    private async Task SuperviseAsync(Attempt attempt)
+    {
         SigningKeySourceResult? result = null;
         Exception? failure = null;
         try
         {
-            using CancellationTokenSource deadline = new(_settings.LoadTimeout, _timeProvider);
-            using CancellationTokenSource attemptToken = CancellationTokenSource.CreateLinkedTokenSource(
-                deadline.Token,
-                _shutdown.Token
+            result = await attempt.Operation.WaitAsync(attempt.Token.Token);
+            if (
+                attempt.Token.IsCancellationRequested
+                || _timeProvider.GetElapsedTime(attempt.Started) >= _settings.LoadTimeout
+            )
+            {
+                result = null;
+                failure = new TimeoutException(
+                    $"The signing-key load finished at or after its {_settings.LoadTimeout.TotalSeconds:F0} s deadline; its result was discarded."
+                );
+            }
+        }
+        catch (OperationCanceledException canceled) when (attempt.Deadline.IsCancellationRequested)
+        {
+            failure = new TimeoutException(
+                $"The signing-key load did not finish within its {_settings.LoadTimeout.TotalSeconds:F0} s deadline.",
+                canceled
             );
-
-            Task<SigningKeySourceResult> load = LoadAsync(attemptToken.Token);
-            // If the deadline ends the wait first, the orphaned load's fault is still observed.
-            _ = load.ContinueWith(
-                static task => _ = task.Exception,
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default
-            );
-
-            result = await load.WaitAsync(attemptToken.Token);
         }
         catch (Exception exception)
         {
             failure = exception;
         }
 
-        completion.SetResult(Complete(trigger, result, failure, _timeProvider.GetElapsedTime(started)));
+        bool operationFinished = attempt.Operation.IsCompleted;
+        attempt.Completion.SetResult(
+            Complete(
+                attempt,
+                result,
+                failure,
+                operationFinished,
+                _timeProvider.GetElapsedTime(attempt.Started)
+            )
+        );
+
+        if (operationFinished)
+        {
+            attempt.DisposeTokens();
+        }
+        else
+        {
+            _ = ReleaseWhenFinishedAsync(attempt);
+        }
     }
 
-    private async Task<SigningKeySourceResult> LoadAsync(CancellationToken cancellationToken) =>
-        await _source.LoadAsync(cancellationToken);
+    /// <summary>
+    /// Waits for a store operation that outlived its attempt, discards its result, and frees the gate for the next
+    /// attempt.
+    /// </summary>
+    private async Task ReleaseWhenFinishedAsync(Attempt attempt)
+    {
+        await Task.WhenAny(attempt.Operation);
+        _ = attempt.Operation.Exception;
+        attempt.DisposeTokens();
+
+        TaskCompletionSource signal;
+        lock (_sync)
+        {
+            if (ReferenceEquals(_storeOperation, attempt.Operation))
+            {
+                _storeOperation = null;
+            }
+
+            signal = _stateChanged;
+            _stateChanged = NewSignal();
+        }
+
+        _logger.LogWarning(
+            "A signing-key load that outlived its deadline has finished ({OperationStatus}); its result was discarded",
+            attempt.Operation.Status
+        );
+        signal.TrySetResult();
+    }
 
     private SigningKeyRefreshOutcome Complete(
-        SigningKeyRefreshTrigger trigger,
+        Attempt attempt,
         SigningKeySourceResult? result,
         Exception? failure,
+        bool operationFinished,
         TimeSpan duration
     )
     {
@@ -324,6 +458,11 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 _nextAttemptAt = now + retryDelay;
             }
 
+            if (operationFinished && ReferenceEquals(_storeOperation, attempt.Operation))
+            {
+                _storeOperation = null;
+            }
+
             consecutiveFailures = _consecutiveFailures;
             _lastOutcome = outcome;
             _lastCompletedAt = now;
@@ -332,7 +471,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
             _stateChanged = NewSignal();
         }
 
-        Log(trigger, outcome, duration, consecutiveFailures, retryDelay);
+        Log(attempt.Trigger, outcome, duration, consecutiveFailures, retryDelay);
         signal.TrySetResult();
         return outcome;
     }
@@ -432,4 +571,33 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
 
     private static TaskCompletionSource NewSignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// What a caller gets from admission. <see cref="State"/> is the snapshot state admission saw; a null
+    /// <see cref="Attempt"/> with no <see cref="Usable"/> snapshot and no <see cref="KeyPresent"/> means the cooldown
+    /// suppressed the refresh.
+    /// </summary>
+    private readonly record struct Admission(
+        SigningKeySnapshotState State,
+        SigningKeySnapshot? Usable = null,
+        Task<SigningKeyRefreshOutcome>? Attempt = null,
+        bool KeyPresent = false
+    );
+
+    /// <summary>One attempt and the store operation it started, with the tokens that operation holds.</summary>
+    private sealed record Attempt(
+        SigningKeyRefreshTrigger Trigger,
+        long Started,
+        Task<SigningKeySourceResult> Operation,
+        CancellationTokenSource Deadline,
+        CancellationTokenSource Token,
+        TaskCompletionSource<SigningKeyRefreshOutcome> Completion
+    )
+    {
+        public void DisposeTokens()
+        {
+            Token.Dispose();
+            Deadline.Dispose();
+        }
+    }
 }

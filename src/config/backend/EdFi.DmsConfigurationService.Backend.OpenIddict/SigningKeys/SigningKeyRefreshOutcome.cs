@@ -79,6 +79,27 @@ public abstract record SigningKeyRefreshOutcome
         public Exception Exception { get; }
     }
 
-    /// <summary>No attempt was started because the retry gate is closed until <see cref="NextAttemptAt"/>.</summary>
-    public sealed record Refused(DateTimeOffset NextAttemptAt) : SigningKeyRefreshOutcome;
+    /// <summary>
+    /// No attempt was started: the retry gate is closed until <see cref="NextAttemptAt"/>, or an earlier store
+    /// operation that outlived its deadline is still running (<see cref="Reason"/>).
+    /// </summary>
+    public sealed record Refused(
+        DateTimeOffset NextAttemptAt,
+        SigningKeyRefusalReason Reason = SigningKeyRefusalReason.RetryDelay
+    ) : SigningKeyRefreshOutcome;
+}
+
+/// <summary>
+/// Why the load gate refused an attempt.
+/// </summary>
+public enum SigningKeyRefusalReason
+{
+    /// <summary>A failure closed the gate until its retry deadline.</summary>
+    RetryDelay,
+
+    /// <summary>
+    /// A store operation that outlived its load deadline has not finished. The single-flight slot owns it until it does,
+    /// so no overlapping store call starts.
+    /// </summary>
+    OperationOutstanding,
 }

@@ -59,6 +59,24 @@ internal sealed class KeyRepositoryHarness
         }
     }
 
+    /// <summary>
+    /// Waits (in real time, bounded) until the store has been called <paramref name="count"/> times. Store calls run on
+    /// the thread pool, so a test must wait for one before advancing fake time past its deadline.
+    /// </summary>
+    public async Task WaitForCallsAsync(int count)
+    {
+        DateTime giveUp = DateTime.UtcNow.AddSeconds(10);
+        while (Calls.Count < count)
+        {
+            if (DateTime.UtcNow > giveUp)
+            {
+                throw new TimeoutException($"The store was called {Calls.Count} times, not {count}.");
+            }
+
+            await Task.Delay(5);
+        }
+    }
+
     /// <summary>A row for a key id; the same id always carries the same RSA public key.</summary>
     public static PublicKeyInfo Row(string keyId) =>
         new()
@@ -104,6 +122,37 @@ internal sealed class KeyRepositoryHarness
 internal sealed class FixedRandom(double sample) : Random
 {
     public override double NextDouble() => sample;
+}
+
+/// <summary>
+/// Fake time that runs a callback inside the next <see cref="GetUtcNow"/> call, to interleave another caller at an
+/// exact point of the code under test.
+/// </summary>
+internal sealed class InterceptingTimeProvider(DateTimeOffset start) : FakeTimeProvider(start)
+{
+    private Action? _next;
+
+    public void OnNextUtcNow(Action action) => _next = action;
+
+    public override DateTimeOffset GetUtcNow()
+    {
+        Interlocked.Exchange(ref _next, null)?.Invoke();
+        return base.GetUtcNow();
+    }
+}
+
+/// <summary>
+/// Fake time whose timers never fire: the clock moves, but a deadline callback is never delivered, as when a timer
+/// runs late on a busy host. Only an elapsed-time check can then notice a deadline has passed.
+/// </summary>
+internal sealed class LateTimerTimeProvider(DateTimeOffset start) : FakeTimeProvider(start)
+{
+    public override ITimer CreateTimer(
+        TimerCallback callback,
+        object? state,
+        TimeSpan dueTime,
+        TimeSpan period
+    ) => base.CreateTimer(callback, state, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
 }
 
 internal static class SigningKeyTestSupport

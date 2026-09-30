@@ -118,6 +118,22 @@ public class SigningKeysUnavailableExceptionTests
     }
 
     [TestFixture]
+    public class Given_a_refusal_because_an_earlier_load_is_still_running
+    {
+        [Test]
+        public void It_says_the_previous_load_has_not_finished() =>
+            new SigningKeysUnavailableException(
+                SigningKeysUnavailableReason.NoSnapshot,
+                new SigningKeyRefreshOutcome.Refused(
+                    DateTimeOffset.UnixEpoch,
+                    SigningKeyRefusalReason.OperationOutstanding
+                )
+            )
+                .Message.Should()
+                .Be("No signing keys have been loaded, and the previous load has not finished.");
+    }
+
+    [TestFixture]
     public class Given_a_token_status_store_failure
     {
         [Test]

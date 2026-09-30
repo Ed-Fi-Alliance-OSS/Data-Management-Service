@@ -62,6 +62,8 @@ public sealed class SigningKeysUnavailableException : AuthenticationDependencyUn
                 "the key store could not be read",
             SigningKeyRefreshOutcome.Failed { Kind: SigningKeyFailureKind.Processing } =>
                 "no key record could be used",
+            SigningKeyRefreshOutcome.Refused { Reason: SigningKeyRefusalReason.OperationOutstanding } =>
+                "the previous load has not finished",
             SigningKeyRefreshOutcome.Refused => "a new load is not allowed before the retry deadline",
             _ => throw new ArgumentException(
                 "A successful load cannot leave the signing keys unavailable.",
