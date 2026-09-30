@@ -107,6 +107,11 @@ internal class CachedProfileService(
     private const string ApplicationProfilesCacheKeyPrefix = "ApplicationProfiles";
     private const string ProfileCatalogCacheKeyPrefix = "ProfileCatalog";
     private const string ProfileOpenApiCacheKeyPrefix = "ProfileOpenApi";
+
+    /// <summary>
+    /// The most profile-definition fetches one catalog build keeps in flight against CMS.
+    /// </summary>
+    internal const int MaxConcurrentProfileFetches = 8;
     private readonly ProfileOpenApiSpecificationFilter profileFilter = new(logger);
 
     private static string GetApplicationCacheKey(string? tenantId, long applicationId)
@@ -669,20 +674,28 @@ internal class CachedProfileService(
                         );
                     }
 
-                    // Fetch all profile definitions in parallel. Any failed fetch, of the list or of one
-                    // definition, throws ProfileDataUnavailableException out of this factory, so a
-                    // partial catalog is never cached. Only a CMS 404 for a definition comes back as
+                    // Fetch the profile definitions with bounded parallelism. Any failed fetch, of the list
+                    // or of one definition, throws ProfileDataUnavailableException out of this factory, so
+                    // a partial catalog is never cached. Only a CMS 404 for a definition comes back as
                     // null, and that one profile is skipped below.
-                    var fetchTasks = profiles.Select(async profile =>
-                    {
-                        CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
-                            profile.Id,
-                            tenantId
-                        );
-                        return (ProfileId: profile.Id, Response: profileResponse);
-                    });
-
-                    var fetchResults = await Task.WhenAll(fetchTasks);
+                    //
+                    // Bounded because the catalog is all-or-nothing: an unbounded burst of one request
+                    // per profile is what exhausts CMS database connections, and one failure now fails
+                    // the whole attempt. After the first failure no further fetches start, so a failing
+                    // attempt ends sooner and stops adding load to a struggling CMS.
+                    var fetchResults = new (long ProfileId, CmsProfileResponse? Response)[profiles.Count];
+                    await Parallel.ForEachAsync(
+                        Enumerable.Range(0, profiles.Count),
+                        new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentProfileFetches },
+                        async (index, _) =>
+                        {
+                            long profileId = profiles[index].Id;
+                            fetchResults[index] = (
+                                profileId,
+                                await profileCmsProvider.GetProfileAsync(profileId, tenantId)
+                            );
+                        }
+                    );
 
                     // Parse all profiles and build the store
                     var profilesByName = new Dictionary<string, ProfileDefinition>(

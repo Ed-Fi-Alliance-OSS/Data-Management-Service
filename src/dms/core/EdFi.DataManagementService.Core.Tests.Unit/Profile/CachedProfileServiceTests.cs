@@ -1619,6 +1619,92 @@ public class CachedProfileServiceTests
     }
 
     /// <summary>
+    /// The catalog is all-or-nothing, so its per-profile fetches are bounded: a catalog larger than the
+    /// bound never has more than the bound in flight against CMS, and still loads completely.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Catalog_Larger_Than_The_Fetch_Bound : Given_A_Cms_Backed_Profile_Service
+    {
+        private const int ProfileCount = CachedProfileService.MaxConcurrentProfileFetches * 3;
+
+        private int _inFlightWhileHeld;
+        private IReadOnlyList<string> _profileNames = [];
+        private readonly List<string> _detailPaths = [];
+
+        protected override async Task Act()
+        {
+            List<object> listed = [];
+            List<(CmsGate Gate, CmsReply Reply)> gates = [];
+            for (int index = 0; index < ProfileCount; index++)
+            {
+                long id = 100 + index;
+                string name = $"Profile{index}";
+                string path = $"/v3/profiles/{id}";
+                listed.Add(new { id, name });
+                _detailPaths.Add(path);
+                CmsReply reply = CmsReply.Json(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            id,
+                            name,
+                            definition = SchoolProfileXml.Replace("SchoolProfile", name),
+                        }
+                    )
+                );
+                Cms.Serve(path, reply);
+                gates.Add((Cms.GateNext(path), reply));
+            }
+            Cms.Serve(CatalogPath, CmsReply.Json(JsonSerializer.Serialize(listed)));
+
+            Task<IReadOnlyList<string>> load = Service.GetProfileNamesAsync(null);
+
+            // Wait for the bound to fill, then give an unbounded fan-out time to exceed it.
+            await WaitUntil(() => Cms.InFlight >= CachedProfileService.MaxConcurrentProfileFetches);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            _inFlightWhileHeld = Cms.InFlight;
+
+            foreach ((CmsGate gate, CmsReply reply) in gates)
+            {
+                gate.Release(reply);
+            }
+            _profileNames = await load;
+        }
+
+        private static async Task WaitUntil(Func<bool> condition)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException("The catalog fetch never reached the fetch bound.");
+                }
+                await Task.Delay(10);
+            }
+        }
+
+        [Test]
+        public void It_holds_no_more_than_the_bound_in_flight()
+        {
+            _inFlightWhileHeld.Should().Be(CachedProfileService.MaxConcurrentProfileFetches);
+            Cms.MaxInFlight.Should().Be(CachedProfileService.MaxConcurrentProfileFetches);
+        }
+
+        [Test]
+        public void It_fetches_every_listed_profile()
+        {
+            _detailPaths.Should().OnlyContain(path => Cms.RequestCount(path) == 1);
+        }
+
+        [Test]
+        public void It_loads_the_complete_catalog()
+        {
+            _profileNames.Should().HaveCount(ProfileCount);
+        }
+    }
+
+    /// <summary>
     /// Callers joined to one failing fetch all receive the failure, the fetch is still shared
     /// (stampede protection), and the failure is not left behind for the next caller.
     /// </summary>

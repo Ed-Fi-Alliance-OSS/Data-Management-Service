@@ -78,6 +78,8 @@ internal sealed class CmsProfileHttpDouble : HttpMessageHandler
     private readonly Dictionary<(string? Tenant, string Path), int> _requestCounts = [];
     private readonly List<CapturedRequest> _requests = [];
     private readonly List<HttpClient> _clients = [];
+    private int _inFlight;
+    private int _maxInFlight;
 
     public IReadOnlyList<CapturedRequest> Requests
     {
@@ -128,6 +130,16 @@ internal sealed class CmsProfileHttpDouble : HttpMessageHandler
         }
         return gate;
     }
+
+    /// <summary>
+    /// Requests currently inside this double, including any held behind a gate.
+    /// </summary>
+    public int InFlight => Volatile.Read(ref _inFlight);
+
+    /// <summary>
+    /// The most requests that were ever inside this double at once.
+    /// </summary>
+    public int MaxInFlight => Volatile.Read(ref _maxInFlight);
 
     /// <summary>
     /// Requests for a path across every tenant.
@@ -238,12 +250,26 @@ internal sealed class CmsProfileHttpDouble : HttpMessageHandler
             }
         }
 
-        if (gate is not null)
+        int inFlight = Interlocked.Increment(ref _inFlight);
+        int observedMax;
+        while (inFlight > (observedMax = Volatile.Read(ref _maxInFlight)))
         {
-            reply = await gate.WaitAsync(cancellationToken);
+            Interlocked.CompareExchange(ref _maxInFlight, inFlight, observedMax);
         }
 
-        return reply.ToResponse();
+        try
+        {
+            if (gate is not null)
+            {
+                reply = await gate.WaitAsync(cancellationToken);
+            }
+
+            return reply.ToResponse();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _inFlight);
+        }
     }
 
     protected override void Dispose(bool disposing)

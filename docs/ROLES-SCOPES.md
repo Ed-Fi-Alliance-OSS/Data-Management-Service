@@ -21,7 +21,7 @@ application, the following defaults are automatically assigned:
 |------------------------------------------------|-----------------------------------------------------------------------------|
 | `edfi_admin_api/full_access`                   | Provides **full access** to all API endpoints (read and write operations). |
 | `edfi_admin_api/readonly_access`               | Grants **read-only** access to all `GET` endpoints.                        |
-| `edfi_admin_api/authMetadata_readonly_access`  | Allows read-only access to the `/v3/authorizationMetadata` endpoint.         |
+| `edfi_admin_api/authMetadata_readonly_access`  | Allows read-only access to the endpoints the DMS API reads: `/v3/authorizationMetadata`, `/v3/claimSets`, `/v3/apiClients`, `/v3/dataStores`, `/v3/dataStoreContexts`, `/v3/dataStoreDerivatives`, `/v3/applications/{id}`, and `/v3/profiles`. |
 
 > [!NOTE]
 > Scopes define the level of access granted to a client. Assign

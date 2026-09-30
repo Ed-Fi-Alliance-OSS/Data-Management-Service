@@ -21,9 +21,11 @@ public class ProfileModule : IEndpointModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/v3/profiles/", GetAll);
+        // Limited access on the reads: DMS builds its profile catalog from them, so the service-account
+        // scope that covers every other DMS read must cover them too.
+        endpoints.MapLimitedAccess("/v3/profiles/", GetAll);
         endpoints.MapSecuredPost("/v3/profiles/", InsertProfile);
-        endpoints.MapSecuredGet($"/v3/profiles/{{id}}", GetById);
+        endpoints.MapLimitedAccess($"/v3/profiles/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/profiles/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/profiles/{{id}}", Delete);
     }
