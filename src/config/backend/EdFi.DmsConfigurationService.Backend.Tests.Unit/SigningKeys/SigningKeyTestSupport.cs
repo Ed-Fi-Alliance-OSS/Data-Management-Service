@@ -155,6 +155,129 @@ internal sealed class LateTimerTimeProvider(DateTimeOffset start) : FakeTimeProv
     ) => base.CreateTimer(callback, state, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
 }
 
+/// <summary>
+/// Fake time that records the due instant of every <c>Task.Delay</c> timer, the only timers the refresh service
+/// creates, so a test can wait until the service is parked on its wait before advancing time. A load deadline's timer
+/// belongs to a <see cref="CancellationTokenSource"/> and is not recorded.
+/// </summary>
+internal sealed class SchedulerTimeProvider(DateTimeOffset start) : FakeTimeProvider(start)
+{
+    private readonly List<DateTimeOffset> _waits = [];
+
+    public IReadOnlyList<DateTimeOffset> Waits
+    {
+        get
+        {
+            lock (_waits)
+            {
+                return [.. _waits];
+            }
+        }
+    }
+
+    public override ITimer CreateTimer(
+        TimerCallback callback,
+        object? state,
+        TimeSpan dueTime,
+        TimeSpan period
+    )
+    {
+        // Recorded after the timer exists, so advancing time once the record is seen cannot deliver it late.
+        ITimer timer = base.CreateTimer(callback, state, dueTime, period);
+        if (state is not CancellationTokenSource && dueTime != Timeout.InfiniteTimeSpan)
+        {
+            lock (_waits)
+            {
+                _waits.Add(GetUtcNow() + dueTime);
+            }
+        }
+
+        return timer;
+    }
+
+    /// <summary>Waits (in real time, bounded) until a scheduler wait due at <paramref name="dueAt"/> exists.</summary>
+    public Task WaitForWaitAsync(DateTimeOffset dueAt) =>
+        SigningKeyTestSupport.WaitUntilAsync(
+            () => Waits.Contains(dueAt),
+            () =>
+                $"No wait is due at {dueAt:O}; waits: {string.Join(", ", Waits.Select(wait => wait.ToString("O")))}."
+        );
+}
+
+/// <summary>
+/// A provider decorator that counts status reads and refresh requests, and can run an action right after a status read,
+/// before that status reaches the caller.
+/// </summary>
+internal sealed class ObservedSnapshotProvider(ISigningKeySnapshotProvider inner)
+    : ISigningKeySnapshotProvider
+{
+    private readonly List<(DateTimeOffset At, SigningKeyRefreshTrigger Trigger)> _refreshes = [];
+    private int _statusReads;
+    private (Func<SigningKeyProviderStatus, bool> When, Action Action)? _afterStatusRead;
+
+    public TimeProvider? Clock { get; init; }
+
+    public int StatusReads => Volatile.Read(ref _statusReads);
+
+    public IReadOnlyList<(DateTimeOffset At, SigningKeyRefreshTrigger Trigger)> Refreshes
+    {
+        get
+        {
+            lock (_refreshes)
+            {
+                return [.. _refreshes];
+            }
+        }
+    }
+
+    public SigningKeySnapshot? Current => inner.Current;
+
+    public DateTimeOffset NextAttemptAt => inner.NextAttemptAt;
+
+    public Task AttemptStateChanged => inner.AttemptStateChanged;
+
+    public SigningKeyProviderStatus Status
+    {
+        get
+        {
+            Interlocked.Increment(ref _statusReads);
+            SigningKeyProviderStatus status = inner.Status;
+            if (_afterStatusRead is { } hook && hook.When(status))
+            {
+                _afterStatusRead = null;
+                hook.Action();
+            }
+
+            return status;
+        }
+    }
+
+    /// <summary>Runs <paramref name="action"/> once, after the first status read that satisfies <paramref name="when"/>.</summary>
+    public void AfterStatusRead(Func<SigningKeyProviderStatus, bool> when, Action action) =>
+        _afterStatusRead = (when, action);
+
+    public Task<SigningKeySnapshot> GetUsableAsync(CancellationToken cancellationToken) =>
+        inner.GetUsableAsync(cancellationToken);
+
+    public Task<SigningKeyRefreshOutcome> RefreshAsync(
+        SigningKeyRefreshTrigger trigger,
+        CancellationToken cancellationToken
+    )
+    {
+        lock (_refreshes)
+        {
+            _refreshes.Add(((Clock ?? TimeProvider.System).GetUtcNow(), trigger));
+        }
+
+        return inner.RefreshAsync(trigger, cancellationToken);
+    }
+
+    public Task<SigningKeyUnknownKeyOutcome> TryRefreshForUnknownKeyAsync(
+        string keyId,
+        CancellationToken cancellationToken
+    ) => inner.TryRefreshForUnknownKeyAsync(keyId, cancellationToken);
+}
+
 internal static class SigningKeyTestSupport
 {
     public static readonly DateTimeOffset Start = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
@@ -165,18 +288,37 @@ internal static class SigningKeyTestSupport
         KeyRepositoryHarness harness,
         TimeProvider timeProvider,
         IdentityOptions? options = null,
-        ILogger<SigningKeySnapshotProvider>? logger = null
+        ILogger<SigningKeySnapshotProvider>? logger = null,
+        Random? random = null
     ) =>
         new(
             new DatabaseSigningKeySource(harness.Repository, NullLogger<DatabaseSigningKeySource>.Instance),
             Options.Create(options ?? new IdentityOptions()),
             timeProvider,
             logger ?? NullLogger<SigningKeySnapshotProvider>.Instance,
-            new FixedRandom(0.5)
+            random ?? new FixedRandom(0.5)
         );
 
     /// <summary>Awaits with a real-time guard so a broken implementation fails instead of hanging the run.</summary>
     public static Task<T> Bounded<T>(this Task<T> task) => task.WaitAsync(TimeSpan.FromSeconds(10));
+
+    /// <inheritdoc cref="Bounded{T}(Task{T})"/>
+    public static Task Bounded(this Task task) => task.WaitAsync(TimeSpan.FromSeconds(10));
+
+    /// <summary>Polls (in real time, bounded) until <paramref name="condition"/> holds.</summary>
+    public static async Task WaitUntilAsync(Func<bool> condition, Func<string> failure)
+    {
+        DateTime giveUp = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > giveUp)
+            {
+                throw new TimeoutException(failure());
+            }
+
+            await Task.Delay(5);
+        }
+    }
 
     public static IReadOnlyList<string> MessagesAt<T>(ILogger<T> logger, LogLevel level) =>
         Fake.GetCalls(logger)
