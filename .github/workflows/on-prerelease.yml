@@ -1329,6 +1329,30 @@ jobs:
 
           Write-Output "Assembly version stamp verified: $dllAssemblyVersion"
 
+          # The plugin contract tree ships in the Configuration Service's publish output and must
+          # keep its own declared version there. The loader's newer-plugin-on-older-host preflight
+          # compares these AssemblyVersions, so a release stamp here would let a plugin built for a
+          # newer contract past that check.
+          Import-Module ./package-helpers.psm1
+          $declared = [version](Get-PluginsContractVersion)
+          $expectedPluginsVersion = [version]::new($declared.Major, $declared.Minor, [Math]::Max($declared.Build, 0), 0)
+
+          foreach ($pluginsDllName in @("EdFi.Api.Plugins.dll", "EdFi.Api.Plugins.Hosting.dll")) {
+            $pluginsDll = Get-ChildItem -Path $publishDir -Filter $pluginsDllName -Recurse | Select-Object -First 1
+            if ($null -eq $pluginsDll) {
+              Write-Error "DLL not found: $pluginsDllName under $publishDir"
+              exit 1
+            }
+
+            $pluginsAssemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($pluginsDll.FullName).Version
+            if ($pluginsAssemblyVersion -ne $expectedPluginsVersion) {
+              Write-Error "Assembly version mismatch: expected $pluginsDllName at the declared plugin contract version '$expectedPluginsVersion' but DLL reports '$pluginsAssemblyVersion'"
+              exit 1
+            }
+
+            Write-Output "Plugin contract version verified: $pluginsDllName $pluginsAssemblyVersion"
+          }
+
       - name: Create Config NuGet Package
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "cs-v", ""

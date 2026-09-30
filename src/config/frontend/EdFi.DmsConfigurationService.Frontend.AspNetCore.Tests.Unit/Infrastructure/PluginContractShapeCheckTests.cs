@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Secrets;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -187,6 +188,140 @@ public class PluginContractShapeCheckTests
                     ("Vault", new ServiceDescriptor(typeof(IDisposable), _ => null!, ServiceLifetime.Scoped)),
                 ]
             );
+
+        [Test]
+        public void It_reports_no_problem()
+        {
+            _findings.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_plugin_registering_the_client_secret_hasher_collection_type
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _findings = CheckOne(
+                "Hasher",
+                new ServiceDescriptor(
+                    typeof(IEnumerable<IClientSecretHasher>),
+                    _ => Array.Empty<IClientSecretHasher>(),
+                    ServiceLifetime.Singleton
+                )
+            );
+
+        [Test]
+        public void It_reports_one_problem_naming_the_plugin_and_the_collection_type()
+        {
+            _findings
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Contain("plugin 'Hasher'")
+                .And.Contain("'IEnumerable<EdFi.DmsConfigurationService.Secrets.IClientSecretHasher>'");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_plugin_registering_a_collection_of_its_own_type
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _findings = CheckOne(
+                "Hasher",
+                new ServiceDescriptor(
+                    typeof(IEnumerable<IDisposable>),
+                    _ => Array.Empty<IDisposable>(),
+                    ServiceLifetime.Singleton
+                )
+            );
+
+        [Test]
+        public void It_reports_no_problem()
+        {
+            _findings.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_plugin_registering_the_client_secret_hasher_collection_type_under_a_key
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _findings = CheckOne(
+                "Hasher",
+                new ServiceDescriptor(
+                    typeof(IEnumerable<IClientSecretHasher>),
+                    "primary",
+                    (_, _) => Array.Empty<IClientSecretHasher>(),
+                    ServiceLifetime.Singleton
+                )
+            );
+
+        [Test]
+        public void It_reports_no_problem_because_the_unkeyed_collection_is_untouched()
+        {
+            _findings.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_plugin_factory_for_the_client_secret_hasher_that_returns_null
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceDescriptor descriptor = ServiceDescriptor.Singleton<IClientSecretHasher>(_ => null!);
+            IServiceCollection services = new ServiceCollection();
+            services.Add(descriptor);
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            _findings = PluginContractShapeCheck.CheckResolvedInstances(
+                CmsPluginContracts.Registry,
+                [("Hasher\nforged", descriptor)],
+                provider
+            );
+        }
+
+        [Test]
+        public void It_reports_one_problem_naming_the_contract_and_the_contributing_plugin()
+        {
+            _findings
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Contain("'EdFi.DmsConfigurationService.Secrets.IClientSecretHasher' resolved to null")
+                .And.Contain("plugin(s) 'Hasherforged'");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_plugin_factory_for_the_client_secret_hasher_that_returns_an_instance
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ServiceDescriptor descriptor = ServiceDescriptor.Singleton(_ => A.Fake<IClientSecretHasher>());
+            IServiceCollection services = new ServiceCollection();
+            services.Add(descriptor);
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            _findings = PluginContractShapeCheck.CheckResolvedInstances(
+                CmsPluginContracts.Registry,
+                [("Hasher", descriptor)],
+                provider
+            );
+        }
 
         [Test]
         public void It_reports_no_problem()

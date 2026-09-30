@@ -5,7 +5,6 @@
 
 using System.Text.Json;
 using EdFi.Api.Plugins.Hosting;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using EdFi.DmsConfigurationService.Secrets;
 using FluentAssertions;

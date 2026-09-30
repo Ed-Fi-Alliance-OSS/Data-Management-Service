@@ -577,7 +577,9 @@ unchanged, with these points stated for the Configuration Service itself:
   unprefixed `AddEnvironmentVariables()` source. `src/config/run.sh` starts the
   application with no arguments, so the stock container has no command-line source.
 - **`PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any
-  `ContributeConfiguration` hook runs**, so no plugin source can supply either.
+  `ContributeConfiguration` hook runs**, so no plugin source can change what loads.
+  A plugin source can still supply either key, and a later read of the section
+  sees that value, but the loader has already acted on the one it bound.
 
 **Values a plugin source cannot usefully supply in the Configuration Service:**
 

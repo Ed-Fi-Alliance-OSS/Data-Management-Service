@@ -176,6 +176,13 @@ async Task AuditPluginRegistrations(WebApplication app)
             .Findings.Select(finding => finding.ActivationException)
             .FirstOrDefault(activationException => activationException is not null)
     );
+
+    // After the shared audit, so an activation failure is reported as one rather than surfacing here
+    // as a resolve that throws. A factory that returned null passed that activation.
+    await AbortOnPluginRegistrationProblems(
+        PluginContractShapeCheck.CheckResolvedInstances(auditInput, app.Services),
+        activationException: null
+    );
 }
 
 /// <summary>

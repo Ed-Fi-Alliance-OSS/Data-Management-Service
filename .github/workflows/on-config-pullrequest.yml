@@ -135,7 +135,7 @@ jobs:
                 ;;
             esac
             case "$file" in
-              .github/workflows/*|build-config.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*)
+              .github/workflows/*|build-config.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*|src/dms/PluginFixtureStaging.targets)
                 config_relevant=true
                 ;;
             esac
