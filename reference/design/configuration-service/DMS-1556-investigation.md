@@ -690,7 +690,10 @@ Bearing on the hypotheses (the attribution table and verdicts are step 0.6):
   eliminate every connection-related contribution: E5 also adds pool waiting, and its
   few handshakes still stalled in half the runs. At the stress workload, connection churn
   saturates PostgreSQL's CPU, but only in the slot-exhausted regime. No SCRAM computation
-  appeared on any captured stack.
+  appeared in any capture inside the unauthorized phase. *(Corrected in 0.6: an earlier
+  wording said "on any captured stack". One worker was in SCRAM HMAC computation in one
+  release-spanning 14 s capture, pair-e3 baseline cold repetition 3, while authorizations
+  rose from 0 to 189.)*
 - **H3:** little I/O, no checkpoints or slow statements in any catalog block.
 - **H4:** profile-dependent in both the harness (E1) and the real workload
   (E7a 0.4 s versus E7b 13.3 s).
@@ -754,7 +757,9 @@ them as `e5-*-stacks.superseded.csv`.
 2. **Idle classification.** Any `PortableThreadPool+WorkerThread` frame had been
    classified as idle, which includes ordinary worker dispatch. `threadpool-parked` now
    requires the parked-worker signature: only `LowLevelLifoSemaphore` waits above
-   `WorkerThreadStart` (3,651 threads in the retained captures match it exactly).
+   `WorkerThreadStart`. The 126 block records contain **3,412** such threads. *(Corrected
+   in 0.6: this sentence had reported 3,651, a total that also counted nine tooling
+   shake-down captures outside the evidence corpus; see 0.6 bookkeeping.)*
    Dedicated runtime threads are `runtime-infrastructure`, and other execution is
    `active-other`. Per-thread validation against retained examples, all passing:
    socket-completion dispatch without Npgsql frames → active-other; socket completion
@@ -764,3 +769,279 @@ them as `e5-*-stacks.superseded.csv`.
    worker → threadpool-parked; a resolver wait → resolver-wait. Four of the 126
    captures change, one thread each (three executing workers and the gate thread, all
    previously counted as idle); no resolver-wait count changes.
+
+## 0.6 — Attribution, gate records, and implementation challenge (2026-09-30)
+
+### Scope
+
+This step analyzes retained evidence only. No workload ran, and no production code
+changed. Evidence is cited by the IDs in the tooling README's **Evidence index**
+(`eng/performance/dms-1556/README.md`). Every verdict and gate decision below is a
+**proposal for the G2 review**, not a decision. Two wording errors found in the 0.5 text
+are corrected in place and listed under Bookkeeping.
+
+### The mechanism, link by link
+
+Each link is marked **M** (measured directly) or **I** (inferred).
+
+1. **M.** In every baseline stall, the captures that lie wholly inside the unauthorized
+   phase (2 s and 8 s) show the thread-pool workers in a synchronous `Task` wait under
+   `JsonWebTokenHandler.ValidateSignature`, which is IdentityModel calling CMS's
+   `IssuerSigningKeyResolver` (F1). Across the 36 baseline catalog captures at 2 s and
+   8 s, **1,904 of 1,906 workers** are in that wait; the other two are one worker in
+   Npgsql code and one initializing. The same holds in all E5 and stress captures. No
+   thread in any of the 126 records is in any other synchronous wait (EV-STK).
+2. **M.** The pool grows about 4 workers per second and every new worker joins the
+   wait. The thread-pool queue stays non-empty across those captures (2–54 items in the
+   catalog workloads, 56–96 at stress) (EV-STK, livemetrics ranges).
+3. **M.** Meanwhile PostgreSQL has received the CMS connections, but authorizations stay
+   flat across both capture boundaries (at most 5 in the catalog baselines). PostgreSQL
+   is mostly idle (mean CPU 5–7 % in every catalog round that released before
+   `Timeout=15`) and waits for the client in the SCRAM exchange (EV-E2 M-conn,
+   EV-E3/E4/E5).
+4. **I.** The continuations of the pending opens, the client's steps of the SCRAM
+   exchange, are queued work that cannot run while every worker is blocked. The round
+   releases once the pool approaches about N workers (76–87 at N = 87, 57–61 at N = 64).
+   The queue's contents were not captured, so the queued items are not observed to be
+   these continuations. E4 corroborates this link: with a worker minimum of 128, round 1
+   takes 0.17–1.1 s and handshakes take 7–15 ms.
+5. **M.** Failures cluster where the stall crosses Npgsql's `Timeout=15`, and nowhere
+   else:
+   - E1 run 3: 12 key-fetch timeouts and 3 × 401 (EV-E1-RA).
+   - The pair-e3 cold baselines: 14–15 resolver-read failures per run, all responses
+     200 (EV-E3).
+   - Stress round 1: profile-path open-timeout 500s, including the unconfounded headroom
+     500s (EV-HR).
+
+   The same blocking code serves the headroom steady state (rounds 2–5) with **zero**
+   non-200s (200 × 3,072).
+6. **M.** The stall also occurs in the warm-first workload (serial warm-up, then the
+   first concurrent burst). By then the F6 metadata self-fetch has completed and the
+   serial paths are JIT-warm. So cold key loading, the metadata fetch, and process start
+   are not necessary for the stall. This matters because the real workload's catalog
+   burst has the warm-first shape: it arrives about 10 minutes into shard 2 on a CMS that
+   has already issued tokens (EV-E7A, EV-E7B).
+7. **I.** On the CI runner, the ticket's 500s are this same chain crossing `Timeout=15` on
+   the profile path at the catalog workload. Locally, the catalog workload never produced
+   a 500. CI after push is the evidence for this link.
+
+### Attribution table (proposed verdicts)
+
+| Hypothesis | Direct evidence | Corroborating controls | Proposed verdict | Limitations |
+| --- | --- | --- | --- | --- |
+| **H1** thread-pool starvation from the blocking resolver | Links 1–3 and 5 (EV-STK, EV-E2, EV-E3/E4/E5, EV-HR, EV-E1-RA) | **E4** removes the stall (round 1 13.6–15.1 s → 0.17–1.1 s; `Worker Min Limit` 128 verified, EV-DUMP). **E3** removes it (0.6–0.9 s) but cannot separate blocking from round-trip cost. **E5** leaves it in place, as H1 predicts: blocking does not depend on connection count. | **Supported** | The snapshot instant inside each ~2.4 s capture is unknown. The 14 s captures span the release, so the release order is unresolved. Link 4 is inferred (queue contents not captured). `/stacks` may perturb the stall by about 1 s, against control effects of 13 s or more. P-runner-approx is not the runner. No control is the fix, so the fix's effect is predicted here and measured only in Phase 4. |
+| **H2** connection-creation and SCRAM cost | Creates track overlap (80–83 at N = 87). Received → authorized takes 5–10 s while PostgreSQL is idle. No SCRAM computation in any capture inside the unauthorized phase; one worker in one release-spanning capture. At stress, `Max Pool Size` 100 = `max_connections` 100 → 53300 rejections, and churn saturates PostgreSQL CPU. | **E5**: with 12–13 physical connections the stall persists (12.2–15.8 s). **Headroom** removes the steady-state 53300s. E3 changes key retrieval as a whole and cannot isolate H2. | **Modifier**, narrowly: high connection counts are **not necessary** for the stall (E5). Slot exhaustion is a separate stress-workload failure (53300) that headroom removes. Not refuted. | E5 changes two things at once (fewer connections, more pool waiting), and its handshake timing is bimodal. The client-side SCRAM cost is known only from stacks. Why stress connections churn is not established. |
+| **H3** PostgreSQL / disk saturation | 0–1 checkpoints, no slow statements, no lock waits, `pg_stat_io` 0–7 writes per round, host disk latency ≤ 7.8 ms, active backends only on-CPU or waiting on `Client` | E4 removes the stall; H3 predicts no effect | **Refuted** for the catalog stall on this host | The host disk (NVMe) is not the runner's, and the runner's disk is unmeasured. The stress CPU saturation coincides with connection churn, not I/O. |
+| **H4** runner contention | P-dev 0/5 stalls (cold p99 802–922 ms) versus P-runner-approx 5/5 (~15 s) (EV-E1-DEV/RA). E7a max 0.4 s versus E7b 13.3 s. | The profile pair itself | **Modifier**: resources decide whether the stall appears and how long it lasts. This fits H1: the release needs about N workers, and the pool starts from the worker minimum (16 on P-dev, 4 on P-runner-approx). | Each profile changes two knobs together (CPU cap and `DOTNET_PROCESSOR_COUNT`). The runner envelope is CI's to show. |
+| **H5** self-referential metadata amplification | No discovery or JWKS self-request in any timed E2+ round. The F6 self-fetch happens once per process. All `Failed to fetch` lines carry `/v3/profiles` request paths. The stall persists in warm-first, after the self-fetch (link 6). | E0(c): supplying a manager removes the backchannel (a design fact, not a control) | **Refuted as amplification** in the measured workloads | No control exercised it. F6 has an unmeasured side effect: merged metadata keys may have let pair-e3 cold requests validate after their resolver reads failed (0.5 footnote 1, inferred). That bears on I-5, not on the stall. |
+
+### G1 record
+
+**G1 as defined (E1 cold catalog runs) is unchanged: partially reproduced
+(provisional).** It is not relabeled. The stress R-500 evidence is recorded beside it as
+its own record:
+
+| Source | Condition | Runs with a round-1 profile-path 500 | Profile-path 500s | Confounder |
+| --- | --- | --- | --- | --- |
+| 0.4 E2 stress-256x128 (EV-E2) | `max_connections=100` | 3 of 3 (2, 3, and 4 round-1 500s). Only repetition 3's includes the exact ticket signature. | 18 in all rounds: 17 × 53300, 1 × `AuthenticateSASL` timeout | Slot exhaustion in the same round |
+| 0.5 stress baseline (EV-HR) | `max_connections=100` | 3 of 3 | Round 1: 5 (3 × SASL timeout, 1 × stream-read timeout during open, 1 × 53300). Rounds 2–5: 14 × 53300 | Slot exhaustion in the same block |
+| **0.5 headroom (EV-HR)** | `max_connections=200` | **2 of 3** (repetition 2: 1; replacement: 2; repetition 3: 0) | **3, all `ProfileRepository.GetProfile` → `OpenAsync` → `AuthenticateSASL` → `TimeoutException`**, completing at 19.5–23.5 s | **None**: no 53300 anywhere in the block, and rounds 2–5 were 200 × 3,072 |
+
+In the headroom runs, the 2 s, 8 s, and 14 s stress captures show every worker in the
+resolver wait, with at most 8 authorizations through 16.5 s. The 500s complete 3–7 s
+after the last capture, so the failure instant itself was not captured. Their durations
+exceed `Timeout=15`, consistent with a profile open that started 4–8 s into the round
+and then starved (**inferred**). The headroom 500s meet the §3.2 R-500 text (HTTP 500 on
+`GET /v3/profiles/{id}` with `NpgsqlException`/`TimeoutException` from `OpenAsync` in the
+profile path). They do not meet G1's scope, which is the five cold E1 catalog runs.
+These are warm-first runs at the stress workload.
+
+**Proposed gate clarification (P-G1, requires approval).** Add to §3.6:
+
+> **G1-S (stress record).** R-500 at `stress-256x128` under a condition without slot
+> exhaustion, in a round whose stacks show the stall's signature. G1-S never changes the
+> G1 catalog record. When G1 is *partially reproduced (provisional)* and G1-S is
+> *reproduced*, the mechanism counts as established for G2 and AC 1 on a **combined
+> basis**:
+>
+> - the catalog workload reproduces the stall (R-slow);
+> - the stress workload reproduces its 500 outcome;
+> - the same stack signature is present in both.
+>
+> The catalog-workload 500 on the CI runner stays recorded as inferred, with CI after
+> push as its evidence.
+
+Why the combined findings justify proceeding:
+
+- The stress 500s have the ticket's exact exception and code path.
+- They occur only in the stalled round, with the catalog stall's stack signature.
+- They disappear from the steady state even though the blocking code is still present.
+- At the catalog workload, the controls that remove the stall (E4, E3) are already
+  measured.
+
+What the combination does **not** show: no control ran at the stress workload, so
+"removing the stall removes the stress 500s" is predicted, not measured. If the reviewer
+wants that corroboration before G2, one E4 stress pair (baseline versus E4, both under
+headroom) would supply it. It is not run here and not requested by this step.
+
+**Proposed G1 record:** *partially reproduced (provisional)* for the catalog workload
+(unchanged), plus **G1-S reproduced** (2 of 3 headroom runs). The combined basis is
+proposed for AC 1.
+
+### Challenging the proposed implementation
+
+Class codes: **M** — the measured mechanism requires it. **A** — an AC requires it.
+**C** — it prevents a regression that another change would introduce. **P** — a policy
+choice (value or trade-off). **O** — optional; kept only by an earlier decision.
+
+| # | Change (spec ref) | Class | Why it is necessary | If omitted | Preserves |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Remove the blocking resolver; supply keys through a plain `IConfigurationManager` (D-2) | M; AC 2, AC 3 | The stall *is* the synchronous resolver wait (link 1). IdentityModel 8.12 has no asynchronous resolver, and the configuration manager is JwtBearer's only asynchronous key hook, awaited with `RequestAborted` (V-2, E0(d)1). | Any resolver that can wait on I/O keeps the stall. | I-1 (validation parameters unchanged), I-5 (no backchannel, E0(c)) |
+| 2 | Shared key state in one singleton (D-1) | M, C | The request path must read keys from memory. F7 creates three `OpenIddictTokenManager` instances, which would otherwise load and hold keys independently. | Three independent loads and possibly different views of the key set. | I-8 |
+| 3 | Single-flight load, startup load, deadline-driven refresh (D-5, §4.4) | M; AC 3 ("asynchronous refresh/coalescing") | The reproduced shape is a burst: 87 concurrent requests must share one *awaited* load, and the startup load means the first burst normally finds a snapshot already published. | Without coalescing, a cold burst issues one load per request. Without the scheduler, rotation and retirement propagate only through request traffic. | `T_prop`, `T_start` bounds |
+| 4 | Boundary readiness in `OnMessageReceived`, `Fail(exception)` at all three events, 503 + `Retry-After` (D-3, D-9) | A (AC 4); C | E0(a)1: a throwing manager escapes as a 500, so without translation the fix would replace today's 500s with different 500s. E0(b): a boundary failure makes no manager call. | M2b, i.e. 500s | Token, introspection, and revocation contracts (§4.7); I-7 |
+| 5 | Failure classes; a failed load is never published as empty (D-4) | A (AC 4), measured | E1 run 3: a swallowed timeout became an empty key set and a 401 on a valid token ("available keys:" empty). F5: JWKS answers `200 []` on failure. | Misreported invalid tokens under load | I-8 |
+| 6 | `VerifyTokenAsync` reads the snapshot (§4.3.9) | M, A | This second per-request key read is the one whose failures produced the E1 run-3 and stress 401s. It also cuts authentication database acquisitions from three to one. | 401s under load persist even with the resolver fixed. | Signature and `kid` checks (I-9) |
+| 7 | Token-status check stays per request and uncached; store failures become a typed exception and 503 (D-7) | A (AC 3 revocation, AC 4) | Stress token-status failures were reported as 401 invalid-token (22 in 0.4, 6 in headroom). The read is already asynchronous and never appeared in a blocked frame, so it needs no structural change. | Caching it would trade revocation for availability, which AC 3 forbids. | **I-2 uncached status**, I-3 |
+| 8 | Gated unknown-`kid` refresh with `Cooldown` (D-6, Q14) | A (AC 3 rotation, unknown key); P (cooldown value) | Today every request re-reads keys, so a newly inserted key is accepted on its first request. The snapshot must keep prompt first-sighting acceptance, bounded against floods of arbitrary `kid`s (I-6). | New-key tokens get 401 on every instance until `T_prop` (about 5 min): a rotation regression. | I-6, I-9; rotation bounds §4.5 |
+| 9 | `MaxStaleness` fail-closed; no last-known-good or metadata fallback (Q13, I-5, V-3) | A (AC 3, "not indefinitely trusting retired keys") | It bounds trust after the last successful retrieval. Today's metadata merge is an unbounded side channel for key trust (inferred from the pair-e3 all-200 runs). | Retired keys trusted without bound during a key-store outage | **`T_max`, retirement bound** |
+| 10 | Retry gate with backoff (D-5) | P; AC 5 (interruption and recovery) | It limits repository traffic during an outage to one attempt per backoff interval, whatever the request rate, and it recovers with no requests. | Request-rate retries against a failing store | I-6 |
+| 11 | Cancellation overload on the repository, both engines (D-8) | C | `LoadTimeout` and waiter detachment need a cancellable read, and MSSQL shares the contract. | A hung load holds the gate until Npgsql's own timeout. | — |
+| 12 | JWKS from the provider: 503 on failure, `200 []` only for `Succeeded(0)` (3.3) | A (AC 4) | F5 | JWKS keeps masking failures as an empty key set. | I-8 |
+| 13 | `DmsJwtBearer` parity (3.2) | C (latent M) | It has the same blocking resolver (F2) and is registered by both stores, though no endpoint selects it. Its reflection call targets the `ValidateTokenAsync` that change 7 alters. | A latent copy of the measured defect and a second, divergent validation path | Same invariants as `Bearer` |
+| 14 | `DevelopmentCertificateStore` (D-10) | C | The hosted service's startup load creates the file concurrently with issuance in development-certificate mode (the round-2 race). | The issued token's `kid` can differ from the published certificate. | I-10 |
+| 15 | Parser move (§4.3.3); format-cache removal (Q7) | C; **O** | The sources parse keys outside the token manager, so the parser must move. Removing the cache is required by neither the mechanism nor an AC: with parsing once per load it no longer earns its keep. | Parser: nothing compiles. Cache: no functional effect. | — |
+| 16 | Options with fail-fast validation (§4.3.12) | C, P | Values under G3 below | — | — |
+
+**Deliberately unchanged, and why the evidence does not require a change:**
+
+- `ProfileRepository.GetProfile` still opens outside its `try` (F8, Q10). The 500s run
+  through that path, but their cause is the starvation. The fix removes the cause, and
+  DMS-side handling stays DMS-1557 (AC 6).
+- Npgsql `Timeout`, `Max Pool Size`, and the thread-pool minimum stay unchanged (§1.6).
+
+**Alternatives the evidence rules out:**
+
+- **A thread-pool minimum (E4).** It removes the stall locally but keeps the blocking
+  resolver. The release needs about N workers, so any fixed minimum is a bet on host and
+  burst size.
+- **A pool bound (E5).** It does not remove the stall.
+- **A longer Npgsql `Timeout`.** The stall grows with burst size (8–9 s at N = 64,
+  13–14 s at 87, more than 16.5 s at 128, with 500s completing at 19–23 s), so a longer
+  timeout only moves the failure point.
+- **A synchronous in-memory cache inside the existing resolver.** It would remove the
+  per-request read on cache hits, which is the real workload's warm-first shape. But a
+  cold or expired cache blocks every concurrent request on one shared load. E5 shows
+  that fewer database operations under blocking still stall; applying that to a single
+  shared load is an inference. AC 3 also names asynchronous refresh/coalescing.
+
+**Security and success requirements preserved** (unchanged from §4.8 and §7.4):
+
+- I-1 issuer/audience/lifetime/signature: 3.1-c/j. I-9 missing-`kid`/forged-signature
+  rejection: 3.1-j/k. Revocation still rejected: 3.1-b.
+- I-2 uncached status: 3.1-l, M3.
+- I-3 no 200 while a store is unavailable: 3.1-f/g/m.
+- Rotation and retirement bounds `T_prop`/`T_max`: 1.5-h/i/o/p/q, 1.6-f, 3.1-e/h/m/q, 3.4-b/c.
+- I-5 no fallback: 3.1-o, M7.
+- I-6 bounded loads: 1.5-j/l, M4/M5.
+- I-8 no empty-as-success: 1.5-f/g, 3.3.
+- Full-request success: **7.4-H** (every expected request in every healthy
+  baseline-comparison run returns 200 with the expected `id` and `definition`) is not
+  relaxed by anything proposed here.
+
+**Proposed test clarification (P-7.4, requires approval).** The pre-fix stress baseline
+shows a second, independent failure at `stress-256x128` with default
+`max_connections=100`. In steady-state rounds that have no stall, 53300 slot exhaustion
+produced 14 × 500 and many 401s, and headroom removed every one of them. The fix changes
+neither `Max Pool Size` nor `max_connections` (§1.6), and the fixed image's pool demand
+at 256/128 is unmeasured. So 7.4-H at 256/128 with default settings could fail for a
+reason outside the design. The proposal:
+
+- Keep 7.4-H exactly as written.
+- Add a headroom 256/128 run alongside it (an addition, not a replacement), so a
+  53300-free stress result exists either way.
+- Pre-register: a 256/128 default run that fails **only** with 53300 is a **gate
+  failure** that returns to review. It is not a pass, and it does not license a pool or
+  `max_connections` change.
+
+Also recorded: no pre-fix `stress-256x128` baseline exists for **P-dev** (E2 ran only
+under P-runner-approx), so the P-dev stress comparison in 4.1-H will lack a baseline
+unless one is run first.
+
+**Prediction to be tested in 4.1-H (not evidence).** With `Worker Min Limit` 4 under
+P-runner-approx, the fixed image's round 1 at 87/87 shows **zero resolver-wait threads**
+and no stall. The E4 and E3 round-1 times (0.17–1.1 s) are results of the controls, not
+predictions for the fix.
+
+### Proposed G2 decision
+
+**Proceed with Phases 1–3 under §4 as written**, with P-G1 and P-7.4 applied if
+approved. §4's mechanism assumptions stand, and no design section needs revision.
+
+- G2's proceed condition is met. Direct evidence supports H1 (stacks, queue growth,
+  timeout clustering), and two controls corroborate it (E4; E3 with its stated limits).
+- The "blocking elsewhere" branch does not apply: no thread in any of the 126 records is
+  in another synchronous wait.
+- The H2-dominant branch does not apply (E5), so connection-string guidance is not part
+  of the fix. A docs-only operational note is proposed under G3.
+- The H3/H4-dominant and inconclusive branches do not apply: H3 is refuted locally, and
+  H4 is a modifier of H1.
+- Phase 1 starts only after this review approves it. Phase 1 is the options step, and
+  step 1.6 remains its own scheduler checkpoint.
+
+### Proposed G3 decisions (settings)
+
+| Setting | Proposed | Basis | Rationale |
+| --- | --- | --- | --- |
+| `SigningKeyRefreshIntervalSeconds` | 300 (unchanged) | **Policy** (rotation/retirement propagation `T_prop`) | The only measured input is that a key read is cheap: one pooled query, with steady-round p50 ≤ 231 ms for requests making four sequential acquisitions (three authentication reads plus the profile query). So the interval is not load-constrained, and 300 s is chosen for propagation time, not cost. |
+| `SigningKeyMaxStalenessSeconds` | 3600 | **Policy, fixed by Q13** | Not re-decided |
+| `SigningKeyUnknownKeyRefreshCooldownSeconds` | 30 (unchanged) | **Security/availability policy** (I-6 flood bound versus the rotation 401 window) | No measurement bears on it. |
+| `SigningKeyLoadTimeoutSeconds` | 10 (unchanged) | **Policy informed by measurement** | Unstalled handshakes took 7–15 ms (E4), 35–68 ms (E3 cold), and 77–129 ms median, 183 ms max (P-dev). 10 s is more than 50 times the slowest, and it ends a load before the request-path `Timeout=15`. Stalled handshakes (5–15 s) are the defect, not a sizing input. |
+| Backoff `min(5·2^(n−1), 60) s ± 20 %` | unchanged | **Availability policy** | No measurement bears on it; 4.1-O verifies recovery within `max backoff + LoadTimeout`. |
+| `Retry-After` | `min(RefreshInterval, 30)` = 30 s | **Policy** (Q3) | — |
+| `RefreshOnIssuerKeyNotFound` | `false` | **Decided (Q14)** | — |
+| Npgsql `Timeout`, `Max Pool Size`; thread-pool minimum | **unchanged** | **Measured** (E4, E5, headroom) and a non-goal (§1.6) | E4 masks the symptom without fixing it; E5 does not help. For the docs (4.3) only, one operational note is proposed: a `Max Pool Size` equal to `max_connections`, with other clients sharing the server, produces 53300 under stress. Whether the note belongs in `CONFIGURATION.md` is a policy call for the reviewer. |
+
+### AC status after Phase 0
+
+| AC | Status | What remains |
+| --- | --- | --- |
+| AC 1 | Proposed **satisfied on the combined basis** (P-G1), pending the G2 decision | Upload the raw captures to Jira (EV index, excluding dumps). The catalog-on-runner 500 stays inferred until CI. |
+| AC 2 | Not started (production) | 4.1-H on the fixed image; shards; CI after push |
+| AC 3 | Design challenged above, not implemented | Phases 1–3; M1–M10 |
+| AC 4 | Design challenged above, not implemented | 4.1-O stage-classified runs; §4.9 log lines |
+| AC 5 | Not started | Phase 1–3 tests; shards 1 and 2 ≥ 2 runs each |
+| AC 6 | Holding: no `src/dms` path on the branch | Re-checked at push readiness |
+
+### Outstanding evidence (Phase 0 does not supply it)
+
+- **E7b is observational**: one run on reused data without stacks. It corroborates the
+  shape and establishes nothing by itself. E7a (uncapped, 0.4 s) says nothing about the
+  runner.
+- **Final regression evidence** on the fixed image: 4.1-H and 4.1-O, every §7.1 lane,
+  and mutations M1–M10.
+- **Repeated shards**: shards 1 and 2, at least 2 independent runs each (4.2).
+- **CI after push**: the real envelope for AC 2 and the catalog-workload 500 (link 7).
+- Still open from 0.5: the release order at the end of a stall, E5's bimodal handshakes,
+  and why the pair-e3 cold baselines crossed 15 s.
+
+### Bookkeeping
+
+- **Parked-thread totals (3,412 versus 3,651).** The two totals come from different
+  corpora.
+  - **3,412** is the sum of `tpParked` over the **126 block records** in the nine
+    regenerated `e5-pair-*-stacks.csv` tables (EV-STK), which is the evidence corpus.
+  - **3,651** came from classifying **every** `*stacks-t*.txt` under `artifacts/`
+    recursively: 135 files. That adds nine tooling shake-down captures: `e5-pilot/`
+    (3 captures, 81 parked) and `e5-smoke/` (6 captures, 158 parked). 3,412 + 81 + 158 =
+    3,651.
+
+  The 0.5 correction text now reports 3,412. Cross-check against the superseded tables:
+  they count 3,416 idle threads over the same 126 records. The difference of 4 is
+  exactly the four reclassified threads, and resolver-wait is 3,718 in both versions.
+- **SCRAM wording.** The 0.5 H2 bullet said no SCRAM computation appeared "on any
+  captured stack". One worker was in SCRAM HMAC computation (`HMACSHA256.HashData`
+  under Npgsql authentication) in one release-spanning 14 s capture (pair-e3 baseline
+  cold repetition 3, authorizations 0 → 189 across it). The bullet is corrected in
+  place. No capture inside the unauthorized phase shows SCRAM computation, and no
+  classification or verdict changes.

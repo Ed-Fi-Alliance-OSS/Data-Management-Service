@@ -1,9 +1,21 @@
 # DMS-1556 Implementation Spec — CMS profile requests return HTTP 500 during concurrent catalog loading
 
-Status: **v4 — Phase 0, step 0.1 approved (Codex, 2026-09-29); every later step and all production phases remain gated.** v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. No baseline experiment has been run and no production code has been changed. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
+Status: **v4 — Phase 0 steps 0.1–0.5 approved (Codex, 2026-09-29/30); step 0.6 (attribution and G1–G3 records) submitted for the G2 architectural review, with its proposals listed in §0.00 and not yet in force. All production phases remain gated on G2.** Phase 0 evidence is in `DMS-1556-investigation.md`, and still no production code has been changed. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
 Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1556`, branch `DMS-1556` (fresh from `main` at `5e0d010af`). Target: Ed-Fi API v8.1. `SchemaHashConstants.RelationalMappingVersion` stays `v3`; no schema migration.
 
 ## 0. Review history and dispositions
+
+### 0.00 Step 0.6 proposals for the G2 review (2026-09-30, **pending; not in force**)
+
+The operative text elsewhere in this spec is unchanged until these are approved. Their
+evidence and reasoning are in `DMS-1556-investigation.md` §0.6.
+
+| Id | Proposal | Applies to |
+| --- | --- | --- |
+| P-G1 | Add **G1-S (stress record)**: R-500 at `stress-256x128` under a condition without slot exhaustion, in a round whose stacks show the stall's signature. G1-S never changes the G1 catalog record. G1 *partially reproduced (provisional)* plus G1-S *reproduced* establishes the mechanism for G2 and AC 1 on a combined basis; the catalog-workload 500 on the runner stays inferred until CI. Proposed records: G1 unchanged; G1-S reproduced (2 of 3 headroom runs, 3 × profile-path `AuthenticateSASL` timeout 500s, no 53300). | §3.6, §2 AC 1 |
+| P-G2 | **Proceed with Phases 1–3 under §4 as written.** H1 is supported by direct evidence (stacks, queue growth, timeout clustering) and corroborated by E4 and E3. No blocking elsewhere. H2 is a modifier (high connection counts not necessary for the stall, E5). H3 is refuted locally. H4 is a modifier of H1. H5 is refuted as amplification. | §3.6 G2, §4.2 C-1 |
+| P-G3 | Settings unchanged: RefreshInterval 300 (policy), MaxStaleness 3600 (Q13), Cooldown 30 (security/availability policy), LoadTimeout 10 (policy informed by measured unstalled handshakes ≤ 183 ms), backoff and `Retry-After` unchanged (policy). Npgsql `Timeout`/`Max Pool Size` and the thread-pool minimum unchanged (measured, and a non-goal). Optional: a docs-only note in 4.3 on `Max Pool Size` = `max_connections` producing 53300 under stress. | §3.6 G3, §4.3.12, §4.3 docs |
+| P-7.4 | Keep 7.4-H unchanged. Add a headroom (`max_connections=200`) 256/128 run alongside it (an addition, not a replacement). Pre-register that a 256/128 default run failing **only** with 53300 is a gate failure returned to review, never a pass and never a licence for a pool or `max_connections` change. Record that no pre-fix P-dev 256/128 baseline exists. | §7.4, Phase 4.1-H |
 
 ### 0.0 Approval-round corrections (v3 → v4, 2026-09-29)
 
@@ -166,19 +178,23 @@ HTTP status histogram, percentiles, time-to-first-failure, measured peak overlap
 - An ineffective E4 never excludes starvation.
 - Verdicts: *supported*, *refuted*, *modifier*, **inconclusive**.
 
-| Hypothesis | Direct evidence | Corroborating controls | Observed | Verdict |
+Filled at step 0.6. The verdicts are **proposed**, pending G2. Evidence links,
+limitations, and the link-by-link mechanism are in `DMS-1556-investigation.md` §0.6.
+
+| Hypothesis | Direct evidence | Corroborating controls | Observed | Verdict (proposed) |
 | --- | --- | --- | --- | --- |
-| H1 | blocked stacks under the resolver, queue growth, timeout clustering | E4, E3 | | |
-| H2 | M-conn creation burst, PG CPU | E5, E3 | | |
-| H3 | waits, slow statements, disk stalls | samplers; E4 no effect | | |
-| H4 | profile dependence | P-dev vs P-runner-approx | | |
-| H5 | self-requests correlated with `Failed to fetch` | E0(c), E1 logs | | |
+| H1 | blocked stacks under the resolver, queue growth, timeout clustering | E4, E3 | 1,904 of 1,906 workers in the resolver wait in the baseline catalog 2 s/8 s captures; queue 2–96; failures only where the stall crosses `Timeout=15`; E4 and E3 remove the stall | supported |
+| H2 | M-conn creation burst, PG CPU | E5, E3 | E5 stall persists with 12–13 connections; PostgreSQL idle during handshakes; 53300 only at stress with `Max Pool Size` = `max_connections` | modifier (not necessary for the stall) |
+| H3 | waits, slow statements, disk stalls | samplers; E4 no effect | little I/O, no slow statements or lock waits; E4 removes the stall | refuted (this host) |
+| H4 | profile dependence | P-dev vs P-runner-approx | P-dev 0/5 versus P-runner-approx 5/5; E7a 0.4 s versus E7b 13.3 s | modifier (of H1) |
+| H5 | self-requests correlated with `Failed to fetch` | E0(c), E1 logs | no timed self-requests; `Failed to fetch` lines on `/v3/profiles` paths; stall persists after the self-fetch | refuted (as amplification) |
 
 ### 3.6 Decision gates
 
 - **G1** R-500 in ≥ 1 of 5 cold runs under either profile → *reproduced*. R-slow only → *partially reproduced (provisional)*; attribution may proceed but AC 1 is not satisfied by R-slow evidence alone, and AC 2's envelope evidence leans on E7 and CI. Neither → re-plan with Codex; Phase 1 does not start.
 - **G2** Proceed with Phases 1–3 when direct evidence supports H1 and/or H2 and at least one control corroborates. Stacks showing blocking elsewhere → revise §4 first. H2-dominant → snapshot still removes two of three authentication acquisitions; connection-string guidance added; re-approve. H3/H4-dominant or inconclusive → §4 withdrawn.
 - **G3** settings confirmed/adjusted; `MaxStaleness` fixed at 3600 s by Q13.
+- *Pending (§0.00):* P-G1 (G1-S stress record and combined basis), P-G2, P-G3. None is in force until approved.
 
 ### 3.7 Deliverable
 
@@ -344,7 +360,7 @@ All commands run from the worktree root in pwsh unless noted. [F]/[C] labels as 
 
 ### 7.4 Push-readiness criteria
 
-**7.4-H**: every healthy baseline-comparison run in §7.2 has 100 % HTTP 200 with validated bodies at 87/87 and 256/128 under both profiles. **7.4-O**: injected-outage runs match §4.6/§4.7 by stage. All lanes in §7.1 green with skips enumerated; M1–M10 confirmed; shards 1 and 2 green on ≥ 2 independent runs each; no `src/dms` path in the diff; CSharpier clean; docs merged; every §2 row filled; explicit approval to push.
+**7.4-H**: every healthy baseline-comparison run in §7.2 has 100 % HTTP 200 with validated bodies at 87/87 and 256/128 under both profiles. **7.4-O**: injected-outage runs match §4.6/§4.7 by stage. All lanes in §7.1 green with skips enumerated; M1–M10 confirmed; shards 1 and 2 green on ≥ 2 independent runs each; no `src/dms` path in the diff; CSharpier clean; docs merged; every §2 row filled; explicit approval to push. *Pending (§0.00):* P-7.4 adds a headroom 256/128 run and a pre-registered 53300-only escalation rule. It leaves 7.4-H unchanged.
 
 ## 8. Risks
 
