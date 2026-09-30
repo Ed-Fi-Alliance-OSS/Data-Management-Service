@@ -73,7 +73,7 @@ Use the existing Pester test suites; do not introduce a reporting framework.
 - [x] Confirm the matrix from `Get-CdcQualificationMatrix.ps1` and
   `Get-CdcQualificationProviderSuite`. Update the stale 15-job documentation to
   match the current 17-job matrix below.
-- [ ] Briefly trace shared setup, execution and teardown across every lane, including
+- [x] Briefly trace shared setup, execution and teardown across every lane, including
   passing lanes. Check image/configuration consistency, dependency readiness,
   initialization order, shared resources/concurrency, partial setup cleanup and
   cancellation. Note relevant differences between local, PR and nightly execution.
@@ -133,7 +133,8 @@ passes; document that limitation explicitly.
   process outcome, timeout budget and elapsed time. Pester setup/block failures and
   independent export failures are retained. Raw messages remain private.
 - Local results default outside the checkout; checkout-local destinations are
-  rejected. Both CI workflows use the runner temporary directory.
+  rejected, including a checkout-local TMPDIR for private logs. Both CI workflows
+  use the runner temporary directory.
 - The shared SQL Server lifecycle adapter called the removed `Invoke-FixtureSql`
   helper. It now calls `Invoke-CdcFixtureSql`; targeted execution tests verify the
   actual adapter, database forwarding and session-option ordering. This is a test
@@ -142,6 +143,11 @@ passes; document that limitation explicitly.
 - Broad Pester validation passed 835 tests. Additional export-failure and interrupted
   case tests passed with the focused diagnostic suite (7 tests). Contract .NET
   validation and hosted qualification remain in progress.
+- Shared-path review covered the pinned-image provider fixture, separate Kafka
+  policy fixture, History servers/retirement, runbook ownership and governed
+  teardown, and API E2E setup/test/cleanup/export deadlines. Historical incidents
+  remain classified with their original evidence limitations; the PR evidence
+  summary is the running validation record.
 - The 600-second wrapper/600-second internal wait remains a diagnostic lead. No
   timeout increase or additional retry has been introduced without live evidence.
 - Three consecutive complete hosted passes have **not** yet been obtained. The
