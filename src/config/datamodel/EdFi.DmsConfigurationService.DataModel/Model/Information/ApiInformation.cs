@@ -46,3 +46,8 @@ public class ApiUrls
 
     public string OpenApiMetadata { get; }
 }
+
+/// <summary>
+/// The anonymous GET /tenancy response: configured tenant names only, empty when multi-tenancy is off.
+/// </summary>
+public record ApiTenancy(IReadOnlyList<string> Tenants);

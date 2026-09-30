@@ -403,6 +403,89 @@ public class MetadataModuleTests
         schema.GetProperty("format").GetString().Should().Be("int64");
     }
 
+    [Test]
+    public async Task MetadataSpecifications_Declares_Tenancy_As_Anonymous()
+    {
+        // Arrange
+        // DMS-1508: GET /tenancy is anonymous. MetadataModule adds a document-wide OAuth requirement,
+        // so without an empty operation-level security array the operation would inherit it.
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchMetadataSpecificationsAsync(client);
+
+        // Assert
+        var security = doc
+            .RootElement.GetProperty("paths")
+            .GetProperty("/tenancy")
+            .GetProperty("get")
+            .GetProperty("security");
+        security.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Array);
+        security.GetArrayLength().Should().Be(0);
+    }
+
+    [Test]
+    public async Task MetadataSpecifications_Keeps_Secured_Operations_Inheriting_OAuth()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchMetadataSpecificationsAsync(client);
+
+        // Assert
+        // The /tenancy override must not leak: secured operations declare no security of their own
+        // and inherit the root requirement.
+        var vendorsGet = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .Single(path => path.Name.TrimEnd('/') == "/v3/vendors")
+            .Value.GetProperty("get");
+        vendorsGet.TryGetProperty("security", out _).Should().BeFalse();
+
+        doc.RootElement.GetProperty("security")
+            .EnumerateArray()
+            .Select(requirement => requirement.TryGetProperty("oauth2_client_credentials", out _))
+            .Should()
+            .Equal(true);
+    }
+
+    [Test]
+    public async Task OpenApi_Documents_The_Tenancy_Response_As_A_String_Array()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchMetadataSpecificationsAsync(client);
+        var properties = ResolveJsonResponseSchemaProperties(
+            doc,
+            doc.RootElement.GetProperty("paths").GetProperty("/tenancy"),
+            "get",
+            "200"
+        );
+
+        // Assert
+        properties.Keys.Should().Equal("tenants");
+        TypeIncludes(properties["tenants"].GetProperty("type"), "array").Should().BeTrue();
+        TypeIncludes(properties["tenants"].GetProperty("items").GetProperty("type"), "string")
+            .Should()
+            .BeTrue();
+    }
+
+    private static async Task<System.Text.Json.JsonDocument> FetchMetadataSpecificationsAsync(
+        HttpClient client
+    )
+    {
+        var response = await client.GetAsync("/metadata/specifications");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        return System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    }
+
     /// <summary>
     /// DMS-1506: with multi-tenancy on, /metadata/specifications must return a valid document without a
     /// Tenant header. It is assembled from a header-less self-request for /openapi/v1.json, which goes back
