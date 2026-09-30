@@ -145,7 +145,7 @@ public class VendorUpdateCommandTests
     }
 
     [Test]
-    public void Validate_WithEmptyNamespacePrefixes_ShouldFailValidation()
+    public void Validate_WithEmptyNamespacePrefixes_ShouldPassValidation()
     {
         // Arrange
         var command = new VendorUpdateCommand
@@ -161,12 +161,68 @@ public class VendorUpdateCommandTests
         var result = _validator.Validate(command);
 
         // Assert
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.PropertyName == "NamespacePrefixes");
+        result.IsValid.Should().BeTrue();
     }
 
     [Test]
-    public void Validate_WithNamespacePrefixesExceedingMaximumLength_ShouldFailValidation()
+    public void Validate_WithDefaultNamespacePrefixes_ShouldPassValidation()
+    {
+        var command = new VendorUpdateCommand
+        {
+            Id = 1,
+            Company = "ValidCompany",
+            ContactName = "ValidContactName",
+            ContactEmailAddress = "valid@example.com",
+        };
+
+        var result = _validator.Validate(command);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Test]
+    public void Validate_WithNullNamespacePrefixes_ShouldFailWithLengthMessage()
+    {
+        var command = new VendorUpdateCommand
+        {
+            Id = 1,
+            Company = "ValidCompany",
+            ContactName = "ValidContactName",
+            ContactEmailAddress = "valid@example.com",
+            NamespacePrefixes = null!,
+        };
+
+        var result = _validator.Validate(command);
+
+        result
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<FluentValidation.Results.ValidationFailure>(error =>
+                error.PropertyName == "NamespacePrefixes"
+                && error.ErrorMessage == "Each NamespacePrefix length must be 128 characters or fewer."
+            );
+    }
+
+    [Test]
+    public void Validate_With128CharacterNamespacePrefix_ShouldPassValidation()
+    {
+        var command = new VendorUpdateCommand
+        {
+            Id = 1,
+            Company = "ValidCompany",
+            ContactName = "ValidContactName",
+            ContactEmailAddress = "valid@example.com",
+            NamespacePrefixes = new string('a', 128),
+        };
+
+        var result = _validator.Validate(command);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Test]
+    public void Validate_With129CharacterNamespacePrefix_ShouldFailWithLengthMessage()
     {
         // Arrange
         var command = new VendorUpdateCommand
@@ -182,7 +238,13 @@ public class VendorUpdateCommandTests
         var result = _validator.Validate(command);
 
         // Assert
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.PropertyName == "NamespacePrefixes");
+        result
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<FluentValidation.Results.ValidationFailure>(error =>
+                error.PropertyName == "NamespacePrefixes"
+                && error.ErrorMessage == "Each NamespacePrefix length must be 128 characters or fewer."
+            );
     }
 }

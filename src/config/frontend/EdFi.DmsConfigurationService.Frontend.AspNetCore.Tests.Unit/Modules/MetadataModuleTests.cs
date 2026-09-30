@@ -934,6 +934,37 @@ public class MetadataModuleTests
         }
     }
 
+    [Test]
+    public async Task OpenApi_Vendor_Request_Schemas_Keep_NamespacePrefixes_Optional_NonNullable_String()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        using var doc = await FetchOpenApiDocumentAsync(client);
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var schemaName in new[] { "VendorInsertCommand", "VendorUpdateCommand" })
+        {
+            var schema = schemas.GetProperty(schemaName);
+            schema
+                .GetProperty("properties")
+                .GetProperty("namespacePrefixes")
+                .GetProperty("type")
+                .GetString()
+                .Should()
+                .Be("string", $"{schemaName}.namespacePrefixes must remain a string");
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                required
+                    .EnumerateArray()
+                    .Select(property => property.GetString())
+                    .Should()
+                    .NotContain("namespacePrefixes", $"{schemaName}.namespacePrefixes is optional");
+            }
+        }
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch
