@@ -186,3 +186,32 @@ public class InformationModuleTests
         content.Should().NotBeNullOrEmpty();
     }
 }
+
+[TestFixture("", "/")]
+[TestFixture("mt-config", "/mt-config")]
+[TestFixture("mt-config", "/mt-config/")]
+public class Given_MultiTenancy_Is_Enabled_And_An_Information_Discovery_Request_Without_A_Tenant_Header(
+    string pathBase,
+    string path
+) : MultiTenantPipelineTestBase
+{
+    private HttpStatusCode _statusCode;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        // UsePathBase leaves an empty path for "/mt-config" and "/" for "/mt-config/"; both are the root.
+        await using var factory = CreateMultiTenantFactory(pathBase);
+        using var client = factory.CreateClient();
+
+        // No Tenant header and no credentials
+        var response = await client.GetAsync(path);
+        _statusCode = response.StatusCode;
+    }
+
+    [Test]
+    public void It_returns_200()
+    {
+        _statusCode.Should().Be(HttpStatusCode.OK);
+    }
+}

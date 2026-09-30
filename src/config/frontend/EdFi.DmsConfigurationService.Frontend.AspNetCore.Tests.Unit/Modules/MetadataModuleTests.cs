@@ -5,9 +5,6 @@
 
 using System.Collections.Generic;
 using System.Net;
-using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
-using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -382,16 +379,10 @@ public class MetadataModuleTests
         // Tenants are out of scope for DMS-1337 - no numeric tenant identifier exists anywhere else
         // in the Ed-Fi platform to align with - so TenantModule keeps a long id. Pinning it here is
         // what makes a careless sweep of the frontend handlers fail loudly.
-        // TenantModule is only registered when multi-tenancy is enabled, and with multi-tenancy on,
-        // TenantResolutionMiddleware requires a resolvable Tenant header on every request that is
-        // not tenant-agnostic, including /openapi/v1.json.
-        var tenantRepository = A.Fake<ITenantRepository>();
-        A.CallTo(() => tenantRepository.GetTenantByName("test-tenant"))
-            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = "test-tenant" }));
-
-        await using var factory = CreateFactory(multiTenancy: true, tenantRepository: tenantRepository);
+        // TenantModule is only registered when multi-tenancy is enabled. /openapi/v1.json is
+        // tenant-agnostic (DMS-1506), so no Tenant header is needed to read it.
+        await using var factory = CreateFactory(multiTenancy: true);
         using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("Tenant", "test-tenant");
 
         // Act
         var doc = await FetchOpenApiDocumentAsync(client);
@@ -412,6 +403,125 @@ public class MetadataModuleTests
         schema.GetProperty("format").GetString().Should().Be("int64");
     }
 
+    /// <summary>
+    /// DMS-1506: with multi-tenancy on, /metadata/specifications must return a valid document without a
+    /// Tenant header. It is assembled from a header-less self-request for /openapi/v1.json, which goes back
+    /// through the real TenantResolutionMiddleware via TestServerHttpClientFactory, so this fails with a
+    /// 500 if either path stops being tenant-agnostic.
+    /// </summary>
+    [TestFixture("")]
+    [TestFixture("mt-config")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Metadata_Discovery_Request_Without_A_Tenant_Header(
+        string pathBase
+    )
+    {
+        private HttpStatusCode _statusCode;
+        private string _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(multiTenancy: true, pathBase: pathBase);
+            using var client = factory.CreateClient();
+
+            // No Tenant header and no credentials
+            var response = await client.GetAsync(
+                pathBase.Length == 0 ? "/metadata/specifications" : $"/{pathBase}/metadata/specifications"
+            );
+            _statusCode = response.StatusCode;
+            _body = await response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _statusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_returns_a_valid_openapi_document()
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(_body);
+            doc.RootElement.GetProperty("openapi").GetString().Should().Be("3.1.1");
+            doc.RootElement.GetProperty("info")
+                .GetProperty("title")
+                .GetString()
+                .Should()
+                .Be("Ed-Fi API Configuration Service API");
+            doc.RootElement.GetProperty("paths").EnumerateObject().Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_is_not_an_error_body()
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(_body);
+            doc.RootElement.TryGetProperty("type", out _).Should().BeFalse();
+            doc.RootElement.TryGetProperty("status", out _).Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_MultiTenancy_Is_Enabled_And_An_OpenApi_Discovery_Request_Without_A_Tenant_Header
+    {
+        private HttpStatusCode _statusCode;
+        private string _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(multiTenancy: true);
+            using var client = factory.CreateClient();
+
+            // No Tenant header and no credentials
+            var response = await client.GetAsync("/openapi/v1.json");
+            _statusCode = response.StatusCode;
+            _body = await response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _statusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_returns_the_openapi_document()
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(_body);
+            doc.RootElement.GetProperty("openapi").GetString().Should().Be("3.1.1");
+            doc.RootElement.GetProperty("paths").EnumerateObject().Should().NotBeEmpty();
+        }
+    }
+
+    [TestFixture("/metadataX")]
+    [TestFixture("/openapiX")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Discovery_Lookalike_Request_Without_A_Tenant_Header(
+        string path
+    )
+    {
+        private HttpStatusCode _statusCode;
+        private string _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(multiTenancy: true);
+            using var client = factory.CreateClient();
+
+            // No Tenant header and no credentials
+            var response = await client.GetAsync(path);
+            _statusCode = response.StatusCode;
+            _body = await response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_400_tenant_required()
+        {
+            _statusCode.Should().Be(HttpStatusCode.BadRequest);
+            _body.Should().Contain("The 'Tenant' header is required when multi-tenancy is enabled");
+        }
+    }
+
     private static async Task<System.Text.Json.JsonDocument> FetchOpenApiDocumentAsync(HttpClient client)
     {
         var response = await client.GetAsync("/openapi/v1.json");
@@ -422,7 +532,6 @@ public class MetadataModuleTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         bool multiTenancy = false,
-        ITenantRepository? tenantRepository = null,
         string? pathBase = null,
         ICollection<Uri?>? recordedRequestUris = null
     )
@@ -457,11 +566,6 @@ public class MetadataModuleTests
                         provider.GetRequiredService<IServer>(),
                         recordedRequestUris
                     ));
-                }
-
-                if (tenantRepository is not null)
-                {
-                    services.AddTransient(_ => tenantRepository);
                 }
             });
         });

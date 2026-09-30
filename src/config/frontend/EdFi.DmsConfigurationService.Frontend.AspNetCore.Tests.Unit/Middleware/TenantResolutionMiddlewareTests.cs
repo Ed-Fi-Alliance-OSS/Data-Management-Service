@@ -163,6 +163,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-missing" };
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Response.Body = new MemoryStream();
 
             // Act
@@ -192,6 +194,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-empty" };
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "";
             httpContext.Response.Body = new MemoryStream();
 
@@ -222,6 +226,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-notfound" };
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "nonexistent-tenant";
             httpContext.Response.Body = new MemoryStream();
 
@@ -252,6 +258,8 @@ internal class TenantResolutionMiddlewareTests
             const string sentinel = "SENTINEL_TENANT_DB_4f2a_must_not_leak";
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-unknown" };
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "test-tenant";
             httpContext.Response.Body = new MemoryStream();
 
@@ -282,6 +290,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext();
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "valid-tenant";
 
             var tenantResponse = new TenantResponse { Id = 123, Name = "valid-tenant" };
@@ -312,6 +322,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext();
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "tenant-with-dashes_and_underscores";
 
             var tenantResponse = new TenantResponse { Id = 456, Name = "tenant-with-dashes_and_underscores" };
@@ -342,6 +354,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-xss" };
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "malicious<script>alert('xss')</script>";
             httpContext.Response.Body = new MemoryStream();
 
@@ -375,6 +389,8 @@ internal class TenantResolutionMiddlewareTests
             // Arrange
             var middleware = new TenantResolutionMiddleware(_next);
             var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-default" };
+            // An explicit tenant-scoped path: the default empty path is the tenant-agnostic service root.
+            httpContext.Request.Path = "/v3/vendors";
             httpContext.Request.Headers["Tenant"] = "test-tenant";
             httpContext.Response.Body = new MemoryStream();
 
@@ -535,12 +551,50 @@ internal class TenantResolutionMiddlewareTests
             A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
         }
+
+        [Test]
+        public async Task It_allows_tenancy_endpoint_with_an_unknown_tenant_header_without_resolving_it()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/tenancy";
+            httpContext.Request.Headers["Tenant"] = "unknown-tenant";
+            httpContext.Response.Body = new MemoryStream();
+
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored))
+                .Returns(new TenantGetByNameResult.FailureNotFound());
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+            _tenantContextProvider.Context.Should().BeOfType<TenantContext.NotMultitenant>();
+        }
     }
 
     [TestFixture("/health")]
     [TestFixture("/HEALTH")]
     [TestFixture("/health/")]
-    public class Given_MultiTenancy_Is_Enabled_And_A_Health_Path(string path)
+    [TestFixture("")]
+    [TestFixture("/")]
+    [TestFixture("/metadata/specifications")]
+    [TestFixture("/METADATA/SPECIFICATIONS")]
+    [TestFixture("/metadata/specifications/")]
+    [TestFixture("/openapi/v1.json")]
+    [TestFixture("/OPENAPI/V1.JSON")]
+    [TestFixture("/tenancy")]
+    [TestFixture("/TENANCY")]
+    [TestFixture("/tenancy/")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Tenant_Agnostic_Path(string path)
     {
         private RequestDelegate _next = null!;
         private IOptions<AppSettings> _appSettings = null!;
@@ -605,7 +659,20 @@ internal class TenantResolutionMiddlewareTests
     [TestFixture("/health/foo")]
     [TestFixture("/v3/health")]
     [TestFixture("/health//")]
-    public class Given_MultiTenancy_Is_Enabled_And_A_Health_Lookalike_Path(string path)
+    [TestFixture("/metadataX")]
+    [TestFixture("/metadata")]
+    [TestFixture("/metadata/specificationsX")]
+    [TestFixture("/metadata/specifications/foo")]
+    [TestFixture("/openapiX")]
+    [TestFixture("/openapi")]
+    [TestFixture("/openapi/v2.json")]
+    [TestFixture("/openapi/v1.jsonX")]
+    [TestFixture("/tenancyx")]
+    [TestFixture("/tenancy/foo")]
+    [TestFixture("/v3/tenancy")]
+    [TestFixture("/tenancy//")]
+    [TestFixture("//")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Tenant_Agnostic_Lookalike_Path(string path)
     {
         private RequestDelegate _next = null!;
         private IOptions<AppSettings> _appSettings = null!;
