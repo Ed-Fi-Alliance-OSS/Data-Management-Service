@@ -57,7 +57,7 @@ Add or adjust focused coverage in the existing validator, frontend module, provi
 
 ## Chosen design and rationale
 
-The smallest responsible design is a validator-only runtime change with cross-boundary regression proof.
+The runtime change removes the two vendor-prefix validator restrictions and encodes empty namespace claims for Keycloak, with cross-boundary regression proof.
 
 Both relational repositories already normalize an empty string to zero vendor-prefix rows and return an empty string on read. OpenIddict emits its mapper value when empty. Keycloak 26.1 does not retain an empty hardcoded-mapper `claim.value` through its Admin REST configuration path, so the mapper sees no value and omits the claim. A JSON-typed hardcoded mapper with `claim.value` set to the two-character JSON string literal `""` preserves the empty string; a live Keycloak 26.1 token probe verified the raw claim. DMS already splits the resulting empty string with `RemoveEmptyEntries` and produces zero `NamespacePrefix` values.
 

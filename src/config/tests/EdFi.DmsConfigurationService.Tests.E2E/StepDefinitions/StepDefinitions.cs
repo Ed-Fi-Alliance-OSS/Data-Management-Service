@@ -776,12 +776,15 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         using JsonDocument tokenPayload = JsonDocument.Parse(Convert.FromBase64String(payload));
         JsonElement payloadRoot = tokenPayload.RootElement;
 
-        payloadRoot
-            .TryGetProperty("namespacePrefixes", out JsonElement namespacePrefixes)
+        JsonProperty namespacePrefixes = payloadRoot
+            .EnumerateObject()
+            .Where(property => property.NameEquals("namespacePrefixes"))
             .Should()
-            .BeTrue($"the token should contain the namespacePrefixes claim; payload: {payloadRoot}");
-        namespacePrefixes.ValueKind.Should().Be(JsonValueKind.String);
-        namespacePrefixes.GetString().Should().BeEmpty();
+            .ContainSingle($"the token should contain exactly one namespacePrefixes claim; payload: {payloadRoot}")
+            .Which;
+        JsonElement namespacePrefixValue = namespacePrefixes.Value;
+        namespacePrefixValue.ValueKind.Should().Be(JsonValueKind.String);
+        namespacePrefixValue.GetString().Should().BeEmpty();
     }
 
     [Then("the response body credentials are captured as {string}")]
