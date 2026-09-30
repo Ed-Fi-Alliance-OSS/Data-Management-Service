@@ -217,6 +217,156 @@ public class VendorModuleTests
         }
     }
 
+    [TestFixture]
+    public class NamespacePrefixesRequestTests : VendorModuleTests
+    {
+        private const string EmptyPrefixesBody = """
+            {
+              "id": 1,
+              "company": "Test Company",
+              "contactName": "Test Contact",
+              "contactEmailAddress": "test@example.com",
+              "namespacePrefixes": ""
+            }
+            """;
+
+        private const string OmittedPrefixesBody = """
+            {
+              "id": 1,
+              "company": "Test Company",
+              "contactName": "Test Contact",
+              "contactEmailAddress": "test@example.com"
+            }
+            """;
+
+        private const string NullPrefixesBody = """
+            {
+              "id": 1,
+              "company": "Test Company",
+              "contactName": "Test Contact",
+              "contactEmailAddress": "test@example.com",
+              "namespacePrefixes": null
+            }
+            """;
+
+        [Test]
+        public Task Post_WithEmptyNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPostAcceptsEmptyPrefixesAsync(EmptyPrefixesBody);
+
+        [Test]
+        public Task Post_WithOmittedNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPostAcceptsEmptyPrefixesAsync(OmittedPrefixesBody);
+
+        [Test]
+        public Task Put_WithEmptyNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPutAcceptsEmptyPrefixesAsync(EmptyPrefixesBody);
+
+        [Test]
+        public Task Put_WithOmittedNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+            AssertPutAcceptsEmptyPrefixesAsync(OmittedPrefixesBody);
+
+        [Test]
+        public Task Post_WithNullNamespacePrefixes_ShouldRejectWithoutPersistence() =>
+            AssertNullPrefixesRejectedAsync(HttpMethod.Post);
+
+        [Test]
+        public Task Put_WithNullNamespacePrefixes_ShouldRejectWithoutPersistence() =>
+            AssertNullPrefixesRejectedAsync(HttpMethod.Put);
+
+        private async Task AssertPostAcceptsEmptyPrefixesAsync(string body)
+        {
+            List<VendorInsertCommand> commands = [];
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Invokes(call => commands.Add(call.GetArgument<VendorInsertCommand>(0)!))
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(body, Encoding.UTF8, "application/json")
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().BeEmpty();
+        }
+
+        private async Task AssertPutAcceptsEmptyPrefixesAsync(string body)
+        {
+            List<VendorUpdateCommand> commands = [];
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Invokes(call => commands.Add(call.GetArgument<VendorUpdateCommand>(0)!))
+                .Returns(new VendorUpdateResult.Success());
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(body, Encoding.UTF8, "application/json")
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().BeEmpty();
+        }
+
+        private async Task AssertNullPrefixesRejectedAsync(HttpMethod method)
+        {
+            Fake.ClearRecordedCalls(_vendorRepository);
+            using var client = SetUpClient();
+            using var request = new HttpRequestMessage(
+                method,
+                method == HttpMethod.Post ? "/v3/vendors" : "/v3/vendors/1"
+            )
+            {
+                Content = new StringContent(NullPrefixesBody, Encoding.UTF8, "application/json"),
+            };
+
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class UpsertTests : VendorModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
+        }
+
+        [Test]
+        public async Task Should_return_200_with_location_when_vendor_already_exists()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.Location!.IsAbsoluteUri.Should().BeTrue();
+            response.Headers.Location!.ToString().Should().EndWith("/v3/vendors/1");
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().BeEmpty();
+        }
+    }
     /// <summary>
     /// The complete 400 body a duplicate company name answers, on both create and rename.
     /// </summary>
