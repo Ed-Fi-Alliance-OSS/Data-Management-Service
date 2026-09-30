@@ -1731,6 +1731,33 @@ Describe 'CDC runbook failure diagnostics' {
         $failures[0].Phase | Should -Be 'Teardown'
         (Get-ChildItem $script:published -File | Get-Content -Raw) -join '' | Should -Not -Match 'opaque|private-document|unlabelled|/home/|ScriptStackTrace'
     }
+    It 'retains parameterized BeforeEach failures when Pester cannot expand the case name' {
+        $config = New-PesterConfiguration
+        $config.Run.Container = New-PesterContainer -ScriptBlock {
+            Describe 'parameterized setup failure' {
+                BeforeEach { throw 'opaque setup secret' }
+                It 'CDC-DOC <Id>' -ForEach @(@{ Id = 'cdc-pg-bootstrap-local' }, @{ Id = 'cdc-pg-e2e-setup' }) { throw 'must not run' }
+            }
+        }
+        $config.Run.PassThru = $true
+        $config.Output.Verbosity = 'None'
+        $nested = Invoke-Pester -Configuration $config
+        $nested.Tests.ExpandedName | Should -Be @('CDC-DOC <Id>', 'CDC-DOC <Id>')
+        $report = Get-CdcRunbookPesterReport -Tests @($nested.Tests) -PesterResult $nested -QualificationProfile PostgresqlSetup
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-setup.json'
+        $cases = Get-Content (Join-Path $script:published 'cdc-runbook-live-setup.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $cases.Outcome | Should -Be @('NotPassed', 'NotPassed')
+        foreach ($case in $cases) {
+            $case.Failures[0].Category | Should -Be 'PesterFailure'
+            $case.Failures[0].Phase | Should -Be 'Setup'
+            $case.Failures[0].Source | Should -Be 'eng/ci/tests/CdcQualification.Tests.ps1'
+            (Get-Content $PSCommandPath)[$case.Failures[0].Line - 1] | Should -Match 'BeforeEach.*opaque setup secret'
+        }
+        ($report | ConvertTo-Json -Depth 15) | Should -Not -Match 'opaque setup secret|must not run'
+        # An unexpanded failed case must still participate in duplicate detection.
+        $duplicate = Get-CdcRunbookPesterReport -Tests (@($nested.Tests) + @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-pg-bootstrap-local'; Result = 'Passed' })) -QualificationProfile PostgresqlSetup
+        $duplicate.Cases[0].Outcome | Should -Be 'Duplicate'
+    }
     It 'reports BeforeAll failure even though the required test never runs' {
         $config = New-PesterConfiguration
         $config.Run.Container = New-PesterContainer -ScriptBlock {

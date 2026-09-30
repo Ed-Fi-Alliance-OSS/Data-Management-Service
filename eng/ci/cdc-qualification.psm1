@@ -321,7 +321,14 @@ function Get-CdcRunbookPesterReport {
     ) }
     $cases = @($required | ForEach-Object {
         $id = $_
-        $found = @($Tests | Where-Object ExpandedName -eq "CDC-DOC $id")
+        $found = @($Tests | Where-Object {
+            $_.ExpandedName -ceq "CDC-DOC $id" -or (
+                # BeforeEach/BeforeAll can fail before Pester expands <Id>. Use only
+                # the fixed template and the required case ID from discovery data.
+                $_.ExpandedName -ceq 'CDC-DOC <Id>' -and $_.Result -cne 'Passed' -and
+                $_.PSObject.Properties['Data'] -and $_.Data -is [Collections.IDictionary] -and $_.Data['Id'] -ceq $id
+            )
+        })
         $outcome = if ($found.Count -eq 0) { 'Missing' } elseif ($found.Count -ne 1) { 'Duplicate' }
         elseif ($found[0].Result -eq 'Passed') { 'Passed' } else { 'NotPassed' }
         $case = [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
