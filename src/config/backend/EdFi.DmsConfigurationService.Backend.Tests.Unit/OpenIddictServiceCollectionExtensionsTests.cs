@@ -3,13 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -201,5 +207,227 @@ public class OpenIddictServiceCollectionExtensionsTests
                 .OfType<SigningKeyOptionsValidator>()
                 .Should()
                 .ContainSingle();
+    }
+
+    /// <summary>
+    /// The options, logging, a faked key repository, and the signing-key services registered
+    /// <paramref name="registrations"/> times.
+    /// </summary>
+    private static ServiceProvider BuildSigningKeyProvider(
+        IOpenIddictTokenRepository repository,
+        Dictionary<string, string?>? settings = null,
+        int registrations = 1,
+        Action<IServiceCollection>? before = null
+    )
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(settings ?? [])
+            .Build();
+        ServiceCollection services = new();
+        before?.Invoke(services);
+        services.AddOpenIddictIdentityOptions(configuration);
+        services.AddLogging();
+        services.AddSingleton(repository);
+        for (int registration = 0; registration < registrations; registration++)
+        {
+            services.AddSigningKeyServices();
+        }
+
+        return services.BuildServiceProvider();
+    }
+
+    // Step 2.1: registering twice still yields one provider and one refresh service, and that service refreshes the
+    // provider every consumer resolves.
+    [TestFixture]
+    public class Given_the_signing_key_services_are_registered_twice
+    {
+        private ServiceProvider _provider = null!;
+        private IReadOnlyList<IHostedService> _refreshServices = [];
+        private ISigningKeySnapshotProvider _first = null!;
+        private ISigningKeySnapshotProvider _second = null!;
+        private SigningKeySnapshot? _loadedByTheService;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            KeyRepositoryHarness harness = new(TimeProvider.System);
+            harness.ReturnsKeys("key-1");
+            _provider = BuildSigningKeyProvider(harness.Repository, registrations: 2);
+
+            _refreshServices =
+            [
+                .. _provider.GetServices<IHostedService>().OfType<SigningKeyRefreshService>(),
+            ];
+            _first = _provider.GetRequiredService<ISigningKeySnapshotProvider>();
+            _second = _provider.GetRequiredService<ISigningKeySnapshotProvider>();
+
+            foreach (IHostedService service in _refreshServices)
+            {
+                await service.StartAsync(CancellationToken.None);
+            }
+
+            await SigningKeyTestSupport.WaitUntilAsync(
+                () => _first.Current is not null,
+                () => "The refresh service did not load into the shared provider."
+            );
+            _loadedByTheService = _first.Current;
+
+            foreach (IHostedService service in _refreshServices)
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_registers_one_refresh_service() => _refreshServices.Should().ContainSingle();
+
+        [Test]
+        public void It_registers_one_provider_descriptor() =>
+            _provider.GetServices<ISigningKeySnapshotProvider>().Should().ContainSingle();
+
+        [Test]
+        public void It_shares_one_provider_instance() => _second.Should().BeSameAs(_first);
+
+        [Test]
+        public void It_refreshes_the_shared_provider() =>
+            _loadedByTheService!.ContainsKeyId("key-1").Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_database_signing_keys
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildSigningKeyProvider(new KeyRepositoryHarness(TimeProvider.System).Repository);
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_selects_the_database_source() =>
+            _provider.GetRequiredService<ISigningKeySource>().Should().BeOfType<DatabaseSigningKeySource>();
+
+        [Test]
+        public void It_uses_the_system_clock() =>
+            _provider.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+    }
+
+    [TestFixture]
+    public class Given_certificate_signing_keys
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildSigningKeyProvider(
+                new KeyRepositoryHarness(TimeProvider.System).Repository,
+                new Dictionary<string, string?> { ["IdentitySettings:UseCertificates"] = "true" }
+            );
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_selects_the_certificate_source() =>
+            _provider
+                .GetRequiredService<ISigningKeySource>()
+                .Should()
+                .BeOfType<CertificateSigningKeySource>();
+
+        [Test]
+        public void It_registers_one_development_certificate_store() =>
+            _provider
+                .GetRequiredService<DevelopmentCertificateStore>()
+                .Should()
+                .BeSameAs(_provider.GetRequiredService<DevelopmentCertificateStore>());
+    }
+
+    [TestFixture]
+    public class Given_a_time_provider_registered_first
+    {
+        private ServiceProvider _provider = null!;
+        private FakeTimeProvider _time = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _time = new FakeTimeProvider();
+            _provider = BuildSigningKeyProvider(
+                new KeyRepositoryHarness(TimeProvider.System).Repository,
+                before: services => services.AddSingleton<TimeProvider>(_time)
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_keeps_the_registered_clock() =>
+            _provider.GetRequiredService<TimeProvider>().Should().BeSameAs(_time);
+    }
+
+    // Each self-contained store registration adds the signing-key services, once however often it is called.
+    [TestFixture("postgresql")]
+    [TestFixture("postgresql-jwt-settings")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_store_registration_called_twice(string registration)
+    {
+        private ServiceCollection _services = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+            _services = [];
+            for (int call = 0; call < 2; call++)
+            {
+                _ = registration switch
+                {
+                    "postgresql" => _services.AddPostgresOpenIddictStores(configuration, "http://localhost"),
+                    "postgresql-jwt-settings" => _services.AddPostgresOpenIddictStores(
+                        configuration,
+                        "http://localhost",
+                        new JwtSettings { Issuer = "http://localhost", Audience = "account" }
+                    ),
+                    _ => _services.AddMssqlOpenIddictStores(configuration, "http://localhost"),
+                };
+            }
+        }
+
+        private int Count(Type serviceType, Type? implementationType = null) =>
+            _services.Count(descriptor =>
+                descriptor.ServiceType == serviceType
+                && (implementationType is null || descriptor.ImplementationType == implementationType)
+            );
+
+        [Test]
+        public void It_registers_one_provider() => Count(typeof(ISigningKeySnapshotProvider)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_refresh_service() =>
+            Count(typeof(IHostedService), typeof(SigningKeyRefreshService)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_source() => Count(typeof(ISigningKeySource)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_development_certificate_store() =>
+            Count(typeof(DevelopmentCertificateStore)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_clock() => Count(typeof(TimeProvider)).Should().Be(1);
     }
 }

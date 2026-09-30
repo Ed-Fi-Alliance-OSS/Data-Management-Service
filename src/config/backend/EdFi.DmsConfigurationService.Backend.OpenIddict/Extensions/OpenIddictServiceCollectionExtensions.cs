@@ -8,6 +8,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
@@ -94,6 +95,36 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 ServiceDescriptor.Singleton<IValidateOptions<IdentityOptions>, SigningKeyOptionsValidator>()
             );
             services.AddOptions<IdentityOptions>().ValidateOnStart();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the signing-key services (spec §4.3, step 2.1): the development-certificate store, both key
+        /// sources, the source selected by <see cref="IdentityOptions.UseCertificates"/>, the one snapshot provider,
+        /// its refresh service, and <see cref="TimeProvider"/>. Only the self-contained store registrations call this,
+        /// so nothing here exists in Keycloak mode. Every registration is a try-add, so registering twice still yields
+        /// one provider and one refresh service. Nothing consumes the provider yet: the token manager and the bearer
+        /// schemes keep their current key resolution until steps 2.2–3.2.
+        /// </summary>
+        public static IServiceCollection AddSigningKeyServices(this IServiceCollection services)
+        {
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<DevelopmentCertificateStore>();
+            services.TryAddSingleton<DatabaseSigningKeySource>();
+            services.TryAddSingleton<CertificateSigningKeySource>();
+
+            // The same switch the token manager reads, so validation and issuance use the same key store.
+            services.TryAddSingleton<ISigningKeySource>(serviceProvider =>
+                serviceProvider.GetRequiredService<IOptions<IdentityOptions>>().Value.UseCertificates
+                    ? serviceProvider.GetRequiredService<CertificateSigningKeySource>()
+                    : serviceProvider.GetRequiredService<DatabaseSigningKeySource>()
+            );
+
+            services.TryAddSingleton<ISigningKeySnapshotProvider, SigningKeySnapshotProvider>();
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, SigningKeyRefreshService>()
+            );
 
             return services;
         }
