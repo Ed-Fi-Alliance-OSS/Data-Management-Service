@@ -1870,51 +1870,67 @@ public class CachedProfileServiceTests
     }
 
     /// <summary>
-    /// A real CMS 404 for an assigned profile keeps its existing meaning: that profile is absent
-    /// from a successfully fetched, cached catalog. Explicit requests naming it get 406/415, and
-    /// implicit requests apply no profile (unchanged behavior, pinned deliberately).
+    /// A genuine CMS 404: an unassigned profile deleted between the list and the detail fetch. (CMS
+    /// refuses to delete an assigned profile, and leaves XSD-invalid profiles out of the list, so this is
+    /// the state a detail 404 actually represents.) That profile is absent from a successfully fetched,
+    /// cached catalog, explicit requests naming it get 406/415, and the assigned profile is unaffected.
     /// </summary>
     [TestFixture]
-    public class Given_An_Assigned_Profile_That_Cms_Reports_Not_Found : Given_A_Cms_Backed_Profile_Service
+    public class Given_An_Unassigned_Profile_That_Cms_Reports_Not_Found : Given_A_Cms_Backed_Profile_Service
     {
+        private IReadOnlyList<string> _profileNames = [];
         private ProfileResolutionResult _explicitGet = null!;
         private ProfileResolutionResult _explicitPost = null!;
         private ProfileResolutionResult _implicitGet = null!;
 
         protected override async Task Act()
         {
-            Cms.Serve(StudentProfilePath, CmsReply.Status(HttpStatusCode.NotFound));
+            Cms.Serve(SchoolProfilePath, CmsReply.Status(HttpStatusCode.NotFound));
 
-            _explicitGet = await ExplicitGet();
-            _explicitPost = await ExplicitPost();
+            _profileNames = await Service.GetProfileNamesAsync(null);
+            _explicitGet = await ExplicitSchoolRequest(RequestMethod.GET, ProfileUsageType.Readable);
+            _explicitPost = await ExplicitSchoolRequest(RequestMethod.POST, ProfileUsageType.Writable);
             _implicitGet = await ImplicitGet();
         }
+
+        private Task<ProfileResolutionResult> ExplicitSchoolRequest(
+            RequestMethod method,
+            ProfileUsageType usageType
+        ) =>
+            Service.ResolveProfileAsync(
+                new ParsedProfileHeader("School", "SchoolProfile", usageType),
+                method,
+                "School",
+                ApplicationId,
+                null
+            );
 
         [Test]
         public void It_caches_the_catalog_without_that_profile()
         {
+            _profileNames.Should().Equal("StudentProfile");
             Cms.RequestCount(CatalogPath).Should().Be(1);
+            Cms.RequestCount(SchoolProfilePath).Should().Be(1);
         }
 
         [Test]
-        public void It_answers_an_explicit_get_with_406()
+        public void It_answers_an_explicit_get_naming_it_with_406()
         {
             _explicitGet.IsSuccess.Should().BeFalse();
             _explicitGet.Error!.StatusCode.Should().Be(406);
         }
 
         [Test]
-        public void It_answers_an_explicit_post_with_415()
+        public void It_answers_an_explicit_post_naming_it_with_415()
         {
             _explicitPost.IsSuccess.Should().BeFalse();
             _explicitPost.Error!.StatusCode.Should().Be(415);
         }
 
         [Test]
-        public void It_applies_no_profile_implicitly()
+        public void It_still_applies_the_assigned_profile_implicitly()
         {
-            _implicitGet.IsSuccess.Should().BeTrue();
-            _implicitGet.ProfileContext.Should().BeNull();
+            AssertImplicitStudentProfile(_implicitGet);
         }
     }
 }
