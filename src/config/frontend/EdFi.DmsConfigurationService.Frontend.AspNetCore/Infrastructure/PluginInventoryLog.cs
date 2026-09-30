@@ -25,7 +25,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// than by everyone remembering it.
 /// </para>
 /// <para>
-/// Every value projected below is metadata: names, versions, digests, states, lifetimes and flags. No
+/// Every value projected below is metadata: names, versions, digests, states, lifetimes, flags and
+/// configuration source type names. No
 /// service descriptor, implementation instance, factory delegate, service key or configuration object
 /// is passed to the logger, so nothing here can render an object whose <c>ToString</c> the host does
 /// not control.
@@ -75,13 +76,17 @@ internal static class PluginInventoryLog
                 "Plugin inventory for {PluginName} version {AssemblyVersion}: declared files "
                     + "{@DeclaredFiles}; registered service types {@RegisteredServiceTypes}; removed "
                     + "descriptors {@RemovedDescriptors}; host-first substitutions "
-                    + "{@HostFirstSubstitutions}",
+                    + "{@HostFirstSubstitutions}; configuration source types {@ConfigurationSourceTypes}",
                 Loggable(record.PluginName),
                 record.Plugin.EntryAssemblyVersion.ToString(),
                 inventory.Select(DeclaredFileOf).ToArray(),
                 record.Additions.Select(RegisteredServiceOf).ToArray(),
                 record.Removals.Select(removal => RemovedDescriptorOf(removal, replaced)).ToArray(),
-                substitutions.Select(SubstitutionOf).ToArray()
+                substitutions.Select(SubstitutionOf).ToArray(),
+                // The Phase A record: the type of each source the plugin's configuration hook added, and
+                // nothing else. A plugin of this kind exists to carry secrets into configuration, so the
+                // keys and values its sources supply are never on this event.
+                record.ConfigurationSourceTypes.Select(sourceType => Loggable(sourceType)!).ToArray()
             );
         }
     }

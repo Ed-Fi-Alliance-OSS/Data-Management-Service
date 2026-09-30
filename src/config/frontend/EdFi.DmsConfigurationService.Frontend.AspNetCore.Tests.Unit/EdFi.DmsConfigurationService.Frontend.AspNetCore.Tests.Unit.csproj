@@ -24,4 +24,5 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />
     </ItemGroup>
+    <Import Project="PluginCmsFixtures.targets" />
 </Project>
