@@ -1709,6 +1709,101 @@ public class CachedProfileServiceTests
     }
 
     /// <summary>
+    /// Once one definition fetch fails, the attempt starts no further fetches: only the requests
+    /// already in flight finish, so a failing attempt never sends every listed profile's request to a
+    /// struggling CMS. A bound that queued every fetch up front (a semaphore around Task.WhenAll)
+    /// would still send all of them.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Catalog_Larger_Than_The_Fetch_Bound_Whose_First_Fetch_Fails
+        : Given_A_Cms_Backed_Profile_Service
+    {
+        private const int ProfileCount = CachedProfileService.MaxConcurrentProfileFetches * 3;
+
+        private readonly List<string> _detailPaths = [];
+        private Exception? _failure;
+
+        protected override async Task Act()
+        {
+            // SetUp runs once per test on the same fixture instance.
+            _detailPaths.Clear();
+            List<object> listed = [];
+            List<(CmsGate Gate, CmsReply Reply)> gates = [];
+            for (int index = 0; index < ProfileCount; index++)
+            {
+                long id = 100 + index;
+                string name = $"Profile{index}";
+                string path = $"/v3/profiles/{id}";
+                listed.Add(new { id, name });
+                _detailPaths.Add(path);
+                CmsReply reply = CmsReply.Json(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            id,
+                            name,
+                            definition = SchoolProfileXml.Replace("SchoolProfile", name),
+                        }
+                    )
+                );
+                Cms.Serve(path, reply);
+
+                if (index == 0)
+                {
+                    // The first listed profile fails at once; every other one is held.
+                    Cms.FailTimes(path, InternalServerError, times: 1);
+                }
+                else
+                {
+                    gates.Add((Cms.GateNext(path), reply));
+                }
+            }
+            Cms.Serve(CatalogPath, CmsReply.Json(JsonSerializer.Serialize(listed)));
+
+            Task<Exception?> load = CaptureFailure(() => Service.GetProfileNamesAsync(null));
+
+            // Let the failure be recorded while the other fetches are still held, so a released
+            // fetch cannot race ahead of it and claim another profile.
+            await WaitUntil(() => Cms.RequestCount(_detailPaths[0]) == 1);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+
+            foreach ((CmsGate gate, CmsReply reply) in gates)
+            {
+                gate.Release(reply);
+            }
+            _failure = await load;
+        }
+
+        private static async Task WaitUntil(Func<bool> condition)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException("The failing definition fetch was never requested.");
+                }
+                await Task.Delay(10);
+            }
+        }
+
+        [Test]
+        public void It_fails_the_catalog_load()
+        {
+            _failure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_starts_no_fetch_after_the_failure()
+        {
+            _detailPaths
+                .Sum(path => Cms.RequestCount(path))
+                .Should()
+                .BeLessThanOrEqualTo(CachedProfileService.MaxConcurrentProfileFetches);
+        }
+    }
+
+    /// <summary>
     /// Callers joined to one failing fetch all receive the failure, the fetch is still shared
     /// (stampede protection), and the failure is not left behind for the next caller.
     /// </summary>

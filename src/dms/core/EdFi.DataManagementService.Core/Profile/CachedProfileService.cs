@@ -679,9 +679,10 @@ internal class CachedProfileService(
                     // a partial catalog is never cached. Only a CMS 404 for a definition comes back as
                     // null, and that one profile is skipped below.
                     //
-                    // Bounded because the catalog is all-or-nothing: an unbounded burst of one request
-                    // per profile is what exhausts CMS database connections, and one failure now fails
-                    // the whole attempt. After the first failure no further fetches start, so a failing
+                    // Bounded as load mitigation: the catalog is all-or-nothing, so one failed fetch
+                    // fails the whole attempt, and the unbounded burst of one request per profile
+                    // coincided with the CMS timeouts tracked in DMS-1556 (their cause is not
+                    // established). After the first failure no further fetches start, so a failing
                     // attempt ends sooner and stops adding load to a struggling CMS.
                     var fetchResults = new (long ProfileId, CmsProfileResponse? Response)[profiles.Count];
                     await Parallel.ForEachAsync(
