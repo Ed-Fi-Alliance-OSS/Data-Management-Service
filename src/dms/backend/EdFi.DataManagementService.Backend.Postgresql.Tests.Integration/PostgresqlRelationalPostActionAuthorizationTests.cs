@@ -523,7 +523,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
 
         blockerResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         // The capture could not see the uncommitted row, so the insert waited on its identity and then lost. A
-        // POST without If-None-Match reports that as an identity conflict, which is not retried.
+        // POST reports that as an identity conflict, which is not retried.
         postResult.Should().BeOfType<UpsertResult.UpsertFailureIdentityConflict>();
         var afterRace = await AssertOnlyTheBlockerPersistedAsync(
             NullableProject,
