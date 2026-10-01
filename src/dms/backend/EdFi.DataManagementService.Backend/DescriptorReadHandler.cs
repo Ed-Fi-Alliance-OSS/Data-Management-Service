@@ -33,7 +33,8 @@ internal sealed class DescriptorReadHandler(
     IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger,
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
-    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor
+    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor,
+    IOwnershipAuthorizationExecutor ownershipAuthorizationExecutor
 ) : IDescriptorReadHandler
 {
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -67,6 +68,9 @@ internal sealed class DescriptorReadHandler(
     private readonly ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor =
         customViewAuthorizationExecutor
         ?? throw new ArgumentNullException(nameof(customViewAuthorizationExecutor));
+    private readonly IOwnershipAuthorizationExecutor _ownershipAuthorizationExecutor =
+        ownershipAuthorizationExecutor
+        ?? throw new ArgumentNullException(nameof(ownershipAuthorizationExecutor));
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
         readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
 
@@ -341,9 +345,73 @@ internal sealed class DescriptorReadHandler(
             return new DescriptorGetByIdReadResult<TRow>.Complete(afterNamespaceDenial);
         }
 
+        // OwnershipBased is the last AND filter whatever position CMS gave it, so the stored-stamp check runs
+        // after every custom-view and namespace check, against the row the lookup above found.
+        if (
+            await ExecuteGetByIdOwnershipAsync(
+                    request,
+                    descriptorRow.DocumentId,
+                    authorizationResult.Proceed?.OwnershipAuthorization,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } ownershipDenial
+        )
+        {
+            return new DescriptorGetByIdReadResult<TRow>.Complete(ownershipDenial);
+        }
+
         LogDiscriminatorMismatchIfPresent(request, descriptorRow);
 
         return new DescriptorGetByIdReadResult<TRow>.AuthorizedRow(descriptorRow);
+    }
+
+    /// <summary>
+    /// Runs the stored-stamp ownership check for a descriptor GET-by-id — the same executor, compiler and
+    /// failure mapper the repository's GET-by-id uses — returning the response it owes or
+    /// <see langword="null"/> when the read is authorized.
+    /// </summary>
+    private async Task<GetResult?> ExecuteGetByIdOwnershipAsync(
+        DescriptorGetByIdRequest request,
+        long documentId,
+        RelationalOwnershipAuthorization? ownershipAuthorization,
+        CancellationToken cancellationToken
+    )
+    {
+        if (ownershipAuthorization is null)
+        {
+            return null;
+        }
+
+        var executionResult = await _ownershipAuthorizationExecutor
+            .ExecuteAsync(
+                new OwnershipAuthorizationExecutionRequest(
+                    request.MappingSet,
+                    documentId,
+                    ownershipAuthorization.Check,
+                    ownershipAuthorization.OwnershipTokenParameterization
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            OwnershipAuthorizationExecutionResult.Authorized => null,
+            OwnershipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                new GetResult.GetFailureOwnershipNotAuthorized(notAuthorized.Failure),
+            OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new GetResult.GetFailureSecurityConfiguration(
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
+            // The row was deleted between the lookup and this check, so it no longer exists: a 404, as the
+            // repository read path reports once it re-resolves the target.
+            OwnershipAuthorizationExecutionResult.StaleTarget => new GetResult.GetFailureNotExists(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ownership authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     private sealed record DescriptorGetByIdAuthorizationResult(
@@ -956,10 +1024,25 @@ internal sealed class DescriptorReadHandler(
 
         var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
 
+        // A caller with no ownership token can own no descriptor. Every custom view executes ahead of
+        // ownership, so each is validated before the empty page — the regular-resource answer, not a 403.
+        if (proceed.OwnershipPageFilterMatchesNothing)
+        {
+            await ValidateCustomViewsAsync(request, proceed.CustomViewChecks, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new DescriptorQueryPreparationResult.Complete(
+                new QueryResult.QuerySuccess([], request.Paging.IncludesTotalCount ? 0 : null)
+                {
+                    SelectionSkipped = true,
+                }
+            );
+        }
+
         // The descriptor page subquery roots on dms.Descriptor, which carries both the DocumentId keyset
         // and the Namespace column, so the namespace and custom-view checks bind directly to the root
-        // alias. The planner consumes the orchestrator's authorization checks through
-        // PageDocumentIdAuthorizationSpec.
+        // alias; the ownership filter reads the stamp through the compiler's dms.Document join. The planner
+        // consumes the orchestrator's authorization checks through PageDocumentIdAuthorizationSpec.
         var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
 
         DescriptorQueryPreprocessingResult preprocessingResult;
@@ -1011,6 +1094,7 @@ internal sealed class DescriptorReadHandler(
                 request.MappingSet.Key.Dialect,
                 request.Resource,
                 proceed.NamespacePrefixParameterization,
+                proceed.PageOwnershipTokenParameterization,
                 preprocessingResult.QueryElementsInOrder.Count,
                 CountPagingParameters(request),
                 CountChangeVersionParameters(request.ChangeVersionRange)
@@ -1194,6 +1278,19 @@ internal sealed class DescriptorReadHandler(
         }
 
         var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+
+        // The GET-many answer for a caller with no ownership token, for the same reason: an empty boundary set
+        // after every custom view is validated.
+        if (proceed.OwnershipPageFilterMatchesNothing)
+        {
+            await ValidateCustomViewsAsync(dialect, proceed.CustomViewChecks, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.PartitionSuccess([]) { SelectionSkipped = true }
+            );
+        }
+
         var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
 
         DescriptorQueryPreprocessingResult preprocessingResult;
@@ -1243,6 +1340,7 @@ internal sealed class DescriptorReadHandler(
                 dialect,
                 request.Resource,
                 proceed.NamespacePrefixParameterization,
+                proceed.PageOwnershipTokenParameterization,
                 preprocessingResult.QueryElementsInOrder.Count,
                 _descriptorPartitionParameterCount,
                 CountChangeVersionParameters(request.ChangeVersionRange)
@@ -1569,15 +1667,16 @@ internal sealed class DescriptorReadHandler(
         PageCandidateModePlanning.ForPaging(request.Paging, request.PageOrderingMode).ParameterValues.Count;
 
     /// <summary>
-    /// Returns a security-configuration failure when the descriptor page query's namespace prefix
-    /// parameters, plus its query filter, paging, ResourceKeyId, and change-version parameters, exceed
-    /// SQL Server's per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate
-    /// lives in <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
+    /// Returns a security-configuration failure when the descriptor page query's namespace prefix and
+    /// ownership token parameters, plus its query filter, paging, ResourceKeyId, and change-version
+    /// parameters, exceed SQL Server's per-command parameter ceiling; otherwise <see langword="null"/>. The
+    /// dialect gate lives in <see cref="AuthorizationParameterBudget.ExceedsCommandParameterLimit"/>.
     /// </summary>
     private static QueryResult? BuildDescriptorQueryParameterBudgetFailure(
         SqlDialect dialect,
         QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
+        OwnershipTokenParameterization? ownershipTokenParameterization,
         int queryFilterParameterCount,
         int pagingParameterCount,
         int changeVersionParameterCount
@@ -1594,7 +1693,8 @@ internal sealed class DescriptorReadHandler(
                 dialect,
                 namespacePrefixParameterization,
                 claimEducationOrganizationIdParameterization: null,
-                nonAuthorizationParameterCount
+                nonAuthorizationParameterCount,
+                ownershipTokenParameterization
             )
         )
         {
@@ -1606,6 +1706,7 @@ internal sealed class DescriptorReadHandler(
                 NamespaceAuthorizationSecurityConfigurationMessages.CommandParameterCapExceeded(
                     namespacePrefixParameterization?.ConfiguredPrefixesInOrder.Count ?? 0,
                     0,
+                    ownershipTokenParameterization?.TokensInOrder.Count ?? 0,
                     nonAuthorizationParameterCount
                 ),
             ],
@@ -2313,11 +2414,11 @@ internal sealed class DescriptorReadHandler(
 
     /// <summary>
     /// Plans descriptor GET / query namespace authorization through the relational authorization
-    /// orchestrator before any SQL is built. Strategies other than <c>NamespaceBased</c> /
-    /// <c>NoFurtherAuthorizationRequired</c> fail closed; the namespace planner terminals
-    /// (no configured prefixes, no usable root column, MSSQL prefix cap) short-circuit with no DB
-    /// roundtrip; otherwise the configured namespace prefixes are surfaced for the in-memory
-    /// stored-value check on GET-by-id or for SQL emission on query.
+    /// orchestrator before any SQL is built. Strategies other than <c>NamespaceBased</c>,
+    /// <c>NoFurtherAuthorizationRequired</c>, <c>OwnershipBased</c> and resolved custom views fail closed; the
+    /// namespace planner terminals (no configured prefixes, no usable root column, MSSQL prefix cap)
+    /// short-circuit with no DB roundtrip; otherwise the configured namespace prefixes are surfaced for the
+    /// in-memory stored-value check on GET-by-id or for SQL emission on query.
     /// </summary>
     private static DescriptorReadAuthorizationPreflightOutcome ResolveDescriptorReadAuthorization(
         MappingSet mappingSet,
@@ -2346,6 +2447,8 @@ internal sealed class DescriptorReadHandler(
                 BuildDescriptorNoUsableRootPreflight(mappingSet, resource, noUsableRoot),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
                 BuildDescriptorNoPrefixesPreflight(mappingSet, resource, noPrefixes),
+            RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded =>
+                BuildDescriptorOwnershipTokenCapPreflight(mappingSet, resource, ownershipTokenCapExceeded),
             // Both read paths route through the same builder, so this terminal carries the custom views
             // configured ahead of it and its message excludes them from the unsupported list. Gating this on
             // GET-many left GET-by-id with a bare 501 that skipped validating those views and named the
@@ -2462,6 +2565,45 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
+    /// <summary>
+    /// The ownership token cap, reported as the read paths' existing security-configuration 500, for GET-by-id,
+    /// GET-many and partitions alike: every descriptor read enforces OwnershipBased.
+    /// </summary>
+    private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorOwnershipTokenCapPreflight(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded
+    )
+    {
+        // A null terminal index: OwnershipBased executes last among the AND strategies whatever position it
+        // is configured at, so every resolved custom view runs ahead of this terminal and is validated first.
+        if (
+            TryResolveTerminalCustomViewChecks(
+                mappingSet,
+                resource,
+                ownershipTokenCapExceeded.CustomViewStrategies,
+                terminalRawConfiguredIndex: null,
+                out var customViewChecks
+            ) is
+            { } customViewFailure
+        )
+        {
+            return customViewFailure;
+        }
+
+        return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+            [
+                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                    ownershipTokenCapExceeded.OwnershipTokenCount
+                ),
+            ],
+            AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+            ),
+            customViewChecks
+        );
+    }
+
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadSecurityConfigurationError(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -2501,11 +2643,12 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
-    /// The known-but-not-enabled 501 terminal. OwnershipBased — the only known-but-not-enabled strategy —
-    /// executes last per auth.md "Execution order", regardless of its configured position, so for GET-many
-    /// every resolved custom view is validated before the 501 is reported, mirroring the relational query
-    /// path. That lets a missing or non-conforming view surface its own configuration failure. GET-by-id
-    /// carries its resolved views the same way, so neither read path reports a bare 501 over them.
+    /// The planner's known-but-not-enabled 501 terminal, kept as the fail-closed arm for that outcome. No
+    /// descriptor read reaches it today: the classifier's only known-but-not-enabled strategy is
+    /// <c>OwnershipBased</c>, which every descriptor read now enforces, so the planner splits it out rather than
+    /// reporting it. A descriptor 501 comes instead from the relationship guardrail on a <c>Plan</c> above. Were
+    /// this terminal reached, it would execute last whatever its configured position, so every resolved custom
+    /// view is validated before the 501 is reported and a missing or non-conforming view keeps its own failure.
     /// </summary>
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadNotImplemented(
         MappingSet mappingSet,
@@ -2734,7 +2877,69 @@ internal sealed class DescriptorReadHandler(
             );
         }
 
-        if (plan.NamespaceChecks.Count == 0 && customViewChecks.Count == 0)
+        RelationalOwnershipAuthorization? ownershipAuthorization = null;
+
+        if (plan.OwnershipCheck is { } ownershipCheck)
+        {
+            // Defensive: the planner reports an over-limit token list as its own terminal before handing back
+            // a plan, so this only fails if that terminal were dropped — and then closed, not with an
+            // over-limit parameter list at the SQL boundary. Every view runs ahead of ownership.
+            if (
+                !OwnershipTokenParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.OwnershipTokenIds,
+                    out var ownershipTokenParameterization,
+                    out var ownershipSecurityConfigurationMessage,
+                    out var ownershipSecurityConfigurationDiagnostics
+                )
+            )
+            {
+                return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [ownershipSecurityConfigurationMessage],
+                    ownershipSecurityConfigurationDiagnostics,
+                    customViewChecks
+                );
+            }
+
+            ownershipAuthorization = new RelationalOwnershipAuthorization(
+                ownershipCheck,
+                ownershipTokenParameterization
+            );
+        }
+
+        OwnershipTokenParameterization? pageOwnershipTokenParameterization = null;
+
+        // An empty token list is left unparameterized: it can match no document, and GET-many and partitions
+        // answer it with an empty result after validating every custom view. Otherwise the same defensive cap
+        // check as the single-record arm above.
+        if (plan.OwnershipPageFilter is not null && authorizationContext.OwnershipTokenIds.Count > 0)
+        {
+            if (
+                !OwnershipTokenParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.OwnershipTokenIds,
+                    out var ownershipTokenParameterization,
+                    out var ownershipSecurityConfigurationMessage,
+                    out var ownershipSecurityConfigurationDiagnostics
+                )
+            )
+            {
+                return new DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError(
+                    [ownershipSecurityConfigurationMessage],
+                    ownershipSecurityConfigurationDiagnostics,
+                    customViewChecks
+                );
+            }
+
+            pageOwnershipTokenParameterization = ownershipTokenParameterization;
+        }
+
+        if (
+            plan.NamespaceChecks.Count == 0
+            && customViewChecks.Count == 0
+            && ownershipAuthorization is null
+            && plan.OwnershipPageFilter is null
+        )
         {
             return DescriptorReadAuthorizationPreflightOutcome.Proceed.NoAuthorization;
         }
@@ -2744,25 +2949,55 @@ internal sealed class DescriptorReadHandler(
             namespacePrefixParameterization,
             customViewChecks,
             plan.CustomViewStrategies
-        );
+        )
+        {
+            OwnershipAuthorization = ownershipAuthorization,
+            OwnershipPageFilter = plan.OwnershipPageFilter,
+            PageOwnershipTokenParameterization = pageOwnershipTokenParameterization,
+        };
     }
 
     private static PageDocumentIdAuthorizationSpec? BuildDescriptorQueryAuthorizationSpec(
         DescriptorReadAuthorizationPreflightOutcome.Proceed proceed
     )
     {
-        if (proceed.NamespaceChecks.Count == 0 && proceed.CustomViewChecks.Count == 0)
+        // A single-record ownership check has no page-query form. The planner never plans one for ReadMany, and
+        // if that ever changed this fails closed rather than composing a query that ignores it.
+        if (proceed.OwnershipAuthorization is not null)
+        {
+            throw new InvalidOperationException(
+                "A descriptor query was handed a single-record ownership check it cannot apply."
+            );
+        }
+
+        // The one place a required page filter could be dropped, so it fails closed here rather than
+        // composing an unfiltered page. The empty-token case never reaches this point: both preparation
+        // paths answer it before building the spec.
+        if (proceed.OwnershipPageFilterMatchesNothing)
+        {
+            throw new InvalidOperationException(
+                $"The relational authorization planner required the '{proceed.OwnershipPageFilter!.StrategyName}' page filter, "
+                    + "but no ownership-token parameterization was built for it. Refusing to compose an unfiltered descriptor page query."
+            );
+        }
+
+        if (
+            proceed.NamespaceChecks.Count == 0
+            && proceed.CustomViewChecks.Count == 0
+            && proceed.PageOwnershipTokenParameterization is null
+        )
         {
             return null;
         }
 
         // No relational relationship strategies participate in descriptor queries; pass an empty
-        // strategy list so the compiler emits the descriptor namespace and custom-view checks.
+        // strategy list so the compiler emits the descriptor namespace, custom-view and ownership checks.
         return new PageDocumentIdAuthorizationSpec(
             Strategies: [],
             NamespaceChecks: proceed.NamespaceChecks,
             NamespacePrefixParameterization: proceed.NamespacePrefixParameterization,
-            CustomViewChecks: proceed.CustomViewChecks
+            CustomViewChecks: proceed.CustomViewChecks,
+            OwnershipTokenParameterization: proceed.PageOwnershipTokenParameterization
         );
     }
 
@@ -2860,6 +3095,32 @@ internal sealed class DescriptorReadHandler(
         ) : DescriptorReadAuthorizationPreflightOutcome
         {
             public static Proceed NoAuthorization { get; } = new([], null, [], []);
+
+            /// <summary>
+            /// The stored-stamp ownership check GET-by-id runs after its custom-view and namespace checks, or
+            /// <see langword="null"/> when <c>OwnershipBased</c> is not planned. Only single-record reads plan
+            /// one; GET-many and partitions never carry it.
+            /// </summary>
+            public RelationalOwnershipAuthorization? OwnershipAuthorization { get; init; }
+
+            /// <summary>
+            /// The <c>OwnershipBased</c> page filter GET-many and partitions apply to their candidate relation,
+            /// or <see langword="null"/> when it is not planned. Only <c>ReadMany</c> plans one.
+            /// </summary>
+            public PageOwnershipFilterSpec? OwnershipPageFilter { get; init; }
+
+            /// <summary>
+            /// The caller's tokens for <see cref="OwnershipPageFilter"/>, or <see langword="null"/> when no
+            /// filter is planned or the caller holds no token — the one case in which the filter matches
+            /// nothing and the page is answered empty without SQL.
+            /// </summary>
+            public OwnershipTokenParameterization? PageOwnershipTokenParameterization { get; init; }
+
+            /// <summary>
+            /// Whether the planned page filter can match no document because the caller holds no token.
+            /// </summary>
+            public bool OwnershipPageFilterMatchesNothing =>
+                OwnershipPageFilter is not null && PageOwnershipTokenParameterization is null;
         }
     }
 

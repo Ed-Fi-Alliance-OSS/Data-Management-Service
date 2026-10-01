@@ -93,6 +93,59 @@ EOF
 fi
 
 docker cp "$sql" "$PG_CONTAINER:/tmp/grandbend.sql"
+
+# Templates own their projection-enqueue trigger functions through the cluster-wide NOLOGIN role
+# edfi_dms_enqueue_owner, so the restore fails with 'role "edfi_dms_enqueue_owner" does not exist'
+# on a fresh cluster. Ensure it (locked down) first; mirrors Initialize-PostgresqlTemplateRestoreGlobalRole
+# in eng/DatabaseTemplates/Template-Management.psm1, which the official restore path runs.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d postgres >/dev/null <<'SQL' ||
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+BEGIN
+    IF _owner_role IS NULL THEN
+        CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_roles roles
+        WHERE roles.oid = _owner_role
+          AND (roles.rolcanlogin OR roles.rolinherit OR roles.rolsuper OR roles.rolcreatedb OR roles.rolcreaterole OR roles.rolreplication OR roles.rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before restoring template packages.';
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members memberships
+        WHERE memberships.member = _owner_role
+          AND (memberships.admin_option OR memberships.inherit_option OR memberships.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before restoring template packages.';
+    END IF;
+END
+$$;
+SQL
+  { echo "ERROR: failed to ensure PostgreSQL role 'edfi_dms_enqueue_owner' in $PG_CONTAINER." >&2; exit 1; }
+
+# Every restore is an independent writable data store, so it needs its own source identity rather
+# than the one baked into the template (otherwise edfi_st and both tenant DBs report one physical
+# source). Mirrors Invoke-RestoredDataStoreIdentitySourceIdentityReseed in Template-Management.psm1.
+RESEED_SQL="$(cat <<'SQL'
+DO $$
+DECLARE
+    _updated_count integer;
+BEGIN
+    UPDATE "dms"."DataStoreIdentity"
+    SET "SourceIdentity" = gen_random_uuid()
+    WHERE "DataStoreIdentitySingletonId" = 1;
+
+    GET DIAGNOSTICS _updated_count = ROW_COUNT;
+    IF _updated_count <> 1 THEN
+        RAISE EXCEPTION 'Restored database is missing the dms.DataStoreIdentity singleton row.';
+    END IF;
+END
+$$;
+SQL
+)"
+
 for db in "${DBS[@]}"; do
   exists="$(docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$db" -tAc "SELECT 1 FROM pg_namespace WHERE nspname='dms'" 2>/dev/null || true)"
   if [ "$exists" = "1" ]; then
@@ -101,10 +154,11 @@ for db in "${DBS[@]}"; do
     continue
   fi
   echo "Restoring Grand Bend (relational) into $db ..."
-  # --single-transaction: an interrupted/failed restore rolls back entirely, so the DB is left
-  # with NO 'dms' schema. That keeps the skip-guard above honest -- a failed attempt is retried,
-  # not silently skipped as "already seeded" on the next run.
-  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -f /tmp/grandbend.sql
+  # --single-transaction wraps the -f restore and the -c reseed together: an interrupted/failed
+  # restore or reseed rolls back entirely, so the DB is left with NO 'dms' schema. That keeps the
+  # skip-guard above honest -- a failed attempt is retried, not silently skipped as "already seeded".
+  docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" \
+    -f /tmp/grandbend.sql -c "$RESEED_SQL"
   RESTORED+=("$db")
 done
 if [ ${#RESTORED[@]} -gt 0 ]; then echo "Restored this run: ${RESTORED[*]}."; fi

@@ -70,8 +70,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Number of PBKDF2 iterations for client secret hashing.
         /// Higher values increase security but also increase computation time.
         /// Recommended minimum: 100,000 for SHA-256.
+        /// Bound from <c>IdentitySettings:ClientSecretHashingIterations</c>. The count is not stored
+        /// with the hash, so changing it invalidates every client secret hashed at the old count.
         /// </summary>
-        public int HashingIterations { get; set; } = 210000;
+        public int ClientSecretHashingIterations { get; set; } = 210000;
 
         /// <summary>
         /// Whether the background sweep that deletes expired OpenIddict tokens runs.

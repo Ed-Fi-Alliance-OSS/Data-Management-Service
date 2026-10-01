@@ -204,6 +204,7 @@ internal sealed class DescriptorWriteHandler(
                                 resourceKeyId,
                                 authorized.ProposedNamespaceAuthorization,
                                 authorized.CustomViewAuthorization,
+                                authorized.DeferredCreateOwnershipFailureResult,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -218,6 +219,8 @@ internal sealed class DescriptorWriteHandler(
                                 authorized.StoredNamespaceAuthorization,
                                 authorized.ProposedNamespaceAuthorization,
                                 authorized.CustomViewAuthorization,
+                                authorized.StoredOwnershipAuthorization,
+                                authorized.DeferredStoredOwnershipFailureResult,
                                 cancellationToken
                             )
                             .ConfigureAwait(false),
@@ -328,6 +331,26 @@ internal sealed class DescriptorWriteHandler(
                 case DescriptorLockedPreconditionResult.Mismatch(var reason):
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new UpsertResult.UpsertFailureETagMisMatch(reason);
+
+                case DescriptorLockedPreconditionResult.OwnershipNotAuthorized(var ownershipFailure):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureOwnershipNotAuthorized(ownershipFailure);
+
+                case DescriptorLockedPreconditionResult.OwnershipAuthorizationInvalid(
+                    var ownershipFailureMessage,
+                    var ownershipDiagnostics
+                ):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new UpsertResult.UpsertFailureSecurityConfiguration(
+                        [ownershipFailureMessage],
+                        ownershipDiagnostics
+                    );
+
+                case DescriptorLockedPreconditionResult.DeferredPostOwnershipFailure(
+                    var deferredOwnershipFailure
+                ):
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return deferredOwnershipFailure;
 
                 case DescriptorLockedPreconditionResult.Loaded(
                     var sessionTargetContext,
@@ -488,6 +511,7 @@ internal sealed class DescriptorWriteHandler(
         var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
         var proposedNamespaceAuthorization = proceed.ProposedNamespaceAuthorization;
         var customViewAuthorization = proceed.CustomViewAuthorization;
+        var storedOwnershipAuthorization = proceed.StoredOwnershipAuthorization;
 
         var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
 
@@ -514,7 +538,8 @@ internal sealed class DescriptorWriteHandler(
                         storedNamespaceAuthorization,
                         proposedNamespaceAuthorization,
                         body.Namespace,
-                        customViewAuthorization
+                        customViewAuthorization,
+                        storedOwnershipAuthorization: storedOwnershipAuthorization
                     )
                     .ConfigureAwait(false);
 
@@ -572,6 +597,20 @@ internal sealed class DescriptorWriteHandler(
                     case DescriptorLockedPreconditionResult.Mismatch(var reason):
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return new UpdateResult.UpdateFailureETagMisMatch(reason);
+
+                    case DescriptorLockedPreconditionResult.OwnershipNotAuthorized(var ownershipFailure):
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureOwnershipNotAuthorized(ownershipFailure);
+
+                    case DescriptorLockedPreconditionResult.OwnershipAuthorizationInvalid(
+                        var ownershipFailureMessage,
+                        var ownershipDiagnostics
+                    ):
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new UpdateResult.UpdateFailureSecurityConfiguration(
+                            [ownershipFailureMessage],
+                            ownershipDiagnostics
+                        );
 
                     case DescriptorLockedPreconditionResult.Loaded(
                         var sessionTargetContext,
@@ -642,6 +681,7 @@ internal sealed class DescriptorWriteHandler(
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
                     customViewAuthorization,
+                    storedOwnershipAuthorization,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -733,6 +773,7 @@ internal sealed class DescriptorWriteHandler(
         var proceed = (DescriptorDeleteAuthorizationPreflightResult.Proceed)authorizationPreflight;
         var storedNamespaceAuthorization = proceed.StoredNamespaceAuthorization;
         var customViewAuthorization = proceed.CustomViewAuthorization;
+        var storedOwnershipAuthorization = proceed.StoredOwnershipAuthorization;
         var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionDescriptorCustomViewRuns(
             customViewAuthorization,
             storedNamespaceAuthorization
@@ -796,8 +837,13 @@ internal sealed class DescriptorWriteHandler(
                     // replace a descriptor under an arbitrary existing UUID, and descriptor PUT cannot
                     // change Namespace/CodeValue identity. Deleting by the same DocumentUuid plus
                     // ResourceKeyId after authorizing the locked row therefore does not allow an
-                    // unauthorized replacement-delete path.
-                    if (storedNamespaceAuthorization is not null || customViewAuthorization is not null)
+                    // unauthorized replacement-delete path. An ownership-only configuration takes this path
+                    // too: deleting without resolving and locking the target would skip its check entirely.
+                    if (
+                        storedNamespaceAuthorization is not null
+                        || customViewAuthorization is not null
+                        || storedOwnershipAuthorization is not null
+                    )
                     {
                         var resolvedDeleteTarget = await RelationalDocumentUuidLookupSupport
                             .TryResolveDeleteTargetAsync(
@@ -830,7 +876,8 @@ internal sealed class DescriptorWriteHandler(
                         else
                         {
                             // Configured order: the views configured at or before NamespaceBased, then the
-                            // namespace check, then the rest. The first failure is the one reported.
+                            // namespace check, then the rest, and ownership last among the AND filters whatever
+                            // position CMS gave it. The first failure is the one reported.
                             outcome =
                                 await AuthorizeLockedDescriptorDeleteCustomViewsAsync(
                                         request,
@@ -865,6 +912,20 @@ internal sealed class DescriptorWriteHandler(
                                         cancellationToken
                                     )
                                     .ConfigureAwait(false)
+                                ?? (
+                                    storedOwnershipAuthorization is null
+                                        ? null
+                                        : MapDeleteOwnershipAuthorizationResult(
+                                            await ExecuteDescriptorOwnershipAuthorizationAsync(
+                                                    request.MappingSet,
+                                                    resolvedDeleteTarget.DocumentId,
+                                                    storedOwnershipAuthorization,
+                                                    sessionCommandExecutor,
+                                                    cancellationToken
+                                                )
+                                                .ConfigureAwait(false)
+                                        )
+                                )
                                 ?? await ExecuteDescriptorDeleteCommandAsync(
                                         request,
                                         resourceKeyId,
@@ -899,7 +960,8 @@ internal sealed class DescriptorWriteHandler(
                             // DELETE has no profile lens, so the current etag is unprofiled.
                             profileName: null,
                             storedNamespaceAuthorization: storedNamespaceAuthorization,
-                            customViewAuthorization: customViewAuthorization
+                            customViewAuthorization: customViewAuthorization,
+                            storedOwnershipAuthorization: storedOwnershipAuthorization
                         )
                         .ConfigureAwait(false);
 
@@ -938,6 +1000,15 @@ internal sealed class DescriptorWriteHandler(
                         ),
                         DescriptorLockedPreconditionResult.Mismatch(var reason) =>
                             new DeleteResult.DeleteFailureETagMisMatch(reason),
+                        DescriptorLockedPreconditionResult.OwnershipNotAuthorized(var ownershipFailure) =>
+                            new DeleteResult.DeleteFailureOwnershipNotAuthorized(ownershipFailure),
+                        DescriptorLockedPreconditionResult.OwnershipAuthorizationInvalid(
+                            var failureMessage,
+                            var diagnostics
+                        ) => new DeleteResult.DeleteFailureSecurityConfiguration(
+                            [failureMessage],
+                            diagnostics
+                        ),
                         DescriptorLockedPreconditionResult.Loaded =>
                             await ExecuteDescriptorDeleteCommandAsync(
                                     request,
@@ -1033,12 +1104,17 @@ internal sealed class DescriptorWriteHandler(
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
         string? proposedNamespace = null,
         RelationalCustomViewAuthorization? customViewAuthorization = null,
-        DescriptorPostTargetSelection? postTargetSelection = null
+        DescriptorPostTargetSelection? postTargetSelection = null,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
         ArgumentNullException.ThrowIfNull(precondition);
         ArgumentNullException.ThrowIfNull(writeSession);
+
+        // POST only, and set from the branch the resolved target selects below.
+        UpsertResult? deferredStoredOwnershipFailureResult = null;
+        UpsertResult? deferredCreateOwnershipFailureResult = null;
 
         var sessionCommandExecutor = writeSession.CreateCommandExecutor();
         RelationalWriteTargetContext targetContext;
@@ -1124,6 +1200,9 @@ internal sealed class DescriptorWriteHandler(
                     storedNamespaceAuthorization = authorized.StoredNamespaceAuthorization;
                     proposedNamespaceAuthorization = authorized.ProposedNamespaceAuthorization;
                     customViewAuthorization = authorized.CustomViewAuthorization;
+                    storedOwnershipAuthorization = authorized.StoredOwnershipAuthorization;
+                    deferredStoredOwnershipFailureResult = authorized.DeferredStoredOwnershipFailureResult;
+                    deferredCreateOwnershipFailureResult = authorized.DeferredCreateOwnershipFailureResult;
                     break;
             }
         }
@@ -1191,6 +1270,15 @@ internal sealed class DescriptorWriteHandler(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+            }
+
+            // The ownership slot of a create: after every proposed filter, and ahead of the precondition
+            // outcome, so the 403 or cap 500 precedes an If-Match 412 and If-None-Match inserts nothing.
+            if (deferredCreateOwnershipFailureResult is not null)
+            {
+                return new DescriptorLockedPreconditionResult.DeferredPostOwnershipFailure(
+                    deferredCreateOwnershipFailureResult
+                );
             }
 
             return new DescriptorLockedPreconditionResult.CreateNew(createDocumentUuid);
@@ -1268,6 +1356,33 @@ internal sealed class DescriptorWriteHandler(
             if (preconditionFromLateCustomViews is not null)
             {
                 return preconditionFromLateCustomViews;
+            }
+
+            // The ownership slot of the stored sequence: after every stored custom view and the stored namespace
+            // check, before the proposed check, as the regular path orders its stored checks. A deferred cap
+            // stands in for the check a POST could not parameterize.
+            if (deferredStoredOwnershipFailureResult is not null)
+            {
+                return new DescriptorLockedPreconditionResult.DeferredPostOwnershipFailure(
+                    deferredStoredOwnershipFailureResult
+                );
+            }
+
+            if (storedOwnershipAuthorization is not null)
+            {
+                var preconditionFromOwnership = await EvaluateLockedOwnershipAuthorizationAsync(
+                        mappingSet,
+                        existingTargetContext.DocumentId,
+                        storedOwnershipAuthorization,
+                        sessionCommandExecutor,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (preconditionFromOwnership is not null)
+                {
+                    return preconditionFromOwnership;
+                }
             }
 
             // Last, because it reads the request's proposed value: every stored check has to have answered
@@ -1434,6 +1549,25 @@ internal sealed class DescriptorWriteHandler(
                 noPrefixes.CustomViewStrategies,
                 noPrefixes.RawConfiguredIndex
             ),
+            // The ownership token cap, reported before the write session opens. Every resolved view runs before
+            // this terminal: OwnershipBased executes last among the AND strategies whatever position it is
+            // configured at.
+            RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded =>
+                DeleteTerminal(
+                    request,
+                    new DeleteResult.DeleteFailureSecurityConfiguration(
+                        [
+                            OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                                ownershipTokenCapExceeded.OwnershipTokenCount
+                            ),
+                        ],
+                        AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                            AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                        )
+                    ),
+                    ownershipTokenCapExceeded.CustomViewStrategies,
+                    int.MaxValue
+                ),
             RelationalAuthorizationPlanOutcome.Plan plan
                 when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
                     plan.NonNamespaceConfiguredStrategies
@@ -1884,16 +2018,14 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        if (plan.NamespaceChecks.Count == 0)
-        {
-            return new DescriptorDeleteAuthorizationPreflightResult.Proceed(null, customViewAuthorization);
-        }
+        NamespacePrefixParameterization? namespacePrefixParameterization = null;
 
         if (
-            !NamespacePrefixParameterizationPreflight.TryCreate(
+            plan.NamespaceChecks.Count > 0
+            && !NamespacePrefixParameterizationPreflight.TryCreate(
                 request.MappingSet.Key.Dialect,
                 request.RelationalAuthorizationContext.NamespacePrefixes,
-                out var namespacePrefixParameterization,
+                out namespacePrefixParameterization,
                 out var securityConfigurationMessage,
                 out var securityConfigurationDiagnostics
             )
@@ -1910,10 +2042,52 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null;
+
+        // After the namespace parameterization, because NamespaceBased executes ahead of OwnershipBased.
+        if (plan.OwnershipCheck is { } ownershipCheck)
+        {
+            // Defensive: the planner reports an over-limit token list as its own terminal before handing back a
+            // plan, so this fails only if that terminal were dropped — and then closed, after every view.
+            if (
+                !OwnershipTokenParameterizationPreflight.TryCreate(
+                    request.MappingSet.Key.Dialect,
+                    request.RelationalAuthorizationContext.OwnershipTokenIds,
+                    out var ownershipTokenParameterization,
+                    out var ownershipSecurityConfigurationMessage,
+                    out var ownershipSecurityConfigurationDiagnostics
+                )
+            )
+            {
+                return DeleteTerminal(
+                    request,
+                    new DeleteResult.DeleteFailureSecurityConfiguration(
+                        [ownershipSecurityConfigurationMessage],
+                        ownershipSecurityConfigurationDiagnostics
+                    ),
+                    plan.CustomViewStrategies,
+                    int.MaxValue
+                );
+            }
+
+            storedOwnershipAuthorization = new RelationalOwnershipAuthorization(
+                ownershipCheck,
+                ownershipTokenParameterization
+            );
+        }
+
         return new DescriptorDeleteAuthorizationPreflightResult.Proceed(
-            new RelationalWriteNamespaceAuthorization(plan.NamespaceChecks, namespacePrefixParameterization),
+            namespacePrefixParameterization is null
+                ? null
+                : new RelationalWriteNamespaceAuthorization(
+                    plan.NamespaceChecks,
+                    namespacePrefixParameterization
+                ),
             customViewAuthorization
-        );
+        )
+        {
+            StoredOwnershipAuthorization = storedOwnershipAuthorization,
+        };
     }
 
     /// <summary>
@@ -1957,6 +2131,17 @@ internal sealed class DescriptorWriteHandler(
             static () => new DeleteResult.DeleteFailureNotExists()
         );
 
+    private static DeleteResult? MapDeleteOwnershipAuthorizationResult(
+        OwnershipAuthorizationExecutionResult executionResult
+    ) =>
+        MapOwnershipAuthorizationToResult<DeleteResult>(
+            executionResult,
+            static failure => new DeleteResult.DeleteFailureOwnershipNotAuthorized(failure),
+            static (failureMessage, diagnostics) =>
+                new DeleteResult.DeleteFailureSecurityConfiguration([failureMessage], diagnostics),
+            static () => new DeleteResult.DeleteFailureNotExists()
+        );
+
     private abstract record DescriptorDeleteAuthorizationPreflightResult
     {
         private DescriptorDeleteAuthorizationPreflightResult() { }
@@ -1992,6 +2177,12 @@ internal sealed class DescriptorWriteHandler(
         {
             public Proceed(RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization)
                 : this(storedNamespaceAuthorization, null) { }
+
+            /// <summary>
+            /// The stored-stamp check run against the locked target after every custom-view and namespace
+            /// check, or <see langword="null"/> when <c>OwnershipBased</c> is not planned.
+            /// </summary>
+            public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
         }
     }
 
@@ -2005,11 +2196,17 @@ internal sealed class DescriptorWriteHandler(
     /// sources can share one payload space — each executed as its own single-record statement inside the write
     /// session.
     /// </summary>
+    /// <param name="isPost">
+    /// A POST does not know yet whether it creates or updates, so the ownership token cap is deferred to the
+    /// resolved target rather than reported at planning, and the create-side ownership verdict is decided
+    /// alongside the stored-token check.
+    /// </param>
     private static DescriptorWriteAuthorizationPreflightOutcome ResolveDescriptorWriteAuthorization(
         DescriptorWriteRequest request,
         NamespaceAuthorizationOperation operation,
         string operationLabel,
-        string actionLabel
+        string actionLabel,
+        bool isPost = false
     )
     {
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
@@ -2020,7 +2217,10 @@ internal sealed class DescriptorWriteHandler(
             request.MappingSet.GetConcreteResourceModelOrThrow(request.Resource),
             operation,
             configuredAuthorizationStrategies,
-            request.RelationalAuthorizationContext
+            request.RelationalAuthorizationContext,
+            isPost
+                ? OwnershipTokenCapHandling.DeferToTargetResolution
+                : OwnershipTokenCapHandling.FailAtPlanning
         );
 
         return orchestratorOutcome switch
@@ -2046,6 +2246,25 @@ internal sealed class DescriptorWriteHandler(
                 noPrefixes.CustomViewStrategies,
                 noPrefixes.RawConfiguredIndex
             ),
+            // Returned for PUT only: a POST defers the cap to its resolved target. Every resolved view runs
+            // before this terminal: OwnershipBased executes last among the AND strategies whatever position it
+            // is configured at.
+            RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded =>
+                WriteTerminal(
+                    request,
+                    new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                        [
+                            OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                                ownershipTokenCapExceeded.OwnershipTokenCount
+                            ),
+                        ],
+                        AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                            AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                        )
+                    ),
+                    ownershipTokenCapExceeded.CustomViewStrategies,
+                    int.MaxValue
+                ),
             RelationalAuthorizationPlanOutcome.Plan plan
                 when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
                     plan.NonNamespaceConfiguredStrategies
@@ -2065,7 +2284,11 @@ internal sealed class DescriptorWriteHandler(
                 // resolved view runs before this 501.
                 int.MaxValue
             ),
-            RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorWritePlanPreflight(request, plan),
+            RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorWritePlanPreflight(
+                request,
+                plan,
+                isPost
+            ),
             RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported => WriteTerminal(
                 request,
                 new DescriptorWriteAuthorizationPreflightOutcome.NotImplemented(
@@ -2500,7 +2723,8 @@ internal sealed class DescriptorWriteHandler(
 
     private static DescriptorWriteAuthorizationPreflightOutcome BuildDescriptorWritePlanPreflight(
         DescriptorWriteRequest request,
-        RelationalAuthorizationPlanOutcome.Plan plan
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        bool isPost
     )
     {
         if (
@@ -2519,22 +2743,14 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        if (plan.NamespaceChecks.Count == 0)
-        {
-            return customViewAuthorization is null
-                ? DescriptorWriteAuthorizationPreflightOutcome.Proceed.NoAuthorization
-                : new DescriptorWriteAuthorizationPreflightOutcome.Proceed(
-                    null,
-                    null,
-                    customViewAuthorization
-                );
-        }
+        NamespacePrefixParameterization? namespacePrefixParameterization = null;
 
         if (
-            !NamespacePrefixParameterizationPreflight.TryCreate(
+            plan.NamespaceChecks.Count > 0
+            && !NamespacePrefixParameterizationPreflight.TryCreate(
                 request.MappingSet.Key.Dialect,
                 request.RelationalAuthorizationContext.NamespacePrefixes,
-                out var namespacePrefixParameterization,
+                out namespacePrefixParameterization,
                 out var securityConfigurationMessage,
                 out var securityConfigurationDiagnostics
             )
@@ -2551,22 +2767,140 @@ internal sealed class DescriptorWriteHandler(
             );
         }
 
-        var stored = NamespaceAuthorizationFactory.SplitByValueSource(
-            plan.NamespaceChecks,
-            NamespaceAuthorizationCheckValueSource.Stored,
-            namespacePrefixParameterization
-        );
-        var proposed = NamespaceAuthorizationFactory.SplitByValueSource(
-            plan.NamespaceChecks,
-            NamespaceAuthorizationCheckValueSource.Proposed,
-            namespacePrefixParameterization
-        );
+        // After the namespace parameterization, because NamespaceBased executes ahead of OwnershipBased.
+        var ownership = PlanDescriptorWriteOwnership(request, plan, isPost);
+
+        if (ownership.Terminal is not null)
+        {
+            return ownership.Terminal;
+        }
+
+        if (
+            plan.NamespaceChecks.Count == 0
+            && customViewAuthorization is null
+            && ownership.StoredOwnershipAuthorization is null
+            && ownership.DeferredStoredOwnershipFailureResult is null
+            && ownership.DeferredCreateOwnershipFailureResult is null
+        )
+        {
+            return DescriptorWriteAuthorizationPreflightOutcome.Proceed.NoAuthorization;
+        }
+
+        var stored = namespacePrefixParameterization is null
+            ? null
+            : NamespaceAuthorizationFactory.SplitByValueSource(
+                plan.NamespaceChecks,
+                NamespaceAuthorizationCheckValueSource.Stored,
+                namespacePrefixParameterization
+            );
+        var proposed = namespacePrefixParameterization is null
+            ? null
+            : NamespaceAuthorizationFactory.SplitByValueSource(
+                plan.NamespaceChecks,
+                NamespaceAuthorizationCheckValueSource.Proposed,
+                namespacePrefixParameterization
+            );
 
         return new DescriptorWriteAuthorizationPreflightOutcome.Proceed(
             stored,
             proposed,
             customViewAuthorization
-        );
+        )
+        {
+            StoredOwnershipAuthorization = ownership.StoredOwnershipAuthorization,
+            DeferredStoredOwnershipFailureResult = ownership.DeferredStoredOwnershipFailureResult,
+            DeferredCreateOwnershipFailureResult = ownership.DeferredCreateOwnershipFailureResult,
+        };
+    }
+
+    /// <summary>
+    /// What the planned <c>OwnershipBased</c> check owes a descriptor write, decided before any session opens.
+    /// </summary>
+    /// <param name="StoredOwnershipAuthorization">
+    /// The executable stored-stamp check, run against the locked target of an update.
+    /// </param>
+    /// <param name="DeferredStoredOwnershipFailureResult">
+    /// POST only: the token-cap 500 an update owes in place of the stored check, set exactly when the token list
+    /// could not be parameterized, and then only with the executable check null.
+    /// </param>
+    /// <param name="DeferredCreateOwnershipFailureResult">
+    /// POST only: the create-side verdict — the cap 500, or the §2.14 / §2.13 denial for a creator token the
+    /// client could not reach — owed if the target resolves to a create.
+    /// </param>
+    /// <param name="Terminal">
+    /// PUT only, and defensive: the planner reports an over-limit list as its own terminal before handing back a
+    /// plan, so this is set only if that terminal were ever dropped.
+    /// </param>
+    private sealed record DescriptorWriteOwnershipPlan(
+        RelationalOwnershipAuthorization? StoredOwnershipAuthorization,
+        UpsertResult? DeferredStoredOwnershipFailureResult,
+        UpsertResult? DeferredCreateOwnershipFailureResult,
+        DescriptorWriteAuthorizationPreflightOutcome? Terminal
+    );
+
+    private static DescriptorWriteOwnershipPlan PlanDescriptorWriteOwnership(
+        DescriptorWriteRequest request,
+        RelationalAuthorizationPlanOutcome.Plan plan,
+        bool isPost
+    )
+    {
+        if (plan.OwnershipCheck is not { } ownershipCheck)
+        {
+            return new DescriptorWriteOwnershipPlan(null, null, null, null);
+        }
+
+        var dialect = request.MappingSet.Key.Dialect;
+        var authorizationContext = request.RelationalAuthorizationContext;
+
+        // The create has no stored token, so its verdict is decided here from the application context alone.
+        var deferredCreateOwnershipFailureResult = isPost
+            ? CreateOwnershipAuthorization.Evaluate(dialect, ownershipCheck, authorizationContext)
+            : null;
+
+        if (
+            OwnershipTokenParameterizationPreflight.TryCreate(
+                dialect,
+                authorizationContext.OwnershipTokenIds,
+                out var ownershipTokenParameterization,
+                out var securityConfigurationMessage,
+                out var securityConfigurationDiagnostics
+            )
+        )
+        {
+            return new DescriptorWriteOwnershipPlan(
+                new RelationalOwnershipAuthorization(ownershipCheck, ownershipTokenParameterization),
+                null,
+                deferredCreateOwnershipFailureResult,
+                null
+            );
+        }
+
+        // An over-limit list never reaches SQL. A POST carries the cap into the session, to be returned in the
+        // ownership slot of whichever branch the target selects; a PUT fails closed here, after every view.
+        return isPost
+            ? new DescriptorWriteOwnershipPlan(
+                null,
+                new UpsertResult.UpsertFailureSecurityConfiguration(
+                    [securityConfigurationMessage],
+                    securityConfigurationDiagnostics
+                ),
+                deferredCreateOwnershipFailureResult,
+                null
+            )
+            : new DescriptorWriteOwnershipPlan(
+                null,
+                null,
+                null,
+                WriteTerminal(
+                    request,
+                    new DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError(
+                        [securityConfigurationMessage],
+                        securityConfigurationDiagnostics
+                    ),
+                    plan.CustomViewStrategies,
+                    int.MaxValue
+                )
+            );
     }
 
     private abstract record DescriptorWriteAuthorizationPreflightOutcome
@@ -2636,6 +2970,15 @@ internal sealed class DescriptorWriteHandler(
                 : this(storedNamespaceAuthorization, proposedNamespaceAuthorization, null) { }
 
             public static Proceed NoAuthorization { get; } = new(null, null, null);
+
+            /// <inheritdoc cref="DescriptorWriteOwnershipPlan.StoredOwnershipAuthorization"/>
+            public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
+            /// <inheritdoc cref="DescriptorWriteOwnershipPlan.DeferredStoredOwnershipFailureResult"/>
+            public UpsertResult? DeferredStoredOwnershipFailureResult { get; init; }
+
+            /// <inheritdoc cref="DescriptorWriteOwnershipPlan.DeferredCreateOwnershipFailureResult"/>
+            public UpsertResult? DeferredCreateOwnershipFailureResult { get; init; }
         }
     }
 
@@ -2646,11 +2989,25 @@ internal sealed class DescriptorWriteHandler(
     {
         private DescriptorPostBranch() { }
 
+        /// <remarks>
+        /// Under one shared policy the same instance serves both branches: a create reads only the create-side
+        /// ownership member and an update only the stored ones, so the resolved target kind is what gates each.
+        /// </remarks>
         public sealed record Authorized(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
             RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization,
             RelationalCustomViewAuthorization? CustomViewAuthorization
-        ) : DescriptorPostBranch;
+        ) : DescriptorPostBranch
+        {
+            /// <inheritdoc cref="DescriptorWriteOwnershipPlan.StoredOwnershipAuthorization"/>
+            public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
+            /// <inheritdoc cref="DescriptorWriteOwnershipPlan.DeferredStoredOwnershipFailureResult"/>
+            public UpsertResult? DeferredStoredOwnershipFailureResult { get; init; }
+
+            /// <inheritdoc cref="DescriptorWriteOwnershipPlan.DeferredCreateOwnershipFailureResult"/>
+            public UpsertResult? DeferredCreateOwnershipFailureResult { get; init; }
+        }
 
         /// <summary>
         /// The result the branch owes as soon as the target selects it, with the views configured ahead of the
@@ -2748,7 +3105,8 @@ internal sealed class DescriptorWriteHandler(
             },
             NamespaceAuthorizationOperation.Update,
             "descriptor POST",
-            "POST"
+            "POST",
+            isPost: true
         );
 
     private static DescriptorPostBranch ToDescriptorPostBranch(
@@ -2761,7 +3119,12 @@ internal sealed class DescriptorWriteHandler(
                     proceed.StoredNamespaceAuthorization,
                     proceed.ProposedNamespaceAuthorization,
                     proceed.CustomViewAuthorization
-                ),
+                )
+                {
+                    StoredOwnershipAuthorization = proceed.StoredOwnershipAuthorization,
+                    DeferredStoredOwnershipFailureResult = proceed.DeferredStoredOwnershipFailureResult,
+                    DeferredCreateOwnershipFailureResult = proceed.DeferredCreateOwnershipFailureResult,
+                },
             DescriptorWriteAuthorizationPreflightOutcome.NotImplemented notImplemented =>
                 new DescriptorPostBranch.Immediate(
                     new UpsertResult.UpsertFailureNotImplemented(
@@ -2833,10 +3196,9 @@ internal sealed class DescriptorWriteHandler(
             request.TraceId.Value
         );
 
-        // Stamped on every descriptor create, exactly as it is for a regular resource, and independently of
-        // whether descriptor ownership enforcement is available: stamping never consults configured
-        // strategies. Descriptor requests configured with OwnershipBased still fail closed with a 501 before
-        // reaching here, so a stamped descriptor row is only ever produced by a request this handler accepts.
+        // Stamped on every descriptor create, exactly as it is for a regular resource: stamping never consults
+        // configured strategies. Under OwnershipBased a create reaches here only when the create-side verdict
+        // allowed it, so the stamp is a token the creating client holds.
         var createdByOwnershipTokenId = request.RelationalAuthorizationContext.CreatorOwnershipTokenId;
 
         var command = request.MappingSet.Key.Dialect switch
@@ -3081,6 +3443,8 @@ internal sealed class DescriptorWriteHandler(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization,
+        UpsertResult? deferredStoredOwnershipFailureResult,
         CancellationToken cancellationToken
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpsertResult>(
@@ -3090,6 +3454,8 @@ internal sealed class DescriptorWriteHandler(
             storedNamespaceAuthorization,
             proposedNamespaceAuthorization,
             customViewAuthorization,
+            storedOwnershipAuthorization,
+            deferredStoredOwnershipFailureResult,
             static () => new UpsertResult.UpsertFailureWriteConflict(),
             missingDescriptorDocumentId => new UpsertResult.UnknownFailure(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
@@ -3101,6 +3467,7 @@ internal sealed class DescriptorWriteHandler(
             static customViewFailure => new UpsertResult.UpsertFailureCustomViewNotAuthorized(
                 customViewFailure
             ),
+            static ownershipFailure => new UpsertResult.UpsertFailureOwnershipNotAuthorized(ownershipFailure),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPostUpsertAsync(
                     request,
@@ -3124,6 +3491,7 @@ internal sealed class DescriptorWriteHandler(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization,
         CancellationToken cancellationToken
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpdateResult>(
@@ -3133,6 +3501,9 @@ internal sealed class DescriptorWriteHandler(
             storedNamespaceAuthorization,
             proposedNamespaceAuthorization,
             customViewAuthorization,
+            storedOwnershipAuthorization,
+            // A PUT never defers: its cap is the planner terminal, reported before any session opens.
+            deferredStoredOwnershipFailureResult: null,
             static () => new UpdateResult.UpdateFailureNotExists(),
             missingDescriptorDocumentId => new UpdateResult.UnknownFailure(
                 BuildMissingDescriptorMessage(request.Resource, missingDescriptorDocumentId)
@@ -3144,6 +3515,7 @@ internal sealed class DescriptorWriteHandler(
             static customViewFailure => new UpdateResult.UpdateFailureCustomViewNotAuthorized(
                 customViewFailure
             ),
+            static ownershipFailure => new UpdateResult.UpdateFailureOwnershipNotAuthorized(ownershipFailure),
             (persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPutAsync(
                     request,
@@ -3165,12 +3537,15 @@ internal sealed class DescriptorWriteHandler(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization,
+        TResult? deferredStoredOwnershipFailureResult,
         Func<TResult> missingDocumentResultFactory,
         Func<long, TResult> missingDescriptorResultFactory,
         Func<NamespaceAuthorizationFailure, TResult> namespaceNotAuthorizedFactory,
         Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> namespaceAuthorizationInvalidFactory,
         Func<TResult> namespaceStaleTargetFactory,
         Func<CustomViewAuthorizationFailure, TResult> customViewNotAuthorizedFactory,
+        Func<OwnershipAuthorizationFailure, TResult> ownershipNotAuthorizedFactory,
         Func<
             PersistedDescriptorState,
             string,
@@ -3286,6 +3661,40 @@ internal sealed class DescriptorWriteHandler(
                         return lateCustomViewFailure;
                     }
 
+                    // The ownership slot: the last stored check, before the proposed namespace check, as the
+                    // regular path orders its stored checks ahead of the proposed ones. A POST that could not
+                    // parameterize its token list owes the deferred cap here instead of running the check.
+                    if (deferredStoredOwnershipFailureResult is not null)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return deferredStoredOwnershipFailureResult;
+                    }
+
+                    if (storedOwnershipAuthorization is not null)
+                    {
+                        var ownershipResult = await ExecuteDescriptorOwnershipAuthorizationAsync(
+                                request.MappingSet,
+                                documentId,
+                                storedOwnershipAuthorization,
+                                sessionCommandExecutor,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        var ownershipFailure = MapOwnershipAuthorizationToResult(
+                            ownershipResult,
+                            ownershipNotAuthorizedFactory,
+                            namespaceAuthorizationInvalidFactory,
+                            namespaceStaleTargetFactory
+                        );
+
+                        if (ownershipFailure is not null)
+                        {
+                            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            return ownershipFailure;
+                        }
+                    }
+
                     // Last, because it reads the request's proposed value: every stored check has to have
                     // answered against the locked row first, or a proposed denial would mask the stored
                     // custom-view answer configured after NamespaceBased — including the 500 a nonconforming
@@ -3353,7 +3762,8 @@ internal sealed class DescriptorWriteHandler(
     /// <summary>
     /// Opens a write session for a descriptor POST create, runs the configured proposed namespace
     /// check before the insert, and rolls back without inserting on namespace denial so the create
-    /// path never produces a partially-written document on a 403.
+    /// path never produces a partially-written document on a 403. The create-side ownership verdict is
+    /// returned in the ownership slot, after the proposed filters and before the insert.
     /// </summary>
     private async Task<UpsertResult> ExecuteDescriptorInsertWithProposedNamespaceCheckAsync(
         DescriptorWriteRequest request,
@@ -3362,6 +3772,7 @@ internal sealed class DescriptorWriteHandler(
         short resourceKeyId,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization,
+        UpsertResult? deferredCreateOwnershipFailureResult,
         CancellationToken cancellationToken
     )
     {
@@ -3383,6 +3794,18 @@ internal sealed class DescriptorWriteHandler(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+        }
+
+        // The ownership verdict was decided from the application context, so with no proposed filter configured
+        // ahead of it the denial is deterministic too, and no session is opened for it. A self-basis denial
+        // reaching here has the namespace check ahead of it, so that check still has to run first.
+        if (
+            deferredCreateOwnershipFailureResult is not null
+            && proposedNamespaceAuthorization is null
+            && selfBasisDenial is null
+        )
+        {
+            return deferredCreateOwnershipFailureResult;
         }
 
         await using var writeSession = await _writeSessionFactory
@@ -3433,6 +3856,13 @@ internal sealed class DescriptorWriteHandler(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+            }
+
+            // The ownership slot of a create: every proposed filter has authorized, and nothing is inserted.
+            if (deferredCreateOwnershipFailureResult is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return deferredCreateOwnershipFailureResult;
             }
 
             var insertResult = await InsertDescriptorAsync(
@@ -3514,6 +3944,84 @@ internal sealed class DescriptorWriteHandler(
                 ),
             // The If-Match path locks the target before this check, so a stale target maps to the same
             // missing-document precondition the caller already resolves to not-exists/conflict.
+            static () => DescriptorLockedPreconditionResult.MissingDocument.Instance
+        );
+    }
+
+    /// <summary>
+    /// Runs the stored-stamp ownership check against the descriptor write session's command executor — the
+    /// executor, compiler and failure mapper every other ownership path uses — inside the transaction that
+    /// locked the target.
+    /// </summary>
+    private Task<OwnershipAuthorizationExecutionResult> ExecuteDescriptorOwnershipAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalOwnershipAuthorization ownershipAuthorization,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        CancellationToken cancellationToken
+    ) =>
+        new OwnershipAuthorizationExecutor(
+            sessionCommandExecutor,
+            _relationshipAuthorizationProviderFailureExtractor
+        ).ExecuteAsync(
+            new OwnershipAuthorizationExecutionRequest(
+                mappingSet,
+                documentId,
+                ownershipAuthorization.Check,
+                ownershipAuthorization.OwnershipTokenParameterization
+            ),
+            cancellationToken
+        );
+
+    private static TResult? MapOwnershipAuthorizationToResult<TResult>(
+        OwnershipAuthorizationExecutionResult executionResult,
+        Func<OwnershipAuthorizationFailure, TResult> ownershipNotAuthorizedFactory,
+        Func<string, SecurityConfigurationFailureDiagnostic[]?, TResult> ownershipAuthorizationInvalidFactory,
+        Func<TResult> staleTargetFactory
+    )
+        where TResult : class =>
+        executionResult switch
+        {
+            OwnershipAuthorizationExecutionResult.Authorized => null,
+            OwnershipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                ownershipNotAuthorizedFactory(notAuthorized.Failure),
+            OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                ownershipAuthorizationInvalidFactory(
+                    invalidFailure.FailureMessage,
+                    invalidFailure.Diagnostics
+                ),
+            // Unreachable while the target lock holds; mapped defensively like the namespace segments.
+            OwnershipAuthorizationExecutionResult.StaleTarget => staleTargetFactory(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ownership authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
+
+    private async Task<DescriptorLockedPreconditionResult?> EvaluateLockedOwnershipAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalOwnershipAuthorization ownershipAuthorization,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await ExecuteDescriptorOwnershipAuthorizationAsync(
+                mappingSet,
+                documentId,
+                ownershipAuthorization,
+                sessionCommandExecutor,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MapOwnershipAuthorizationToResult<DescriptorLockedPreconditionResult>(
+            result,
+            static failure => new DescriptorLockedPreconditionResult.OwnershipNotAuthorized(failure),
+            static (failureMessage, diagnostics) =>
+                new DescriptorLockedPreconditionResult.OwnershipAuthorizationInvalid(
+                    failureMessage,
+                    diagnostics
+                ),
             static () => DescriptorLockedPreconditionResult.MissingDocument.Instance
         );
     }
@@ -4124,6 +4632,22 @@ internal sealed class DescriptorWriteHandler(
         ) : DescriptorLockedPreconditionResult;
 
         public sealed record Mismatch(ETagPreconditionFailureReason Reason)
+            : DescriptorLockedPreconditionResult;
+
+        /// <summary>The stored-stamp check denied the locked target: §2.13 or §2.14.</summary>
+        public sealed record OwnershipNotAuthorized(OwnershipAuthorizationFailure Failure)
+            : DescriptorLockedPreconditionResult;
+
+        public sealed record OwnershipAuthorizationInvalid(
+            string FailureMessage,
+            SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+        ) : DescriptorLockedPreconditionResult;
+
+        /// <summary>
+        /// POST only: a result decided before the session opened and owed in the ownership slot of the branch the
+        /// resolved target selected — the create-side verdict for a create, the deferred token cap for an update.
+        /// </summary>
+        public sealed record DeferredPostOwnershipFailure(UpsertResult Result)
             : DescriptorLockedPreconditionResult;
 
         /// <summary>

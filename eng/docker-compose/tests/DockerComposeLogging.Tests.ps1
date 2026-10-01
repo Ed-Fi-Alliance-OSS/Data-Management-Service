@@ -115,6 +115,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             "eng/docker-compose/local-dms-diagnostics.yml",
             "eng/docker-compose/mssql-cdc.yml",
             "eng/docker-compose/mssql-tmpfs.yml",
+            "eng/docker-compose/plugins-config.yml",
             "eng/docker-compose/plugins-dms.yml",
             "eng/docker-compose/plugins-fetch-dms.yml",
             "eng/docker-compose/postgresql-tmpfs.yml",

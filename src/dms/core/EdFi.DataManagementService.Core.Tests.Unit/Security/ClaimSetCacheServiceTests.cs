@@ -12,7 +12,9 @@ using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
@@ -37,13 +39,16 @@ public class ClaimSetCacheServiceTests
         public async Task Setup()
         {
             _expectedClaims = [new("ClaimSet1", []), new("ClaimSet2", [])];
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Returns(_expectedClaims);
 
             _service = new CachedClaimSetProvider(
                 _securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
             _claims = await _service.GetAllClaimSets();
@@ -55,7 +60,9 @@ public class ClaimSetCacheServiceTests
             _claims.Should().NotBeNull();
             _claims!.Count.Should().Be(2);
             _claims[0].Name.Should().Be("ClaimSet1");
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -75,7 +82,9 @@ public class ClaimSetCacheServiceTests
         public async Task Setup()
         {
             _expectedClaims = [new("ClaimSet1", []), new("ClaimSet2", [])];
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Returns(_expectedClaims);
 
             // Use the same memory cache for both calls
@@ -85,6 +94,7 @@ public class ClaimSetCacheServiceTests
                 _securityMetadataProvider,
                 memoryCache,
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -108,7 +118,9 @@ public class ClaimSetCacheServiceTests
         public void It_Should_Call_Provider_Only_Once()
         {
             // Second request should come from cache
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -158,7 +170,9 @@ public class ClaimSetCacheServiceTests
 
         private void SetClaimSetCacheService(HttpStatusCode statusCode)
         {
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Throws(
                     new HttpRequestException(
                         $"Error response from http://localhost. Error message: error. StatusCode: {statusCode}"
@@ -169,6 +183,7 @@ public class ClaimSetCacheServiceTests
                 _securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
         }
@@ -224,15 +239,26 @@ public class ClaimSetCacheServiceTests
             var expectedTenant1Claims = new List<ClaimSet> { new("Tenant1ClaimSet", []) };
             var expectedTenant2Claims = new List<ClaimSet> { new("Tenant2ClaimSet", []) };
 
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("Tenant1")))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(
+                        A<string?>.That.IsEqualTo("Tenant1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(expectedTenant1Claims);
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("Tenant2")))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(
+                        A<string?>.That.IsEqualTo("Tenant2"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(expectedTenant2Claims);
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -258,13 +284,16 @@ public class ClaimSetCacheServiceTests
 
             var expectedClaims = new List<ClaimSet> { new("TestClaimSet", []) };
 
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Returns(expectedClaims);
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -273,7 +302,9 @@ public class ClaimSetCacheServiceTests
             await service.GetAllClaimSets("Tenant2");
 
             // Assert - verify provider was called twice (once per tenant)
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappened(2, Times.Exactly);
         }
 
@@ -285,7 +316,9 @@ public class ClaimSetCacheServiceTests
 
             var expectedClaims = new List<ClaimSet> { new("TestClaimSet", []) };
 
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Returns(expectedClaims);
 
             var memoryCache = CreateMemoryCache();
@@ -293,6 +326,7 @@ public class ClaimSetCacheServiceTests
                 securityMetadataProvider,
                 memoryCache,
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -303,7 +337,9 @@ public class ClaimSetCacheServiceTests
             await service.GetAllClaimSets("Tenant2"); // Should come from cache
 
             // Assert - provider should be called only once per tenant (2 times total)
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappened(2, Times.Exactly);
         }
     }
@@ -319,13 +355,16 @@ public class ClaimSetCacheServiceTests
             var firstClaims = new List<ClaimSet> { new("FirstClaimSet", []) };
             var secondClaims = new List<ClaimSet> { new("SecondClaimSet", []) };
 
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .ReturnsNextFromSequence(firstClaims, secondClaims);
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -335,7 +374,9 @@ public class ClaimSetCacheServiceTests
 
             cachedClaims[0].Name.Should().Be("FirstClaimSet");
             reloadedClaims[0].Name.Should().Be("SecondClaimSet");
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappened(2, Times.Exactly);
         }
     }
@@ -349,13 +390,16 @@ public class ClaimSetCacheServiceTests
         {
             var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
 
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Returns(Task.FromResult<IList<ClaimSet>>(null!));
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -364,7 +408,9 @@ public class ClaimSetCacheServiceTests
 
             firstClaims.Should().BeEmpty();
             secondClaims.Should().BeEmpty();
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappened(2, Times.Exactly);
         }
     }
@@ -380,13 +426,16 @@ public class ClaimSetCacheServiceTests
             var expectedClaims = CreateLargeClaimSetPayload();
 
             JsonSerializer.SerializeToUtf8Bytes(expectedClaims).Length.Should().BeGreaterThan(1_048_576);
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .Returns(expectedClaims);
 
             var service = new CachedClaimSetProvider(
                 securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
@@ -395,7 +444,9 @@ public class ClaimSetCacheServiceTests
 
             firstClaims.Should().HaveCount(expectedClaims.Count);
             secondClaims.Should().HaveCount(expectedClaims.Count);
-            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -420,10 +471,10 @@ public class ClaimSetCacheServiceTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_An_Aborted_Waiter_On_The_Per_Key_Lock : ClaimSetCacheServiceTests
+    public class Given_An_Aborted_Waiter_On_A_Shared_Fill : ClaimSetCacheServiceTests
     {
         [Test]
-        public async Task It_Stops_Waiting_On_The_Lock_While_A_Live_Waiter_Still_Completes()
+        public async Task It_Stops_Waiting_On_The_Fill_While_A_Live_Waiter_Still_Completes()
         {
             var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
             var gate = new TaskCompletionSource();
@@ -442,21 +493,22 @@ public class ClaimSetCacheServiceTests
                 securityMetadataProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 
-            // Holder: acquires the per-key lock and blocks inside the factory until the gate opens.
+            // Holder: starts the shared fill, which blocks inside the fetch until the gate opens.
             Task<IList<ClaimSet>> holderTask = service.GetAllClaimSets();
             await Task.Delay(50);
 
-            // Aborted waiter: queues behind the lock and never acquires it.
+            // Aborted waiter: joins the same fill and stops waiting when cancelled.
             using var abortedCts = new CancellationTokenSource();
             Task<IList<ClaimSet>> abortedWaiterTask = service.GetAllClaimSets(
                 cancellationToken: abortedCts.Token
             );
             await Task.Delay(50);
 
-            // Live waiter: also queues behind the lock, without cancelling.
+            // Live waiter: also joins the fill, without cancelling.
             Task<IList<ClaimSet>> liveWaiterTask = service.GetAllClaimSets();
             await Task.Delay(50);
 
@@ -467,8 +519,8 @@ public class ClaimSetCacheServiceTests
             await act.Should().ThrowAsync<OperationCanceledException>();
             stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
 
-            // The live waiter is still queued behind the holder - the aborted waiter leaving the
-            // queue does not let it skip ahead of the holder still fetching.
+            // The live waiter is still waiting on the fill - the aborted waiter leaving does not
+            // complete it early or abort the fetch it still needs.
             liveWaiterTask.IsCompleted.Should().BeFalse();
 
             gate.SetResult();
@@ -476,6 +528,359 @@ public class ClaimSetCacheServiceTests
             IList<ClaimSet> liveResult = await liveWaiterTask;
             liveResult.Should().BeEquivalentTo(liveClaims);
             await holderTask;
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Caller_Holding_The_Fill_Is_Aborted : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task It_Keeps_The_Shared_Fill_Running_For_A_Live_Waiter()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var gate = new TaskCompletionSource();
+            var liveClaims = new List<ClaimSet> { new("LiveClaimSet", []) };
+            var fillTokens = new List<CancellationToken>();
+
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .ReturnsLazily(
+                    async (string? _, CancellationToken token) =>
+                    {
+                        fillTokens.Add(token);
+                        await gate.Task.WaitAsync(token);
+                        return (IList<ClaimSet>)liveClaims;
+                    }
+                );
+
+            var service = new CachedClaimSetProvider(
+                securityMetadataProvider,
+                CreateMemoryCache(),
+                CreateCacheSettings(),
+                TimeProvider.System,
+                NullLogger<CachedClaimSetProvider>.Instance
+            );
+
+            // Holder: starts the fill and blocks inside it until the gate opens.
+            using var abortedHolderCts = new CancellationTokenSource();
+            Task<IList<ClaimSet>> abortedHolderTask = service.GetAllClaimSets(
+                cancellationToken: abortedHolderCts.Token
+            );
+            await Task.Delay(50);
+
+            // Live waiter: needs the same tenant's claim sets and does not cancel.
+            Task<IList<ClaimSet>> liveWaiterTask = service.GetAllClaimSets();
+            await Task.Delay(50);
+
+            var stopwatch = Stopwatch.StartNew();
+            await abortedHolderCts.CancelAsync();
+
+            Func<Task> act = async () => await abortedHolderTask;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+
+            // The holder leaving did not cancel the fetch the live waiter still needs.
+            fillTokens.Should().ContainSingle().Which.IsCancellationRequested.Should().BeFalse();
+            liveWaiterTask.IsCompleted.Should().BeFalse();
+
+            gate.SetResult();
+
+            IList<ClaimSet> liveResult = await liveWaiterTask.WaitAsync(TimeSpan.FromSeconds(2));
+            liveResult.Should().BeEquivalentTo(liveClaims);
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>Drives IMemoryCache expiry from a <see cref="FakeTimeProvider" />.</summary>
+    protected sealed class FakeTimeProviderClock(FakeTimeProvider timeProvider) : ISystemClock
+    {
+        public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
+    }
+
+    protected static async Task<Exception?> CaptureExceptionAsync(Task task)
+    {
+        try
+        {
+            await task.WaitAsync(TimeSpan.FromSeconds(2));
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    protected static CachedClaimSetProvider CreateService(
+        IConfigurationServiceClaimSetProvider securityMetadataProvider,
+        IMemoryCache memoryCache,
+        TimeProvider timeProvider,
+        CacheSettings? cacheSettings = null
+    ) =>
+        new(
+            securityMetadataProvider,
+            memoryCache,
+            cacheSettings ?? CreateCacheSettings(),
+            timeProvider,
+            NullLogger<CachedClaimSetProvider>.Instance
+        );
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Cancelled_Caller_And_A_Warm_Cache : ClaimSetCacheServiceTests
+    {
+        private readonly IConfigurationServiceClaimSetProvider _securityMetadataProvider =
+            A.Fake<IConfigurationServiceClaimSetProvider>();
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .Returns([new ClaimSet("ClaimSet1", [])]);
+            var service = CreateService(_securityMetadataProvider, CreateMemoryCache(), TimeProvider.System);
+            await service.GetAllClaimSets("tenant-a");
+
+            using var cancelledSource = new CancellationTokenSource();
+            await cancelledSource.CancelAsync();
+            _exception = await CaptureExceptionAsync(
+                service.GetAllClaimSets("tenant-a", cancelledSource.Token)
+            );
+        }
+
+        [Test]
+        public void It_propagates_the_callers_cancellation_instead_of_answering_from_the_cache()
+        {
+            _exception.Should().BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_does_not_fetch_again()
+        {
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Fill_That_Completes_After_A_Reload_Invalidated_It : ClaimSetCacheServiceTests
+    {
+        private readonly List<ClaimSet> _preReloadClaims = [new("PreReload", [])];
+        private readonly List<ClaimSet> _postReloadClaims = [new("PostReload", [])];
+        private IConfigurationServiceClaimSetProvider _securityMetadataProvider = null!;
+        private IList<ClaimSet> _afterReload = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var gate = new TaskCompletionSource();
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .ReturnsLazily(async () =>
+                {
+                    await gate.Task;
+                    return (IList<ClaimSet>)_preReloadClaims;
+                })
+                .Once()
+                .Then.Returns(Task.FromResult<IList<ClaimSet>>(_postReloadClaims));
+
+            var service = CreateService(_securityMetadataProvider, CreateMemoryCache(), TimeProvider.System);
+
+            // A fill starts before the reload and is still fetching when the reload invalidates.
+            Task<IList<ClaimSet>> preReloadFill = service.GetAllClaimSets();
+            await Task.Delay(50);
+            await service.InvalidateCacheAsync();
+
+            // The pre-reload fill finishes after the invalidation, before anything reads again.
+            gate.SetResult();
+            await preReloadFill;
+
+            _afterReload = await service.GetAllClaimSets();
+        }
+
+        [Test]
+        public void It_does_not_serve_the_pre_reload_result_after_the_reload()
+        {
+            _afterReload.Should().BeEquivalentTo(_postReloadClaims);
+        }
+
+        [Test]
+        public void It_fetches_again_after_the_reload()
+        {
+            A.CallTo(() =>
+                    _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .MustHaveHappenedTwiceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Fill_That_Completes_After_The_Reloads_Own_Fill : ClaimSetCacheServiceTests
+    {
+        private readonly List<ClaimSet> _preReloadClaims = [new("PreReload", [])];
+        private readonly List<ClaimSet> _postReloadClaims = [new("PostReload", [])];
+        private IList<ClaimSet> _reloadResult = null!;
+        private IList<ClaimSet> _afterBothFills = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var gate = new TaskCompletionSource();
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .ReturnsLazily(async () =>
+                {
+                    await gate.Task;
+                    return (IList<ClaimSet>)_preReloadClaims;
+                })
+                .Once()
+                .Then.Returns(Task.FromResult<IList<ClaimSet>>(_postReloadClaims));
+
+            var service = CreateService(securityMetadataProvider, CreateMemoryCache(), TimeProvider.System);
+
+            Task<IList<ClaimSet>> preReloadFill = service.GetAllClaimSets();
+            await Task.Delay(50);
+            await service.InvalidateCacheAsync();
+            _reloadResult = await service.GetAllClaimSets();
+
+            // The pre-reload fill finishes last and must not overwrite the reload's entry.
+            gate.SetResult();
+            await preReloadFill;
+
+            _afterBothFills = await service.GetAllClaimSets();
+        }
+
+        [Test]
+        public void It_returns_the_post_reload_result_to_the_reload()
+        {
+            _reloadResult.Should().BeEquivalentTo(_postReloadClaims);
+        }
+
+        [Test]
+        public void It_keeps_the_post_reload_result_cached()
+        {
+            _afterBothFills.Should().BeEquivalentTo(_postReloadClaims);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Fill_That_Exceeds_Its_Budget : ClaimSetCacheServiceTests
+    {
+        private CancellationToken _fillToken;
+        private Exception? _exception;
+        private int _fetchesAfterRetry;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            var neverCompletes = new TaskCompletionSource<IList<ClaimSet>>();
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .ReturnsLazily(
+                    (string? _, CancellationToken token) =>
+                    {
+                        _fillToken = token;
+                        return neverCompletes.Task;
+                    }
+                )
+                .Once()
+                .Then.Returns(Task.FromResult<IList<ClaimSet>>([new("Recovered", [])]));
+
+            var service = CreateService(securityMetadataProvider, CreateMemoryCache(), timeProvider);
+
+            Task<IList<ClaimSet>> caller = service.GetAllClaimSets();
+            timeProvider.Advance(TimeSpan.FromSeconds(30));
+            _exception = await CaptureExceptionAsync(caller);
+
+            await service.GetAllClaimSets().WaitAsync(TimeSpan.FromSeconds(2));
+            _fetchesAfterRetry = Fake.GetCalls(securityMetadataProvider).Count();
+        }
+
+        [Test]
+        public void It_cancels_the_fetch_token_when_the_budget_elapses()
+        {
+            _fillToken.IsCancellationRequested.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_fails_the_waiting_caller_instead_of_hanging()
+        {
+            _exception.Should().BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_starts_a_new_fetch_on_the_next_call()
+        {
+            _fetchesAfterRetry.Should().Be(2);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Revoked_Claim_Set_And_A_Controlled_Clock : ClaimSetCacheServiceTests
+    {
+        private readonly List<ClaimSet> _grantedClaims = [new("Granted", [])];
+        private readonly List<ClaimSet> _revokedClaims = [new("Revoked", [])];
+        private IList<ClaimSet> _justBeforeExpiry = null!;
+        private IList<ClaimSet> _atExpiry = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            var memoryCache = new MemoryCache(
+                new MemoryCacheOptions { Clock = new FakeTimeProviderClock(timeProvider) }
+            );
+            var securityMetadataProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            A.CallTo(() =>
+                    securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._)
+                )
+                .Returns(Task.FromResult<IList<ClaimSet>>(_grantedClaims))
+                .Once()
+                .Then.Returns(Task.FromResult<IList<ClaimSet>>(_revokedClaims));
+
+            var service = CreateService(
+                securityMetadataProvider,
+                memoryCache,
+                timeProvider,
+                cacheSettings: new CacheSettings { ClaimSetsCacheExpirationSeconds = 15 }
+            );
+
+            await service.GetAllClaimSets();
+            timeProvider.Advance(TimeSpan.FromSeconds(14));
+            _justBeforeExpiry = await service.GetAllClaimSets();
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            _atExpiry = await service.GetAllClaimSets();
+        }
+
+        [Test]
+        public void It_keeps_serving_the_granted_claim_sets_until_expiry()
+        {
+            _justBeforeExpiry.Should().BeEquivalentTo(_grantedClaims);
+        }
+
+        [Test]
+        public void It_serves_the_revoked_claim_sets_once_the_entry_expires()
+        {
+            _atExpiry.Should().BeEquivalentTo(_revokedClaims);
         }
     }
 }

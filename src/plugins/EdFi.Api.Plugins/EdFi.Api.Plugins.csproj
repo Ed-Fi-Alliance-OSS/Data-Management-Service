@@ -1,4 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project
+    Sdk="Microsoft.NET.Sdk"
+    TreatAsLocalProperty="Version;VersionPrefix;AssemblyVersion;FileVersion;InformationalVersion"
+>
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>

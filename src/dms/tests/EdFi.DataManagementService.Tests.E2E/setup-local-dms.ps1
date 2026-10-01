@@ -62,10 +62,14 @@ param(
     [string] $DatabaseEngine = "postgresql",
 
     [switch] $EnableKafkaCdc,
+    # Returns the private CDC_API_E2E_HANDOFF_PATH value after HTTP-only rollout.
+    [switch] $CdcApiE2E,
     [string] $CdcSettingsPath,
     [string] $CdcBindingStatePath,
     [switch] $SkipDockerBuild
 )
+
+if ($CdcApiE2E -and -not $EnableKafkaCdc) { throw '-CdcApiE2E requires -EnableKafkaCdc.' }
 
 function Get-DirectSetupTeardownCommand {
     # Builds a copyable teardown command that carries the same engine and environment file this setup
@@ -172,7 +176,7 @@ try {
     if ($EnableKafkaCdc) {
         Invoke-E2ECdcSetup -EnvironmentFile $resolvedEnvironmentFile -OriginalEnvironmentFile $baseEnvironmentFile `
             -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName -SnapshotDatabaseName $e2eSnapshotDatabaseName `
-            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild
+            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild -CdcApiE2E:$CdcApiE2E
         $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $baseEnvironmentFile
         Write-Host "CDC E2E setup complete. Governed teardown: $teardownCommand" -ForegroundColor Green
         return

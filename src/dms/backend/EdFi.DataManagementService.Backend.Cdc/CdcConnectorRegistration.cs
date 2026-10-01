@@ -267,9 +267,7 @@ public sealed class CdcConnectorRegistration
                 _ = Observed(configuration);
             }
             boundary.Component = CdcDeploymentComponent.Connect;
-            var live = Observed(
-                await CallAsync(request, ct => _connect.ReadConfigurationAsync(request, ct), token)
-            );
+            var live = await ReadRegistrationConfigurationAsync(request, token);
             ValidateConfiguration(handoff, live);
             boundary.Component = CdcDeploymentComponent.WorkflowState;
             var registration = journal.Operations.Single(o =>
@@ -495,6 +493,43 @@ public sealed class CdcConnectorRegistration
             return new CdcTransportResult<CdcConnectorRegistrationReceipt>.Unavailable(
                 CdcDeploymentDiagnostic.FromException(boundary.Component, exception)
             );
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> ReadRegistrationConfigurationAsync(
+        CdcDeploymentRequest request,
+        CancellationToken token
+    )
+    {
+        // Creation can succeed before Connect finishes its rebalance. Retry only observation,
+        // under the original registration deadline; never repeat the potentially committed write.
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                var result = await CallAsync(
+                    request,
+                    ct => _connect.ReadConfigurationAsync(request, ct),
+                    token
+                );
+                if (
+                    result
+                    is not CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable
+                    {
+                        Diagnostic.Component: CdcDeploymentComponent.Connect,
+                        Diagnostic.Failure: CdcDeploymentFailure.Unavailable or CdcDeploymentFailure.Timeout,
+                    }
+                )
+                {
+                    return Observed(result);
+                }
+            }
+            catch (TimeoutException) when (!token.IsCancellationRequested)
+            {
+                // A single read's call budget can expire while the registration budget remains.
+            }
+            await Task.Delay(request.Timing.PollInterval, _time, token);
         }
     }
 

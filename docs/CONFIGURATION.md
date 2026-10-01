@@ -24,9 +24,10 @@ file.
 | ApiSchemaPath                    | Specifies the runtime ApiSchema workspace directory containing `bootstrap-api-schema-manifest.json` and the manifest-declared core and extension schema files. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages before the root manifest is materialized. |
 | DomainsExcludedFromOpenApi       | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
-| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
+| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear". The names `__identityId` and `__identityToken` are reserved, and names that are equal under case-insensitive comparison are rejected, whether or not identity management is enabled. As with `CorrelationIdMaxLength`, a rejected value does not stop the process: the host starts, logs the validation failure at `Critical`, and answers every request, including `/health`, with the generic Ed-Fi `500` until the setting is corrected and the service is restarted. |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | EnableManagementEndpoints       | When `true`, allows the DMS claimset management endpoint surface to be registered. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__EnableManagementEndpoints`. Default: `false` |
+| EnableIdentityManagement        | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. Environment override: `AppSettings__EnableIdentityManagement`. Default: `false` |
 | ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `dms-management-operator` |
 | MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also the `default` and `maximum` published for those parameters in the OpenAPI specification. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
@@ -246,7 +247,7 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
 | EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
-| Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
+| Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`. With multi-tenancy enabled, use `edfi_admin_api/readonly_access`: DMS also reads `/v3/tenants`, which the limited scope does not grant (see [ROLES-SCOPES.md](ROLES-SCOPES.md)). |
 
 > [!NOTE]
 > **Shared key.** In the provided Docker Compose files, a single
@@ -555,6 +556,53 @@ qualifier above.
 > only from the container's environment, so a deployment on the stock image sets
 > them in the environment even when a plugin also supplies them.
 
+### Configuration Service plugins
+
+The Configuration Service loads plugins with the same loader and the same `Plugins`
+section, bound the same way, against its own plugin root and its own allowlist. Its
+`appsettings.json` ships `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`.
+Everything above about `Directory`, `Allowed` and how the value is parsed applies
+unchanged, with these points stated for the Configuration Service itself:
+
+- **`Allowed` ships empty and is the only switch.** A plugin runs in the
+  Configuration Service if and only if its directory name appears in the
+  Configuration Service's `Allowed`; allowlisting it for DMS does not.
+- **The order of `Allowed` is the invocation order, and for `ContributeConfiguration`
+  it is contractual.** Where two plugins supply the same key, the later one wins.
+  Every plugin source ranks below the unprefixed environment variables and the
+  command line and above the JSON sources, as in
+  [Configuration precedence](#configuration-precedence), which applies unchanged:
+  the Configuration Service's `AddServices`
+  ([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs))
+  also configures logging from the `Serilog` section first and then appends its own
+  unprefixed `AddEnvironmentVariables()` source. `src/config/run.sh` starts the
+  application with no arguments, so the stock container has no command-line source.
+- **`PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any
+  `ContributeConfiguration` hook runs**, so no plugin source can change what loads.
+  A plugin source can still supply either key, and a later read of the section
+  sees that value, but the loader has already acted on the one it bound.
+
+**Values a plugin source cannot usefully supply in the Configuration Service:**
+
+- The `Plugins` section, for the reason above.
+- The values `src/config/run.sh`, the container entry point, reads from the
+  environment before the .NET process starts, to wait for the database:
+  - `AppSettings__Datastore`, which decides whether the script waits for PostgreSQL
+    or for a SQL Server TCP endpoint. It defaults to `postgresql` when unset.
+  - `DatabaseSettings__DatabaseConnection`, from which it parses the host and port
+    it waits on.
+
+  A plugin that supplies either changes what .NET then uses, but not what the script
+  already waited for: the wait still targets the engine and host the environment
+  named, and may never end if that is not the database the deployment runs. On the
+  stock image, set both in the environment.
+
+There is no `AppSettings:StartupStatusFilePath` equivalent in the Configuration
+Service. A plugin loading or composition failure is written to standard error and
+stops host creation before any request is served; there is no status file to read
+it from. The DMS schema-download settings above do not apply to the Configuration
+Service.
+
 ## RateLimit
 
 Basic rate limiting can be applied by supplying a `RateLimit` object in the
@@ -792,11 +840,12 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | Parameter        | Description                                                      | Example (Keycloak)                                   | Example (Self-contained)                      |
 |------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
-| `IdentitySettings.Authority`        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `IdentitySettings.Authority`        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings.PathBase` from this value, and keep DMS `JwtAuthentication.MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication.Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 | `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a single client may hold (self-contained only). A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement. | _(not used)_ | `5` |
+| `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** the limit takes effect immediately, so a client
 > already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
@@ -834,6 +883,11 @@ all until the oldest of those tokens expires, even once the fault behind the cra
 A deployment that starts DMS before its data stores are registered hits this. Raising the limit,
 or giving DMS a client id it does not share, is the fix; the symptom is a sizing problem, not a
 Configuration Service outage.
+
+> **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
+> count is not stored with a hashed secret, so verification always derives at the currently
+> configured count. Raising (or lowering) the value makes every client secret hashed at the old
+> count fail verification; the remedy is to re-issue those client secrets.
 
 ### Signing-key settings (Configuration Service, self-contained only)
 
@@ -889,8 +943,8 @@ describes refresh, backoff, staleness, key rotation and retirement, and which fa
 | Parameter         | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
 |-------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
-| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
-| `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until it re-fetches metadata that matches. DMS retries at most once per `RefreshIntervalMinutes` (default 60), so recovery can lag the fix by up to that long; restarting DMS recovers immediately. The first rejected request is logged as an error and repeats at debug level | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint. DMS fetches signing keys only from this address's origin (scheme, host and port): a metadata document whose `jwks_uri` names another origin is refused, which stops DMS from starting, or keeps the last good metadata on a later refresh. DMS then retries until a fetch succeeds (once the automatic refresh is due, on every request), logging the first refusal as an error and repeats at debug level. DMS does not follow redirects for these fetches. For Keycloak reached over an internal hostname, set `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak's default makes `jwks_uri` name the public host | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.

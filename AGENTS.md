@@ -144,6 +144,12 @@ Example local container setup:
   TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
 - When order of operations matters (e.g. truncate-then-filter vs. filter-then-truncate), write an explicit test for the case where the "obvious" order changes client-visible behavior — order-of-operations regressions are the kind of thing code review misses without a targeted test.
 - Avoid tests that pass regardless of whether the feature exists (e.g. `NotBeEmpty()` instead of an exact value, asserting on a hardcoded constant that never varies with input, or an ordering invariant enforced only by a comment). Before adding a test, ask "would this fail if the feature were reverted?"
+- Be wary of tests that depend on arbitrary millisecond timings: a short timeout, `Task.Delay`, or `CancelAfter` that assumes one timer or state change happens before another. CI runners are resource-constrained, so timer callbacks can run late and in any order, and these tests become flaky. Add timing-dependent tests only when they are truly valuable, and make them as durable as possible:
+  - Wait on a deterministic signal, such as a cancellation token, `TaskCompletionSource`, or test hook, instead of a fixed delay.
+  - Use a fake `TimeProvider` where the code supports one.
+  - Never "fix" a race by lengthening a delay.
+
+  Passing locally does not show that a timing-dependent test is sound.
 
 ## Logging
 

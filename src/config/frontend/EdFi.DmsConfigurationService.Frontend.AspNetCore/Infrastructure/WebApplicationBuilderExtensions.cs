@@ -5,6 +5,7 @@
 
 using System.Reflection;
 using System.Text.RegularExpressions;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
@@ -28,6 +29,7 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Secrets;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -41,8 +43,13 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class WebApplicationBuilderExtensions
 {
-    public static void AddServices(this WebApplicationBuilder webApplicationBuilder)
+    public static void AddServices(
+        this WebApplicationBuilder webApplicationBuilder,
+        LoadedPlugins loadedPlugins
+    )
     {
+        ArgumentNullException.ThrowIfNull(loadedPlugins);
+
         var logger = ConfigureLogging();
         webApplicationBuilder.Services.AddLogging(loggingBuilder => loggingBuilder.AddSerilog(dispose: true));
 
@@ -134,6 +141,20 @@ public static class WebApplicationBuilderExtensions
         // Each repository will get a fresh instance that captures the current HTTP context (if available)
         webApplicationBuilder.Services.AddHttpContextAccessor();
         webApplicationBuilder.Services.AddTransient<IAuditContext, AuditContext>();
+
+        // Last, and unconditionally. Plugin hooks contribute to a collection this method has finished
+        // populating. With no plugin loaded the contribution phase is a no-op and the audit runs and
+        // finds nothing, which keeps a plugin-free deployment on the same path as any other.
+        //
+        // The audit input is registered as an instance, so the container activates nothing to hand it
+        // over, and after every plugin hook has run, so a plugin that registered its own cannot
+        // displace it: a single-service resolve takes the last registration for a service type.
+        PluginAuditInput pluginAuditInput = loadedPlugins.ContributeServices(
+            webApplicationBuilder.Services,
+            webApplicationBuilder.Configuration,
+            CmsPluginContracts.Registry
+        );
+        webApplicationBuilder.Services.AddSingleton(pluginAuditInput);
 
         Serilog.ILogger ConfigureLogging()
         {

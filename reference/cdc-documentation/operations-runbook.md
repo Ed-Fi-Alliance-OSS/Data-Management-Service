@@ -1,38 +1,38 @@
 # CDC Operations Runbook
 
-[Entry point](README.md) · [Evidence index](cdc-inv-evidence.md)
+[Entry point](README.md) · [Qualification index](cdc-inv-evidence.md)
 
 This shared PostgreSQL/SQL Server runbook covers setup and DMS E2E opt-in,
 state preservation, lifecycle/recovery, projection handoffs, monitoring, security,
 consumer evidence, record-size increases, retirement and disclosure response.
-The [final evidence reconciliation](cdc-inv-evidence.md#final-reconciliation-t20)
-records executed examples and the limits of each test layer, including alternatives
-checked only in Contract.
+The [qualification index](cdc-inv-evidence.md) maps procedures to tests and defines
+how to retain execution results outside the repository. Contract checks and live
+provider exercises supply different levels of evidence.
 Use the [shipped command reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 for current command details and the linked design owners for support boundaries.
 
 ## Procedure Navigation
 
-| Need | Procedure | Documentation task |
-| --- | --- | --- |
-| PostgreSQL local setup | [postgresql-setup](#postgresql-setup) | T02 — documented; T16 local setup passed |
-| SQL Server local setup | [sql-server-setup](#sql-server-setup) | T03 — documented; T17 local/published setup passed |
-| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) | PostgreSQL / SQL Server direct setup passed T16/T17; build alternatives unexercised |
-| Preserve deployment state | [deployment-state](#deployment-state) | PostgreSQL passed T18; SQL Server passed T19 |
-| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) | PostgreSQL exact CLI passed [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20); SQL Server wrapper retry passed [T17](cdc-inv-evidence.md#sql-server-setup-qualification-t17), with shared CLI/Contract coverage; no separate SQL Server exact-CLI run |
-| Established validation and restart preflight | [established-validation](#established-validation) | PostgreSQL passed T18; SQL Server passed T19 |
-| Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) | PostgreSQL passed T18; SQL Server passed T19 |
-| Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) | PostgreSQL passed T18; SQL Server passed T19 |
-| Intact connector restart and resume | [intact-restart](#intact-restart) | PostgreSQL passed T18; SQL Server passed T19 |
-| Native recovery and incomplete shutdown | [native-recovery](#native-recovery) | PostgreSQL T21 / SQL Server T22 — qualified local scope |
-| Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) | T06 — documented; PostgreSQL T25 and SQL Server T26 qualified |
-| Monitoring and provider retention | [monitoring-retention](#monitoring-retention) | T07 — documented; T27/T28 inspections qualified |
-| Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) | T08 documented; T20 Kafka/consumer qualification |
-| Coordinated record-size increase | [record-size-increase](#record-size-increase) | T09 — documented; T23/T24 live qualification passed |
-| Guarded generation retirement | [generation-retirement](#generation-retirement) | T10 — documented; PostgreSQL T25 and SQL Server T26 qualified |
-| Destructive stack teardown | [stack-teardown](#stack-teardown) | T10 — documented; prior live stack cleanup and T25/T26 wrapper ordering linked separately |
-| Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) | T11 — documented; PostgreSQL T25 and SQL Server T26 command handoffs qualified |
-| Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) | T11 — documented; PostgreSQL T25 and SQL Server T26 command handoffs qualified |
+| Need | Procedure |
+| --- | --- |
+| PostgreSQL local setup | [postgresql-setup](#postgresql-setup) |
+| SQL Server local setup | [sql-server-setup](#sql-server-setup) |
+| DMS E2E opt-in | [dms-e2e-setup](#dms-e2e-setup) |
+| Preserve deployment state | [deployment-state](#deployment-state) |
+| Interrupted initial-enable retry | [initial-enable-retry](#initial-enable-retry) |
+| Established validation and restart preflight | [established-validation](#established-validation) |
+| Missing provenance and source mismatch | [unsupported-provenance](#unsupported-provenance) |
+| Managed shutdown and startup | [managed-lifecycle](#managed-lifecycle) |
+| Intact connector restart and resume | [intact-restart](#intact-restart) |
+| Native recovery and incomplete shutdown | [native-recovery](#native-recovery) |
+| Projection troubleshooting and administration handoff | [projection-handoff](#projection-handoff) |
+| Monitoring and provider retention | [monitoring-retention](#monitoring-retention) |
+| Security, topic retention and consumer evidence | [security-consumer-evidence](#security-consumer-evidence) |
+| Coordinated record-size increase | [record-size-increase](#record-size-increase) |
+| Guarded generation retirement | [generation-retirement](#generation-retirement) |
+| Destructive stack teardown | [stack-teardown](#stack-teardown) |
+| Compatible representation-restamp handoff | [representation-restamp](#representation-restamp) |
+| Sensitive-data disclosure response | [sensitive-data-response](#sensitive-data-response) |
 
 ## Procedure Record
 
@@ -76,9 +76,9 @@ commands, not fixture-generated provenance.
 
 Marked `cdc-output-*` blocks are JSON result excerpts, never executable input or retained
 provenance. They need no substitutions; tests compare fixed selected fields and omit
-volatile identities/timestamps. All other marked runnable examples are inputs to the focused checks. T13 checks CLI
-commands, settings and acknowledgement inputs; T14 checks result excerpts, packaged
-output and links. T15 checks wrapper invocations in the existing Contract/PR fixtures. Illustrative output is separately identified for
+volatile identities/timestamps. All other marked runnable examples are inputs to
+focused CLI command, settings, acknowledgement, output, link, and wrapper checks
+in the existing Contract/PR fixtures. Illustrative output is separately identified for
 checks against production serialization fixtures. Reserved IDs, unmarked blocks
 and prose must not be executed.
 The [evidence index](cdc-inv-evidence.md#recording-results) distinguishes parser checks
@@ -110,8 +110,6 @@ E2E schema/engine overlays and retained managed startup. Both providers' running
 image IDs must match the selected immutable input during setup and after managed
 startup; shared image tags are never retagged to satisfy that check. Without an
 override, the Compose files retain their documented default image references.
-[T31 image-forwarding evidence](evidence/t31-provider-image-forwarding.json) records
-the four Admission/Lifecycle runs and all seven wrapper image assertions.
 It prepares a restricted role before target provisioning, never capture artifacts or
 manual schema repairs. PostgreSQL fixtures select host port `5435`, target `1`, the
 documented primary names, and matching staged core/extensions. The masked setup input
@@ -127,7 +125,7 @@ E2E setup runs once: its destructive setup guard rejects retained CDC workspaces
 
 ## PostgreSQL local setup
 
-**Documented in T02; local bootstrap and observations passed T16.** This is an initial setup on an
+This is an initial setup on an
 exclusively owned Linux local deployment using the [supported profile](README.md#supported-deployment).
 Follow the [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
 and [PostgreSQL setup owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#postgresql).
@@ -414,7 +412,7 @@ settings and original state paths. Copy those exact paths for subsequent operati
 do not choose the newest file by timestamp or return to the un-staged input settings.
 Preserve the whole retained handoff, including `.bootstrap` schema/configuration data,
 `.cdc-deployments/<project>.json`, all custom controller roots and broker-size override.
-See [deployment state](#deployment-state) and its T18/T19 live evidence.
+See [deployment state](#deployment-state) and the [procedure-to-test mapping](cdc-inv-evidence.md#procedure-evidence).
 
 PowerShell, repository root; `api-schema-tools` is the matching installed/resolved
 SchemaTools executable. Requires retained paths from the wrapper's printed command.
@@ -485,7 +483,7 @@ is not gated by CDC status; see [readiness scope](../design/backend-redesign/des
 
 ## SQL Server local setup
 
-**Local and published setup passed [T17 live qualification](cdc-inv-evidence.md#sql-server-setup-qualification-t17).** Use the same
+Use the same
 [owned local profile](README.md#supported-deployment), Linux/Docker/toolchain,
 private-file protections, writer/seed exclusion, complete normal DMS settings and
 CMS-selection rules in [shared preparation](#prepare-the-owned-deployment). Follow
@@ -506,9 +504,6 @@ and [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-str
 
 Use [mssql.yml](../../eng/docker-compose/mssql.yml)'s SQL Server **2025** Developer
 image (`mcr.microsoft.com/mssql/server:2025-latest`), not an old 2022 volume/container.
-The immutable SQL Server and Connect images actually exercised for initial mapping
-are recorded in [T29 evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
-and its [image manifest](evidence/t29-sqlserver-initial-user-mapping.json).
 The Compose SQL Server tag is mutable; retain the resolved image identity in each
 qualification result rather than treating the tag as proof of the tested digest.
 Use the qualified Connect image in [kafka-cdc.yml](../../eng/docker-compose/kafka-cdc.yml)
@@ -757,17 +752,14 @@ schema history; raw Connect mutation is not the managed handoff.
 | `CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE` | Setup administrator needs principal-definition visibility (`VIEW ANY DEFINITION`, implied by `sa` here), user-creation and provider setup authority. Correct setup authority without elevating the connector; retain state and follow initial retry classification. |
 
 The owning [SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
-and [T29 implementation evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
-define the mapping/retry boundary. [T17 procedure evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
-exercises local, published and direct E2E setup from a restricted login with no target
-database or precreated user. Published qualification uses matching branch images,
-not a registry release.
+defines the mapping/retry boundary. The [user-mapping test index](cdc-inv-evidence.md#sql-server-initial-user-mapping)
+links provider, controller, and public-wrapper coverage.
 
 <a id="dms-e2e-setup"></a>
 
 ## DMS E2E opt-in
 
-**PostgreSQL and SQL Server direct setup passed T16/T17; build alternatives remain unexercised.** These alternatives qualify setup wiring. API-driven message
+These alternatives configure the DMS E2E stack. API-driven message
 scenarios remain [DMS-1325](../design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md).
 [Local bootstrap/CI owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
 This is the DMS E2E suite, not Instance Management E2E.
@@ -993,14 +985,14 @@ Admission/output/failure rules are the common E2E record above: preserve
 `.cdc-diagnostics`, original state and retained settings; failed containment is not
 successful cleanup. Use SQL Server status/watch with emitted paths, and the wrapper's
 printed `mssql` teardown command for [governed teardown](#stack-teardown). Ordinary
-[managed stop/start](#managed-lifecycle) preserves the admitted source. T17 qualifies
-these setup commands; DMS-1325 owns API-driven message scenarios.
+[managed stop/start](#managed-lifecycle) preserves the admitted source. DMS-1325
+owns API-driven message scenarios.
 
 <a id="deployment-state"></a>
 
 ## Preserve deployment state
 
-**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server passed [T19](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19).** Apply to both providers from
+Apply to both providers from
 first managed provisioning onward. The [continuity/adoption owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 defines why current artifact health cannot replace historical evidence.
 
@@ -1063,14 +1055,11 @@ or incident-history deletion remains an incident even when files parse and live 
 
 ## Interrupted initial-enable retry
 
-**The exact shared CLI retry is exercised on PostgreSQL in [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).** Intact provider wrapper retries retain
-[T16](cdc-inv-evidence.md#postgresql-setup-qualification-t16) and
-[T17](cdc-inv-evidence.md#sql-server-setup-qualification-t17) setup evidence. The T20 fixture pauses after durable connector registration, resumes the original
-workflow, verifies writer authorization, then confirms a second initial retry rejects.
-SQL Server retains T17 wrapper evidence plus both-provider Contract coverage; no separate
-SQL Server live execution of this exact CLI snippet is claimed. Follow the
+Follow the
 [initial retry classification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 and [initial-admission sequence](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
+Retry preserves the original unfinished workflow and must reject a workflow that
+already authorized writer publication.
 
 | Record | Value |
 | --- | --- |
@@ -1129,7 +1118,7 @@ completed. Use the [containment handoff](#native-recovery); The procedure distin
 
 ## Established validation and restart preflight
 
-**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server passed [T19](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19).** The
+The
 [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
 and [managed/native recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
 define the scope of fresh observations.
@@ -1182,7 +1171,7 @@ publish before revalidation; a later healthy result cannot certify the unsampled
 
 ## Missing provenance and source mismatch
 
-**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server passed [T19](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19).** Use the
+Use the
 [adoption/state-loss boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral)
 and [physical-source replacement deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 
@@ -1251,7 +1240,7 @@ state supplies none and retirement does not erase source publication history.
 
 ## Managed shutdown and startup
 
-**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server passed [T19](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19).** Use the
+Use the
 [managed/native recovery owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
 and the shipped [lifecycle wrapper](../../eng/docker-compose/cdc-lifecycle.psm1).
 These operations retain the generation; [destructive teardown](#stack-teardown)
@@ -1355,7 +1344,7 @@ no whole-stack rollback. Keep external writers fenced and follow the recovery ta
 
 ## Intact connector restart and resume
 
-**PostgreSQL passed [T18](cdc-inv-evidence.md#postgresql-lifecycle-qualification-t18); SQL Server passed [T19](cdc-inv-evidence.md#sql-server-lifecycle-qualification-t19).** These are selected-connector
+These are selected-connector
 operations on reachable existing infrastructure. For a stopped **stack**, use
 [managed startup](#managed-lifecycle). The
 [recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
@@ -1418,7 +1407,7 @@ occurred. Keep the result and inspect before issuing another operation.
 
 ## Native recovery and incomplete shutdown
 
-**PostgreSQL passed [T21](cdc-inv-evidence.md#postgresql-native-recovery-qualification-t21); SQL Server passed [T22](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22).** Native worker recovery, task
+Native worker recovery, task
 reassignment/internal recovery and incomplete shutdown follow the
 [design-owned recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary).
 Records may be consumed and published **before** controller revalidation. Later
@@ -1511,7 +1500,7 @@ the [disclosure-response handoff](#sensitive-data-response); connector stop is n
 
 ## Projection troubleshooting and administration handoff
 
-**Documented T06; [PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25) and [SQL Server T26](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) qualified.** E18 owns projection
+E18 owns projection
 administration. This procedure selects that workflow and explains its production
 history gate under the [projection administration owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration)
 and [cache-ahead recovery owner](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery).
@@ -1654,8 +1643,8 @@ V1 new-generation cutover remains [deferred](../design/backend-redesign/design-d
 
 The following stable result excerpts apply to all three guarded operations. The
 [packaged history fixtures](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/CdcPublicationHistoryTests.cs)
-compare these same fields after the real gate runs. PostgreSQL T25 and SQL Server T26 execute both
-marked snippets. Unit serialization checks alone do not prove admission.
+compare these same fields after the real gate runs for both providers.
+Unit serialization checks alone do not prove admission.
 
 An admitted `internalOnly` operation completes with exit `0`:
 
@@ -1685,7 +1674,7 @@ Active, historical, possible or untrusted history rejects with exit `10`:
 
 ## Monitoring and provider retention
 
-**Documented T07; [PostgreSQL exact inspections passed T27](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27). [SQL Server exact inspections passed T28](cdc-inv-evidence.md#sql-server-telemetry-and-retention-qualification-t28).** Use the
+Use the
 [operations owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
 [telemetry owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry),
 and [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
@@ -1877,18 +1866,12 @@ continue pinning WAL while other database writes continue; a verified stop alone
 is not a disk-pressure resolution. Missing tooling/access is unavailable capacity
 evidence, not a reason to remove managed volumes.
 
-The [T27 PostgreSQL qualification](cdc-inv-evidence.md#postgresql-telemetry-and-retention-qualification-t27)
-runs these exact inspections against fixture-owned services. It observes active
-retained WAL and two advancing heartbeat/committed-source samples, distinguishes
-unlimited slot retention's null budget from filesystem capacity, and checks missing
-slot, unavailable service and partial disk-observation failure. These are diagnostic
-actions; the missing-slot query does not remove the original slot or exercise a new
-controller recovery path. The fixture uses its administrator for read-only monitoring,
-so this evidence does not certify a minimum monitoring-role grant set. No disk-full
-fault or deployment capacity threshold is claimed. The exporter case also executes
-the marked scrape around task and worker replacement; missing task metrics remain
-unavailable. Status/watch and source-history behavior retain the linked setup/recovery
-evidence, with separate [T20 topic policy/access evidence](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).
+The [PostgreSQL retention fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.Runbook.cs)
+exercises these inspections against disposable services, including advancing source
+positions, missing slots, unavailable services, and partial disk observations.
+It uses administrator access for monitoring; it does not establish minimum
+monitoring-role grants, deployment capacity, or disk-pressure recovery. Source-history
+and topic-access checks remain separate from these diagnostic queries.
 
 ### SQL Server capture, cleanup, LSN and version-store inspection
 
@@ -1997,22 +1980,13 @@ A DBA resolves capacity/long-transaction issues, confirms capture and cleanup re
 with required history still retained, then obtains fresh controller status. Do not
 kill sessions or alter isolation/retention from this inspection recipe.
 
-The [T28 SQL Server qualification](cdc-inv-evidence.md#sql-server-telemetry-and-retention-qualification-t28)
-executes this exact batch twice after real heartbeat/committed-source advancement,
-then checks the unavailable-monitor action. It observes enabled capture/cleanup jobs,
-successful completed cleanup, nonzero ordered retained LSN ranges, scan latency/errors,
-snapshot/ADR settings and both version-store views. Its minimal connector fixture has
-snapshot isolation ON and RCSI OFF: the exported action points to E18 prerequisite
-correction while Disabled, not a healthy DMS projection claim or permission to alter
-an active deployment. No correction is performed by these inspections. Separate
-[T17 admission evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17)
-qualifies actual DMS prerequisites and missing/lost schema-history rejection;
-[T22 recovery](cdc-inv-evidence.md#sql-server-native-recovery-qualification-t22)
-supplies fresh/rejected controller observations. Topic policy/access has separate [T20 evidence](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).
-The fixture also runs the exact disk command against its database's actual data and
-log files, which share a filesystem, and rejects a missing log path. These samples
-prove neither sustained capacity nor pressure recovery. Administrator visibility and
-the declared self-signed TLS exception qualify only this disposable fixture.
+The [SQL Server retention fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTelemetryQualificationTests.SqlServerRunbook.cs)
+exercises capture/cleanup jobs, retained LSN ranges, scan latency/errors, snapshot/ADR
+settings, version stores, and data/log filesystem inspections. Unavailable-monitor
+and missing-path cases check diagnostic actions. Inspections do not correct projection
+prerequisites or establish source-history continuity, sustained capacity, or pressure
+recovery. Administrator visibility and a fixture TLS exception do not establish a
+production monitoring role or deployment TLS policy.
 
 ### Symptom to owner and completion
 
@@ -2091,7 +2065,7 @@ thresholds.
 
 ## Security, topic retention and consumer evidence
 
-**Qualified in [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20), with secured and local evidence kept separate.** Use the
+Use the
 [security owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations),
 [topology/offset-store owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#kafka-connect-offset-store),
 [public bootstrap owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap)
@@ -2280,12 +2254,11 @@ principal. Kafka group lag or fetched offsets do not prove durable application.
 | Capacity and cleaner evidence | Measure the largest retained log claimed, dirty/uncompacted versions, skew, maximum-sized records, durable state writes and concurrent mutations, including persistence/stalls in elapsed time. Record fetch capacity against the accepted record ceiling and cleaner/storage observations. Repeated missed deadlines require more throughput/parallelism before production use. |
 | Completion and responsibility | Consumer owner attests its store's actual evidence and supported workload. Reference fixtures and deployment topic validation cannot certify that store; live-key counts, a healthy connector or a larger retention setting cannot substitute. |
 
-The [T20 consumer evidence](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20)
-links exact broker scenario IDs and Contract unit methods for these checklist rows:
-partition barriers/durable checkpoints, bootstrap deadline boundaries, idle renewal,
-checkpoint loss/corruption and stale callback invalidation. Its source hashes and
-pinned images identify the tested DMS-1324 revision; simulated durability and clock
-remain explicit. Capacity and correctness of independent stores remain owner obligations.
+The [consumer contract fixtures](../../src/dms/backend/Fixtures/cdc/message-contract/README.md)
+map broker scenarios and unit tests to partition barriers/durable checkpoints,
+bootstrap deadline boundaries, idle renewal, checkpoint loss/corruption, and stale
+callback invalidation. Simulated durability and clock behavior remain test constraints.
+Capacity and correctness of independent stores remain owner obligations.
 
 Consumer invalidation is scoped to consumer-owned state. It does **not** authorize deleting
 controller provenance, resetting Connect offsets, changing binding generation or executing
@@ -2306,8 +2279,8 @@ product, benchmark or certification of an independently operated persistence sys
 
 PowerShell, repository root; disposable Docker qualification environment and runner
 prerequisites above. This broader existing MessageContract lane also exercises provider
-and transform cases; it does not run against the retained operator deployment. Exact
-execution and sanitized artifacts are recorded in [T20](cdc-inv-evidence.md#kafka-and-consumer-qualification-t20).
+and transform cases; it does not run against the retained operator deployment. Retain
+execution results and sanitized artifacts using the [result-recording guidance](cdc-inv-evidence.md#recording-results).
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
@@ -2334,7 +2307,7 @@ results and their simulated-store limitation, not an inferred consumer conforman
 
 ## Coordinated record-size increase
 
-**Documented in T09; exact live snippets qualified for [PostgreSQL (T23)](cdc-inv-evidence.md#postgresql-record-size-qualification-t23) and [SQL Server (T24)](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24).** Use the
+Use the
 [in-place increase owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#in-place-record-size-increase)
 and [ADR sizing contract](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size).
 The [SchemaTools reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
@@ -2362,10 +2335,8 @@ task with no partial public record. The existing
 [message-size fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/MessageContractRecordSizeTests.cs)
 and [rollout/replay fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Producer.cs)
 qualify this boundary for their pinned runtime and workload, not every valid document
-or production throughput. Procedure-level live qualification passed for
-[PostgreSQL (T23)](cdc-inv-evidence.md#postgresql-record-size-qualification-t23) and
-[SQL Server (T24)](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24),
-including exact increase and interrupted-retry snippets within those fixture limits.
+or production throughput. The [marked-command fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcRecordSizeIncreaseTests.Runbook.cs)
+exercises increase and interrupted-retry snippets for both providers within those limits.
 
 Choose a strictly larger record ceiling and a producer buffer at least that large
 and no smaller than the previous effective buffer (default: greater of `33554432`
@@ -2574,10 +2545,9 @@ The [acknowledgement fixtures](../../src/dms/backend/EdFi.DataManagementService.
 cover renewal and changed-consumer evidence; the
 [rollout fixtures](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcRecordSizeIncreaseTests.cs)
 cover interruption boundaries, lost responses, not-ready gating and ordered effective
-limits for both providers. [PostgreSQL T23 qualification](cdc-inv-evidence.md#postgresql-record-size-qualification-t23)
-exercises both marked acknowledgement inputs, the increase/retry commands and the
-post-success settings handoff through the packaged CLI. [SQL Server T24 qualification](cdc-inv-evidence.md#sqlserver-record-size-qualification-t24)
-passes the same provider-parameterized cases. The producer-recovery fixture supplies
+limits for both providers. The marked-command fixture exercises both acknowledgement
+inputs, increase/retry commands, and the post-success settings handoff through the
+packaged CLI. The producer-recovery fixture supplies
 bounded operational size evidence; neither payload length nor an HTTP request limit defines Kafka's exact
 serialized-record threshold.
 
@@ -2657,9 +2627,9 @@ missing destructive confirmation and a wrong-generation substitution, then compl
 and repeat it after fixture-only interruptions at connector and topic deletion.
 Those negative requests and injected faults are test cases, not operator steps.
 The same case executes the status/restamp handoff and disclosure stop snippets;
-stop preserves offsets and binding. [T25 evidence](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25)
-and [T26 evidence](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) separate these command outcomes from restamp execution, consumer fencing and purge.
-They do not authorize deleting shared artifacts outside the binding.
+stop preserves offsets and binding. These command outcomes do not establish restamp
+execution, consumer fencing, or purge, and do not authorize deleting shared artifacts
+outside the binding.
 
 ### Partial cleanup and rejection actions
 
@@ -2790,15 +2760,13 @@ to release it. Preserve the shared broker-size override for surviving peers; dir
 per-binding cleanup is not authority to remove shared files or volumes.
 
 [Lifecycle wrapper fixtures](../../eng/docker-compose/tests/CdcLifecycleOrdering.Tests.ps1)
-cover peer ordering, interrupted retirement/Compose/file cleanup, settings conflicts
-and nested state. [Provider-specific evidence rows](cdc-inv-evidence.md#procedure-evidence)
-link the T16/T18 PostgreSQL and T17/T19 SQL Server stack-teardown snippets and
-T25/T26 wrapper-ordering results separately
-from per-binding retirement. The E2E teardown alternative is covered by wrapper
-checks, not a new T25/T26 live stack. Neither
-wrapper exit `0` nor removed local volumes supplies platform byte-purge evidence,
-initial eligibility, migration continuity or a supported new-generation cutover.
-Use the [sensitive-data handoff](#sensitive-data-response) for disclosure evidence.
+cover peer ordering, interrupted retirement/Compose/file cleanup, settings conflicts,
+and nested state. [Live setup fixtures](../../eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1)
+exercise governed stack teardown separately from per-binding retirement. The E2E
+teardown alternative also has wrapper coverage. Neither wrapper exit `0` nor removed
+local volumes supplies platform byte-purge evidence, initial eligibility, migration
+continuity, or a supported new-generation cutover. Use the
+[sensitive-data handoff](#sensitive-data-response) for disclosure evidence.
 
 <a id="representation-restamp"></a>
 
@@ -2882,9 +2850,7 @@ baseline. Use authorized consumer-owner inspection to verify eventual affected
 record versions/ETags without copying payloads into evidence. The existing
 [real-restamp publication fixture](../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/RepresentationRestampCdcStateTests.cs)
 checks this separate projection-and-publication outcome for both providers; it is
-not purge evidence or a live exercise of this marked status command. Exact snippet
-qualification passed [PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25);
-[SQL Server T26](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) also passed.
+not purge evidence or a live exercise of this marked status command.
 
 <a id="sensitive-data-response"></a>
 
@@ -3003,10 +2969,8 @@ document bodies or API/stream response payloads into manifests, reasons, example
 diagnostics, telemetry or shared artifacts. Retain only necessary protected identity
 and sanitized administrative outcomes; verify record differences without copying
 sensitive content. Neither restamp's bounded claim nor controller cleanup authorizes
-restoring Kafka access or closing the incident. Exact marked stop/retire commands passed
-[PostgreSQL T25](cdc-inv-evidence.md#postgresql-history-and-retirement-qualification-t25);
-[SQL Server T26](cdc-inv-evidence.md#sql-server-history-and-retirement-qualification-t26) also passed. Platform/consumer attestations
-remain deployment-owned even after those fixtures pass.
+restoring Kafka access or closing the incident. Platform/consumer attestations
+remain deployment-owned even after stop/retire fixtures pass.
 
 <a id="serialized-result-examples"></a>
 

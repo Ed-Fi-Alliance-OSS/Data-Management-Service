@@ -58,6 +58,7 @@ services:
       AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
       AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
+      AppSettings__EnableIdentityManagement: ${DMS_ENABLE_IDENTITY_MANAGEMENT:-false}
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
       AppSettings__ManagementEndpoints__RequiredRole: ${DMS_MANAGEMENT_REQUIRED_ROLE:-}
@@ -83,7 +84,7 @@ services:
       DataManagement__DocumentCache__Status__EndpointTimeout: ${DMS_DOCUMENTCACHE_STATUS_ENDPOINT_TIMEOUT:-00:00:30}
       DataManagement__DocumentCache__Status__RequiredRole: ${DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE:-}
       # JWT Authentication
-      JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
+      JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://localhost:8045/realms/edfi}
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-account}
       JwtAuthentication__MetadataAddress: ${DMS_JWT_METADATA_ADDRESS:-}
       JwtAuthentication__RequireHttpsMetadata: ${DMS_JWT_REQUIRE_HTTPS_METADATA:-false}

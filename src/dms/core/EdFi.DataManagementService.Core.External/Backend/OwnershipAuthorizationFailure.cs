@@ -10,29 +10,34 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Both kinds describe an <em>existing</em> stored document, because ownership authorizes only stored values:
-/// the API client's <c>OwnershipTokenIds</c> authorize reads and mutations, while the single
-/// <c>CreatorOwnershipTokenId</c> is used solely to stamp <c>dms.Document.CreatedByOwnershipTokenId</c> on
-/// creation and is never an authorization input. A create therefore has nothing for this strategy to deny.
+/// The API client's <c>OwnershipTokenIds</c> authorize reads and mutations against the stored
+/// <c>dms.Document.CreatedByOwnershipTokenId</c>, and its single <c>CreatorOwnershipTokenId</c> is the value a
+/// create stamps there. For an existing document both kinds describe the stored value. For a create, which has
+/// no stored value yet, they describe the value the create would stamp: a create that would leave a row its
+/// own client could never reach through ownership is denied before any row is written, with the same kind —
+/// and so the same response — as the stored state it would have produced.
 /// </para>
 /// <para>
 /// Two conditions the SQL check can also raise are deliberately absent. A stale stored target is a retry
 /// signal that resolves to a 404, never a response of its own. An <c>OwnershipTokenIds</c> count at or above
 /// the defensive limit is a security-configuration problem carrying the <c>urn:ed-fi:api:system</c> 500,
-/// reported as a planner terminal rather than as an authorization denial.
+/// reported as a planner terminal or a deferred POST failure rather than as an authorization denial.
 /// </para>
 /// </remarks>
 public enum OwnershipAuthorizationFailureKind
 {
     /// <summary>
     /// The stored <c>CreatedByOwnershipTokenId</c> is non-null but matches none of the caller's ownership
+    /// tokens — or, for a create, the caller's <c>CreatorOwnershipTokenId</c> is not among its own ownership
     /// tokens. auth.md §2.13 — ownership, access denied, ownership mismatch.
     /// </summary>
     OwnershipTokenMismatch,
 
     /// <summary>
     /// The stored <c>CreatedByOwnershipTokenId</c> is null, so the existing item can never be reached through
-    /// ownership-based authorization. auth.md §2.14 — ownership, invalid data, ownership uninitialized.
+    /// ownership-based authorization — or, for a create, the caller has no <c>CreatorOwnershipTokenId</c>, so
+    /// the row it would create would be in that state. auth.md §2.14 — ownership, invalid data, ownership
+    /// uninitialized.
     /// </summary>
     StoredOwnershipTokenUninitialized,
 }
@@ -53,10 +58,11 @@ public enum OwnershipAuthorizationFailureKind
 /// is what the AUTH1 design calls for.
 /// </para>
 /// <para>
-/// Non-nullable because every ownership denial arrives through AUTH1. Ownership has no planner/preflight 403
-/// analogous to the namespace no-prefixes-configured case: a caller with an empty ownership-token list still
-/// executes the stored-row check, so that the response can distinguish a stored null (§2.14) from a
-/// non-matching stored value (§2.13) rather than guessing.
+/// Non-nullable because every ownership denial is attributed to the planned check's earliest configured
+/// occurrence: an existing document's through AUTH1, a create's by the in-process verdict that reads the same
+/// planned check. Ownership has no planner/preflight 403 analogous to the namespace no-prefixes-configured
+/// case: a caller with an empty ownership-token list still executes the stored-row check, so that the response
+/// can distinguish a stored null (§2.14) from a non-matching stored value (§2.13) rather than guessing.
 /// </para>
 /// </param>
 /// <param name="StrategyName">The configured strategy name — always <c>OwnershipBased</c>.</param>

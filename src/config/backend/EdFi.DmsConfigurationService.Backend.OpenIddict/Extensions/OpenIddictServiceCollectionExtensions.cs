@@ -59,6 +59,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:KeyFormatCacheSize",
                     100
                 );
+                options.ClientSecretHashingIterations = configuration.GetValue<int>(
+                    "IdentitySettings:ClientSecretHashingIterations",
+                    options.ClientSecretHashingIterations
+                );
                 options.TokenCleanupEnabled = configuration.GetValue<bool>(
                     "IdentitySettings:TokenCleanupEnabled",
                     true
@@ -95,6 +99,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 ServiceDescriptor.Singleton<IValidateOptions<IdentityOptions>, SigningKeyOptionsValidator>()
             );
             services.AddOptions<IdentityOptions>().ValidateOnStart();
+
+            // PBKDF2 rejects a non-positive count, so without this a bad value would surface as a 500
+            // on the first client create or token request rather than failing startup.
+            services
+                .AddOptions<IdentityOptions>()
+                .Validate(
+                    options => options.ClientSecretHashingIterations > 0,
+                    "IdentitySettings:ClientSecretHashingIterations must be greater than zero."
+                )
+                .ValidateOnStart();
 
             return services;
         }

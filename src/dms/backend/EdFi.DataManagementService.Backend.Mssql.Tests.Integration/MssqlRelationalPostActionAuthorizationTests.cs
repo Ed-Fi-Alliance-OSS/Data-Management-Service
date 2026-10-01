@@ -290,6 +290,21 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
         );
 
         owner.Should().BeOfType<UpsertResult.UpdateSuccess>();
+
+        // A read/modify-only client holds the row's token but no creator token. An update is decided by the
+        // stored token alone, so the missing creator token does not stand in its way.
+        var readModifyOnly = await PostAsync(
+            NullableProject,
+            NullableResource,
+            Body(NullableResource, "Changed again"),
+            _secondUuid,
+            updateChecksOwnership,
+            creatorOwnershipTokenId: null,
+            ownershipTokenIds: [CreatorToken]
+        );
+
+        readModifyOnly.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        (await _context.CountDocumentsAsync(NullableProject, NullableResource)).Should().Be(1);
     }
 
     // ── Strategy difference: relationship ────────────────────────────────

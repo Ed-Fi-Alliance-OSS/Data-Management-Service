@@ -369,6 +369,99 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
     }
 
+    /// <summary>
+    /// AGENTS.md Logging: the token-scope claim-set name must be sanitized before reaching a log
+    /// line - the "Claim set name from token scope" information log fires unconditionally, and the
+    /// "No ClaimSet matching Scope" log fires because no configured claim set matches the injected
+    /// name.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_No_Matching_ClaimSet_With_Control_Characters_In_The_Scope
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private const string InjectedClaimSetName = "Bad\r\nInjected";
+        private RecordingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger();
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns([
+                    new ClaimSet(
+                        Name: "SIS-Vendor",
+                        ResourceClaims:
+                        [
+                            new ResourceClaim(
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                                "Create",
+                                [
+                                    new AuthorizationStrategy(
+                                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]);
+            var middleware = new ResourceActionAuthorizationMiddleware(claimSetProvider, _logger);
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+            {
+                ClientAuthorizations = new ClientAuthorizations("", "", InjectedClaimSetName, [], [], []),
+                PathComponents = new PathComponents(
+                    ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
+                    EndpointName: new EndpointName("schools"),
+                    Operation: ResourcePathOperation.Collection.Instance
+                ),
+            };
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
+
+            await middleware.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_claim_set_name_from_token_scope_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger
+                .Records.Should()
+                .ContainSingle(record => record.Message.StartsWith("Claim set name from token scope"))
+                .Subject;
+
+            record.Level.Should().Be(LogLevel.Information);
+            record.Properties["ClaimSetName"].Should().Be("BadInjected");
+        }
+
+        [Test]
+        public void It_logs_the_no_matching_claim_set_scope_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger
+                .Records.Should()
+                .ContainSingle(record => record.Message.Contains("No ClaimSet matching Scope"))
+                .Subject;
+
+            record.Level.Should().Be(LogLevel.Information);
+            record.Properties["Scope"].Should().Be("BadInjected");
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class GivenNoMatchingResourceActionClaim : ResourceActionAuthorizationMiddlewareTests

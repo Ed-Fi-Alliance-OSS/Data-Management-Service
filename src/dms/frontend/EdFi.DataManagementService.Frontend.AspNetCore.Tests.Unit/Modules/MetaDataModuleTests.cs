@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
@@ -577,7 +578,7 @@ public class MetadataModuleTests
             var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
             var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
 
             var profilesArray = jsonArray!
@@ -603,7 +604,7 @@ public class MetadataModuleTests
             var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
             var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
 
             var profilesArray = jsonArray!
@@ -728,6 +729,109 @@ public class MetadataModuleTests
                     )
                 )
                 .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    private const string ProfileTraceId = "profile-trace-id";
+
+    /// <summary>
+    /// A request context that carries the correlation id the 503 body must echo.
+    /// </summary>
+    private static DefaultHttpContext CreateProfileMetadataHttpContext(string path)
+    {
+        DefaultHttpContext httpContext = CreateHttpContext(path);
+        httpContext.Request.Headers["X-Correlation-Id"] = ProfileTraceId;
+        return httpContext;
+    }
+
+    private static void AssertProfileDataUnavailable(HttpContext httpContext, JsonNode? body)
+    {
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.ServiceUnavailable);
+        httpContext.Response.ContentType.Should().Be("application/problem+json");
+        body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:service-unavailable");
+        body["status"]!.GetValue<int>().Should().Be(503);
+        body["correlationId"]!.GetValue<string>().Should().Be(ProfileTraceId);
+    }
+
+    /// <summary>
+    /// The specifications listing must not be published without its profile sections when the
+    /// profile catalog is unavailable, since that would be a partial catalog.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Profile_Catalog_Is_Unavailable_For_The_Specifications_List
+    {
+        private DefaultHttpContext _httpContext = null!;
+        private JsonNode? _body;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .ThrowsAsync(new ProfileDataUnavailableException("The profile catalog is unavailable"));
+            _httpContext = CreateProfileMetadataHttpContext("/metadata/specifications");
+
+            await MetadataEndpointModule.GetSections(_httpContext, apiService, FrontendOptions());
+            _body = await ReadJsonResponseAsync(_httpContext);
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable_problem_details()
+        {
+            AssertProfileDataUnavailable(_httpContext, _body);
+        }
+
+        [Test]
+        public void It_writes_no_partial_listing()
+        {
+            _body.Should().BeOfType<JsonObject>();
+            _body!.ToJsonString().Should().NotContain("resources-spec.json");
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Profile_Catalog_Is_Unavailable_For_A_Profile_Spec
+    {
+        private DefaultHttpContext _httpContext = null!;
+        private JsonNode? _body;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "StudentProfile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .ThrowsAsync(new ProfileDataUnavailableException("The profile catalog is unavailable"));
+            _httpContext = CreateProfileMetadataHttpContext(
+                "/metadata/specifications/profiles/StudentProfile/resources-spec.json"
+            );
+
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                _httpContext,
+                "StudentProfile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
+            _body = await ReadJsonResponseAsync(_httpContext);
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable_problem_details()
+        {
+            AssertProfileDataUnavailable(_httpContext, _body);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_internal_message()
+        {
+            _body!.ToJsonString().Should().NotContain("The profile catalog is unavailable");
         }
     }
 
@@ -1251,7 +1355,7 @@ public class MetadataModuleTests
             var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
             var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
             var changeQueries = jsonArray!.SingleOrDefault(node =>
                 node!["name"]!.GetValue<string>() == "Change-Queries"
@@ -1301,7 +1405,7 @@ public class MetadataModuleTests
             httpContext.Response.Body = new MemoryStream();
 
             // Act
-            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
             httpContext.Response.Body.Position = 0;
             var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
             var jsonArray = JsonNode.Parse(content) as JsonArray;
@@ -1327,7 +1431,7 @@ public class MetadataModuleTests
             var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            await MetadataEndpointModule.GetSections(httpContext, apiService);
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
             var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
             var changeQueries = jsonArray!.SingleOrDefault(node =>
                 node!["name"]!.GetValue<string>() == "Change-Queries"

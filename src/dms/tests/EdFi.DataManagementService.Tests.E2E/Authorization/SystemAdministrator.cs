@@ -44,47 +44,56 @@ public static class SystemAdministrator
                 return;
             }
 
-            var formContent = new FormUrlEncodedContent([
-                new KeyValuePair<string, string>("ClientId", clientId),
-                new KeyValuePair<string, string>("ClientSecret", clientSecret),
-                new KeyValuePair<string, string>("DisplayName", clientId),
-            ]);
-
-            await _client.PostAsync("connect/register", formContent);
-
-            // Client may already exist, which is OK - try to get token anyway
-            var tokenRequestFormContent = new FormUrlEncodedContent([
-                new KeyValuePair<string, string>("client_id", clientId),
-                new KeyValuePair<string, string>("client_secret", clientSecret),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            ]);
-
-            var tokenResult = await _client.PostAsync("connect/token", tokenRequestFormContent);
-
-            if (!tokenResult.IsSuccessStatusCode)
-            {
-                var errorBody = await tokenResult.Content.ReadAsStringAsync();
-                throw new InvalidOperationException(
-                    $"Failed to obtain token for client '{clientId}'. Status: {tokenResult.StatusCode}, Error: {errorBody}"
-                );
-            }
-
-            var body = await tokenResult.Content.ReadAsStringAsync();
-            var document = JsonDocument.Parse(body);
-            Token = document.RootElement.GetProperty("access_token").GetString() ?? "";
-            int expiresInSeconds = document.RootElement.TryGetProperty(
-                "expires_in",
-                out JsonElement expiresIn
-            )
-                ? expiresIn.GetInt32()
-                : 1800;
-            _tokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
+            var registration = await RegisterAsync(_client, clientId, clientSecret, CancellationToken.None);
+            Token = registration.Token;
+            _tokenExpiresAt = registration.ExpiresAt;
         }
         finally
         {
             _registrationLock.Release();
         }
+    }
+
+    // Endpoint-driven registration for attached fixtures. Does not alter the legacy static session.
+    internal static async Task<(string Token, DateTimeOffset ExpiresAt)> RegisterAsync(
+        HttpClient client,
+        string clientId,
+        string clientSecret,
+        CancellationToken token
+    )
+    {
+        using var formContent = new FormUrlEncodedContent([
+            new("ClientId", clientId),
+            new("ClientSecret", clientSecret),
+            new("DisplayName", clientId),
+        ]);
+        using HttpResponseMessage registration = await client.PostAsync(
+            "connect/register",
+            formContent,
+            token
+        );
+        // An existing client is allowed; token acquisition establishes success.
+        using var tokenRequest = new FormUrlEncodedContent([
+            new("client_id", clientId),
+            new("client_secret", clientSecret),
+            new("grant_type", "client_credentials"),
+            new("scope", "edfi_admin_api/full_access"),
+        ]);
+        using HttpResponseMessage response = await client.PostAsync("connect/token", tokenRequest, token);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"CMS token acquisition failed: HTTP {(int)response.StatusCode}."
+            );
+        }
+        using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+        string accessToken =
+            document.RootElement.GetProperty("access_token").GetString()
+            ?? throw new InvalidOperationException("CMS token response is missing a token.");
+        int expiresIn = document.RootElement.TryGetProperty("expires_in", out JsonElement expiry)
+            ? expiry.GetInt32()
+            : 1800;
+        return (accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresIn));
     }
 
     public static async Task<string> GetToken()

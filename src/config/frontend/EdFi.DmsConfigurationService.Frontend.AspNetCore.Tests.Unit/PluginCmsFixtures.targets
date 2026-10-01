@@ -1,0 +1,77 @@
+<Project>
+    <!--
+        Publishes the fixture plugins whose criteria are about the Configuration Service's own contracts
+        into this project's output as real plugin directories. Its sources live beside the plugin
+        hosting tests' own fixtures, because that is where fixture plugins live and because the tree
+        already carries the props that keep a test asset out of the analyzer set; only the staging
+        happens here.
+
+        Acme.CmsContributor serves every boot case; Acme.CmsSecondResolver exists only so that two plugins
+        can each claim the secret resolver once. These two rather than an import of the hosting project's
+        fixture list, which is dozens of directories no test here reads.
+
+        This file is the two lists and nothing else. Deciding freshness, pruning and publishing are in
+        src/dms/PluginFixtureStaging.targets, imported at the bottom, which is where those mechanics are
+        explained. That file is host-agnostic despite where it sits; it is imported rather than copied
+        so the two hosts cannot drift apart on how a fixture tree is decided stale. The coupling is
+        test-only, and the Configuration Service pull request workflow names that one file in its
+        change filter, so an edit to it alone also runs the tests here.
+    -->
+    <ItemGroup>
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/Acme.CmsContributor.csproj">
+            <StagedName>Acme.CmsContributor</StagedName>
+        </PluginStagedFixture>
+        <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/Acme.CmsSecondResolver.csproj">
+            <StagedName>Acme.CmsSecondResolver</StagedName>
+        </PluginStagedFixture>
+    </ItemGroup>
+
+    <!--
+        Everything the staged bytes can depend on, as directories rather than as a hand-written list of
+        files, for the reason src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/PluginFrontendFixtures.targets
+        gives: an enumeration of the files a closure happens to reach today silently omits the next one
+        somebody adds. bin/ and obj/ are excluded everywhere, because generated sources change on every
+        build and would leave the tree permanently out of date.
+
+        $(PluginCmsFixtureRepositoryRoot) is this file's directory walked up to src/.
+    -->
+    <PropertyGroup>
+        <PluginCmsFixtureRepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..'))</PluginCmsFixtureRepositoryRoot>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- The staging rules themselves. -->
+        <PluginStagedFixtureInput Include="$(MSBuildThisFileFullPath)" />
+
+        <!-- Each staged fixture's own directory. A fixture added above needs its directory added here too. -->
+        <PluginStagedFixtureInput
+            Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/**/*"
+            Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/obj/**"
+        />
+        <PluginStagedFixtureInput
+            Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/**/*"
+            Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsSecondResolver/obj/**"
+        />
+
+        <!-- The props the fixtures inherit from the fixture tree they sit in. -->
+        <PluginStagedFixtureInput Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Build.props;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Directory.Packages.props" />
+
+        <!--
+            Every project the fixtures reference: the plugin contract, the plugin hosting assembly
+            Acme.CmsContributor names the decoy audit input from, and the secrets contract.
+        -->
+        <PluginStagedFixtureInput
+            Include="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/**/*;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/**/*;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/**/*"
+            Exclude="$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins/obj/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/bin/**;$(PluginCmsFixtureRepositoryRoot)plugins/EdFi.Api.Plugins.Hosting/obj/**;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/bin/**;$(PluginCmsFixtureRepositoryRoot)config/contracts/EdFi.DmsConfigurationService.Secrets/obj/**"
+        />
+
+        <!--
+            The build metadata every one of those inherits: the props each tree carries, the central
+            package versions the fixture tree's own props chain to, and the NuGet configuration a
+            restore of any of them reads.
+        -->
+        <PluginStagedFixtureInput Include="$(PluginCmsFixtureRepositoryRoot)Directory.Packages.props;$(PluginCmsFixtureRepositoryRoot)nuget.config;$(PluginCmsFixtureRepositoryRoot)plugins/Directory.Build.props;$(PluginCmsFixtureRepositoryRoot)config/Directory.Build.props" />
+    </ItemGroup>
+
+    <Import Project="$(MSBuildThisFileDirectory)../../../dms/PluginFixtureStaging.targets" />
+</Project>

@@ -2,20 +2,18 @@
 
 This shared PostgreSQL and SQL Server reference set delivers
 [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
-The [reconciled evidence index](cdc-inv-evidence.md#final-reconciliation-t20) links
-setup, lifecycle, native recovery, record-size increases, history/retirement and
-telemetry/retention qualification for both providers, plus separate secured Kafka
-access and DMS-1324 consumer conformance results. Exact commands, declared fixture
-substitutions, images, revisions and outcomes are recorded with each procedure.
-Contract checks cover marked settings, commands, JSON excerpts, wrapper wiring and
-relative links. Alternatives with only Contract coverage are identified explicitly;
-no fixture result certifies an operator's deployment or consumer store.
+The [qualification index](cdc-inv-evidence.md) maps setup, lifecycle, recovery,
+record-size, history/retirement, telemetry, security, and API scenarios to reproducible
+tests. Generated reports and execution histories are retained outside the repository;
+PR and release records should identify the tested revision and retained artifacts.
+Contract checks cover marked settings, commands, JSON excerpts, wrapper wiring, and
+relative links. No fixture result certifies an operator's deployment or consumer store.
 
 - [Operations runbook](operations-runbook.md#procedure-navigation): procedure selection,
   stable anchors, required procedure records, and snippet conventions.
 - [Checked JSON excerpts](operations-runbook.md#serialized-result-examples): readiness, optional observations, operation scope and failures.
-- [Evidence index](cdc-inv-evidence.md): procedure-to-test mapping and actual results,
-  with test layers and unexercised alternatives explicitly identified.
+- [Qualification index](cdc-inv-evidence.md): procedure-to-test mappings, scenario
+  invariants, and instructions for recording results.
 - [SchemaTools CDC reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands):
   shipped commands, options, configuration, output, and wrapper examples.
 
@@ -53,14 +51,14 @@ API-driven message scenarios belong to [DMS-1325](../design/backend-redesign/epi
 
 | Subject | Owner and handoff |
 | --- | --- |
-| Ordered operator procedures and their qualification results | This reference set; implementation scope is [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md). |
+| Ordered operator procedures and their qualification requirements | This reference set; implementation scope is [DMS-1326](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md). |
 | Command/configuration catalog and generated connector configuration | [SchemaTools CDC reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands) and [connector integration owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-transform-integration). Do not maintain a second property catalog here. |
 | Projection administration and provider prerequisite correction | [DocumentCache runbook](../document-cache-documentation/operations-runbook.md), reached through the [CDC projection handoff](operations-runbook.md#projection-handoff). |
 | Offline representation restamp | [DocumentCacheAdmin restamp procedure](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp); this runbook owns only the [CDC handoff](operations-runbook.md#representation-restamp). |
 | Deployment, readiness, recovery, and security contracts | [CDC integration design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#authority-and-document-ownership). |
 | Projector/source behavior | [ADR 0001](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md). |
 | Topic/message, consumer, and compatibility contract | [ADR 0002](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md). |
-| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; both providers have live procedure evidence; [T20 reconciliation](cdc-inv-evidence.md#final-reconciliation-t20) records scope and alternatives. |
+| Existing documentation entry-point audit | [Design disposition](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#documentation-audit-and-disposition); entry points link to these procedures. Scoped link/anchor, result and wrapper checks run in Contract/PR; [qualification mappings](cdc-inv-evidence.md#procedure-evidence) identify the live test layers. |
 
 ## Scope Boundaries and Missing Surfaces
 
@@ -76,13 +74,10 @@ also remains separate work.
 The SQL Server provider now maps a missing same-name database user to the deployment's
 restricted SQL login during managed initial setup. Durable provider completion switches
 retries to validation-only; missing users and conflicting SIDs then fail without repair.
-[DMS-1326's T29 evidence](cdc-inv-evidence.md#sql-server-initial-user-mapping-t29) records
-provider/controller qualification and wrapper ordering checks for this former setup gap.
-The [SQL Server operator procedure](operations-runbook.md#sql-server-setup) and
-[E2E variant](operations-runbook.md#sql-server-e2e-variant) are documented in T03.
-[T17 live evidence](cdc-inv-evidence.md#sql-server-setup-qualification-t17) now covers local,
-published and direct E2E setup from the restricted login, including the production
-user mapping and writer-publication boundary. Build-based E2E remains unexercised.
+The [user-mapping test index](cdc-inv-evidence.md#sql-server-initial-user-mapping)
+links provider/controller and wrapper coverage. Follow the
+[SQL Server operator procedure](operations-runbook.md#sql-server-setup) and
+[E2E variant](operations-runbook.md#sql-server-e2e-variant) for setup instructions.
 
 If a later procedure needs a missing capability, record the command/fixture, expected
 surface, and observed gap here. Required runtime integration work belongs to DMS-1326,

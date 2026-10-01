@@ -21,7 +21,8 @@ namespace EdFi.DataManagementService.Backend;
 /// instead of emitting an over-limit parameter list at the SQL boundary or letting the factory's exception
 /// escape as a generic failure. POST defers the planner's cap to target resolution, so this is where its
 /// over-limit list is caught, and the failure reported here is carried into the write session to be returned
-/// only if the target proves to exist.
+/// once target resolution has selected the Create or the Update branch — either can owe it — in that branch's
+/// ownership slot.
 /// </remarks>
 internal static class OwnershipTokenParameterizationPreflight
 {

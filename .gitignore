@@ -66,9 +66,11 @@ eng/docker-compose/.bootstrap/
 eng/docker-compose/.e2e-claims/
 eng/docker-compose/.cdc-deployments/
 eng/docker-compose/.cdc-diagnostics/
+eng/docker-compose/.cdc-api-e2e.lock
 eng/docker-compose/.cdc-state
 eng/docker-compose/.derived/
 eng/docker-compose/.env.perf-hostpg
+eng/docker-compose/.env.ide
 .dms-dotnet-diagnostics/
 
 # Local data-load credentials
@@ -487,3 +489,6 @@ docs/superpowers/
 # Local folder feed the custom validation fixture plugins restore their two contract
 # packages from. Written by the integration test project's CustomValidationFixturePlugin.targets.
 /eng/fixtures/plugins/.local-feed/
+
+# CDC execution reports are retained outside source control.
+/reference/cdc-documentation/evidence/

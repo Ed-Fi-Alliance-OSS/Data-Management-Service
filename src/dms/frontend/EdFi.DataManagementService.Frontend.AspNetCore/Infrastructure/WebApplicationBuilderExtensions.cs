@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using System.Net;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.Api.Plugins.Hosting;
@@ -216,11 +215,10 @@ public static class WebApplicationBuilderExtensions
         var rateLimitOptions = new RateLimitOptions();
         webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Bind(rateLimitOptions);
 
-        webAppBuilder.Services.AddRateLimiter(limiterOptions =>
-        {
-            limiterOptions.RejectionStatusCode = (int)HttpStatusCode.TooManyRequests;
-            limiterOptions.OnRejected = WriteRateLimitRejectionAsync;
-            limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        // Container-owned so it is disposed with the host, which stops its replenishment timer.
+        // GlobalRateLimitingMiddleware applies it to every request.
+        webAppBuilder.Services.AddSingleton(_ =>
+            PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: httpContext.Request.Headers.Host.ToString(),
                     factory: _ => new FixedWindowRateLimiterOptions
@@ -230,13 +228,13 @@ public static class WebApplicationBuilderExtensions
                         Window = TimeSpan.FromSeconds(rateLimitOptions.Window),
                     }
                 )
-            );
-        });
+            )
+        );
     }
 
     /// <summary>
-    /// Serves the rejection produced by the rate limiter middleware, which applies
-    /// RejectionStatusCode before invoking this callback. Rejected requests never reach the DMS
+    /// Serves the rejection produced by <see cref="GlobalRateLimitingMiddleware"/>, which sets the
+    /// 429 status code before invoking this. Rejected requests never reach the DMS
     /// core pipeline, so the Retry-After header and the problem-details body are written at this
     /// boundary. The Retry-After value is the limiter's recommended retry delay rounded up to
     /// whole seconds so a client never retries sooner than recommended, and the body stays

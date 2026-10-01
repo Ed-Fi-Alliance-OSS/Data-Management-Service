@@ -383,6 +383,7 @@ public static class DmsCoreServiceExtensions
         );
         services.TryAddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
         services.TryAddSingleton<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
+        services.TryAddSingleton<IdentityTenantSnapshot>();
 
         return services;
     }
@@ -488,8 +489,12 @@ public static class DmsCoreServiceExtensions
         services.Configure<JwtAuthenticationOptions>(configuration.GetSection("JwtAuthentication"));
         services.TryAddSingleton(TimeProvider.System);
 
-        // Register HttpClient for OIDC metadata retrieval
-        services.AddHttpClient();
+        // Register HttpClient for OIDC metadata retrieval. Redirects stay off: HttpDocumentRetriever
+        // checks only the address it is handed, so a followed redirect would carry the fetch to
+        // another origin after that check.
+        services
+            .AddHttpClient(Security.HttpDocumentRetriever.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
         // Register singleton ConfigurationManager for OIDC metadata caching
         services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(serviceProvider =>
@@ -505,13 +510,47 @@ public static class DmsCoreServiceExtensions
                 );
             }
 
+            // The scheme check matters: TryCreate also accepts a scheme-less "host:port/path" as an
+            // absolute URI whose scheme is the host name.
+            if (
+                !Uri.TryCreate(options.MetadataAddress, UriKind.Absolute, out Uri? metadataAddress)
+                || metadataAddress.Scheme is not ("http" or "https")
+            )
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:MetadataAddress must be an absolute http(s) URL for JWT authentication"
+                );
+            }
+
+            // Checked once here rather than per fetch: HttpDocumentRetriever fetches only from the
+            // MetadataAddress origin, scheme included, so every fetch shares this address's scheme.
+            if (options.RequireHttpsMetadata && metadataAddress.Scheme != Uri.UriSchemeHttps)
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:MetadataAddress must use https when JwtAuthentication:RequireHttpsMetadata is true"
+                );
+            }
+
+            if (string.IsNullOrEmpty(options.Authority))
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:Authority must be configured for JWT authentication"
+                );
+            }
+
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-            HttpClient httpClient = httpClientFactory.CreateClient();
+            HttpClient httpClient = httpClientFactory.CreateClient(
+                Security.HttpDocumentRetriever.HttpClientName
+            );
 
             ConfigurationManager<OpenIdConnectConfiguration> configManager = new(
                 options.MetadataAddress,
                 new OpenIdConnectConfigurationRetriever(),
-                new Security.HttpDocumentRetriever(httpClient) { RequireHttps = options.RequireHttpsMetadata }
+                new Security.HttpDocumentRetriever(
+                    httpClient,
+                    metadataAddress,
+                    serviceProvider.GetRequiredService<ILogger<Security.HttpDocumentRetriever>>()
+                )
             )
             {
                 RefreshInterval = TimeSpan.FromMinutes(options.RefreshIntervalMinutes),

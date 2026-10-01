@@ -284,6 +284,7 @@ public class ConfigurationServiceClaimSetProviderHeaderTests
                 CreateProvider(_client),
                 _memoryCache,
                 new CacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 

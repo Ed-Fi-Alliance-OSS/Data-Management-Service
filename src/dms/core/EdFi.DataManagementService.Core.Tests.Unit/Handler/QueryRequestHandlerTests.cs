@@ -851,8 +851,8 @@ public class QueryRequestHandlerTests
                 "Relational query authorization is not implemented for resource "
                 + "'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires "
                 + "filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests "
-                + "with no authorization strategies or with 'NamespaceBased' and/or "
-                + "'NoFurtherAuthorizationRequired' are currently supported.";
+                + "with no authorization strategies or with 'NamespaceBased', "
+                + "'NoFurtherAuthorizationRequired', and/or 'OwnershipBased' are currently supported.";
 
             public override Task<QueryResult> QueryDocuments(
                 IQueryRequest queryRequest,
