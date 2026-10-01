@@ -687,6 +687,7 @@ $failureStatement
             $log | Should -Contain "start-infra DmsBaseUrl= rebuild=True writerGuidanceSuppressed=True"
             $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
             $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
+            $output | Should -Not -Match "Local Docker images are reused by default"
         }
 
         It "does not rebuild by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
@@ -704,6 +705,7 @@ $failureStatement
             $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
             $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
             $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
+            $output | Should -Match "Local Docker images are reused by default.*-Rebuild"
         }
 
         It "suppresses initial terminal guidance before published DMS startup" {

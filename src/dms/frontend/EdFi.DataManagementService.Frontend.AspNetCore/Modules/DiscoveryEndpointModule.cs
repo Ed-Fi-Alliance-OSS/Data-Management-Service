@@ -182,7 +182,8 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
     /// Builds the route qualifier prefix for URLs.
     /// When multi-tenancy is enabled, includes tenant as the first segment.
     /// If segments are present in the request, uses actual values.
-    /// If segments are not present in request, uses placeholders.
+    /// If segments are not present in a discovery request, uses placeholders.
+    /// Unqualified metadata requests omit missing route-context segments.
     /// </summary>
     internal static string BuildRouteQualifierPrefix(
         HttpContext httpContext,
@@ -206,7 +207,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             {
                 prefixSegments.Add(tenant);
             }
-            else
+            else if (!useMetadataRouteValues)
             {
                 prefixSegments.Add("{tenant}");
             }
@@ -229,7 +230,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
                 // Use actual value from route
                 prefixSegments.Add(stringValue);
             }
-            else
+            else if (!useMetadataRouteValues)
             {
                 // Use placeholder
                 prefixSegments.Add($"{{{segmentName}}}");

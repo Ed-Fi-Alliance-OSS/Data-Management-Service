@@ -68,8 +68,8 @@ public class MetadataModuleTests
     [TestFixture]
     public class Given_OpenApi_documents_with_internal_authentication_urls
     {
-        [TestCase("section", false, "http://localhost/dms-api/{section}/oauth/token")]
-        [TestCase("profileName", false, "http://localhost/dms-api/{profileName}/oauth/token")]
+        [TestCase("section", false, "http://localhost/dms-api/oauth/token")]
+        [TestCase("profileName", false, "http://localhost/dms-api/oauth/token")]
         [TestCase("section", true, "http://localhost/dms-api/255901/oauth/token")]
         [TestCase("profileName", true, "http://localhost/dms-api/255901/oauth/token")]
         public async Task It_distinguishes_mapped_endpoint_parameters_from_route_qualifiers(
@@ -188,7 +188,14 @@ public class MetadataModuleTests
                 .ReturnsLazily(CreateOpenApiDocument);
             var dataStoreProvider = A.Fake<IDataStoreProvider>();
 
-            foreach (bool qualified in new[] { false, true, false })
+            foreach (
+                (bool routeContextsConfigured, bool qualified) in new[]
+                {
+                    (false, false),
+                    (true, true),
+                    (true, false),
+                }
+            )
             {
                 var context = CreateHttpContext("/metadata/specifications", qualified ? "/dms-api" : "");
                 context.Request.Scheme = "https";
@@ -196,8 +203,8 @@ public class MetadataModuleTests
                 context.Request.RouteValues["section"] = "discovery";
                 var options = FrontendOptions(settings =>
                 {
-                    settings.MultiTenancy = qualified;
-                    settings.RouteQualifierSegments = qualified ? "districtId,schoolYear" : "";
+                    settings.MultiTenancy = routeContextsConfigured;
+                    settings.RouteQualifierSegments = routeContextsConfigured ? "districtId,schoolYear" : "";
                 });
                 if (qualified)
                 {
