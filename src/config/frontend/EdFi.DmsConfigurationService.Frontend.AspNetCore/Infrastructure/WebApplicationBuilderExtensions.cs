@@ -90,11 +90,20 @@ public static class WebApplicationBuilderExtensions
             >()
             .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
             .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>()
-            .AddSingleton<IValidateOptions<ApplicationLockOptions>, ApplicationLockOptionsValidator>();
+            .AddSingleton<IValidateOptions<ApplicationLockOptions>, ApplicationLockOptionsValidator>()
+            .AddSingleton<IValidateOptions<SecretsOptions>, SecretsOptionsValidator>();
         webApplicationBuilder
             .Services.AddOptions<ApplicationLockOptions>()
             .Bind(webApplicationBuilder.Configuration.GetSection("ApplicationLockSettings"))
             .ValidateOnStart();
+        webApplicationBuilder
+            .Services.AddOptions<SecretsOptions>()
+            .Bind(webApplicationBuilder.Configuration.GetSection("SecretsSettings"))
+            .ValidateOnStart();
+
+        // The cache is a singleton taking the tenant as an argument, so it holds no scoped
+        // dependency; the read seam that consults it is transient like the repositories calling it.
+        webApplicationBuilder.Services.AddSingleton<SecretValueCache>();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
