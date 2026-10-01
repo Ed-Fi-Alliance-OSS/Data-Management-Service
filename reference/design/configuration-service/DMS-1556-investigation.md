@@ -1199,21 +1199,32 @@ burst window, every run):
 
 ### Results — managed stacks, round 1 (4.1-H)
 
-160 captures in all: 40 per profile and workload class, at 0, 2, 8 and 14 s into round 1.
+184 healthy captures in all, at 0, 2, 8 and 14 s into round 1 of every run: 160 at
+default settings (40 per profile and workload class) and 24 in the headroom block (6 runs).
 Each capture is the interval `[requested, completed]`; the snapshot lies somewhere inside.
+(Corrected after review: this section first said 160 in all, with the headroom captures
+folded into the P-runner-approx stress row. Counts are from the per-block
+`artifacts/h41-*-stacks.csv` files and the run summaries; no workload was rerun.)
 
 | Profile, workloads | Captures | TP workers | Resolver wait | Authentication frame in a sync wait | Other sync wait | Parked | Round end vs the 0 s capture |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | P-dev, catalog | 40 | 16–17 | **0** | **0** | 0 | all | inside it (round ends before completion) |
-| P-dev, stress | 40 | 16–36 | **0** | **0** | 0 | all | inside it |
+| P-dev, stress | 40 | 16–36 | **0** | **0** | 0 | all but 1 worker in 1 capture¹ | inside it |
 | P-runner-approx, catalog | 40 | 5–23 | **0** | **0** | 0 | all | inside it |
-| P-runner-approx, stress (default and headroom) | 40 | 5–21 | **0** | **0** | 0 | all | inside it |
+| P-runner-approx, stress (default) | 40 | 12–21 | **0** | **0** | 0 | all | inside it |
+| P-runner-approx, stress (headroom, `max_connections=200`) | 24 | 5–21 | **0** | **0** | 0 | all | inside it |
+
+¹ Warm rep 2, the 2 s capture, after that round had ended: one of 36 workers was writing a
+Kestrel connection-accept log line to the Serilog file sink (`OSFileStreamStrategy.Write`
+under `RollingFileSink.Emit`). It is not a synchronous wait. (Corrected after review: the
+row first said "all".)
 
 - No capture shows a resolver wait (the Phase 0 signature: a synchronous `Task.InternalWait`
   under `JsonWebTokenHandler.ValidateSignature`), nor any thread in a synchronous wait
   with a JwtBearer, signing-key, token-manager or IdentityModel frame. Every worker is
-  parked. In the Phase 0 baselines, 40–41 workers were in the resolver wait at 2 s and
-  64–66 at 8 s, and 89–90 at 14 s under stress (0.5).
+  parked, except the one log write in footnote 1. In the Phase 0 baselines, 40–41
+  workers were in the resolver wait at 2 s and 64–66 at 8 s, and 89–90 at 14 s under
+  stress (0.5).
 - **Limitation:** a fixed-image round 1 ends within 0.3–1.9 s, inside the ~2.4 s 0 s
   capture, and the 2/8/14 s captures follow the round. These stacks therefore cannot be
   placed during the burst, and they show only that no worker is left blocked. The
@@ -1347,7 +1358,9 @@ evidence that authentication no longer blocks workers.
 - **Observed:**
   - Catalog 87/87: all 8,700 responses were 200 with validated bodies on both profiles,
     with round 1 well under a second (Phase 0: 13.6–16.7 s on P-runner-approx).
-  - No blocked authentication frame in any of the 184 captures.
+  - No blocked authentication frame in any of the 208 captures: 184 healthy (160
+    default, 24 headroom) and 24 outage. (Corrected after review; this line first said
+    184.)
   - Workers stay parked while 87 requests are held by a frozen database.
   - Stage-classified 503s carry `Retry-After`, and their Error lines name the category.
   - The JWKS answers 503 when no usable snapshot exists and 200 with keys while one does.
@@ -1399,6 +1412,25 @@ evidence that authentication no longer blocks workers.
   - The rerun streams the CMS log during pause bursts, runs 80 key-lock rounds, judges
     log completeness against the burst start, and records the time observed after
     removal and the first publication after it.
+- **Log-completeness records reconciled (after review, no rerun).** The four key-lock run
+  records (`o41-keylock-cold-*-outage.json` and their entries in both
+  `o41-*-index.json` files) said `cmsLogComplete=false`, while the report recomputed
+  `true`.
+  - **The old comparison:** the stored values are what a comparison of the log's first
+    line against the harness start (`summary.startedUtc`) gives, not against the burst
+    start. The driver's switch to the burst start landed after these records were
+    written, and they were not regenerated. This is inferred from the values: all 12
+    stored flags match the harness-start comparison, and the driver was committed only
+    in its final form.
+  - **Why only the key-lock runs:** a pause run's log is streamed from the run start,
+    before its warm-up, so its first line precedes the harness start. A key-lock run is
+    cold, and the old process is idle until the harness connects: its first line is
+    Kestrel accepting the token-mint connection, 2–5 ms after the harness start. The CMS restart and the burst follow 26–30 s later.
+  - **Recomputed against the burst start:** the first line precedes the burst by 30.1,
+    27.8, 26.2 and 28.6 s, so all four logs are complete. The records now say `true` and
+    keep the old value and both instants under `cmsLogCompleteReconciliation`. No
+    classification or signal count changes, because those were always computed over the
+    full retained log.
 - **Data.** The profile table holds 87 leftover E2E profiles besides the 87 harness
   profiles (above).
 
