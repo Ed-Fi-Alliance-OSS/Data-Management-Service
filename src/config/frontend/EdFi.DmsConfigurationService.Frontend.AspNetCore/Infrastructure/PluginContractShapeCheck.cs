@@ -154,7 +154,7 @@ internal static class PluginContractShapeCheck
 
         foreach (Type contract in registry.Entries.Select(entry => entry.Contract))
         {
-            if (!services.GetServices(contract).Any(instance => instance is null))
+            if (!ResolvesNull(services, contract))
             {
                 continue;
             }
@@ -184,6 +184,25 @@ internal static class PluginContractShapeCheck
 
         return findings;
     }
+
+    /// <summary>
+    /// Whether resolving the contract, as the collection or as the single instance host code asks
+    /// for, yields a null.
+    /// </summary>
+    /// <remarks>
+    /// Both, because they can disagree. A registration of the collection type, which the descriptor
+    /// rule refuses only in its closed form, decides what the collection yields but not what a single
+    /// resolve returns. The single resolve is made only for a contract the container reports as
+    /// registered: the secret resolver has no host default, and a null for a contract nobody
+    /// registered is the absence host code already handles.
+    /// </remarks>
+    private static bool ResolvesNull(IServiceProvider services, Type contract) =>
+        services.GetServices(contract).Any(instance => instance is null)
+        || (
+            services.GetService<IServiceProviderIsService>() is { } isService
+            && isService.IsService(contract)
+            && services.GetService(contract) is null
+        );
 
     /// <summary>
     /// The element type when <paramref name="serviceType"/> is <c>IEnumerable&lt;T&gt;</c>.

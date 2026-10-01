@@ -304,6 +304,64 @@ public class PluginContractShapeCheckTests
     }
 
     [TestFixture]
+    public class Given_a_null_hasher_factory_hidden_behind_a_collection_registration
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // The collection yields a real instance, so only a single resolve sees the null that
+            // host code would receive.
+            ServiceDescriptor descriptor = ServiceDescriptor.Singleton<IClientSecretHasher>(_ => null!);
+            IServiceCollection services = new ServiceCollection();
+            services.Add(descriptor);
+            services.AddSingleton<IEnumerable<IClientSecretHasher>>([A.Fake<IClientSecretHasher>()]);
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            _findings = PluginContractShapeCheck.CheckResolvedInstances(
+                CmsPluginContracts.Registry,
+                [("Hasher", descriptor)],
+                provider
+            );
+        }
+
+        [Test]
+        public void It_reports_the_null_the_single_resolve_returns()
+        {
+            _findings
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Contain("'EdFi.DmsConfigurationService.Secrets.IClientSecretHasher' resolved to null");
+        }
+    }
+
+    [TestFixture]
+    public class Given_no_registration_of_the_secret_resolver
+    {
+        private IReadOnlyList<string> _findings = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            using ServiceProvider provider = new ServiceCollection().BuildServiceProvider();
+
+            _findings = PluginContractShapeCheck.CheckResolvedInstances(
+                CmsPluginContracts.Registry,
+                [],
+                provider
+            );
+        }
+
+        [Test]
+        public void It_reports_no_problem()
+        {
+            _findings.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
     public class Given_a_plugin_factory_for_the_client_secret_hasher_that_returns_an_instance
     {
         private IReadOnlyList<string> _findings = null!;

@@ -502,11 +502,12 @@ function Invoke-ImageVersionProof {
     Write-Phase "Phase 1: image build and version stamping"
 
     $dmsDeclared = Get-DeclaredAssemblyVersion (Join-Path $repositoryRoot "src/dms/Directory.Build.props")
-    $pluginsDeclared = Get-DeclaredAssemblyVersion (Join-Path $repositoryRoot "src/plugins/Directory.Build.props")
 
-    # The second contract's declaration lives in its csproj rather than in a props file, which is
-    # what the module's reader knows and this phase does not have to.
+    # Both contracts through the module's readers. The plugin props declares VersionPrefix and
+    # derives AssemblyVersion from it, so its AssemblyVersion element is not a literal; the second
+    # contract's declaration lives in its csproj rather than in a props file.
     Import-Module (Join-Path $repositoryRoot "package-helpers.psm1") -Force
+    $pluginsDeclared = Get-PluginsContractVersion
     $customValidationDeclared = Get-CustomValidationContractVersion
 
     Assert-True `

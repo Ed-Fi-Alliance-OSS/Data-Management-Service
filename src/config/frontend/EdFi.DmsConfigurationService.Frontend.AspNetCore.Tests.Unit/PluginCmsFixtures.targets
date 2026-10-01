@@ -14,8 +14,8 @@
         src/dms/PluginFixtureStaging.targets, imported at the bottom, which is where those mechanics are
         explained. That file is host-agnostic despite where it sits; it is imported rather than copied
         so the two hosts cannot drift apart on how a fixture tree is decided stale. The coupling is
-        test-only and accepted: the Configuration Service pull request workflow does not watch
-        src/dms, so an edit to that file alone runs only the Data Management Service's staging tests.
+        test-only, and the Configuration Service pull request workflow names that one file in its
+        change filter, so an edit to it alone also runs the tests here.
     -->
     <ItemGroup>
         <PluginStagedFixture Include="$(MSBuildThisFileDirectory)../../../plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.CmsContributor/Acme.CmsContributor.csproj">
