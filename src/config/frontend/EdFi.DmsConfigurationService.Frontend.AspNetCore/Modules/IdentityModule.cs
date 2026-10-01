@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -38,9 +37,9 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
-        // access token. RevokeToken authenticates the caller itself via
-        // ITokenRevocationManager.AuthenticateClientAsync before deciding whether it owns the
-        // token being revoked, so the ASP.NET Core auth pipeline is not involved at all.
+        // access token. The ITokenRevocationManager authenticates the caller inside
+        // RevokeTokenAsync before deciding whether it owns the token being revoked, so the
+        // ASP.NET Core auth pipeline is not involved at all.
         endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
     }
 
@@ -374,7 +373,6 @@ public class IdentityModule : IEndpointModule
     }
 
     private static async Task<IResult> RevokeToken(
-        [FromServices] ITokenManager tokenManager,
         [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
@@ -418,10 +416,13 @@ public class IdentityModule : IEndpointModule
             return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
         }
 
-        // Check if token manager supports revocation via interface. In Keycloak mode no
-        // ITokenRevocationManager is registered, so this falls through to the bare 200 OK below
-        // and nothing is revoked — revocation is the external IdP's responsibility there.
-        if (tokenManager is not ITokenRevocationManager revocationManager)
+        // Resolved optionally for now: in Keycloak mode no ITokenRevocationManager is registered
+        // yet (DMS-1327 P3.2 adds it), so revocation stays the external IdP's responsibility there
+        // and this answers a bare 200 OK with nothing revoked, exactly as before. P4.1 makes the
+        // registration required at startup.
+        ITokenRevocationManager? revocationManager =
+            httpContext.RequestServices.GetService<ITokenRevocationManager>();
+        if (revocationManager is null)
         {
             return Results.Ok();
         }
@@ -433,36 +434,89 @@ public class IdentityModule : IEndpointModule
             return InvalidClient(httpContext, "Client authentication is required.");
         }
 
-        // Authentication hands back the client's stored canonical client_id rather than a bare
-        // success flag, and that is what the ownership check must be given. Tokens are minted
-        // from the canonical value, so passing the caller's own spelling would silently fail
-        // the comparison wherever the engine authenticated a mis-cased id — SQL Server's default
-        // collation does — leaving the caller with 200 OK and a still-live token.
-        string? canonicalClientId = await revocationManager.AuthenticateClientAsync(clientId, clientSecret);
-        if (canonicalClientId is null)
-        {
-            return InvalidClient(httpContext, "Invalid client or Invalid client credentials");
-        }
+        TokenRevocationRequest request = new(
+            clientId,
+            clientSecret,
+            model.Token,
+            ParseTokenTypeHint(model.Token_Type_Hint)
+        );
 
-        try
+        // The manager owns authenticate → ownership → mutate and classifies every dependency
+        // failure; an exception reaching this point is a programming fault and is left to the
+        // global exception handler rather than being swallowed into a 200 (DMS-1327 D-13).
+        TokenRevocationResult result = await revocationManager.RevokeTokenAsync(
+            request,
+            httpContext.RequestAborted
+        );
+
+        return result switch
         {
-            // A token belonging to another client is left alone by the manager and still
-            // reported as 200 OK, so nothing is leaked about whether it exists or who owns it.
-            await revocationManager.RevokeTokenAsync(model.Token, canonicalClientId);
-            return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
-        }
-        catch (Exception ex)
-        {
-            // Even if revocation fails, return 200 OK (RFC 7009 requirement). The 200 hides
-            // the failure from the caller by design, so log it here or it is lost entirely.
-            logger.LogError(
-                ex,
-                "Revocation failed for client {ClientId}; returning 200 OK per RFC 7009",
-                LoggingUtility.SanitizeForLog(canonicalClientId)
-            );
-            return Results.Ok();
-        }
+            // RFC 7009: revoked, unknown, invalid, expired, already revoked and another client's
+            // token are all the same empty 200, so nothing leaks about a token's existence or owner.
+            TokenRevocationResult.Completed => Results.Ok(),
+            TokenRevocationResult.InvalidClient => InvalidClient(
+                httpContext,
+                "Invalid client or Invalid client credentials"
+            ),
+            TokenRevocationResult.UnsupportedTokenType => OAuthError(
+                StatusCodes.Status400BadRequest,
+                "unsupported_token_type",
+                "The token type is not supported by the identity provider."
+            ),
+            TokenRevocationResult.InvalidRequest => OAuthError(
+                StatusCodes.Status400BadRequest,
+                "invalid_request",
+                "The identity provider rejected the revocation request."
+            ),
+            TokenRevocationResult.TemporarilyUnavailable unavailable => TemporarilyUnavailable(
+                logger,
+                clientId,
+                unavailable
+            ),
+            _ => throw new InvalidOperationException("The revocation manager returned an unknown result."),
+        };
     }
+
+    private static TokenTypeHint ParseTokenTypeHint(string? hint) =>
+        hint switch
+        {
+            "access_token" => TokenTypeHint.AccessToken,
+            "refresh_token" => TokenTypeHint.RefreshToken,
+            _ => TokenTypeHint.None,
+        };
+
+    /// <summary>
+    /// A dependency the revocation needed (database, signing keys, identity provider) failed, so
+    /// the outcome is unknown: the mutation may or may not have happened. The text therefore says
+    /// "could not be confirmed" and never claims the token is still live. Retrying is safe (DMS-1327
+    /// D-13.3). The manager has already logged the boundary and exception types at Error; this
+    /// records only the sanitized caller and the fixed boundary label.
+    /// </summary>
+    private static IResult TemporarilyUnavailable(
+        ILogger<IdentityModule> logger,
+        string clientId,
+        TokenRevocationResult.TemporarilyUnavailable unavailable
+    )
+    {
+        logger.LogWarning(
+            "Revocation for client {ClientId} could not be confirmed ({Reason}); answering 503",
+            LoggingUtility.SanitizeForLog(clientId),
+            unavailable.Reason
+        );
+        return OAuthError(
+            StatusCodes.Status503ServiceUnavailable,
+            "temporarily_unavailable",
+            "Token revocation could not be confirmed. Retry the request and confirm the token's state through the provider's validation path."
+        );
+    }
+
+    /// <summary>An RFC 6749 §5.2 error response with a fixed, service-owned description.</summary>
+    private static IResult OAuthError(int statusCode, string error, string errorDescription) =>
+        Results.Json(
+            new OAuthErrorResponse(error, errorDescription),
+            contentType: "application/json",
+            statusCode: statusCode
+        );
 
     /// <summary>
     /// The RFC 6749 §5.2 error response for a revocation caller that failed client
@@ -488,11 +542,7 @@ public class IdentityModule : IEndpointModule
             httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
         }
 
-        return Results.Json(
-            new OAuthErrorResponse("invalid_client", errorDescription),
-            contentType: "application/json",
-            statusCode: StatusCodes.Status401Unauthorized
-        );
+        return OAuthError(StatusCodes.Status401Unauthorized, "invalid_client", errorDescription);
     }
 
     /// <summary>

@@ -24,6 +24,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -1398,12 +1399,12 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
-    /// This <c>ITokenManager</c> fake implements no <c>ITokenRevocationManager</c>, the same as
-    /// <c>KeycloakTokenManager</c> in production — so there is no local way to check client
-    /// credentials, and the handler's no-op branch answers before authentication is even
-    /// considered. A bearer token presented here (there being no client credentials at all) is
-    /// simply irrelevant to the outcome; see RevocationOwnershipTests for the self-contained-mode
-    /// credential checks this fake cannot exercise.
+    /// Keycloak mode as it stands until DMS-1327 P3.2: no <c>ITokenRevocationManager</c> is
+    /// registered (this fixture removes the one the Test host's self-contained configuration
+    /// adds), so there is no local way to check client credentials and the handler's no-op branch
+    /// answers before authentication is even considered. A bearer token presented here (there
+    /// being no client credentials at all) is simply irrelevant to the outcome; see
+    /// RevocationOwnershipTests for the self-contained-mode credential checks.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller
@@ -1416,7 +1417,11 @@ public class OAuthEndpointErrorTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTransient(_ => _tokenManager);
+                collection.RemoveAll<ITokenRevocationManager>();
+            });
             _client = _factory.CreateClient();
             _response = await _client.PostAsync(
                 "/connect/revoke",
@@ -1508,16 +1513,48 @@ public class RevocationOwnershipTests
         A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
             .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
 
-    private static WebApplicationFactory<Program> CreateFactory(ITokenManager tokenManager) =>
+    private static WebApplicationFactory<Program> CreateFactory(OpenIddictTokenManager tokenManager) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(collection =>
             {
                 collection.AddTestAuthentication();
-                collection.AddTransient(_ => tokenManager);
+                collection.AddTransient<ITokenManager>(_ => tokenManager);
+                collection.AddTransient<ITokenRevocationManager>(_ => tokenManager);
             });
         });
+
+    /// <summary>
+    /// Injects a fault into the manager's ownership comparison, which sits between its dependency
+    /// boundaries and must not be relabelled as an outage.
+    /// </summary>
+    private sealed class FaultingOwnershipTokenManager(
+        IOpenIddictTokenRepository tokenRepository,
+        IClientSecretHasher secretHasher
+    )
+        : OpenIddictTokenManager(
+            Options.Create(new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
+            NullLogger<OpenIddictTokenManager>.Instance,
+            secretHasher,
+            tokenRepository
+        )
+    {
+        protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
+            throw new InvalidOperationException("ownership comparison fault");
+    }
+
+    private const string UnavailableDescription =
+        "Token revocation could not be confirmed. Retry the request and confirm the token's state through the provider's validation path.";
+
+    private static void AssertTemporarilyUnavailable(HttpResponseMessage response, JsonObject body)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        response.Headers.WwwAuthenticate.Should().BeEmpty();
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+        body["error_description"]!.GetValue<string>().Should().Be(UnavailableDescription);
+    }
 
     /// <summary>
     /// Creates a client that authenticates to /connect/revoke with HTTP Basic client credentials
@@ -2131,6 +2168,16 @@ public class RevocationOwnershipTests
         [SetUp]
         public async Task Setup()
         {
+            // A healthy key set is registered so the malformed token is judged against it; with
+            // no active key at all the manager reports an outage (503) instead, by design.
+            var (keyId, publicKeySpki, _) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
@@ -2151,6 +2198,239 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_anything() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// DMS-1327 D-13: a database failure during client authentication is an operational outcome,
+    /// answered 503 in the OAuth error format — not 200 (which would mask it) and not 401 (the
+    /// caller may well be valid). No challenge is sent: authentication did not fail.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_application_lookup_fails
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Throws(new InvalidOperationException("database unavailable"));
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_secret_hasher_fails
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .Throws(new InvalidOperationException("hasher unavailable"));
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_token_update_fails
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+                .Throws(new InvalidOperationException("database unavailable"));
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, jti));
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+    }
+
+    /// <summary>
+    /// The UPDATE reached the store and the connection then dropped before the result came back.
+    /// The caller gets 503 and a description that says "could not be confirmed"; deliberately, no
+    /// assertion here claims the token is revoked or still live (DMS-1327 D-13.3).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_whose_update_commits_but_the_response_is_lost
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+        private bool _updateReachedTheStore;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+                .Invokes(() => _updateReachedTheStore = true)
+                .Throws(new TimeoutException("the connection dropped while reading the result"));
+
+            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, jti));
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_had_issued_the_update() => _updateReachedTheStore.Should().BeTrue();
+
+        [Test]
+        public void It_answers_503_without_claiming_an_outcome() =>
+            AssertTemporarilyUnavailable(_response, _body);
+    }
+
+    /// <summary>
+    /// A programming fault inside the manager is not an outage: it reaches the global exception
+    /// handler as a 500 rather than being relabelled 503 or swallowed into 200 (DMS-1327 D-13.1,
+    /// Q-04). The OAuth-formatted 500 body is D-17's concern in P2.3; here only the status is pinned.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_ownership_comparison_faults
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(new FaultingOwnershipTokenManager(_tokenRepository, _secretHasher));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(
+                _client,
+                CreateSignedToken(signingKey, OwnerClientId, Guid.NewGuid())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_500() => _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
     }
 }
