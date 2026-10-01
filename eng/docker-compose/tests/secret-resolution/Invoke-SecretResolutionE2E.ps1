@@ -77,6 +77,7 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $composeDirectory "../.."))
 
 Import-Module (Join-Path $composeDirectory "env-utility.psm1") -Force
 Import-Module (Join-Path $composeDirectory "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $composeDirectory "database-safety.psm1") -Force
 
 # The deployment's identity. Everything that names a container, network, port or image is here, so
 # none of it can collide with a stack another launcher owns.
@@ -114,6 +115,29 @@ function Invoke-Compose {
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
     }
+}
+
+# Every process variable the harness sets, with the value it replaced, so a run inside an interactive
+# session leaves that session as it found it. A later start-local-config.ps1 in the same session would
+# otherwise inherit the harness's project, ports and images.
+$priorEnvironment = @{}
+
+function Set-HarnessVariable {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal helper of the non-interactive E2E harness; it sets only process variables it restores.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $Name, [string] $Value)
+
+    if (-not $priorEnvironment.ContainsKey($Name)) {
+        $priorEnvironment[$Name] = [System.Environment]::GetEnvironmentVariable($Name)
+    }
+    [System.Environment]::SetEnvironmentVariable($Name, $Value)
+}
+
+function Restore-HarnessEnvironment {
+    foreach ($name in $priorEnvironment.Keys) {
+        [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+    }
+    $priorEnvironment.Clear()
 }
 
 function Wait-HttpHealthy {
@@ -187,7 +211,7 @@ function New-HarnessEnvironmentFile {
     # set in this process: a port, URL, image or cache setting inherited from the caller's shell
     # cannot replace the harness's own.
     foreach ($key in $Overrides.Keys) {
-        Set-Item -Path "Env:$key" -Value ([string]$Overrides[$key])
+        Set-HarnessVariable -Name $key -Value ([string]$Overrides[$key])
     }
 }
 
@@ -196,14 +220,26 @@ function Remove-Deployment {
     [CmdletBinding()]
     param()
 
-    if (Test-Path -LiteralPath $environmentFile) {
-        Push-Location $composeDirectory
-        try {
+    Push-Location $composeDirectory
+    try {
+        if (Test-Path -LiteralPath $environmentFile) {
             & docker compose @composeFiles --env-file $environmentFile -p $project down -v --remove-orphans
         }
-        finally {
-            Pop-Location
+        else {
+            # Without the environment file the compose files cannot be interpolated, but the project's
+            # containers, networks and volumes carry its label, so they can still be found and removed.
+            & docker compose -p $project down -v --remove-orphans
         }
+        $downExitCode = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+
+    # The work directory holds the environment file a retried -Down needs, so it is kept until the
+    # deployment is known to be gone.
+    if ($downExitCode -ne 0) {
+        throw "docker compose down for project $project failed with exit code $downExitCode; the deployment and $workDirectory were left in place. Retry with -Down."
     }
 
     & docker network rm $names.SECRETS_E2E_NETWORK *> $null
@@ -212,164 +248,187 @@ function Remove-Deployment {
     }
 }
 
-# Every variable the compose files read, set for this process too, because Compose gives the process
-# environment precedence over --env-file and a value inherited from the caller's shell must not win.
-foreach ($name in $names.Keys) {
-    Set-Item -Path "Env:$name" -Value $names[$name]
-}
-$env:SECRETS_E2E_SECRETS_DIRECTORY = $secretsDirectory
-$env:CMS_PLUGINS_MOUNT_SOURCE = $pluginRoot
-
-if ($Down) {
-    Remove-Deployment
-    return
-}
-
-if (-not $ResultsDirectory) {
-    $ResultsDirectory = Join-Path $workDirectory "results"
-}
-$ResultsDirectory = [System.IO.Path]::GetFullPath($ResultsDirectory)
-
-Remove-Deployment
-$null = New-Item -ItemType Directory -Path $workDirectory, $pluginRoot, $secretsDirectory, $ResultsDirectory -Force
-
-$baseValues = ReadValuesFromEnvFile (Join-Path $composeDirectory ".env.e2e")
-$postgresPassword = $baseValues["POSTGRES_PASSWORD"]
-$configUrlInNetwork = "http://ed-fi-api-config:$configPort"
-$claimsMountSource = Initialize-E2EClaimsWorkspace
-
-New-HarnessEnvironmentFile -Overrides @{
-    POSTGRES_PORT = $postgresPort
-    DMS_HTTP_PORTS = $dmsPort
-    DMS_CONFIG_ASPNETCORE_HTTP_PORTS = $configPort
-    CONFIG_SERVICE_URL = $configUrlInNetwork
-    OAUTH_TOKEN_ENDPOINT = "$configUrlInNetwork/connect/token"
-    SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = "$configUrlInNetwork/connect/token"
-    SELF_CONTAINED_DMS_JWT_AUTHORITY = $configUrlInNetwork
-    SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS = "$configUrlInNetwork/.well-known/openid-configuration"
-    DMS_JWT_AUTHORITY = $configUrlInNetwork
-    DMS_JWT_METADATA_ADDRESS = "$configUrlInNetwork/.well-known/openid-configuration"
-    DMS_CONFIG_IDENTITY_AUTHORITY = $configUrlInNetwork
-    DMS_CONFIG_IDENTITY_PROVIDER = "self-contained"
-    DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS = $CacheExpirationSeconds
-    DMS_CONFIG_DOCKER_IMAGE = "ed-fi-api-config-secrets-e2e"
-    DMS_DOCKER_IMAGE = "ed-fi-api-secrets-e2e"
-    DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $claimsMountSource
-    CMS_PLUGINS_MOUNT_SOURCE = $pluginRoot
-}
-
-Write-Output "Publishing $pluginName framework-dependent into the plugin root..."
-& dotnet publish (Join-Path $repoRoot "src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/$pluginName/$pluginName.csproj") `
-    --configuration $Configuration --no-self-contained --output (Join-Path $pluginRoot $pluginName) --nologo
-if ($LASTEXITCODE -ne 0) {
-    throw "Publishing $pluginName failed with exit code $LASTEXITCODE."
-}
-
-# The store the fixture reads. The data store password is the real one, held only here; the test
-# owns every other entry, including the ones it rotates.
-@{ $datastoreSecretName = $postgresPassword } | ConvertTo-Json | Set-Content -LiteralPath $secretsFile
-
-$succeeded = $false
-Push-Location $composeDirectory
 try {
-    & docker network inspect $names.SECRETS_E2E_NETWORK *> $null
+    # Every variable the compose files read, set for this process too, because Compose gives the process
+    # environment precedence over --env-file and a value inherited from the caller's shell must not win.
+    foreach ($name in $names.Keys) {
+        Set-HarnessVariable -Name $name -Value $names[$name]
+    }
+    Set-HarnessVariable -Name SECRETS_E2E_SECRETS_DIRECTORY -Value $secretsDirectory
+    Set-HarnessVariable -Name CMS_PLUGINS_MOUNT_SOURCE -Value $pluginRoot
+
+    if ($Down) {
+        Remove-Deployment
+        return
+    }
+
+    if (-not $ResultsDirectory) {
+        $ResultsDirectory = Join-Path $workDirectory "results"
+    }
+    $ResultsDirectory = [System.IO.Path]::GetFullPath($ResultsDirectory)
+
+    Remove-Deployment
+    $null = New-Item -ItemType Directory -Path $workDirectory, $pluginRoot, $secretsDirectory, $ResultsDirectory -Force
+
+    # Read as Compose resolves them, so a value set in the caller's shell, which Compose, the
+    # Configuration Service and provisioning all use, is the one the harness uses too.
+    $baseValues = ReadValuesFromEnvFile (Join-Path $composeDirectory ".env.e2e")
+    function Get-BaseValue([string] $Name) {
+        Get-RequiredComposeResolvedEnvValue -EnvironmentValues $baseValues -Name $Name
+    }
+    $postgresPassword = Get-BaseValue "POSTGRES_PASSWORD"
+    $databaseName = Get-BaseValue "E2E_DATABASE_NAME"
+    $configUrlInNetwork = "http://ed-fi-api-config:$configPort"
+    $claimsMountSource = Initialize-E2EClaimsWorkspace
+
+    New-HarnessEnvironmentFile -Overrides @{
+        POSTGRES_PORT = $postgresPort
+        DMS_HTTP_PORTS = $dmsPort
+        DMS_CONFIG_ASPNETCORE_HTTP_PORTS = $configPort
+        CONFIG_SERVICE_URL = $configUrlInNetwork
+        OAUTH_TOKEN_ENDPOINT = "$configUrlInNetwork/connect/token"
+        SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = "$configUrlInNetwork/connect/token"
+        SELF_CONTAINED_DMS_JWT_AUTHORITY = $configUrlInNetwork
+        SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS = "$configUrlInNetwork/.well-known/openid-configuration"
+        DMS_JWT_AUTHORITY = $configUrlInNetwork
+        DMS_JWT_METADATA_ADDRESS = "$configUrlInNetwork/.well-known/openid-configuration"
+        DMS_CONFIG_IDENTITY_AUTHORITY = $configUrlInNetwork
+        DMS_CONFIG_IDENTITY_PROVIDER = "self-contained"
+        DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS = $CacheExpirationSeconds
+        DMS_CONFIG_DOCKER_IMAGE = "ed-fi-api-config-secrets-e2e"
+        DMS_DOCKER_IMAGE = "ed-fi-api-secrets-e2e"
+        DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $claimsMountSource
+        CMS_PLUGINS_MOUNT_SOURCE = $pluginRoot
+    }
+
+    Write-Output "Publishing $pluginName framework-dependent into the plugin root..."
+    & dotnet publish (Join-Path $repoRoot "src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/$pluginName/$pluginName.csproj") `
+        --configuration $Configuration --no-self-contained --output (Join-Path $pluginRoot $pluginName) --nologo
     if ($LASTEXITCODE -ne 0) {
-        & docker network create $names.SECRETS_E2E_NETWORK | Out-Null
+        throw "Publishing $pluginName failed with exit code $LASTEXITCODE."
     }
 
-    if (-not $SkipImageBuild) {
-        Write-Output "Building the Configuration Service and DMS images under the harness's own tags..."
-        Invoke-Compose -Arguments @("build", "config", "dms")
+    # The store the fixture reads. The data store password is the real one, held only here; the test
+    # owns every other entry, including the ones it rotates.
+    @{ $datastoreSecretName = $postgresPassword } | ConvertTo-Json | Set-Content -LiteralPath $secretsFile
+
+    $succeeded = $false
+    Push-Location $composeDirectory
+    try {
+        & docker network inspect $names.SECRETS_E2E_NETWORK *> $null
+        if ($LASTEXITCODE -ne 0) {
+            & docker network create $names.SECRETS_E2E_NETWORK | Out-Null
+        }
+
+        if (-not $SkipImageBuild) {
+            Write-Output "Building the Configuration Service and DMS images under the harness's own tags..."
+            Invoke-Compose -Arguments @("build", "config", "dms")
+        }
+
+        Invoke-Compose -Arguments @("up", "--detach", "db")
+        Wait-PostgresqlReady
+
+        $identityDbParams = @{
+            EnvironmentFile = $environmentFile
+            DbUser = "postgres"
+            DbPort = "ENV:POSTGRES_PORT"
+            DbName = "ENV:DMS_CONFIG_DATABASE_NAME"
+            PostgresContainerName = $names.SECRETS_E2E_POSTGRES_CONTAINER
+        }
+        ./setup-openiddict.ps1 -InitDb @identityDbParams
+
+        Invoke-Compose -Arguments @("up", "--detach", "config")
+        Wait-HttpHealthy -Url "http://localhost:$configPort/health" -Name "Configuration Service"
+
+        $clientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues (ReadValuesFromEnvFile $environmentFile)
+        $bounds = @{
+            ClientSecretMinimumLength = $clientSecrets.ClientSecretMinimumLength
+            ClientSecretMaximumLength = $clientSecrets.ClientSecretMaximumLength
+        }
+        ./setup-openiddict.ps1 -InsertData -NewClientSecret $clientSecrets.DmsConfigurationServiceClientSecret @bounds @identityDbParams
+        ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" `
+            -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $clientSecrets.CmsReadOnlyAccessClientSecret @bounds @identityDbParams
+
+        Write-Output "Provisioning the DMS database with SchemaTools ddl provision..."
+        ./provision-e2e-database.ps1 -EnvironmentFile $environmentFile -DatabaseName $databaseName `
+            -PostgresContainerName $names.SECRETS_E2E_POSTGRES_CONTAINER -Configuration $Configuration
+
+        # DMS will not start without a data store to load, so the one the capability proof uses is
+        # created first, through the Configuration Service's own endpoint and validator, carrying only a
+        # reference to its password. DMS's startup load is then already a read through the resolver.
+        $cmsToken = (Invoke-RestMethod -Method Post -Uri "http://localhost:$configPort/connect/token" -Body @{
+                client_id = "DmsConfigurationService"
+                client_secret = $clientSecrets.DmsConfigurationServiceClientSecret
+                grant_type = "client_credentials"
+                scope = "edfi_admin_api/full_access"
+            }).access_token
+        $dataStore = Invoke-RestMethod -Method Post -Uri "http://localhost:$configPort/v3/dataStores" `
+            -Headers @{ Authorization = "Bearer $cmsToken" } -ContentType "application/json" -Body (@{
+                dataStoreType = "Test"
+                name = "Secret resolution capability"
+                connectionString = "host=dms-postgresql;port=5432;username=postgres;password=`${secret:$datastoreSecretName};database=$($databaseName)"
+            } | ConvertTo-Json)
+
+        Invoke-Compose -Arguments @("up", "--detach", "dms")
+        Wait-HttpHealthy -Url "http://localhost:$dmsPort/health" -Name "DMS"
+
+        Set-HarnessVariable -Name SECRETS_E2E_CMS_URL -Value "http://localhost:$configPort"
+        Set-HarnessVariable -Name SECRETS_E2E_DMS_URL -Value ("http://localhost:$dmsPort/$(Get-ComposeResolvedEnvValue -EnvironmentValues $baseValues -Name "PATH_BASE")")
+        Set-HarnessVariable -Name SECRETS_E2E_CMS_CLIENT_ID -Value "DmsConfigurationService"
+        Set-HarnessVariable -Name SECRETS_E2E_CMS_CLIENT_SECRET -Value $clientSecrets.DmsConfigurationServiceClientSecret
+        Set-HarnessVariable -Name SECRETS_E2E_ENCRYPTION_KEY -Value (Get-BaseValue "DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+        Set-HarnessVariable -Name SECRETS_E2E_SECRETS_FILE -Value $secretsFile
+        Set-HarnessVariable -Name SECRETS_E2E_DATASTORE_SECRET -Value $datastoreSecretName
+        Set-HarnessVariable -Name SECRETS_E2E_DATASTORE_ID -Value $dataStore.id
+        Set-HarnessVariable -Name SECRETS_E2E_DATASTORE_DATABASE -Value $databaseName
+        Set-HarnessVariable -Name SECRETS_E2E_CACHE_EXPIRATION_SECONDS -Value $CacheExpirationSeconds
+
+        Write-Output "Running the SecretResolutionPlugin proofs..."
+        & dotnet test (Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj") `
+            --configuration $Configuration --filter "TestCategory=SecretResolutionPlugin" `
+            --logger "trx;LogFileName=$(Join-Path $ResultsDirectory 'secret-resolution-e2e.trx')" `
+            --logger "console;verbosity=normal"
+        if ($LASTEXITCODE -ne 0) {
+            throw "The SecretResolutionPlugin proofs failed with exit code $LASTEXITCODE."
+        }
+        $succeeded = $true
     }
+    finally {
+        if (-not $succeeded) {
+            foreach ($container in $names.SECRETS_E2E_CONFIG_CONTAINER, $names.SECRETS_E2E_DMS_CONTAINER) {
+                Write-Output "---- last log lines of $container ----"
+                & docker logs --tail 60 $container 2>&1 | Write-Output
+            }
+        }
+        Pop-Location
 
-    Invoke-Compose -Arguments @("up", "--detach", "db")
-    Wait-PostgresqlReady
+        if ($KeepStack) {
+            Write-Output "Deployment left running (project $project). Remove it with -Down."
+        }
+        else {
+            # The results directory sits under the work directory by default; keep a copy outside it.
+            if ($ResultsDirectory.StartsWith($workDirectory, [System.StringComparison]::Ordinal)) {
+                $kept = Join-Path ([System.IO.Path]::GetTempPath()) "dms-secret-resolution-e2e-results"
+                $null = New-Item -ItemType Directory -Path $kept -Force
+                Copy-Item -Path (Join-Path $ResultsDirectory "*") -Destination $kept -Force -ErrorAction SilentlyContinue
+                Write-Output "Results copied to $kept"
+            }
 
-    $identityDbParams = @{
-        EnvironmentFile = $environmentFile
-        DbUser = "postgres"
-        DbPort = "ENV:POSTGRES_PORT"
-        DbName = "ENV:DMS_CONFIG_DATABASE_NAME"
-        PostgresContainerName = $names.SECRETS_E2E_POSTGRES_CONTAINER
+            if ($succeeded) {
+                Remove-Deployment
+            }
+            else {
+                # The run's own failure is the one to report; a teardown failure on top of it is a warning.
+                try {
+                    Remove-Deployment
+                }
+                catch {
+                    Write-Warning $_.Exception.Message
+                }
+            }
+        }
     }
-    ./setup-openiddict.ps1 -InitDb @identityDbParams
-
-    Invoke-Compose -Arguments @("up", "--detach", "config")
-    Wait-HttpHealthy -Url "http://localhost:$configPort/health" -Name "Configuration Service"
-
-    $clientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues (ReadValuesFromEnvFile $environmentFile)
-    $bounds = @{
-        ClientSecretMinimumLength = $clientSecrets.ClientSecretMinimumLength
-        ClientSecretMaximumLength = $clientSecrets.ClientSecretMaximumLength
-    }
-    ./setup-openiddict.ps1 -InsertData -NewClientSecret $clientSecrets.DmsConfigurationServiceClientSecret @bounds @identityDbParams
-    ./setup-openiddict.ps1 -InsertData -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" `
-        -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $clientSecrets.CmsReadOnlyAccessClientSecret @bounds @identityDbParams
-
-    Write-Output "Provisioning the DMS database with SchemaTools ddl provision..."
-    ./provision-e2e-database.ps1 -EnvironmentFile $environmentFile -DatabaseName $baseValues["E2E_DATABASE_NAME"] `
-        -PostgresContainerName $names.SECRETS_E2E_POSTGRES_CONTAINER -Configuration $Configuration
-
-    # DMS will not start without a data store to load, so the one the capability proof uses is
-    # created first, through the Configuration Service's own endpoint and validator, carrying only a
-    # reference to its password. DMS's startup load is then already a read through the resolver.
-    $cmsToken = (Invoke-RestMethod -Method Post -Uri "http://localhost:$configPort/connect/token" -Body @{
-            client_id = "DmsConfigurationService"
-            client_secret = $clientSecrets.DmsConfigurationServiceClientSecret
-            grant_type = "client_credentials"
-            scope = "edfi_admin_api/full_access"
-        }).access_token
-    $dataStore = Invoke-RestMethod -Method Post -Uri "http://localhost:$configPort/v3/dataStores" `
-        -Headers @{ Authorization = "Bearer $cmsToken" } -ContentType "application/json" -Body (@{
-            dataStoreType = "Test"
-            name = "Secret resolution capability"
-            connectionString = "host=dms-postgresql;port=5432;username=postgres;password=`${secret:$datastoreSecretName};database=$($baseValues["E2E_DATABASE_NAME"])"
-        } | ConvertTo-Json)
-
-    Invoke-Compose -Arguments @("up", "--detach", "dms")
-    Wait-HttpHealthy -Url "http://localhost:$dmsPort/health" -Name "DMS"
-
-    $env:SECRETS_E2E_CMS_URL = "http://localhost:$configPort"
-    $env:SECRETS_E2E_DMS_URL = "http://localhost:$dmsPort/$($baseValues["PATH_BASE"])"
-    $env:SECRETS_E2E_CMS_CLIENT_ID = "DmsConfigurationService"
-    $env:SECRETS_E2E_CMS_CLIENT_SECRET = $clientSecrets.DmsConfigurationServiceClientSecret
-    $env:SECRETS_E2E_ENCRYPTION_KEY = $baseValues["DMS_CONFIG_DATABASE_ENCRYPTION_KEY"]
-    $env:SECRETS_E2E_SECRETS_FILE = $secretsFile
-    $env:SECRETS_E2E_DATASTORE_SECRET = $datastoreSecretName
-    $env:SECRETS_E2E_DATASTORE_ID = $dataStore.id
-    $env:SECRETS_E2E_DATASTORE_DATABASE = $baseValues["E2E_DATABASE_NAME"]
-    $env:SECRETS_E2E_CACHE_EXPIRATION_SECONDS = $CacheExpirationSeconds
-
-    Write-Output "Running the SecretResolutionPlugin proofs..."
-    & dotnet test (Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj") `
-        --configuration $Configuration --filter "TestCategory=SecretResolutionPlugin" `
-        --logger "trx;LogFileName=$(Join-Path $ResultsDirectory 'secret-resolution-e2e.trx')" `
-        --logger "console;verbosity=normal"
-    if ($LASTEXITCODE -ne 0) {
-        throw "The SecretResolutionPlugin proofs failed with exit code $LASTEXITCODE."
-    }
-    $succeeded = $true
 }
 finally {
-    if (-not $succeeded) {
-        foreach ($container in $names.SECRETS_E2E_CONFIG_CONTAINER, $names.SECRETS_E2E_DMS_CONTAINER) {
-            Write-Output "---- last log lines of $container ----"
-            & docker logs --tail 60 $container 2>&1 | Write-Output
-        }
-    }
-    Pop-Location
-
-    if ($KeepStack) {
-        Write-Output "Deployment left running (project $project). Remove it with -Down."
-    }
-    else {
-        # The results directory sits under the work directory by default; keep a copy outside it.
-        if ($ResultsDirectory.StartsWith($workDirectory, [System.StringComparison]::Ordinal)) {
-            $kept = Join-Path ([System.IO.Path]::GetTempPath()) "dms-secret-resolution-e2e-results"
-            $null = New-Item -ItemType Directory -Path $kept -Force
-            Copy-Item -Path (Join-Path $ResultsDirectory "*") -Destination $kept -Force -ErrorAction SilentlyContinue
-            Write-Output "Results copied to $kept"
-        }
-        Remove-Deployment
-    }
+    Restore-HarnessEnvironment
 }
