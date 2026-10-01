@@ -702,8 +702,7 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
         DocumentUuid documentUuid,
         UpsertActionAuthorization actionAuthorization,
         short? creatorOwnershipTokenId = null,
-        IReadOnlyList<short>? ownershipTokenIds = null,
-        Dictionary<string, string>? headers = null
+        IReadOnlyList<short>? ownershipTokenIds = null
     ) =>
         _context.UpsertWithActionAuthorizationAsync(
             project,
@@ -713,8 +712,7 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
             actionAuthorization,
             _prefixes,
             creatorOwnershipTokenId,
-            ownershipTokenIds,
-            headers
+            ownershipTokenIds
         );
 
     /// <summary>

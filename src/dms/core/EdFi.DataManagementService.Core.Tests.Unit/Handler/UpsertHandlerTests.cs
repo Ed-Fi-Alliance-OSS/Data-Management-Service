@@ -1805,15 +1805,111 @@ actual: {requestInfo.FrontendResponse.Body}
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
+            public IUpsertRequest? CapturedRequest { get; private set; }
+
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
+                CapturedRequest = upsertRequest;
                 return Task.FromResult<UpsertResult>(
                     new UpdateSuccess(upsertRequest.DocumentUuid, "\"test-etag\"")
                 );
             }
         }
 
-        private readonly RecordingLogger _logger = new();
+        private const string SentinelTag = "\"sentinel-7f3a\"";
+        private const string RequestTraceId = "if-none-match-trace";
+
+        private RecordingLogger _logger = new();
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet(RequestTraceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.POST;
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["If-None-Match"] = SentinelTag,
+                },
+            };
+
+            _logger = new RecordingLogger();
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new UpsertHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_logs_once_at_debug_that_if_none_match_was_ignored()
+        {
+            _logger
+                .Records.Where(record =>
+                    record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+                )
+                .Should()
+                .ContainSingle();
+        }
+
+        [Test]
+        public void It_logs_the_method_and_trace_id_as_structured_properties()
+        {
+            var record = _logger.Records.Single(record =>
+                record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+            );
+
+            record.Properties["Method"].Should().Be("POST");
+            record.Properties["TraceId"].Should().Be(RequestTraceId);
+        }
+
+        [Test]
+        public void It_does_not_log_the_header_value_in_the_message_or_any_property()
+        {
+            var record = _logger.Records.Single(record =>
+                record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+            );
+
+            record.Message.Should().NotContain("sentinel-7f3a");
+            record
+                .Properties.Values.Select(value => value?.ToString())
+                .Should()
+                .NotContain(value => value != null && value.Contains("sentinel-7f3a"));
+        }
+
+        [Test]
+        public void It_passes_no_write_precondition_to_the_repository()
+        {
+            _repository.CapturedRequest!.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
+        }
+    }
+
+    /// <summary>
+    /// DMS-1576: the frontend passes a blank If-None-Match through to core. The helper only checks for the
+    /// header's presence, so a blank value is still logged once as ignored; the write is unaffected.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_That_Carries_A_Blank_If_None_Match_Header : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IUpsertRequest? CapturedRequest { get; private set; }
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                CapturedRequest = upsertRequest;
+                return Task.FromResult<UpsertResult>(
+                    new UpdateSuccess(upsertRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private RecordingLogger _logger = new();
+        private readonly Repository _repository = new();
         private readonly RequestInfo _requestInfo = UpsertRequestInfoWithRelationalMappingSet();
 
         [SetUp]
@@ -1824,32 +1920,33 @@ actual: {requestInfo.FrontendResponse.Body}
             {
                 Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["If-None-Match"] = "*",
+                    ["If-None-Match"] = "",
                 },
             };
+            _logger = new RecordingLogger();
 
             var serviceProvider = A.Fake<IServiceProvider>();
-            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
-                .Returns(new Repository());
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
 
             await new UpsertHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
         }
 
-        // One test method: the fixture's fields are shared across every [Test] in this class (NUnit
-        // reuses a single fixture instance), so a second [Test] here would re-run Setup and double
-        // the accumulated RecordingLogger entries rather than start clean.
         [Test]
-        public void It_logs_once_at_debug_that_if_none_match_was_ignored_without_the_header_value()
+        public void It_logs_once_at_debug_that_the_blank_if_none_match_was_ignored()
         {
             _logger
                 .Records.Where(record =>
                     record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
                 )
                 .Should()
-                .ContainSingle()
-                .Which.Message.Should()
-                .NotContain("*");
+                .ContainSingle();
+        }
+
+        [Test]
+        public void It_passes_no_write_precondition_to_the_repository()
+        {
+            _repository.CapturedRequest!.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
         }
     }
 

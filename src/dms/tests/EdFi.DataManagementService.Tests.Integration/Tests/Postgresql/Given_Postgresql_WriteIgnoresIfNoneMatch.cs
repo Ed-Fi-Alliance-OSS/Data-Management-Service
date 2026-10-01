@@ -72,4 +72,14 @@ public sealed class Given_Postgresql_WriteIgnoresIfNoneMatch : PostgresqlApiInte
         WriteIgnoresIfNoneMatchScenario.It_rejects_a_stale_if_match_even_when_if_none_match_is_present(
             Harness
         );
+
+    [Test]
+    public Task It_honors_a_wildcard_if_match_on_a_post_to_an_existing_document() =>
+        WriteIgnoresIfNoneMatchScenario.It_honors_a_wildcard_if_match_on_a_post_to_an_existing_document(
+            Harness
+        );
+
+    [Test]
+    public Task It_rejects_a_wildcard_if_match_on_a_post_of_a_new_document() =>
+        WriteIgnoresIfNoneMatchScenario.It_rejects_a_wildcard_if_match_on_a_post_of_a_new_document(Harness);
 }
