@@ -39,6 +39,10 @@ public class DataStoreTests : DatabaseTest
         Configuration.DatabaseOptions,
         NullLogger<DataStoreDerivativeRepository>.Instance,
         new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+        TestConnectionStringReader.Create(
+            new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            new TenantContextProvider()
+        ),
         new TestAuditContext(),
         new TenantContextProvider()
     );
@@ -51,6 +55,10 @@ public class DataStoreTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DataStoreRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            TestConnectionStringReader.Create(
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TenantContextProvider()
+            ),
             _routeContextRepository,
             _derivativeRepository,
             new TestAuditContext(),
@@ -300,7 +308,7 @@ public class DataStoreTests : DatabaseTest
             insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
             var id = ((DataStoreInsertResult.Success)insertResult).Id;
 
-            _storedCipherTextBeforeRotation = await StoredCipherText(id);
+            _storedCipherTextBeforeRotation = await StoredCipherText(_repository, id);
 
             _rotatedKeyEncryptionService = new ConnectionStringEncryptionService(
                 Options.Create(
@@ -318,6 +326,7 @@ public class DataStoreTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 _rotatedKeyEncryptionService,
+                TestConnectionStringReader.Create(_rotatedKeyEncryptionService, new TenantContextProvider()),
                 _routeContextRepository,
                 _derivativeRepository,
                 new TestAuditContext(),
@@ -335,16 +344,17 @@ public class DataStoreTests : DatabaseTest
             );
             updateResult.Should().BeOfType<DataStoreUpdateResult.Success>();
 
-            _storedCipherTextAfterRotation = await StoredCipherText(id);
+            _storedCipherTextAfterRotation = await StoredCipherText(repositoryOnRotatedKey, id);
         }
 
         /// <summary>
-        /// A get returns the stored bytes as Base64 without decrypting them, so this is the cipher text
-        /// as persisted.
+        /// A get decrypts the stored value and, when it carries no secret reference, returns the stored
+        /// bytes as Base64 unchanged, so this is the cipher text as persisted. Each read goes through a
+        /// repository on the key the value was written under, because a read now has to decrypt it.
         /// </summary>
-        private async Task<string> StoredCipherText(int id)
+        private static async Task<string> StoredCipherText(IDataStoreRepository repository, int id)
         {
-            var getResult = await _repository.GetDataStore(id);
+            var getResult = await repository.GetDataStore(id);
             getResult.Should().BeOfType<DataStoreGetResult.Success>();
 
             var storedConnectionString = ((DataStoreGetResult.Success)getResult)

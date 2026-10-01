@@ -21,6 +21,7 @@ public class DataStoreDerivativeRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DataStoreDerivativeRepository> logger,
     IConnectionStringEncryptionService encryptionService,
+    IConnectionStringReader connectionStringReader,
     IAuditContext auditContext,
     ITenantContextProvider tenantContextProvider
 ) : IDataStoreDerivativeRepository
@@ -144,15 +145,29 @@ public class DataStoreDerivativeRepository(
                 }
             );
 
-            var derivatives = results.Select(row => new DataStoreDerivativeResponse
+            // Awaited row by row here, inside the try, so a read failure reaches the failure arm
+            // rather than escaping while the response is serialized.
+            List<DataStoreDerivativeResponse> derivatives = [];
+            foreach (var row in results)
             {
-                Id = row.Id,
-                DataStoreId = row.DataStoreId,
-                DerivativeType = row.DerivativeType,
-                ConnectionString = row.ConnectionString is null
-                    ? null
-                    : Convert.ToBase64String(row.ConnectionString),
-            });
+                derivatives.Add(
+                    new DataStoreDerivativeResponse
+                    {
+                        Id = row.Id,
+                        DataStoreId = row.DataStoreId,
+                        DerivativeType = row.DerivativeType,
+                        ConnectionString = await connectionStringReader.ReadAsync(
+                            row.ConnectionString,
+                            new ConnectionStringRow.Derivative(
+                                row.Id,
+                                row.DataStoreId,
+                                row.DerivativeType,
+                                DerivativeReadMode.Resource
+                            )
+                        ),
+                    }
+                );
+            }
 
             return new DataStoreDerivativeQueryResult.Success(derivatives);
         }
@@ -192,9 +207,15 @@ public class DataStoreDerivativeRepository(
                 Id = result.Value.Id,
                 DataStoreId = result.Value.DataStoreId,
                 DerivativeType = result.Value.DerivativeType,
-                ConnectionString = result.Value.ConnectionString is null
-                    ? null
-                    : Convert.ToBase64String(result.Value.ConnectionString),
+                ConnectionString = await connectionStringReader.ReadAsync(
+                    result.Value.ConnectionString,
+                    new ConnectionStringRow.Derivative(
+                        result.Value.Id,
+                        result.Value.DataStoreId,
+                        result.Value.DerivativeType,
+                        DerivativeReadMode.Resource
+                    )
+                ),
             };
 
             return new DataStoreDerivativeGetResult.Success(derivative);
@@ -355,15 +376,29 @@ public class DataStoreDerivativeRepository(
                 byte[]? ConnectionString
             )>(sql, new { DataStoreId = dataStoreId, TenantId });
 
-            var derivatives = results.Select(row => new DataStoreDerivativeResponse
+            // Awaited row by row here, inside the try, so a read failure reaches the failure arm
+            // rather than escaping while the response is serialized.
+            List<DataStoreDerivativeResponse> derivatives = [];
+            foreach (var row in results)
             {
-                Id = row.Id,
-                DataStoreId = row.DataStoreId,
-                DerivativeType = row.DerivativeType,
-                ConnectionString = row.ConnectionString is null
-                    ? null
-                    : Convert.ToBase64String(row.ConnectionString),
-            });
+                derivatives.Add(
+                    new DataStoreDerivativeResponse
+                    {
+                        Id = row.Id,
+                        DataStoreId = row.DataStoreId,
+                        DerivativeType = row.DerivativeType,
+                        ConnectionString = await connectionStringReader.ReadAsync(
+                            row.ConnectionString,
+                            new ConnectionStringRow.Derivative(
+                                row.Id,
+                                row.DataStoreId,
+                                row.DerivativeType,
+                                DerivativeReadMode.PartOfDataStore
+                            )
+                        ),
+                    }
+                );
+            }
 
             return new DataStoreDerivativeQueryByDataStoreResult.Success(derivatives);
         }
@@ -396,15 +431,29 @@ public class DataStoreDerivativeRepository(
                 byte[]? ConnectionString
             )>(sql, new { DataStoreIds = dataStoreIds, TenantId });
 
-            var derivatives = results.Select(row => new DataStoreDerivativeResponse
+            // Awaited row by row here, inside the try, so a read failure reaches the failure arm
+            // rather than escaping while the response is serialized.
+            List<DataStoreDerivativeResponse> derivatives = [];
+            foreach (var row in results)
             {
-                Id = row.Id,
-                DataStoreId = row.DataStoreId,
-                DerivativeType = row.DerivativeType,
-                ConnectionString = row.ConnectionString is null
-                    ? null
-                    : Convert.ToBase64String(row.ConnectionString),
-            });
+                derivatives.Add(
+                    new DataStoreDerivativeResponse
+                    {
+                        Id = row.Id,
+                        DataStoreId = row.DataStoreId,
+                        DerivativeType = row.DerivativeType,
+                        ConnectionString = await connectionStringReader.ReadAsync(
+                            row.ConnectionString,
+                            new ConnectionStringRow.Derivative(
+                                row.Id,
+                                row.DataStoreId,
+                                row.DerivativeType,
+                                DerivativeReadMode.PartOfDataStore
+                            )
+                        ),
+                    }
+                );
+            }
 
             return new DataStoreDerivativeQueryByDataStoreIdsResult.Success(derivatives);
         }

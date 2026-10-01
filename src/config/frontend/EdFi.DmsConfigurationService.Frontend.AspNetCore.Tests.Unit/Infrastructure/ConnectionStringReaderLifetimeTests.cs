@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Generic;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Secrets;
 using FluentAssertions;
@@ -21,9 +22,11 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// the scoped tenant provider fails the boot here. The seam is transient like the repositories that
 /// call it, and the cache and the resolver are singletons.
 /// </summary>
-[TestFixture("with a resolver")]
-[TestFixture("without a resolver")]
-public class Given_the_host_booted_in_the_development_environment(string resolver)
+[TestFixture("postgresql", "with a resolver")]
+[TestFixture("postgresql", "without a resolver")]
+[TestFixture("mssql", "with a resolver")]
+[TestFixture("mssql", "without a resolver")]
+public class Given_the_host_booted_in_the_development_environment(string datastore, string resolver)
 {
     /// <summary>
     /// What appsettings.Test.json supplies, so the Development boot needs no database or identity
@@ -32,7 +35,6 @@ public class Given_the_host_booted_in_the_development_environment(string resolve
     private static readonly Dictionary<string, string> _settings = new()
     {
         ["AppSettings:DeployDatabaseOnStartup"] = "false",
-        ["AppSettings:Datastore"] = "postgresql",
         ["DatabaseSettings:EncryptionKey"] = "TestEncryptionKey32CharactersLong1",
         ["IdentitySettings:AllowRegistration"] = "true",
         ["IdentitySettings:TokenCleanupEnabled"] = "false",
@@ -67,6 +69,7 @@ public class Given_the_host_booted_in_the_development_environment(string resolve
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
+            builder.UseSetting("AppSettings:Datastore", datastore);
             foreach ((string key, string value) in _settings)
             {
                 builder.UseSetting(key, value);
@@ -107,6 +110,27 @@ public class Given_the_host_booted_in_the_development_environment(string resolve
             .Should()
             .NotBeSameAs(scope.ServiceProvider.GetRequiredService<IConnectionStringReader>())
             .And.BeOfType<ConnectionStringReader>();
+    }
+
+    [Test]
+    public void It_composes_both_repositories_over_the_reader()
+    {
+        using IServiceScope scope = _factory.Services.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreRepository>()
+            .GetType()
+            .Namespace.Should()
+            .StartWith(
+                $"EdFi.DmsConfigurationService.Backend.{(datastore == "postgresql" ? "Postgresql" : "Mssql")}"
+            );
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreDerivativeRepository>()
+            .GetType()
+            .Namespace.Should()
+            .StartWith(
+                $"EdFi.DmsConfigurationService.Backend.{(datastore == "postgresql" ? "Postgresql" : "Mssql")}"
+            );
     }
 
     [Test]
