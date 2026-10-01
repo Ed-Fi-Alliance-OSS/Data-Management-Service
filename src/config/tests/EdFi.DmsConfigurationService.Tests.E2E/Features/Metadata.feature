@@ -95,7 +95,8 @@ Feature: Metadata endpoints
                   | paths./v3/apiClients.post.requestBody.content.application/json.example.dataStoreIds     | []    |
                   | paths./v3/apiClients/{id}.put.requestBody.content.application/json.example.dataStoreIds | []    |
 
-        # tenants is empty only when multi-tenancy is disabled, so this scenario is single-tenant only.
+        # Single-tenant only: on a multi-tenant stack the list holds every tenant, and Tenants.feature creates
+        # tenants. An empty list alone does not mean multi-tenancy is off (DMS-1508 AC4).
         # The multi-tenant listing is covered by Tenants.feature.
         @DMS-1508
         Scenario: 08 Tenancy lists no tenants without authentication when multi-tenancy is disabled

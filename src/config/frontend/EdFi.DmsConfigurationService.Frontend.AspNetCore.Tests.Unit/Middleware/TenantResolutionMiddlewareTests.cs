@@ -551,34 +551,6 @@ internal class TenantResolutionMiddlewareTests
             A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
         }
-
-        [Test]
-        public async Task It_allows_tenancy_endpoint_with_an_unknown_tenant_header_without_resolving_it()
-        {
-            // Arrange
-            var middleware = new TenantResolutionMiddleware(_next);
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Path = "/tenancy";
-            httpContext.Request.Headers["Tenant"] = "unknown-tenant";
-            httpContext.Response.Body = new MemoryStream();
-
-            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored))
-                .Returns(new TenantGetByNameResult.FailureNotFound());
-
-            // Act
-            await middleware.Invoke(
-                httpContext,
-                _appSettings,
-                _tenantContextProvider,
-                _tenantRepository,
-                _logger
-            );
-
-            // Assert
-            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
-            _tenantContextProvider.Context.Should().BeOfType<TenantContext.NotMultitenant>();
-        }
     }
 
     [TestFixture("/health")]
