@@ -27,6 +27,7 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
+        LogIfNoneMatchIgnoredOnWrite(_logger, requestInfo);
         Trace.Assert(requestInfo.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT", "");
 
         // Resolve repository from the per-request scoped service provider

@@ -21,6 +21,13 @@ namespace EdFi.DataManagementService.Core.Handler;
 public static class Utility
 {
     /// <summary>
+    /// The conditional-read header name. DMS-1576: on a write (POST, PUT, DELETE) this is read only to
+    /// decide whether to log that it was ignored; <see cref="Backend.WritePreconditionFactory.Create" />
+    /// never reads it. GET is unaffected and keeps reading it independently.
+    /// </summary>
+    private const string IfNoneMatchHeaderName = "If-None-Match";
+
+    /// <summary>
     /// ResilienceContext property key for TraceId, used to correlate per-retry log lines.
     /// </summary>
     internal static readonly ResiliencePropertyKey<string> TraceIdKey = new("TraceId");
@@ -161,6 +168,28 @@ public static class Utility
             Headers: [],
             ContentType: "application/problem+json"
         );
+    }
+
+    /// <summary>
+    /// Logs at Debug when a write request (POST, PUT, DELETE) carries an If-None-Match header, since
+    /// <see cref="Backend.WritePreconditionFactory.Create" /> ignores it (DMS-1576: If-None-Match is a
+    /// conditional-read validator only; ODS/API parity). Shared by UpsertHandler, UpdateByIdHandler, and
+    /// DeleteByIdHandler so the check and message stay identical across all three. Logs the method and
+    /// TraceId only -- never the header's value.
+    /// </summary>
+    internal static void LogIfNoneMatchIgnoredOnWrite(ILogger logger, RequestInfo requestInfo)
+    {
+        if (
+            logger.IsEnabled(LogLevel.Debug)
+            && requestInfo.FrontendRequest.Headers.ContainsKey(IfNoneMatchHeaderName)
+        )
+        {
+            logger.LogDebug(
+                "{Method} ignored the If-None-Match header, which DMS honors only on GET - {TraceId}",
+                requestInfo.MethodName,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
     }
 
     internal static MappingSet RequireMappingSet(RequestInfo requestInfo, string operationName)
