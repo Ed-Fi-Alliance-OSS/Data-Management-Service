@@ -327,6 +327,73 @@ internal static class WriteIgnoresIfNoneMatchScenario
         );
     }
 
+    public static async Task It_honors_a_wildcard_if_match_on_a_post_to_an_existing_document(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("pim-ex");
+        (string locationPath, _) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, StudentsEndpoint)
+        {
+            Content = CreateStudentContent(studentUniqueId, "Ada-changed"),
+        };
+        request.Headers.TryAddWithoutValidation(IfMatchHeaderName, "*");
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.OK,
+                $"If-Match: * on a POST is satisfied when the target document exists, so the upsert succeeds. Body: {body}"
+            );
+
+        await AssertFirstNameAsync(
+            harness,
+            locationPath,
+            "Ada-changed",
+            "the upsert must have taken effect."
+        );
+    }
+
+    public static async Task It_rejects_a_wildcard_if_match_on_a_post_of_a_new_document(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("pim-new");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, StudentsEndpoint)
+        {
+            Content = CreateStudentContent(studentUniqueId, "Ada"),
+        };
+        request.Headers.TryAddWithoutValidation(IfMatchHeaderName, "*");
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.PreconditionFailed,
+                $"If-Match: * on a POST requires the target document to exist, so a create fails. Body: {body}"
+            );
+
+        using HttpResponseMessage listResponse = await harness.HttpClient.GetAsync(StudentsEndpoint);
+        string listBody = await listResponse.Content.ReadAsStringAsync();
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK, listBody);
+        JsonNode
+            .Parse(listBody)!
+            .AsArray()
+            .Select(student => student!["studentUniqueId"]!.GetValue<string>())
+            .Should()
+            .NotContain(
+                studentUniqueId,
+                $"the rejected POST must not have created the document. Body: {listBody}"
+            );
+    }
+
     private static async Task<(string locationPath, string etag)> CreateStudentAsync(
         ApiIntegrationHarness harness,
         string studentUniqueId,

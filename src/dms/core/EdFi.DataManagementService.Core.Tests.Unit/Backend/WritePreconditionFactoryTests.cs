@@ -96,6 +96,8 @@ public class WritePreconditionFactoryTests
     [TestCase("\"5-a1b2c3d4.j._.l.i\"")] // quoted strong validator
     [TestCase("5-a1b2c3d4.j._.l.i")] // bare unquoted value tolerated
     [TestCase("W/\"5-a1b2c3d4.j._.l.i\"")] // weak validator, still ignored on a write
+    [TestCase("")] // blank value, still ignored on a write
+    [TestCase("   ")] // whitespace-only value, still ignored on a write
     public void It_ignores_a_single_tag_if_none_match_on_a_write(string ifNoneMatchValue)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

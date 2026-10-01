@@ -686,8 +686,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
         DocumentUuid documentUuid,
         UpsertActionAuthorization actionAuthorization,
         short? creatorOwnershipTokenId = null,
-        IReadOnlyList<short>? ownershipTokenIds = null,
-        Dictionary<string, string>? headers = null
+        IReadOnlyList<short>? ownershipTokenIds = null
     ) =>
         _context.UpsertWithActionAuthorizationAsync(
             project,
@@ -697,8 +696,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
             actionAuthorization,
             _prefixes,
             creatorOwnershipTokenId,
-            ownershipTokenIds,
-            headers
+            ownershipTokenIds
         );
 
     /// <summary>
