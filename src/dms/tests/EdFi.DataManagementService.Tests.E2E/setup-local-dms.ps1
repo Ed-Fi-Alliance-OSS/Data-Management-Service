@@ -69,6 +69,17 @@ param(
     [switch] $SkipDockerBuild
 )
 
+function Write-SetupQualificationFailure {
+    param([object[]] $Records)
+    if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
+    try {
+        . (Join-Path $PSScriptRoot '../../../../eng/ci/cdc-runbook-diagnostics.ps1')
+        Write-CdcRunbookChildFailure -Records $Records
+    } catch { # Diagnostic collection must not change the setup outcome.
+        return
+    }
+}
+
 if ($CdcApiE2E -and -not $EnableKafkaCdc) { throw '-CdcApiE2E requires -EnableKafkaCdc.' }
 
 function Get-DirectSetupTeardownCommand {
@@ -103,6 +114,7 @@ try {
     }
 }
 catch {
+    Write-SetupQualificationFailure -Records @($Error)
     Write-Host ""
     Write-Error "Docker is not running or not installed. Please start Docker and try again."
     Write-Host ""
@@ -286,6 +298,10 @@ try {
     $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $resolvedEnvironmentFile
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
     Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
+}
+catch {
+    Write-SetupQualificationFailure -Records @($Error)
+    throw
 }
 finally {
     # Return to original location

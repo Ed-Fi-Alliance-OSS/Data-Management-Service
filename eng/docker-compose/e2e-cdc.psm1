@@ -388,11 +388,20 @@ function Invoke-E2ECdcSetup {
         # Never persist raw exceptions, CLI output, connection strings, or settings. Detailed typed
         # controller evidence remains at its original state root for cdc status/retirement.
         $diagnostic = @{ operation = 'e2e-setup'; succeeded = $false; cancelled = $cancelled; cleanup = $cleanup; provider = $DatabaseEngine; failureCodes = $failureCodes }
-        $diagnosticRoot = Join-Path $PSScriptRoot '.cdc-diagnostics'
-        $null = [IO.Directory]::CreateDirectory($diagnosticRoot)
-        $diagnostic | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot "$([guid]::NewGuid().ToString('N')).json")
-        if ($cancelled) { throw [OperationCanceledException]::new('CDC E2E setup cancelled; tests were not launched. Retain original state for governed cleanup.') }
-        throw 'CDC E2E setup failed; tests were not launched. Retain original state and inspect .cdc-diagnostics plus SchemaTools cdc status before governed cleanup.'
+        $diagnosticRoot = if ($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
+            Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'e2e-setup'
+        } else { Join-Path ([IO.Path]::GetTempPath()) ('dms-cdc-diagnostics-' + [guid]::NewGuid().ToString('N')) }
+        try {
+            $diagnosticRoot = [IO.Path]::GetFullPath($diagnosticRoot)
+            $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+            if ($diagnosticRoot -eq $repo -or $diagnosticRoot.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'CDC diagnostics must be outside the repository checkout.'
+            }
+            $null = [IO.Directory]::CreateDirectory($diagnosticRoot)
+            $diagnostic | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot "$([guid]::NewGuid().ToString('N')).json") -ErrorAction Stop
+        } catch { Write-Warning 'CDC E2E failure diagnostics could not be saved; the original setup failure is retained.' }
+        if ($cancelled) { throw [OperationCanceledException]::new("CDC E2E setup cancelled; tests were not launched. Retain original state and temporary diagnostics at '$diagnosticRoot' for governed cleanup.") }
+        throw "CDC E2E setup failed; tests were not launched. Retain original state and inspect temporary diagnostics at '$diagnosticRoot' plus SchemaTools cdc status before governed cleanup."
     }
 }
 

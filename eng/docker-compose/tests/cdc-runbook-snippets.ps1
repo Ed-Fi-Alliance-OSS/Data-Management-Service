@@ -99,8 +99,36 @@ function Invoke-CdcRunbookLiveWrapper {
     }
     $phase = if ($Id -match 'bootstrap|e2e-setup') { 'Setup' } else { 'Test' }
     Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
-    $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList $arguments.ToArray() -InputText '' -TimeoutSeconds $TimeoutSeconds
+    $childFailurePath = Join-Path $FixtureRoot ('wrapper-errors-' + [guid]::NewGuid().ToString('N') + '.json')
+    $savedChildFailurePath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+    try {
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $childFailurePath
+        $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList $arguments.ToArray() -InputText '' -TimeoutSeconds $TimeoutSeconds
+    } finally { $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedChildFailurePath }
     Complete-CdcRunbookOperation $result
+    if (Test-Path -LiteralPath $childFailurePath) {
+        try {
+            if (Get-Variable runbookOperation -Scope Script -ErrorAction SilentlyContinue) {
+                . (Join-Path $repo 'eng/ci/cdc-runbook-diagnostics.ps1')
+                $childFailures = Get-Content -LiteralPath $childFailurePath -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+                $script:runbookOperation.ChildFailures = @($childFailures |
+                    Select-Object -First 8 | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
+                Save-CdcRunbookProgress
+            }
+        } catch {
+            if (Get-Variable runbookProgress -Scope Script -ErrorAction SilentlyContinue) {
+                $script:runbookProgress.CollectionFailed = $true
+                Save-CdcRunbookProgress
+            }
+        }
+    }
+    elseif ($Id -in @('cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup') -and
+        $result.ExitCode -ne 0 -and $result.FailureKind -eq 'None' -and
+        -not ($result.PSObject.Properties['TimedOut'] -and $result.TimedOut) -and
+        (Get-Variable runbookProgress -Scope Script -ErrorAction SilentlyContinue)) {
+        $script:runbookProgress.CollectionFailed = $true
+        Save-CdcRunbookProgress
+    }
     $prefix = Join-Path $FixtureRoot ($Id + '-' + [guid]::NewGuid().ToString('N'))
     $result.StandardOutput | Set-Content -LiteralPath "$prefix.stdout"
     $result.StandardError | Set-Content -LiteralPath "$prefix.stderr"
