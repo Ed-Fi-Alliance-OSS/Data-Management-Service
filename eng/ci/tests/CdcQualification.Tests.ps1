@@ -205,6 +205,11 @@ Describe 'CDC qualification result boundary' {
                 Set-Content (Join-Path $TestDrive 'admission-evidence-sql-startup-injected.json')
             '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":true}' |
                 Set-Content (Join-Path $TestDrive 'admission-evidence-sql-recovery-injected.json')
+            # VSTest copies NUnit attachments beneath the TRX directory while the
+            # original remains beside the report. Each GUID-named attachment is one event.
+            $attachments = Join-Path $TestDrive 'trx-attachments'
+            $null = New-Item -ItemType Directory -Path $attachments
+            Copy-Item (Join-Path $TestDrive 'admission-evidence-sql-*.json') $attachments
             $result = Get-CdcQualificationReport $script:report 0
             $result.Status | Should -Be 'Passed'
             $result.SqlStartupFailures | Should -Be 1
@@ -217,6 +222,7 @@ Describe 'CDC qualification result boundary' {
         }
         finally {
             Remove-Item (Join-Path $TestDrive 'admission-evidence-sql-*.json')
+            Remove-Item (Join-Path $TestDrive 'trx-attachments') -Recurse -ErrorAction SilentlyContinue
         }
     }
 

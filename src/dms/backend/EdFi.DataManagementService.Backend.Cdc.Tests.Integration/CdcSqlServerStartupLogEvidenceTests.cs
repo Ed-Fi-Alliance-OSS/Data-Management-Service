@@ -12,6 +12,62 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [TestFixture]
 public sealed class Given_CdcSqlServerStartupLogEvidence
 {
+    [TestCase("0xc0070102", "0xc0070102", true)]
+    [TestCase("0xc0000001", "0xc0000001", false)]
+    [TestCase("0xc0070102", "0xc0000001", false)]
+    public void It_distinguishes_loader_statuses_without_broadening_startup_recovery(
+        string loadStatus,
+        string exitStatus,
+        bool permitsRecovery
+    )
+    {
+        string log = Given_CdcSqlServerFixtureStartup
+            .LsaFailureLog.Replace("load LSA: 0xc0070102", $"load LSA: {loadStatus}")
+            .Replace("status=0xc0070102", $"status={exitStatus}");
+        var evidence = CdcSqlServerStartupLogClassifier.Parse(new(0, log, string.Empty));
+        evidence.LsaLoadStatusCodes.Should().Equal(loadStatus.ToUpperInvariant());
+        evidence.AppLoaderExitStatusCodes.Should().Equal(exitStatus.ToUpperInvariant());
+        var state = new CdcSqlServerContainerState("exited", 1, false) { Logs = evidence };
+        state.RecoverySignature.Should().Be(permitsRecovery ? "LsaInitializationTimeout" : "None");
+    }
+
+    [Test]
+    public void It_bounds_loader_codes_and_excludes_arbitrary_text_from_serialized_evidence()
+    {
+        string log = string.Concat(
+            Enumerable
+                .Range(1, 20)
+                .Select(n =>
+                    $"** ERROR: [AppLoader] Failed to load LSA: 0x{n:x8} private-secret\n"
+                    + $"AppLoader: Exiting with status=0x{n:x8} private-host\n"
+                    + $"AppLoader: Exiting with status=0x{n:x8}\n"
+                )
+        );
+        log +=
+            "** ERROR: [AppLoader] Failed to load LSA: 0x123456789\n"
+            + "AppLoader: Exiting with status=private-secret\n";
+        var evidence = CdcSqlServerStartupLogClassifier.Parse(new(0, log, string.Empty));
+        string[] expected = Enumerable.Range(1, 8).Select(n => $"0X{n:X8}").ToArray();
+        evidence.LsaLoadStatusCodes.Should().Equal(expected);
+        evidence.AppLoaderExitStatusCodes.Should().Equal(expected);
+        evidence.LsaInitializationTimeout.Should().BeFalse();
+        JsonSerializer.Serialize(evidence).Should().NotContain("private").And.NotContain("123456789");
+    }
+
+    [TestCase("0x123456789")]
+    [TestCase("0x123")]
+    [TestCase("private-secret")]
+    public void It_rejects_malformed_loader_codes(string code)
+    {
+        string log =
+            $"** ERROR: [AppLoader] Failed to load LSA: {code}\n"
+            + $"AppLoader: Exiting with status={code}\n";
+        var evidence = CdcSqlServerStartupLogClassifier.Parse(new(0, log, string.Empty));
+        evidence.LsaLoadStatusCodes.Should().BeEmpty();
+        evidence.AppLoaderExitStatusCodes.Should().BeEmpty();
+        JsonSerializer.Serialize(evidence).Should().NotContain("private");
+    }
+
     [Test]
     public void It_preserves_crash_identity_without_publishing_arbitrary_messages_or_paths()
     {
