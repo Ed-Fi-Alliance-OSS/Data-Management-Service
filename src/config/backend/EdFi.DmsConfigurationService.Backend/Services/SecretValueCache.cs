@@ -18,9 +18,14 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 /// Concurrent misses on one key share one fetch and its outcome, a failed fetch caches nothing, and
 /// a key never waits behind another one.
 ///
+/// An expired value is never served. It is released when its key is next read, or when any value is
+/// next stored, whichever comes first, so plain text can outlive its expiration until the host next
+/// touches the cache; nothing sweeps it on a timer. What is held is bounded by the number of distinct
+/// secret names read.
+///
 /// Nothing tells the cache that a tenant was added or removed. A new tenant has no entries to be
 /// stale, and a removed tenant's entries can only be reached with its own name, so they are never
-/// read again and are dropped once expired.
+/// read again and are released by the next store after they expire.
 /// </summary>
 public sealed class SecretValueCache(IOptions<SecretsOptions> options, TimeProvider? timeProvider = null)
 {
@@ -97,21 +102,40 @@ public sealed class SecretValueCache(IOptions<SecretsOptions> options, TimeProvi
         }
     }
 
+    /// <summary>
+    /// Returns the cached value for the tenant and name without fetching, for a caller that has
+    /// decided not to ask the resolver.
+    /// </summary>
+    public bool TryGetFresh(
+        string? tenant,
+        string name,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value
+    ) => TryGetFresh(new Key(tenant, name), out value);
+
     private bool TryGetFresh(Key key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value)
     {
-        if (_values.TryGetValue(key, out Entry? entry) && _timeProvider.GetUtcNow() < entry.ExpiresAt)
+        value = null;
+
+        if (!_values.TryGetValue(key, out Entry? entry))
         {
-            value = entry.Value;
-            return true;
+            return false;
         }
 
-        value = null;
-        return false;
+        if (_timeProvider.GetUtcNow() >= entry.ExpiresAt)
+        {
+            // Removes only this expired entry, never a fresh one stored since.
+            _values.TryRemove(new KeyValuePair<Key, Entry>(key, entry));
+            return false;
+        }
+
+        value = entry.Value;
+        return true;
     }
 
     /// <summary>
     /// Drops every expired entry. It runs only when a value is stored, which happens at most once
-    /// per key per expiration window, so the sweep costs nothing on the read path.
+    /// per key per expiration window, so the sweep costs nothing on the read path. An expired entry
+    /// read before then is dropped by the read itself.
     /// </summary>
     private void RemoveExpired(DateTimeOffset now)
     {

@@ -238,6 +238,76 @@ public class SecretValueCacheTests
         public void It_releases_the_expired_entries() => _countAfterExpiry.Should().Be(1);
     }
 
+    /// <summary>
+    /// A read of an expired key releases it even when the refetch fails, so no later store is needed
+    /// to drop the plain text.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_expired_entry_whose_refetch_fails : SecretValueCacheTests
+    {
+        private int _countBeforeRead;
+        private int _countAfterRead;
+
+        [SetUp]
+        public async Task Act()
+        {
+            await Read("tenant", "name");
+            _time.Advance(TimeSpan.FromSeconds(ExpirationSeconds));
+            _countBeforeRead = _cache.Count;
+
+            Func<Task> failingRead = () =>
+                _cache.GetOrFetchAsync("tenant", "name", () => throw new InvalidOperationException("down"));
+            await failingRead.Should().ThrowAsync<InvalidOperationException>();
+            _countAfterRead = _cache.Count;
+        }
+
+        [Test]
+        public void It_holds_the_entry_until_its_key_is_read() => _countBeforeRead.Should().Be(1);
+
+        [Test]
+        public void It_releases_the_entry_when_its_key_is_read() => _countAfterRead.Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_a_lookup_without_a_fetch : SecretValueCacheTests
+    {
+        private bool _foundFresh;
+        private string? _freshValue;
+        private bool _foundMissing;
+        private bool _foundExpired;
+        private int _countAfterExpiredLookup;
+
+        [SetUp]
+        public async Task Act()
+        {
+            await Read("tenant", "name");
+            _foundFresh = _cache.TryGetFresh("tenant", "name", out _freshValue);
+            _foundMissing = _cache.TryGetFresh("tenant", "other", out _);
+
+            _time.Advance(TimeSpan.FromSeconds(ExpirationSeconds));
+            _foundExpired = _cache.TryGetFresh("tenant", "name", out _);
+            _countAfterExpiredLookup = _cache.Count;
+        }
+
+        [Test]
+        public void It_returns_a_fresh_value() => _freshValue.Should().Be("tenant/name#1");
+
+        [Test]
+        public void It_reports_a_fresh_value_found() => _foundFresh.Should().BeTrue();
+
+        [Test]
+        public void It_reports_a_missing_value() => _foundMissing.Should().BeFalse();
+
+        [Test]
+        public void It_does_not_serve_an_expired_value() => _foundExpired.Should().BeFalse();
+
+        [Test]
+        public void It_releases_the_expired_value() => _countAfterExpiredLookup.Should().Be(0);
+
+        [Test]
+        public void It_never_fetches() => _fetches.Should().HaveCount(1);
+    }
+
     [TestFixture]
     public class Given_caching_is_disabled : SecretValueCacheTests
     {
