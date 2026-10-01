@@ -1,12 +1,11 @@
-# Product Requirements Document: Ed-Fi Configuration Management Service (CMS) v1.0
+# Product Requirements Document: Ed-Fi Configuration Management Service (CMS) v8.0
 
-> **Status**: Draft \
+> **Status**: Published - describes platform capabilities as implemented in Ed-Fi
+> API v8.0 \
 > **Owner**: Stephen Fuqua \
 > **Product**: Ed-Fi Configuration Management Service (CMS) \
 > **Repository**: `Ed-Fi-Alliance-OSS/Data-Management-Service` (`src/config`) \
-> **Jira Project**: `DMS` \
-> **Companion documents**: [Ed-Fi API v8.0 Platform Capabilities](./PRD-DMS-v8.0.md), [Ed-Fi API v8.1 Platform Capabilities (Planned)](./PRD-DMS-v8.1.md) \
-> **Source lineage**: Adapted from [ODS Admin API 2.3](./PRD-ODS-Admin-API-2.3.md) and [ODS Admin API 2.4](./PRD-ODS-Admin-API-2.4.md), reverse-engineered against current CMS implementation and design documents under `reference/design/configuration-service/`, `reference/spikes/DMS-1082/`, `reference/design/claimset-export-import/`, and `reference/design/profiles-DMS-877/` as of 2026-09-04.
+> **Jira Project**: `DMS`
 
 ## 1. Product Overview
 
@@ -14,16 +13,19 @@ The Ed-Fi Configuration Management Service (CMS) is the administrative control
 plane for the Ed-Fi API v8 platform. It exists so platform hosts can
 administer vendors, applications, API client credentials, claim sets,
 Profiles, and data store (database instance) routing for the Ed-Fi API
-service ("DMS") programmatically and without direct database access —
+service ("DMS") programmatically and without direct database access to
+the CMS configuration database —
 continuing the role the ODS Admin API played for the prior-generation ODS/API
 platform, but as a purpose-built companion service for DMS rather than a
 retrofit.
 
-CMS implements **only version 3 of the Ed-Fi Management API specification**.
+CMS exposes **only version 3 routes of the Ed-Fi Management API specification**.
 Unlike the ODS Admin API, which supports three specification generations
 (v1/v2/v3, corresponding to ODS/API 6.x and 7.x compatibility modes), CMS has
 no legacy compatibility burden: DMS is a ground-up rewrite, so CMS ships a
-single, current API surface from the start. This PRD — in combination with the
+single, current API surface from the start. The `AppSettings:SpecificationVersion`
+value is reported in discovery metadata, but v8.0 does not use it to map
+alternate v1 or v2 route sets. This PRD — in combination with the
 Ed-Fi Alliance API Design Guidelines — implicitly serves as the requirements
 for the v3 Ed-Fi Management API as CMS implements it.
 
@@ -148,8 +150,9 @@ can be associated with the data store(s) they are permitted to reach.
 
 **How CMS Helps**: Provides CRUD endpoints for data stores, data store
 contexts (route-qualifier key/value pairs used for context-based routing),
-and data store derivatives, with connection strings encrypted at rest
-(FR-DATASTORE-1 through FR-DATASTORE-9).
+and data store derivatives, with connection strings encrypted at rest and
+returned as encrypted ciphertext rather than plaintext (FR-DATASTORE-1 through
+FR-DATASTORE-9).
 
 #### JTBD 4: Manage Authorization
 
@@ -255,43 +258,17 @@ which Management API specification version is active, \
 **so that** I can configure my tooling correctly.
 
 **How CMS Helps**: The discovery endpoint reports application name, version,
-build metadata, the discovery/OpenAPI metadata URL, and (per NFR-OPS-1)
-multi-tenancy status (FR-VERSION-2, FR-VERSION-4).
+build metadata, the discovery/OpenAPI metadata URL, and the configured
+Management API specification version (FR-VERSION-2). Multi-tenancy status
+reporting is deferred to v8.1.0.
 
-#### JTBD 11 (Proposed — not yet implemented): Database Instance Provisioning
+#### Deferred Jobs
 
-**Personas**: Platform Host System Administrator, Operator
-
-**When** onboarding a new district or standing up a new environment, \
-**I want** to request creation of a new data store from an approved database
-template through the API, monitor its provisioning status, and later request
-its removal, \
-**so that** I don't have to run manual database-provisioning scripts or track
-progress out of band.
-
-**How CMS Could Help**: The ODS Admin API 2.4 line introduced an analogous
-`/v2/odsInstances/manage` / `/v3/dataStores/manage` resource with
-asynchronous, job-tracked provisioning. **No equivalent exists in CMS today**
-— current CMS data-store creation is a synchronous CRUD operation over an
-already-provisioned connection string, and schema provisioning is a separate,
-host-run tooling step (`api-schema-tools`, `provision-dms-schema.ps1`), not an
-API-driven workflow. This job is captured here as a candidate for a future
-CMS release; see FR-DBINST (proposed) in §3.13 and the open question in §7.
-
-#### JTBD 12 (Proposed — not yet implemented): Education Organization Synchronization
-
-**Personas**: Platform Host System Administrator, Operator
-
-**When** a data store's education organization structure changes, \
-**I want** CMS to keep an up-to-date, queryable copy of each data store's
-education organizations, \
-**so that** I can view and audit education organization hierarchies without
-querying operational databases directly.
-
-**How CMS Could Help**: The ODS Admin API 2.4 line introduced this as a
-periodically-synchronized, on-demand-refreshable cache. **No equivalent
-exists in CMS today.** Captured here as a candidate for a future release; see
-FR-EDORG (proposed) in §3.14 and the open question in §7.
+Database instance provisioning, education organization synchronization,
+asynchronous job tracking, rate limiting, dependency-aware health checks,
+full non-success error-response conformance, application-profile lookup by
+application, and OpenAPI disablement are deferred to the v8.1.0 planning
+document: [CMS v8.1.0 Deferred Requirements](./PRD-CMS-v8.1.0.md).
 
 ## 2. Enterprise Architecture
 
@@ -316,7 +293,7 @@ graph TB
 
     ClientApp -->|"Authenticate<br/>(client_credentials grant)"| CMS
     ClientApp -->|"Transmit & retrieve<br/>student data (bearer JWT)"| DMS
-    AdminUI -->|"Manage configuration:<br/>credentials, claim sets,<br/>Profiles, tenants, data stores"| CMS
+    AdminUI -->|"Manage config"| CMS
     DMS -->|"Retrieve & cache<br/>configuration data"| CMS
     DMS --> DMSDB
     CMS --> CMSDB
@@ -336,8 +313,7 @@ External systems and dependencies:
   DataStore, DataStoreContext, DataStoreDerivative, ClaimSet, Profile,
   ResourceClaim, ClaimsHierarchy, and (in self-contained identity-provider
   mode) OpenIddict token/client tables. Supports PostgreSQL and Microsoft SQL
-  Server, with a small number of features (resource-claim read endpoints, as
-  of this writing) supported on PostgreSQL only.
+  Server.
 - **Keycloak (optional)**: an external OAuth 2.0/OIDC provider. When
   configured, CMS validates tokens against Keycloak instead of issuing them
   itself, and client credential management is delegated to Keycloak's admin
@@ -358,9 +334,8 @@ External systems and dependencies:
   informational/release-candidate label, and the discoverable OpenAPI
   metadata URL.
 - **FR-VERSION-3**: CMS SHALL generate an OpenAPI/Swagger description of its
-  API surface, served at `/metadata/specifications`.
-- **FR-VERSION-4**: CMS's discovery/metadata endpoints SHALL report whether
-  the deployment is running in multi-tenant mode.
+  API surface, served at `/metadata/specifications`, with the generated raw
+  OpenAPI document also available at `/openapi/v1.json`.
 
 ### 3.2 Identity Provider and Authentication
 
@@ -384,9 +359,11 @@ External systems and dependencies:
   configured administrative role by default.
 - **FR-AUTH-6**: CMS SHALL support at least three scopes: full read/write
   access to all endpoints (`edfi_admin_api/full_access`), read-only access to
-  all `GET` endpoints (`edfi_admin_api/readonly_access`), and read-only access
-  limited to the authorization-metadata endpoint
-  (`edfi_admin_api/authMetadata_readonly_access`).
+  all `GET` endpoints (`edfi_admin_api/readonly_access`), and limited read-only
+  access for DMS/internal metadata lookups
+  (`edfi_admin_api/authMetadata_readonly_access`). The read-only
+  scope SHALL be accepted by the authorization-metadata endpoint, claim-set list
+  endpoint, and API-client list/lookup endpoints.
 - **FR-AUTH-7**: CMS SHALL serve as the OAuth 2.0 identity provider for both
   (a) its own administrative/automation clients and (b) the vendor/API
   clients that call the DMS resource API. A DMS API client's `client_id` and
@@ -400,16 +377,13 @@ External systems and dependencies:
   initial issuance or after a reset: in self-contained mode secrets are
   hashed at rest, and in Keycloak mode secret storage and retrieval are
   governed entirely by Keycloak.
-- **FR-AUTH-10**: In self-contained mode, CMS SHALL periodically remove
-  expired access-token records from its own storage on a configurable
-  interval, defaulting to enabled with a 30-minute sweep interval. In
-  Keycloak mode, CMS SHALL NOT implement its own token-cleanup mechanism,
-  since Keycloak owns its own token and session lifecycle.
-- **FR-AUTH-11**: Endpoint authorization SHALL be enforced per HTTP method:
+- **FR-AUTH-10**: Endpoint authorization SHALL be enforced per HTTP method:
   `GET` endpoints SHALL accept either `full_access` or `readonly_access`;
   `POST`, `PUT`, and `DELETE` endpoints SHALL require `full_access`; the
-  authorization-metadata endpoint SHALL accept any of the three defined
-  scopes; and health, JWKS, and discovery endpoints SHALL remain anonymous.
+  authorization-metadata endpoint, claim-set list endpoint, and API-client
+  list/lookup endpoints SHALL accept any of the three defined scopes; and
+  health, discovery, metadata, OAuth `/connect/*`, and self-contained OIDC
+  discovery/JWKS endpoints SHALL remain anonymous.
 
 ### 3.3 Vendor Management
 
@@ -430,27 +404,26 @@ External systems and dependencies:
   ApiClient credential sets, rather than treating the Application itself as a
   single credential.
 - **FR-APP-2**: Creating an application SHALL require an application name,
-  vendor ID, claim set name, education organization IDs, and one or more data
-  store IDs.
+  vendor ID, and claim set name. Education organization IDs, Profile IDs,
+  and data store IDs MAY be supplied.
 - **FR-APP-3**: Creating an application SHALL validate that the referenced
-  vendor ID, claim set name, profile IDs (if provided), and data store IDs
-  exist.
+  vendor ID exists and that any supplied Profile IDs and data store IDs exist.
 - **FR-APP-4**: Creating an application SHALL create an associated ApiClient
   and return the generated `client_id`/`client_secret` pair in the creation
   response.
 - **FR-APP-5**: Updating an application SHALL support changes to name, claim
-  set, vendor, profile IDs, education organization IDs, data store IDs, and
-  enabled state.
+  set, vendor, Profile IDs, education organization IDs, and data store IDs.
+  Credential approval is managed on ApiClient records.
 - **FR-APP-6**: Deleting an application SHALL remove its associated API
   clients and data-store associations while preserving referenced Profile
   records.
 
 ### 3.5 API Client (Credential) Management
 
-- **FR-CLIENT-1**: CMS SHALL allow authorized clients to list, retrieve,
-  create, update, delete, and reset credentials for individual ApiClient
-  records, independent of the parent Application, so that credential
-  rotation does not require recreating the Application.
+- **FR-CLIENT-1**: CMS SHALL allow authorized clients to list, retrieve by
+  `client_id`, create, update, delete, and reset credentials for individual
+  ApiClient records, independent of the parent Application, so that
+  credential rotation does not require recreating the Application.
 - **FR-CLIENT-2**: Creating an API client SHALL require a name, approval
   state, application ID, and at least one associated data store ID.
 - **FR-CLIENT-3**: Creating or updating an API client SHALL validate that the
@@ -467,13 +440,13 @@ External systems and dependencies:
 - **FR-DATASTORE-1**: CMS SHALL allow authorized clients to list, retrieve,
   create, update, and delete data store records (the CMS v3 term for what the
   ODS Admin API calls an "ODS instance").
-- **FR-DATASTORE-2**: Data store records SHALL include a name, an optional
-  data store type, and a connection string.
+- **FR-DATASTORE-2**: Data store records SHALL include a name, a required
+  data store type, and an optional connection string.
 - **FR-DATASTORE-3**: Data store connection strings SHALL be encrypted at
   rest (AES). A `GET` of a data store SHALL return the connection string as
-  an encrypted, non-reversible representation, not the plaintext value
-  submitted; a `PUT` that omits the connection-string field SHALL preserve
-  the stored value rather than requiring the caller to resupply it.
+  base64-encoded encrypted ciphertext, not the plaintext value submitted. A
+  `PUT` writes the request body's `connectionString` value; omitting
+  or sending `null` does not preserve the previous value.
 - **FR-DATASTORE-4**: CMS SHALL allow authorized clients to manage data store
   contexts — key/value pairs (for example, school year or district ID) used
   by DMS for context-based routing.
@@ -503,11 +476,8 @@ External systems and dependencies:
   that the definition's declared name matches the record name) at
   create/update time.
 - **FR-PROFILE-4**: Deleting an application SHALL NOT delete Profile records
-  it references.
-- **FR-PROFILE-5**: CMS SHALL expose an endpoint for DMS to retrieve all
-  Profiles assigned to a given application (`GET
-  /v3/applications/{id}/profiles`), so DMS can resolve and cache which
-  Profiles apply to a given API client.
+  it references. Profile assignment is represented by the Application
+  `profileIds` field.
 
 ### 3.8 Claim Sets and Authorization Metadata
 
@@ -568,9 +538,11 @@ External systems and dependencies:
   against the caller's identity. A client holding `full_access` or
   `readonly_access` therefore has that level of access to every tenant's
   configuration in the deployment.
-- **FR-TENANT-5**: CMS SHALL allow authorized clients to list and create
-  tenants, and each tenant SHALL resolve to its own configuration-database
-  connection details.
+- **FR-TENANT-5**: CMS SHALL allow authorized clients to list, retrieve, and
+  create tenants when multi-tenancy is enabled. Tenant records contain an ID
+  and name; the application partitions rows by tenant in the configured CMS
+  database rather than storing per-tenant configuration-database connection
+  details.
 - **FR-TENANT-6**: In multi-tenant mode, CMS-issued API-client credentials
   used against the DMS resource API SHALL remain scoped to the data store(s)
   associated with the tenant/application under which they were created, even
@@ -594,38 +566,29 @@ External systems and dependencies:
 
 ### 3.11 Error Handling and Responses
 
-- **FR-ERROR-1**: Every non-success CMS response — including framework-level
-  errors, authentication/authorization failures, and OAuth/OIDC error
-  responses (not just responses from CRUD endpoint modules) — SHALL return a
-  JSON body conforming to the Ed-Fi Error Response Knowledge Base contract:
-  `detail`, `type`, `title`, `status`, `correlationId`, `validationErrors`
-  (an object, empty `{}` when there are none), and `errors` (an array, empty
-  `[]` when there are none).
-- **FR-ERROR-2**: The body's `status` field SHALL always equal the response's
-  HTTP status code, and `correlationId` SHALL always equal
-  `HttpContext.TraceIdentifier`.
-- **FR-ERROR-3**: `type` SHALL be a documented `urn:ed-fi:api:*` taxonomy URI
-  matching the failure category (for example,
+- **FR-ERROR-1**: CMS business endpoints and the global exception handler SHALL
+  return Ed-Fi-style JSON error responses with `detail`, `type`, `title`,
+  `status`, `correlationId`, `validationErrors` (an object, empty `{}` when
+  there are none), and `errors` (an array, empty `[]` when there are none).
+  OAuth/OIDC protocol errors, tenant-resolution middleware failures, dynamic
+  claims-management endpoints, and some authorization failures are known
+  exceptions and may return OAuth-standard or ad hoc shapes.
+- **FR-ERROR-2**: For endpoints using the Ed-Fi-style error helpers, the
+  body's `status` field SHALL equal the response's HTTP status code, and
+  `correlationId` SHALL equal `HttpContext.TraceIdentifier`.
+- **FR-ERROR-3**: Ed-Fi-style responses SHALL use the implemented
+  `urn:ed-fi:api:*` taxonomy URI matching the failure category (for example,
   `urn:ed-fi:api:bad-request:data` for data validation,
   `urn:ed-fi:api:security:authentication` for 401,
   `urn:ed-fi:api:security:authorization` for 403,
-  `urn:ed-fi:api:not-found` for 404, `urn:ed-fi:api:conflict:*` for 409, and
-  `urn:ed-fi:api:internal-server-error` for 500). CMS SHALL NOT invent new
-  taxonomy URIs; a reachable status with no ticket-mandated, KB-documented,
-  or established platform URI SHALL use `about:blank` (RFC 9457 §4.2.1)
-  rather than a fabricated URI.
-- **FR-ERROR-4**: CMS SHALL NOT return bare framework results (e.g.,
-  `NotFound()`, `Forbid()`, `BadRequest()`, `Unauthorized()`) or ad hoc `{
-  error, message }` shapes for any endpoint.
-- **FR-ERROR-5**: Error response bodies SHALL NOT leak sensitive detail
-  (database error text, configuration values, secrets, or upstream identity-
-  provider internals); unstructured or untrusted provider/transport error
-  text SHALL be replaced with a safe, fixed fallback message rather than
-  passed through.
-- **FR-ERROR-6**: Business conflicts — including unresolved caller-supplied
-  references (e.g., an unknown vendor, data store, or profile ID) and
-  dependent-item-exists conditions (e.g., deleting a Profile still in use) —
-  SHALL return `409 Conflict` with the appropriate conflict sub-type.
+  `urn:ed-fi:api:not-found` for 404, `urn:ed-fi:api:conflict:*` for 409,
+  `urn:ed-fi:api:bad-gateway` for 502, and
+  `urn:ed-fi:api:internal-server-error` for 500).
+- **FR-ERROR-4**: CMS SHALL avoid leaking secrets or raw upstream identity
+  provider internals from the main credential-management flows; identity
+  provider errors during application/API-client creation and token exchange
+  SHALL be mapped to safe client-facing responses.
+- **FR-ERROR-5**: Duplicate identifying values SHALL return `409 Conflict`.
 
 ### 3.12 DMS Integration
 
@@ -650,68 +613,11 @@ External systems and dependencies:
   requiring faster revocation SHOULD configure a shorter access-token
   lifetime.
 
-### 3.13 Database Instance Provisioning (Proposed — not yet implemented)
+### 3.13 Deferred Functional Requirements
 
-> [!NOTE]
-> This capability is carried forward from ODS Admin API 2.4 as a candidate
-> for a future CMS release. No implementation exists in CMS today; current
-> data-store creation is synchronous CRUD over an already-provisioned
-> connection string, and schema provisioning is a separate, host-run tooling
-> step outside the CMS API. See the open question in §7.
-
-- **FR-DBINST-1** (proposed): CMS SHOULD allow an administrator to request
-  creation of a new data store from a named, approved database template,
-  validating the instance name and template before accepting the request.
-- **FR-DBINST-2** (proposed): CMS SHOULD provision and de-provision such data
-  stores asynchronously via a background job after a create or delete
-  request is accepted, including tenant-aware scheduling in multi-tenant
-  deployments.
-- **FR-DBINST-3** (proposed): CMS SHOULD expose granular lifecycle status
-  values for a data store's creation and deletion (e.g., `PendingCreate`,
-  `CreateInProgress`, `CreateFailed`, `PendingDelete`, `DeleteInProgress`,
-  `Deleted`, `DeleteFailed`), so administrators can track provisioning
-  progress.
-- **FR-DBINST-4** (proposed): Deleting a provisioned data store SHOULD mark
-  it `PendingDelete` (soft delete) rather than removing it immediately, and
-  SHOULD reject the request with a descriptive error if the instance is in a
-  status that blocks deletion.
-
-### 3.14 Education Organization Synchronization (Proposed — not yet implemented)
-
-> [!NOTE]
-> This capability is carried forward from ODS Admin API 2.4 as a candidate
-> for a future CMS release. No implementation exists in CMS today.
-
-- **FR-EDORG-1** (proposed): CMS SHOULD periodically refresh a cached copy of
-  each data store's education organization structure, on an
-  administrator-configurable interval.
-- **FR-EDORG-2** (proposed): CMS SHOULD allow an administrator to retrieve
-  education organizations grouped by their owning data store, and to trigger
-  an on-demand refresh for all data stores or a specific one.
-
-### 3.15 Asynchronous Job Tracking (Proposed — not yet implemented)
-
-> [!NOTE]
-> This capability supports FR-DBINST and FR-EDORG above; it has no
-> independent purpose absent those capabilities, and shares their
-> not-yet-implemented status.
-
-- **FR-JOB-1** (proposed): CMS SHOULD allow an administrator to query the
-  status of an asynchronous background job (such as data-store provisioning
-  or education-organization refresh) by job ID, including when it was
-  created and, if applicable, when it finished.
-
-### 3.16 Rate Limiting (Proposed — not yet implemented)
-
-> [!NOTE]
-> The ODS Admin API implements request rate limiting. No evidence of an
-> equivalent capability in CMS was found during the research for this PRD;
-> it is captured here as a candidate rather than asserted as current
-> behavior. See the open question in §7.
-
-- **FR-RATE-1** (proposed): CMS SHOULD enforce a configurable rate limit on
-  client requests and return `429 Too Many Requests` when a client exceeds
-  it within a configured time window.
+Database instance provisioning, education organization synchronization,
+asynchronous job tracking, and rate limiting are deferred to
+[CMS v8.1.0 Deferred Requirements](./PRD-CMS-v8.1.0.md).
 
 ## 4. Non-Functional Requirements
 
@@ -720,10 +626,8 @@ External systems and dependencies:
 - **NFR-COMPAT-1**: CMS SHALL support both PostgreSQL and Microsoft SQL
   Server as its configuration-database engine.
 - **NFR-COMPAT-2**: A given CMS feature MAY be supported on one database
-  engine ahead of the other during incremental rollout (for example, the
-  resource-claim read endpoints in FR-CLAIM-7 are PostgreSQL-only as of this
-  writing); such gaps SHALL be documented rather than silently routed to the
-  wrong backend.
+  engine ahead of the other during incremental rollout; such gaps SHALL be
+  documented rather than silently routed to the wrong backend.
 - **NFR-COMPAT-3**: CMS SHALL be deployable via standard container tooling
   (OCI-compliant images), with reference Docker Compose configurations
   provided.
@@ -742,9 +646,10 @@ External systems and dependencies:
 - **NFR-SEC-3**: Client secrets SHALL be hashed at rest in self-contained
   mode; in Keycloak mode, secret storage is governed by Keycloak. In neither
   mode SHALL the original secret be retrievable from storage.
-- **NFR-SEC-4**: Swagger/OpenAPI generation SHALL be independently
-  controllable so it can be disabled in production deployments that do not
-  want to expose interactive API documentation.
+- **NFR-SEC-4**: OpenAPI metadata is exposed through the
+  generated `/openapi/v1.json` document and the transformed
+  `/metadata/specifications` endpoint. Independent production disablement is
+  deferred to v8.1.0.
 - **NFR-SEC-5**: Self-registration (`POST /connect/register`) SHALL be
   disabled after initial bootstrap in deployments that do not require open
   client self-registration.
@@ -764,28 +669,21 @@ External systems and dependencies:
 
 ### 4.3 Reliability and Operations
 
-- **NFR-REL-1**: CMS SHALL expose a health endpoint reflecting the status of
-  its own dependencies (at minimum, its configuration database).
-- **NFR-REL-2**: In self-contained identity-provider mode, CMS SHALL run an
-  in-process, config-gated background sweep that deletes expired access-token
-  rows on a configurable interval (default: enabled, every 30 minutes), so
-  the token table does not grow unbounded. In Keycloak mode, no such
-  mechanism SHALL be registered, since Keycloak owns its own token
-  housekeeping.
-- **NFR-REL-3**: Invalid or missing required configuration (e.g., an
+- **NFR-REL-1**: CMS SHALL expose an anonymous `/health` liveness endpoint.
+- **NFR-REL-2**: Invalid or missing required configuration (e.g., an
   unsupported database engine, an invalid identity-provider mode, or
-  incomplete multi-tenant connection settings) SHALL cause CMS to fail
-  explicitly at startup rather than exhibiting undefined behavior at request
-  time.
-- **NFR-REL-4**: CMS SHALL use a database schema (`dmscs`) dedicated to its
+  incomplete required settings) SHALL cause CMS to fail explicitly at startup
+  or report invalid configuration through startup validation rather than
+  exhibiting undefined behavior at request time.
+- **NFR-REL-3**: CMS SHALL use a database schema (`dmscs`) dedicated to its
   own configuration objects, distinct from any schema used by DMS's
   operational data, even when a host chooses to colocate both databases in a
   single physical database instance.
 
 ### 4.4 Observability
 
-- **NFR-OBS-1**: Every non-success response SHALL be traceable to a specific
-  log entry via `correlationId` (`HttpContext.TraceIdentifier`).
+- **NFR-OBS-1**: Ed-Fi-style non-success responses SHALL be traceable to a
+  specific log entry via `correlationId` (`HttpContext.TraceIdentifier`).
 - **NFR-OBS-2**: CMS SHALL produce structured, machine-readable operational
   logs.
 - **NFR-OBS-3**: Logs related to failure classification SHALL avoid emitting
@@ -800,11 +698,7 @@ External systems and dependencies:
 
 - **NFR-PERF-1**: Collection endpoints that support pagination SHALL avoid
   returning unbounded result sets when `limit`/`offset` are supplied.
-- **NFR-PERF-2**: Running the expired-token cleanup sweep (NFR-REL-2)
-  concurrently across multiple CMS replicas SHALL be safe: the underlying
-  delete SHALL be idempotent, so replicas racing to delete the same expired
-  rows cause no harm.
-- **NFR-PERF-3**: DMS's caching of CMS-sourced configuration (data-store
+- **NFR-PERF-2**: DMS's caching of CMS-sourced configuration (data-store
   routing, Profile definitions, authorization metadata) SHALL have a
   host-configurable refresh interval, so hosts can tune how quickly a CMS-side
   configuration change takes effect on DMS without needing to restart DMS.
@@ -812,7 +706,7 @@ External systems and dependencies:
 ### 4.6 Accessibility and Usability
 
 - **NFR-UX-1**: CMS SHALL provide Swagger/OpenAPI metadata for its full API
-  surface when enabled.
+  surface through `/openapi/v1.json` and `/metadata/specifications`.
 - **NFR-UX-2**: Error responses SHALL be actionable: validation failures
   SHALL identify the offending field(s) via `validationErrors`, and
   not-found/conflict responses SHALL identify the resource or constraint
@@ -839,15 +733,30 @@ External systems and dependencies:
 
 ## 5. System Architecture
 
-| Component | Responsibility | Notes |
-| --- | --- | --- |
-| CMS frontend (`EdFi.DmsConfigurationService.Frontend.AspNetCore`) | Hosts the Management API v3 REST surface, OAuth/OIDC endpoints, and request pipeline (tenant resolution, authentication, authorization, error shaping) | ASP.NET Core minimal-API application |
-| CMS backend (PostgreSQL / SQL Server providers) | Implements the `dmscs`-schema repositories for Vendor, Application, ApiClient, DataStore, DataStoreContext, DataStoreDerivative, ClaimSet, Profile, and ResourceClaim data | Two interchangeable backend implementations behind a shared repository interface |
-| Self-contained identity provider (OpenIddict) | Issues, validates, introspects, and revokes OAuth 2.0 tokens; stores hashed client secrets and token records | Default mode; includes the in-process token-cleanup `BackgroundService` (NFR-REL-2) |
-| Keycloak (optional, external) | Alternative identity provider; owns client credential storage, token issuance, and token/session housekeeping | CMS proxies authentication and client-management calls to Keycloak in this mode |
-| CMS configuration database (`dmscs` schema) | System of record for all CMS-managed configuration | May be colocated in the same physical database instance as DMS's operational data, but remains a logically distinct schema |
-| Ed-Fi API service (DMS) | Consumes CMS's Management API v3 to retrieve and cache configuration; validates bearer tokens statelessly via JWKS | Not part of this PRD's scope beyond the integration points in §3.12 |
-| Administrative UI (e.g., Ed-Fi Admin App) | Human-facing client of CMS's Management API v3 for configuration management | Out of scope for this PRD; documented as a consumer only |
+- **CMS frontend** (`EdFi.DmsConfigurationService.Frontend.AspNetCore`):
+  hosts the Management API v3 REST surface, OAuth/OIDC endpoints, and request
+  pipeline (tenant resolution, authentication, authorization, error shaping).
+  It is an ASP.NET Core minimal-API application.
+- **CMS backend (PostgreSQL / SQL Server providers)**: implements the
+  `dmscs`-schema repositories for Vendor, Application, ApiClient, DataStore,
+  DataStoreContext, DataStoreDerivative, ClaimSet, Profile, and ResourceClaim
+  data behind a shared repository interface.
+- **Self-contained identity provider (OpenIddict)**: issues, validates,
+  introspects, and revokes OAuth 2.0 tokens; stores hashed client secrets and
+  token records.
+- **Keycloak (optional, external)**: alternative identity provider that owns
+  client credential storage, token issuance, and token/session housekeeping.
+  CMS proxies authentication and client-management calls to Keycloak in this
+  mode.
+- **CMS configuration database (`dmscs` schema)**: system of record for all
+  CMS-managed configuration. It may be colocated in the same physical database
+  instance as DMS's operational data, but remains a logically distinct schema.
+- **Ed-Fi API service (DMS)**: consumes CMS's Management API v3 to retrieve
+  and cache configuration; validates bearer tokens statelessly via JWKS. DMS is
+  not part of this PRD's scope beyond the integration points in §3.12.
+- **Administrative UI (e.g., Ed-Fi Admin App)**: human-facing client of CMS's
+  Management API v3 for configuration management. This is out of scope for this
+  PRD; documented as a consumer only.
 
 ## 6. Out of Scope and Known Limitations
 
@@ -864,57 +773,27 @@ External systems and dependencies:
   authorization-strategy assignments are exposed read-only (FR-CLAIM-7). CMS
   does not provide endpoints to create, seed, or maintain this metadata;
   seeding is a deployment/bootstrap concern outside this API surface.
-- **OUT-4**: The resource-claim read endpoints (FR-CLAIM-7) are supported on
-  PostgreSQL only as of this writing; Microsoft SQL Server support is a known
-  gap, not an intentional permanent restriction.
-- **OUT-5**: A richer, database-instance-provisioning workflow with
-  templates and asynchronous job tracking (§3.13, FR-DBINST) and an
-  education-organization synchronization cache (§3.14, FR-EDORG) exist in the
-  ODS Admin API 2.4 line but have no CMS implementation today; they are
-  captured as proposed, not current, requirements.
-- **OUT-6**: Client-secret expiration and scheduled rotation were researched
+- **OUT-4**: A richer, database-instance-provisioning workflow with
+  templates and asynchronous job tracking, an education-organization
+  synchronization cache, request rate limiting, dependency-aware health
+  checks, full non-success error-response conformance, an
+  application-profile lookup endpoint, token cleanup, and OpenAPI
+  disablement are deferred to
+  [CMS v8.1.0 Deferred Requirements](./PRD-CMS-v8.1.0.md).
+- **OUT-5**: Client-secret expiration and scheduled rotation were researched
   in a design spike but are not implemented; today, secret rotation is a
   manual reset (`FR-CLIENT-4`) with no expiration date tracked or enforced.
-- **OUT-7**: Request rate limiting (§3.16, FR-RATE) has no confirmed CMS
-  implementation and is captured as a proposed requirement pending
-  verification.
-- **OUT-8**: Tenant `/details` and other tenant-summary projections available
+- **OUT-6**: Tenant `/details` and other tenant-summary projections available
   in the ODS Admin API are not implemented in CMS; only tenant list/create
   are current CMS behavior (FR-TENANT-5).
-- **OUT-9**: Client-supplied Correlation IDs, supported on the DMS resource
+- **OUT-7**: Client-supplied Correlation IDs, supported on the DMS resource
   API, are not supported on CMS (NFR-OBS-4).
-- **OUT-10**: A built-in administrative UI is not part of CMS; CMS is
+- **OUT-8**: A built-in administrative UI is not part of CMS; CMS is
   consumed by a separate administrative application (e.g., Ed-Fi Admin App).
+- **OUT-9**: Support for third-party OAuth / OpenID Connect (OIDC) identity
+  providers *other than* Keycloak.
 
-## 7. Open Questions and Decision Log
-
-- **Database-instance provisioning scope**: Should CMS build the async,
-  template-based data-store provisioning workflow described in §3.13, or is
-  schema provisioning expected to remain a host-run tooling step
-  (`api-schema-tools`) indefinitely? This affects whether FR-DBINST and
-  FR-JOB graduate from proposed to committed requirements.
-- **Education-organization synchronization scope**: Is the read-side
-  education-organization cache in §3.14 still a priority for CMS, given DMS's
-  own authorization model resolves relationships from live operational data
-  rather than an administrative cache?
-- **Rate limiting**: Confirm whether CMS implements or plans to implement
-  request rate limiting; if not, document this as an intentional platform
-  asymmetry with DMS (which does implement it per the DMS v8.0 companion
-  PRD's FR-CONFIG-3) rather than an oversight.
-- **Secret expiration/rotation**: Decide whether to implement the
-  `secret_expires_on` tracking and rotation tooling investigated in the
-  Keycloak secret-rotation spike, or to leave rotation as a fully manual,
-  host-driven operation.
-- **MSSQL parity for resource-claim endpoints**: Confirm the timeline for
-  extending FR-CLAIM-7 to Microsoft SQL Server, since NFR-COMPAT-1 otherwise
-  commits CMS to full dual-engine support.
-- **Claim-set write parity for resource claims**: The ODS Admin API allows
-  editing resource claims and authorization-strategy overrides at a more
-  granular level than CMS's current read-only projection (FR-CLAIM-7);
-  confirm whether write endpoints for this metadata are in scope for a
-  future release.
-
-## 8. Glossary
+## 7. Glossary
 
 - **CMS**: Ed-Fi Configuration Management Service — the administrative
   control plane and OAuth identity provider for the Ed-Fi API v8 (DMS)
