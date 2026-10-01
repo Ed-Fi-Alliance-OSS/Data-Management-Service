@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -78,27 +79,17 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     /// <summary>
     /// With the proposed namespace check configured ahead of it, every create verdict is returned in the
-    /// ownership slot once that check authorizes — on the plain create path and on the locked-resolve path an
-    /// If-None-Match create takes — with no data-modifying statement and the opened session rolled back.
+    /// ownership slot once that check authorizes, with no data-modifying statement and the opened session
+    /// rolled back.
     /// </summary>
-    [TestCase(CreateDenialKind.NoCreatorToken, false)]
-    [TestCase(CreateDenialKind.CreatorTokenNotHeld, false)]
-    [TestCase(CreateDenialKind.TokenCap, false)]
-    [TestCase(CreateDenialKind.NoCreatorToken, true)]
-    [TestCase(CreateDenialKind.CreatorTokenNotHeld, true)]
-    [TestCase(CreateDenialKind.TokenCap, true)]
+    [TestCase(CreateDenialKind.NoCreatorToken)]
+    [TestCase(CreateDenialKind.CreatorTokenNotHeld)]
+    [TestCase(CreateDenialKind.TokenCap)]
     public async Task It_denies_a_descriptor_post_create_in_the_ownership_slot_after_the_proposed_namespace_check_authorizes(
-        CreateDenialKind denialKind,
-        bool withPrecondition
+        CreateDenialKind denialKind
     )
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-
-        if (withPrecondition)
-        {
-            // The in-session lookup finds no row.
-            sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
-        }
 
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.Authorized()
@@ -109,10 +100,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             WithCreateDenial(
                 CreatePostRequest(
                     namespacePrefixes: ["uri://ed-fi.org/"],
-                    authorizationStrategies: [NamespaceStrategy(), OwnershipStrategy()],
-                    writePrecondition: withPrecondition
-                        ? new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-                        : null
+                    authorizationStrategies: [NamespaceStrategy(), OwnershipStrategy()]
                 ),
                 denialKind
             )
@@ -157,12 +145,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     /// <summary>
-    /// An If-Match create owes a 412, but the ownership verdict is an authorization answer and precedes it; an
-    /// If-None-Match create would insert, and the verdict stops it first.
+    /// An If-Match create owes a 412, but the ownership verdict is an authorization answer and precedes it.
     /// </summary>
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task It_reports_the_create_ownership_denial_ahead_of_the_precondition_outcome(bool ifMatch)
+    [Test]
+    public async Task It_reports_the_create_ownership_denial_ahead_of_the_precondition_outcome()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, CreateNewTargetLookup());
@@ -172,9 +158,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 CreatePostRequest(
                     namespacePrefixes: [],
                     authorizationStrategies: [OwnershipStrategy()],
-                    writePrecondition: ifMatch
-                        ? new WritePrecondition.IfMatch("\"stale-etag\"")
-                        : new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+                    writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
                 ),
                 creatorOwnershipTokenId: null,
                 ownershipTokenIds: [OwnedToken]
@@ -977,12 +961,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     /// proposed check for an update, with or without a precondition. The list is never sent to SQL.
     /// </summary>
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     public async Task It_fails_a_descriptor_post_at_the_ownership_token_cap_in_the_selected_branch(
         PostTarget target,
@@ -1030,12 +1012,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     /// update runs the stored-stamp check once and applies.
     /// </summary>
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     public async Task It_applies_a_descriptor_post_one_below_the_ownership_token_cap(
         PostTarget target,
@@ -1108,12 +1088,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     /// plain one and the locked-resolve one a precondition takes — and under shared and split policies.
     /// </summary>
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     public async Task It_reports_a_preceding_namespace_denial_ahead_of_the_deferred_ownership_token_cap(
         PostTarget target,
@@ -1130,15 +1108,14 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
             if (withPrecondition)
             {
-                // The in-session lookup finds no row.
-                sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
-                precondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
+                // If-Match on a create is a 412, so a create under a precondition has no cap or ownership path.
+                throw new ArgumentException("A create has no precondition case.", nameof(withPrecondition));
             }
         }
         else if (withPrecondition)
         {
             sessionFactory = PreconditionLockedTargetSessionFactory(CreatePersistedDescriptorRow());
-            precondition = new WritePrecondition.IfNoneMatch(["\"not-the-current-etag\""]);
+            precondition = new WritePrecondition.IfMatch(ExpectedComposedDescriptorEtag(44L));
         }
         else
         {
@@ -1285,12 +1262,21 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
     );
 
+    /// <summary>The etag a write precondition must carry to match the stubbed locked row's content version.</summary>
+    private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
+        EtagComposer.Compose(
+            contentVersion,
+            DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
+            )
+        );
+
     private static void AssertNoDataModification(RecordingNamespaceWriteSessionFactory sessionFactory) =>
         AllSessionCommands(sessionFactory).Should().NotContain(command => IsDataModifying(command));
 
     /// <summary>
     /// Arranges a POST over the given token list, with its creator token in the list, for either target. With
-    /// a precondition the request takes the locked-resolve path under an If-None-Match the target satisfies, so
+    /// a precondition the request takes the locked-resolve path under an If-Match the target satisfies, so
     /// only ownership can stop it.
     /// </summary>
     private static (
@@ -1310,9 +1296,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
             if (withPrecondition)
             {
-                // The in-session lookup finds no row.
-                sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
-                precondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
+                // If-Match on a create is a 412, so a create under a precondition has no cap or ownership path.
+                throw new ArgumentException("A create has no precondition case.", nameof(withPrecondition));
             }
         }
         else if (withPrecondition)
@@ -1321,7 +1306,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 CreatePersistedDescriptorRowWithEdFiNamespace()
             );
             targetLookup = ExistingPostTargetLookup();
-            precondition = new WritePrecondition.IfNoneMatch(["\"not-the-current-etag\""]);
+            precondition = new WritePrecondition.IfMatch(ExpectedComposedDescriptorEtag(44L));
         }
         else
         {

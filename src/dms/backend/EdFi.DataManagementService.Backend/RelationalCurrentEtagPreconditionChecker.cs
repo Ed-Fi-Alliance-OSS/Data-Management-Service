@@ -38,9 +38,8 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 
 /// <summary>
 /// Result of the current-etag precondition check. <see cref="IsSatisfied"/> is whether the write may
-/// PROCEED under the precondition: for If-Match this means the tag matched; for If-None-Match the
-/// polarity is inverted (satisfied = the tag did NOT match). Computed by
-/// <see cref="EtagPreconditionEvaluator"/> so the inverted semantics live in one place. The
+/// PROCEED under the precondition (the If-Match tag matched). Computed by
+/// <see cref="EtagPreconditionEvaluator"/>. The
 /// <see cref="CurrentState"/> is loaded only when the precondition is satisfied.
 /// </summary>
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
