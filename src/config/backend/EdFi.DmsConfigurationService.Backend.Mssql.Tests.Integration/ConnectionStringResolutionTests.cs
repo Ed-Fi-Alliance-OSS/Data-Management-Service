@@ -158,8 +158,7 @@ public class ConnectionStringResolutionTests : DatabaseTest
             ? null
             : (string?)
                 (
-                    (IDataStoreConnectionStringBuilderSource)
-                        new MssqlDataStoreConnectionStringValidator()
+                    (IDataStoreConnectionStringBuilderSource)new MssqlDataStoreConnectionStringValidator()
                 ).CreateBuilder(_encryption.Decrypt(Convert.FromBase64String(base64))!)["Password"];
 
     protected static string? Decrypted(string? base64) =>
