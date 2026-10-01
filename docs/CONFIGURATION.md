@@ -180,8 +180,8 @@ A stored data store or derivative connection string may name a secret instead of
 
 | Parameter              | Description                                                                                                                                                                                                                       | Default | Accepted range  |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------- |
-| CacheExpirationSeconds | How long a resolved value is reused, per tenant and secret name, before the resolver is asked again. The expiration is absolute from when the value was fetched; reads do not extend it. `0` disables caching, so every read asks the resolver. | `300`   | `0` or greater  |
-| ResolveTimeoutSeconds  | How long one resolver call may take before the read that needed it fails. It covers the whole call, including any work the resolver does before it returns.                                                                     | `10`    | `1` – `4294967` |
+| CacheExpirationSeconds | How long a resolved value is reused, per tenant and secret name, before the resolver is asked again. The expiration is absolute from when the value was fetched; reads do not extend it. `0` disables caching, so every read that needs a value asks the resolver; reads that ask for the same value at the same moment still share one call. | `300`   | `0` or greater  |
+| ResolveTimeoutSeconds  | How long one resolver call may take before the read that needed it fails. It covers the whole call, including any work the resolver does before it returns. After one call times out, the rest of that read uses only values already cached and does not ask the resolver again, so a data store read waits at most two timeouts however many rows it returns. | `10`    | `1` – `4294967` |
 
 **A rotation reaches DMS within the sum of two windows.** A secret rotated in the store is seen by the Configuration Service within `CacheExpirationSeconds`, and by a running DMS within its own `CacheSettings:DataStoreCacheExpirationSeconds` after that (see [CacheSettings](#cachesettings)). On the defaults that is up to 300 + 600 seconds, about fifteen minutes. For that whole window DMS keeps using the previous value, so write the new credential first and revoke the old one only after the window has elapsed. Nothing pushes a rotation sooner; to apply one immediately, restart both the Configuration Service and DMS. When DMS's `DataStoreCacheRefreshEnabled` is `false` or its `DataStoreCacheExpirationSeconds` is not positive, DMS keeps the value it loaded until it restarts.
 
@@ -298,18 +298,29 @@ These settings configure how the DMS API connects to the Configuration Service t
 > Configuration Service were encrypted with the previous key and are not
 > re-encrypted automatically. After setting a new key, re-submit each data store
 > and data store derivative connection string through the Admin API; an update
-> stores the value encrypted under the currently configured key. Until a
-> connection string has been re-submitted, DMS cannot decrypt it and reports a
-> decryption failure.
+> stores the value encrypted under the currently configured key. The
+> Configuration Service decrypts every stored connection string when it is read,
+> so until a connection string has been re-submitted:
+> - A data store still under the previous key fails every data store read that
+>   includes it, the collection as well as the single row, with an HTTP 500 whose
+>   log entry says the stored connection string could not be decrypted. DMS
+>   therefore cannot load that tenant's data stores.
+> - A derivative still under the previous key fails the data store derivative
+>   reads the same way. Read as part of its data store, it is returned with a null
+>   connection string, which DMS treats as not configured, and the data store and
+>   its other derivatives are unaffected.
+>
+> Re-submitting a value is a write, which does not decrypt the stored one, so the
+> procedure works while reads fail.
 >
 > This applies to local Docker Compose stacks as well, where the environment
 > files under `eng/docker-compose/` supply the key. Picking up an updated
 > environment file changes the derived key, so a database volume created before
 > the change still holds connection strings encrypted under the previous one.
-> `provision-dms-schema.ps1` then fails with a decryption error even though CMS
-> and DMS agree on the new value — the mismatch is with the stored data, not
-> between the services. Recreate the database volume, or apply the re-submission
-> procedure above.
+> `provision-dms-schema.ps1` then fails when it lists the data stores, with the
+> Configuration Service's HTTP 500, even though CMS and DMS agree on the new
+> value — the mismatch is with the stored data, not between the services.
+> Recreate the database volume, or apply the re-submission procedure above.
 
 ## CacheSettings
 
