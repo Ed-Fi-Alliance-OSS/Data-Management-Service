@@ -1,6 +1,6 @@
 # DMS-1556 Implementation Spec — CMS profile requests return HTTP 500 during concurrent catalog loading
 
-Status: **v4 — Phase 0 complete (0.1–0.6 approved, Codex, 2026-09-29/30). G2 approved 2026-09-30 with P-G1, P-G2, P-G3 and P-7.4 in force (§0.00). Phases 1–3 are complete (every step approved; 3.4 at `c799f084d`, 2026-10-01). Phase 4: 4.1 reviewed 2026-10-01 (evidence in `DMS-1556-investigation.md` §4.1). The catalog gate is met on both profiles. The default-setting 256/128 gate **remains failed** (53300 only): it is a separate connection-capacity limitation, it is kept for final review, and no pool, `max_connections` or concurrency change follows. 4.2 approved 2026-10-01 (§4.2 there): DMS shards 1 and 2 are green on 2 independent runs each, and CMS E2E is green once. 4.3 (docs) approved at `1bc6f6fa3`: `docs/CONFIGURATION.md` and `CS-AUTH.md` describe the settings, behavior and rotation runbook. 4.4 (final matrix and push-readiness report, `DMS-1556-investigation.md` §4.4) is at its checkpoint (2026-10-01). It reports **not ready to push**: the default stress gate failed, mutations M2a/M2b and five other boundary probes are unrun (classifier-denied or the same kind of edit), CI has not run after `6e3aec32c`, and the branch conflicts with current `main`. The final decision is the reviewer's.** Phase 0 evidence is in `DMS-1556-investigation.md`. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
+Status: **v4 — Phase 0 complete (0.1–0.6 approved, Codex, 2026-09-29/30). G2 approved 2026-09-30 with P-G1, P-G2, P-G3 and P-7.4 in force (§0.00). Phases 1–3 are complete (every step approved; 3.4 at `c799f084d`, 2026-10-01). Phase 4: 4.1 reviewed 2026-10-01 (evidence in `DMS-1556-investigation.md` §4.1). The catalog gate is met on both profiles. The default-setting 256/128 gate **remains failed** (53300 only): it is a separate connection-capacity limitation, it is kept for final review, and no pool, `max_connections` or concurrency change follows. 4.2 approved 2026-10-01 (§4.2 there): DMS shards 1 and 2 are green on 2 independent runs each, and CMS E2E is green once. 4.3 (docs) approved at `1bc6f6fa3`: `docs/CONFIGURATION.md` and `CS-AUTH.md` describe the settings, behavior and rotation runbook. 4.4 (final matrix and push-readiness report, `DMS-1556-investigation.md` §4.4) approved at `a59b931ce`. Its gate decisions are recorded in §7.4: the default stress failure is a ticket-scoped exception (kept FAILED), the seven unrun mutants are waived (never passed), CI is a merge and completion gate, and evidence archival is required before completion. `main` (`5c964676f`) is merged locally (investigation, *Integration with `main`*); push and ready-for-review each await explicit approval.** Phase 0 evidence is in `DMS-1556-investigation.md`. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
 Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1556`, branch `DMS-1556` (fresh from `main` at `5e0d010af`). Target: Ed-Fi API v8.1. `SchemaHashConstants.RelationalMappingVersion` stays `v3`; no schema migration.
 
 ## 0. Review history and dispositions
@@ -583,6 +583,31 @@ All commands run from the worktree root in pwsh unless noted. [F]/[C] labels as 
 ### 7.4 Push-readiness criteria
 
 **7.4-H**: every healthy baseline-comparison run in §7.2 has 100 % HTTP 200 with validated bodies at 87/87 and 256/128 under both profiles. **7.4-O**: injected-outage runs match §4.6/§4.7 by stage. All lanes in §7.1 green with skips enumerated; M1–M15 confirmed; shards 1 and 2 green on ≥ 2 independent runs each; no `src/dms` path in the diff; CSharpier clean; docs merged; every §2 row filled; explicit approval to push. *In force (P-7.4, §0.00):* a headroom (`max_connections=200`) 256/128 run supplements the unchanged all-200 gate. A default-setting run with 53300 failures goes to review; it is never a pass and never licenses a pool or `max_connections` change.
+
+*Gate decisions at the 4.4 review (2026-10-01; `DMS-1556-investigation.md` §4.4, Review
+disposition):*
+
+- **7.4-H stress, ticket-scoped exception.** The default-setting 256/128 result stays
+  **FAILED** (591 responses, all PostgreSQL `53300`, 4.1). It is accepted as an exception
+  for DMS-1556 only:
+  - the evidence separates connection-slot exhaustion from the authentication stall;
+  - the catalog workload the ticket concerns passes (8,700/8,700).
+  The result is not a pass. No pool size, `max_connections` or concurrency change follows,
+  and the headroom run stays supplementary evidence.
+- **M1–M15, partial waiver.** The execution requirement is waived for M2a and M2b, the three
+  2.2 unknown-kid mutants, the 3.1 challenge-classification mutant and the 3.1 wiring revert.
+  - They stay *UNRUN — execution requirement waived*; none counts as passed.
+  - The alternative evidence: the reviewed boundary code, the real-pipeline assertions, the
+    configuration-manager call counts, the rotation tests, and the executed mutations.
+  - The denied edits are not retried by any route.
+- **CI.** CI is a merge and completion gate, not a prerequisite for pushing. Draft PRs skip
+  CI, so pushing and marking the PR ready each need explicit approval after the integration
+  review.
+- **Evidence archival.** An indexed bundle (checksums, commit and image provenance; memory
+  dumps excluded from the ordinary Jira bundle) is required before the ticket is completed.
+- **Integration.** `main` is integrated by a merge, not a rebase, because the published
+  commits and the evidence anchor on the existing ids. The checks on the merged tree are
+  selected at the integration review.
 
 ## 8. Risks
 

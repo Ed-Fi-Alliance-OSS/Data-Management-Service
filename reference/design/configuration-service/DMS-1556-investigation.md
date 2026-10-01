@@ -1729,8 +1729,8 @@ mutants were applied together, and no revert was batched with a mutant.
 | M | Mutation (as applied) | Must fail | Status | Result |
 | --- | --- | --- | --- | --- |
 | M1 | `GetUsableAsync` admits `LoadNeed.Always`, with no fast path and no usable-snapshot admission | 1.5-a, 3.1-a | **Caught, final** | Unit 11/126, incl. 1.5-a ×2 (`It_reads_the_store_once`, same snapshot). Pipeline 16/128, incl. 3.1-a `It_reads_the_key_table_once` and DmsJwtBearer cold `It_reads_the_key_table_once`. |
-| M2a | boundary swallows `SigningKeysUnavailableException` without a result | 2.3-c, 3.1-f | **UNRUN** | The edit to `SigningKeyBearerEvents.MessageReceivedAsync` was **denied** by the session's permission classifier ("Security Weaken", 2026-10-01). Not retried, and not attempted by any other means. |
-| M2b | dependency translation removed at message-received, authentication-failed and token-validated | 3.1-f, 3.1-g, 3.1-m | **UNRUN** | Not attempted. It is the same kind of edit to the same boundary code that was just denied for M2a. |
+| M2a | boundary swallows `SigningKeysUnavailableException` without a result | 2.3-c, 3.1-f | **UNRUN — execution requirement waived** (4.4 review) | The edit to `SigningKeyBearerEvents.MessageReceivedAsync` was **denied** by the session's permission classifier ("Security Weaken", 2026-10-01). Not retried, and not attempted by any other means. |
+| M2b | dependency translation removed at message-received, authentication-failed and token-validated | 3.1-f, 3.1-g, 3.1-m | **UNRUN — execution requirement waived** (4.4 review) | Not attempted. It is the same kind of edit to the same boundary code that was just denied for M2a. |
 | M3 | `ValidateTokenAsync`'s catch loses its filter, so status-store failures return `false` | 2.2-c, 3.1-g | **Caught, final** | Unit 14/122, incl. 2.2-c ×9 (database, timeout, canceled). Pipeline 3/128: 3.1-g `It_answers_a_dependency_503`, plus the DmsJwtBearer status-store fixture ×2. (At 2.2: 11/113.) |
 | M4 | retry gate never closes (`now.AddYears(100) < NextAttemptAt`) | 1.5-l, 3.1-n | **Caught, final** | Unit 7/126, incl. 1.5-l ×2. Pipeline 1/128: 3.1-n `It_reads_the_key_table_once`. |
 | M5 | unknown-key cooldown never applies | 1.5-j, 1.5-p, 3.1-q | **Caught, final** | Unit 9/126: 1.5-j ×4, 1.5-p ×3, 1.5-q ×2. Pipeline 4/128: 3.1-q ×2 (`It_loads_nothing_during_the_cooldown`, `It_answers_401_during_the_cooldown`), 3.1-d, 3.1-h. |
@@ -1747,8 +1747,9 @@ mutants were applied together, and no revert was batched with a mutant.
 | M14 | source `ObjectDisposedException` treated as provider disposal | 1.6-n | **Caught, reused** (`02f7f3b77`) | 3/307. Unchanged since. |
 | M15 | provider ignores the observed state version | 1.6-m, provider conditional-refresh fixture | **Caught, reused** (`02f7f3b77`) | 4/307. Unchanged since. |
 
-**Other probes still UNRUN.** Each was denied by the permission classifier or is the same
-kind of edit as a denied one. None was retried or worked around.
+**Other probes still UNRUN — execution requirement waived at the 4.4 review.** Each was
+denied by the permission classifier or is the same kind of edit as a denied one. None was
+retried or worked around, and none counts as passed.
 
 - **Unknown-kid mutants at 2.2** (refresh never called, always called, stale snapshot
   used): denied ("Security Test Removal", 2026-09-30). The other two were not attempted.
@@ -1894,3 +1895,139 @@ requirements):
 | AC 4 | Met (PostgreSQL runtime, both engines by integration) | — |
 | AC 5 | Met locally | Re-validation after the rebase |
 | AC 6 | Met | — |
+
+### Review disposition (2026-10-01)
+
+The reviewer approved `a59b931ce` as the 4.4 checkpoint, after reading the report, the
+relevant implementation and the incoming CMS changes; no tests were rerun. **This is not
+approval to push or to close DMS-1556.** Decisions:
+
+1. **Default stress failure: a ticket-scoped exception.**
+   - The 256/128 default-setting result stays **FAILED**, with all 591 responses.
+   - The evidence separates PostgreSQL connection-slot exhaustion (`53300`) from the
+     authentication stall, and the ticket's catalog workload passes.
+   - No pool size, server limit or concurrency changes for this ticket. The headroom run
+     stays supplementary evidence.
+   - The exception is recorded in spec §7.4.
+2. **The seven blocked or unattempted mutation probes:** M2a, M2b, the three 2.2
+   unknown-kid mutants, the 3.1 challenge classification and the 3.1 wiring revert.
+   - Their execution requirement is **waived**. They stay labelled *UNRUN — execution
+     requirement waived* and never count as passed.
+   - The alternative evidence: the reviewed boundary code, the real-pipeline assertions,
+     the configuration-manager call counts, the rotation tests and the mutations that were
+     executed.
+   - The denied edits are not to be retried by any other route.
+3. **CI** is a merge and completion gate, not a prerequisite for pushing.
+   - Both workflows skip draft PRs, so a push alone yields no CI evidence.
+   - Pushing, and marking the PR ready, each need explicit approval after the integration
+     review.
+4. **Evidence archival** is required before the ticket is completed.
+   - The local captures stay preserved.
+   - An indexed evidence bundle is to be prepared, with checksums and commit and image
+     provenance. Memory dumps stay out of the ordinary Jira bundle.
+   - **Not yet done:** the bundle is pending, and the captures remain in the gitignored
+     `artifacts/`.
+
+The next checkpoint was set as integrating `main` by a **merge**, not a rebase: part of the
+branch is published, and the existing commit ids anchor the review and the evidence.
+
+## Integration with `main` (2026-10-01)
+
+### Scope
+
+`origin/main` `5c964676f` merged into `DMS-1556` (`a59b931ce`) locally as merge commit
+`0b8fd96d6`, whose parents are `a59b931ce` and `5c964676f`. The working tree was reviewed
+before committing. The merge commit holds only `main` and the conflict resolutions, and its
+`src/` is the tree validated below. This record follows in a separate documentation commit.
+Nothing is pushed.
+
+- **Backup:** branch `DMS-1556-before-main-merge` at `a59b931ce`.
+- **Why `main` is a merge parent:** the merge base is `5e0d010af`, and `main` brings 14
+  commits. Seven touch `src/config`:
+  - DMS-853 (resource-claim actions);
+  - DMS-1552 (`EdFi.DmsConfigurationService.Secrets` contract, `IClientSecretHasher`
+    relocated, `ClientSecretHashingIterations` validated);
+  - DMS-1325 (E2E fragments);
+  - DMS-1488 (`jwks_uri` from the configured Authority);
+  - DMS-1557 (profile and application reads on the limited scope);
+  - DMS-1553 (plugin loading in CMS startup);
+  - DMS-1508/1506 (anonymous `/tenancy` discovery).
+- **No production code changed** beyond the conflict resolution below. No compatibility
+  adjustment was needed: the branch compiled against `main`'s relocated contract and
+  renamed setting unchanged.
+- **Phase 0 remains historical causal evidence.** The 4.1/4.2 runtime and E2E evidence
+  applies to the pre-merge implementation (`src/` = `c799f084d`). The merged tree is no
+  longer identical to it, so the reviewer selects what reruns on the merged tree.
+
+### Conflicts (4) and their resolution
+
+| File | Conflict | Resolution |
+| --- | --- | --- |
+| `Backend.OpenIddict/Extensions/OpenIddictServiceCollectionExtensions.cs` (production) | Both sides appended to the end of `AddOpenIddictIdentityOptions`. The branch added the `SigningKeyOptionsValidator` registration and `ValidateOnStart`, followed by the new `AddSigningKeyServices` method. `main` added the `ClientSecretHashingIterations > 0` check with `ValidateOnStart`. | Both kept verbatim, in this order: the signing-key validator, the hashing-iterations validation, `return`. `AddSigningKeyServices` follows, unchanged. Options validators are cumulative, so both run at startup. The tests of each side pass: the signing-key validator fixtures, plus `main`'s zero, negative and positive hashing-iterations startup fixtures. |
+| `Backend.Tests.Unit/OpenIddictServiceCollectionExtensionsTests.cs` | Both sides inserted new fixtures at the same anchor, after the base file's last fixture. The `using` lists also conflicted. | Union. The `using` lists are combined. The helpers merged automatically: the branch's `BuildProvider`, and `main`'s `ResolveBoundHasher`, `ValidateAtStartup` and `CreateHasherAt`. The branch's fixtures come first, then `main`'s. Verified mechanically: against the branch's side the result only adds `main`'s 210 lines; against `main`'s side it only adds the branch's lines, plus the branch's one changed line (`BindIdentityOptions` through `BuildProvider`). |
+| `Backend.Tests.Unit/OpenIddictTokenManagerTests.cs` | `using` lists only | Union: the branch's `SigningKeys`, `Validation` and `Tests.Unit.SigningKeys`, plus `main`'s `Secrets`. |
+| `docs/CONFIGURATION.md` | Both sides appended after the `IdentitySettings` section's last paragraph | `main`'s `ClientSecretHashingIterations` warning stays at the end of the `IdentitySettings` section, where `main` placed it. The branch's *Signing-key settings* section follows. Neither text was changed. |
+
+### Automatically merged files both sides changed (12), reviewed
+
+- **SQL Server and PostgreSQL OpenIddict registrations, and `OpenIddictTokenManager.cs`:**
+  `main` adds only `using EdFi.DmsConfigurationService.Secrets;` (the `IClientSecretHasher`
+  relocation). The branch's `AddSigningKeyServices` calls, and the manager's snapshot
+  provider and certificate store, are untouched.
+- **`IdentityOptions.cs`:** `main` renames `HashingIterations` to
+  `ClientSecretHashingIterations`. No branch file referenced the old name. The
+  `SigningKey*` properties are unaffected.
+- **`WebApplicationBuilderExtensions.cs`:**
+  - `main` changes the signature to `AddServices(LoadedPlugins)` and appends the plugin
+    service-contribution phase last.
+  - The branch's `Bearer` wiring (`UseSigningKeySnapshot`) is untouched.
+  - The plugin contract registry names only `ISecretResolver` and `IClientSecretHasher`
+    (both *replace*). No signing-key type is a plugin contract, and nothing on `main`
+    consumes `ISecretResolver` yet.
+- **Frontend unit test csproj:** the branch's `Microsoft.Extensions.TimeProvider.Testing`
+  reference plus `main`'s `<Import Project="PluginCmsFixtures.targets" />`.
+- **The 3 lock files:** both sides' entries kept; valid JSON. The build did not rewrite
+  them.
+- **`IdentityModuleTests.cs`:** both sides' edits kept.
+- **`CS-AUTH.md`:** `main` changes the scope table (limited-access routes). The branch's
+  *Signing keys in self-contained mode* section is untouched.
+- **`OWASP-AUTH-COVERAGE.md`:** `main` adds its DMS issuer-pin and `jwks_uri` origin-pin
+  coverage. The branch's retirement note is untouched.
+
+### Incoming CMS changes checked against the signing-key design
+
+- **DMS-1553, startup composition (`Program.cs`).** Plugins load before `AddServices`, and
+  the plugin registration audit runs after `Build`, before schema deployment. Schema
+  deployment still precedes `RunAsync`, so the refresh service's startup load (2.1) still
+  sees the deployed schema. The branch's `ValidateOnStart` checks run at host start, as
+  before.
+- **DMS-1488, `jwks_uri`.** The discovery document now builds `jwks_uri` from the
+  configured Authority, not the request host. The JWKS route (`/.well-known/jwks.json`) and
+  `JwksEndpointModule` (3.3) are unchanged.
+- **DMS-1557.** `GET /v3/profiles/`, `/v3/profiles/{id}` and `/v3/applications/{id}` move
+  to `MapLimitedAccess`, which accepts any of the three scopes, so every token accepted
+  before is still accepted. The post-authentication profile-repository 500 (F8) is
+  unchanged. DMS-1557 is the independent DMS-side correction AC 6 names, and it is now on
+  `main`.
+- **DMS-1508/1506** adds an anonymous `/tenancy` endpoint and changes tenant-resolution
+  paths, but not authentication. **DMS-853** is claim-set management and unrelated.
+
+### Validation on the merged tree (`0b8fd96d6`, run on the working tree before committing)
+
+| Check | Result |
+| --- | --- |
+| `dotnet build src/config/EdFi.DmsConfigurationService.sln --no-incremental` | 0 warnings, 0 errors (twice) |
+| Plugin fixtures (`PluginCmsFixtures.targets`) | Restored and built. `Acme.CmsContributor` and `Acme.CmsSecondResolver` were freshly staged into the frontend test output by this build (16:11, build started 16:10:41). **No NU1008**: the nested-worktree failure stays confined to the DMS integration fixture (4.2). No old binaries were used. |
+| Backend unit | **1912 passed, 0 failed, 0 skipped** (1 m 19 s) |
+| Frontend unit | **2016 passed, 0 failed, 0 skipped** (5 m 17 s) |
+| Branch-owned tests | All 388 backend and 176 frontend signing-key, JWKS and pipeline tests present and passing. Against the pre-merge run, every name missing after the merge is `main`'s: the TenantResolution health-path fixtures replaced by DMS-1508 (19), the E2E-fragment test changed by DMS-1325 (2), and 4 test cases whose names embed random values that differ per run. |
+| CSharpier, the 63 branch-owned and resolved C# files | clean |
+| CSharpier, whole `src/config` | **fails on 9 files inherited from `main`.** The same 9 fail identically on a clean `origin/main` checkout: the DMS-853 claim-set files and the DMS-1552 Secrets csproj. Not touched here. |
+
+**Not run on the merged tree:**
+
+- PostgreSQL and SQL Server integration;
+- CMS E2E and the DMS shards;
+- any runtime or load check.
+
+The reviewer selects these after reviewing the merge.
