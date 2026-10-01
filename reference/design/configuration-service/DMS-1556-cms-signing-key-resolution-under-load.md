@@ -1,6 +1,6 @@
 # DMS-1556 Implementation Spec — CMS profile requests return HTTP 500 during concurrent catalog loading
 
-Status: **v4 — Phase 0 complete (0.1–0.6 approved, Codex, 2026-09-29/30). G2 approved 2026-09-30 with P-G1, P-G2, P-G3 and P-7.4 in force (§0.00). Phases 1–3 are complete (every step approved; 3.4 at `c799f084d`, 2026-10-01). Phase 4: 4.1 reviewed 2026-10-01 (evidence in `DMS-1556-investigation.md` §4.1). The catalog gate is met on both profiles. The default-setting 256/128 gate **remains failed** (53300 only): it is a separate connection-capacity limitation, it is kept for final review, and no pool, `max_connections` or concurrency change follows. 4.2 is at its checkpoint (2026-10-01, §4.2 there): DMS shards 1 and 2 are green on 2 independent runs each, and CMS E2E is green once. 4.3 has not started (§5).** Phase 0 evidence is in `DMS-1556-investigation.md`. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
+Status: **v4 — Phase 0 complete (0.1–0.6 approved, Codex, 2026-09-29/30). G2 approved 2026-09-30 with P-G1, P-G2, P-G3 and P-7.4 in force (§0.00). Phases 1–3 are complete (every step approved; 3.4 at `c799f084d`, 2026-10-01). Phase 4: 4.1 reviewed 2026-10-01 (evidence in `DMS-1556-investigation.md` §4.1). The catalog gate is met on both profiles. The default-setting 256/128 gate **remains failed** (53300 only): it is a separate connection-capacity limitation, it is kept for final review, and no pool, `max_connections` or concurrency change follows. 4.2 approved 2026-10-01 (§4.2 there): DMS shards 1 and 2 are green on 2 independent runs each, and CMS E2E is green once. 4.3 (docs) is at its checkpoint (2026-10-01, §5 Phase 4): `docs/CONFIGURATION.md` and `CS-AUTH.md` describe the settings, behavior and rotation runbook. CI and final acceptance (4.4, §7.4) are pending.** Phase 0 evidence is in `DMS-1556-investigation.md`. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
 Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1556`, branch `DMS-1556` (fresh from `main` at `5e0d010af`). Target: Ed-Fi API v8.1. `SchemaHashConstants.RelationalMappingVersion` stays `v3`; no schema migration.
 
 ## 0. Review history and dispositions
@@ -476,6 +476,27 @@ It is called only by the three self-contained store registrations: PostgreSQL, P
   - **Superseded first outage set:** the first P-runner-approx outage set was rerun.
     Docker log rotation truncated its pause-run CMS logs, and its key-lock window ended
     before recovery.
+
+*4.3 as done (2026-10-01, documentation only; no workload rerun):*
+
+- **`docs/CONFIGURATION.md`**, new section *Signing-key settings*:
+  - the four `SigningKey*` settings, with defaults, accepted ranges and startup validation
+    (self-contained only);
+  - `KeyFormatCacheSize` as an ignored compatibility setting;
+  - a connection-capacity note: the observed 53300 limitation (P-G3's optional note,
+    P-7.4). It recommends no changed default.
+- **`CS-AUTH.md`**, new section *Signing keys in self-contained mode*:
+  - the snapshot and its sources;
+  - refresh, cooldown, backoff and maximum staleness, and the recovery bound;
+  - dependency 503 versus ordinary 401 versus a successful empty JWKS, per consumer;
+  - why cached keys give no general database-outage availability (token status stays
+    uncached);
+  - the §4.5 rotation and retirement runbook, with the new-key acceptance delay;
+  - the §4.9 log signals.
+- **`README.md`** (configuration-service designs): links to this spec, the investigation and
+  the CS-AUTH section.
+- **Gate state unchanged:** the default 256/128 stress gate remains failed (P-7.4, 4.1
+  disposition). CI and final acceptance (4.4, §7.4) are pending.
 
 **Changed log signal (recorded at the 3.3 review).** The baseline code logged `Failed to fetch public keys for JWKS` when a key read failed, and `Invoke-E1Baseline.ps1` counts that string (`$cmsKeyFetchFailures`). The fixed code never emits it: since 2.2 a key-store failure is logged by the snapshot provider's load-attempt Error (§4.9, category `SigningKeyStore`), and since 3.3 a JWKS request with no usable snapshot logs `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)`; protected requests log `Authentication could not reach a decision: the {Category} is unavailable (trace …)`. On the fixed image that counter therefore reads zero whatever happens, and Phase 4 must **not** treat it as evidence that dependency failures disappeared: 4.1 counts the new signals, and outage runs (4.1-O) must show them. The historical baseline evidence (0.3–0.6, `DMS-1556-investigation.md`) stays unchanged.
 

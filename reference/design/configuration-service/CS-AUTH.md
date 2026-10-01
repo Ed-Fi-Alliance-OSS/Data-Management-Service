@@ -195,6 +195,189 @@ follow that both modes perform ownership-checked revocation:
   is a no-op end to end: there is no data to protect behind the missing
   authentication check, since nothing is read, mutated, or revealed either way.
 
+## Signing keys in self-contained mode
+
+This section applies to `self-contained` mode only. In `keycloak` mode none of these
+components is registered, and token validation is unchanged. The settings named here
+are described, with their defaults and accepted ranges, in
+[Signing-key settings](../../../docs/CONFIGURATION.md#signing-key-settings-configuration-service-self-contained-only).
+The design and its test evidence are in
+[DMS-1556](./DMS-1556-cms-signing-key-resolution-under-load.md).
+
+### The key snapshot
+
+Each Configuration Service instance holds the public keys it validates tokens with in one
+in-memory **snapshot**. The snapshot comes from one of two sources:
+
+- **Database keys** (the default): every row of `dmscs.OpenIddictKey` with
+  `IsActive = true`. Token issuance signs with the newest active row.
+- **Certificates** (`IdentitySettings:UseCertificates`): the one key of the configured or
+  development certificate, with the certificate thumbprint as the key id.
+
+The default `Bearer` scheme, `DmsJwtBearer`, the JWKS endpoint, introspection and
+revocation all use the same snapshot. Validating a token does not read the key table.
+The table is read only by a load, and a load starts in one of these ways:
+
+- the startup load;
+- a scheduled reload;
+- a request that finds the snapshot missing, expired, or overdue;
+- a token whose key id the snapshot does not hold.
+
+The per-token status check (revoked or not) is a separate database read, made on every
+request and never cached. See [Cached keys do not keep the service available through a
+database outage](#cached-keys-do-not-keep-the-service-available-through-a-database-outage).
+
+### Refresh, backoff, cooldown and staleness
+
+- **One load at a time.** An instance runs at most one load. Requests that need keys while
+  a load is running wait for that load rather than starting their own. A load that runs
+  longer than `SigningKeyLoadTimeoutSeconds` (default 10 s) is canceled and counted as
+  failed. If the database call itself does not end at that deadline, no new load starts
+  until it does, and its late result is discarded.
+- **Scheduled reload.** After a successful load the next reload is due after
+  `SigningKeyRefreshIntervalSeconds` ±10 % (default 300 s, so 270–330 s). The ±10 % is drawn
+  once per snapshot.
+- **Fresh and overdue.** A snapshot is *fresh* until the refresh interval has passed and
+  *overdue* after that. An overdue snapshot is still used, and the first request that finds
+  it overdue starts a reload in the background. Whichever comes first, the scheduled reload
+  or such a request, does the load.
+- **A failed load never replaces the snapshot.** The previous keys stay in use, and no
+  failure is ever published as an empty key set. The next load is allowed only after a
+  backoff of 5, 10, 20, 40 and then 60 s, each ±20 %, after consecutive failures (at most
+  72 s). During a backoff no request starts a load. The background service wakes at the
+  end of the backoff, so an instance retries without any traffic.
+- **Recovery.** Once the key store is back, the next load starts within the remaining
+  backoff, at most 72 s. It completes within `SigningKeyLoadTimeoutSeconds` after that:
+  82 s at the default settings. This bound assumes no earlier database call is still
+  outstanding.
+- **Maximum staleness.** A snapshot can be used for `SigningKeyMaxStalenessSeconds` after
+  its last successful load (default 3600 s). After that it has *expired*, and it is not
+  used again until a load succeeds.
+- **Unknown key id.** A token whose `kid` is not in the snapshot triggers one reload. The
+  reload happens only when no backoff is running and the last completed load, of any kind,
+  ended at least `SigningKeyUnknownKeyRefreshCooldownSeconds` ago (default 30 s). The
+  cooldown applies to the whole instance, so tokens carrying made-up key ids cause at most
+  one load per cooldown. If the key is still absent after the reload, or the reload was
+  not allowed, the token is rejected with 401.
+- **Empty key set.** A store that holds no active key is a *successful* load of zero keys.
+  It is published with a Warning
+  (`Signing-key snapshot {n} is empty: … so every token will be rejected`). JWKS then
+  answers `200 {"keys":[]}`, and every token is rejected with 401. A database that has no
+  key when the service starts behaves this way until a key is added. After that, the first
+  token signed with the new key triggers the unknown-key reload, subject to the cooldown,
+  or the next scheduled reload picks the key up.
+
+### Dependency 503s, ordinary 401s, and an empty JWKS
+
+Each response says whether the token was judged, or whether the service could not reach a
+decision:
+
+| Situation | Protected endpoints | `GET /.well-known/jwks.json` | Introspection | Revocation |
+| --- | --- | --- | --- | --- |
+| Usable snapshot, valid token, token status valid | Request proceeds | `200` with keys | `{"active": true}` | Revokes; `200` |
+| Token rejected: bad signature, wrong issuer or audience, expired, missing or unknown `kid`, revoked, malformed | **401**, `WWW-Authenticate: Bearer`, no `Retry-After` | unaffected | `{"active": false}` | No-op `200` |
+| No usable snapshot (never loaded, or past maximum staleness) | **503**, category `SigningKeyStore` | **503** | `{"active": false}` and an Error log | No-op `200` and an Error log |
+| Token-status read fails (usable snapshot) | **503**, category `TokenStatusStore` | unaffected | `{"active": false}` and an Error log | not affected (revocation does not read the status) |
+| Store holds no active key (successful empty load) | **401** for every token | `200 {"keys":[]}` | `{"active": false}` | No-op `200` |
+
+- **A dependency 503** carries `Retry-After: 30`, has no `WWW-Authenticate`, and has a
+  generic `application/problem+json` body (`title` `Service Unavailable`, the request's
+  `correlationId`). The body never names the failing store. The category appears only in
+  the Error log line:
+  `Authentication could not reach a decision: the {SigningKeyStore|TokenStatusStore} is unavailable (trace …)`,
+  and for JWKS `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)`.
+  Clients should treat it as transient and retry after the indicated delay, not discard
+  their token.
+- **An ordinary 401** means the token itself was judged and rejected. It never results from
+  a key-store failure while the snapshot is usable. An unknown `kid` whose reload fails is
+  401 while the snapshot is usable, and 503 when it is not.
+- **An empty JWKS (`200 {"keys":[]}`)** is an authoritative answer: the store has no active
+  key. Before DMS-1556, JWKS also answered `200 []` when the key read *failed*, and
+  protected requests answered 401 when key or status reads failed. Both are now the 503
+  above. This is a deliberate contract change. A JWKS consumer now sees a failed fetch
+  instead of an empty key set it might adopt.
+- **Introspection and revocation are unchanged on the wire.** They keep their protocol
+  answers (`{"active": false}`; RFC 7009's always-`200`) when a dependency fails, and log
+  an Error naming the category.
+- Failures after authentication, in the endpoint's own data access, are not part of this
+  classification and keep their existing responses (for example 500).
+
+### Cached keys do not keep the service available through a database outage
+
+The snapshot makes authentication independent of the **key table**, not of the
+**database**. The token-status check is deliberately uncached, so a revocation takes
+effect on the next request. That check reads the database on every authenticated request.
+When the whole database is unavailable, every authenticated request answers 503
+`TokenStatusStore`, whatever the state of the snapshot. Maximum staleness matters only
+when key reads fail while token-status reads still work, for example while the key table
+is locked.
+
+### Rotating and retiring a database signing key
+
+This is how the system behaves, not an extra mechanism. At the default settings, write
+`T_prop` = refresh interval + 10 % + load timeout = 300 + 30 + 10 = **340 s**. A key-table
+change committed at time *t* is in use on every healthy instance by *t* + `T_prop`, even
+with no traffic.
+
+1. **Insert the new key** as an active row. On PostgreSQL,
+   [`Generate-OpenIddictKey-Insert.ps1`](../../../eng/docker-compose/Generate-OpenIddictKey-Insert.ps1)
+   prints a suitable `INSERT`. **Signing switches at the next token issued, on every
+   instance,** because issuance reads the newest active row directly. Validation does not
+   switch at that moment.
+2. **Expect a short new-key acceptance delay.** An instance accepts the new key's tokens as
+   soon as its snapshot holds the key. The first new-key token it sees triggers the
+   unknown-key reload when the cooldown and backoff allow. Otherwise that token is
+   rejected with **401**, and the key arrives at the next allowed unknown-key reload or by
+   `T_prop`, whichever comes first. With traffic the delay is bounded by
+   min(cooldown, refresh interval) + load timeout (40 s at the defaults). If the key store
+   was failing, it can reach the maximum backoff + load timeout (82 s). Instances are
+   independent: one may accept a new-key token while another still answers 401 until its
+   cooldown ends or its next reload. **If you need zero such 401s, insert the key at a
+   quiet time and wait `T_prop` before new-key tokens reach validators**, or restart each
+   instance. A restarted instance loads the table at startup.
+3. **Keep the old key active** for at least `TokenExpirationMinutes` plus the 5-minute
+   validation clock skew after the insert (35 min at the defaults). Tokens minted before
+   the switch then stay valid until they expire.
+4. **Retire the old key** by setting `IsActive = false`. Its tokens are rejected within
+   `T_prop` on healthy instances. If an instance cannot read the key store, it keeps
+   trusting the retired key until its snapshot expires: at most
+   `SigningKeyMaxStalenessSeconds` (3600 s) after its last successful load. That is the
+   configurable trade-off between availability and how long a retired key can be accepted.
+   To force an immediate reload, for example after a key compromise, restart each instance
+   once the row is updated. A token you know about can also be revoked at once through
+   `POST /connect/revoke`, because the status check is not cached.
+
+In **certificate mode** the snapshot holds the one certificate key, so there is no overlap
+window. Issuance reads the certificate file at every token, so replacing the file switches
+signing at once. Validation switches at the instance's next load. Until then, new-certificate
+tokens face the acceptance delay of step 2. After the load, tokens signed with the replaced
+certificate are rejected. Replace the certificate at a quiet time, or restart each instance
+after replacing it.
+
+### Log signals
+
+| Event | Level | Message starts with |
+| --- | --- | --- |
+| Snapshot published | Information | `Signing-key snapshot {n} published from {Database\|Certificate} ({Trigger}): {k} keys, …` |
+| Empty snapshot published | Warning | `Signing-key snapshot {n} is empty: …` |
+| Load failed | Error | `Signing-key load failed ({Trigger}): category SigningKeyStore, kind {Retrieval\|Processing}, consecutive failures {n}, next attempt in {s} s. …` |
+| Load finished after its deadline | Warning | `A signing-key load that outlived its deadline has finished …; its result was discarded` |
+| Unknown key id | Warning | `Bearer token key id {kid} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
+| Dependency 503 | Error | `Authentication could not reach a decision: the {Category} is unavailable (trace …)` |
+| JWKS 503 | Error | `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)` |
+
+A snapshot publication labelled `Request` is a normal background reload started by a
+request that found the snapshot overdue. It is not a fault. The message
+`Failed to fetch public keys for JWKS`, logged before DMS-1556, is no longer emitted.
+
+### Connection capacity
+
+The snapshot takes key reads off the request path, but each authenticated request still
+opens a database connection for its status check, and most endpoints read their own data.
+Under heavy concurrency the database's connection limit can still be reached. See the
+connection-capacity note in
+[Signing-key settings](../../../docs/CONFIGURATION.md#signing-key-settings-configuration-service-self-contained-only).
+
 ## Scopes
 
 Authorization is scope-based. Three scopes are defined:

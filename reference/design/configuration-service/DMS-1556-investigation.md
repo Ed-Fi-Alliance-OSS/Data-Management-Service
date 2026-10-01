@@ -1597,6 +1597,19 @@ local images; only the pinned 4.1 tag survived.
   PowerShell files the branch adds or changes (`eng/performance/dms-1556/*.ps1`, `*.psm1`)
   reported no findings.
 
+### Review disposition (2026-10-01)
+
+The reviewer checked the retained trx files and the run index (`artifacts/e42/`) and ran no
+tests. 4.2 is approved.
+
+1. **Runs confirmed:** both independent runs of each DMS shard, and the CMS E2E result.
+2. **Build exception:** the failed local DMS Release build (NU1008 on the plugin fixture,
+   Deviations) does not invalidate the freshly built E2E assemblies. It stays recorded as a
+   build exception.
+3. **CMS E2E counts for the final matrix:** 227 passed, 8 reported skips, and 2
+   pending-binding `NotExecuted` results (ApiClients 09 and 15): 237 trx entries in all. The
+   Results section above already explains the 2.
+
 ### AC status after 4.2
 
 | AC | Status | What remains |
