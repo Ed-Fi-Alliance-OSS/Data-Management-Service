@@ -108,26 +108,6 @@ startup by explicitly passing `-Rebuild` (or its shorter `-r` alias):
 ./bootstrap-local-dms.ps1 -Rebuild
 ```
 
-### Recovering from the pre-release Docker setup
-
-The released Configuration Service does not migrate a database retained from
-the `dms-pre-8.0.1-alpha.0.48` setup. Keeping that database can make
-`/connect/token` return HTTP 500. Recovery is reset-only: save any intentional
-local `.env` values, stop the stack, delete its volumes and staged workspace,
-refresh `.env` from the current example, reapply the values you still need, and
-rebuild from the current checkout:
-
-```powershell
-./bootstrap-local-dms.ps1 -d -v
-Copy-Item .env.example .env -Force
-# Reapply intentional local secrets and overrides to .env.
-./bootstrap-local-dms.ps1 -Rebuild
-```
-
-The `-d -v` step permanently deletes the local Docker databases and their data.
-There is no supported in-place migration for that pre-release database, so this
-recovery path involves data loss.
-
 For advanced workflows that need phase-level control, the individual commands
 remain available. For example, `start-local-dms.ps1 -InfraOnly` starts the
 infrastructure without DMS, and `configure-local-data-store.ps1` registers or
@@ -219,7 +199,7 @@ example:
 
 Use `-SeedTemplate Populated` for the populated sample. The wrapper also accepts
 `-SeedDataPath` for developer-supplied XML interchange files; see
-`./bootstrap-local-dms.ps1 -Help` for that expert workflow.
+`Get-Help ./bootstrap-local-dms.ps1 -Detailed` for that expert workflow.
 
 ## Stopping the Containers
 

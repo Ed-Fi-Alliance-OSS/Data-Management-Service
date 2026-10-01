@@ -627,7 +627,9 @@ public partial class MetadataEndpointModule(
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, IdentityOpenApiRouteBase);
         JsonNode content = apiService.GetIdentityOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     /// <summary>

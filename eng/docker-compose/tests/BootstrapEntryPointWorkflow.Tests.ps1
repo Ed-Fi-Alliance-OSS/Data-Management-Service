@@ -690,7 +690,7 @@ $failureStatement
             $output | Should -Not -Match "Local Docker images are reused by default"
         }
 
-        It "does not rebuild by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
+        It "does not rebuild or warn by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-default-start.txt"
             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
@@ -705,7 +705,7 @@ $failureStatement
             $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
             $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
             $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
-            $output | Should -Match "Local Docker images are reused by default.*-Rebuild"
+            $output | Should -Not -Match "Local Docker images are reused by default"
         }
 
         It "suppresses initial terminal guidance before published DMS startup" {
@@ -2956,15 +2956,6 @@ Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separ
             $script:gettingStarted | Should -Match '(?i)not as form fields'
         }
 
-        It "documents the reset-only recovery for a retained pre-release database" {
-            $script:gettingStarted | Should -Match 'start-local-dms\.ps1'
-            $script:gettingStarted | Should -Match 'configure-local-data-store\.ps1'
-            $script:gettingStarted | Should -Match '(?i)pre-release'
-            $script:gettingStarted | Should -Match '(?i)data loss'
-            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1 -d -v'
-            $script:gettingStarted | Should -Match 'Copy-Item \.env\.example \.env -Force'
-            $script:gettingStarted | Should -Match 'bootstrap-local-dms\.ps1 -Rebuild'
-        }
     }
 }
 

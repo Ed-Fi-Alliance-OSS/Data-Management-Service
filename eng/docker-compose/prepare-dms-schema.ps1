@@ -125,25 +125,6 @@ if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     }
 }
 
-if (-not (Get-Command Format-LogSafePath -ErrorAction SilentlyContinue)) {
-    function Format-LogSafePath {
-        param($Value)
-
-        if ($null -eq $Value) { return "" }
-        $text = [string]$Value
-        if ([string]::IsNullOrEmpty($text)) { return "" }
-
-        $builder = [System.Text.StringBuilder]::new()
-        foreach ($character in $text.ToCharArray()) {
-            if (-not [char]::IsControl($character)) {
-                $null = $builder.Append($character)
-            }
-        }
-
-        return $builder.ToString()
-    }
-}
-
 if (-not (Get-Command Read-RequiredJsonBoolean -ErrorAction SilentlyContinue)) {
     function Read-RequiredJsonBoolean {
         param(
@@ -235,11 +216,11 @@ if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
         try {
             $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
         } catch {
-            throw "Bootstrap manifest '$(Format-LogSafeText $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+            throw "Bootstrap manifest '$(Format-LogSafePath $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
         }
 
         if ($manifest -isnot [System.Collections.IDictionary]) {
-            throw "Bootstrap manifest '$(Format-LogSafeText $Path)' must contain a JSON object."
+            throw "Bootstrap manifest '$(Format-LogSafePath $Path)' must contain a JSON object."
         }
 
         if (-not $manifest.ContainsKey("version") -or $null -eq $manifest["version"]) {
@@ -342,7 +323,7 @@ if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
         )
 
         if (-not (Test-Path -LiteralPath $Path)) {
-            throw "Workspace path does not exist: $(Format-LogSafeText $Path)"
+            throw "Workspace path does not exist: $(Format-LogSafePath $Path)"
         }
 
         $entries = @(
@@ -424,11 +405,11 @@ function Read-ApiSchemaIdentity {
     try {
         $schema = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
     } catch {
-        throw "ApiSchema file '$(Format-LogSafeText $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+        throw "ApiSchema file '$(Format-LogSafePath $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
     }
 
     if (-not $schema.ContainsKey("projectSchema")) {
-        throw "ApiSchema file '$(Format-LogSafeText $Path)' is missing projectSchema."
+        throw "ApiSchema file '$(Format-LogSafePath $Path)' is missing projectSchema."
     }
 
     $projectSchema = $schema["projectSchema"]
@@ -436,17 +417,17 @@ function Read-ApiSchemaIdentity {
     $projectEndpointName = $projectSchema["projectEndpointName"]
 
     if ([string]::IsNullOrWhiteSpace($projectName)) {
-        throw "ApiSchema file '$(Format-LogSafeText $Path)' is missing projectSchema.projectName."
+        throw "ApiSchema file '$(Format-LogSafePath $Path)' is missing projectSchema.projectName."
     }
 
     if ([string]::IsNullOrWhiteSpace($projectEndpointName)) {
-        throw "ApiSchema file '$(Format-LogSafeText $Path)' is missing projectSchema.projectEndpointName."
+        throw "ApiSchema file '$(Format-LogSafePath $Path)' is missing projectSchema.projectEndpointName."
     }
 
     $isExtensionProject = Read-RequiredJsonBoolean `
         -Hashtable $projectSchema `
         -Key "isExtensionProject" `
-        -ArtifactContext ("ApiSchema project schema in '" + (Format-LogSafeText $Path) + "'")
+        -ArtifactContext ("ApiSchema project schema in '" + (Format-LogSafePath $Path) + "'")
 
     $projectDirectoryName = Get-ProjectDirectoryName `
         -ProjectName $projectName `
@@ -472,13 +453,13 @@ function Find-ApiSchemaFile {
     try {
         $resolvedPath = Resolve-Path -LiteralPath $Path -ErrorAction Stop
     } catch {
-        throw "ApiSchemaPath was not found: $(Format-LogSafeText $Path). $(Format-LogSafeText ($_.Exception.Message))"
+        throw "ApiSchemaPath was not found: $(Format-LogSafePath $Path). $(Format-LogSafeText ($_.Exception.Message))"
     }
 
     $item = Get-Item -LiteralPath $resolvedPath
 
     if (-not $item.PSIsContainer) {
-        throw "ApiSchemaPath must be a directory: $(Format-LogSafeText ($item.FullName))"
+        throw "ApiSchemaPath must be a directory: $(Format-LogSafePath ($item.FullName))"
     }
 
     $schemaFiles = @(
@@ -488,7 +469,7 @@ function Find-ApiSchemaFile {
     )
 
     if ($schemaFiles.Count -eq 0) {
-        throw "No ApiSchema*.json files were found under '$(Format-LogSafeText ($item.FullName))'."
+        throw "No ApiSchema*.json files were found under '$(Format-LogSafePath ($item.FullName))'."
     }
 
     return $schemaFiles
@@ -513,7 +494,7 @@ function Add-CopyOperation {
 
     $normalizedRelativeTargetPath = $RelativeTargetPath.Replace("\", "/")
     if ($TargetSources.ContainsKey($normalizedRelativeTargetPath)) {
-        throw "Normalized path collision for '$(Format-LogSafeText $normalizedRelativeTargetPath)' from '$(Format-LogSafeText $SourcePath)' and '$(Format-LogSafeText ($TargetSources[$normalizedRelativeTargetPath]))'."
+        throw "Normalized path collision for '$(Format-LogSafePath $normalizedRelativeTargetPath)' from '$(Format-LogSafePath $SourcePath)' and '$(Format-LogSafePath ($TargetSources[$normalizedRelativeTargetPath]))'."
     }
 
     $TargetSources[$normalizedRelativeTargetPath] = $SourcePath
@@ -595,7 +576,7 @@ function Add-ProjectContentOperation {
         foreach ($xsdFile in $xsdFiles) {
             $xsdFileDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($xsdFile.FullName)).TrimEnd($pathSeparatorChars)
             if (-not [System.String]::Equals($xsdFileDirectory, $xsdSourceDirectoryFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw "ApiSchema project '$(Format-LogSafeText $($Project.ProjectName))' contains nested XSD file '$(Format-LogSafeText $($xsdFile.FullName))'. XSD files must be flattened directly under '$(Format-LogSafeText $xsdSourceDirectory)'."
+                throw "ApiSchema project '$(Format-LogSafeText $($Project.ProjectName))' contains nested XSD file '$(Format-LogSafePath $($xsdFile.FullName))'. XSD files must be flattened directly under '$(Format-LogSafePath $xsdSourceDirectory)'."
             }
         }
 
@@ -735,7 +716,7 @@ function Invoke-SchemaWorkspaceStaging {
                         (Test-Path -LiteralPath (Join-Path $project.SourceDirectory "xsd") -PathType Container) -or
                         (Test-Path -LiteralPath (Join-Path $project.SourceDirectory "XSD") -PathType Container)
                     if ($hasSchemaAdjacentContent) {
-                        throw "Ambiguous schema-adjacent content ownership: source directory '$(Format-LogSafeText $project.SourceDirectory)' contains multiple extension schemas and no core schema. Move each extension into its own directory."
+                        throw "Ambiguous schema-adjacent content ownership: source directory '$(Format-LogSafePath $project.SourceDirectory)' contains multiple extension schemas and no core schema. Move each extension into its own directory."
                     }
                 }
 
@@ -786,7 +767,7 @@ function Invoke-SchemaWorkspaceStaging {
         $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
         $jsonSchemaValidatorSource = Join-Path $repoRoot "src/dms/core/EdFi.DataManagementService.Core/ApiSchema/JsonSchemaForApiSchema.json"
         if (-not (Test-Path -LiteralPath $jsonSchemaValidatorSource -PathType Leaf)) {
-            throw "JsonSchemaForApiSchema.json not found at $(Format-LogSafeText $jsonSchemaValidatorSource). Build the DMS solution before running prepare-dms-schema.ps1."
+            throw "JsonSchemaForApiSchema.json not found at $(Format-LogSafePath $jsonSchemaValidatorSource). Build the DMS solution before running prepare-dms-schema.ps1."
         }
         Copy-Item -LiteralPath $jsonSchemaValidatorSource -Destination (Join-Path $temporaryRoot "JsonSchemaForApiSchema.json") -ErrorAction Stop
 
@@ -1004,7 +985,7 @@ function Invoke-SchemaPackagesModeSchemaStaging {
     $script:StandardCorePackageIdPattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
     $coreEntryCount = @($schemaPackages | Where-Object { ([string]$_.name) -match $script:StandardCorePackageIdPattern }).Count
     if ($coreEntryCount -ne 1) {
-        throw "SCHEMA_PACKAGES in '$(Format-LogSafeText $EnvironmentFilePath)' must list exactly one core package (EdFi.DataStandard<NN>.ApiSchema). Found $coreEntryCount."
+        throw "SCHEMA_PACKAGES in '$(Format-LogSafePath $EnvironmentFilePath)' must list exactly one core package (EdFi.DataStandard<NN>.ApiSchema). Found $coreEntryCount."
     }
 
     $corePackage = Get-StandardCorePackage
@@ -1088,7 +1069,7 @@ if ($hasApiSchemaPath) {
         Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force -Global
         $environmentFileFullPath = [System.IO.Path]::GetFullPath($EnvironmentFile)
         if (-not (Test-Path -LiteralPath $environmentFileFullPath -PathType Leaf)) {
-            throw "-EnvironmentFile was supplied but the file was not found: $(Format-LogSafeText $environmentFileFullPath)"
+            throw "-EnvironmentFile was supplied but the file was not found: $(Format-LogSafePath $environmentFileFullPath)"
         }
 
         $environmentFileContent = Get-Content -LiteralPath $environmentFileFullPath -Raw

@@ -70,13 +70,13 @@ function Resolve-SeedBootstrapWorkspaceRelativePath {
     if ([System.IO.Path]::IsPathRooted($RelativePath) -or
         $normalizedPath.StartsWith("/") -or
         $normalizedPath -match "^[A-Za-z]:($|/)") {
-        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafeText $RelativePath)"
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     $pathSegments = $normalizedPath.Split([char[]]@('/'), [System.StringSplitOptions]::None)
     $invalidPathSegments = @($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." })
     if ($invalidPathSegments.Count -gt 0) {
-        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafePath $RelativePath)"
     }
 
     return Resolve-BootstrapWorkspaceRelativePath -RelativePath $RelativePath -ManifestField $ManifestField
@@ -97,13 +97,13 @@ function Resolve-SeedApiSchemaWorkspacePath {
     if ([System.IO.Path]::IsPathRooted($RelativePath) -or
         $normalizedPath.StartsWith("/") -or
         $normalizedPath -match "^[A-Za-z]:($|/)") {
-        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the staged ApiSchema workspace: $(Format-LogSafeText $RelativePath)"
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the staged ApiSchema workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     $pathSegments = $normalizedPath.Split([char[]]@('/'), [System.StringSplitOptions]::None)
     $invalidPathSegments = @($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." })
     if ($invalidPathSegments.Count -gt 0) {
-        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafePath $RelativePath)"
     }
 
     $resolvedRoot = [System.IO.Path]::GetFullPath($ApiSchemaWorkspaceRoot)
@@ -113,7 +113,7 @@ function Resolve-SeedApiSchemaWorkspacePath {
     if ($relativeToRoot.StartsWith("../", [System.StringComparison]::Ordinal) -or
         $relativeToRoot.Equals("..", [System.StringComparison]::Ordinal) -or
         [System.IO.Path]::IsPathRooted($relativeToRoot)) {
-        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' escapes the staged ApiSchema workspace: $(Format-LogSafeText $RelativePath)"
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' escapes the staged ApiSchema workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     return $resolvedPath
@@ -185,7 +185,7 @@ function Resolve-BootstrapBulkLoadClient {
         $globPattern = Join-Path $packageDir "tools/net*/any/EdFi.BulkLoadClient.Console.dll"
         $resolved = @(Get-Item -Path $globPattern -ErrorAction SilentlyContinue)
         if ($resolved.Count -eq 0) {
-            throw "No EdFi.BulkLoadClient.Console.dll found under $(Format-LogSafeText $packageDir) tools/net*/any/."
+            throw "No EdFi.BulkLoadClient.Console.dll found under $(Format-LogSafePath $packageDir) tools/net*/any/."
         }
         if ($resolved.Count -gt 1) {
             # Pick deterministically: sort by parent TFM numerically (latest net* first)
@@ -198,10 +198,10 @@ function Resolve-BootstrapBulkLoadClient {
     $chosenAnyDir = $candidates[0].FullName
     $dlls = @(Get-ChildItem -LiteralPath $chosenAnyDir -Filter "EdFi.BulkLoadClient.Console.dll" -ErrorAction SilentlyContinue)
     if ($dlls.Count -eq 0) {
-        throw "No EdFi.BulkLoadClient.Console.dll found in $(Format-LogSafeText $chosenAnyDir)."
+        throw "No EdFi.BulkLoadClient.Console.dll found in $(Format-LogSafePath $chosenAnyDir)."
     }
     if ($dlls.Count -gt 1) {
-        throw "Multiple EdFi.BulkLoadClient.Console.dll files found in $(Format-LogSafeText $chosenAnyDir). Cannot determine which to use."
+        throw "Multiple EdFi.BulkLoadClient.Console.dll files found in $(Format-LogSafePath $chosenAnyDir). Cannot determine which to use."
     }
 
     return $dlls[0].FullName
@@ -444,7 +444,7 @@ function Initialize-CoreSeedSource {
 
     $descriptorsSourceDir = Join-Path $DataStandardRoot "Descriptors"
     if (-not (Test-Path -LiteralPath $descriptorsSourceDir -PathType Container)) {
-        throw "Data Standard 'Descriptors' directory not found at $(Format-LogSafeText $descriptorsSourceDir)."
+        throw "Data Standard 'Descriptors' directory not found at $(Format-LogSafePath $descriptorsSourceDir)."
     }
 
     $descriptorFiles = @(
@@ -452,7 +452,7 @@ function Initialize-CoreSeedSource {
             Sort-Object -Property Name
     )
     if ($descriptorFiles.Count -eq 0) {
-        throw "Data Standard 'Descriptors' directory has no XML files at $(Format-LogSafeText $descriptorsSourceDir)."
+        throw "Data Standard 'Descriptors' directory has no XML files at $(Format-LogSafePath $descriptorsSourceDir)."
     }
 
     foreach ($file in $descriptorFiles) {
@@ -463,7 +463,7 @@ function Initialize-CoreSeedSource {
     if ($Template -eq "Populated") {
         $sampleXmlDir = Join-Path $DataStandardRoot "Samples/Sample XML"
         if (-not (Test-Path -LiteralPath $sampleXmlDir -PathType Container)) {
-            throw "Data Standard 'Samples/Sample XML' directory not found at $(Format-LogSafeText $sampleXmlDir)."
+            throw "Data Standard 'Samples/Sample XML' directory not found at $(Format-LogSafePath $sampleXmlDir)."
         }
 
         $allSampleXml = @(
@@ -489,7 +489,7 @@ function Initialize-CoreSeedSource {
 
         $resourceFiles = @($allSampleXml | Where-Object { $_.Name -notlike "*Descriptor.xml" })
         if ($resourceFiles.Count -eq 0) {
-            throw "Data Standard 'Samples/Sample XML' directory has no resource XML files at $(Format-LogSafeText $sampleXmlDir)."
+            throw "Data Standard 'Samples/Sample XML' directory has no resource XML files at $(Format-LogSafePath $sampleXmlDir)."
         }
 
         New-Item -ItemType Directory -Path $resourcesDir -Force | Out-Null
@@ -522,7 +522,7 @@ function Read-SeedManifest {
 
     $manifest = Read-BootstrapManifest -Path $Path
     if ($null -eq $manifest) {
-        throw "Bootstrap manifest not found at '$(Format-LogSafeText $Path)'."
+        throw "Bootstrap manifest not found at '$(Format-LogSafePath $Path)'."
     }
 
     # schema section
@@ -613,7 +613,7 @@ function Resolve-ExtensionSeedSources {
             $seedCatalog = Get-Content -LiteralPath $CatalogPath -Raw | ConvertFrom-Json -AsHashtable
         }
         catch {
-            throw "Seed catalog at '$(Format-LogSafeText $CatalogPath)' contains malformed JSON: $(Format-LogSafeText ($_.Exception.Message))"
+            throw "Seed catalog at '$(Format-LogSafePath $CatalogPath)' contains malformed JSON: $(Format-LogSafeText ($_.Exception.Message))"
         }
     }
 
@@ -635,7 +635,7 @@ function Resolve-ExtensionSeedSources {
 
         $extDir = Join-Path $catalogDir $extEntry["directory"]
         if (-not (Test-Path -LiteralPath $extDir -PathType Container)) {
-            throw "Advertised seed package directory for extension '$(Format-LogSafeText $ext)' is missing: $(Format-LogSafeText $extDir)"
+            throw "Advertised seed package directory for extension '$(Format-LogSafeText $ext)' is missing: $(Format-LogSafePath $extDir)"
         }
         $extraDirs.Add($extDir)
     }
@@ -658,7 +658,7 @@ function Assert-SeedDataPathHasXml {
     )
 
     if (-not (Test-Path -LiteralPath $SeedDataPath -PathType Container)) {
-        throw "-SeedDataPath does not exist or is not a directory: $(Format-LogSafeText $SeedDataPath)."
+        throw "-SeedDataPath does not exist or is not a directory: $(Format-LogSafePath $SeedDataPath)."
     }
 
     $loadableFiles = @(
@@ -669,7 +669,7 @@ function Assert-SeedDataPathHasXml {
             }
     )
     if ($loadableFiles.Count -eq 0) {
-        throw "-SeedDataPath contains no loadable *.xml files after excluding ODS package metadata (Manifest*.xml, [Content_Types].xml, _rels/): $(Format-LogSafeText $SeedDataPath)."
+        throw "-SeedDataPath contains no loadable *.xml files after excluding ODS package metadata (Manifest*.xml, [Content_Types].xml, _rels/): $(Format-LogSafePath $SeedDataPath)."
     }
 }
 
@@ -767,26 +767,26 @@ function Resolve-SeedSource {
     $builtInDir = Join-Path $BuiltInSourceRoot $effectiveTemplate.ToLowerInvariant()
 
     if (-not (Test-Path -LiteralPath $builtInDir -PathType Container)) {
-        throw "Built-in seed source directory for template '$(Format-LogSafeText $effectiveTemplate)' is missing: $(Format-LogSafeText $builtInDir). Ensure the seed source was materialized via Initialize-CoreSeedSource before calling Resolve-SeedSource."
+        throw "Built-in seed source directory for template '$(Format-LogSafeText $effectiveTemplate)' is missing: $(Format-LogSafePath $builtInDir). Ensure the seed source was materialized via Initialize-CoreSeedSource before calling Resolve-SeedSource."
     }
 
     # New shape: <builtInDir>/descriptors/ is mandatory; <builtInDir>/resources/ is Populated-only.
     $descriptorsDir = Join-Path $builtInDir "descriptors"
     $resourcesDir   = Join-Path $builtInDir "resources"
     if (-not (Test-Path -LiteralPath $descriptorsDir -PathType Container)) {
-        throw "Built-in seed source for template '$(Format-LogSafeText $effectiveTemplate)' is missing the required descriptors/ subdirectory at $(Format-LogSafeText $descriptorsDir)."
+        throw "Built-in seed source for template '$(Format-LogSafeText $effectiveTemplate)' is missing the required descriptors/ subdirectory at $(Format-LogSafePath $descriptorsDir)."
     }
     $descriptorXml = @(Get-ChildItem -LiteralPath $descriptorsDir -File -Filter "*.xml" -ErrorAction SilentlyContinue)
     if ($descriptorXml.Count -eq 0) {
-        throw "Built-in seed source descriptors/ directory is empty for template '$(Format-LogSafeText $effectiveTemplate)': $(Format-LogSafeText $descriptorsDir)."
+        throw "Built-in seed source descriptors/ directory is empty for template '$(Format-LogSafeText $effectiveTemplate)': $(Format-LogSafePath $descriptorsDir)."
     }
     if ($effectiveTemplate -eq "Populated") {
         if (-not (Test-Path -LiteralPath $resourcesDir -PathType Container)) {
-            throw "Built-in Populated seed source is missing the required resources/ subdirectory at $(Format-LogSafeText $resourcesDir)."
+            throw "Built-in Populated seed source is missing the required resources/ subdirectory at $(Format-LogSafePath $resourcesDir)."
         }
         $resourceXml = @(Get-ChildItem -LiteralPath $resourcesDir -File -Filter "*.xml" -ErrorAction SilentlyContinue)
         if ($resourceXml.Count -eq 0) {
-            throw "Built-in Populated seed source resources/ directory is empty: $(Format-LogSafeText $resourcesDir)."
+            throw "Built-in Populated seed source resources/ directory is empty: $(Format-LogSafePath $resourcesDir)."
         }
     }
 
@@ -852,7 +852,7 @@ function Get-BulkLoadClientInterchangeNames {
     )
 
     if (-not (Test-Path -LiteralPath $XsdDirectory -PathType Container)) {
-        throw "BulkLoadClient XSD directory does not exist or is not a directory: $(Format-LogSafeText $XsdDirectory)"
+        throw "BulkLoadClient XSD directory does not exist or is not a directory: $(Format-LogSafePath $XsdDirectory)"
     }
 
     $names = [System.Collections.Generic.List[string]]::new()
@@ -869,7 +869,7 @@ function Get-BulkLoadClientInterchangeNames {
     }
 
     if ($names.Count -eq 0) {
-        throw "BulkLoadClient XSD directory contains no core or extension Interchange XSD files: $(Format-LogSafeText $XsdDirectory)"
+        throw "BulkLoadClient XSD directory contains no core or extension Interchange XSD files: $(Format-LogSafePath $XsdDirectory)"
     }
 
     return @($names | Sort-Object -Unique)
@@ -989,7 +989,7 @@ function Resolve-SeedXmlDeclaredInterchangeName {
         }
     }
     catch {
-        throw "Seed XML declaration cannot be inspected for BulkLoadClient interchange discovery at $(Format-LogSafeText $FilePath): $(Format-LogSafeText ($_.Exception.Message))"
+        throw "Seed XML declaration cannot be inspected for BulkLoadClient interchange discovery at $(Format-LogSafePath $FilePath): $(Format-LogSafeText ($_.Exception.Message))"
     }
     finally {
         if ($null -ne $reader) {
@@ -1022,7 +1022,7 @@ function Get-SeedFileTargetName {
 
     $leaf = $segments[$segments.Count - 1]
     if (-not $leaf.EndsWith(".xml", [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Seed XML path does not end with .xml: $(Format-LogSafeText $RelativePath)"
+        throw "Seed XML path does not end with .xml: $(Format-LogSafePath $RelativePath)"
     }
 
     $separator = [string][System.IO.Path]::DirectorySeparatorChar
@@ -1048,7 +1048,7 @@ function Get-SeedFileTargetName {
         return "$declaredInterchangeName$separator$leaf"
     }
 
-    throw "Seed XML path is not discoverable by BulkLoadClient. Use InterchangeName.xml, InterchangeName-*.xml, or InterchangeName/*.xml: $(Format-LogSafeText $RelativePath)"
+    throw "Seed XML path is not discoverable by BulkLoadClient. Use InterchangeName.xml, InterchangeName-*.xml, or InterchangeName/*.xml: $(Format-LogSafePath $RelativePath)"
 }
 
 function Get-SeedWorkspacePlan {
@@ -1093,12 +1093,12 @@ function Get-SeedWorkspacePlan {
                 $targetName = Get-SeedFileTargetName -RelativePath $relPath -SourceFilePath $file.FullName -InterchangeNames $knownInterchangeNames -SourceInterchangeName $sourceInterchangeName
             }
             catch {
-                $invalidPaths.Add("Invalid seed XML path from $(Format-LogSafeText $sourceKey):$(Format-LogSafeText $relPath) - $(Format-LogSafeText ($_.Exception.Message))")
+                $invalidPaths.Add("Invalid seed XML path from $(Format-LogSafePath $sourceKey):$(Format-LogSafePath $relPath) - $(Format-LogSafeText ($_.Exception.Message))")
                 continue
             }
 
             if (-not $targetNames.Add($targetName)) {
-                $collisions.Add("Target name collision: $(Format-LogSafeText $targetName) from $(Format-LogSafeText $sourceKey):$(Format-LogSafeText $relPath)")
+                $collisions.Add("Target name collision: $(Format-LogSafePath $targetName) from $(Format-LogSafePath $sourceKey):$(Format-LogSafePath $relPath)")
             }
             else {
                 $plan.Add([pscustomobject]@{
@@ -1353,7 +1353,7 @@ function Get-SeedXsdDirectory {
     $absApiSchemaManifestPath = [System.IO.Path]::GetFullPath((Join-Path $BootstrapRoot $relApiSchemaManifestPath))
 
     if (-not (Test-Path -LiteralPath $absApiSchemaManifestPath -PathType Leaf)) {
-        throw "ApiSchema manifest not found at $(Format-LogSafeText $absApiSchemaManifestPath). Run prepare-dms-schema.ps1 first."
+        throw "ApiSchema manifest not found at $(Format-LogSafePath $absApiSchemaManifestPath). Run prepare-dms-schema.ps1 first."
     }
 
     try {
@@ -1440,7 +1440,7 @@ function Get-SeedXsdDirectory {
             $projectLabel = if ([string]::IsNullOrWhiteSpace($projectName)) { $xsdDir } else { $projectName }
 
             if (-not (Test-Path -LiteralPath $xsdDir -PathType Container)) {
-                throw "ApiSchema manifest project '$(Format-LogSafeText $projectLabel)' advertises xsdDirectory '$(Format-LogSafeText $xsdDir)' but that directory does not exist. Re-run prepare-dms-schema.ps1, or check for a stale .bootstrap workspace."
+                throw "ApiSchema manifest project '$(Format-LogSafeText $projectLabel)' advertises xsdDirectory '$(Format-LogSafePath $xsdDir)' but that directory does not exist. Re-run prepare-dms-schema.ps1, or check for a stale .bootstrap workspace."
             }
 
             if (-not $xsdSourceDirectories.Add($xsdDir)) {
@@ -1450,7 +1450,7 @@ function Get-SeedXsdDirectory {
             $xsdFiles = @(Get-ChildItem -LiteralPath $xsdDir -Filter "*.xsd" -File -Recurse -ErrorAction SilentlyContinue)
             foreach ($xsdFile in $xsdFiles) {
                 if (-not $xsdTargetNames.Add($xsdFile.Name)) {
-                    $xsdCollisions.Add("Target name collision: $(Format-LogSafeText $xsdFile.Name) from project $(Format-LogSafeText $projectLabel) ($(Format-LogSafeText $xsdFile.FullName))")
+                    $xsdCollisions.Add("Target name collision: $(Format-LogSafeText $xsdFile.Name) from project $(Format-LogSafeText $projectLabel) ($(Format-LogSafePath $xsdFile.FullName))")
                 }
                 else {
                     $xsdPlan.Add([pscustomobject]@{
@@ -1467,7 +1467,7 @@ function Get-SeedXsdDirectory {
     }
 
     if ($xsdPlan.Count -eq 0) {
-        throw "No staged XSD files found in any project's xsdDirectory from $(Format-LogSafeText $absApiSchemaManifestPath). Verify the ApiSchema manifest projects include an xsdDirectory entry and that prepare-dms-schema.ps1 completed successfully."
+        throw "No staged XSD files found in any project's xsdDirectory from $(Format-LogSafePath $absApiSchemaManifestPath). Verify the ApiSchema manifest projects include an xsdDirectory entry and that prepare-dms-schema.ps1 completed successfully."
     }
 
     foreach ($entry in $xsdPlan) {
@@ -1516,7 +1516,7 @@ function New-BuiltInSeedXsdDirectory {
     )
 
     if (-not (Test-Path -LiteralPath $DataStandardXsdDirectory -PathType Container)) {
-        throw "Bulk XSD directory not found in Ed-Fi-Data-Standard tag $(Format-LogSafeText $script:DataStandardRefTag): $(Format-LogSafeText $DataStandardXsdDirectory)"
+        throw "Bulk XSD directory not found in Ed-Fi-Data-Standard tag $(Format-LogSafeText $script:DataStandardRefTag): $(Format-LogSafePath $DataStandardXsdDirectory)"
     }
 
     if (-not $IncludeExtensionXsds) {

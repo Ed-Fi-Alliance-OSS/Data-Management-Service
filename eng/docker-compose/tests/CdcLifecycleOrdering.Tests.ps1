@@ -710,6 +710,19 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             -not $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') -and $Parameters.SuppressWriterGuidance
         }
     }
+    It 'forwards an explicit retained local rebuild only to infrastructure preparation' {
+        Invoke-TestLifecycle @{ d = $true }
+        $script:trace.Clear()
+
+        Invoke-TestLifecycle @{ Rebuild = $true }
+
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+            $Parameters['InfraOnly'] -and $Parameters['r']
+        }
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+            $Parameters['DmsOnly'] -and -not $Parameters.ContainsKey('r')
+        }
+    }
     It 'waits for managed <project> <operation> startup evidence: <scenario>' -ForEach @(
         foreach ($project in @('dms-local', 'dms-published')) {
             foreach ($operation in @('start', 'retire')) {
