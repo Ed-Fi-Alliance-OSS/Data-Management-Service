@@ -8,6 +8,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.Api.Plugins.Hosting.Tests.Unit;
@@ -931,5 +932,81 @@ public class Given_a_plugin_source_that_supplies_the_allowlist
     {
         _plugins.Plugins.Should().Equal(_loadedBefore);
         _plugins.Plugins.Select(plugin => plugin.Name).Should().Equal(PluginFixtures.ConfigContributor);
+    }
+}
+
+/// <summary>
+/// What the contribution record keeps of the configuration phase, for a plugin that added sources and
+/// one that added none.
+/// </summary>
+/// <remarks>
+/// The type names are what the Phase A inventory reports, so they have to be the plugin's own sources,
+/// in the order it added them, attributed to it and to no other plugin.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+public class Given_the_service_phase_after_one_plugin_added_configuration_sources_and_one_added_none
+{
+    private TemporaryPluginRoot _root = null!;
+    private PluginAuditInput _input = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        FixtureObservations.Clear();
+        _root = TemporaryPluginRoot.Create();
+        LoadedPlugins plugins = ContributionProbe.Load(
+            _root,
+            PluginFixtures.ConfigContributor,
+            PluginFixtures.SecondConfigContributor
+        );
+
+        // The second plugin is directed to nothing, so its configuration hook adds no source.
+        ConfigurationProbeHost host = ConfigurationProbeHost.Directing(
+            (PluginFixtures.ConfigContributor, "appendEnvironment")
+        );
+        plugins.ContributeConfiguration(host.Manager, TextWriter.Null);
+
+        _input = plugins.ContributeServices(
+            new ServiceCollection(),
+            host.Manager,
+            new PluginContractRegistry([]),
+            TextWriter.Null
+        );
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    private PluginContributionRecord RecordFor(string pluginName) =>
+        _input.Records.Single(record => record.PluginName == pluginName);
+
+    [Test]
+    public void It_records_the_type_of_each_source_the_plugin_added_in_the_order_it_added_them()
+    {
+        RecordFor(PluginFixtures.ConfigContributor)
+            .ConfigurationSourceTypes.Should()
+            .Equal(
+                typeof(MemoryConfigurationSource).FullName,
+                typeof(EnvironmentVariablesConfigurationSource).FullName
+            );
+    }
+
+    [Test]
+    public void It_records_that_the_plugin_contributed_configuration()
+    {
+        RecordFor(PluginFixtures.ConfigContributor).ContributedConfiguration.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_records_no_source_type_for_the_plugin_that_added_none()
+    {
+        RecordFor(PluginFixtures.SecondConfigContributor).ConfigurationSourceTypes.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_records_that_the_plugin_that_added_none_contributed_no_configuration()
+    {
+        RecordFor(PluginFixtures.SecondConfigContributor).ContributedConfiguration.Should().BeFalse();
     }
 }

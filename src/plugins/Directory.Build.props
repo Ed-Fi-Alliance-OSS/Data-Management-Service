@@ -24,10 +24,26 @@
             evolution the additive-only compatibility policy allows. A breaking change is a new
             package id, not a major bump, because the default binder would load an older plugin
             against it and fail with MissingMethodException inside a hook.
+
+            Declaring these here is not enough on its own. build-config.ps1 Compile and PublishApi
+            pass /p:Version, /p:InformationalVersion, /p:VersionPrefix, /p:AssemblyVersion and
+            /p:FileVersion as global properties, and the Configuration Service frontend references
+            both projects in this tree, so without more the release lane stamps the CMS release onto
+            them. The two shipped projects, EdFi.Api.Plugins and EdFi.Api.Plugins.Hosting, name
+            these five in TreatAsLocalProperty on their own Project elements, which is what lets the
+            declarations below win over a global property of the same name. Version and
+            InformationalVersion are declared for the same reason: left undeclared, a global value
+            stays in place and the DLL's ProductVersion reports the host release.
+
+            VersionPrefix is the one literal, and it is what every lane reads through
+            Get-PluginsContractVersion. The other four are derived from it, so a bump edits one
+            element and the five cannot disagree.
         -->
         <VersionPrefix>1.1.0</VersionPrefix>
-        <AssemblyVersion>1.1.0</AssemblyVersion>
-        <FileVersion>1.1.0</FileVersion>
+        <Version>$(VersionPrefix)</Version>
+        <AssemblyVersion>$(VersionPrefix)</AssemblyVersion>
+        <FileVersion>$(VersionPrefix)</FileVersion>
+        <InformationalVersion>$(VersionPrefix)</InformationalVersion>
         <Product>Ed-Fi API</Product>
         <Authors>Ed-Fi Alliance, LLC and contributors</Authors>
         <Company>Ed-Fi Alliance, LLC and contributors</Company>

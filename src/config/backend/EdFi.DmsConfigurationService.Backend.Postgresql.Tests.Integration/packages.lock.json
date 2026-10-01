@@ -715,6 +715,24 @@
         "resolved": "8.0.0",
         "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
+      "edfi.api.plugins": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
+        }
+      },
+      "edfi.api.plugins.hosting": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.Api.Plugins": "[1.1.0, )",
+          "Microsoft.Extensions.Configuration": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.Binder": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
+        }
+      },
       "EdFi.Api.Secrets": {
         "type": "Project"
       },
@@ -809,6 +827,7 @@
       "edfi.dmsconfigurationservice.frontend.aspnetcore": {
         "type": "Project",
         "dependencies": {
+          "EdFi.Api.Plugins.Hosting": "[1.1.0, )",
           "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.Keycloak": "[1.0.0, )",

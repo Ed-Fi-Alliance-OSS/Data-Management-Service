@@ -3,10 +3,14 @@
 This package defines `EdFiApiPlugin`, the base class a district or vendor implements to extend an
 Ed-Fi API host without rebuilding it.
 
-> **Target the Data Management Service.** It is the host that loads plugins. The contract and the
-> loader are host-neutral — which is why the base class is named for the Ed-Fi API platform rather
-> than for one host, and why the Configuration Service could adopt the same loader — but the
-> Configuration Service does not load plugins, so a plugin deployed to it contributes nothing.
+> **Both hosts load plugins, each for its own contracts.** The contract and the loader are
+> host-neutral, which is why the base class is named for the Ed-Fi API platform rather than for one
+> host. The Data Management Service loads plugins for custom validation. The Configuration Service
+> loads them with the same loader for the secrets contracts in `EdFi.Api.Secrets`, a secret resolver
+> and a client secret hasher; see
+> [Configuration Service plugins](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#configuration-service-plugins).
+> Each host has its own plugin root and its own allowlist, so allowlisting a plugin for one host
+> does not run it in the other.
 
 A plugin is a directory of assemblies you publish, compiled against this package. An operator drops
 that directory into the host's plugin root and names it in an allowlist. The host loads it into an

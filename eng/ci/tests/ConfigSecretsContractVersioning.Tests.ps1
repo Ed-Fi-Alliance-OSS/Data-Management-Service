@@ -139,6 +139,13 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
             $publishDirectory = Join-Path $frontend "publish"
             $script:publishContract = Join-Path $publishDirectory "$($script:assemblyName).dll"
             $script:publishFrontend = Join-Path $publishDirectory "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll"
+            $script:publishPluginAssemblies = @(
+                Join-Path $publishDirectory "EdFi.Api.Plugins.dll"
+                Join-Path $publishDirectory "EdFi.Api.Plugins.Hosting.dll"
+            )
+            $script:expectedPluginsAssemblyVersion = ConvertTo-FourPartVersion -Version (
+                Get-SingleDeclaredProperty -Path (Join-Path $script:repoRoot "src/plugins/Directory.Build.props") -Name "VersionPrefix"
+            )
 
             # Git-ignored output from an earlier run would otherwise satisfy the publish assertions.
             if (Test-Path -LiteralPath $publishDirectory) {
@@ -188,6 +195,14 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
 
         It "leaves the contract in the PublishApi output at its declared version" {
             Get-AssemblyVersion -Path $script:publishContract | Should -Be $script:expectedContractAssemblyVersion
+        }
+
+        # The frontend references the plugin contract tree, so the same global properties reach it.
+        # The plugin loader's newer-plugin-on-older-host preflight compares these AssemblyVersions.
+        It "leaves the plugin contract assemblies in the PublishApi output at their declared version" {
+            foreach ($assembly in $script:publishPluginAssemblies) {
+                Get-AssemblyVersion -Path $assembly | Should -Be $script:expectedPluginsAssemblyVersion -Because $assembly
+            }
         }
     }
 

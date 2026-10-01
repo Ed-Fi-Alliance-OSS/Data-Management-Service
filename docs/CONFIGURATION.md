@@ -556,6 +556,53 @@ qualifier above.
 > only from the container's environment, so a deployment on the stock image sets
 > them in the environment even when a plugin also supplies them.
 
+### Configuration Service plugins
+
+The Configuration Service loads plugins with the same loader and the same `Plugins`
+section, bound the same way, against its own plugin root and its own allowlist. Its
+`appsettings.json` ships `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`.
+Everything above about `Directory`, `Allowed` and how the value is parsed applies
+unchanged, with these points stated for the Configuration Service itself:
+
+- **`Allowed` ships empty and is the only switch.** A plugin runs in the
+  Configuration Service if and only if its directory name appears in the
+  Configuration Service's `Allowed`; allowlisting it for DMS does not.
+- **The order of `Allowed` is the invocation order, and for `ContributeConfiguration`
+  it is contractual.** Where two plugins supply the same key, the later one wins.
+  Every plugin source ranks below the unprefixed environment variables and the
+  command line and above the JSON sources, as in
+  [Configuration precedence](#configuration-precedence), which applies unchanged:
+  the Configuration Service's `AddServices`
+  ([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs))
+  also configures logging from the `Serilog` section first and then appends its own
+  unprefixed `AddEnvironmentVariables()` source. `src/config/run.sh` starts the
+  application with no arguments, so the stock container has no command-line source.
+- **`PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any
+  `ContributeConfiguration` hook runs**, so no plugin source can change what loads.
+  A plugin source can still supply either key, and a later read of the section
+  sees that value, but the loader has already acted on the one it bound.
+
+**Values a plugin source cannot usefully supply in the Configuration Service:**
+
+- The `Plugins` section, for the reason above.
+- The values `src/config/run.sh`, the container entry point, reads from the
+  environment before the .NET process starts, to wait for the database:
+  - `AppSettings__Datastore`, which decides whether the script waits for PostgreSQL
+    or for a SQL Server TCP endpoint. It defaults to `postgresql` when unset.
+  - `DatabaseSettings__DatabaseConnection`, from which it parses the host and port
+    it waits on.
+
+  A plugin that supplies either changes what .NET then uses, but not what the script
+  already waited for: the wait still targets the engine and host the environment
+  named, and may never end if that is not the database the deployment runs. On the
+  stock image, set both in the environment.
+
+There is no `AppSettings:StartupStatusFilePath` equivalent in the Configuration
+Service. A plugin loading or composition failure is written to standard error and
+stops host creation before any request is served; there is no status file to read
+it from. The DMS schema-download settings above do not apply to the Configuration
+Service.
+
 ## RateLimit
 
 Basic rate limiting can be applied by supplying a `RateLimit` object in the

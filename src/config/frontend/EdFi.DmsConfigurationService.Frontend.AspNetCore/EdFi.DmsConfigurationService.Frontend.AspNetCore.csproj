@@ -40,5 +40,6 @@
         <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
         <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
         <ProjectReference Include="..\..\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
+        <ProjectReference Include="..\..\..\plugins\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj" />
     </ItemGroup>
 </Project>

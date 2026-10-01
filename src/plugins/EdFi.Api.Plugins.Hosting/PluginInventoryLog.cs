@@ -3,16 +3,22 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.Api.Plugins.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+namespace EdFi.Api.Plugins.Hosting;
 
 /// <summary>
 /// The audit record of what each loaded plugin brought into the process, emitted once the logger
-/// exists and before any startup task runs.
+/// exists and before any plugin registration check runs.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Shared by both hosts, so the Data Management Service and the Configuration Service emit one event
+/// shape under one event id, and a query written against either finds the inventory of both. The
+/// loader and the composition phases still log nothing: they run before any logging pipeline exists
+/// and write to <see cref="Console.Error"/>. This runs once the host's logger does, and is handed it.
+/// </para>
 /// <para>
 /// This is an audit record rather than a convenience. The trust model does not claim to contain a
 /// plugin, so an incident responder has to be able to say which third-party code was available to the
@@ -25,17 +31,17 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// than by everyone remembering it.
 /// </para>
 /// <para>
-/// Every value projected below is metadata: names, versions, digests, states, lifetimes and flags. No
-/// service descriptor, implementation instance, factory delegate, service key or configuration object
-/// is passed to the logger, so nothing here can render an object whose <c>ToString</c> the host does
-/// not control.
+/// Every value projected below is metadata: names, versions, digests, states, lifetimes, flags and
+/// configuration source type names. No service descriptor, implementation instance, factory delegate,
+/// service key or configuration object is passed to the logger, so nothing here can render an object
+/// whose <c>ToString</c> the host does not control.
 /// </para>
 /// </remarks>
-internal static class PluginInventoryLog
+public static class PluginInventoryLog
 {
     /// <summary>
-    /// Identifies this event apart from the registration guard's own per-plugin diagnostics, which are
-    /// built from the same records at a later point in startup.
+    /// Identifies this event apart from each host's registration checks' own per-plugin diagnostics,
+    /// which are built from the same records at a later point in startup.
     /// </summary>
     private static readonly EventId PluginInventoryEvent = new(1499, "PluginInventory");
 
@@ -74,13 +80,17 @@ internal static class PluginInventoryLog
                 "Plugin inventory for {PluginName} version {AssemblyVersion}: declared files "
                     + "{@DeclaredFiles}; registered service types {@RegisteredServiceTypes}; removed "
                     + "descriptors {@RemovedDescriptors}; host-first substitutions "
-                    + "{@HostFirstSubstitutions}",
+                    + "{@HostFirstSubstitutions}; configuration source types {@ConfigurationSourceTypes}",
                 Loggable(record.PluginName),
                 record.Plugin.EntryAssemblyVersion.ToString(),
                 inventory.Select(DeclaredFileOf).ToArray(),
                 record.Additions.Select(RegisteredServiceOf).ToArray(),
                 record.Removals.Select(removal => RemovedDescriptorOf(removal, replaced)).ToArray(),
-                substitutions.Select(SubstitutionOf).ToArray()
+                substitutions.Select(SubstitutionOf).ToArray(),
+                // The Phase A record: the type of each source the plugin's configuration hook added, and
+                // nothing else. Such a plugin may exist to carry secrets into configuration, so the keys
+                // and values its sources supply are never on this event.
+                record.ConfigurationSourceTypes.Select(sourceType => Loggable(sourceType)!).ToArray()
             );
         }
     }
@@ -210,11 +220,11 @@ internal sealed record PluginInventoryFileEntry(
 /// <remarks>
 /// <para>
 /// The implementation type travels with the service type because attribution is what this event is
-/// for. Every host guard that can abort startup over a plugin's registration names the offending
-/// <em>implementation</em> class: the validator audit at startup-task order 250 does, and it knows
-/// nothing about plugins. Two plugins registering the same contract produce two entries carrying the
-/// same service type, so the service type alone cannot say which of them supplied the offender, and
-/// nothing obliges an implementation's namespace to resemble the plugin's name.
+/// for. A host failure that surfaces while a contract implementation is constructed or called names
+/// the offending <em>implementation</em> class and knows nothing about plugins. Two plugins
+/// registering the same contract produce two entries carrying the same service type, so the service
+/// type alone cannot say which of them supplied the offender, and nothing obliges an
+/// implementation's namespace to resemble the plugin's name.
 /// </para>
 /// <para>
 /// Metadata only. The implementation type is read from the descriptor rather than activated, an

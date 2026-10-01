@@ -1120,6 +1120,51 @@ The order written is the order plugins are invoked in. See the `Plugins` section
 [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md) for the full configuration
 surface.
 
+### Loading plugins into the Configuration Service
+
+The Configuration Service loads plugins the same way, from its own plugin root and
+its own allowlist; a plugin allowlisted for DMS is not thereby allowlisted for the
+Configuration Service, and the reverse. `plugins-config.yml` is the Configuration
+Service counterpart of `plugins-dms.yml`: it bind-mounts a pre-populated directory
+of plugin directories read-only at `/app/plugins` on the `config` service, and
+`local-config.yml` and `published-config.yml` are unchanged by it. There is no fetch
+overlay for the Configuration Service.
+
+`start-local-config.ps1` has no setting that adds this overlay.
+`DMS_PLUGINS_COMPOSE_FILES` is the DMS launchers' setting for the DMS overlays
+above and is not a Configuration Service mechanism. Add `plugins-config.yml` with its
+own `-f` after the base file, followed by a deployment-owned allowlist override for
+the `config` service, because this overlay allowlists nothing:
+
+```yaml
+# my-plugins-allowed-config.yml
+services:
+  config:
+    environment:
+      Plugins__Allowed: Acme.Cms.VaultResolver
+```
+
+```powershell
+cd eng/docker-compose
+# CMS_PLUGINS_MOUNT_SOURCE is required by plugins-config.yml; set it here or in the env file.
+$env:CMS_PLUGINS_MOUNT_SOURCE = "C:/cms-plugins"
+docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml `
+  -f plugins-config.yml -f my-plugins-allowed-config.yml `
+  --env-file .env -p cs-local up -d config
+```
+
+These are the files `start-local-config.ps1` composes for a PostgreSQL stack, plus
+the two plugin files. As with DMS, compose them directly only against an environment
+a previous `start-local-config.ps1` run already set up: that script also creates the
+identity clients the Configuration Service needs, which no overlay does.
+
+| Variable | Overlay | Meaning |
+| -------- | ------- | ------- |
+| `CMS_PLUGINS_MOUNT_SOURCE` | `plugins-config.yml` | Host path holding the Configuration Service's plugin directories. Declared with `:?`, and listed commented out in `.env.example`. |
+
+See [Configuration Service plugins](../../docs/CONFIGURATION.md#configuration-service-plugins)
+for the Configuration Service's configuration surface.
+
 ## Kafka UI
 
 ```powershell
