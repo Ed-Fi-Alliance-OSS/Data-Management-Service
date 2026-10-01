@@ -658,4 +658,133 @@ internal class TenantResolutionMiddlewareTests
             A.CallTo(() => _next(_httpContext)).MustNotHaveHappened();
         }
     }
+
+    [TestFixture("", "/mt-config")]
+    [TestFixture("/", "")]
+    [TestFixture("/", "/mt-config")]
+    [TestFixture("/metadata/specifications", "")]
+    [TestFixture("/METADATA/SPECIFICATIONS", "")]
+    [TestFixture("/metadata/specifications/", "")]
+    [TestFixture("/openapi/v1.json", "")]
+    [TestFixture("/openapi/v1.json", "/mt-config")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Service_Description_Path(string path, string pathBase)
+    {
+        private RequestDelegate _next = null!;
+        private IOptions<AppSettings> _appSettings = null!;
+        private ITenantContextProvider _tenantContextProvider = null!;
+        private ITenantRepository _tenantRepository = null!;
+        private ILogger<TenantResolutionMiddleware> _logger = null!;
+        private DefaultHttpContext _httpContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _next = A.Fake<RequestDelegate>();
+            _tenantContextProvider = new TenantContextProvider();
+            _tenantRepository = A.Fake<ITenantRepository>();
+            _logger = A.Fake<ILogger<TenantResolutionMiddleware>>();
+            _appSettings = Options.Create(
+                new AppSettings
+                {
+                    MultiTenancy = true,
+                    Datastore = "postgresql",
+                    IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
+                }
+            );
+
+            var middleware = new TenantResolutionMiddleware(_next);
+            _httpContext = new DefaultHttpContext();
+            _httpContext.Request.PathBase = pathBase;
+            _httpContext.Request.Path = path;
+            _httpContext.Response.Body = new MemoryStream();
+            // No Tenant header
+
+            await middleware.Invoke(
+                _httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            A.CallTo(() => _next(_httpContext)).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_does_not_reject_the_missing_tenant_header()
+        {
+            _httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        }
+    }
+
+    [TestFixture("", "")]
+    [TestFixture("//", "")]
+    [TestFixture("/metadata", "")]
+    [TestFixture("/metadata/specifications/v3", "")]
+    [TestFixture("/openapi", "")]
+    [TestFixture("/openapi/v2.json", "")]
+    [TestFixture("/v3/metadata/specifications", "")]
+    [TestFixture("/metadata", "/mt-config")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Service_Description_Lookalike_Path(
+        string path,
+        string pathBase
+    )
+    {
+        private RequestDelegate _next = null!;
+        private IOptions<AppSettings> _appSettings = null!;
+        private ITenantContextProvider _tenantContextProvider = null!;
+        private ITenantRepository _tenantRepository = null!;
+        private ILogger<TenantResolutionMiddleware> _logger = null!;
+        private DefaultHttpContext _httpContext = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _next = A.Fake<RequestDelegate>();
+            _tenantContextProvider = new TenantContextProvider();
+            _tenantRepository = A.Fake<ITenantRepository>();
+            _logger = A.Fake<ILogger<TenantResolutionMiddleware>>();
+            _appSettings = Options.Create(
+                new AppSettings
+                {
+                    MultiTenancy = true,
+                    Datastore = "postgresql",
+                    IdentityProvider = "self-contained",
+                    SpecificationVersion = "v3",
+                }
+            );
+
+            var middleware = new TenantResolutionMiddleware(_next);
+            _httpContext = new DefaultHttpContext();
+            _httpContext.Request.PathBase = pathBase;
+            _httpContext.Request.Path = path;
+            _httpContext.Response.Body = new MemoryStream();
+            // No Tenant header
+
+            await middleware.Invoke(
+                _httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+        }
+
+        [Test]
+        public void It_returns_400()
+        {
+            _httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            A.CallTo(() => _next(_httpContext)).MustNotHaveHappened();
+        }
+    }
 }

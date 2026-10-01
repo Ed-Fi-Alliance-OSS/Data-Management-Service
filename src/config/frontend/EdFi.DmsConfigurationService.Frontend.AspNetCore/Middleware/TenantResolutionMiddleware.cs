@@ -37,8 +37,10 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         // Allow /connect endpoints without tenant header (for system administrator authentication)
         // Allow /v3/tenants endpoints without tenant header (for tenant management before tenants exist)
         // Allow /.well-known endpoints without tenant header (standard OIDC discovery endpoints)
+        // Allow the service's own description without tenant header (root, OpenAPI document)
         if (
             IsHealthPath(context.Request.Path)
+            || IsServiceDescriptionPath(context.Request)
             || context.Request.Path.StartsWithSegments("/connect", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/v3/tenants", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/.well-known", StringComparison.OrdinalIgnoreCase)
@@ -137,6 +139,28 @@ public class TenantResolutionMiddleware(RequestDelegate next)
     private static bool IsHealthPath(PathString path) =>
         path.Equals("/health", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/health/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Determines whether the request targets one of the documents that describe the service itself
+    /// rather than any tenant's data, which a client must be able to read before it knows a tenant:
+    /// the root information endpoint ("/", or "" when a path base is set), the OpenAPI specification it links to
+    /// ("/metadata/specifications"), and the generated document that endpoint fetches from this
+    /// same service ("/openapi/v1.json"). The last one is exempt because that fetch sends no tenant
+    /// header, so requiring one made "/metadata/specifications" fail with 500 even for a caller
+    /// that sent a valid tenant. Matched exactly, like <see cref="IsHealthPath" />, so lookalike
+    /// paths keep requiring a valid tenant. An empty path is the root only under a path base:
+    /// UsePathBase turns a request for "/mt-config" into PathBase "/mt-config" and Path "", while
+    /// without a path base the server always delivers the root as "/".
+    /// </summary>
+    private static bool IsServiceDescriptionPath(HttpRequest request)
+    {
+        PathString path = request.Path;
+        return (!path.HasValue && request.PathBase.HasValue)
+            || path.Equals("/", StringComparison.Ordinal)
+            || path.Equals("/metadata/specifications", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/metadata/specifications/", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/openapi/v1.json", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Sanitizes a string for safe logging by allowing only safe characters.
