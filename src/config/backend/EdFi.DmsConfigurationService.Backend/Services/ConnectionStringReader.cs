@@ -66,7 +66,8 @@ public interface IConnectionStringReader
     /// Returns the Base64 cipher text a response carries for the stored value, resolving any
     /// <c>${secret:&lt;name&gt;}</c> reference it holds. Throws
     /// <see cref="ConnectionStringReadException"/> when the value cannot be returned; returns null
-    /// for a derivative read as part of a data store whose reference cannot be resolved.
+    /// instead for a derivative read as part of a data store, whose value cannot be decrypted, parsed
+    /// or resolved.
     /// </summary>
     Task<string?> ReadAsync(byte[]? stored, ConnectionStringRow row);
 }
@@ -83,6 +84,13 @@ public interface IConnectionStringReader
 /// Transient, like the repositories that call it, because it reads the request's tenant from the
 /// scoped tenant provider. The cache it consults is the singleton, and takes the tenant as an
 /// argument.
+///
+/// Being transient also makes one instance one repository read, which is what bounds a hung resolver.
+/// The timeout bounds one call, and rows are read one at a time, so a read of many rows would
+/// otherwise wait out one timeout per row. Once a call on this instance times out, every later
+/// reference it reads is served from the cache or reported unresolved without asking again, so a read
+/// waits out at most one timeout. A data store read nests one derivative read, so it waits at most
+/// two.
 /// </summary>
 public sealed class ConnectionStringReader(
     IConnectionStringEncryptionService encryptionService,
@@ -100,6 +108,8 @@ public sealed class ConnectionStringReader(
         secretsOptions.Value.ResolveTimeoutSeconds
     );
 
+    private bool _resolverTimedOut;
+
     public async Task<string?> ReadAsync(byte[]? stored, ConnectionStringRow row)
     {
         if (stored is null)
@@ -116,9 +126,7 @@ public sealed class ConnectionStringReader(
         catch (Exception)
         {
             // The exception says nothing an operator can act on beyond this, and its text is not ours.
-            throw new ConnectionStringReadException(
-                $"The stored connection string for {row} could not be decrypted."
-            );
+            return Unreadable(row, "could not be decrypted");
         }
 
         IReadOnlyList<SecretReferenceToken> tokens = plainText is null
@@ -130,7 +138,10 @@ public sealed class ConnectionStringReader(
             return Convert.ToBase64String(stored);
         }
 
-        DbConnectionStringBuilder builder = Parse(plainText!, row);
+        if (Parse(plainText!) is not { } builder)
+        {
+            return Unreadable(row, "could not be parsed by the configured database engine");
+        }
 
         // Resolution works on the values the provider kept: a keyword assigned twice keeps its last
         // value, so a reference the provider discarded is never resolved and cannot reach the
@@ -161,7 +172,7 @@ public sealed class ConnectionStringReader(
         return Convert.ToBase64String(encryptionService.Encrypt(builder.ConnectionString)!);
     }
 
-    private DbConnectionStringBuilder Parse(string plainText, ConnectionStringRow row)
+    private DbConnectionStringBuilder? Parse(string plainText)
     {
         try
         {
@@ -170,12 +181,40 @@ public sealed class ConnectionStringReader(
         catch (Exception)
         {
             // The provider's message repeats the text it could not parse.
-            throw ParseFailure(row);
+            return null;
         }
     }
 
-    private static ConnectionStringReadException ParseFailure(ConnectionStringRow row) =>
-        new($"The stored connection string for {row} could not be parsed by the configured database engine.");
+    /// <summary>
+    /// A stored value that cannot be decrypted or parsed. A derivative read as part of a data store
+    /// reads as not configured, as DMS already treats a derivative it cannot decrypt, so one stale row
+    /// cannot empty every data store's derivatives. Anything read as a resource fails the read.
+    /// </summary>
+    private string? Tenant =>
+        tenantContextProvider.Context is TenantContext.Multitenant multitenant
+            ? multitenant.TenantName
+            : null;
+
+    private static string TenantForLog(string? tenant) =>
+        tenant is null ? "(none)" : LoggingUtility.SanitizeForLog(tenant);
+
+    private string? Unreadable(ConnectionStringRow row, string problem)
+    {
+        if (row is ConnectionStringRow.Derivative { ReadAs: DerivativeReadMode.PartOfDataStore } derivative)
+        {
+            logger.LogWarning(
+                "Derivative {DerivativeId} ({DerivativeType}) of data store {DataStoreId} in tenant {Tenant} is treated as not configured: its stored connection string {Problem}",
+                derivative.DerivativeId,
+                LoggingUtility.SanitizeForLog(derivative.DerivativeType),
+                derivative.DataStoreId,
+                TenantForLog(Tenant),
+                problem
+            );
+            return null;
+        }
+
+        throw new ConnectionStringReadException($"The stored connection string for {row} {problem}.");
+    }
 
     /// <summary>
     /// Rebuilds one keyword value from its original segments, replacing each reference with its
@@ -208,9 +247,7 @@ public sealed class ConnectionStringReader(
 
     private async Task<string?> ResolveAsync(string name, ConnectionStringRow row)
     {
-        string? tenant = tenantContextProvider.Context is TenantContext.Multitenant multitenant
-            ? multitenant.TenantName
-            : null;
+        string? tenant = Tenant;
 
         if (secretResolver is null)
         {
@@ -225,6 +262,20 @@ public sealed class ConnectionStringReader(
         string? value;
         string outcome;
 
+        if (_resolverTimedOut)
+        {
+            // Asking again would wait out another timeout for a resolver that has just shown it is not
+            // answering, so only a value already cached is used.
+            return cache.TryGetFresh(tenant, name, out string? cached)
+                ? cached
+                : Unresolved(
+                    row,
+                    name,
+                    tenant,
+                    $"was not resolved: the resolver did not return within {secretsOptions.Value.ResolveTimeoutSeconds} seconds earlier in this read"
+                );
+        }
+
         try
         {
             value = await cache.GetOrFetchAsync(
@@ -236,6 +287,7 @@ public sealed class ConnectionStringReader(
         }
         catch (SecretResolveTimeoutException)
         {
+            _resolverTimedOut = true;
             value = null;
             outcome =
                 $"could not be resolved: the resolver did not return within {secretsOptions.Value.ResolveTimeoutSeconds} seconds";
@@ -264,7 +316,7 @@ public sealed class ConnectionStringReader(
         // The name came from the parser, which admits only the grammar's characters, so it is logged
         // exactly as the resolver was asked for it. The shared sanitizer would strip '@' and '+'.
         string token = name;
-        string tenantForLog = tenant is null ? "(none)" : LoggingUtility.SanitizeForLog(tenant);
+        string tenantForLog = TenantForLog(tenant);
 
         if (row is ConnectionStringRow.Derivative { ReadAs: DerivativeReadMode.PartOfDataStore } derivative)
         {

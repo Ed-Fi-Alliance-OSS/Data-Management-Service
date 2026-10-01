@@ -257,9 +257,11 @@ public class ConnectionStringReaderTests
         public void It_does_not_call_the_resolver() => Resolver.Calls.Should().BeEmpty();
     }
 
+    /// <summary>Not a whole number of AES blocks after the initialization vector, so decryption throws.</summary>
+    protected static readonly byte[] Undecryptable = [.. Enumerable.Range(0, 20).Select(i => (byte)i)];
+
     [TestFixture("data store")]
     [TestFixture("derivative resource")]
-    [TestFixture("nested derivative")]
     public class Given_a_value_that_cannot_be_decrypted(string rowKind) : ConnectionStringReaderTests
     {
         private ConnectionStringRow _row = null!;
@@ -268,16 +270,8 @@ public class ConnectionStringReaderTests
         [SetUp]
         public async Task Act()
         {
-            _row = rowKind switch
-            {
-                "data store" => DataStoreRow,
-                "derivative resource" => ResourceDerivativeRow,
-                _ => NestedDerivativeRow,
-            };
-
-            // Not a whole number of AES blocks after the initialization vector, so decryption throws.
-            byte[] corrupt = [.. Enumerable.Range(0, 20).Select(i => (byte)i)];
-            _failure = await ReadFailure(() => CreateReader().ReadAsync(corrupt, _row));
+            _row = rowKind == "data store" ? DataStoreRow : ResourceDerivativeRow;
+            _failure = await ReadFailure(() => CreateReader().ReadAsync(Undecryptable, _row));
         }
 
         [Test]
@@ -290,6 +284,44 @@ public class ConnectionStringReaderTests
 
         [Test]
         public void It_carries_no_inner_exception() => _failure.InnerException.Should().BeNull();
+
+        [Test]
+        public void It_does_not_call_the_resolver() => Resolver.Calls.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A derivative still under an old encryption key, read as part of its data store, reads as not
+    /// configured, as DMS treats a derivative it cannot decrypt, rather than failing the read and
+    /// emptying the derivatives of every data store beside it.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_nested_derivative_that_cannot_be_decrypted : ConnectionStringReaderTests
+    {
+        private string? _result = "unset";
+
+        [SetUp]
+        public async Task Act()
+        {
+            Tenant.Context = new TenantContext.Multitenant(42, "district-a");
+            _result = await CreateReader().ReadAsync(Undecryptable, NestedDerivativeRow);
+        }
+
+        [Test]
+        public void It_reads_as_not_configured() => _result.Should().BeNull();
+
+        [Test]
+        public void It_logs_one_warning_naming_the_row_and_the_problem() =>
+            Logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<LogEntry>(entry =>
+                    entry.Level == LogLevel.Warning
+                    && Equals(entry.Field("DerivativeId"), 7L)
+                    && Equals(entry.Field("DataStoreId"), 5L)
+                    && (string)entry.Field("Tenant")! == "district-a"
+                    && (string)entry.Field("Problem")! == "could not be decrypted"
+                );
 
         [Test]
         public void It_does_not_call_the_resolver() => Resolver.Calls.Should().BeEmpty();
@@ -713,7 +745,8 @@ public class ConnectionStringReaderTests
     public class Given_a_tokenized_value_the_engine_cannot_parse : ConnectionStringReaderTests
     {
         private ConnectionStringReadException _failure = null!;
-        private ConnectionStringReadException _nestedFailure = null!;
+        private ConnectionStringReadException _resourceFailure = null!;
+        private string? _nested = "unset";
 
         [SetUp]
         public async Task Act()
@@ -721,7 +754,10 @@ public class ConnectionStringReaderTests
             byte[] stored = Stored("Host=db;Password=${secret:prod/dms};dangling");
 
             _failure = await ReadFailure(() => CreateReader().ReadAsync(stored, DataStoreRow));
-            _nestedFailure = await ReadFailure(() => CreateReader().ReadAsync(stored, NestedDerivativeRow));
+            _resourceFailure = await ReadFailure(() =>
+                CreateReader().ReadAsync(stored, ResourceDerivativeRow)
+            );
+            _nested = await CreateReader().ReadAsync(stored, NestedDerivativeRow);
         }
 
         [Test]
@@ -733,8 +769,13 @@ public class ConnectionStringReaderTests
                 );
 
         [Test]
-        public void It_is_not_contained_for_a_nested_derivative() =>
-            _nestedFailure.Message.Should().EndWith("could not be parsed by the configured database engine.");
+        public void It_fails_a_derivative_read_as_the_resource() =>
+            _resourceFailure
+                .Message.Should()
+                .EndWith("could not be parsed by the configured database engine.");
+
+        [Test]
+        public void It_reads_a_nested_derivative_as_not_configured() => _nested.Should().BeNull();
 
         [Test]
         public void It_carries_no_inner_exception() => _failure.InnerException.Should().BeNull();
@@ -1037,5 +1078,90 @@ public class ConnectionStringReaderTests
 
         [Test]
         public void It_keeps_the_later_value_cached() => _passwordAfterLateReturn.Should().Be("fresh");
+    }
+
+    /// <summary>
+    /// A hung resolver is asked once per read, not once per row: rows are read one at a time, so
+    /// asking again for each would make a read of many derivatives wait out one timeout apiece. The
+    /// rows use different names, so it is the timeout and not a shared fetch that stops the later
+    /// calls, and a value already cached is still served.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_resolver_that_hangs_for_a_read_of_several_rows : ConnectionStringReaderTests
+    {
+        private readonly List<string?> _nested = [];
+        private string? _cachedName;
+        private ConnectionStringReadException _dataStoreFailure = null!;
+        private string? _nextRead;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _nested.Clear();
+            Resolver.Behavior = (_, _) => ValueTask.FromResult("cached");
+            await CreateReader().ReadAsync(Stored("Host=db;Password=${secret:warm}"), DataStoreRow);
+
+            TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Resolver.Behavior = (_, _) =>
+            {
+                entered.TrySetResult();
+                return new ValueTask<string>(new TaskCompletionSource<string>().Task);
+            };
+
+            ConnectionStringReader reader = CreateReader();
+            Task<string?> first = reader.ReadAsync(
+                Stored("Host=db;Password=${secret:a}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(TimeoutSeconds));
+            _nested.Add(await first.WaitAsync(SafetyBound));
+
+            // Each of these would hang until the clock moved again if it asked the resolver.
+            _nested.Add(
+                await reader
+                    .ReadAsync(Stored("Host=db;Password=${secret:b}"), NestedDerivativeRow)
+                    .WaitAsync(SafetyBound)
+            );
+            _nested.Add(
+                await reader
+                    .ReadAsync(Stored("Host=db;Password=${secret:c}"), NestedDerivativeRow)
+                    .WaitAsync(SafetyBound)
+            );
+            string? cached = await reader
+                .ReadAsync(Stored("Host=db;Password=${secret:warm}"), NestedDerivativeRow)
+                .WaitAsync(SafetyBound);
+            _cachedName = (string)_postgresql.CreateBuilder(Decrypted(cached!))["Password"];
+            _dataStoreFailure = await ReadFailure(() =>
+                    reader.ReadAsync(Stored("Host=db;Password=${secret:d}"), DataStoreRow)
+                )
+                .WaitAsync(SafetyBound);
+
+            // A later read is a new instance, and asks again.
+            Resolver.Behavior = (_, _) => ValueTask.FromResult("recovered");
+            _nextRead = await CreateReader()
+                .ReadAsync(Stored("Host=db;Password=${secret:b}"), NestedDerivativeRow)
+                .WaitAsync(SafetyBound);
+        }
+
+        [Test]
+        public void It_asks_the_hung_resolver_once() =>
+            Resolver.Calls.Select(call => call.Name).Should().Equal("warm", "a", "b");
+
+        [Test]
+        public void It_reads_every_nested_row_as_not_configured() => _nested.Should().Equal(null, null, null);
+
+        [Test]
+        public void It_still_serves_a_cached_value() => _cachedName.Should().Be("cached");
+
+        [Test]
+        public void It_fails_a_data_store_naming_the_earlier_timeout() =>
+            _dataStoreFailure
+                .Message.Should()
+                .EndWith("the resolver did not return within 10 seconds earlier in this read.");
+
+        [Test]
+        public void It_asks_again_on_the_next_read() =>
+            _postgresql.CreateBuilder(Decrypted(_nextRead!))["Password"].Should().Be("recovered");
     }
 }

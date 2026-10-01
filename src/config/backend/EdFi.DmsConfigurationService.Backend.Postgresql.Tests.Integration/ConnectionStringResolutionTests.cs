@@ -494,10 +494,11 @@ public class ConnectionStringResolutionTests : DatabaseTest
     }
 
     /// <summary>
-    /// A value that cannot be decrypted fails every read that reaches it, carrying no reference at all,
-    /// which is what shows every value is decrypted. On the nested derivative path that is a failure of
-    /// the derivative repository method, and the data store reads keep mapping a failed derivative
-    /// lookup to an empty list, as they did before.
+    /// A value that cannot be decrypted fails every read that reaches it as the resource, carrying no
+    /// reference at all, which is what shows every value is decrypted. A derivative read as part of its
+    /// data store reads as not configured instead, as DMS treats a derivative it cannot decrypt, so
+    /// one row still under an old key leaves its siblings and every other data store's derivatives in
+    /// place.
     /// </summary>
     [TestFixture]
     public class Given_stored_values_that_cannot_be_decrypted : ConnectionStringResolutionTests
@@ -505,6 +506,7 @@ public class ConnectionStringResolutionTests : DatabaseTest
         private int _corruptParentId;
         private int _parentOfCorruptDerivativeId;
         private int _corruptDerivativeId;
+        private int _healthyDerivativeId;
 
         [SetUp]
         public async Task Arrange()
@@ -522,6 +524,18 @@ public class ConnectionStringResolutionTests : DatabaseTest
                 ConnectionStringWithPassword("plain")
             );
             await CorruptDerivative(_corruptDerivativeId);
+            _healthyDerivativeId = await InsertDerivative(
+                _parentOfCorruptDerivativeId,
+                "Snapshot",
+                ConnectionStringWithPassword("sibling")
+            );
+        }
+
+        private void ShouldContainOnlyTheCorruptRow(IEnumerable<DataStoreDerivativeItem> derivatives)
+        {
+            List<DataStoreDerivativeItem> items = derivatives.ToList();
+            items.Single(d => d.Id == _corruptDerivativeId).ConnectionString.Should().BeNull();
+            Password(items.Single(d => d.Id == _healthyDerivativeId).ConnectionString).Should().Be("sibling");
         }
 
         private static string DecryptMessage(string row) =>
@@ -561,22 +575,41 @@ public class ConnectionStringResolutionTests : DatabaseTest
         }
 
         [Test]
-        public async Task It_fails_the_nested_derivative_methods_rather_than_containing_the_row()
+        public async Task It_contains_the_row_in_the_nested_derivative_methods()
         {
-            (await Derivatives.GetDataStoreDerivativesByDataStore(_parentOfCorruptDerivativeId))
-                .Should()
-                .BeOfType<DataStoreDerivativeQueryByDataStoreResult.FailureUnknown>()
-                .Subject.FailureMessage.Should()
-                .Be(DecryptMessage(DerivativeRow));
-            (await Derivatives.GetDataStoreDerivativesByDataStoreIds([_parentOfCorruptDerivativeId]))
-                .Should()
-                .BeOfType<DataStoreDerivativeQueryByDataStoreIdsResult.FailureUnknown>()
-                .Subject.FailureMessage.Should()
-                .Be(DecryptMessage(DerivativeRow));
+            var byDataStore = await Derivatives.GetDataStoreDerivativesByDataStore(
+                _parentOfCorruptDerivativeId
+            );
+            var byIds = await Derivatives.GetDataStoreDerivativesByDataStoreIds([
+                _parentOfCorruptDerivativeId,
+            ]);
+
+            ShouldContainOnlyTheCorruptRow(
+                byDataStore
+                    .Should()
+                    .BeOfType<DataStoreDerivativeQueryByDataStoreResult.Success>()
+                    .Subject.DataStoreDerivativeResponses.Select(d => new DataStoreDerivativeItem(
+                        d.Id,
+                        d.DataStoreId,
+                        d.DerivativeType,
+                        d.ConnectionString
+                    ))
+            );
+            ShouldContainOnlyTheCorruptRow(
+                byIds
+                    .Should()
+                    .BeOfType<DataStoreDerivativeQueryByDataStoreIdsResult.Success>()
+                    .Subject.DataStoreDerivativeResponses.Select(d => new DataStoreDerivativeItem(
+                        d.Id,
+                        d.DataStoreId,
+                        d.DerivativeType,
+                        d.ConnectionString
+                    ))
+            );
         }
 
         [Test]
-        public async Task It_keeps_mapping_a_failed_derivative_lookup_to_an_empty_list_on_the_single_row_read()
+        public async Task It_contains_the_row_on_the_single_row_read()
         {
             var result = await DataStores.GetDataStore(_parentOfCorruptDerivativeId);
 
@@ -585,22 +618,23 @@ public class ConnectionStringResolutionTests : DatabaseTest
                 .BeOfType<DataStoreGetResult.Success>()
                 .Subject.DataStoreResponse;
             dataStore.ConnectionString.Should().NotBeNull();
-            dataStore.DataStoreDerivatives.Should().BeEmpty();
+            ShouldContainOnlyTheCorruptRow(dataStore.DataStoreDerivatives);
         }
 
         [Test]
-        public async Task It_keeps_mapping_a_failed_derivative_lookup_to_an_empty_list_on_the_collection_read()
+        public async Task It_contains_the_row_on_the_collection_read()
         {
             await DataStores.DeleteDataStore(_corruptParentId);
 
             var result = await DataStores.QueryDataStore(new DataStoreQuery());
 
-            result
-                .Should()
-                .BeOfType<DataStoreQueryResult.Success>()
-                .Subject.DataStoreResponses.Single()
-                .DataStoreDerivatives.Should()
-                .BeEmpty();
+            ShouldContainOnlyTheCorruptRow(
+                result
+                    .Should()
+                    .BeOfType<DataStoreQueryResult.Success>()
+                    .Subject.DataStoreResponses.Single()
+                    .DataStoreDerivatives
+            );
         }
 
         [Test]
