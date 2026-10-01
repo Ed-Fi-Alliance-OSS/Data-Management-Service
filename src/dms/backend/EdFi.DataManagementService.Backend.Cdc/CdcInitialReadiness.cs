@@ -287,7 +287,13 @@ public sealed class CdcInitialReadiness
                             await DelayAsync(request, token);
                         }
                         if (
-                            request.Binding.Provider == CoreProvider.Postgresql
+                            (
+                                request.Binding.Provider == CoreProvider.Postgresql
+                                || continuity.Observation.Diagnostics.Any(diagnostic =>
+                                    diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
+                                    && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+                                )
+                            )
                             && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
                         )
                         {

@@ -87,7 +87,7 @@ Use the existing Pester test suites; do not introduce a reporting framework.
   the internal wait, explicit timeout overrides, and other wrapper deadlines.
   The failing child process's internal substep remains unknown; this does not
   retrospectively prove the cause of the earlier September 30 incident.
-- [ ] Run SQL Server Admission with the improved diagnostics, then run the full
+- [x] Run SQL Server Admission with the improved diagnostics, then run the full
   matrix on the branch through the existing workflow. Do not stop at the previously
   failing lane.
 - [ ] For each failure, record the evidence and classify it as a product defect,
@@ -136,47 +136,31 @@ passes; document that limitation explicitly.
 
 ## Implementation status
 
-- Diagnostic metadata now includes case operations, phase, assertion source/line,
-  process outcome, timeout budget and elapsed time. Pester setup/block failures and
-  independent export failures are retained. Raw messages remain private.
-- Local results default outside the checkout; checkout-local destinations are
-  rejected, including a checkout-local TMPDIR for private logs. Both CI workflows
-  use the runner temporary directory.
-- SQL startup evidence now retains bounded hexadecimal LSA-load and AppLoader-exit
-  status codes separately, without changing recovery eligibility. Startup failure
-  and recovery totals count each GUID-named attachment once, including when VSTest
-  retains another copy beneath the results directory.
-- The shared SQL Server lifecycle adapter called the removed `Invoke-FixtureSql`
-  helper. It now calls `Invoke-CdcFixtureSql`; targeted execution tests verify the
-  actual adapter, database forwarding and session-option ordering. This is a test
-  harness defect introduced by the fixture extraction, not evidence of the cause
-  of the September 30 Admission failure.
-- Local Contract validation passed 4,671 controller unit, 819 CLI CDC, 6 runbook-admin,
-  502 offline integration and 839 Pester tests. Subsequent SQL diagnostic/counter
-  changes passed 63 targeted .NET checks and all 283 qualification-script checks,
-  with no failures or skips. The duplicate-count regression failed before its fix.
-- Full Contract validation on `4e1127e07` passed 4,671 controller unit, 819 CLI CDC,
-  6 runbook-admin, 509 offline integration and 839 Pester tests. The subsequent
-  E2E deadline correction passed all 305 wrapper/qualification checks. Both new
-  provider deadline regressions failed with the old 600-second budget.
-- Hosted run `36790134648` on `4748fdda6` has twelve passing live jobs with audited
-  artifacts and a failed SQL Server Recovery job; four jobs remain in progress.
-  The failed scenario encountered a SQL Server process exit before exercising CDC.
-  The AppLoader termination message was identified, but the exact LSA timeout
-  signature was absent. No additional retry was authorized. Twenty fresh local
-  starts of the same image reached client readiness without reproducing the crash;
-  this does not establish hosted stability or resolve the vendor cause. This run
-  cannot count as a complete stability pass. The PR retains the current run ledger.
-- Shared-path review covered the pinned-image provider fixture, separate Kafka
-  policy fixture, History servers/retirement, runbook ownership and governed
-  teardown, and API E2E setup/test/cleanup/export deadlines. Historical incidents
-  remain classified with their original evidence limitations; the PR evidence
-  summary is the running validation record.
-- The focused SQL Server Admission run confirmed that the harness terminated the
-  E2E setup child at its outer deadline. E2E setup now has the existing API E2E
-  runner's 30-minute allowance for its combined preparation/provisioning/readiness
-  work. The original focused job lasted approximately 103 minutes, leaving room
-  for this additional 20-minute allowance within the 130-minute workflow limit.
-  Live verification of the correction is still required. No retry was added.
-- Three consecutive complete hosted passes have **not** yet been obtained. The
-  candidate is not frozen and the PR is not ready for merge.
+The running validation ledger is in [draft PR #1319](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1319).
+Keep generated evidence outside the checkout and update the PR with run links and
+artifact audit outcomes, so recording validation does not change the candidate.
+
+Implemented changes:
+
+- Diagnostic reports retain operation, phase, source location, process outcome and
+  timing, including setup/block failures and separate cleanup/export failures.
+  Local and CI output paths are outside the checkout, with checkout-local results
+  and temporary roots rejected.
+- SQL startup reports retain bounded loader/exit status codes and count each
+  GUID-named attachment once. Recovery eligibility has not been broadened.
+- The SQL Server lifecycle adapter uses the current shared fixture SQL helper.
+  Regression coverage checks database forwarding and session-option ordering.
+- The two provider E2E setup snippets have a bounded 1,800-second outer deadline.
+  Two hosted failures demonstrated the old 600-second outer timeout; their internal
+  child substep and the original September 30 cause remain unknown.
+- SQL continuity validation treats a commit beyond an earlier range maximum as
+  unknown instead of latching history loss. Established validation refreshes the
+  provider once and then rereads the offset; initial admission collects fresh
+  evidence within its existing bounded loop. An offset below the retained floor
+  still establishes loss, and unavailable evidence does not authorize readiness.
+
+Qualification remains in progress. An earlier revision passed all seventeen jobs,
+but it predates the deadline and continuity corrections and does not count toward
+the final candidate's three required passes. The PR ledger must establish those
+passes, Contract validation, required scenario counts and cleanup outcomes before
+this work is considered complete.
