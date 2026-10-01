@@ -3,10 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -25,7 +23,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 public sealed class SigningKeyBearerEvents
 {
     private const string BearerPrefix = "Bearer ";
-    private const string ProblemJsonContentType = "application/problem+json";
 
     private readonly ISigningKeySnapshotProvider _provider;
     private readonly ITokenManager _tokenManager;
@@ -45,12 +42,8 @@ public sealed class SigningKeyBearerEvents
         _provider = provider;
         _tokenManager = tokenManager;
         _logger = logger;
-
-        TimeSpan refreshInterval = SigningKeySettings
-            .FromIdentityOptions(identityOptions.Value)
-            .RefreshInterval;
-        _retryAfterSeconds = ((int)Math.Min(refreshInterval.TotalSeconds, 30)).ToString(
-            CultureInfo.InvariantCulture
+        _retryAfterSeconds = SigningKeyDependencyResponse.RetryAfterSeconds(
+            SigningKeySettings.FromIdentityOptions(identityOptions.Value)
         );
     }
 
@@ -165,25 +158,7 @@ public sealed class SigningKeyBearerEvents
         }
 
         context.HandleResponse();
-        HttpResponse response = context.Response;
-        if (response.HasStarted)
-        {
-            return true;
-        }
-
-        response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-        response.Headers.RetryAfter = _retryAfterSeconds;
-        response.ContentType = ProblemJsonContentType;
-        await response.WriteAsync(
-            FailureResponse
-                .ForUnclassifiedStatus(
-                    StatusCodes.Status503ServiceUnavailable,
-                    "Service Unavailable",
-                    context.HttpContext.TraceIdentifier
-                )
-                .ToJsonString(),
-            context.HttpContext.RequestAborted
-        );
+        await SigningKeyDependencyResponse.WriteAsync(context.HttpContext, _retryAfterSeconds);
         return true;
     }
 

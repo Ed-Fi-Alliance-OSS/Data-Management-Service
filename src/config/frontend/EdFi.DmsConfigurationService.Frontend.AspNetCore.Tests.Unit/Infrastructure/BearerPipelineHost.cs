@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Profile;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -255,10 +256,10 @@ internal sealed class RecordingBackchannelHandler : HttpMessageHandler
 }
 
 /// <summary>
-/// Stands in for the <see cref="ILogger{JwtBearerHandler}"/> the <c>DmsJwtBearer</c> scheme's own challenge and
-/// authentication-failed events resolve from the request services, and records what they log.
+/// Stands in for an <see cref="ILogger{TCategoryName}"/> that code resolves from the request services, such as the one
+/// the <c>DmsJwtBearer</c> scheme's own challenge and authentication-failed events use, and records what it logs.
 /// </summary>
-internal sealed class RecordingJwtBearerHandlerLogger : ILogger<JwtBearerHandler>
+internal sealed class RecordingLogger<TCategoryName> : ILogger<TCategoryName>
 {
     private readonly ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> _entries = new();
 
@@ -327,7 +328,7 @@ internal sealed class DmsJwtBearerProbeStartupFilter(Action onProbeReached) : IS
 
 /// <summary>
 /// The application with its real bearer schemes, real token manager, real snapshot provider and real refresh service,
-/// over <see cref="PipelineTokenStore"/>, a faked profile repository and fake time (spec §5 steps 3.1 and 3.2). The
+/// over <see cref="PipelineTokenStore"/>, a faked profile repository and fake time (spec §5 steps 3.1 to 3.3). The
 /// provider is wrapped by <see cref="CountingSnapshotProvider"/> and the configuration manager of the scheme under test
 /// (<c>Bearer</c> by default, or <c>DmsJwtBearer</c>) by <see cref="CountingConfigurationManager"/>; that scheme's
 /// backchannel handler is <see cref="RecordingBackchannelHandler"/>. The manager is wrapped after every other
@@ -458,6 +459,7 @@ internal sealed class BearerPipelineHost : IDisposable
                 }
 
                 services.AddSingleton<ILogger<JwtBearerHandler>>(HandlerLogger);
+                services.AddSingleton<ILogger<JwksEndpointModule>>(JwksLogger);
                 services.AddTransient<IStartupFilter>(_ => new DmsJwtBearerProbeStartupFilter(() =>
                     Interlocked.Increment(ref _probeHits)
                 ));
@@ -478,7 +480,10 @@ internal sealed class BearerPipelineHost : IDisposable
     public RecordingBackchannelHandler Backchannel { get; } = new();
 
     /// <summary>What the <c>DmsJwtBearer</c> scheme's own challenge and authentication-failed events logged.</summary>
-    public RecordingJwtBearerHandlerLogger HandlerLogger { get; } = new();
+    public RecordingLogger<JwtBearerHandler> HandlerLogger { get; } = new();
+
+    /// <summary>What the JWKS endpoint logged.</summary>
+    public RecordingLogger<JwksEndpointModule> JwksLogger { get; } = new();
 
     /// <summary>The scheme behind each message-received event, in order.</summary>
     public IReadOnlyCollection<string> SchemesAuthenticating => [.. _schemesAuthenticating];
@@ -522,6 +527,9 @@ internal sealed class BearerPipelineHost : IDisposable
     /// <summary>Requests the probe endpoint, which only the <c>DmsJwtBearer</c> scheme authenticates.</summary>
     public Task<HttpResponseMessage> GetDmsJwtBearerProbeAsync(string token) =>
         SendAsync(new AuthenticationHeaderValue("Bearer", token), DmsJwtBearerProbePath);
+
+    /// <summary>Requests the JWKS document, anonymously as its consumers do.</summary>
+    public Task<HttpResponseMessage> GetJwksAsync() => SendAsync(null, "/.well-known/jwks.json");
 
     public Task<HttpResponseMessage> SendAsync(
         AuthenticationHeaderValue? authorization,
