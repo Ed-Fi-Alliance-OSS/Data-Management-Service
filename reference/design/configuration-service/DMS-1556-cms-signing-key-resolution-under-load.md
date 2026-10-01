@@ -1,6 +1,6 @@
 # DMS-1556 Implementation Spec — CMS profile requests return HTTP 500 during concurrent catalog loading
 
-Status: **v4 — Phase 0 complete (0.1–0.6 approved, Codex, 2026-09-29/30). G2 approved 2026-09-30 with P-G1, P-G2, P-G3 and P-7.4 in force (§0.00). Phases 1 and 2 are complete (every step approved, 2026-09-30). Phase 3 is in progress: step 3.1 (`Bearer` scheme) is at its checkpoint, and 3.2 has not started (§5).** Phase 0 evidence is in `DMS-1556-investigation.md`. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
+Status: **v4 — Phase 0 complete (0.1–0.6 approved, Codex, 2026-09-29/30). G2 approved 2026-09-30 with P-G1, P-G2, P-G3 and P-7.4 in force (§0.00). Phases 1–3 are complete (every step approved; 3.4 at `c799f084d`, 2026-10-01). Phase 4: step 4.1 is at its checkpoint (2026-10-01; evidence in `DMS-1556-investigation.md` §4.1): the catalog gate is met on both profiles, while the default-setting 256/128 runs fail with 53300 only and are returned to review under P-7.4. 4.2 has not started (§5).** Phase 0 evidence is in `DMS-1556-investigation.md`. v1 and v2 (both 2026-09-29) were reviewed and not approved; v3 applied the round-2 findings (§0.1) on top of the round-1 dispositions (§0.2) and was approved for step 0.1 only, with the corrections in §0.0 applied here as v4. Approval applies only to the scope reviewed: production implementation remains conditional on the evidence review at G2, and if Phase 0 evidence changes the mechanism or the fix, the affected sections and §2 are revised and re-approved before any later phase starts.
 Worktree: `C:\dev\ed-fi\Data-Management-Service\src\Data-Management-Service-DMS-1556`, branch `DMS-1556` (fresh from `main` at `5e0d010af`). Target: Ed-Fi API v8.1. `SchemaHashConstants.RelationalMappingVersion` stays `v3`; no schema migration.
 
 ## 0. Review history and dispositions
@@ -449,6 +449,33 @@ It is called only by the three self-contained store registrations: PostgreSQL, P
 ### Phase 4
 
 **4.1-H Healthy baseline-comparison runs** on the fixed image (both profiles; 5 cold + 5 warm at 87/87 and 256/128; `-ValidateBodies`): gate = every expected request returns 200 with the expected `id`/`definition`; stacks recorded. **4.1-O Injected outage runs** (`docker pause dms-postgresql` 20 s mid-burst): expectations classified by stage — authentication-stage → 503 + `Retry-After`; requests already past authentication may hit the unchanged profile-repository 500 (F8) and are reported separately; recovery within `max backoff + LoadTimeout`. Doc updated; commit. **4.2 E2E** (teardown; rebuild; shards 1 and 2 ≥ 2 runs each; CMS E2E once). **4.3 Docs** (`CONFIGURATION.md`, `CS-AUTH.md` incl. the runbook of §4.5, README, spec status). `CONFIGURATION.md` documents `IdentitySettings:KeyFormatCacheSize` as an ignored compatibility setting with no effect. Decided at the 1.3 review: it is kept for DMS-1556, and removing it belongs to a separately scoped configuration cleanup. **4.4 Final matrix + push-readiness report.**
+
+*4.1 as run (2026-10-01, `DMS-1556-investigation.md` §4.1):*
+
+- **Image and settings.** Image `ed-fi-api-config-local:dms1556-c799f084d`. Default
+  settings throughout; the headroom block is the only `max_connections=200` run.
+- **4.1-H.** 5 cold + 5 warm runs per workload and profile, plus 3 + 3 headroom runs.
+  - Catalog 87/87: all 200 with validated bodies on both profiles.
+  - Default 256/128: 53300-only failures on both profiles. These are 503 at
+    authentication (`TokenStatusStore`) and 500 after it. By P-7.4 this is a gate
+    failure returned to review; no setting was changed.
+  - Headroom 256/128: all 200.
+- **4.1-O.** Three scenarios, 2 repetitions per profile:
+  - the specified pause (`docker pause dms-postgresql`, 20 s, mid-round);
+  - a 40 s pause that outlasts Npgsql's 30 s command timeout;
+  - a key-store-only outage (`LOCK TABLE dmscs."OpenIddictKey"` held 75 s across a CMS
+    restart). It is the only way to reach the "no usable snapshot" state, and so the
+    JWKS 503, at default settings.
+- **Deviations from the plan as written.**
+  - **Dumps:** one `Worker Min Limit` dump per block, not per run, still outside the
+    timed windows. A first sequence was stopped for host memory; that was this choice's
+    reason.
+  - **Pause round size:** the pause rounds are 870 requests through 87 slots, so the
+    pause lands mid-round. A warm 87-request round ends before `docker pause` takes
+    effect.
+  - **Superseded first outage set:** the first P-runner-approx outage set was rerun.
+    Docker log rotation truncated its pause-run CMS logs, and its key-lock window ended
+    before recovery.
 
 **Changed log signal (recorded at the 3.3 review).** The baseline code logged `Failed to fetch public keys for JWKS` when a key read failed, and `Invoke-E1Baseline.ps1` counts that string (`$cmsKeyFetchFailures`). The fixed code never emits it: since 2.2 a key-store failure is logged by the snapshot provider's load-attempt Error (§4.9, category `SigningKeyStore`), and since 3.3 a JWKS request with no usable snapshot logs `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)`; protected requests log `Authentication could not reach a decision: the {Category} is unavailable (trace …)`. On the fixed image that counter therefore reads zero whatever happens, and Phase 4 must **not** treat it as evidence that dependency failures disappeared: 4.1 counts the new signals, and outage runs (4.1-O) must show them. The historical baseline evidence (0.3–0.6, `DMS-1556-investigation.md`) stays unchanged.
 

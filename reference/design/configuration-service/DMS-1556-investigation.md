@@ -1064,3 +1064,362 @@ Evidence archival (the Jira upload) remains outstanding.
   cold repetition 3, authorizations 0 → 189 across it). The bullet is corrected in
   place. No capture inside the unauthorized phase shows SCRAM computation, and no
   classification or verdict changes.
+
+## 4.1 — Fixed-image runtime evidence (2026-10-01)
+
+### Scope
+
+Spec Phase 4.1: healthy baseline-comparison runs (4.1-H) and injected outage runs
+(4.1-O) on the fixed image, at default settings. Nothing in this step changes
+production code. The Phase 0 records above are unchanged; Phase 0 numbers quoted here
+are for comparison only.
+
+### Image, environment, and effective configuration
+
+- **Image:** `ed-fi-api-config-local:dms1556-c799f084d`, image id
+  `sha256:eb4acec72d7c…`, built 2026-10-01 13:26 UTC with `docker compose … build config`
+  from a clean worktree at `c799f084d` (the last 3.4 correction; the production code is
+  that of 3.3 plus the 3.4 tests). Every block index records the image id of the running
+  container, and every run used this image.
+- **Stack:** dms-local, self-contained identity, PostgreSQL 16.8, database-backed signing
+  keys, DMS idle, with both diagnostics overlays, as in §3.1 and Phase 0. CMS is at
+  `127.0.0.1:8081`.
+- **Effective configuration** (recorded per block in `conditionState.effectiveConfiguration`,
+  secrets redacted):
+  - No `SigningKey*` setting is supplied, so the defaults are in force: refresh 300 s,
+    maximum staleness 3600 s, unknown-key cooldown 30 s, load timeout 10 s.
+  - The connection string has no `Timeout`, `Command Timeout` or pool keywords, so Npgsql
+    defaults apply: open timeout 15 s, command timeout 30 s, `Max Pool Size` 100.
+  - No thread-pool override. `Serilog` at Debug (as in Phase 0). PostgreSQL
+    `max_connections=100`, except in the headroom block (200).
+  - **P-dev**: no CPU caps; `Worker Min Limit` 16 (dump). **P-runner-approx**: `cpus: 2`
+    on CMS and PostgreSQL, `DOTNET_PROCESSOR_COUNT=4`; `Worker Min Limit` 4 (dump). These
+    match the Phase 0 values, so the thread-pool minimum that exposed the stall is
+    unchanged.
+- **Other containers:** every container outside the dms-local stack was stopped for the
+  runs (list in `artifacts/h41-stopped-containers.txt`); the block indexes record none
+  running.
+- **Data:** 87 harness profiles were re-seeded (the previous manifest was stale after the
+  E7 teardowns). The table also holds 87 leftover E2E profiles, so it has 174 rows; each
+  request is a primary-key read, and body validation uses only the harness manifest.
+
+### Commands
+
+From `eng/performance/dms-1556`:
+
+```powershell
+./Invoke-CmsProfileBurst.ps1 -Seed -ProfileCount 87
+./Invoke-Step41Sequence.ps1              # 4.1-H: all blocks below, then restores P-runner-approx
+./Invoke-Step41Outage.ps1 -ResourceProfile p-runner-approx -Repetitions 2
+./Set-Dms1556StackCondition.ps1 -Condition baseline -ResourceProfile p-dev -RecreateDb
+./Invoke-Step41Outage.ps1 -ResourceProfile p-dev -Repetitions 2
+./Get-Step41Report.ps1                   # tables below: artifacts/h41-report.md
+```
+
+`Invoke-Step41Sequence.ps1` recreates PostgreSQL before every block and runs
+`Invoke-ControlBatch.ps1 -LabelPrefix h41`. Every run restarts CMS and has 5 rounds with
+body validation, samplers with the coverage gate, and managed stacks at 0/2/8/14 s into
+round 1. Cold runs mint the token, restart CMS, and burst at once. Warm runs restart CMS,
+then do a serial warm-up of 87 requests before the burst.
+
+### Results — 4.1-H healthy baseline-comparison runs
+
+5 cold and 5 warm runs per workload and profile at default settings, plus 3 + 3 headroom
+runs. "Rounds" are the 5 rounds of each run; "cold" is round 1 of a cold run.
+
+| Profile / condition | Workload | Runs | Responses | Non-200 | 200 with invalid body | Round-1 p50 (ms) | Round-1 max (ms) | Rounds 2–5 p50 (ms) | TP threads max, round 1 (queue max) | CMS conns created, round 1 | Sampler coverage failures |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| P-dev | cold-87x87 | 5 | 2,175 | **0** | 0 | 270–381 | ≤ 414 | 81–164 | 17 (0–12) | 69–82 | 0 |
+| P-dev | warm-87x87 | 5 | 2,175 | **0** | 0 | 102–176 | ≤ 198 | 88–120 | 16–17 (0) | 9–57 | 0 |
+| P-runner-approx | cold-87x87 | 5 | 2,175 | **0** | 0 | 458–562 | ≤ 585 | 85–208 | 5–23 (0–4) | 81–82 | 0 |
+| P-runner-approx | warm-87x87 | 5 | 2,175 | **0** | 0 | 259–422 | ≤ 519 | 90–134 | 13–15 (0–3) | 59–79 | 0 |
+| P-dev | cold-256x128 | 5 | 6,400 | **131** | 0 | 335–410 | ≤ 825 | 126–250 | 17 (2–17) | 213–387 | 0 |
+| P-dev | warm-256x128 | 5 | 6,400 | **148** | 0 | 215–287 | ≤ 661 | 134–223 | 16–36 (1–8) | 174–201 | 0 |
+| P-runner-approx | cold-256x128 | 5 | 6,400 | **157** | 0 | 552–780 | ≤ 1,850 | 300–713 | 18–21 (2–45) | 195–274 | 0 |
+| P-runner-approx | warm-256x128 | 5 | 6,400 | **155** | 0 | 551–714 | ≤ 1,820 | 226–794 | 12–15 (0–27) | 208–262 | 0 |
+| P-runner-approx, headroom (`max_connections=200`) | cold-256x128 | 3 | 3,840 | **0** | 0 | 374–406 | ≤ 1,030 | 180–296 | 20–21 (1–44) | 95–96 | 0 |
+| P-runner-approx, headroom | warm-256x128 | 3 | 3,840 | **0** | 0 | 308–382 | ≤ 848 | 181–231 | 5–15 (0–8) | 95–96 | 0 |
+
+Measured peak overlap was 87 in every catalog round and 128 in every stress round.
+
+- **Catalog workload (87/87), both profiles: 8,700 of 8,700 responses are HTTP 200 with
+  the expected `id`, `name` and `definition`.** The gate for this workload is met.
+- **For comparison (Phase 0, same host and profile, baseline image):**
+  - P-runner-approx round 1 took 13.6–16.7 s at p50 in every baseline block (0.5).
+  - Thread-pool threads climbed to 79–87, with the queue up to 74.
+  - The fixed image's P-runner-approx round 1 is 0.26–0.56 s at p50, with threads 5–23
+    and the queue at most 4.
+- **Stress workload (256/128) at default settings: the gate is NOT met.** 591 of 25,600
+  responses are non-200 across both profiles. Every one was joined through its
+  `correlationId` to its CMS log lines; none is uncorrelated. **All 591 have the same
+  cause: PostgreSQL `53300: sorry, too many clients already`**. They split by stage:
+
+  | Profile | Workload | 503, authentication stage (`TokenStatusStore`) | 500, after authentication (profile read) |
+  | --- | --- | --- | --- |
+  | P-dev | cold | 66 | 65 |
+  | P-dev | warm | 87 | 61 |
+  | P-runner-approx | cold | 101 | 56 |
+  | P-runner-approx | warm | 99 | 56 |
+
+  - Every 503 carries the dependency contract (`Retry-After: 30`,
+    `application/problem+json`, no `WWW-Authenticate`). Each has its boundary Error line
+    `Authentication could not reach a decision: the TokenStatusStore is unavailable (trace …)`,
+    whose inner exception is the `53300` `PostgresException`.
+  - The 500s are the unchanged profile-repository path (F8).
+  - PostgreSQL logged 134–158 `too many clients` rejections per block.
+  - **No open timeout, SASL timeout, or `TimeoutException` appears anywhere** in the stress
+    runs, and no round shows a stall: the worst request took 1.85 s.
+- **Headroom supplements the gate (P-7.4):** with `max_connections=200`, all 7,680 stress
+  responses are 200, and CMS creates 95–96 connections in round 1. Removing the slot
+  limit removes every failure, so nothing but slot exhaustion remains at 256/128 on this
+  host.
+- **Pre-registered disposition (P-7.4):** a default-setting 256/128 run that fails only
+  with 53300 is a gate failure returned to review, never a pass, and never a licence for a
+  pool or `max_connections` change. **This is that case.** It goes to review at this
+  checkpoint, and no setting was changed.
+- **Context, not a disposition:** CMS's `Max Pool Size` (100) equals the server's
+  `max_connections` (100), and DMS and the two samplers share the server. Before the fix,
+  the stall itself bounded how fast CMS opened connections. Now 128 concurrent requests
+  open connections as fast as PostgreSQL authorizes them, and round 1 creates 174–387
+  connections. No pre-fix P-dev 256/128 baseline exists (P-7.4). The Phase 0
+  P-runner-approx stress baseline (0.5) also had 53300 failures, there mixed with
+  open-timeout 500s under the stall.
+
+**Dependency log signals in the healthy windows** (spec §4.9; counted per run over the
+burst window, every run):
+
+- **Catalog and headroom runs: zero** boundary 503 lines, zero JWKS-unavailable lines, zero
+  signing-key load failures, zero late-load discards and zero unknown-key refresh
+  warnings. No snapshot publication either: the startup load published before each burst.
+- **Default stress runs:** `Authentication could not reach a decision … TokenStatusStore`
+  appears 66, 87, 101 and 99 times, equal to each workload's 503 count. **No
+  `SigningKeyStore` category appears in any healthy run**, and no signing-key load failed.
+- **The retired baseline string** `Failed to fetch public keys for JWKS` reads zero by
+  construction (spec Phase 4, changed log signal) and is not used as evidence.
+
+### Results — managed stacks, round 1 (4.1-H)
+
+160 captures in all: 40 per profile and workload class, at 0, 2, 8 and 14 s into round 1.
+Each capture is the interval `[requested, completed]`; the snapshot lies somewhere inside.
+
+| Profile, workloads | Captures | TP workers | Resolver wait | Authentication frame in a sync wait | Other sync wait | Parked | Round end vs the 0 s capture |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| P-dev, catalog | 40 | 16–17 | **0** | **0** | 0 | all | inside it (round ends before completion) |
+| P-dev, stress | 40 | 16–36 | **0** | **0** | 0 | all | inside it |
+| P-runner-approx, catalog | 40 | 5–23 | **0** | **0** | 0 | all | inside it |
+| P-runner-approx, stress (default and headroom) | 40 | 5–21 | **0** | **0** | 0 | all | inside it |
+
+- No capture shows a resolver wait (the Phase 0 signature: a synchronous `Task.InternalWait`
+  under `JsonWebTokenHandler.ValidateSignature`), nor any thread in a synchronous wait
+  with a JwtBearer, signing-key, token-manager or IdentityModel frame. Every worker is
+  parked. In the Phase 0 baselines, 40–41 workers were in the resolver wait at 2 s and
+  64–66 at 8 s, and 89–90 at 14 s under stress (0.5).
+- **Limitation:** a fixed-image round 1 ends within 0.3–1.9 s, inside the ~2.4 s 0 s
+  capture, and the 2/8/14 s captures follow the round. These stacks therefore cannot be
+  placed during the burst, and they show only that no worker is left blocked. The
+  counters cover the burst itself (thread-pool threads at most 36, queue at most 45 in a
+  1 s sample). The direct stack evidence that authentication does not block workers is in
+  4.1-O, where requests are held 15–40 s.
+
+### Results — 4.1-O injected outage runs
+
+`Invoke-Step41Outage.ps1`, 2 repetitions of each scenario per profile, default settings,
+with samplers and a JWKS probe every 500 ms beside the rounds. Each run restarts CMS.
+
+- **`pause-warm`** (spec 4.1-O):
+  - setup: serial warm-up, then 35 rounds of 870 requests through 87 slots, 2 s apart;
+  - fault: `docker pause dms-postgresql` for 20 s, starting 0.4 s into round 4, so 87
+    requests are in flight at the freeze and the rest queue behind them;
+  - stacks: at 3.4 s and 10.4 s into round 4, both inside the pause.
+- **`pause-warm-long`**: the same with a 40 s pause, longer than Npgsql's 30 s command
+  timeout.
+- **`keylock-cold`**: a key-store-only outage.
+  - The token is minted first. One session then holds
+    `LOCK TABLE dmscs."OpenIddictKey" IN ACCESS EXCLUSIVE MODE` for 75 s, and CMS is
+    restarted under the lock.
+  - Token-status and profile reads are unaffected, so this is the only way at default
+    settings to reach "no usable snapshot", and with it the JWKS 503.
+  - 80 rounds of 87/87, 2 s apart; stacks at 1 s and 5 s into round 1.
+
+Every non-200 was joined through its correlation id to its CMS log lines. **All 4,506
+are classified, and none is transport, unclassified, or uncorrelated.** Each run's CMS
+log starts before its burst; pause runs stream the log during the burst (see
+Deviations). **Every 503 carries the dependency contract** (`Retry-After: 30`,
+`application/problem+json`, no `WWW-Authenticate`). **Every 200 has a validated body.**
+
+| Scenario | Profile | Run | Responses | 503, authentication stage | 500 | Fault held (s) | First 200 after removal (s) | Last non-200 after removal (s) | JWKS during the fault |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| pause 20 s | P-dev | 1 / 2 | 30,450 / 30,450 | 9 / 11 `TokenStatusStore` | 0 / 0 | 20.4 / 20.3 | 0.02 / 0.02 | −5.2 / −5.1 | 40 / 40 × 200, 1 key |
+| pause 20 s | P-runner-approx | 1 / 2 | 30,450 / 30,450 | 3 / 0 `TokenStatusStore` | 0 / 0 | 20.1 / 20.2 | 0.00 / 0.00 | −5.1 / — | 40 / 40 × 200, 1 key |
+| pause 40 s | P-dev | 1 / 2 | 30,450 / 30,450 | 30 / 14 `TokenStatusStore` | 0 / 0 | 40.2 / 40.3 | 0.18 / 0.10 | +0.34 / +0.11 | 60 / 60 × 200, 1 key |
+| pause 40 s | P-runner-approx | 1 / 2 | 30,450 / 30,450 | 2 / 0 `TokenStatusStore` | 0 / 0 | 40.1 / 40.3 | 0.26 / 0.23 | +0.16 / — | 61 / 60 × 200, 1 key |
+| key-table lock 75 s | P-dev | 1 / 2 | 6,960 / 6,960 | 870 / 1,218 `SigningKeyStore` | 0 / 0 | 74.6 / 75.0 | 0.32 / 0.28 | −9.8 / −4.3 | 54 / 70 × **503** (+1 × 200¹) |
+| key-table lock 75 s | P-runner-approx | 1 / 2 | 6,960 / 6,960 | 1,305 / 1,044 `SigningKeyStore` | 0 / 0 | 75.0 / 75.0 | 0.13 / 0.67 | −2.9 / −6.3 | 70 / 64 × **503** (+1 × 200¹) |
+
+¹ The probe was requested before the release and completed just after it: it joined the
+load that completed when the lock was released.
+
+**Token-status store outage (pause scenarios).** 69 non-200s in 243,600 responses. All
+are 503 `TokenStatusStore` at the authentication stage, and the inner exception of every
+one is `System.TimeoutException: Timeout during reading attempt`, the 15 s open timeout
+of a new physical connection.
+
+- Each completed 15.0–25.3 s after admission.
+- Requests that needed no new connection waited for the server and completed with 200.
+  At the 40 s pause, the requests held through the freeze (the 87 in flight, and
+  those admitted after them) were held 40.4–42.0 s and then returned 200. Npgsql's 30 s command timeout did not end them while the server was
+  frozen. That mechanism is **not established here** (not investigated), so the 40 s
+  scenario did not exercise a command timeout. The 503 counts vary with how many new
+  connections a run needed.
+- **No request reached a post-authentication failure (500).** The unchanged
+  profile-repository 500 path (F8) was observed only in the 4.1-H stress runs (53300).
+- The snapshot stayed usable, so the JWKS answered 200 with its key throughout every
+  pause.
+- No signing-key load was attempted or failed: the refresh interval is 300 s and nothing
+  triggered an unknown-key refresh.
+- Recovery was immediate: the first 200 completed 0.00–0.26 s after unpause, and the
+  last 503 0.34 s after it at the latest. No load had failed, so the snapshot recovery
+  bound is not engaged.
+
+**Key-store outage (key-table lock).** 4,437 non-200s. All are 503 `SigningKeyStore` at
+the authentication stage, and all ended within 10 s:
+
+- **3,915 refused at once:** no usable snapshot, and the backoff gate refuses a request
+  load, so there is no inner exception.
+- **522 waited on the in-flight load:** they joined it and failed when its 10 s
+  deadline passed (`TaskCanceledException` inner).
+- **The JWKS answered 503 throughout the lock (54–70 probes per run), never `200 []`.**
+  This is AC 4's distinction, observed at runtime.
+- **Load attempts:**
+  - The startup load failed at its 10 s deadline. Two timer retries followed at backoffs
+    of 4.1–5.6 s, 8.3–11.6 s and 19.3–22.8 s (5/10/20 s ±20 %).
+  - Each run logs 3 load-failure Errors (`Startup`, `Timer`, `Timer`) and 2–3
+    late-discard Warnings for loads that outlived their deadline.
+  - In all four runs the next timer attempt was in flight, blocked on the lock, when the
+    lock was released. It published the snapshot at the release instant (`retrieved in`
+    2.8–8.4 s).
+  - The first protected 200 came 0.13–0.67 s after release, and the JWKS 200 0.02–0.15 s
+    after. Each run observed at least 139 s after release, with no non-200 after it.
+- **Backed-off recovery** (observed in the superseded first set, Deviations):
+  - The 4th attempt timed out 0.4 s before the release, so the provider backed off
+    47.6 s, and request loads were refused meanwhile (I-6).
+  - The snapshot was published 47.2 s after release, within the
+    `max backoff + LoadTimeout` = 82 s bound.
+  - That run's rounds ended 0.16 s before the publication, so it is log evidence only:
+    no 200 was observed.
+
+**Dependency log signals** (spec §4.9; counted over each burst window):
+
+- **Boundary 503 lines:** `Authentication could not reach a decision: the {Category} is
+  unavailable (trace …)` equals the 503 count of every run exactly, with the matching
+  category (`TokenStatusStore` for pauses, `SigningKeyStore` for the lock).
+- **JWKS 503 lines:** `The JWKS could not be served: the SigningKeyStore is unavailable`
+  equals the JWKS 503 count (54, 70, 70, 64).
+- **Signing-key load failures:** `Signing-key load failed (Startup|Timer): category
+  SigningKeyStore, kind Retrieval, consecutive failures n, next attempt in …`, with
+  exactly one `Signing-key snapshot 1 published … (Timer)` per lock run.
+- **Not seen in any outage run:** empty-snapshot warnings, unknown-key refresh warnings,
+  and introspection failures. Neither are the retired `Failed to fetch public keys for
+  JWKS` lines (zero by construction; not evidence).
+
+**Managed stacks while the dependency is held.** These 24 captures are the direct
+evidence that authentication no longer blocks workers.
+
+- **Pause runs:** both captures fall inside the pause, with 87 requests held in flight.
+  - P-dev: 36 thread-pool workers, 35–36 parked; P-runner-approx: 12–21, all parked.
+  - In 2 captures one worker was in Npgsql code.
+  - Resolver waits, other sync waits, and authentication frames in a sync wait: zero in
+    every capture.
+  - Thread-pool threads stayed at 14–49 for the whole run. The 1 s queue samples peaked
+    at 28–92 per run; this record does not establish when within the run the peaks
+    fell.
+  - Phase 0 for comparison: during the stall, every worker was in the resolver's
+    synchronous wait, and the pool grew about 4 threads per second.
+- **Key-lock runs:** 5 (P-runner-approx) and 17 (P-dev) workers, all parked, zero sync
+  waits.
+  - Round 1 ended inside the first capture, so these captures cannot be placed during a
+    held load.
+  - Later rounds that waited on a held load for 9.5–9.6 s were not captured. Their
+    thread-pool threads stayed ≤ 39 over the run.
+
+### Evidence vs inference
+
+- **Observed:**
+  - Catalog 87/87: all 8,700 responses were 200 with validated bodies on both profiles,
+    with round 1 well under a second (Phase 0: 13.6–16.7 s on P-runner-approx).
+  - No blocked authentication frame in any of the 184 captures.
+  - Workers stay parked while 87 requests are held by a frozen database.
+  - Stage-classified 503s carry `Retry-After`, and their Error lines name the category.
+  - The JWKS answers 503 when no usable snapshot exists and 200 with keys while one does.
+  - Recovery comes at the next load attempt after the dependency returns.
+- **Observed, gate failure:** 256/128 at default settings fails with 53300 only (591
+  responses, both stages), and headroom removes every failure.
+- **Not established:**
+  - why Npgsql's command timeout did not end commands held by `docker pause`;
+  - the real CI envelope (4.2 and CI after push);
+  - behavior on SQL Server (all runtime evidence here is PostgreSQL).
+
+### Limitations
+
+- P-runner-approx is a stress approximation of the runner, not its envelope (§3.1.8).
+- The healthy-run stacks end after their sub-second rounds, so they show only that no
+  worker is left blocked; the outage stacks carry the direct evidence.
+- `docker pause` freezes the server process but keeps its TCP endpoints, so it models a
+  hung server, not a refused or reset connection.
+- The key-table lock models a key store that blocks. It is not a key store that errors
+  immediately; that path is covered by the 1.5/3.1/3.3 fixtures.
+- One `Worker Min Limit` dump per block, not per run (Deviations); the values (16 / 4)
+  match every Phase 0 dump on the same profiles.
+- The CMS log level is Debug, as in Phase 0. That is what made the pause runs' logs
+  exceed Docker's rotation.
+
+### Deviations
+
+- **Host memory.** The first 4.1-H sequence was stopped by the host for low memory at
+  8 of 10 runs of its first block. Those runs are kept in `artifacts/h41-aborted/` and
+  are not evidence. Before the rerun, at the reviewer's direction:
+  - every container outside the dms-local stack was stopped (listed in
+    `artifacts/h41-stopped-containers.txt`; `docker start` restores them);
+  - the dump policy was changed to **one dump per block**, taken after the block's last
+    run and outside every timed window.
+- **Pause placement.** A warm 87-request round completes in about 0.2 s, faster than
+  `docker pause` takes effect, and the first shake-down paused between rounds. Pause
+  rounds are therefore 870 requests through 87 slots, with the pause 0.4 s in.
+- **40 s pause added.** The specified 20 s pause on a warm pool elapses no command
+  timeout, so a 40 s variant was added. It did not exercise the command timeout either
+  (above).
+- **Key-store-only outage added.** The key-table lock reaches the no-usable-snapshot
+  state, which no pause on a warm process can reach at default settings.
+- **First P-runner-approx outage set superseded** (kept in `artifacts/o41-superseded/`).
+  - Docker's json-file rotation (5 × 50 MB) dropped the start of each pause run's
+    Debug-level CMS log, leaving 10 non-200s unclassifiable.
+  - Its key-lock repetition 2 ended its rounds before recovery. The driver then reported
+    recovery from the absence of later failures, a bug now fixed: recovery requires an
+    observed 200.
+  - The rerun streams the CMS log during pause bursts, runs 80 key-lock rounds, judges
+    log completeness against the burst start, and records the time observed after
+    removal and the first publication after it.
+- **Data.** The profile table holds 87 leftover E2E profiles besides the 87 harness
+  profiles (above).
+
+### For review at this checkpoint
+
+1. **Default 256/128 fails with 53300 only (P-7.4: a gate failure, returned to review).**
+   - The catalog workload passes. No setting was changed, and no pool or
+     `max_connections` change follows from this record.
+   - The decision is the reviewer's.
+   - The optional docs note on `Max Pool Size` = `max_connections` proposed at G3 (0.6) is
+     relevant to it.
+2. **The 40 s pause did not exercise Npgsql's command timeout.** Whether a scenario that
+   does is required is the reviewer's call.
+3. **Outage scope beyond the specified pause** (the 40 s pause and the key-table lock),
+   and the per-block dump policy.
+
+### AC status after 4.1
+
+| AC | Status | What remains |
+| --- | --- | --- |
+| AC 2 | **Catalog-shape gate met** on both profiles (8,700/8,700 validated 200s; no blocked authentication frames). The stress-shape gate is **not met** (53300 only, returned to review). | Review disposition of the 256/128 result; 4.2 shards; CI after push |
+| AC 4 | **Observed at runtime:** stage-classified 503s with `Retry-After` for both categories, §4.9 Error lines matching 503 counts exactly, JWKS 503 versus 200 with keys, no failed read treated as an empty key set | Docs (4.3) |
+| AC 5 | Interruption/recovery covered at runtime (pause and key-table lock, both profiles) | 4.2 shards 1 and 2 ≥ 2 runs each; §7.1 lanes on the final commit |
+| AC 1, 3, 6 | Unchanged by 4.1 | as before |

@@ -167,6 +167,30 @@ not to the CMS database. For M-conn:
   `-stacks.csv` from the retained captures with the current analysis module (no
   workload); keeps the previous table as `-stacks.superseded.csv`.
 - `Invoke-Step05Sequence.ps1` — the matched-pair sequence as run for step 0.5.
+- `Invoke-Step41Sequence.ps1` — step 4.1-H on the fixed image, default settings: for
+  P-dev and P-runner-approx a catalog block (cold-87x87 + warm-87x87) and a stress block
+  (cold-256x128 + warm-256x128), 5 repetitions each, then the supplementary headroom
+  stress block (`max_connections=200`). Each block starts from a recreated PostgreSQL and
+  runs `Invoke-ControlBatch.ps1 -LabelPrefix h41 -DumpOncePerBlock`; the block index
+  records the CMS image id and the effective configuration (secrets redacted).
+- `Invoke-Step41Outage.ps1` — step 4.1-O: `pause-warm` (`docker pause` of PostgreSQL for
+  20 s, 0.4 s into a round of 870 requests through 87 slots), `pause-warm-long` (the same,
+  40 s), and `keylock-cold` (CMS restarted while one session holds
+  `LOCK TABLE dmscs."OpenIddictKey"` for 75 s). It runs a JWKS probe beside the rounds and
+  takes stacks while the dependency is held. It classifies every non-200 by stage through its correlation id
+  (authentication with category / post-authentication / transport / unclassified),
+  checks the dependency contract on every 503, and records the timeline against the
+  recovery bound (max backoff 72 s + load timeout 10 s). A pause run streams the CMS log
+  during the burst: at Debug level it exceeds Docker's json-file rotation.
+- `Invoke-CmsProfileBurst.ps1` step 4.1 additions: `-FaultKind PausePostgres|LockKeyTable`
+  (fault on a thread job, removed unconditionally in `finally`), `-JwksProbeIntervalMilliseconds`,
+  and `retryAfter`/`contentType`/`wwwAuthenticate` columns for non-200 responses.
+- `dms-1556-step41.psm1` — fixed-image analysis: CMS log entries (Warning/Error and
+  signing-key lines only), the spec §4.9 signal counts (with the retired
+  `Failed to fetch public keys for JWKS` string counted only to show it is absent),
+  per-response stage classification, and authentication frames in sync waits.
+- `Get-Step41Report.ps1` — aggregates the retained 4.1 captures into
+  `artifacts/h41-report.md` / `.json` (the tables in the investigation record).
 - `Invoke-E7Shard.ps1` — E7 overlay variant: runs a DMS E2E shard directly (same
   test-process context as `build-dms.ps1 E2ETest`, `--no-build`) against an already
   provisioned stack with samplers over the whole run, then summarizes the CMS side
@@ -235,6 +259,9 @@ goes to Jira DMS-1556 except the full dumps (EV-DUMP). Counts and sizes were tak
 | EV-E7B | 0.5 E7b, shard 2 with overlays (observational) | `e7b-shard2-20260930-053018-*`, `e7b-console.log` | 11 / 125 MB | `e7b-shard2-20260930-053018-summary.json`, `.trx` | 0.5 |
 | EV-DUMP | `Worker Min Limit` per run (Q17) | `cms-threadpool-<stamp>.{json,threadpool.txt}` (uploaded); `cms-threadpool-<stamp>.dmp` (75 full dumps, 30.5 GB, **local only**) | 225 | each `.json` records the parsed value, tool version, and `docker inspect` | 0.3–0.5 |
 | — | Tooling shake-down only, **not evidence** | `e2-smoke/`, `e5-pilot/`, `e5-smoke/` | 74 / 23 MB | — | excluded; see 0.6 bookkeeping |
+| EV-H41 | 4.1-H fixed image, default settings + headroom | `{cold,warm}-{87x87,256x128}-h41-*`, `h41-sequence-console.log` | — | `h41-<block>-<condition>-{index.json,rounds.csv,stacks.csv}`, `h41-report.md` | 4.1 |
+| EV-O41 | 4.1-O injected outages, both profiles | `o41-<scenario>-<profile>-rep<n>-*` (`-responses.csv`, `-outage.json`, `-burst-*-jwks.csv`) | — | `o41-<profile>-index.json`, `o41-<profile>-console.log` | 4.1 |
+| — | 4.1 superseded / aborted, **not evidence** | `o41-superseded/` (first P-runner-approx outage set: pause-run CMS logs truncated by Docker log rotation; key-lock window ended before recovery), `h41-aborted/` (P-dev catalog block stopped at 8 of 10 runs for host memory), `h41-smoke/` (shake-down) | — | — | 4.1 deviations |
 
 The tooling folders hold harness and driver shake-down runs made before the timed
 sequences. No table or claim in the record uses them. They are kept only because a

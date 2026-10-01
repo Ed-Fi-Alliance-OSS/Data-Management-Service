@@ -130,6 +130,46 @@ param(
     [Parameter(ParameterSetName = 'Burst')]
     [string[]] $SamplerStatsContainers = @('ed-fi-api-config-service', 'dms-postgresql'),
 
+    # Injected dependency outage (step 4.1-O), run on a thread job beside the rounds:
+    #   PausePostgres - `docker pause` of -FaultPgContainerName at -FaultOffsetSeconds into
+    #                   round -FaultRound, `docker unpause` -FaultDurationSeconds later.
+    #   LockKeyTable  - one session holds LOCK TABLE dmscs."OpenIddictKey" ACCESS EXCLUSIVE
+    #                   for -FaultDurationSeconds (a key-store-only outage; token-status and
+    #                   profile reads are unaffected). -FaultRound 0 takes the lock after
+    #                   the token mint and BEFORE any -Cold restart, and the harness waits
+    #                   until the lock is granted, so the restarted process starts without
+    #                   a readable key store.
+    # The fault's host-clock times are recorded in the summary. Cleanup is unconditional:
+    # the finally block unpauses a paused container and terminates the lock session.
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateSet('None', 'PausePostgres', 'LockKeyTable')]
+    [string] $FaultKind = 'None',
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateRange(0, 100)]
+    [int] $FaultRound = 1,
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateRange(0, 600)]
+    [double] $FaultOffsetSeconds = 0,
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateRange(1, 600)]
+    [int] $FaultDurationSeconds = 20,
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [string] $FaultPgContainerName = 'dms-postgresql',
+
+    [Parameter(ParameterSetName = 'Burst')]
+    [string] $FaultDatabase = 'edfi_datamanagementservice',
+
+    # When > 0, a thread job requests GET /.well-known/jwks.json every this many
+    # milliseconds from before round 1 until after the last round, and writes
+    # <runId>-jwks.csv (status, key count, Retry-After, content type, duration).
+    [Parameter(ParameterSetName = 'Burst')]
+    [ValidateRange(0, 60000)]
+    [int] $JwksProbeIntervalMilliseconds = 0,
+
     [string] $OutputDirectory = (Join-Path $PSScriptRoot 'artifacts'),
 
     [string] $ManifestPath
@@ -309,6 +349,11 @@ namespace Dms1556
         public int StatusCode; // 0 => transport error, see Error
         public string Body;
         public string Error;
+        // Recorded for non-200 responses only: they classify a dependency 503
+        // (Retry-After, problem+json, no challenge) against an ordinary 401 challenge.
+        public string RetryAfter;
+        public string ContentType;
+        public string WwwAuthenticate;
     }
 
     public static class BurstRunner
@@ -385,6 +430,12 @@ namespace Dms1556
                                 result.StatusCode = (int)response.StatusCode;
                                 // Non-200 bodies are always kept: they carry the correlation id.
                                 result.Body = (captureBodies || result.StatusCode != 200) ? body : null;
+                                if (result.StatusCode != 200)
+                                {
+                                    result.RetryAfter = response.Headers.RetryAfter != null ? response.Headers.RetryAfter.ToString() : null;
+                                    result.ContentType = response.Content.Headers.ContentType != null ? response.Content.Headers.ContentType.MediaType : null;
+                                    result.WwwAuthenticate = response.Headers.WwwAuthenticate.Count > 0 ? response.Headers.WwwAuthenticate.ToString() : null;
+                                }
                             }
                         }
                         catch (Exception ex)
@@ -522,9 +573,161 @@ function Get-CmsEnvironmentRecord {
     }
 }
 
+$faultLockApplicationName = 'dms1556-fault-lock'
+
+function Invoke-FaultJob {
+    # Starts the injected outage on a thread job: it waits until -DueUtc, applies the
+    # fault, holds it for -FaultDurationSeconds, removes it, and returns one record with
+    # the host-clock instants of each step.
+    [CmdletBinding()]
+    [OutputType([object])]
+    param([Parameter(Mandatory)][DateTime] $DueUtc)
+
+    return Start-ThreadJob -ScriptBlock {
+        $kind = $using:FaultKind
+        $container = $using:FaultPgContainerName
+        $database = $using:FaultDatabase
+        $duration = $using:FaultDurationSeconds
+        $applicationName = $using:faultLockApplicationName
+        $due = [DateTime]::new(([DateTime]$using:DueUtc).Ticks, [DateTimeKind]::Utc)
+        $record = [ordered]@{
+            kind = $kind; container = $container; durationSeconds = $duration; dueUtc = $due.ToString('o')
+            applyRequestedUtc = $null; appliedUtc = $null; removeRequestedUtc = $null; removedUtc = $null
+            output = $null; error = $null
+        }
+        $waitMs = [int](($due - [DateTime]::UtcNow).TotalMilliseconds)
+        if ($waitMs -gt 0) { Start-Sleep -Milliseconds $waitMs }
+        try {
+            if ($kind -eq 'PausePostgres') {
+                $record.applyRequestedUtc = [DateTime]::UtcNow.ToString('o')
+                $null = docker pause $container 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "docker pause $container failed ($LASTEXITCODE)." }
+                $record.appliedUtc = [DateTime]::UtcNow.ToString('o')
+                Start-Sleep -Seconds $duration
+                $record.removeRequestedUtc = [DateTime]::UtcNow.ToString('o')
+                $null = docker unpause $container 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "docker unpause $container failed ($LASTEXITCODE)." }
+                $record.removedUtc = [DateTime]::UtcNow.ToString('o')
+            }
+            else {
+                # One session: lock, report the server clock, hold, release by rollback.
+                $sql = @"
+BEGIN;
+LOCK TABLE dmscs."OpenIddictKey" IN ACCESS EXCLUSIVE MODE;
+SELECT 'locked ' || clock_timestamp();
+SELECT pg_sleep($duration);
+SELECT 'released ' || clock_timestamp();
+ROLLBACK;
+"@
+                $record.applyRequestedUtc = [DateTime]::UtcNow.ToString('o')
+                $output = $sql | docker exec -i $container psql -U postgres -d "dbname=$database application_name=$applicationName" -At -v ON_ERROR_STOP=1 2>&1
+                $record.removedUtc = [DateTime]::UtcNow.ToString('o')
+                $record.output = @($output | ForEach-Object { [string]$_ } | Where-Object { $_ -and $_ -notin @('BEGIN', 'LOCK TABLE', 'ROLLBACK') })
+                if ($LASTEXITCODE -ne 0) { throw "Key-table lock session failed ($LASTEXITCODE): $($record.output -join ' / ')" }
+            }
+        }
+        catch {
+            $record.error = $_.Exception.Message
+        }
+        [pscustomobject]$record
+    }
+}
+
+function Wait-KeyTableLockGranted {
+    # The lock session is asynchronous; a cold restart must not begin before the lock is
+    # actually held, or the startup load could read the keys first.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([int] $TimeoutSeconds = 30)
+
+    $query = "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation JOIN pg_stat_activity a ON a.pid = l.pid WHERE c.relname = 'OpenIddictKey' AND l.mode = 'AccessExclusiveLock' AND l.granted AND a.application_name = '$faultLockApplicationName'"
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $granted = docker exec $FaultPgContainerName psql -U postgres -d $FaultDatabase -Atc $query 2>$null
+        if ($LASTEXITCODE -eq 0 -and [int]$granted -ge 1) { return [DateTime]::UtcNow.ToString('o') }
+        Start-Sleep -Milliseconds 200
+    }
+    throw "The key-table lock was not granted within $TimeoutSeconds s."
+}
+
+function Clear-InjectedFault {
+    # Unconditional cleanup; never throws, so it cannot mask the error that led here.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    try {
+        if ($FaultKind -eq 'PausePostgres') {
+            $paused = docker inspect -f '{{.State.Paused}}' $FaultPgContainerName 2>$null
+            if ($paused -eq 'true') {
+                $null = docker unpause $FaultPgContainerName 2>&1
+                return "unpaused $FaultPgContainerName in cleanup"
+            }
+        }
+        elseif ($FaultKind -eq 'LockKeyTable') {
+            $terminated = docker exec $FaultPgContainerName psql -U postgres -d postgres -Atc "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = '$faultLockApplicationName'" 2>$null
+            if ([int]$terminated -gt 0) { return "terminated $terminated lock session(s) in cleanup" }
+        }
+    }
+    catch {
+        return "cleanup failed: $($_.Exception.Message)"
+    }
+    return $null
+}
+
+function Invoke-JwksProbeJob {
+    # Polls the JWKS endpoint until $Control.stop is set; one record per request.
+    [CmdletBinding()]
+    [OutputType([object])]
+    param([Parameter(Mandatory)][hashtable] $Control)
+
+    return Start-ThreadJob -ScriptBlock {
+        $control = $using:Control
+        $url = "$($using:BaseUrl)/.well-known/jwks.json"
+        $intervalMs = $using:JwksProbeIntervalMilliseconds
+        $client = [System.Net.Http.HttpClient]::new()
+        $client.Timeout = [TimeSpan]::FromSeconds(30)
+        try {
+            while (-not $control.stop) {
+                $started = [DateTime]::UtcNow
+                $status = 0; $keyCount = ''; $retryAfter = ''; $contentType = ''; $probeError = ''
+                try {
+                    $response = $client.GetAsync($url).GetAwaiter().GetResult()
+                    $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                    $status = [int]$response.StatusCode
+                    if ($response.Headers.RetryAfter) { $retryAfter = $response.Headers.RetryAfter.ToString() }
+                    if ($response.Content.Headers.ContentType) { $contentType = $response.Content.Headers.ContentType.MediaType }
+                    if ($status -eq 200) {
+                        try { $keyCount = @(($body | ConvertFrom-Json).keys).Count } catch { $probeError = 'unparseable 200 body' }
+                    }
+                    $response.Dispose()
+                }
+                catch {
+                    $probeError = $_.Exception.GetBaseException().Message
+                }
+                $completed = [DateTime]::UtcNow
+                [pscustomobject]@{
+                    requestedUtc = $started.ToString('o'); completedUtc = $completed.ToString('o')
+                    durationMs = [Math]::Round(($completed - $started).TotalMilliseconds, 1)
+                    statusCode = $status; keyCount = $keyCount; retryAfter = $retryAfter; contentType = $contentType; error = $probeError
+                }
+                $sleepMs = $intervalMs - [int]($completed - $started).TotalMilliseconds
+                if ($sleepMs -gt 0) { Start-Sleep -Milliseconds $sleepMs }
+            }
+        }
+        finally {
+            $client.Dispose()
+        }
+    }
+}
+
 function Invoke-Burst {
     [CmdletBinding()]
     param()
+
+    if ($FaultKind -eq 'PausePostgres' -and $FaultRound -lt 1) {
+        throw '-FaultRound 0 (before the cold restart) applies only to LockKeyTable: a paused PostgreSQL blocks CMS startup.'
+    }
 
     if (-not (Test-Path -LiteralPath $ManifestPath)) {
         throw "Manifest not found at $ManifestPath. Run with -Seed first."
@@ -558,6 +761,20 @@ function Invoke-Burst {
     $tokenMintedUtc = [DateTime]::UtcNow.ToString('o')
     $token = Get-AccessToken
     $client = [Dms1556.BurstRunner]::CreateClient($token)
+
+    $faultJob = $null
+    $faultRecord = $null
+    $lockGrantedUtc = $null
+    $jwksJob = $null
+    $jwksControl = [hashtable]::Synchronized(@{ stop = $false })
+    # The outer try owns the injected fault from the moment it can exist: whatever fails
+    # afterwards, the finally removes it (unpause / terminate the lock session).
+    try {
+    if ($FaultKind -ne 'None' -and $FaultRound -eq 0) {
+        $faultJob = Invoke-FaultJob -DueUtc ([DateTime]::UtcNow)
+        $lockGrantedUtc = Wait-KeyTableLockGranted
+        Write-Output "Key-table lock granted at $lockGrantedUtc (before any restart)."
+    }
 
     $coldPreparation = $null
     if ($Cold) {
@@ -594,10 +811,16 @@ function Invoke-Burst {
     }
 
     $roundSummaries = [System.Collections.Generic.List[object]]::new()
+    if ($JwksProbeIntervalMilliseconds -gt 0) {
+        $jwksJob = Invoke-JwksProbeJob -Control $jwksControl
+    }
     $burstWindowStartUtc = [DateTime]::UtcNow
     for ($round = 1; $round -le $Rounds; $round++) {
         Write-Output "Round ${round}/${Rounds}: $TotalRequests requests, concurrency $MaxConcurrency..."
         $burstStartUtc = [DateTime]::UtcNow
+        if ($FaultKind -ne 'None' -and $FaultRound -ge 1 -and $round -eq $FaultRound) {
+            $faultJob = Invoke-FaultJob -DueUtc $burstStartUtc.AddSeconds($FaultOffsetSeconds)
+        }
         $stackJob = $null
         if ($StackCaptureOffsetsSeconds.Count -gt 0 -and $round -in $StackCaptureRounds) {
             if ($null -eq $samplerState -or $null -eq $samplerState.MonitorPid) {
@@ -681,6 +904,9 @@ function Invoke-Burst {
                     bodyValid        = $bodyValid
                     traceId          = if ($r.StatusCode -ne 200) { Get-TraceIdFromBody -Body $r.Body } else { '' }
                     error            = if ($r.Error) { $r.Error } else { '' }
+                    retryAfter       = if ($r.RetryAfter) { $r.RetryAfter } else { '' }
+                    contentType      = if ($r.ContentType) { $r.ContentType } else { '' }
+                    wwwAuthenticate  = if ($r.WwwAuthenticate) { $r.WwwAuthenticate } else { '' }
                 })
         }
 
@@ -730,6 +956,26 @@ function Invoke-Burst {
 
     $burstWindowEndUtc = [DateTime]::UtcNow
 
+    if ($faultJob) {
+        $null = Wait-Job -Job $faultJob -Timeout ($FaultOffsetSeconds + $FaultDurationSeconds + 60)
+        $faultRecord = @(Receive-Job -Job $faultJob -ErrorAction SilentlyContinue) | Select-Object -Last 1
+        Remove-Job -Job $faultJob -Force
+        $faultJob = $null
+    }
+    $jwksFile = $null
+    $jwksCount = 0
+    if ($jwksJob) {
+        $jwksControl.stop = $true
+        $null = Wait-Job -Job $jwksJob -Timeout 60
+        $jwksRows = @(Receive-Job -Job $jwksJob -ErrorAction SilentlyContinue)
+        Remove-Job -Job $jwksJob -Force
+        $jwksJob = $null
+        $jwksCount = $jwksRows.Count
+        $jwksFile = Join-Path $OutputDirectory "$runId-jwks.csv"
+        $jwksRows | Select-Object requestedUtc, completedUtc, durationMs, statusCode, keyCount, retryAfter, contentType, error |
+            Export-Csv -LiteralPath $jwksFile -NoTypeInformation -Encoding utf8
+    }
+
     # Stop the samplers only after the burst window closes, then verify their captures
     # actually span it: file existence alone says nothing about coverage. The short
     # settle lets every capture (slowest tick ~1 s) record past the burst end; the stop
@@ -761,6 +1007,22 @@ function Invoke-Burst {
             endUtc   = $burstWindowEndUtc.ToString('o')
         }
         cmsEnvironment  = Get-CmsEnvironmentRecord
+        fault           = if ($FaultKind -eq 'None') { $null } else {
+            [pscustomobject]@{
+                kind           = $FaultKind
+                round          = $FaultRound
+                offsetSeconds  = $FaultOffsetSeconds
+                lockGrantedUtc = $lockGrantedUtc
+                record         = $faultRecord
+            }
+        }
+        jwksProbe       = if ($JwksProbeIntervalMilliseconds -le 0) { $null } else {
+            [pscustomobject]@{
+                intervalMilliseconds = $JwksProbeIntervalMilliseconds
+                file                 = if ($jwksFile) { Split-Path -Leaf $jwksFile } else { $null }
+                requests             = $jwksCount
+            }
+        }
         roundSummaries  = $roundSummaries
         samplerReport   = $samplerReport
     }
@@ -781,6 +1043,18 @@ function Invoke-Burst {
             # otherwise it stops any still-owned sampler jobs. It never throws, so it
             # cannot mask the error that brought us here.
             Remove-DmsSamplerSet -State $samplerState
+        }
+    }
+    }
+    finally {
+        $jwksControl.stop = $true
+        foreach ($job in @($jwksJob, $faultJob) | Where-Object { $_ }) {
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        }
+        if ($FaultKind -ne 'None') {
+            $cleanup = Clear-InjectedFault
+            if ($cleanup) { Write-Warning $cleanup }
         }
     }
 }

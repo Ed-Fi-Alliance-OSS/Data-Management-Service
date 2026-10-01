@@ -21,6 +21,8 @@ same way in every condition):
   warm-87x87   - E2 shape: restart, untimed serial warm-up (87 requests at concurrency 1),
                  then the burst; round 1 is the first concurrent burst after warm-up.
   warm-256x128 - the E2 stress shape (slot-exhaustion prone; keep it in its own blocks).
+  cold-256x128 - the stress shape with a cold round 1 (step 4.1-H: 5 cold + 5 warm at
+                 both shapes).
 Each burst: -Rounds rounds, -InterRoundDelaySeconds apart, samplers with coverage gate,
 body validation, managed stacks at -StackCaptureOffsetsSeconds into round 1. After the
 run: container logs, per-round evidence and handshake timing, one interval record per
@@ -29,8 +31,11 @@ received/authorized at the capture's request AND completion boundaries; thread-p
 pool-busy ranges across the ~2.4 s capture), then one dump OUTSIDE the timed windows
 (Q17).
 
-Repetitions alternate the workload order. Outputs e5-<block>-<condition>-index.json,
--rounds.csv, and -stacks.csv. Nothing here assigns a verdict.
+Repetitions alternate the workload order. Outputs <prefix>-<block>-<condition>-index.json,
+-rounds.csv, and -stacks.csv (-LabelPrefix: 'e5' for step 0.5, 'h41' for the step 4.1
+fixed-image runs, where 'baseline' means default settings with no control overlay). The
+index records the CMS image and the effective configuration of the container. Nothing
+here assigns a verdict.
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Parameters are read by nested functions through script scope; the analyzer does not track that usage.')]
 [CmdletBinding()]
@@ -45,13 +50,16 @@ param(
     [ValidatePattern('^[a-z0-9-]+$')]
     [string] $BlockLabel,
 
+    [ValidatePattern('^[a-z0-9]+$')]
+    [string] $LabelPrefix = 'e5',
+
     [ValidateSet('p-dev', 'p-runner-approx')]
     [string] $ResourceProfile = 'p-runner-approx',
 
     [ValidateRange(1, 10)]
     [int] $Repetitions = 3,
 
-    [ValidateSet('cold-87x87', 'warm-87x87', 'warm-256x128')]
+    [ValidateSet('cold-87x87', 'warm-87x87', 'warm-256x128', 'cold-256x128')]
     [string[]] $Workloads = @('cold-87x87', 'warm-87x87'),
 
     [ValidateRange(1, 20)]
@@ -77,7 +85,12 @@ param(
 
     [string] $OutputDirectory = (Join-Path $PSScriptRoot 'artifacts'),
 
-    [switch] $SkipDumps
+    [switch] $SkipDumps,
+
+    # One dump for the whole block, after its last run (still outside every timed window),
+    # instead of one per run. Step 4.1 uses it to limit host memory pressure: each full
+    # dump is ~400 MB and its analysis runs in a separate SDK container.
+    [switch] $DumpOncePerBlock
 )
 
 Set-StrictMode -Version Latest
@@ -108,7 +121,18 @@ function Get-ConditionState {
     $forceMin = [string](@($envLines | Where-Object { $_ -like 'DOTNET_ThreadPool_ForceMinWorkerThreads=*' }) | ForEach-Object { ($_ -split '=', 2)[1] } | Select-Object -First 1)
     $useCertificates = [string](@($envLines | Where-Object { $_ -like 'IdentitySettings__UseCertificates=*' }) | ForEach-Object { ($_ -split '=', 2)[1] } | Select-Object -First 1)
     $maxConnections = [int](docker exec $PgContainerName psql -U postgres -d postgres -Atc 'show max_connections' 2>$null)
+    $imageId = [string](docker inspect $CmsContainerName --format '{{.Image}}' 2>$null)
+    # Effective configuration: the settings this investigation varies or depends on, with
+    # the client secret, the encryption key, and the connection-string password redacted.
+    $effective = @($envLines | Where-Object { $_ -match '^(DatabaseSettings__DatabaseConnection|IdentitySettings__|AppSettings__(Datastore|IdentityProvider)|DOTNET_|Serilog__MinimumLevel)' } |
+        ForEach-Object { $_ -replace '^(IdentitySettings__(ClientSecret|EncryptionKey))=.*$', '$1=***' -replace '(?i)(password=)[^;]*', '$1***' })
     return [pscustomobject]@{
+        cmsImage               = [pscustomobject]@{
+            id      = $imageId
+            tags    = @(docker image inspect $imageId --format '{{range .RepoTags}}{{println .}}{{end}}' 2>$null | Where-Object { $_ })
+            created = [string](docker image inspect $imageId --format '{{.Created}}' 2>$null)
+        }
+        effectiveConfiguration = $effective
         cms                    = Get-DmsContainerResourceRecord -ContainerName $CmsContainerName
         postgres               = Get-DmsContainerResourceRecord -ContainerName $PgContainerName
         useCertificates        = $useCertificates
@@ -158,7 +182,7 @@ for ($rep = 1; $rep -le $Repetitions; $rep++) {
         $shape = $workload.Split('-')[1].Split('x')
         $total = [int]$shape[0]
         $concurrency = [int]$shape[1]
-        $baseLabel = "$workload-e5-$BlockLabel-$Condition-rep$rep"
+        $baseLabel = "$workload-$LabelPrefix-$BlockLabel-$Condition-rep$rep"
         $burstLabel = "$baseLabel-burst"
         $warmLabel = "$baseLabel-warm"
         $runStartUtc = [DateTime]::UtcNow.AddSeconds(-1)
@@ -273,7 +297,8 @@ for ($rep = 1; $rep -le $Repetitions; $rep++) {
         }
 
         $workerMinLimit = $null
-        if (-not $SkipDumps) {
+        $isLastRun = ($rep -eq $Repetitions) -and ($workload -eq $order[-1])
+        if (-not $SkipDumps -and (-not $DumpOncePerBlock -or $isLastRun)) {
             try {
                 & (Join-Path $PSScriptRoot 'Get-CmsThreadPoolMinLimit.ps1') -MonitorBaseUrl $MonitorBaseUrl `
                     -CmsContainerName $CmsContainerName -OutputDirectory $OutputDirectory | Out-Null
@@ -307,7 +332,7 @@ for ($rep = 1; $rep -le $Repetitions; $rep++) {
     }
 }
 
-$prefix = Join-Path $OutputDirectory "e5-$BlockLabel-$Condition"
+$prefix = Join-Path $OutputDirectory "$LabelPrefix-$BlockLabel-$Condition"
 [pscustomobject]@{
     block           = $BlockLabel
     condition       = $Condition
@@ -319,6 +344,7 @@ $prefix = Join-Path $OutputDirectory "e5-$BlockLabel-$Condition"
     rounds          = $Rounds
     interRoundDelaySeconds = $InterRoundDelaySeconds
     stackCaptureOffsetsSeconds = $StackCaptureOffsetsSeconds
+    dumpPolicy      = if ($SkipDumps) { 'none' } elseif ($DumpOncePerBlock) { 'once-per-block (after the last run)' } else { 'per-run' }
     runs            = $runRecords
 } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath "$prefix-index.json" -Encoding utf8
 $roundRows | Export-Csv -LiteralPath "$prefix-rounds.csv" -NoTypeInformation -Encoding utf8
