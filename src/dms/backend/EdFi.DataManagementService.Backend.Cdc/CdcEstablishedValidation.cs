@@ -362,17 +362,48 @@ public sealed partial class CdcEstablishedValidation
             await progress.ContainTerminal();
         }
         if (
-            request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.Postgresql
+            (
+                request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.Postgresql
+                || offsetHistory.Observation.Diagnostics.Any(diagnostic =>
+                    diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
+                    && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+                )
+            )
             && offset is not null
             && offsetHistory.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
         )
         {
-            // The first source read preceded Connect. Refresh its upper WAL observation,
+            // The first source read preceded Connect. Refresh its upper range observation,
             // retaining the same validate-only provenance checks and any established loss.
             setComponent(CdcDeploymentComponent.ProviderSetup);
             provider = await CallAsync(request, ct => _provider.SetupAsync(setup, ct), token);
             mapped = MapProvider(provider);
             partialInput = partialInput with { ProviderSetup = mapped.ProviderSetup };
+            if (request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.SqlServer)
+            {
+                // Retention may also advance during the refresh. Compare its new floor with
+                // a later offset, never the offset sampled before the refreshed range.
+                setComponent(CdcDeploymentComponent.Connect);
+                rawOffset = await ReadAsync(
+                    request,
+                    ct => _connect.ReadOffsetEvidenceAsync(request, ct),
+                    CdcDeploymentComponent.Connect,
+                    token
+                );
+                offset = rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Observed refreshed
+                    ? CdcControllerObservations.Offset(
+                        request,
+                        operation,
+                        refreshed.Value,
+                        establishment.SourcePartitionHash,
+                        _time.GetUtcNow()
+                    )
+                    : null;
+                if (rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable refreshUnavailable)
+                {
+                    diagnostics.Add(refreshUnavailable.Diagnostic);
+                }
+            }
         }
         setComponent(CdcDeploymentComponent.Kafka);
         var schemaHistory = CdcSqlServerSchemaHistoryState.NotApplicable;
