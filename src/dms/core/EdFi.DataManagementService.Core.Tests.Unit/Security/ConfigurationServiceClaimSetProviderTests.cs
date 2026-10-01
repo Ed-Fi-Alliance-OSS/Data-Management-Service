@@ -88,6 +88,7 @@ public class ConfigurationServiceClaimSetProviderTests
                 _provider,
                 memoryCache,
                 new CacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
 

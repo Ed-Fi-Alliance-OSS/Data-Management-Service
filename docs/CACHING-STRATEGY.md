@@ -39,6 +39,7 @@ Only per-client and per-connection caches remain cold:
 | ClaimSets        | Warm     | Loaded from CMS on startup     |
 | CMS Token        | Warm     | Fetched as startup dependency  |
 | App Context      | Cold     | Fetched per client on auth     |
+| Identity Tenants | Cold     | Fetched on first identity call |
 | NpgsqlDataSource | Cold     | Created on first DB connection |
 
 ## Cache Implementations
@@ -114,12 +115,15 @@ resource access permissions from the Configuration Service.
 
 - `src/dms/core/.../Security/CachedClaimSetProvider.cs`
 
-**Implementation:** `HybridCache` (Microsoft.Extensions.Caching.Hybrid) with
-built-in stampede protection
+**Implementation:** `IMemoryCache`, which keeps the full claim-set graph in process and avoids HybridCache payload serialization limits.
+Concurrent misses for one key share a single fetch from the Configuration Service, and each caller stops waiting on its own cancellation without aborting the fetch for the others.
+A caller whose request is already cancelled gets no answer, not even a cached one.
+The shared fetch runs on no caller's token and is bounded by a 30-second budget; host shutdown does not cancel it, so a request still draining gets its claim sets.
+A reload advances a per-key generation, so a fetch that started before the reload never writes the pre-reload claim sets back into the cache.
 
 **Cache Structure:**
 
-- **Key:** `ClaimSetsCache` (single-tenant) or `ClaimSetsCache:{tenant}` (multi-tenant)
+- **Key:** `ClaimSets` (single-tenant) or `ClaimSets:{tenant}` (multi-tenant), with the tenant spelled exactly as the request spelled it
 - **Value:** `IList<ClaimSet>` - list of claim set records, each containing:
   - `Name` - Claim set name (e.g., "SIS Vendor", "Ed-Fi Sandbox")
   - `ResourceClaims` - List of `ResourceClaim` records, each containing:
@@ -145,16 +149,20 @@ built-in stampede protection
 
 **Cache Operations:**
 
-| Operation | Method                | Description              |
-| --------- | --------------------- | ------------------------ |
-| Set       | `CacheClaimSets()`    | Stores with TTL          |
-| Get       | `GetCachedClaimSets`  | Retrieves tenant data    |
-| Remove    | `ClearCache(tenant)`  | Removes tenant's cache   |
+| Operation | Method                          | Description                                         |
+| --------- | ------------------------------- | --------------------------------------------------- |
+| Get       | `GetAllClaimSets(tenant)`       | Returns the cached list, or joins or starts a fetch |
+| Remove    | `InvalidateCacheAsync(tenant)`  | Removes the tenant's entry and any in-flight fetch  |
 
 **Invalidation Strategy:**
 
 - TTL-based expiration after the configured duration
 - Manual invalidation via `/management/reload-claimsets` management endpoint
+- A reload is replica-local and exact-spelling only: it clears the entry on the one DMS replica
+  that serves it, and only for the tenant spelling the request names.
+  Other replicas keep their entries, and so does another spelling of the same tenant on that
+  replica (`north` after a reload for `North`), until each entry expires.
+  Draining or restarting every replica clears all cached variants.
 - Requires `AppSettings:EnableManagementEndpoints: true` to map the DMS claimset management
   route surface.
 - Requires a valid `AppSettings:ManagementEndpoints:RequiredRole`; the endpoints are not mapped
@@ -409,18 +417,16 @@ doesn't accept requests until JWT authentication is fully functional. When `Bypa
 
 ## Stampede Protection
 
-DMS uses `Microsoft.Extensions.Caching.Hybrid` (HybridCache) to provide stampede
-protection for frequently accessed caches. Stampede protection ensures that
-when multiple concurrent requests experience a cache miss, only one request
-executes the factory function to fetch data while others wait for the result.
+Stampede protection ensures that when multiple concurrent requests experience a cache miss, only one fetch runs while the others wait for its result.
+The application-context and Configuration Service token caches get it from `Microsoft.Extensions.Caching.Hybrid` (HybridCache).
+The claim-set cache and the identity tenant snapshot share one in-flight fetch task instead, so a caller that stops waiting never aborts the fetch the others still need.
 
 ### How It Works
 
-1. **First request** experiences cache miss and acquires internal lock
-2. **Subsequent concurrent requests** for the same key wait on the lock
-3. **Factory executes once**, result is cached
-4. **All waiting requests** receive the cached result
-5. **Lock is released**
+1. **First request** experiences a cache miss and starts the fetch
+2. **Subsequent concurrent requests** for the same key wait on that same fetch
+3. **The fetch runs once**, and its result is cached
+4. **All waiting requests** receive that result
 
 This prevents the "thundering herd" problem where N concurrent requests
 could trigger N redundant backend calls, potentially overwhelming the
@@ -430,9 +436,10 @@ Configuration Service during cache expiration under high load.
 
 | Cache                          | Stampede Protected | Implementation                 |
 | ------------------------------ | ------------------ | ------------------------------ |
-| ClaimSets                      | Yes                | HybridCache.GetOrCreateAsync   |
+| ClaimSets                      | Yes                | One shared fetch per key       |
 | Application Context            | Yes                | HybridCache.GetOrCreateAsync   |
 | Configuration Service Token    | Yes                | HybridCache.GetOrCreateAsync   |
+| Identity tenant snapshot       | Yes                | One shared refresh per process |
 | Compiled Schemas               | No*                | ConcurrentDictionary.GetOrAdd  |
 | NpgsqlDataSource               | No*                | Single-winner publish under lock |
 | data stores                  | No                 | Direct assignment on startup   |
@@ -540,6 +547,30 @@ Startup validation (`ValidateStartupInstancesTask`) uses `Primary` keys only. It
 probe, or prime any derivative, because a derivative may be intentionally offline between extraction
 windows; the first request routed to one is what reaches it.
 
+### 9. Identity tenant snapshot
+
+**Purpose:** Answers whether the tenant named in an identity request's URL exists, for the `/identity/v2` routes only.
+
+**Location:**
+
+- `src/dms/core/.../Identity/IdentityTenantSnapshot.cs`
+
+**Implementation:** One immutable, case-insensitive set of tenant names per process, fetched through the Configuration Service tenant list (`IDataStoreProvider.LoadTenants`).
+It never loads data stores or decrypts connection strings.
+Concurrent cold, expired, or missing-name callers share one refresh, which runs on no caller's token with a 30-second budget and ends early when the host shuts down.
+
+**Freshness:**
+
+- A snapshot is fresh for 60 seconds after a successful refresh completes, and a stale snapshot never answers.
+- A name missing from a fresh snapshot triggers one shared refresh, at most once every 5 seconds after a successful refresh, so a newly created tenant is recognized within seconds while repeated unknown names cannot drive back-to-back fetches.
+- A tenant deleted in the Configuration Service can still be accepted for up to 60 seconds.
+
+**Failures:** When a refresh fails, its waiters are answered from the snapshot if it is still fresh, and otherwise with `503`.
+No new refresh starts for 5 seconds after a failure.
+A caller's own cancellation propagates and is never turned into an answer.
+
+**Configuration:** None; the 60-second, 5-second, and 30-second values are fixed.
+
 ---
 
 ## Summary Table
@@ -547,7 +578,8 @@ windows; the first request routed to one is what reaches it.
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
 | ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
 | App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
-| ClaimSets    | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
+| ClaimSets    | MemoryCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
+| Id. Tenants  | Snapshot     | Sing. | 60 s   | N/A    | Yes      | TTL + miss refresh |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
 | NpgsqlDS     | Dict + lock  | Sing. | None   | N/A    | No       | Reconcile + Shutdown |

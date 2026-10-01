@@ -24,6 +24,13 @@ public static class TestMockHelper
     /// <param name="services">The service collection to add mocks to</param>
     public static void AddEssentialMocks(IServiceCollection services)
     {
+        // IHttpClientFactory arms a handler-lifetime timer (two minutes by default) per created
+        // handler, and a pending timer keeps its handler's service scope, and so the whole host,
+        // reachable from the runtime's global timer queue after the host is disposed. Test hosts
+        // are short-lived and numerous, so an infinite lifetime, which arms no timer, lets each
+        // disposed host be collected instead of accumulating across the run.
+        services.ConfigureHttpClientDefaults(builder => builder.SetHandlerLifetime(Timeout.InfiniteTimeSpan));
+
         // Mock IClaimSetProvider
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
