@@ -105,7 +105,9 @@ function Get-CdcQualificationReport {
     $startupFailures = 0; $startupRecoveries = 0
     $injectedFailures = 0; $injectedRecoveries = 0
     $signatures = @{}
-    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse) {
+    # VSTest also copies attachments into its result hierarchy. The fixture assigns
+    # each event a GUID filename; count that event once, not once per retained copy.
+    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse | Sort-Object -Property Name -Unique) {
         $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
         if ($evidence.Stage -eq 'unprovisioned-sql-startup') {
             if ($evidence['Container']?['Logs']?['InjectedFailure'] -eq $true) { $injectedFailures++ }
