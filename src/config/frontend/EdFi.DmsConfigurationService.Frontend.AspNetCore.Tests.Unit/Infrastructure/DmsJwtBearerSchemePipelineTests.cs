@@ -33,8 +33,12 @@ public class DmsJwtBearerSchemePipelineTests
 
     private static BearerPipelineHost CreateHost() => new(Scheme);
 
-    private static bool IsChallengeLog((LogLevel Level, string Message) entry) =>
+    private static bool IsChallengeLog((LogLevel Level, string Message, Exception? Exception) entry) =>
         entry.Level == LogLevel.Warning && entry.Message.StartsWith("JWT authentication challenge");
+
+    private static bool IsAuthenticationFailedLog(
+        (LogLevel Level, string Message, Exception? Exception) entry
+    ) => entry.Level == LogLevel.Error && entry.Message == "JWT authentication failed";
 
     // Cold success: concurrent requests on a cold instance all wait on the one startup load and then succeed, each
     // validated with the shared manager's configuration and each with its own status check.
@@ -285,9 +289,6 @@ public class DmsJwtBearerSchemePipelineTests
             _host.Dispose();
         }
 
-        private static bool IsAuthenticationFailedLog((LogLevel Level, string Message) entry) =>
-            entry.Level == LogLevel.Error && entry.Message == "JWT authentication failed";
-
         [Test]
         public void It_answers_401() => ShouldBeAnOrdinaryUnauthorized(_response);
 
@@ -310,6 +311,132 @@ public class DmsJwtBearerSchemePipelineTests
 
         [Test]
         public void It_never_reaches_the_endpoint() => _host.ProbeHits.Should().Be(0);
+    }
+
+    // Settings that agree: a token from an issuer the scheme was not configured for is the ordinary 401, rejected
+    // before the token-status check.
+    [TestFixture]
+    public class Given_a_token_from_another_issuer
+    {
+        private BearerPipelineHost _host = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _host = CreateHost();
+            _host.Store.AddKey("key-1");
+            await _host.StartWarmAsync();
+
+            _response = await _host.GetDmsJwtBearerProbeAsync(
+                _host.Store.Mint("key-1", issuer: "http://localhost/realms/other").Token
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public void It_answers_401() => ShouldBeAnOrdinaryUnauthorized(_response);
+
+        [Test]
+        public void It_runs_only_the_named_scheme() => _host.SchemesAuthenticating.Should().Equal(Scheme);
+
+        [Test]
+        public void It_fails_the_issuer_check() =>
+            _host
+                .HandlerLogger.Entries.Should()
+                .ContainSingle(entry =>
+                    IsAuthenticationFailedLog(entry) && entry.Exception is SecurityTokenInvalidIssuerException
+                );
+
+        [Test]
+        public void It_never_reads_the_token_status() => _host.Store.StatusReads.Should().Be(0);
+
+        [Test]
+        public void It_never_reaches_the_endpoint() => _host.ProbeHits.Should().Be(0);
+    }
+
+    // Step 3.2 review: the scheme's issuer differs from IdentitySettings:Authority (AddJwtAuthentication with its own
+    // JwtSettings.Issuer). The shared manager must not widen the scheme's issuer policy: an otherwise valid token issued
+    // by the Authority is the ordinary 401 at the scheme's issuer check, after signature validation and before the
+    // token-status check. A token from the scheme's own issuer passes that check, and the token manager's verification,
+    // which has always used the Authority as issuer, then rejects it, as the inline ValidateTokenAsync call did before
+    // step 3.2: with these settings the scheme accepts no token, and no token-status row is read for either.
+    [TestFixture]
+    public class Given_a_scheme_issuer_that_differs_from_the_authority
+    {
+        private const string SchemeIssuer = "http://localhost/realms/dms-jwt-bearer";
+        private BearerPipelineHost _host = null!;
+        private HttpResponseMessage _authorityResponse = null!;
+        private int _managerCallsForTheAuthorityToken;
+        private int _authenticationFailuresForTheAuthorityToken;
+        private HttpResponseMessage _schemeIssuerResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _host = new BearerPipelineHost(Scheme, dmsJwtBearerIssuer: SchemeIssuer);
+            _host.Store.AddKey("key-1");
+            await _host.StartWarmAsync();
+
+            _authorityResponse = await _host.GetDmsJwtBearerProbeAsync(
+                _host.Store.Mint("key-1", issuer: BearerPipelineHost.Issuer).Token
+            );
+            _managerCallsForTheAuthorityToken = _host.Manager.Calls;
+            _authenticationFailuresForTheAuthorityToken = _host.HandlerLogger.Entries.Count(entry =>
+                IsAuthenticationFailedLog(entry) && entry.Exception is SecurityTokenInvalidIssuerException
+            );
+
+            _schemeIssuerResponse = await _host.GetDmsJwtBearerProbeAsync(
+                _host.Store.Mint("key-1", issuer: SchemeIssuer).Token
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _authorityResponse.Dispose();
+            _schemeIssuerResponse.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public void It_rejects_the_authority_token_with_401() =>
+            ShouldBeAnOrdinaryUnauthorized(_authorityResponse);
+
+        [Test]
+        public void It_rejects_the_authority_token_at_the_issuer_check() =>
+            _authenticationFailuresForTheAuthorityToken.Should().Be(1);
+
+        [Test]
+        public void It_validated_the_authority_token_with_the_shared_keys() =>
+            _managerCallsForTheAuthorityToken.Should().Be(1);
+
+        [Test]
+        public void It_passes_the_schemes_own_issuer_through_the_issuer_check() =>
+            _host.HandlerLogger.Entries.Count(entry => IsAuthenticationFailedLog(entry)).Should().Be(1);
+
+        [Test]
+        public void It_rejects_the_schemes_own_issuer_in_the_token_manager_with_401() =>
+            ShouldBeAnOrdinaryUnauthorized(_schemeIssuerResponse);
+
+        [Test]
+        public void It_validated_both_tokens_with_the_shared_keys() => _host.Manager.Calls.Should().Be(2);
+
+        [Test]
+        public void It_never_reads_a_token_status() => _host.Store.StatusReads.Should().Be(0);
+
+        [Test]
+        public void It_never_runs_the_endpoint() => _host.ProbeHits.Should().Be(0);
+
+        [Test]
+        public void It_runs_only_the_named_scheme() =>
+            _host.SchemesAuthenticating.Should().Equal(Scheme, Scheme);
     }
 
     // Structural (s): the production wiring, with nothing decorated.

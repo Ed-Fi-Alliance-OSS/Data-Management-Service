@@ -161,9 +161,7 @@ public class SigningKeyBearerEventsTests
             KeyRepositoryHarness harness = new(time);
             harness.Fails(new TimeoutException("store down"));
             _provider = Provider(harness, time);
-            _manager = new CountingConfigurationManager(
-                new SigningKeyConfigurationManager(_provider, Options.Create(new IdentityOptions()))
-            );
+            _manager = new CountingConfigurationManager(new SigningKeyConfigurationManager(_provider));
             _tokenManager = A.Fake<ITokenManager>();
             _logger = EnabledLogger();
             using RSA rsa = RSA.Create(2048);
@@ -222,12 +220,7 @@ public class SigningKeyBearerEventsTests
                 new PublicKeyInfo { KeyId = "key-1", PublicKey = rsa.ExportSubjectPublicKeyInfo() }
             );
             _provider = Provider(harness, time);
-            _manager = new CountingConfigurationManager(
-                new SigningKeyConfigurationManager(
-                    _provider,
-                    Options.Create(new IdentityOptions { Authority = Issuer })
-                )
-            );
+            _manager = new CountingConfigurationManager(new SigningKeyConfigurationManager(_provider));
             _tokenManager = A.Fake<ITokenManager>();
             A.CallTo(() => _tokenManager.ValidateTokenAsync(A<string>._)).Returns(true);
             _token = SignedToken(rsa, "key-1");

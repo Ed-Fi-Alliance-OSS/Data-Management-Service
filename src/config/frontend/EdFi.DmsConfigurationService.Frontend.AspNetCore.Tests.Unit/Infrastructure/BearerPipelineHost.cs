@@ -260,9 +260,10 @@ internal sealed class RecordingBackchannelHandler : HttpMessageHandler
 /// </summary>
 internal sealed class RecordingJwtBearerHandlerLogger : ILogger<JwtBearerHandler>
 {
-    private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+    private readonly ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> _entries = new();
 
-    public IReadOnlyCollection<(LogLevel Level, string Message)> Entries => [.. _entries];
+    public IReadOnlyCollection<(LogLevel Level, string Message, Exception? Exception)> Entries =>
+        [.. _entries];
 
     public IDisposable? BeginScope<TState>(TState state)
         where TState : notnull => null;
@@ -275,7 +276,7 @@ internal sealed class RecordingJwtBearerHandlerLogger : ILogger<JwtBearerHandler
         TState state,
         Exception? exception,
         Func<TState, Exception?, string> formatter
-    ) => _entries.Enqueue((logLevel, formatter(state, exception)));
+    ) => _entries.Enqueue((logLevel, formatter(state, exception), exception));
 }
 
 /// <summary>
@@ -360,7 +361,15 @@ internal sealed class BearerPipelineHost : IDisposable
     private CountingConfigurationManager? _manager;
     private int _probeHits;
 
-    public BearerPipelineHost(string scheme = JwtBearerDefaults.AuthenticationScheme)
+    /// <param name="scheme">The scheme whose configuration manager and backchannel are observed.</param>
+    /// <param name="dmsJwtBearerIssuer">
+    /// When given, replaces the <c>DmsJwtBearer</c> scheme's <c>ValidIssuer</c>, as <c>AddJwtAuthentication</c> sets it
+    /// from a <c>JwtSettings.Issuer</c> that differs from <c>IdentitySettings:Authority</c>.
+    /// </param>
+    public BearerPipelineHost(
+        string scheme = JwtBearerDefaults.AuthenticationScheme,
+        string? dmsJwtBearerIssuer = null
+    )
     {
         Scheme = scheme;
         A.CallTo(() => Profiles.GetProfile(A<int>._))
@@ -407,6 +416,14 @@ internal sealed class BearerPipelineHost : IDisposable
                     scheme,
                     options => options.BackchannelHttpHandler = Backchannel
                 );
+                if (dmsJwtBearerIssuer is not null)
+                {
+                    services.Configure<JwtBearerOptions>(
+                        JwtAuthenticationExtensions.JwtSchemeName,
+                        options => options.TokenValidationParameters.ValidIssuer = dmsJwtBearerIssuer
+                    );
+                }
+
                 services.PostConfigure<JwtBearerOptions>(
                     scheme,
                     options =>

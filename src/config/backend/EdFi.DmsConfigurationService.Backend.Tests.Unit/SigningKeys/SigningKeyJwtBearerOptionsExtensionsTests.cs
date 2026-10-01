@@ -50,7 +50,7 @@ public class SigningKeyJwtBearerOptionsExtensionsTests
             IOptions<IdentityOptions> identityOptions = Microsoft.Extensions.Options.Options.Create(
                 new IdentityOptions { Authority = Issuer }
             );
-            ConfigurationManager = new SigningKeyConfigurationManager(provider, identityOptions);
+            ConfigurationManager = new SigningKeyConfigurationManager(provider);
             BearerEvents = new SigningKeyBearerEvents(
                 provider,
                 A.Fake<ITokenManager>(),

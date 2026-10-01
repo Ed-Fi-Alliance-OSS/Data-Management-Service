@@ -6,7 +6,6 @@
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using FluentAssertions;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -16,10 +15,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
 
 public class SigningKeyConfigurationManagerTests
 {
-    private const string Authority = "https://cms.example.test";
-
     private static SigningKeyConfigurationManager Manager(ISigningKeySnapshotProvider provider) =>
-        new(provider, Options.Create(new IdentityOptions { Authority = Authority }));
+        new(provider);
 
     private static IEnumerable<string> KeyIdsOf(OpenIdConnectConfiguration configuration) =>
         configuration.SigningKeys.Select(key => key.KeyId);
@@ -80,8 +77,10 @@ public class SigningKeyConfigurationManagerTests
                 .Parameters.Modulus.Should()
                 .Equal(_provider.Current!.Keys[0].PublicParameters.Modulus);
 
+        // The handler appends a configuration's issuer to every request's valid issuers, so a shared issuer would widen
+        // each scheme's own issuer policy (step 3.2 review). Issuer validation stays with each scheme's ValidIssuer.
         [Test]
-        public void It_declares_the_configured_authority_as_issuer() => _first.Issuer.Should().Be(Authority);
+        public void It_declares_no_issuer() => _first.Issuer.Should().BeNull();
 
         [Test]
         public void It_reads_the_key_store_once() => _harness.Calls.Should().ContainSingle();
