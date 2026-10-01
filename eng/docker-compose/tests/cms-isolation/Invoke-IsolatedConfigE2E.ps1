@@ -106,122 +106,148 @@ foreach ($key in $remaining.Keys) {
 Set-Content -LiteralPath $derivedEnvironmentFile -Value $lines
 Write-Output "Isolated environment file: $derivedEnvironmentFile"
 
-# Compose gives the process environment precedence over --env-file, so every isolation value is also
-# set in this process: a value inherited from the caller's shell cannot override any of them.
-foreach ($key in $isolation.Keys) {
-    Set-Item -Path "Env:$key" -Value $isolation[$key]
+# Every process variable the harness sets, with the value it replaced, so a run inside an interactive
+# session leaves that session as it found it. A later start-local-config.ps1 in the same session would
+# otherwise inherit the isolated project, ports and image.
+$priorEnvironment = @{}
+
+function Set-HarnessVariable {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal helper of the non-interactive E2E harness; it sets only process variables it restores.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $Name, [string] $Value)
+
+    if (-not $priorEnvironment.ContainsKey($Name)) {
+        $priorEnvironment[$Name] = [System.Environment]::GetEnvironmentVariable($Name)
+    }
+    [System.Environment]::SetEnvironmentVariable($Name, $Value)
 }
 
-function Remove-IsolatedStack {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal teardown of the non-interactive E2E harness; it removes only the isolated stack it started.')]
-    [CmdletBinding()]
-    param()
+$exitCode = 1
+try {
+    # Compose gives the process environment precedence over --env-file, so every isolation value is also
+    # set in this process: a value inherited from the caller's shell cannot override any of them.
+    foreach ($key in $isolation.Keys) {
+        Set-HarnessVariable -Name $key -Value $isolation[$key]
+    }
 
-    Push-Location $composeDirectory
+    function Remove-IsolatedStack {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal teardown of the non-interactive E2E harness; it removes only the isolated stack it started.')]
+        [CmdletBinding()]
+        param()
+
+        Push-Location $composeDirectory
+        try {
+            ./start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile
+            & docker network rm $isolation.CMS_COMPOSE_NETWORK *> $null
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    <#
+        Guards that must hold before anything can send a request. The E2ETest path runs the test assembly
+        already built, without building it, so a stale build can carry defaults that point at the stock
+        stack. The assembly is therefore built here first, and a read-only preflight test inside that very
+        assembly must report that it targets this deployment's Configuration Service, and the engine and
+        host port of its database. The database name in the expectation comes from POSTGRES_DB_NAME,
+        which the cleanup hooks also read, so it confirms nothing on its own.
+    #>
+    Import-Module (Join-Path $repoRoot "eng/build-helpers.psm1") -Force
+
+    $e2eProject = Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj"
+    Write-Output "Building the E2E test project ($Configuration) so the suite run uses this tree's code..."
+    & dotnet build $e2eProject --configuration $Configuration --nologo
+    if ($LASTEXITCODE -ne 0) {
+        throw "Building the E2E test project failed with exit code $LASTEXITCODE; refusing to run the suite."
+    }
+
+    $derivedValues = @{}
+    foreach ($line in $lines) {
+        if ($line -match '^(?<Key>[A-Za-z_][A-Za-z0-9_]*)=(?<Value>.*)$') {
+            $derivedValues[$Matches.Key] = $Matches.Value
+        }
+    }
+    $datastore = if ($derivedValues["DMS_CONFIG_DATASTORE"]) { $derivedValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
+    $expectedDbTarget = if ($datastore -eq "mssql") {
+        "mssql localhost:$($isolation.MSSQL_PORT)/$($derivedValues["POSTGRES_DB_NAME"])"
+    }
+    else {
+        "postgresql localhost:$($isolation.POSTGRES_PORT)/$($derivedValues["POSTGRES_DB_NAME"])"
+    }
+
+    # The values the suite's hooks read, as build-config.ps1 will export them for the run itself.
+    Set-HarnessVariable -Name POSTGRES_DB_NAME -Value $derivedValues["POSTGRES_DB_NAME"]
+    Set-HarnessVariable -Name DMS_CONFIG_DATASTORE -Value $datastore
+    Set-HarnessVariable -Name CMS_E2E_PREFLIGHT_API_URL -Value $isolation.CMS_E2E_API_URL
+    Set-HarnessVariable -Name CMS_E2E_PREFLIGHT_DB_TARGET -Value $expectedDbTarget
+
+    if ($derivedValues["CMS_CONFIG_CONTAINER"] -ne $isolation.CMS_CONFIG_CONTAINER) {
+        throw "The derived environment file does not name the isolated Configuration Service container; refusing to run."
+    }
+
+    $preflightTests = @(
+        "It_sends_requests_to_the_selected_configuration_service",
+        "It_cleans_the_selected_database"
+    )
+    foreach ($assembly in @(Get-RequiredTestAssembly -SolutionRoot (Join-Path $repoRoot "src/config") -Filter "*.Tests.E2E" -Configuration $Configuration)) {
+        $preflightResults = Join-Path $derivedDirectory "e2e-target-preflight.trx"
+        Remove-Item -LiteralPath $preflightResults -ErrorAction SilentlyContinue
+        & dotnet test $assembly.FullName --filter "TestCategory=E2ETargetPreflight" --logger "trx;LogFileName=$preflightResults"
+        if ($LASTEXITCODE -ne 0) {
+            throw "The target preflight failed for $($assembly.FullName); the suite would not target this deployment. Refusing to run."
+        }
+
+        # Zero discovered or skipped tests is not a pass: every preflight test must have executed and passed.
+        [xml]$trx = Get-Content -LiteralPath $preflightResults -Raw
+        $results = @($trx.TestRun.Results.UnitTestResult)
+        foreach ($name in $preflightTests) {
+            $result = $results | Where-Object { $_.testName -eq $name }
+            if (@($result).Count -ne 1 -or $result.outcome -ne "Passed") {
+                throw "The target preflight test $name did not execute and pass for $($assembly.FullName). Refusing to run."
+            }
+        }
+        Write-Output "Target preflight passed for $($assembly.FullName): requests go to $($isolation.CMS_E2E_API_URL), cleanup targets $expectedDbTarget."
+    }
+
+    if ($PreflightOnly) {
+        $exitCode = 0
+        return
+    }
+
+    Remove-IsolatedStack
+
+    Push-Location $repoRoot
     try {
-        ./start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile
-        & docker network rm $isolation.CMS_COMPOSE_NETWORK *> $null
+        $arguments = @{
+            Command = "E2ETest"
+            Configuration = $Configuration
+            IdentityProvider = $IdentityProvider
+            EnvironmentFile = $derivedEnvironmentFile
+        }
+        if ($E2ETestFilter) {
+            $arguments.E2ETestFilter = $E2ETestFilter
+        }
+        if ($SkipDockerBuild) {
+            $arguments.SkipDockerBuild = $true
+        }
+
+        ./build-config.ps1 @arguments
+        $exitCode = $LASTEXITCODE
     }
     finally {
         Pop-Location
-    }
-}
-
-<#
-    Guards that must hold before anything can send a request. The E2ETest path runs the test assembly
-    already built, without building it, so a stale build can carry defaults that point at the stock
-    stack. The assembly is therefore built here first, and a read-only preflight test inside that very
-    assembly must report that it targets this deployment's Configuration Service and database.
-#>
-Import-Module (Join-Path $repoRoot "eng/build-helpers.psm1") -Force
-
-$e2eProject = Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj"
-Write-Output "Building the E2E test project ($Configuration) so the suite run uses this tree's code..."
-& dotnet build $e2eProject --configuration $Configuration --nologo
-if ($LASTEXITCODE -ne 0) {
-    throw "Building the E2E test project failed with exit code $LASTEXITCODE; refusing to run the suite."
-}
-
-$derivedValues = @{}
-foreach ($line in $lines) {
-    if ($line -match '^(?<Key>[A-Za-z_][A-Za-z0-9_]*)=(?<Value>.*)$') {
-        $derivedValues[$Matches.Key] = $Matches.Value
-    }
-}
-$datastore = if ($derivedValues["DMS_CONFIG_DATASTORE"]) { $derivedValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
-$expectedDbTarget = if ($datastore -eq "mssql") {
-    "mssql localhost:$($isolation.MSSQL_PORT)/$($derivedValues["POSTGRES_DB_NAME"])"
-}
-else {
-    "postgresql localhost:$($isolation.POSTGRES_PORT)/$($derivedValues["POSTGRES_DB_NAME"])"
-}
-
-# The values the suite's hooks read, as build-config.ps1 will export them for the run itself.
-$env:POSTGRES_DB_NAME = $derivedValues["POSTGRES_DB_NAME"]
-$env:DMS_CONFIG_DATASTORE = $datastore
-$env:CMS_E2E_PREFLIGHT_API_URL = $isolation.CMS_E2E_API_URL
-$env:CMS_E2E_PREFLIGHT_DB_TARGET = $expectedDbTarget
-
-if ($derivedValues["CMS_CONFIG_CONTAINER"] -ne $isolation.CMS_CONFIG_CONTAINER) {
-    throw "The derived environment file does not name the isolated Configuration Service container; refusing to run."
-}
-
-$preflightTests = @(
-    "It_sends_requests_to_the_selected_configuration_service",
-    "It_cleans_the_selected_database"
-)
-foreach ($assembly in @(Get-RequiredTestAssembly -SolutionRoot (Join-Path $repoRoot "src/config") -Filter "*.Tests.E2E" -Configuration $Configuration)) {
-    $preflightResults = Join-Path $derivedDirectory "e2e-target-preflight.trx"
-    Remove-Item -LiteralPath $preflightResults -ErrorAction SilentlyContinue
-    & dotnet test $assembly.FullName --filter "TestCategory=E2ETargetPreflight" --logger "trx;LogFileName=$preflightResults"
-    if ($LASTEXITCODE -ne 0) {
-        throw "The target preflight failed for $($assembly.FullName); the suite would not target this deployment. Refusing to run."
-    }
-
-    # Zero discovered or skipped tests is not a pass: every preflight test must have executed and passed.
-    [xml]$trx = Get-Content -LiteralPath $preflightResults -Raw
-    $results = @($trx.TestRun.Results.UnitTestResult)
-    foreach ($name in $preflightTests) {
-        $result = $results | Where-Object { $_.testName -eq $name }
-        if (@($result).Count -ne 1 -or $result.outcome -ne "Passed") {
-            throw "The target preflight test $name did not execute and pass for $($assembly.FullName). Refusing to run."
+        if ($KeepStack) {
+            Write-Output "Isolated stack left running (project $($isolation.CMS_COMPOSE_PROJECT))."
+        }
+        else {
+            Remove-IsolatedStack
         }
     }
-    Write-Output "Target preflight passed for $($assembly.FullName): requests go to $($isolation.CMS_E2E_API_URL), cleanup targets $expectedDbTarget."
-}
-
-if ($PreflightOnly) {
-    return
-}
-
-Remove-IsolatedStack
-
-$exitCode = 1
-Push-Location $repoRoot
-try {
-    $arguments = @{
-        Command = "E2ETest"
-        Configuration = $Configuration
-        IdentityProvider = $IdentityProvider
-        EnvironmentFile = $derivedEnvironmentFile
-    }
-    if ($E2ETestFilter) {
-        $arguments.E2ETestFilter = $E2ETestFilter
-    }
-    if ($SkipDockerBuild) {
-        $arguments.SkipDockerBuild = $true
-    }
-
-    ./build-config.ps1 @arguments
-    $exitCode = $LASTEXITCODE
 }
 finally {
-    Pop-Location
-    if ($KeepStack) {
-        Write-Output "Isolated stack left running (project $($isolation.CMS_COMPOSE_PROJECT))."
-    }
-    else {
-        Remove-IsolatedStack
+    foreach ($name in $priorEnvironment.Keys) {
+        [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
     }
 }
 

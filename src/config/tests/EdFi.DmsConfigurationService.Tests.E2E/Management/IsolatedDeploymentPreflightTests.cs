@@ -10,10 +10,15 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Management;
 
 /// <summary>
 /// Read-only checks, run against the built test assembly before an isolated suite run, that the
-/// suite will send its requests to and clean the database of the deployment the run selected, and
-/// not the stock stack's defaults. eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1
-/// supplies the expectations and requires both tests to have executed and passed; without them, as in
-/// an ordinary run, they are ignored. Nothing here makes a request or opens a connection.
+/// suite will send its requests to the deployment the run selected, and clean a database on that
+/// deployment's engine and host port, rather than the stock stack's defaults.
+/// eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 supplies the expectations and
+/// requires both tests to have executed and passed; without them, as in an ordinary run, they are
+/// ignored. Nothing here makes a request or opens a connection.
+///
+/// The database name is not checked: the harness builds the expected name from POSTGRES_DB_NAME, the
+/// same variable the cleanup hooks read, so the check cannot tell whether the Configuration Service
+/// uses another database. Only the engine and the port can fail it.
 /// </summary>
 [TestFixture]
 [Category("E2ETargetPreflight")]
