@@ -32,6 +32,15 @@ public static class SetupHooks
     private static string EnvOrDefault(string name, string fallback) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
+    /// <summary>
+    /// The database the cleanup hooks delete from, without credentials, so an isolated run can check
+    /// before it starts that cleanup and the deployment it targets are the same.
+    /// </summary>
+    internal static string CleanupDatabaseTarget =>
+        UseMssql
+            ? $"mssql localhost:{MssqlDbPortExternal}/{DatabaseName}"
+            : $"postgresql localhost:{DbPortExternal}/{DatabaseName}";
+
     private static bool UseMssql =>
         string.Equals(
             Environment.GetEnvironmentVariable("DMS_CONFIG_DATASTORE"),

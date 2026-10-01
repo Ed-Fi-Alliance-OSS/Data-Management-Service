@@ -48,6 +48,18 @@ if ($useMssqlTmpfs -and $datastore -eq "mssql") {
     Write-Output "Using SQL Server tmpfs data directory (MSSQL_TMPFS_SIZE=$mssqlTmpfsSize, MSSQL_CONTAINER_MEMORY=$mssqlContainerMemory)."
 }
 
+# Opt-in isolation, read from the environment file. Unset, each resolves to the name this script has
+# always used, so the default stack is unchanged. A test-owned deployment sets them, together with an
+# overlay renaming the containers and network, to run beside another local stack.
+$composeProject = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_COMPOSE_PROJECT" -DefaultValue "cs-local"
+$composeNetwork = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_COMPOSE_NETWORK" -DefaultValue "dms"
+$postgresContainerName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_POSTGRES_CONTAINER" -DefaultValue "dms-postgresql"
+$mssqlContainerName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_MSSQL_CONTAINER" -DefaultValue "dms-mssql"
+$overlayComposeFiles = @(
+    (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_COMPOSE_OVERLAY_FILES" -DefaultValue "") -split ";" |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+
 $files = @(
     "-f",
     $databaseComposeFile
@@ -64,6 +76,10 @@ $files += @(
     "keycloak.yml"
 )
 
+foreach ($overlayComposeFile in $overlayComposeFiles) {
+    $files += @("-f", $overlayComposeFile.Trim())
+}
+
 # Compose reads the claims mount from the process environment; the caller's value is restored below.
 $priorClaimsMountSource = $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE
 try {
@@ -73,20 +89,23 @@ try {
     }
 
     if ($d) {
+        # The same environment file as startup, so an overlay's variables resolve on the way down too.
+        # Only when it exists, so a teardown that never needed one keeps working without it.
+        $downEnvironmentArgs = if (Test-Path -LiteralPath $EnvironmentFile) { @("--env-file", $EnvironmentFile) } else { @() }
         if ($v) {
             Write-Output "Shutting down with volume delete"
-            docker compose $files -p cs-local down -v
+            docker compose $files @downEnvironmentArgs -p $composeProject down -v
         }
         else {
             Write-Output "Shutting down"
-            docker compose $files -p cs-local down
+            docker compose $files @downEnvironmentArgs -p $composeProject down
         }
     }
     else {
 
-        $existingNetwork = docker network ls --filter name="dms" -q
+        $existingNetwork = docker network ls --filter name="$composeNetwork" -q
         if (! $existingNetwork) {
-            docker network create dms
+            docker network create $composeNetwork
         }
 
         $upArgs = @(
@@ -94,7 +113,7 @@ try {
         )
         if ($r) {
             Write-Output "Building images with no cache (this may take a few minutes)..."
-            docker compose $files --env-file $EnvironmentFile -p cs-local build --no-cache
+            docker compose $files --env-file $EnvironmentFile -p $composeProject build --no-cache
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to build images. Exit code $LASTEXITCODE"
             }
@@ -162,18 +181,18 @@ try {
 
         if ($datastore -eq "mssql") {
             Write-Output "Starting SQL Server..."
-            docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs db
+            docker compose $files --env-file $EnvironmentFile -p $composeProject up $upArgs db
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start SQL Server. Exit code $LASTEXITCODE"
             }
 
             $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
-            Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+            Wait-MssqlReady -ContainerName $mssqlContainerName -Password $mssqlSaPassword
         }
 
         Write-Output "Starting locally-built DMS config service"
         $configServices = if ($datastore -eq "mssql") { @("keycloak", "config") } else { @() }
-        docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs $configServices
+        docker compose $files --env-file $EnvironmentFile -p $composeProject up $upArgs $configServices
 
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
@@ -217,15 +236,15 @@ try {
             # mssql.yml authenticates as the fixed sa account.
             $dbUser = if ($datastore -eq "mssql") { "sa" } else { Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres" }
             $dbPort = if ($datastore -eq "mssql") { "ENV:MSSQL_PORT" } else { "ENV:POSTGRES_PORT" }
-            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
+            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort -PostgresContainerName $postgresContainerName -MssqlContainerName $mssqlContainerName
             # Create client with default edfi_admin_api/full_access scope
-            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
+            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort -PostgresContainerName $postgresContainerName -MssqlContainerName $mssqlContainerName
 
             # Create client with edfi_admin_api/readonly_access scope
-            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
+            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort -PostgresContainerName $postgresContainerName -MssqlContainerName $mssqlContainerName
 
             # Create client with edfi_admin_api/authMetadata_readonly_access scope
-            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort
+            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -DbType $dbType -DbUser $dbUser -DbPort $dbPort -PostgresContainerName $postgresContainerName -MssqlContainerName $mssqlContainerName
         }
     }
 }
