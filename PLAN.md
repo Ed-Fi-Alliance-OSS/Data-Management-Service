@@ -80,9 +80,13 @@ Use the existing Pester test suites; do not introduce a reporting framework.
 - [x] Check nested timeout budgets. In particular, investigate the runbook's
   600-second internal wait inside a wrapper with a 600-second process timeout.
   Review confirms the outer deadline also encloses preparation and provisioning.
-  PostgreSQL's observed setup completed in 324 seconds without timing out; SQL
-  Server evidence remains pending. This is not a confirmed cause of the September
-  30 failure, and no budget increase has been made on that assumption.
+  Focused run `36788206148` retained an E2E setup timeout at 600.146 seconds after
+  all 42 SQL Server Admission tests and both bootstrap cases passed. Give the two
+  provider E2E setup snippets a bounded 1,800-second outer deadline, matching the
+  existing API E2E runner's setup budget. Regression checks cover preparation plus
+  the internal wait, explicit timeout overrides, and other wrapper deadlines.
+  The failing child process's internal substep remains unknown; this does not
+  retrospectively prove the cause of the earlier September 30 incident.
 - [ ] Run SQL Server Admission with the improved diagnostics, then run the full
   matrix on the branch through the existing workflow. Do not stop at the previously
   failing lane.
@@ -151,6 +155,10 @@ passes; document that limitation explicitly.
   502 offline integration and 839 Pester tests. Subsequent SQL diagnostic/counter
   changes passed 63 targeted .NET checks and all 283 qualification-script checks,
   with no failures or skips. The duplicate-count regression failed before its fix.
+- Full Contract validation on `4e1127e07` passed 4,671 controller unit, 819 CLI CDC,
+  6 runbook-admin, 509 offline integration and 839 Pester tests. The subsequent
+  E2E deadline correction passed all 305 wrapper/qualification checks. Both new
+  provider deadline regressions failed with the old 600-second budget.
 - Hosted run `36790134648` on `4748fdda6` has twelve passing live jobs with audited
   artifacts and a failed SQL Server Recovery job; four jobs remain in progress.
   The failed scenario encountered a SQL Server process exit before exercising CDC.
@@ -164,7 +172,11 @@ passes; document that limitation explicitly.
   teardown, and API E2E setup/test/cleanup/export deadlines. Historical incidents
   remain classified with their original evidence limitations; the PR evidence
   summary is the running validation record.
-- The 600-second wrapper/600-second internal wait remains a diagnostic lead. No
-  timeout increase or additional retry has been introduced without live evidence.
+- The focused SQL Server Admission run confirmed that the harness terminated the
+  E2E setup child at its outer deadline. E2E setup now has the existing API E2E
+  runner's 30-minute allowance for its combined preparation/provisioning/readiness
+  work. The original focused job lasted approximately 103 minutes, leaving room
+  for this additional 20-minute allowance within the 130-minute workflow limit.
+  Live verification of the correction is still required. No retry was added.
 - Three consecutive complete hosted passes have **not** yet been obtained. The
   candidate is not frozen and the PR is not ready for merge.

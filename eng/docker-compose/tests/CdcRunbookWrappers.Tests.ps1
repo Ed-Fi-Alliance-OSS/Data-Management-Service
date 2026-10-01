@@ -42,8 +42,34 @@ Describe 'CDC live snippet process boundary' {
             $FilePath -eq 'pwsh' -and $ArgumentList -contains '-EnableKafkaCdc' -and
             $ArgumentList -contains (Join-Path $TestDrive '.local/cdc/postgresql.json') -and
             $ArgumentList -contains (Join-Path $TestDrive '.local/cdc/state-pg') -and
-            $ArgumentList -contains (Join-Path $TestDrive '.env') -and $InputText -eq ''
+            $ArgumentList -contains (Join-Path $TestDrive '.env') -and $InputText -eq '' -and $TimeoutSeconds -eq 600
         }
+    }
+    It 'allows preparation and the internal readiness wait for <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-e2e-setup' },
+        @{ Id = 'cdc-sqlserver-e2e-setup' }
+    ) {
+        # Simulate 300 seconds of preparation plus the supported 600-second wait.
+        # Exercise the real wrapper's native-process boundary without a long wall-clock test.
+        Mock Invoke-NativeCommandWithInput {
+            param($TimeoutSeconds)
+            [pscustomobject]@{
+                ExitCode = 0
+                FailureKind = $(if ($TimeoutSeconds -le 900) { 'Timeout' } else { 'None' })
+                StandardOutput = ''; StandardError = ''
+            }
+        }
+        $result = Invoke-CdcRunbookLiveWrapper -Id $Id -FixtureRoot $TestDrive
+        $result.FailureKind | Should -Be 'None'
+        Should -Invoke Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter { $TimeoutSeconds -eq 1800 }
+    }
+    It 'honors an explicit E2E setup deadline and preserves its timeout result' {
+        Mock Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ ExitCode = 0; FailureKind = 'Timeout'; StandardOutput = ''; StandardError = '' }
+        }
+        $result = Invoke-CdcRunbookLiveWrapper -Id 'cdc-sqlserver-e2e-setup' -FixtureRoot $TestDrive -TimeoutSeconds 1
+        $result.FailureKind | Should -Be 'Timeout'
+        Should -Invoke Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter { $TimeoutSeconds -eq 1 }
     }
     It 'does not start a process for a missing marked wrapper' {
         Mock Invoke-NativeCommandWithInput { throw 'must not execute' }

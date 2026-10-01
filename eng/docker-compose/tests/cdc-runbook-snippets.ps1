@@ -80,6 +80,13 @@ function Get-CdcRunbookInvocation {
 # Nothing here implements provisioning, lifecycle, readiness, or connector mutation.
 function Invoke-CdcRunbookLiveWrapper {
     param([string] $Id, [string] $FixtureRoot, [int] $TimeoutSeconds = 600)
+    # E2E setup also builds/prepares and provisions schemas before its 600-second
+    # readiness wait. Match the API E2E runner's bounded 30-minute setup budget;
+    # the original 600-second outer deadline killed SQL Server setup in CI.
+    if (-not $PSBoundParameters.ContainsKey('TimeoutSeconds') -and
+        $Id -in @('cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup')) {
+        $TimeoutSeconds = 1800
+    }
     $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
     Import-Module (Join-Path $repo 'eng/docker-compose/env-utility.psm1') -DisableNameChecking
     $invocation = Get-CdcRunbookInvocation -Id $Id -FixtureRoot $FixtureRoot
