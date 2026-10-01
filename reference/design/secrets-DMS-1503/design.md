@@ -868,6 +868,7 @@ A fixture secrets plugin published `--no-self-contained`, delivered by the spine
 The deployment brings up CMS and DMS together, creates a data store whose password is a token, and asserts that DMS serves a resource out of that data store.
 That is the whole claim of this design: an operator's secret reaches the database driver without ever having been written to CMS, to a configuration file, or to an environment variable.
 It runs against a locally built image, for the same reason the spine's equivalent tier does, and the pulled-stock-image proof is the spine's `DMS-1502` rather than a second one here.
+It runs on a weekday schedule and on demand (`.github/workflows/scheduled-secret-resolution-proof.yml`) rather than on every pull request, because it builds both images and measures a rotation against real time; the harness fails unless every proof in its TRX executed and passed, so a proof that ignored itself is never reported as green.
 
 **Consumer proof.**
 The per-PR lane packs `EdFi.Api.Secrets` and compiles a scratch consumer against the produced nupkg, following `eng/verification/CustomValidationConsumer/`, and asserts that the `AssemblyVersion` inside the packed nupkg equals the package version, which is the assertion that keeps the skew preflight from going blind.

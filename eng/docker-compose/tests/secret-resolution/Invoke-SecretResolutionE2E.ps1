@@ -140,6 +140,50 @@ function Restore-HarnessEnvironment {
     $priorEnvironment.Clear()
 }
 
+<#
+    Every proof the run must have executed and passed. A filter that matches nothing, or a proof that
+    ignores itself because a setting did not reach it, leaves dotnet test exiting zero, so the exit
+    code alone is not evidence. Renaming or adding a proof means updating this list.
+#>
+$expectedProofs = @(
+    "It_returns_the_resolved_password_from_the_configuration_service",
+    "It_lets_dms_write_and_read_a_resource_through_the_resolved_credential",
+    "It_resolves_the_value_the_store_held_first",
+    "It_observed_the_inside_read_inside_the_window",
+    "It_keeps_the_previous_value_inside_the_window",
+    "It_does_not_return_the_rotated_value_before_the_window_can_have_closed",
+    "It_returns_the_rotated_value_once_the_window_has_closed",
+    "It_keeps_returning_the_rotated_value",
+    "It_returns_only_the_previous_or_the_rotated_value"
+)
+
+function Assert-ProofsExecuted {
+    param([Parameter(Mandatory)] [string] $TrxPath)
+
+    if (-not (Test-Path -LiteralPath $TrxPath)) {
+        throw "The SecretResolutionPlugin proofs wrote no results to $TrxPath."
+    }
+
+    [xml]$trx = Get-Content -LiteralPath $TrxPath -Raw
+    $results = @($trx.TestRun.Results.UnitTestResult | Where-Object { $null -ne $_ })
+    if ($results.Count -eq 0) {
+        throw "No SecretResolutionPlugin proofs ran; the filter matched nothing."
+    }
+
+    $notPassed = @($results | Where-Object { $_.outcome -ne "Passed" })
+    if ($notPassed.Count -gt 0) {
+        throw "SecretResolutionPlugin proofs did not pass: $(($notPassed | ForEach-Object { "$($_.testName) ($($_.outcome))" }) -join ', ')."
+    }
+
+    foreach ($name in $expectedProofs) {
+        if (@($results | Where-Object { $_.testName -eq $name }).Count -ne 1) {
+            throw "The SecretResolutionPlugin proof $name did not execute exactly once."
+        }
+    }
+
+    Write-Output "All $($expectedProofs.Count) SecretResolutionPlugin proofs executed and passed."
+}
+
 function Wait-HttpHealthy {
     param([string] $Url, [string] $Name, [int] $TimeoutSeconds = 300)
 
@@ -384,13 +428,16 @@ try {
         Set-HarnessVariable -Name SECRETS_E2E_CACHE_EXPIRATION_SECONDS -Value $CacheExpirationSeconds
 
         Write-Output "Running the SecretResolutionPlugin proofs..."
+        $trxPath = Join-Path $ResultsDirectory "secret-resolution-e2e.trx"
+        Remove-Item -LiteralPath $trxPath -ErrorAction SilentlyContinue
         & dotnet test (Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj") `
             --configuration $Configuration --filter "TestCategory=SecretResolutionPlugin" `
-            --logger "trx;LogFileName=$(Join-Path $ResultsDirectory 'secret-resolution-e2e.trx')" `
+            --logger "trx;LogFileName=$trxPath" `
             --logger "console;verbosity=normal"
         if ($LASTEXITCODE -ne 0) {
             throw "The SecretResolutionPlugin proofs failed with exit code $LASTEXITCODE."
         }
+        Assert-ProofsExecuted -TrxPath $trxPath
         $succeeded = $true
     }
     finally {
