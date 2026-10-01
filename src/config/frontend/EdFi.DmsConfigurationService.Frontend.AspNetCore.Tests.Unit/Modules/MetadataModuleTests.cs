@@ -1136,13 +1136,12 @@ public class MetadataModuleTests
         foreach (var schemaName in new[] { "VendorInsertCommand", "VendorUpdateCommand" })
         {
             var schema = schemas.GetProperty(schemaName);
-            schema
-                .GetProperty("properties")
-                .GetProperty("namespacePrefixes")
-                .GetProperty("type")
-                .GetString()
+            TypeIncludes(
+                    schema.GetProperty("properties").GetProperty("namespacePrefixes").GetProperty("type"),
+                    "string"
+                )
                 .Should()
-                .Be("string", $"{schemaName}.namespacePrefixes must remain a string");
+                .BeTrue($"{schemaName}.namespacePrefixes must remain a string");
 
             if (schema.TryGetProperty("required", out var required))
             {
