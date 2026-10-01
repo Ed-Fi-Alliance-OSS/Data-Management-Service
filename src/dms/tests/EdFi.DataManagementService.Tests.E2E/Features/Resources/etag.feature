@@ -351,7 +351,7 @@ Feature: ETag validations
              Then it should respond with 201
               And the ETag is in the response header
         @e2e-ci-shard-1
-        Scenario: 15 Ensure that a wildcard If-None-Match on a POST to an already-existing resource returns 412
+        Scenario: 15 Ensure that a wildcard If-None-Match on a POST to an already-existing resource is ignored
              Given a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -370,9 +370,19 @@ Feature: ETag validations
                       "lastSurname": "Mulligan"
                   }
                   """
-             Then it should respond with 412
+             Then it should respond with 200
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "studentUniqueId": "111111",
+                    "birthDate": "2014-08-14",
+                    "firstName": "Russella",
+                    "lastSurname": "Mulligan"
+                  }
+                  """
         @e2e-ci-shard-1
-        Scenario: 16 Ensure that a wildcard If-None-Match on a PUT to an existing resource returns 412
+        Scenario: 16 Ensure that a wildcard If-None-Match on a PUT to an existing resource is ignored
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -394,7 +404,17 @@ Feature: ETag validations
                       "lastSurname": "Mayorga"
                   }
                   """
-             Then it should respond with 412
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayorga"
+                  }
+                  """
         @e2e-ci-shard-1
         Scenario: 17 Ensure that a quoted If-Match (as emitted) is accepted on PUT
              When a POST request is made to "/ed-fi/students" with
@@ -569,3 +589,37 @@ Feature: ETag validations
              # The id value is a non-existing resource
              When a GET if-none-match "some-etag" request is made to "/ed-fi/students/00000000-0000-4000-a000-000000000000"
              Then it should respond with 404
+        @e2e-ci-shard-1
+        Scenario: 23 Ensure that a matching specific If-None-Match on a PUT to an existing resource is ignored
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
+             When a PUT if-none-match "{IfNoneMatch}" request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayorga"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayorga"
+                  }
+                  """
