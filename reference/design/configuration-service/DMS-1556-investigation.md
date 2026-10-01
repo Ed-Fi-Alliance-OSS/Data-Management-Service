@@ -1447,6 +1447,25 @@ evidence that authentication no longer blocks workers.
 3. **Outage scope beyond the specified pause** (the 40 s pause and the key-table lock),
    and the per-block dump policy.
 
+### Review disposition (2026-10-01)
+
+The reviewer inspected the code and retained artifacts and ran no workloads. The 4.1
+evidence supports proceeding to 4.2. **This is not approval of the final acceptance
+gate: the default stress gate remains failed.**
+
+1. **53300:** a separate connection-capacity limitation. No pool size, PostgreSQL limit or
+   production concurrency changes for DMS-1556. The failed default-setting 256/128 result
+   is kept for final review; the headroom success does not replace it. No further stress
+   runs are required now.
+2. **Command timeout:** no further experiment. Why Npgsql's command timeout did not end
+   commands held by `docker pause` stays explicitly unexplained. The pause runs establish
+   interruption, recovery and open-failure classification, not command-timeout coverage.
+3. **Added scenarios:** the 40 s pause, the key-table lock and the per-block dump policy
+   are accepted.
+4. **Bookkeeping:** the stack totals and the key-lock log-completeness records were
+   corrected without rerunning anything (see the managed-stacks table, Evidence vs
+   inference, and Deviations).
+
 ### AC status after 4.1
 
 | AC | Status | What remains |
@@ -1455,3 +1474,134 @@ evidence that authentication no longer blocks workers.
 | AC 4 | **Observed at runtime:** stage-classified 503s with `Retry-After` for both categories, §4.9 Error lines matching 503 counts exactly, JWKS 503 versus 200 with keys, no failed read treated as an empty key set | Docs (4.3) |
 | AC 5 | Interruption/recovery covered at runtime (pause and key-table lock, both profiles) | 4.2 shards 1 and 2 ≥ 2 runs each; §7.1 lanes on the final commit |
 | AC 1, 3, 6 | Unchanged by 4.1 | as before |
+
+## 4.2 — E2E shards and CMS E2E (2026-10-01)
+
+### Scope
+
+Spec Phase 4.2, as approved at the 4.1 review: DMS E2E shards 1 and 2 on at least two
+independent runs each, with teardown/setup between runs, and the CMS E2E suite once,
+through the documented build path. No production code changed, and no workload or setting
+from 4.1 was rerun or changed.
+
+### Tested code and images
+
+- **Commit:** HEAD `a5ae72e30` (4.1 bookkeeping). Its `src/` is identical to `c799f084d`,
+  the implementation the 4.1 image was built from (`git diff c799f084d HEAD -- src/` is
+  empty). The branch changes nothing under `src/dms` relative to its `main` base
+  `5e0d010af`. The only uncommitted file during the runs was this document.
+- **CMS image in the DMS shard runs.** `teardown-local-dms.ps1` removes
+  `ed-fi-api-config-local:latest` (and `ed-fi-api-local`), so each run's compose start
+  built both images again from this worktree (`local-config.yml`: context
+  `../../src/config`).
+  - Run 1's CMS image has the same 16 layers and labels as the 4.1 image
+    `ed-fi-api-config-local:dms1556-c799f084d` (`eb4acec72d7c`). Its layer list was
+    compared while the stack was up.
+  - All four builds report the 4.1 build's creation time (`2026-10-01T13:26:17Z`). Every
+    step was therefore a cache hit on the 4.1 build. The layers of runs 2–4 were not
+    compared before teardown removed them.
+  - Image ids differ per build (`d55d23ca781d`, `356151e7801f`, `e02a74cc2f0f`,
+    `5d41780de4db`) even with identical layers and labels. The cause was not
+    investigated.
+- **CMS image in the CMS E2E run:** `start-local-config.ps1 -r` built it without cache
+  from the same tree (`46ca1f8b3fe2`, created `20:42:46Z`). A no-cache build has new
+  layers, so it is not layer-comparable to the 4.1 image.
+- **DMS image:** rebuilt every run by `build-dms.ps1` and compose from the unchanged
+  `src/dms`.
+
+### Commands
+
+From the repository root, each lane in its own `pwsh -NoProfile` process (driver output
+in the gitignored `eng/performance/dms-1556/artifacts/e42/`: per-lane logs, trx files,
+container logs, image records, `e42-index.json`):
+
+```powershell
+./build-dms.ps1 Build -Configuration Release
+./build-config.ps1 Build -Configuration Release
+# shard 1, shard 2, shard 1, shard 2; after each:
+#   src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1
+./build-dms.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-N'
+./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained
+#   then src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1
+```
+
+`-SkipDockerBuild` was not used. Every teardown removed the containers, the volume and the
+local images; only the pinned 4.1 tag survived.
+
+### Results
+
+| Lane | Start (UTC) | Wall time | Passed | Failed | Skipped | trx counters |
+| --- | --- | --- | --- | --- | --- | --- |
+| DMS shard 1, run 1 | 18:06 | 42.7 min | 230 | 0 | 2 | total 232, executed 230 |
+| DMS shard 2, run 1 | 18:49 | 36.3 min | 220 | 0 | 2 | total 222, executed 220 |
+| DMS shard 1, run 2 | 19:25 | 40.1 min | 230 | 0 | 2 | total 232, executed 230 |
+| DMS shard 2, run 2 | 20:06 | 36.0 min | 220 | 0 | 2 | total 222, executed 220 |
+| CMS E2E (self-contained, PostgreSQL) | 20:42 | 2.2 min | 227 | 0 | 8 | total 237, executed 227 |
+
+- **Skips are the known ones and match between runs.**
+  - Shard 1: profile scenarios `04 PUT with profile excluding required field succeeds`
+    and `06 POST with collection rule on required collection …`.
+  - Shard 2: the `@ignore` profile scenarios 03 and 09, as in the shard-2 baseline
+    (220/0/2, 0.5 E7a).
+  - CMS: the 8 `@MultitenantOnly` scenarios (single-tenant stack). The pending-binding
+    ApiClients scenarios 09 and 15 also print as skipped but are outside the totals
+    (pre-existing; they are why the trx total is 237).
+- **Both E2E assemblies came from this build:** the run logs list
+  `bin/Release/…/Tests.E2E.dll` written at 11:05 local time by the Release builds above.
+- **DMS restarts are scenario-driven:** both shard 1 runs show 6 DMS startups at the same
+  points in the run, and both shard 2 runs show 2. CMS started once per run and did not
+  restart.
+
+**CMS logs in the DMS shard runs** (the workload the ticket reported):
+
+- Zero Error-level lines in all four runs.
+- The only DMS-1556 signals are snapshot publications, all with 1 key (reloads retrieved
+  in 1–18 ms):
+  - shard 1: 8 and 9 per run; shard 2: 8 and 8;
+  - each run has one `Startup` publication, then one reload about every 5 minutes;
+  - the reloads are labelled `Timer` or `Request` (shard 1: 3+4 and 7+1; shard 2: 3+4
+    and 5+2). A `Request` reload is a background load started by a request that finds
+    the snapshot `Overdue`: older than the 300 s refresh interval, still served. The
+    timer fires at 300 s ±10 % jitter, so when its deadline falls after 300 s, a request
+    gets there first. These requests were `/v3/authorizationMetadata` and
+    `/v3/dataStores` calls from DMS.
+- No boundary 503 line (`Authentication could not reach a decision …`), no JWKS 503, no
+  signing-key load failure, no late-load discard, and no unknown-key refresh.
+
+**CMS logs in the CMS E2E run:**
+
+- The fresh database has no key at startup, so the `Startup` snapshot published 0 keys.
+  The first token was then signed with a key the snapshot did not have. One unknown-key
+  refresh followed (`Warning … unknown-key refresh outcome: RefreshedFound`) and
+  published snapshot 2 with 1 key. The cooldown design expects exactly this cold path.
+- 4 Error lines `Authentication failed: IDX10511: Signature validation failed` are the
+  four manipulated-signature scenarios (Token 02, OwaspCriticalPaths 04/05/06), all
+  passing with 401. That log line is the scheme's `OnAuthenticationFailed` handler,
+  unchanged from `main` and kept at 3.2.
+- The other Error/Warning lines come from scenarios that expect a validation failure
+  (duplicate application names, a non-unique claim-set name, a claims upload with 3
+  failures).
+
+### Deviations
+
+- **`build-dms.ps1 Build -Configuration Release` exited 1** with NU1008/MSB3073 in one
+  place: the `EdFi.DataManagementService.Tests.Integration` build publishes the
+  `eng/fixtures/plugins/Acme.CustomValidationProof` plugin fixture.
+  - Cause: worktree placement. This worktree lies under the main checkout's `src\`, so
+    that fixture project inherits the main checkout's central package management.
+  - This is a known local condition, not related to this change; CI and a worktree
+    outside the main checkout do not hit it.
+  - Every other project built, including the DMS E2E test assembly used above. No DMS
+    integration lane is part of 4.2.
+- **PowerShell analysis:** `eng/Invoke-StagedPowerShellAnalysis.ps1` over all 16
+  PowerShell files the branch adds or changes (`eng/performance/dms-1556/*.ps1`, `*.psm1`)
+  reported no findings.
+
+### AC status after 4.2
+
+| AC | Status | What remains |
+| --- | --- | --- |
+| AC 2 | Catalog-shape gate met (4.1). **Default stress gate failed** (53300 only; kept for final review per the 4.1 disposition). Shards 1 and 2 green on 2 independent runs each, CMS E2E green. | CI after push (real envelope); final disposition of the failed stress gate |
+| AC 4 | Observed at runtime (4.1); no dependency 503 or key-load failure in any E2E run | Docs (4.3) |
+| AC 5 | Interruption/recovery at runtime (4.1); shards 1 and 2 rerun ≥ 2 times each, green | §7.1 lanes on the final commit |
+| AC 1, 3, 6 | Unchanged by 4.2 | as before |

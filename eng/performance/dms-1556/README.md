@@ -261,6 +261,7 @@ goes to Jira DMS-1556 except the full dumps (EV-DUMP). Counts and sizes were tak
 | — | Tooling shake-down only, **not evidence** | `e2-smoke/`, `e5-pilot/`, `e5-smoke/` | 74 / 23 MB | — | excluded; see 0.6 bookkeeping |
 | EV-H41 | 4.1-H fixed image, default settings + headroom | `{cold,warm}-{87x87,256x128}-h41-*`, `h41-sequence-console.log` | — | `h41-<block>-<condition>-{index.json,rounds.csv,stacks.csv}`, `h41-report.md` | 4.1 |
 | EV-O41 | 4.1-O injected outages, both profiles | `o41-<scenario>-<profile>-rep<n>-*` (`-responses.csv`, `-outage.json`, `-burst-*-jwks.csv`) | — | `o41-<profile>-index.json`, `o41-<profile>-console.log` | 4.1 |
+| EV-E42 | 4.2 DMS shards 1 and 2 × 2 runs, CMS E2E × 1 | `e42/`: `<lane>.log`, `<lane>-*.trx`, `<lane>-<container>.log` per run, Release build logs, teardown logs | 28 / 341 MB | `e42/e42-index.json` (commit, exit codes, summary lines, image ids) | 4.2 |
 | — | 4.1 superseded / aborted, **not evidence** | `o41-superseded/` (first P-runner-approx outage set: pause-run CMS logs truncated by Docker log rotation; key-lock window ended before recovery), `h41-aborted/` (P-dev catalog block stopped at 8 of 10 runs for host memory), `h41-smoke/` (shake-down) | — | — | 4.1 deviations |
 
 The tooling folders hold harness and driver shake-down runs made before the timed
