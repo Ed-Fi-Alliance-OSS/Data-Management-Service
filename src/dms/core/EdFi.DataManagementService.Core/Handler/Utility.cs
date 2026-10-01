@@ -21,13 +21,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 public static class Utility
 {
     /// <summary>
-    /// The conditional-read header name. DMS-1576: on a write (POST, PUT, DELETE) this is read only to
-    /// decide whether to log that it was ignored; <see cref="Backend.WritePreconditionFactory.Create" />
-    /// never reads it. GET is unaffected and keeps reading it independently.
-    /// </summary>
-    private const string IfNoneMatchHeaderName = "If-None-Match";
-
-    /// <summary>
     /// ResilienceContext property key for TraceId, used to correlate per-retry log lines.
     /// </summary>
     internal static readonly ResiliencePropertyKey<string> TraceIdKey = new("TraceId");
@@ -181,7 +174,7 @@ public static class Utility
     {
         if (
             logger.IsEnabled(LogLevel.Debug)
-            && requestInfo.FrontendRequest.Headers.ContainsKey(IfNoneMatchHeaderName)
+            && Backend.WritePreconditionFactory.IsIfNoneMatchIgnored(requestInfo.FrontendRequest.Headers)
         )
         {
             logger.LogDebug(

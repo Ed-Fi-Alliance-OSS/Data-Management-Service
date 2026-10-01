@@ -178,9 +178,9 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         return resolution switch
         {
-            RelationalWriteConstraintResolution.RootNaturalKeyUnique
-            or RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique =>
-                BuildIdentityConflictFailureResult(request),
+            RelationalWriteConstraintResolution.RootNaturalKeyUnique => BuildIdentityConflictFailureResult(
+                request
+            ),
             RelationalWriteConstraintResolution.RequestReference requestReference
                 when TryBuildRequestReferenceFailureResult(
                     request.OperationKind,

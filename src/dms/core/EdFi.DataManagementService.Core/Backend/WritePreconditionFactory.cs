@@ -24,6 +24,21 @@ internal static class WritePreconditionFactory
 {
     private const string IfMatchHeaderName = "If-Match";
 
+    /// <summary>
+    /// The conditional-read header name. <see cref="Create" /> never reads it; GET reads it independently.
+    /// </summary>
+    internal const string IfNoneMatchHeaderName = "If-None-Match";
+
+    /// <summary>
+    /// True when a write request carries an <c>If-None-Match</c> header that <see cref="Create" /> ignores.
+    /// </summary>
+    public static bool IsIfNoneMatchIgnored(IReadOnlyDictionary<string, string> headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+
+        return headers.ContainsKey(IfNoneMatchHeaderName);
+    }
+
     public static WritePrecondition Create(IReadOnlyDictionary<string, string> headers)
     {
         ArgumentNullException.ThrowIfNull(headers);

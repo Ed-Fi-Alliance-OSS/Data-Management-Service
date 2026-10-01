@@ -1350,8 +1350,9 @@ actual: {requestInfo.FrontendResponse.Body}
 
     /// <summary>
     /// DMS-1576: If-None-Match is a GET-only conditional-read validator; PUT (and POST, DELETE) ignore
-    /// it. These fixtures prove the shared Debug-log helper fires exactly once when the header is
-    /// present and not at all when it is absent, without logging the header's value.
+    /// it. These fixtures prove the shared Debug-log helper is wired in (fires once with the right method
+    /// when the header is present, not at all when absent) and that no write precondition reaches the
+    /// repository. The helper's own behavior is covered by <see cref="UtilityTests" />.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -1410,28 +1411,13 @@ actual: {requestInfo.FrontendResponse.Body}
         }
 
         [Test]
-        public void It_logs_the_method_and_trace_id_as_structured_properties()
+        public void It_logs_the_method_as_a_structured_property()
         {
             var record = _logger.Records.Single(record =>
                 record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
             );
 
             record.Properties["Method"].Should().Be("PUT");
-            record.Properties["TraceId"].Should().Be(RequestTraceId);
-        }
-
-        [Test]
-        public void It_does_not_log_the_header_value_in_the_message_or_any_property()
-        {
-            var record = _logger.Records.Single(record =>
-                record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
-            );
-
-            record.Message.Should().NotContain("sentinel-7f3a");
-            record
-                .Properties.Values.Select(value => value?.ToString())
-                .Should()
-                .NotContain(value => value != null && value.Contains("sentinel-7f3a"));
         }
 
         [Test]

@@ -349,12 +349,11 @@ Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendmen
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 
 > [!WARNING]
-> **Partly superseded 2026-09-30 — `If-None-Match` is a conditional-read validator only.**
-> [Amendment (2026-09-30)](#amendment-2026-09-30-if-none-match-is-a-conditional-read-validator-only)
-> withdrew several parts of this amendment: the write create-guard described below (POST/PUT `412`), the
-> write rows of the per-operation table, Decision 6, the "Parse," "Write checkers," and "DELETE is out
-> of scope" notes, and the Consequence. The conditional-GET content stands. The text below is kept as
-> the historical record.
+> **Partly superseded 2026-09-30.** The write create-guard (POST/PUT `412`) was withdrawn; see the
+> [Supersedes list](#supersedes) in the
+> [2026-09-30 amendment](#amendment-2026-09-30-if-none-match-is-a-conditional-read-validator-only) for
+> exactly what changed. The conditional-GET content stands, and the text below is kept as the historical
+> record.
 
 ### What changed
 
