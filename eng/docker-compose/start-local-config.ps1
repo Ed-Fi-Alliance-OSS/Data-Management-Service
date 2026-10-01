@@ -90,15 +90,14 @@ try {
 
     if ($d) {
         # The same environment file as startup, so an overlay's variables resolve on the way down too.
-        # Only when it exists, so a teardown that never needed one keeps working without it.
-        $downEnvironmentArgs = if (Test-Path -LiteralPath $EnvironmentFile) { @("--env-file", $EnvironmentFile) } else { @() }
+        # It was already read above, which fails when it is missing.
         if ($v) {
             Write-Output "Shutting down with volume delete"
-            docker compose $files @downEnvironmentArgs -p $composeProject down -v
+            docker compose $files --env-file $EnvironmentFile -p $composeProject down -v
         }
         else {
             Write-Output "Shutting down"
-            docker compose $files @downEnvironmentArgs -p $composeProject down
+            docker compose $files --env-file $EnvironmentFile -p $composeProject down
         }
     }
     else {

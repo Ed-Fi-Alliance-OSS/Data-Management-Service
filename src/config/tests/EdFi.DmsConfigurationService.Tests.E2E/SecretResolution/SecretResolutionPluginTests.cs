@@ -332,9 +332,13 @@ public class Given_a_secret_rotated_in_the_store : SecretResolutionPluginTestBas
     [Test]
     public void It_resolves_the_value_the_store_held_first() => _firstReadIsPrevious.Should().BeTrue();
 
+    /// <summary>
+    /// The inside read proves something only if it finished before the earliest moment the window can
+    /// have closed, the same bound the early-rotation test uses.
+    /// </summary>
     [Test]
-    public void It_observed_the_inside_read_well_inside_the_window() =>
-        _insideReadAfterCreation.Should().BeLessThan(_window / 2);
+    public void It_observed_the_inside_read_inside_the_window() =>
+        _insideReadAfterCreation.Should().BeLessThan(_window - _margin);
 
     [Test]
     public void It_keeps_the_previous_value_inside_the_window() => _insideReadIsPrevious.Should().BeTrue();
