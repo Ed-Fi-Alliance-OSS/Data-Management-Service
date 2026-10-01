@@ -1618,3 +1618,279 @@ tests. 4.2 is approved.
 | AC 4 | Observed at runtime (4.1); no dependency 503 or key-load failure in any E2E run | Docs (4.3) |
 | AC 5 | Interruption/recovery at runtime (4.1); shards 1 and 2 rerun ≥ 2 times each, green | §7.1 lanes on the final commit |
 | AC 1, 3, 6 | Unchanged by 4.2 | as before |
+
+## 4.4 — Final matrix and push-readiness report (2026-10-01)
+
+### Scope
+
+Spec Phase 4.4 and §7.4. This step fills the validation still missing on the final
+implementation, accounts for every mutation requirement, and records the readiness
+decision's inputs. It changes no production code, setting or test. As directed at the 4.3
+review, no load test or E2E run was repeated: Phase 4 changed only documentation and
+investigation scripts, so the accepted 4.1 and 4.2 evidence still applies.
+
+**Not ready to push.** The default-setting stress gate failed. Seven mutation probes could
+not be run. CI has not run on any commit after `6e3aec32c`. The branch also conflicts with
+current `main`. Each item is listed under *Open items for the final decision*. Pushing and
+the ticket's completion are the reviewer's decisions; neither was done.
+
+### Final implementation and tested commits
+
+- **Report base:** HEAD `1bc6f6fa3` (4.3 correction). The commit holding this section
+  changes documentation only.
+- **Production code** last changed at `966a29c0d` (3.3). After that:
+  - `3ddf13c49` and `c799f084d` (3.4) changed only the PostgreSQL integration test
+    project;
+  - Phase 4 changed only `docs/`, `reference/` and `eng/performance/dms-1556/`.
+- **Tree equality:** `git diff c799f084d 1bc6f6fa3 -- src/` is empty. The 4.1 image
+  (`dms1556-c799f084d`) and the 4.2 E2E runs therefore tested exactly the final `src/`
+  tree.
+- **Branch base:** `main` at `5e0d010af`. All evidence in this document is on that base.
+  `origin/main` has since moved (see *Open items*).
+
+### §7.1 automated matrix
+
+All lanes were run from the worktree. Lanes marked *final* ran on `1bc6f6fa3` on
+2026-10-01.
+
+| Lane | Tested commit | Command | Result | Skips and not-executed |
+| --- | --- | --- | --- | --- |
+| Solution build | `1bc6f6fa3` (final) | `dotnet build src/config/EdFi.DmsConfigurationService.sln`; again with `--no-incremental` after the mutation pass | 0 warnings, 0 errors (both) | — |
+| CMS backend unit | `1bc6f6fa3` (final, restored tree after the mutation pass) | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit --no-build` | **1861 passed, 0 failed, 0 skipped** (1 m 5 s) | none |
+| CMS frontend unit | `1bc6f6fa3` (final, restored tree) | `dotnet test src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit --no-build` | **1772 passed, 0 failed, 0 skipped** (4 m 42 s) | none |
+| PostgreSQL integration | `1bc6f6fa3` (final) | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration --no-build` | **937 passed, 0 failed, 0 skipped** (8 m 21 s) | 62 trx entries `NotExecuted`: the `[Explicit]` DMS-1437 operational probes (14 fixtures), "run manually with `--filter Category=OperationalProbe`". They come from `main`, not this branch. |
+| MSSQL integration | `1bc6f6fa3` (final) | `ConnectionStrings__MssqlAdmin='Server=127.0.0.1,14335;User Id=sa;Password=…;TrustServerCertificate=true'`, then `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration --no-build` | **957 passed, 0 failed, 0 skipped** (8 m 55 s) | 66 trx entries `NotExecuted`: the same `[Explicit]` DMS-1437 operational probes. Zero skips shows the variable reached the test process. |
+| CMS E2E (self-contained, PostgreSQL) | `45754357d`; its `src/` equals the final tree | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained` (4.2) | **227 passed, 0 failed** | 8 skipped (`@MultitenantOnly`), plus 2 pending-binding `NotExecuted` (ApiClients 09 and 15): 237 trx entries |
+| DMS E2E shard 1 × 2 | `a5ae72e30`; its `src/` equals the final tree | `./build-dms.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-1'` (4.2) | **230/0/2, 230/0/2** | 2 known profile skips per run |
+| DMS E2E shard 2 × 2 | as above | same, `@e2e-ci-shard-2` | **220/0/2, 220/0/2** | the 2 `@ignore` profile scenarios per run |
+| CSharpier | `1bc6f6fa3` (final) | `dotnet csharpier check src/config` | clean, 615 files | — |
+| PowerShell analysis | `1bc6f6fa3` (final) | `pwsh ./eng/Invoke-StagedPowerShellAnalysis.ps1 <the 16 branch-changed .ps1/.psm1 files>` | no findings | — |
+
+**Lane timing.**
+
+- **MSSQL:** the last full run before this step was at `918bfeb3d` (1.4). It predated the
+  2.2 production changes to the SQL Server repositories, so the full lane was rerun here.
+  The count rose 954 → 957 with the pool-exhaustion fixture (`0031eb255`).
+- **PostgreSQL:** its last full run was at `3ddf13c49`, before the test-only `c799f084d`
+  change to the same project, so it was rerun here too. The count rose 933 → 937 with the
+  sampler-lifecycle fixture.
+- **Unit lanes:** their code was unchanged since `966a29c0d` (1861 / 1772 there). They were
+  rerun anyway, because the mutation pass rebuilt their assemblies. That rerun is the check
+  that the restored tree is the approved one.
+
+**Database targets.** Verified after building and before the runs.
+
+- PostgreSQL: the gitignored override
+  `…Postgresql.Tests.Integration/bin/Debug/net10.0/appsettings.Test.json` still read
+  `host=127.0.0.1;port=5437`. Container `cms-pg-integration-1556` (PostgreSQL 16.3,
+  trust) held `edfi_configurationservice`.
+- SQL Server: container `cms-mssql-integration-1556` is SQL Server 2025, `17.0.4065.4`,
+  on `127.0.0.1:14335`.
+- Neither lane used the other sessions' ports (5432, 14334).
+- §7.1 names `localhost:5432` and `localhost,1434`. The dedicated `127.0.0.1` targets
+  replace them, as since 1.4.
+
+**Build exception (recorded at 4.2, unchanged).**
+
+- `./build-dms.ps1 Build -Configuration Release` exits 1 locally with NU1008/MSB3073. The
+  failure is in the `EdFi.DataManagementService.Tests.Integration` plugin-fixture publish.
+- Cause: this worktree lies under the main checkout's `src\`.
+- Every other project built, including both E2E assemblies used in 4.2. CI does not have
+  this layout.
+
+### §7.2 runtime evidence
+
+Reused from 4.1. Every run used image `ed-fi-api-config-local:dms1556-c799f084d`, whose
+`src/` is the final tree.
+
+| Evidence | Result |
+| --- | --- |
+| 7.4-H catalog 87/87, both profiles, 5 cold + 5 warm | **Met.** 8,700 of 8,700 responses are 200 with validated bodies. Round-1 p50 is 0.26–0.56 s on P-runner-approx (Phase 0: 13.6–16.7 s). |
+| 7.4-H stress 256/128, default settings, both profiles, 5 cold + 5 warm | **FAILED.** 591 of 25,600 responses are non-200, all PostgreSQL `53300`: 353 are 503 `TokenStatusStore` and 238 are 500 after authentication. No timeouts or stall. |
+| Headroom 256/128 (`max_connections=200`, P-7.4 supplement) | 7,680 of 7,680 are 200. A supplement only: it does not replace the failed default result. |
+| Managed stacks | 208 captures (184 healthy, 24 outage): no blocked authentication frame and no resolver wait in any of them. `Worker Min Limit` is 16 / 4, the same as Phase 0. |
+| 7.4-O outages (20 s and 40 s pause, 75 s key-table lock, both profiles, 2 repetitions each) | All 4,506 non-200s classified by stage. The pauses give 503 `TokenStatusStore` and the lock gives 503 `SigningKeyStore`, all with `Retry-After: 30`. JWKS answers 503 during the lock, never `200 []`. §4.9 Error lines match the 503 counts exactly. Recovery came at the next load attempt. The command timeout stays unexplained (accepted, no experiment). |
+
+### §7.3 mutation accounting
+
+Every probe was applied locally to the named file and rebuilt with `--no-incremental`.
+The must-fail fixtures were then run with `--blame-hang-timeout 4m`, the file was restored
+with `git checkout`, and `git status` was confirmed clean before the next probe. No two
+mutants were applied together, and no revert was batched with a mutant.
+
+- **Commands.** The backend filters selected the named test classes in
+  `Backend.Tests.Unit`. The frontend filter was `FullyQualifiedName~BearerSchemePipelineTests`,
+  which also matches `DmsJwtBearerSchemePipelineTests` (128 tests).
+- **Baseline.** On the unmutated final tree the backend classes passed 338 of 338 and the
+  frontend filter 128 of 128.
+- **Final-code rows** ("final", run 2026-10-01) are on `1bc6f6fa3`. A row reused from an
+  earlier commit gives the reason the mutated code is unchanged since then.
+
+| M | Mutation (as applied) | Must fail | Status | Result |
+| --- | --- | --- | --- | --- |
+| M1 | `GetUsableAsync` admits `LoadNeed.Always`, with no fast path and no usable-snapshot admission | 1.5-a, 3.1-a | **Caught, final** | Unit 11/126, incl. 1.5-a ×2 (`It_reads_the_store_once`, same snapshot). Pipeline 16/128, incl. 3.1-a `It_reads_the_key_table_once` and DmsJwtBearer cold `It_reads_the_key_table_once`. |
+| M2a | boundary swallows `SigningKeysUnavailableException` without a result | 2.3-c, 3.1-f | **UNRUN** | The edit to `SigningKeyBearerEvents.MessageReceivedAsync` was **denied** by the session's permission classifier ("Security Weaken", 2026-10-01). Not retried, and not attempted by any other means. |
+| M2b | dependency translation removed at message-received, authentication-failed and token-validated | 3.1-f, 3.1-g, 3.1-m | **UNRUN** | Not attempted. It is the same kind of edit to the same boundary code that was just denied for M2a. |
+| M3 | `ValidateTokenAsync`'s catch loses its filter, so status-store failures return `false` | 2.2-c, 3.1-g | **Caught, final** | Unit 14/122, incl. 2.2-c ×9 (database, timeout, canceled). Pipeline 3/128: 3.1-g `It_answers_a_dependency_503`, plus the DmsJwtBearer status-store fixture ×2. (At 2.2: 11/113.) |
+| M4 | retry gate never closes (`now.AddYears(100) < NextAttemptAt`) | 1.5-l, 3.1-n | **Caught, final** | Unit 7/126, incl. 1.5-l ×2. Pipeline 1/128: 3.1-n `It_reads_the_key_table_once`. |
+| M5 | unknown-key cooldown never applies | 1.5-j, 1.5-p, 3.1-q | **Caught, final** | Unit 9/126: 1.5-j ×4, 1.5-p ×3, 1.5-q ×2. Pipeline 4/128: 3.1-q ×2 (`It_loads_nothing_during_the_cooldown`, `It_answers_401_during_the_cooldown`), 3.1-d, 3.1-h. |
+| M6 | `MaxStaleness` ignored (state past the refresh interval is always `Overdue`) | 1.5-o, 3.1-m | **Caught, final** | Unit 5/126: 1.5-o ×2, 1.5-e ×3. Pipeline 1/128: 3.1-m `It_answers_503_past_the_maximum_staleness`. |
+| M7 | `options.ConfigurationManager` not supplied | 3.1-o, 3.1-s | **Caught, reused** (`b69fb47a9`) | 30/65: 3.1-o backchannel ×3, 3.1-s structural ×3, +24. `SigningKeyJwtBearerOptionsExtensions` is unchanged since that commit. |
+| M8a | after a failure, wait for the tick instead of the retry deadline | 1.6-b, 1.6-e, 1.6-h | **Caught, final** | 29/51: 1.6-b ×3, 1.6-e ×4, 1.6-h ×2 (+4 past equality), +16. (At `edfecec3c`: 26/44.) |
+| M8b | due time switches to the refresh deadline once `NextAttemptAt` is reached | 1.6-b, 1.6-e, 1.6-h | **Caught, final** | 29/51, the same fixtures as M8a: once the deadline is reached, this mutant also defers the retry to the refresh interval. (At `edfecec3c`, a variant failed 8/44.) |
+| M9 | `DevelopmentCertificateStore` lock removed | 1.5-r, 2.2-e | **Caught, reused** (`2ea7ece4e`) | 11/14 in each of 3 runs (1.5-r + 2.2-e). At 1.5, 6/108. `DevelopmentCertificateStore` is unchanged since `42d680fc5`. |
+| M10a | a signal wake authorizes a load | 1.6-i | **Caught, final** | 3/51: 1.6-i, request-triggered success ×3. |
+| M10b | gate eligibility treated as due-ness (start time = `NextAttemptAt`) | 1.6-i | **Caught, final** | 33/51, incl. both 1.6-i fixtures ×6. |
+| M11 | outstanding store operation ignored | 1.6-j, 1.6-k | **Caught, final** | 3/51: 1.6-j ×2, 1.6-k ×1. |
+| M12 | status read before the state-change signal is captured | 1.6-l | **Caught, final** | 2/51: 1.6-l ×2. |
+| M13 | scheduled admission unconditional, or conditional on a version re-read | 1.6-m | **Caught, reused** (`02f7f3b77`) | 2/307. Provider and refresh service are unchanged since that commit. |
+| M14 | source `ObjectDisposedException` treated as provider disposal | 1.6-n | **Caught, reused** (`02f7f3b77`) | 3/307. Unchanged since. |
+| M15 | provider ignores the observed state version | 1.6-m, provider conditional-refresh fixture | **Caught, reused** (`02f7f3b77`) | 4/307. Unchanged since. |
+
+**Other probes still UNRUN.** Each was denied by the permission classifier or is the same
+kind of edit as a denied one. None was retried or worked around.
+
+- **Unknown-kid mutants at 2.2** (refresh never called, always called, stale snapshot
+  used): denied ("Security Test Removal", 2026-09-30). The other two were not attempted.
+- **Challenge-classification mutant at 3.1** (`OnChallenge` bypassing
+  `TryChallengeDependencyAsync`): denied ("Security Weaken", 2026-09-30).
+- **Wiring revert at 3.1** (old blocking resolver restored): not attempted, the same kind
+  of edit.
+
+Running these seven (M2a, M2b, the three unknown-kid mutants, challenge classification,
+wiring revert) needs the user to run them or to grant the permission. Their target
+behavior is pinned by these fixtures, which pass on the final code:
+
+- M2a: 2.3-c and 3.1-f (manager call count 0);
+- M2b: 3.1-f/g/m (503, not 500);
+- the unknown-kid paths: 2.2-b and 3.1-d/e/q;
+- challenge classification: every dependency-503 assertion;
+- the wiring: 3.1-s and 3.2 structural.
+
+A passing fixture is not a mutation result, so §7.4's "M1–M15 confirmed" is **not met**
+for M2a and M2b.
+
+**Supplementary probes from earlier checkpoints** (accepted at their reviews; not §7.3
+requirements):
+
+- 1.1/1.2 detached projections (7/38, 5/38);
+- 1.3 format cache restored (2/85);
+- 1.4 token ignored (PG 5/7, MSSQL 4/6);
+- 1.5 waiter cancels the shared load (5/108) and deadline not counted (5/108);
+- 1.5 corrections F1, F2, F3a and F3b (all caught);
+- 2.1 registration removals R1–R6 (all caught);
+- 2.2 partial status translation (7/113), issuance creating its own certificate (6/8 ×3);
+- 3.3 failure answered as `200 []` (5/30);
+- 3.4 success-only sampler stop (3/4).
+
+### §7.4 push-readiness criteria
+
+| Criterion | State |
+| --- | --- |
+| 7.4-H: 100 % HTTP 200 with validated bodies at 87/87 **and** 256/128, both profiles | **Not met.** 87/87 met; default 256/128 **failed** (53300 only). P-7.4: a gate failure for review, never a pass; headroom does not replace it. |
+| 7.4-O: outage runs match §4.6/§4.7 by stage | Met (4.1) |
+| All §7.1 lanes green, skips enumerated | Met (table above) |
+| M1–M15 confirmed | **Not met:** M2a, M2b unrun. The other 14 IDs are caught, in 16 rows: 11 on the final code, and 5 reused with code unchanged since their probes. |
+| Shards 1 and 2 ≥ 2 independent runs each | Met (4.2) |
+| No `src/dms` path in the diff | Met (below) |
+| CSharpier clean | Met |
+| Docs merged | Written and committed locally (4.3); not merged |
+| Every §2 row filled | Filled below |
+| Explicit approval to push | **Not given.** Nothing pushed in 4.4 |
+
+### §2 acceptance criteria → evidence
+
+| AC | Evidence | Tested at | State |
+| --- | --- | --- | --- |
+| AC 1 — failure mechanism, repeatable scenario, runtime evidence | Harness and E1–E7 (0.3–0.5). The mechanism link by link is in 0.6: blocking resolver → thread-pool starvation → late SCRAM completion → open timeouts. G1 is *partially reproduced (provisional)*; G1-S is *reproduced* (3 × profile-path `AuthenticateSASL` timeout 500s at 256/128 under headroom); G2 approved. | baseline image, Phase 0 | Met on the combined basis (P-G1). **Open:** the catalog-workload 500 on the CI runner stays inferred until CI, and the raw captures are not yet in Jira. |
+| AC 2 — profiles served reliably during the catalog burst; no auth blocking async DB work | 4.1-H catalog 8,700/8,700 validated 200s on both profiles; 208 stack captures with no blocked authentication frame; 3.1-a/s and 3.4-a fixtures; shards 1 and 2 green ×2 each | `c799f084d` image, `45754357d` / `a5ae72e30` E2E; fixtures on `1bc6f6fa3` | Catalog shape met locally. **Default 256/128 stress gate FAILED** (53300 only; for the final decision). **Open:** CI envelope after push. |
+| AC 3 — in-memory snapshot, async refresh and coalescing; rotation, unknown key, revocation and failure semantics preserved; no invalid tokens, no indefinite trust of retired keys | Phase 1–3 fixtures (1.5-a…r, 1.6-a…n, 2.2, 2.3, 3.1-b…s, 3.2, 3.4-b/c) green in the final lanes. Mutations: M1, M3–M15 caught; M2a and M2b unrun. Bounds by fake-time tests and §4.4/§4.5: `T_prop` = 350 s at the defaults; the new-key bound = 50 s **only when a request carrying the new key arrives promptly after the cooldown expires**; failing-store recovery bounds stay **conditional** (§4.4; R+82 s, or R+92 s with a load in flight, and only while the store operation terminates). | `1bc6f6fa3` | Met by tests, except two unrun boundary mutants and the unrun 2.2/3.1 mutants listed above |
+| AC 4 — diagnosable dependency errors; failed retrieval never an empty key set | 4.1-O: stage-classified 503s with `Retry-After`, §4.9 Error lines matching the 503 counts, and JWKS 503 versus 200 with keys. Fixtures 1.5-f/g, 2.2-c/d, 2.3-b/c, 3.1-f/g/i, 3.3-a; the 3.3 F5 mutant (5/30). Docs in `CS-AUTH.md` (4.3). | image `c799f084d`; fixtures on `1bc6f6fa3` | Met (PostgreSQL runtime; SQL Server by integration tests only) |
+| AC 5 — coverage for concurrent cold requests, interruption/recovery, rotation; affected shards rerun | Cold: 1.5-a, 3.1-a, 3.4-a. Interruption/recovery: 1.5-f/l/m, 1.6-b/e, 3.1-f/g/i/n and 4.1-O at runtime. Rotation/retirement: 1.5-h/i/p/q, 1.6-f, 3.1-e/h/q, 3.4-b/c. Certificate race: 1.5-r. Shards 1 and 2 × 2 each. | `1bc6f6fa3` lanes; 4.2 E2E | Met locally |
+| AC 6 — DMS failure handling independent of this fix | `git diff --stat 5e0d010af..1bc6f6fa3` has no `src/dms` path. DMS-1557 has since merged to `main` as `eb0b10597`. | `1bc6f6fa3` | Met |
+
+### Diff hygiene (`git diff 5e0d010af..1bc6f6fa3`)
+
+- **100 files.** None under `src/dms`.
+- **35 CMS production files**, all within §1.5 scope:
+  - `Backend.OpenIddict`: the `SigningKeys/` folder, `OpenIddictTokenManager`,
+    `IdentityOptions`, the repository interfaces, `EnhancedTokenValidator`, the
+    registration extensions;
+  - the PostgreSQL and SQL Server OpenIddict repositories and registrations;
+  - the shared exception in `Backend`;
+  - the frontend `WebApplicationBuilderExtensions` and `JwksEndpointModule`.
+- **Configuration-type changes:**
+  - one test package reference, `Microsoft.Extensions.TimeProvider.Testing`, in the
+    frontend unit csproj;
+  - its 3 lock-file entries (frontend unit, PostgreSQL and SQL Server integration);
+  - the E0 probe csproj and the 7 new compose overlays under `eng/` (investigation
+    tooling, §1.5).
+- **No changes** to: appsettings, `.env*`, the base compose files, Dockerfiles,
+  `.github/`, `Directory.*`, build scripts, or `*.DotSettings`.
+- **No mutation remnants:**
+  - the working tree was clean after every revert and is clean now;
+  - a case-insensitive `mutant` scan of every `*.cs` under `src/config/backend` and
+    `src/config/frontend` (bin and obj excluded) finds nothing;
+  - the production diff has no added `TODO`, `FIXME`, `HACK`, `if (true)`, `if (false)`
+    or `#if false`;
+  - the final unit and integration lanes ran on a `--no-incremental` rebuild of the
+    restored tree.
+
+### Open items for the final decision
+
+1. **Default 256/128 stress gate: FAILED.**
+   - 591 non-200s, all `53300`, on both profiles; preserved, not re-run.
+   - P-7.4 makes this a gate failure, never a pass.
+   - The 4.1 disposition: a separate connection-capacity limitation; no pool,
+     `max_connections` or concurrency change.
+   - Whether the ticket can close with it is the reviewer's decision.
+2. **Mutations unrun** (§7.3 above):
+   - M2a: denied this step;
+   - M2b: not attempted, same kind of edit;
+   - the three 2.2 unknown-kid mutants, the 3.1 challenge-classification mutant, and the
+     3.1 wiring revert.
+3. **CI has not run on the implementation.**
+   - Draft PR #1317 is at `6e3aec32c` (1.5 corrections), which predates every Phase 2–4
+     commit.
+   - 17 local commits are unpushed. Draft PRs skip CI.
+   - The real CI envelope for AC 2, and the catalog-workload 500 on the runner (AC 1), are
+     unconfirmed.
+4. **The branch is behind `main` and conflicts with it.**
+   - `origin/main` (`5c964676f`) is 14 commits past the base `5e0d010af`.
+   - `git merge-tree` reports conflicts in:
+     - `docs/CONFIGURATION.md`;
+     - `Backend.OpenIddict/Extensions/OpenIddictServiceCollectionExtensions.cs`;
+     - `OpenIddictServiceCollectionExtensionsTests.cs`;
+     - `OpenIddictTokenManagerTests.cs`.
+   - `main` also changed CMS production code this branch touches or depends on: DMS-1553
+     plugin loading in `Program.cs` and `WebApplicationBuilderExtensions`, DMS-1488
+     `jwks_uri` in `OpenIdConfigurationModule`, DMS-1552 `IClientSecretHasher` relocation,
+     and `IdentityOptions`.
+   - A rebase changes the tested tree, so every result here would need re-validation
+     after it: the §7.1 lanes, and at least the E2E lanes. Whether 4.1 load evidence must
+     be repeated on the rebased image is the reviewer's call.
+   - Not done in 4.4.
+5. **Evidence archival outstanding.**
+   - Jira DMS-1556 had no attachments (checked 2026-10-01).
+   - The raw captures (Phase 0, 4.1, 4.2) remain only in the gitignored
+     `eng/performance/dms-1556/artifacts/`. Q8 and P-G1 still require the upload.
+6. **Known limits carried forward:**
+   - Npgsql's command timeout under `docker pause` stays unexplained (accepted, no
+     experiment);
+   - there is no SQL Server runtime evidence (integration tests only);
+   - P-runner-approx is an approximation, not the runner;
+   - `KeyFormatCacheSize` is kept as an ignored setting (removal is a separate cleanup).
+7. **Local build exception:** the DMS Release build fails on NU1008 in the plugin fixture
+   (worktree placement). Recorded at 4.2; it does not affect CMS lanes or the E2E
+   assemblies.
+
+### AC status after 4.4
+
+| AC | Status | What remains |
+| --- | --- | --- |
+| AC 1 | Met on the combined basis (P-G1) | Jira upload; CI for the catalog-on-runner 500 |
+| AC 2 | Catalog gate met locally; **default stress gate failed** | Final decision on the stress gate; CI after push (after rebase) |
+| AC 3 | Met by tests; M2a/M2b and five other boundary probes unrun | User-run or permitted mutation probes, or an explicit waiver |
+| AC 4 | Met (PostgreSQL runtime, both engines by integration) | — |
+| AC 5 | Met locally | Re-validation after the rebase |
+| AC 6 | Met | — |
