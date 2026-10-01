@@ -113,6 +113,10 @@ foreach ($key in $isolation.Keys) {
 }
 
 function Remove-IsolatedStack {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal teardown of the non-interactive E2E harness; it removes only the isolated stack it started.')]
+    [CmdletBinding()]
+    param()
+
     Push-Location $composeDirectory
     try {
         ./start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile

@@ -108,7 +108,7 @@ $composeFiles = @(
 )
 
 function Invoke-Compose {
-    param([Parameter(ValueFromRemainingArguments)] [string[]] $Arguments)
+    param([Parameter(Mandatory)] [string[]] $Arguments)
 
     & docker compose @composeFiles --env-file $environmentFile -p $project @Arguments
     if ($LASTEXITCODE -ne 0) {
@@ -157,6 +157,8 @@ function Wait-PostgresqlReady {
     through untouched.
 #>
 function New-HarnessEnvironmentFile {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal helper of the non-interactive E2E harness; it writes only the harness-owned environment file.')]
+    [CmdletBinding()]
     param([hashtable] $Overrides)
 
     $lines = [System.Collections.Generic.List[string]]::new(
@@ -190,6 +192,10 @@ function New-HarnessEnvironmentFile {
 }
 
 function Remove-Deployment {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal teardown of the non-interactive E2E harness; it removes only the harness-owned deployment and work directory.')]
+    [CmdletBinding()]
+    param()
+
     if (Test-Path -LiteralPath $environmentFile) {
         Push-Location $composeDirectory
         try {
@@ -273,10 +279,10 @@ try {
 
     if (-not $SkipImageBuild) {
         Write-Output "Building the Configuration Service and DMS images under the harness's own tags..."
-        Invoke-Compose build config dms
+        Invoke-Compose -Arguments @("build", "config", "dms")
     }
 
-    Invoke-Compose up --detach db
+    Invoke-Compose -Arguments @("up", "--detach", "db")
     Wait-PostgresqlReady
 
     $identityDbParams = @{
@@ -288,7 +294,7 @@ try {
     }
     ./setup-openiddict.ps1 -InitDb @identityDbParams
 
-    Invoke-Compose up --detach config
+    Invoke-Compose -Arguments @("up", "--detach", "config")
     Wait-HttpHealthy -Url "http://localhost:$configPort/health" -Name "Configuration Service"
 
     $clientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues (ReadValuesFromEnvFile $environmentFile)
@@ -320,7 +326,7 @@ try {
             connectionString = "host=dms-postgresql;port=5432;username=postgres;password=`${secret:$datastoreSecretName};database=$($baseValues["E2E_DATABASE_NAME"])"
         } | ConvertTo-Json)
 
-    Invoke-Compose up --detach dms
+    Invoke-Compose -Arguments @("up", "--detach", "dms")
     Wait-HttpHealthy -Url "http://localhost:$dmsPort/health" -Name "DMS"
 
     $env:SECRETS_E2E_CMS_URL = "http://localhost:$configPort"
