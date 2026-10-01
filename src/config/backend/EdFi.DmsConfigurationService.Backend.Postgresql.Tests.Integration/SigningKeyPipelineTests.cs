@@ -241,6 +241,138 @@ public class SigningKeyPipelineTests : DatabaseTest
         }
     }
 
+    /// <summary>The number of backends in <c>pg_stat_activity</c> with <paramref name="applicationName"/>.</summary>
+    protected async Task<int> CountBackendsAsync(string applicationName) =>
+        await Connection!.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = @Name",
+            new { Name = applicationName }
+        );
+
+    /// <summary>
+    /// Starts <paramref name="sampler"/>, runs <paramref name="body"/>, and stops the sampler in <c>finally</c> whatever
+    /// the body does, so it never outlives the call holding its connection. A failure of the body propagates unchanged;
+    /// a failure to stop the sampler is then only reported, never thrown in its place. Returns the peak sampled.
+    /// </summary>
+    protected static async Task<int> SampleWhileAsync(HostBackendSampler sampler, Func<Task> body)
+    {
+        await sampler.StartAsync();
+        bool bodySucceeded = false;
+        int peak = 0;
+        try
+        {
+            await body();
+            bodySucceeded = true;
+        }
+        finally
+        {
+            try
+            {
+                peak = await sampler.StopAsync();
+            }
+            catch (Exception stopFailure) when (!bodySucceeded)
+            {
+                await TestContext.Out.WriteLineAsync(
+                    $"Stopping the backend sampler also failed: {stopFailure}"
+                );
+            }
+        }
+
+        return peak;
+    }
+
+    /// <summary>
+    /// Samples how many of the host's backends <c>pg_stat_activity</c> shows, on its own unpooled connection named
+    /// <see cref="ApplicationName"/>, so closing it ends its backend. Opening, every query and every pause take the stop
+    /// token, and both the open and the stop are bounded.
+    /// </summary>
+    protected sealed class HostBackendSampler
+    {
+        public const string ApplicationName = "dms1556-pipeline-sampler";
+
+        private static readonly TimeSpan _bound = TimeSpan.FromSeconds(10);
+        private readonly CancellationTokenSource _stop = new();
+        private Task<int>? _sampling;
+
+        /// <summary>Completes, with the peak, once sampling has stopped and the connection is closed.</summary>
+        public Task<int> Completion =>
+            _sampling ?? throw new InvalidOperationException("The sampler has not been started.");
+
+        /// <summary>Opens the connection, bounded, and starts sampling on it.</summary>
+        public async Task StartAsync()
+        {
+            string connectionString = new NpgsqlConnectionStringBuilder(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            )
+            {
+                ApplicationName = ApplicationName,
+                Pooling = false,
+            }.ToString();
+
+            NpgsqlConnection connection = new(connectionString);
+            try
+            {
+                using CancellationTokenSource openBound = CancellationTokenSource.CreateLinkedTokenSource(
+                    _stop.Token
+                );
+                openBound.CancelAfter(_bound);
+                await connection.OpenAsync(openBound.Token);
+            }
+            catch
+            {
+                await connection.DisposeAsync();
+                _stop.Dispose();
+                throw;
+            }
+
+            _sampling = SampleAsync(connection, _stop.Token);
+        }
+
+        /// <summary>Stops sampling and waits, bounded, until the connection is closed; returns the peak.</summary>
+        /// <exception cref="TimeoutException">The sampler did not finish within the bound.</exception>
+        public async Task<int> StopAsync()
+        {
+            try
+            {
+                await _stop.CancelAsync();
+                return await Completion.WaitAsync(_bound);
+            }
+            finally
+            {
+                // Cancellation has already been requested, so a sampler still running past the bound sees it.
+                _stop.Dispose();
+            }
+        }
+
+        private static async Task<int> SampleAsync(NpgsqlConnection connection, CancellationToken stop)
+        {
+            int peak = 0;
+            await using (connection)
+            {
+                try
+                {
+                    while (true)
+                    {
+                        int current = await connection.ExecuteScalarAsync<int>(
+                            new CommandDefinition(
+                                "SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = @Name",
+                                new { Name = HostApplicationName },
+                                cancellationToken: stop
+                            )
+                        );
+                        peak = Math.Max(peak, current);
+                        await Task.Delay(20, stop);
+                    }
+                }
+                catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                {
+                    // Stopped, between queries or during one.
+                }
+            }
+
+            return peak;
+        }
+    }
+
     /// <summary>Counts the requests for a usable snapshot, so a test can see how many callers wait on a load.</summary>
     protected sealed class CountingSnapshotProvider(ISigningKeySnapshotProvider inner)
         : ISigningKeySnapshotProvider
@@ -334,49 +466,22 @@ public class SigningKeyPipelineTests : DatabaseTest
             );
             _completedBeforeTheLoad = requests.Count(request => request.IsCompleted);
 
-            using CancellationTokenSource stopSampling = new();
-            Task<int> sampling = SamplePeakHostBackendsAsync(stopSampling.Token);
-
-            await keyTableLock.RollbackAsync();
-            _responses = await Task.WhenAll(requests).WaitAsync(TimeSpan.FromSeconds(60));
-            _bodies = await Task.WhenAll(
-                _responses.Select(async response =>
-                    JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject()
-                )
+            _peakHostBackends = await SampleWhileAsync(
+                new HostBackendSampler(),
+                async () =>
+                {
+                    await keyTableLock.RollbackAsync();
+                    _responses = await Task.WhenAll(requests).WaitAsync(TimeSpan.FromSeconds(60));
+                    _bodies = await Task.WhenAll(
+                        _responses.Select(async response =>
+                            JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject()
+                        )
+                    );
+                }
             );
-
-            await stopSampling.CancelAsync();
-            _peakHostBackends = await sampling;
             await TestContext.Out.WriteLineAsync(
                 $"3.4-a observational: peak {HostApplicationName} backends during the release = {_peakHostBackends}"
             );
-        }
-
-        /// <summary>The largest number of the host's backends seen in <c>pg_stat_activity</c> until canceled.</summary>
-        private async Task<int> SamplePeakHostBackendsAsync(CancellationToken cancellationToken)
-        {
-            await using NpgsqlConnection observer = await DataSource!.OpenConnectionAsync(
-                CancellationToken.None
-            );
-            int peak = 0;
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                int current = await observer.ExecuteScalarAsync<int>(
-                    "SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = @Name",
-                    new { Name = HostApplicationName }
-                );
-                peak = Math.Max(peak, current);
-                try
-                {
-                    await Task.Delay(20, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
-
-            return peak;
         }
 
         [TearDown]
@@ -409,6 +514,70 @@ public class SigningKeyPipelineTests : DatabaseTest
             _provider.Current!.Version.Should().Be(1);
             _provider.Status.ConsecutiveFailures.Should().Be(0);
         }
+    }
+
+    // The 3.4-a sampler's lifecycle: the work it samples fails right after sampling starts. The original failure is the
+    // one that propagates, and the sampler has still stopped and closed its connection, so it cannot hold one through
+    // the teardown.
+    [TestFixture]
+    public class Given_a_failure_immediately_after_the_backend_sampler_starts : SigningKeyPipelineTests
+    {
+        private InvalidOperationException _original = null!;
+        private HostBackendSampler _sampler = null!;
+        private int _samplerBackendsAtTheFailure;
+        private Exception? _thrown;
+        private int _samplerBackendsAfterwards;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _original = new InvalidOperationException("The sampled work failed.");
+            _sampler = new HostBackendSampler();
+
+            try
+            {
+                await SampleWhileAsync(
+                    _sampler,
+                    async () =>
+                    {
+                        _samplerBackendsAtTheFailure = await CountBackendsAsync(
+                            HostBackendSampler.ApplicationName
+                        );
+                        throw _original;
+                    }
+                );
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+
+            // The server ends the backend shortly after the client closes it.
+            DateTime giveUp = DateTime.UtcNow.AddSeconds(10);
+            do
+            {
+                _samplerBackendsAfterwards = await CountBackendsAsync(HostBackendSampler.ApplicationName);
+                if (_samplerBackendsAfterwards == 0)
+                {
+                    break;
+                }
+
+                await Task.Delay(20);
+            } while (DateTime.UtcNow < giveUp);
+        }
+
+        [Test]
+        public void It_propagates_the_original_failure() => _thrown.Should().BeSameAs(_original);
+
+        [Test]
+        public void It_held_its_connection_when_the_failure_happened() =>
+            _samplerBackendsAtTheFailure.Should().Be(1);
+
+        [Test]
+        public void It_finished_sampling() => _sampler.Completion.IsCompletedSuccessfully.Should().BeTrue();
+
+        [Test]
+        public void It_released_its_connection() => _samplerBackendsAfterwards.Should().Be(0);
     }
 
     // 3.4-b [F]: a newer active key inserted while the instance is warm. The next mint signs with it, and the token is
