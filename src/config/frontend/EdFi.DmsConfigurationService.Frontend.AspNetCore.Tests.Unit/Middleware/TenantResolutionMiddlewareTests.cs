@@ -624,7 +624,12 @@ internal class TenantResolutionMiddlewareTests
             _httpContext = new DefaultHttpContext();
             _httpContext.Request.Path = path;
             _httpContext.Response.Body = new MemoryStream();
-            // No Tenant header
+            // An unknown Tenant header: a path that lost its exemption, or one checked after header
+            // validation, would look the tenant up and answer 400. Without a header both assertions
+            // would pass for any path. The no-header case is covered by the pipeline fixtures.
+            _httpContext.Request.Headers["Tenant"] = "unknown-tenant";
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored))
+                .Returns(new TenantGetByNameResult.FailureNotFound());
 
             await middleware.Invoke(
                 _httpContext,
@@ -645,12 +650,6 @@ internal class TenantResolutionMiddlewareTests
         public void It_does_not_look_up_tenant()
         {
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_leaves_tenant_context_not_multitenant()
-        {
-            _tenantContextProvider.Context.Should().BeOfType<TenantContext.NotMultitenant>();
         }
     }
 
