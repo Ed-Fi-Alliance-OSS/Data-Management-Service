@@ -1805,6 +1805,52 @@ Describe 'CDC runbook failure diagnostics' {
         @(Get-ChildItem $script:published -Name) | Should -Be @('cdc-runbook-live-lifecycle.json')
         (Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw) | Should -Not -Match 'opaque|private error|StandardOutput'
     }
+    It 'exports the actual E2E child failure location without its private error message' {
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        $setup = Join-Path $repo 'src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1'
+        $child = Join-Path $script:private 'probe.ps1'
+        # Only Docker availability is stubbed. Execute the real setup script through
+        # its environment-file validation, before any deployment can be created.
+        @"
+function docker { `$global:LASTEXITCODE = 0 }
+& '$($setup.Replace("'", "''"))' -EnvironmentFile '$((Join-Path $script:private 'private-input-sentinel.env').Replace("'", "''"))'
+"@ | Set-Content -LiteralPath $child
+        $script:probePath = [IO.Path]::GetRelativePath($repo, $child)
+        Mock Get-CdcRunbookInvocation { @{ Path = $script:probePath; Parameters = @{} } }
+        $result = Invoke-CdcRunbookLiveWrapper -Id cdc-pg-e2e-setup -FixtureRoot $script:private -TimeoutSeconds 30
+        $result.ExitCode | Should -Be 1
+        $result.FailureKind | Should -Be 'None'
+        ((Get-Content "$($result.LogPrefix).stderr" -Raw) -replace '\s', '') | Should -Match 'private-input-sentinel'
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $cases = $json | ConvertFrom-Json -NoEnumerate
+        $failure = $cases[0].Operations[0].ChildFailures[0]
+        $failure.Category | Should -Be 'ChildProcessFailure'
+        $failure.Phase | Should -Be 'Setup'
+        $failure.Source | Should -Be 'eng/docker-compose/env-utility.psm1'
+        (Get-Content (Join-Path $repo $failure.Source))[$failure.Line - 1] | Should -Match 'throw.*Environment file not found'
+        $failure.ErrorCategory | Should -Be 'OperationStopped'
+        $json | Should -Not -Match 'private-input-sentinel|ScriptStackTrace|/home/|/tmp/'
+        @(Get-ChildItem $script:published -Name) | Should -Be @('cdc-runbook-failures.json', 'cdc-runbook-live-lifecycle.json')
+    }
+    It 'preserves a child exit code when its diagnostic file is <Diagnostic>' -ForEach @(
+        @{ Diagnostic = 'absent' }, @{ Diagnostic = 'malformed' }
+    ) {
+        Mock Invoke-NativeCommandWithInput {
+            if ($Diagnostic -eq 'malformed') { Set-Content -LiteralPath $env:CDC_RUNBOOK_CHILD_FAILURE_PATH 'private-malformed-json' }
+            [pscustomobject]@{ ExitCode = 17; FailureKind = 'None'; StandardOutput = ''; StandardError = 'private' }
+        }
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        $result = Invoke-CdcRunbookLiveWrapper -Id cdc-pg-e2e-setup -FixtureRoot $script:private
+        $result.ExitCode | Should -Be 17
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PATH | Should -Be $savedPath
+        $script:runbookProgress.CollectionFailed | Should -BeTrue
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        $report.Cases[0].Operations[0].ExitCode | Should -Be 17
+        $report.Failures[0].Category | Should -Be 'CollectionFailed'
+        ($report | ConvertTo-Json -Depth 15) | Should -Not -Match 'private'
+    }
     It 'keeps process failure when progress collection also fails' {
         Mock Invoke-NativeCommandWithInput {
             [pscustomobject]@{ ExitCode = 17; FailureKind = 'StartFailure'; StandardOutput = ''; StandardError = 'private' }
@@ -1849,12 +1895,17 @@ Describe 'CDC runbook failure diagnostics' {
         @{
             Cases = @(@{ TestId = 'CDC-DOC cdc-managed-start'; SnippetId = 'cdc-managed-start'; Outcome = 'NotPassed'
                 Failures = @(@{ Phase = 'private'; Category = 'opaque'; Source = '/home/private.ps1'; Line = 'secret'; Message = 'raw' })
-                Operations = @(@{ Operation = 'cdc-secret-credential'; FailureKind = 'password'; ExitCode = 'secret'; ElapsedMilliseconds = -1 }) })
+                Operations = @(@{ Operation = 'cdc-secret-credential'; FailureKind = 'password'; ExitCode = 'secret'; ElapsedMilliseconds = -1
+                    ChildFailures = @(1..20 | ForEach-Object { @{ Category = 'ChildProcessFailure'; ErrorCategory = 'secret'; Source = '/tmp/private.ps1'; Message = 'raw';
+                        ChildFailures = @(@{ Category = 'ChildProcessFailure'; Message = 'private' }) } }) }) })
         } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:private 'cdc-runbook-live-lifecycle.json')
         Export-CdcQualificationEvidence $script:private $script:published
         $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
         $json | Should -Not -Match 'private|opaque|secret|raw|password|ElapsedMilliseconds'
-        ($json | ConvertFrom-Json -NoEnumerate)[0].Outcome | Should -Be 'NotPassed'
+        $case = ($json | ConvertFrom-Json -NoEnumerate)[0]
+        $case.Outcome | Should -Be 'NotPassed'
+        $case.Operations[0].ChildFailures.Count | Should -Be 8
+        $case.Operations[0].ChildFailures[0].PSObject.Properties.Name | Should -Be @('Category')
     }
 }
 

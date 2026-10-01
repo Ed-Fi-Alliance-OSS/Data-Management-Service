@@ -21,6 +21,9 @@ AfterAll {
 
 Describe 'Shared CDC E2E setup handoff' {
     BeforeEach {
+        $script:savedDiagnosticDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $TestDrive 'evidence'
+
         $script:arguments = @{
             EnvironmentFile = (Join-Path $TestDrive '.env.e2e')
             OriginalEnvironmentFile = (Join-Path $TestDrive '.env.original')
@@ -42,6 +45,36 @@ Describe 'Shared CDC E2E setup handoff' {
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             & $BeforeCdcAdmission '/effective/.env'
         }
+    }
+
+    AfterEach { $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:savedDiagnosticDirectory }
+
+    It 'writes setup failure diagnostics outside the checkout' {
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw 'private-setup-failure' }
+        { Invoke-E2ECdcSetup @script:arguments } | Should -Throw '*CDC E2E setup failed*'
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $LiteralPath.StartsWith($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY + [IO.Path]::DirectorySeparatorChar) -and
+            $Value -notmatch 'private-setup-failure'
+        }
+    }
+
+    It 'rejects a checkout diagnostic destination without replacing the setup failure' {
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $script:composeRoot 'must-not-be-created'
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw [OperationCanceledException]::new('private-cancellation') }
+        $failure = $null
+        try { Invoke-E2ECdcSetup @script:arguments } catch { $failure = $_ }
+        $failure.Exception | Should -BeOfType ([OperationCanceledException])
+        Test-Path -LiteralPath $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY | Should -BeFalse
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 0 -Exactly
+    }
+
+    It 'preserves cancellation when writing failure diagnostics also fails' {
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw [OperationCanceledException]::new('private-cancellation') }
+        Mock Set-Content -ModuleName e2e-cdc { throw 'private-diagnostic-error' }
+        $failure = $null
+        try { Invoke-E2ECdcSetup @script:arguments } catch { $failure = $_ }
+        $failure.Exception | Should -BeOfType ([OperationCanceledException])
+        $failure.Exception.Message | Should -Not -Match 'private-'
     }
 
     It 'CDC-DOC <Id>' -ForEach @(

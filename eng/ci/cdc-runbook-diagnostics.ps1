@@ -6,12 +6,12 @@
 # Only fixed metadata crosses the private Pester/process boundary. Never serialize
 # ErrorRecord messages, assertion values, command text, arguments or host paths.
 function ConvertTo-CdcRunbookDiagnostic {
-    param([Collections.IDictionary] $Value)
+    param([Collections.IDictionary] $Value, [switch] $Child)
     $safe = [ordered]@{}
     foreach ($field in @('Phase', 'Category', 'Status', 'FailureKind')) {
         $allowed = switch ($field) {
             Phase { @('Setup', 'Test', 'Teardown', 'Export') }
-            Category { @('AssertionFailed', 'PesterFailure', 'BlockFailed', 'ContainerFailed', 'ExportFailed', 'CollectionFailed') }
+            Category { @('AssertionFailed', 'PesterFailure', 'BlockFailed', 'ContainerFailed', 'ExportFailed', 'CollectionFailed', 'ChildProcessFailure') }
             Status { @('Running', 'Completed') }
             FailureKind { @('None', 'StartFailure', 'StdinFailure', 'Timeout', 'TerminationFailure', 'OutputFailure', 'WaitFailure') }
         }
@@ -30,8 +30,20 @@ function ConvertTo-CdcRunbookDiagnostic {
     if ($Value['TimedOut'] -is [bool]) { $safe.TimedOut = $Value.TimedOut }
     $sources = @('eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1',
         'eng/docker-compose/tests/cdc-runbook-snippets.ps1', 'eng/docker-compose/tests/cdc-runbook-lifecycle.ps1',
-        'eng/ci/tests/CdcQualification.Tests.ps1')
+        'eng/ci/tests/CdcQualification.Tests.ps1',
+        'src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1') +
+        @(Get-ChildItem (Join-Path $PSScriptRoot '../docker-compose') -File | Where-Object {
+            $_.Extension -in @('.ps1', '.psm1')
+        } | ForEach-Object { 'eng/docker-compose/' + $_.Name })
     if ($Value['Source'] -is [string] -and $Value['Source'] -cin $sources) { $safe.Source = $Value.Source }
+    if ($Value['ErrorCategory'] -is [string] -and $Value['ErrorCategory'] -cin [Enum]::GetNames([Management.Automation.ErrorCategory])) {
+        $safe.ErrorCategory = $Value.ErrorCategory
+    }
+    if (-not $Child -and $Value.Contains('ChildFailures')) {
+        $safe.ChildFailures = @($Value.ChildFailures | Select-Object -First 8 | Where-Object {
+            $_ -is [Collections.IDictionary]
+        } | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
+    }
     return $safe
 }
 
@@ -39,11 +51,12 @@ function Get-CdcRunbookErrorDiagnostic {
     param($Record, [string] $Category = 'PesterFailure', [string] $Phase = 'Test')
     $value = [ordered]@{ Phase = $Phase; Category = $Category }
     if ($Record.FullyQualifiedErrorId -eq 'PesterAssertionFailed') { $value.Category = 'AssertionFailed' }
+    if ($null -ne $Record.CategoryInfo) { $value.ErrorCategory = [string]$Record.CategoryInfo.Category }
     # Stack frames locate Should failures at the call site, not inside Pester.
     $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).Replace('\', '/')
     $trace = [string]$Record.ScriptStackTrace
     foreach ($frame in $trace.Replace('\', '/') -split '\r?\n') {
-        if ($frame -match ([regex]::Escape($repo) + '/(?<source>eng/[^:]+\.ps1): line (?<line>\d+)\s*$')) {
+        if ($frame -match ([regex]::Escape($repo) + '/(?<source>(?:eng|src)/[^:]+\.psm?1): line (?<line>\d+)\s*$')) {
             $value.Source = $Matches.source; $value.Line = [int]$Matches.line
             $safe = ConvertTo-CdcRunbookDiagnostic $value
             if ($safe.Contains('Source')) {
@@ -68,4 +81,23 @@ function Get-CdcRunbookBlockFailure {
         if ($null -ne $errorRecord) { Get-CdcRunbookErrorDiagnostic $errorRecord -Category BlockFailed -Phase Setup }
     }
     foreach ($child in @($Block.Blocks)) { Get-CdcRunbookBlockFailure $child }
+}
+
+# Opt-in child-side collection. The caller rethrows its original error unchanged.
+# Only metadata is written; diagnostic errors never replace the setup failure.
+function Write-CdcRunbookChildFailure {
+    param([object[]] $Records)
+    if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
+    try {
+        $path = [IO.Path]::GetFullPath($env:CDC_RUNBOOK_CHILD_FAILURE_PATH)
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+        if ($path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { return }
+        $failures = @($Records | Select-Object -First 8 | ForEach-Object {
+            Get-CdcRunbookErrorDiagnostic $_ -Category ChildProcessFailure -Phase Setup
+        })
+        ConvertTo-Json -InputObject $failures -Depth 5 | Set-Content -LiteralPath $path -ErrorAction Stop
+    } catch {
+        # The existing parent process outcome remains authoritative.
+        return
+    }
 }

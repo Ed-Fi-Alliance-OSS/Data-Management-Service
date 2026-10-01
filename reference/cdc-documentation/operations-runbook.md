@@ -768,11 +768,11 @@ This is the DMS E2E suite, not Instance Management E2E.
 | --- | --- |
 | Target/generation | One fresh CMS-selected target for `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Separate `E2E_SNAPSHOT_DATABASE_NAME` is not the CDC source. |
 | Authority/offline window | Same exclusive deployment and initial writer/seed exclusion as the selected provider setup; test processes start only after controller admission and DMS startup. |
-| Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; `.cdc-diagnostics` on failure. |
+| Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; temporary CDC diagnostics on failure. |
 | Invocation | PostgreSQL: `cdc-pg-e2e-setup` then optional `cdc-pg-e2e-test`, **or** `cdc-pg-e2e-build` on a separate fresh workspace. SQL Server: `cdc-sqlserver-e2e-setup` or `cdc-sqlserver-e2e-build` with the SQL Server variant below. |
 | JSON/exit status | Wrappers print progress, not a CLI JSON envelope. Internal admission requires the same matching `enable` publication result as local setup. On failure, the sanitized `e2e-setup` artifact includes `operation`, `succeeded`, `cancelled`, `cleanup`, `provider`, `failureCodes`. |
 | Postcondition | Managed primary receipt retained, separate snapshot prepared with matching schema, CDC admitted before DMS/tests; selected setup-smoke tests pass without source-reset hooks. This does not qualify message scenarios. |
-| Rejection/timeout action | Do not launch tests. Retain `.cdc-diagnostics` and original settings/state. `cleanup: "Stopped"` means governed stop completed; `"RetainedForReconciliation"` means stop failed and infrastructure remains for reconciliation; `"NotStarted"` is not proof of shutdown. Use status/initial-retry handoffs above and governed teardown below. |
+| Rejection/timeout action | Do not launch tests. Retain the temporary CDC diagnostics path printed by setup and original settings/state. `cleanup: "Stopped"` means governed stop completed; `"RetainedForReconciliation"` means stop failed and infrastructure remains for reconciliation; `"NotStarted"` is not proof of shutdown. Use status/initial-retry handoffs above and governed teardown below. |
 
 ### Prepare the E2E variant
 
@@ -883,7 +883,7 @@ checks HTTP/database health without feature reset hooks. Do not broaden this exa
 to reset-based API tests and call it CDC message qualification. `E2ETest -LoadSeedData`
 is rejected. On success or failure, use the retained settings/state for the observation
 commands above. Retain sanitized failure artifacts under
-`eng/docker-compose/.cdc-diagnostics`; an attempted stop is not a verified stop.
+the printed system-temporary `dms-cdc-diagnostics-*` directory (the runner evidence directory during qualification); an attempted stop is not a verified stop.
 
 Finish with [governed stack/E2E teardown](#stack-teardown).
 Use the setup wrapper's printed teardown command with its exact resolved environment
@@ -982,7 +982,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CDC E2E setup/test failed; preserve the retain
 <!-- /cdc-snippet: cdc-sqlserver-e2e-build -->
 
 Admission/output/failure rules are the common E2E record above: preserve
-`.cdc-diagnostics`, original state and retained settings; failed containment is not
+temporary CDC diagnostics, original state and retained settings; failed containment is not
 successful cleanup. Use SQL Server status/watch with emitted paths, and the wrapper's
 printed `mssql` teardown command for [governed teardown](#stack-teardown). Ordinary
 [managed stop/start](#managed-lifecycle) preserves the admitted source. DMS-1325
