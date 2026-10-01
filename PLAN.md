@@ -144,6 +144,9 @@ Implemented changes:
 
 - Diagnostic reports retain operation, phase, source location, process outcome and
   timing, including setup/block failures and separate cleanup/export failures.
+  E2E setup child failures retain bounded error categories and repository source
+  locations without changing the original PowerShell invocation or exit outcome.
+  E2E failure JSON also uses temporary storage outside the checkout.
   Local and CI output paths are outside the checkout, with checkout-local results
   and temporary roots rejected.
 - SQL startup reports retain bounded loader/exit status codes and count each
