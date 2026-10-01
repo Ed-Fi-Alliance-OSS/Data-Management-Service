@@ -9,55 +9,99 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Keycloak;
 
 // DMS-1327 P1.1: characterization of the pinned Keycloak image's token revocation endpoint.
 //
-// These fixtures record what Keycloak actually answers (status, `error`, `error_description`) and,
-// through a dedicated confidential observer client, the token's introspection state before and
-// after each call. Each row asserts the exact values §2.1 of the spec predicts from the Keycloak
-// source; a deviation fails the fixture so it is recorded in §9.1 and reviewed before any
-// normalization (D-10, D-11) is coded. Fields §2.1 leaves open are reported as skipped tests with
-// the observed value, never as passes. Nothing here touches the Configuration Service.
+// These fixtures record what Keycloak actually answers (status, body shape, `error`,
+// `error_description`) and the token's introspection state before and after each call: access
+// tokens through a dedicated confidential observer client, refresh tokens through their owning
+// client (D-16 as corrected after P1.1). Each row asserts exact values; a deviation fails the
+// fixture so it is recorded in §9.1 and reviewed before any normalization (D-10, D-11) is coded.
+// The only skipped checks are ones that do not exist for a row (for example the before-state of a
+// request that carried no live token). Nothing here touches the Configuration Service.
 
 /// <summary>Creates the run's realm resources once and removes them (and writes the evidence table) at the end.</summary>
 [SetUpFixture]
 public class KeycloakCharacterizationRealmSetup
 {
     private static CharacterizationRealm? _realm;
+    private static EvidenceLog? _evidence;
 
     public static CharacterizationRealm Realm =>
         _realm
         ?? throw new InvalidOperationException("The characterization realm resources were not created.");
+
+    public static EvidenceLog Evidence =>
+        _evidence
+        ?? throw new InvalidOperationException("The characterization evidence log was not created.");
 
     [OneTimeSetUp]
     public async Task CreateRealmResources()
     {
         if (KeycloakCharacterizationEnvironment.IsKeycloakProvider)
         {
-            _realm = await CharacterizationRealm.CreateAsync();
+            SensitiveValueRegistry sensitive = new();
+            _evidence = new EvidenceLog(sensitive);
+            _realm = await CharacterizationRealm.CreateAsync(sensitive);
         }
     }
 
     [OneTimeTearDown]
-    public async Task RemoveRealmResourcesAndWriteEvidence()
+    public async Task WriteEvidenceAndRemoveRealmResources()
     {
         if (_realm is null)
         {
             return;
         }
 
-        string evidencePath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            $"keycloak-characterization-{_realm.ServerVersion}.md"
-        );
-        await File.WriteAllTextAsync(evidencePath, EvidenceLog.RenderMarkdown(_realm));
-        await TestContext.Progress.WriteLineAsync($"[evidence] table written to {evidencePath}");
-
-        await _realm.DisposeAsync();
+        CharacterizationRealm realm = _realm;
         _realm = null;
+        Exception? evidenceFailure = null;
+        try
+        {
+            string evidencePath = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory,
+                $"keycloak-characterization-{realm.ServerVersion}.md"
+            );
+            await File.WriteAllTextAsync(
+                evidencePath,
+                Evidence.RenderMarkdown(realm.ServerVersion, realm.SslRequired, realm.RunId)
+            );
+            await TestContext.Progress.WriteLineAsync($"[evidence] table written to {evidencePath}");
+        }
+        catch (Exception exception)
+        {
+            evidenceFailure = exception;
+        }
+        finally
+        {
+            // Realm cleanup must happen even when the evidence file could not be written. If both
+            // fail, both are reported: the cleanup failure names what was left behind and the
+            // evidence failure says why the table is missing.
+            try
+            {
+                await realm.DisposeAsync();
+            }
+            catch (Exception cleanupFailure) when (evidenceFailure is not null)
+            {
+                throw new AggregateException(
+                    "Writing the evidence table and cleaning up the realm resources both failed.",
+                    evidenceFailure,
+                    cleanupFailure
+                );
+            }
+        }
+
+        if (evidenceFailure is not null)
+        {
+            throw new InvalidOperationException(
+                "The evidence table could not be written; the realm resources were cleaned up.",
+                evidenceFailure
+            );
+        }
     }
 }
 
 /// <summary>
 /// One evidence row: the subclass arranges tokens, performs exactly one characterized call and
-/// reports what it observed; the shared tests compare that against the §2.1 prediction.
+/// reports what it observed; the shared tests compare that against the row's prediction.
 /// </summary>
 [Category(KeycloakCharacterizationEnvironment.Category)]
 public abstract class RevocationCharacterizationRow
@@ -80,7 +124,9 @@ public abstract class RevocationCharacterizationRow
     {
         KeycloakCharacterizationEnvironment.RequireKeycloakProvider();
         _observation = await ObserveAsync();
-        EvidenceLog.Record(new EvidenceRow(RowId, Scenario, Prediction, _observation));
+        KeycloakCharacterizationRealmSetup.Evidence.Record(
+            new EvidenceRow(RowId, Scenario, Prediction, _observation)
+        );
     }
 
     protected abstract Task<RowObservation> ObserveAsync();
@@ -90,7 +136,7 @@ public abstract class RevocationCharacterizationRow
     {
         if (Observation.ActiveBefore is null)
         {
-            Assert.Ignore("This row does not start from a live token.");
+            Assert.Ignore("Not applicable: this row does not start from a live token.");
         }
 
         Observation.ActiveBefore.Should().BeTrue("the observer must prove the token live before the call");
@@ -98,76 +144,77 @@ public abstract class RevocationCharacterizationRow
 
     [Test]
     public void It_answers_the_predicted_http_status() =>
-        AssertPredicted(Prediction.Status, Observation.Outcome.Status, "HTTP status");
+        Observation.Outcome.Status.Should().Be(Prediction.Status.Value);
+
+    [Test]
+    public void It_answers_with_the_predicted_body_shape()
+    {
+        HttpOutcome outcome = Observation.Outcome;
+        switch (Prediction.Body.Value)
+        {
+            case BodyShape.Empty:
+                outcome.BodyLength.Should().Be(0, "a successful revocation answers with no body at all");
+                break;
+            case BodyShape.OAuthErrorJson:
+                outcome.Body.Should().Be(BodyKind.JsonObject, "an OAuth error is a JSON object");
+                outcome.ContentType.Should().Be("application/json");
+                break;
+            default:
+                throw new InvalidOperationException("Every row predicts a body shape.");
+        }
+    }
 
     [Test]
     public void It_answers_the_predicted_error() =>
-        AssertPredicted(Prediction.Error, Observation.Outcome.Error, "error");
+        Observation.Outcome.Error.Should().Be(Prediction.Error.Value);
 
     [Test]
     public void It_answers_the_predicted_error_description() =>
-        AssertPredicted(
-            Prediction.ErrorDescription,
-            Observation.Outcome.ErrorDescription,
-            "error_description"
-        );
+        Observation.Outcome.ErrorDescription.Should().Be(Prediction.ErrorDescription.Value);
 
     [Test]
     public void It_leaves_the_token_in_the_predicted_state_afterwards()
     {
-        if (!Prediction.ActiveAfter.IsPredicted)
+        if (!Prediction.ActiveAfter.IsApplicable)
         {
-            Assert.Ignore(
-                $"§2.1 makes no prediction about the token's state afterwards; observed '{Render(Observation.ActiveAfter)}'."
-            );
+            Assert.Ignore("Not applicable: this row has no token whose state could change.");
         }
 
         Observation.ActiveAfter.Should().Be(Prediction.ActiveAfter.Value);
     }
 
-    /// <summary>The observer proves a token live; anything else is a failed prerequisite, not "inactive".</summary>
+    /// <summary>The observer proves an access token live; anything else is a failed prerequisite, not "inactive".</summary>
     protected static async Task<bool> ObserveLiveAsync(string token)
     {
         bool active = await Realm.ObserveAsync(token);
         if (!active)
         {
             throw new InvalidOperationException(
-                "The observer reported a freshly issued token inactive; the characterization prerequisite failed."
+                "The observer reported a freshly issued access token inactive; the characterization prerequisite failed."
             );
         }
 
         return active;
     }
 
-    /// <summary>Same prerequisite rule for a refresh token, observed with the refresh-token hint.</summary>
-    protected static async Task<bool> ObserveLiveRefreshTokenAsync(string refreshToken)
+    /// <summary>Same prerequisite rule for a refresh token, observed by its owning client with the refresh-token hint.</summary>
+    protected static async Task<bool> ObserveLiveRefreshTokenAsync(
+        CharacterizationClient owner,
+        string refreshToken
+    )
     {
-        bool active = await Realm.ObserveRefreshTokenAsync(refreshToken);
+        bool active = await Realm.ObserveRefreshTokenAsOwnerAsync(owner, refreshToken);
         if (!active)
         {
             throw new InvalidOperationException(
-                "The observer reported a freshly issued refresh token inactive; the characterization prerequisite failed."
+                "The owning client reported its freshly issued refresh token inactive; the characterization prerequisite failed."
             );
         }
 
         return active;
     }
 
-    private static void AssertPredicted<T>(Predicted<T> predicted, T? observed, string field)
-    {
-        if (!predicted.IsPredicted)
-        {
-            Assert.Ignore(
-                $"§2.1 makes no prediction for the {field}; observed '{observed?.ToString() ?? "(absent)"}'."
-            );
-        }
-
-        observed
-            .Should()
-            .Be(predicted.Value, $"the {field} is the value §2.1 predicts from the Keycloak source");
-    }
-
-    private static string Render(bool? state) =>
+    protected static string Render(bool? state) =>
         state switch
         {
             true => "active",
@@ -184,8 +231,8 @@ public class Given_the_characterization_realm
     private string? _subjectClientId;
     private bool _observerSeesSubjectToken;
     private bool _observerSeesPublicUserToken;
-    private bool _observerSeesRefreshToken;
-    private bool _observerSeesPublicUserRefreshToken;
+    private bool _refreshSubjectSeesOwnRefreshToken;
+    private int _publicUserRefreshGrantStatus;
 
     [OneTimeSetUp]
     public async Task ArrangeAndAct()
@@ -199,30 +246,24 @@ public class Given_the_characterization_realm
 
         TokenGrant publicUser = await Realm.PublicUserGrantAsync();
         _observerSeesPublicUserToken = await Realm.ObserveAsync(publicUser.AccessToken);
-        _observerSeesPublicUserRefreshToken =
-            publicUser.RefreshToken is not null
-            && await Realm.ObserveRefreshTokenAsync(publicUser.RefreshToken);
+        _publicUserRefreshGrantStatus = publicUser.RefreshToken is null
+            ? 0
+            : (await Realm.PublicUserRefreshGrantProbeAsync(publicUser.RefreshToken)).Status;
 
         TokenGrant refresh = await Realm.ServiceAccountGrantAsync(Realm.RefreshSubject);
-        _observerSeesRefreshToken =
-            refresh.RefreshToken is not null && await Realm.ObserveRefreshTokenAsync(refresh.RefreshToken);
+        _refreshSubjectSeesOwnRefreshToken =
+            refresh.RefreshToken is not null
+            && await Realm.ObserveRefreshTokenAsOwnerAsync(Realm.RefreshSubject, refresh.RefreshToken);
 
-        EvidenceLog.Record(
-            new EvidenceRow(
-                "K-00",
-                "Preconditions (A-02, A-04, A-06)",
-                RowPrediction.Open(Predicted<bool>.Unpredicted),
-                new RowObservation(
-                    new HttpOutcome(0, null, null, 0, false, null, null),
-                    ActiveBefore: null,
-                    ActiveAfter: null,
-                    $"server {Realm.ServerVersion}; sslRequired={Realm.SslRequired ?? "(absent)"}; azp={(string.Equals(_azp, _subjectClientId, StringComparison.Ordinal) ? "client id" : _azp ?? "(absent)")}; "
-                        + $"observer sees subject access token {Render(_observerSeesSubjectToken)}, public user access token {Render(_observerSeesPublicUserToken)}, "
-                        + $"public user refresh token {Render(_observerSeesPublicUserRefreshToken)}, service-account refresh token {Render(_observerSeesRefreshToken)}; "
-                        + $"refresh token issued for client_credentials: {(refresh.RefreshToken is not null ? "yes" : "no")}; "
-                        + "observer is in every subject token's aud via a per-run client scope; refresh tokens observed with token_type_hint=refresh_token"
-                )
-            )
+        KeycloakCharacterizationRealmSetup.Evidence.RecordNote(
+            "K-00",
+            "Preconditions (A-02, A-04, A-06 as corrected)",
+            $"server {Realm.ServerVersion}; sslRequired={Realm.SslRequired ?? "(absent)"}; "
+                + $"azp={(string.Equals(_azp, _subjectClientId, StringComparison.Ordinal) ? "client id" : _azp ?? "(absent)")}; "
+                + $"observer (in aud via the per-run scope) sees subject access token {Render(_observerSeesSubjectToken)} and public user access token {Render(_observerSeesPublicUserToken)}; "
+                + $"refresh subject sees its own refresh token (hint refresh_token) {Render(_refreshSubjectSeesOwnRefreshToken)}; "
+                + $"public user refresh grant probe HTTP {_publicUserRefreshGrantStatus}; "
+                + $"refresh token issued for client_credentials: {(refresh.RefreshToken is not null ? "yes" : "no")}"
         );
     }
 
@@ -253,15 +294,17 @@ public class Given_the_characterization_realm
     public void It_lets_the_observer_see_a_public_client_user_access_token_as_active() =>
         _observerSeesPublicUserToken
             .Should()
-            .BeTrue("a public client's token must be observable by the confidential observer (A-06)");
+            .BeTrue("a public client's access token must be observable by the confidential observer");
 
     [Test]
-    public void It_lets_the_observer_see_a_public_client_user_refresh_token_as_active() =>
-        _observerSeesPublicUserRefreshToken.Should().BeTrue();
+    public void It_lets_the_public_client_refresh_its_fresh_user_session() =>
+        _publicUserRefreshGrantStatus
+            .Should()
+            .Be(200, "a public client cannot introspect, so the refresh grant is its liveness probe");
 
     [Test]
-    public void It_lets_the_observer_see_a_service_account_refresh_token_as_active() =>
-        _observerSeesRefreshToken
+    public void It_lets_the_refresh_subject_see_its_own_fresh_refresh_token_as_active() =>
+        _refreshSubjectSeesOwnRefreshToken
             .Should()
             .BeTrue("the refresh subject enables refresh tokens for client_credentials");
 
@@ -343,7 +386,14 @@ public class Given_a_caller_whose_client_id_differs_from_the_owner_only_by_case
     protected override string Scenario =>
         "Owner's token presented with the owner's secret under a case-variant client_id †";
 
-    protected override RowPrediction Prediction => RowPrediction.Open(Predicted<bool>.Of(true));
+    // Observed in P1.1: Keycloak client ids are case-sensitive, so this is an unknown client.
+    protected override RowPrediction Prediction =>
+        RowPrediction.ErrorBody(
+            401,
+            "invalid_client",
+            "Invalid client or Invalid client credentials",
+            Predicted<bool>.Of(true)
+        );
 
     protected override async Task<RowObservation> ObserveAsync()
     {
@@ -361,7 +411,7 @@ public class Given_a_caller_whose_client_id_differs_from_the_owner_only_by_case
             outcome,
             before,
             after,
-            "client_id upper-cased; §2.2 lists unknown client as open"
+            "client_id upper-cased; answered as an unknown client"
         );
     }
 }
@@ -373,12 +423,14 @@ public class Given_an_invalid_secret_and_an_unknown_token : RevocationCharacteri
 
     protected override string Scenario => "Invalid secret + unknown token";
 
+    // Observed in P1.1 (approved correction to §2.1): a wrong secret on a known confidential client
+    // is unauthorized_client, while an unknown client is invalid_client. D-10 row 4 maps both.
     protected override RowPrediction Prediction =>
         RowPrediction.ErrorBody(
             401,
-            "invalid_client",
+            "unauthorized_client",
             "Invalid client or Invalid client credentials",
-            Predicted<bool>.Unpredicted
+            Predicted<bool>.NotApplicable
         );
 
     protected override async Task<RowObservation> ObserveAsync()
@@ -399,7 +451,7 @@ public class Given_an_invalid_secret_and_the_callers_own_valid_token : Revocatio
     protected override RowPrediction Prediction =>
         RowPrediction.ErrorBody(
             401,
-            "invalid_client",
+            "unauthorized_client",
             "Invalid client or Invalid client credentials",
             Predicted<bool>.Of(true)
         );
@@ -424,7 +476,13 @@ public class Given_an_unknown_client_id : RevocationCharacterizationRow
 
     protected override string Scenario => "Unknown client_id presenting A's live token";
 
-    protected override RowPrediction Prediction => RowPrediction.Open(Predicted<bool>.Of(true));
+    protected override RowPrediction Prediction =>
+        RowPrediction.ErrorBody(
+            401,
+            "invalid_client",
+            "Invalid client or Invalid client credentials",
+            Predicted<bool>.Of(true)
+        );
 
     protected override async Task<RowObservation> ObserveAsync()
     {
@@ -433,7 +491,12 @@ public class Given_an_unknown_client_id : RevocationCharacterizationRow
         ClientCredentials unknown = new($"cs-char-unknown-{Realm.RunId}", "irrelevant");
         HttpOutcome outcome = await Realm.Api.RevokeAsync(FormBody.Revocation(unknown, grant.AccessToken));
         bool after = await Realm.ObserveAsync(grant.AccessToken);
-        return new RowObservation(outcome, before, after, "§2.2 lists unknown client as open");
+        return new RowObservation(
+            outcome,
+            before,
+            after,
+            "A's token is live only to prove it is left untouched"
+        );
     }
 }
 
@@ -444,7 +507,13 @@ public class Given_no_client_credentials : RevocationCharacterizationRow
 
     protected override string Scenario => "No credentials at all, A's live token †";
 
-    protected override RowPrediction Prediction => RowPrediction.Open(Predicted<bool>.Of(true));
+    protected override RowPrediction Prediction =>
+        RowPrediction.ErrorBody(
+            401,
+            "invalid_client",
+            "Invalid client or Invalid client credentials",
+            Predicted<bool>.Of(true)
+        );
 
     protected override async Task<RowObservation> ObserveAsync()
     {
@@ -556,7 +625,7 @@ public class Given_an_owner_revoking_its_refresh_token : RevocationCharacterizat
     protected override string RowId => "K-14";
 
     protected override string Scenario =>
-        "Owner revokes its refresh token (client_credentials with refresh enabled) †";
+        "Owner revokes its refresh token (client_credentials with refresh enabled); refresh state seen by the owner, paired access token by the observer †";
 
     protected override RowPrediction Prediction => RowPrediction.EmptySuccess(Predicted<bool>.Of(false));
 
@@ -570,12 +639,12 @@ public class Given_an_owner_revoking_its_refresh_token : RevocationCharacterizat
             );
         }
 
-        bool before = await ObserveLiveRefreshTokenAsync(grant.RefreshToken);
+        bool before = await ObserveLiveRefreshTokenAsync(Realm.RefreshSubject, grant.RefreshToken);
         _pairedAccessTokenActiveBefore = await ObserveLiveAsync(grant.AccessToken);
         HttpOutcome outcome = await Realm.Api.RevokeAsync(
             FormBody.Revocation(Realm.RefreshSubject.Credentials, grant.RefreshToken)
         );
-        bool after = await Realm.ObserveRefreshTokenAsync(grant.RefreshToken);
+        bool after = await Realm.ObserveRefreshTokenAsOwnerAsync(Realm.RefreshSubject, grant.RefreshToken);
         _pairedAccessTokenActiveAfter = await Realm.ObserveAsync(grant.AccessToken);
         return new RowObservation(
             outcome,
@@ -592,8 +661,6 @@ public class Given_an_owner_revoking_its_refresh_token : RevocationCharacterizat
     // §2.1: refresh-token revocation detaches the client session, so the paired access token dies with it.
     [Test]
     public void It_invalidates_the_paired_access_token() => _pairedAccessTokenActiveAfter.Should().BeFalse();
-
-    private static string Render(bool? state) => state is true ? "active" : "inactive";
 }
 
 [TestFixture]
@@ -642,14 +709,9 @@ public class Given_an_expired_access_token : RevocationCharacterizationRow
     protected override string Scenario =>
         "Owner revokes its own naturally expired access token (short-lifespan client, expiry observed first)";
 
-    // §2.2: either 200 `invalid_token` or 200 empty; both are CMS 200, so only the status is predicted.
-    protected override RowPrediction Prediction =>
-        new(
-            Predicted<int>.Of(200),
-            Predicted<string>.Unpredicted,
-            Predicted<string>.Unpredicted,
-            Predicted<bool>.Of(false)
-        );
+    // Observed in P1.1: decode accepts the expired token and the owner's revocation path runs to a
+    // 200 with an empty body (not 200 invalid_token). Either way CMS answers 200 under D-13.
+    protected override RowPrediction Prediction => RowPrediction.EmptySuccess(Predicted<bool>.Of(false));
 
     protected override async Task<RowObservation> ObserveAsync()
     {
@@ -677,8 +739,9 @@ public class Given_a_token_from_another_realm : RevocationCharacterizationRow
     protected override string Scenario =>
         "Token issued and signed by the master realm, presented by confidential A";
 
+    // The edfi realm cannot introspect a master-realm token, so there is no observable state for this row.
     protected override RowPrediction Prediction =>
-        RowPrediction.ErrorBody(200, "invalid_token", "Invalid token", Predicted<bool>.Unpredicted);
+        RowPrediction.ErrorBody(200, "invalid_token", "Invalid token", Predicted<bool>.NotApplicable);
 
     protected override async Task<RowObservation> ObserveAsync()
     {
@@ -686,12 +749,11 @@ public class Given_a_token_from_another_realm : RevocationCharacterizationRow
         HttpOutcome outcome = await Realm.Api.RevokeAsync(
             FormBody.Revocation(Realm.SubjectA.Credentials, foreignToken)
         );
-        bool observedInRealm = await Realm.ObserveAsync(foreignToken);
         return new RowObservation(
             outcome,
             ActiveBefore: null,
-            observedInRealm,
-            "the edfi observer's view of a master-realm token is recorded for completeness only"
+            ActiveAfter: null,
+            "a master-realm token has no observable state in the edfi realm"
         );
     }
 }
@@ -700,7 +762,7 @@ public class Given_a_token_from_another_realm : RevocationCharacterizationRow
 public class Given_a_public_client_revoking_its_own_user_token_without_a_secret
     : RevocationCharacterizationRow
 {
-    private bool? _pairedRefreshTokenActiveAfter;
+    private int? _refreshGrantStatusAfter;
 
     protected override string RowId => "K-18";
 
@@ -717,21 +779,22 @@ public class Given_a_public_client_revoking_its_own_user_token_without_a_secret
             FormBody.Revocation(Realm.PublicClient.Credentials, grant.AccessToken)
         );
         bool after = await Realm.ObserveAsync(grant.AccessToken);
-        _pairedRefreshTokenActiveAfter = grant.RefreshToken is not null
-            ? await Realm.ObserveRefreshTokenAsync(grant.RefreshToken)
-            : null;
+        // Last use of the refresh token in this row: the probe may rotate it (see D-16).
+        _refreshGrantStatusAfter = grant.RefreshToken is null
+            ? null
+            : (await Realm.PublicUserRefreshGrantProbeAsync(grant.RefreshToken)).Status;
         return new RowObservation(
             outcome,
             before,
             after,
-            $"observer's view of the paired refresh token after: {(_pairedRefreshTokenActiveAfter is true ? "active" : "inactive")}"
+            $"refresh grant probe with the paired refresh token after the call: HTTP {_refreshGrantStatusAfter?.ToString() ?? "no refresh token issued"}"
         );
     }
 
-    // §2.1: access-token revocation records the jti and leaves the session alone.
+    // §2.1: access-token revocation records the jti and leaves the session alone, so the paired
+    // refresh token still buys a new access token.
     [Test]
-    public void It_leaves_the_paired_refresh_token_active() =>
-        _pairedRefreshTokenActiveAfter.Should().BeTrue();
+    public void It_leaves_the_paired_refresh_token_usable() => _refreshGrantStatusAfter.Should().Be(200);
 }
 
 [TestFixture]
@@ -805,8 +868,9 @@ public class Given_a_second_revocation_of_an_already_revoked_token : RevocationC
     {
         TokenGrant grant = await Realm.ServiceAccountGrantAsync(Realm.SubjectA);
         await ObserveLiveAsync(grant.AccessToken);
-        FormBody form = FormBody.Revocation(Realm.SubjectA.Credentials, grant.AccessToken);
-        _firstOutcome = await Realm.Api.RevokeAsync(form);
+        _firstOutcome = await Realm.Api.RevokeAsync(
+            FormBody.Revocation(Realm.SubjectA.Credentials, grant.AccessToken)
+        );
         _activeAfterFirst = await Realm.ObserveAsync(grant.AccessToken);
         HttpOutcome second = await Realm.Api.RevokeAsync(
             FormBody.Revocation(Realm.SubjectA.Credentials, grant.AccessToken)
@@ -816,7 +880,7 @@ public class Given_a_second_revocation_of_an_already_revoked_token : RevocationC
             second,
             ActiveBefore: null,
             afterSecond,
-            $"first call: HTTP {_firstOutcome.Status}, token {(_activeAfterFirst is true ? "active" : "inactive")} afterwards"
+            $"first call: HTTP {_firstOutcome.Status}, token {Render(_activeAfterFirst)} afterwards"
         );
     }
 
@@ -825,6 +889,7 @@ public class Given_a_second_revocation_of_an_already_revoked_token : RevocationC
     {
         _firstOutcome.Should().NotBeNull();
         _firstOutcome!.Status.Should().Be(200);
+        _firstOutcome.BodyLength.Should().Be(0);
         _activeAfterFirst.Should().BeFalse();
     }
 }
@@ -837,7 +902,7 @@ public class Given_a_missing_token_parameter : RevocationCharacterizationRow
     protected override string Scenario => "Owner credentials, no `token` parameter";
 
     protected override RowPrediction Prediction =>
-        RowPrediction.ErrorBody(400, "invalid_request", "Token not provided", Predicted<bool>.Unpredicted);
+        RowPrediction.ErrorBody(400, "invalid_request", "Token not provided", Predicted<bool>.NotApplicable);
 
     protected override async Task<RowObservation> ObserveAsync()
     {

@@ -1,7 +1,9 @@
 # DMS-1327: Complete CMS token revocation (Keycloak support and consistent OAuth failure handling)
 
-**Status:** DRAFT, revision 3, for review and challenge (Sam, Codex). Nothing in this document is
-implemented. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
+**Status:** DRAFT, revision 3, approved for P1.1 only (Codex, 2026-10-01). P1.1 is implemented
+(tests and this document; no production code) and its evidence is in §9.1, together with the
+approved corrections to §2.1, A-06 and D-16 made by the P1.1 correction commit. Nothing beyond P1.1
+is implemented. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
 the change made.
 **Ticket:** [DMS-1327](https://edfi.atlassian.net/browse/DMS-1327). Prerequisite: DMS-1478 / PR #1280
 (commit `8b43a5fee`). Related: DMS-1218 (CMS error contract), DMS-1365 (Keycloak compensation).
@@ -51,6 +53,16 @@ Revision 3 (responses to the Codex review of revision 2):
 | Image evidence | container name corrected to `ed-fi-api-config-service`. |
 | Commit/test ordering | §6.8 now defines: focused tests on the working tree, commit, then E2E against the clean commit, fix-forward commits if needed, and final E2E against the final commit. |
 | Stale reference | P2.1 now says Keycloak activation happens at P3.2. |
+
+P1.1 correction (responses to the Codex review of commit `7cebf3660`, the first P1.1 commit):
+
+| Codex finding | Change |
+|---|---|
+| 1. Failure diagnostics could disclose raw provider content | Every diagnostic the characterization harness raises is built from fixed text, the operation label, the HTTP status and a body **category** (empty / JSON object / JSON array / JSON value / non-JSON); request and response content never reach an exception. A `SensitiveValueRegistry` records every secret and token the run sees, and the evidence log refuses any row that would contain one. Offline tests with sentinel secrets (`KeycloakCharacterizationDiagnosticsTests.cs`) walk each exception's message, string form and inner chain. |
+| 2. The compatibility run did not characterize refresh-token revocation | D-16 corrected (approved): refresh tokens are introspected by their **owning** client with `token_type_hint=refresh_token`; the separate observer stays for access tokens; a public client's refresh token is probed with a refresh grant as the last action on that token. K-14 is now characterized on 26.1.4 **and** 26.7.5 with identical results. |
+| 3. "Empty success" did not assert an empty response | Every row predicts a body shape: `empty` asserts zero body length; `OAuth JSON` asserts a JSON object with `Content-Type: application/json`. |
+| 4. Evidence writing bypassed cleanup | The run's teardown writes the evidence inside `try` and disposes the realm resources in `finally`; if both fail, both exceptions are reported. |
+| Decisions | §2.1 wrong-secret row corrected to the observed `401 unauthorized_client` (D-10 row 4 unchanged); the test-only observer audience scope kept, creation and removal confined to fixture-owned resources; version wording distinguishes observed upstream `26.1.4` / `26.7.5` behavior from the Red Hat build of Keycloak 26.4 migration statement about `26.4.12`; Q-08 resolved: the fixture stays in the existing Keycloak CI lane with every prediction exact; the fixture/harness file split is accepted. |
 
 ---
 
@@ -157,7 +169,8 @@ revocation.
 | Session/user not resolvable | 200 | `invalid_token` / "Invalid token" |
 | Duplicated form parameter | 400 | `invalid_request` / "duplicated parameter" |
 | Bearer-only client | 400 | `invalid_client` / "Bearer-only not allowed" |
-| Wrong or missing secret (confidential client) | 401 | `invalid_client` / "Invalid client or Invalid client credentials" (per authenticator) |
+| Wrong secret, known confidential client | 401 | `unauthorized_client` / "Invalid client or Invalid client credentials" — **corrected from the P1.1 evidence** (K-04, K-05, both versions); the source reading had predicted `invalid_client`. D-10 row 4 maps both codes |
+| Unknown `client_id` (including a case variant of a real one), or no credentials at all | 401 | `invalid_client` / "Invalid client or Invalid client credentials" — observed in P1.1 (K-03, K-06, K-07, both versions) |
 | **Public client** | **client authentication succeeds** with or without a secret (`if (client.isPublicClient()) { context.success(); return; }`) | — |
 | Basic header **and** form `client_id` | form value **overrides** the header | — |
 | Access-token revocation effect | `jti` written to the single-use "revoked" store for the token's remaining lifetime; no session removal | — |
@@ -628,17 +641,28 @@ its full inner chain; the assertion walks all of them, not only the rendered mes
 | Provider | Active-before proof | Revoked-after proof | Unchanged (cross-client / public client) proof | Propagation |
 |---|---|---|---|---|
 | self-contained | protected CMS resource 200 (existing scenario 18) and `/connect/introspect` `active:true` | protected CMS resource 401 (per-request status check by `jti`) and `/connect/introspect` `active:false` | after the attempt: protected resource still 200 **and** `/connect/introspect` still `active:true` | immediate |
-| keycloak | Keycloak `POST {Url}/realms/{Realm}/protocol/openid-connect/token/introspect`, authenticated by a dedicated confidential **observer** client → `active:true` | same endpoint, same observer → `active:false` | same endpoint, same observer, still `active:true` | Keycloak-immediate; DMS/CMS validate JWTs locally and keep accepting the token until `exp` (+ their clock skew). No per-request introspection is added (non-goal). Scenario 18's 401 assertion is therefore **not** portable; `@SelfContainedOnly` stays on it and the Keycloak scenarios assert through introspection instead |
+| keycloak | Keycloak `POST {Url}/realms/{Realm}/protocol/openid-connect/token/introspect`: access tokens introspected by a dedicated confidential **observer** client that is in the token's `aud` → `active:true`; refresh tokens introspected by their **owning** client with `token_type_hint=refresh_token` → `active:true` | same endpoint, same introspecting client per token type → `active:false` | same endpoint, same introspecting client, still `active:true` | Keycloak-immediate; DMS/CMS validate JWTs locally and keep accepting the token until `exp` (+ their clock skew). No per-request introspection is added (non-goal). Scenario 18's 401 assertion is therefore **not** portable; `@SelfContainedOnly` stays on it and the Keycloak scenarios assert through introspection instead |
 
-**Observer client (Keycloak).** Keycloak's introspection endpoint refuses public clients (26.1
-source: `client.isPublicClient()` → 403 `invalid_request` "Client not allowed.") and performs no
-ownership check, so any confidential client in the realm can introspect any token (A-06). Every
-Keycloak before/after check therefore uses one dedicated confidential client created for the test
-(`revocation-observer-<run id>`) whose credentials are **never** submitted to `/connect/revoke`.
-This separates the observer from the subject: an owner, a cross-client caller and a public client
-are all observed the same way, and a public client's token can be observed at all. Each fixture
-first proves the observer itself works (`active:true` for a freshly issued token) before any
-revocation is attempted.
+**Observer client (Keycloak), as corrected by P1.1.** Keycloak's introspection endpoint refuses
+public clients (403 `invalid_request` "Client not allowed.", observed on 26.1.4 and 26.7.5), so a
+public client's token can only be observed by someone else. **Access tokens** are observed by one
+dedicated confidential client created for the test (`revocation-observer-<run id>`) whose
+credentials are **never** submitted to `/connect/revoke`, and which is placed in the audience
+(`aud`) of every observed token through a test-owned client scope carrying an audience mapper:
+Keycloak 26.7.5 answers `active:false` to any introspecting client absent from `aud`, while 26.1.4
+performs no such check (A-06). This separates the observer from the subject: an owner, a
+cross-client caller and a public client are all observed the same way. **Refresh tokens** are
+observed by their **owning** client with `token_type_hint=refresh_token`, because Keycloak's
+refresh-token introspection admits only the client the token was issued to (26.7.5
+`RefreshTokenIntrospectionProvider`; 26.1.4 answers the owner as well), so for refresh state the
+owner's introspection is the first-hand observation and the observer-separation rule applies to
+access tokens. A **public client's refresh token**, which its owner cannot introspect, is observed
+through a refresh grant used as a liveness probe (200 = usable, 400 `invalid_grant` = not), performed
+only as the last action on that token because the grant may rotate it. Each fixture first proves the
+relevant observation path works (`active:true`, or a 200 refresh grant, for a freshly issued token)
+before any revocation is attempted. P3.2's `[BeforeFeature]` observer setup creates the audience
+scope and attaches it to the clients whose tokens the Keycloak scenarios observe, and removes it in
+`[AfterFeature]`.
 
 Supported token-type matrix (what "supported token" means per provider; the Keycloak rows are
 confirmed or corrected by P1.1 before any documentation claims them):
@@ -646,10 +670,10 @@ confirmed or corrected by P1.1 before any documentation claims them):
 | Token | self-contained | keycloak |
 |---|---|---|
 | Access token (JWT, `typ` Bearer) | supported; only type issued | supported |
-| Refresh token | not issued | supported by Keycloak's endpoint; Keycloak does not issue one for `client_credentials` unless the client enables "use refresh tokens for client credentials grant"; characterized with that setting on a test client, otherwise documented as untested |
+| Refresh token | not issued | supported by Keycloak's endpoint; issued for `client_credentials` only when the client attribute `client_credentials.use_refresh_token` is `true`; **characterized on 26.1.4 and 26.7.5 (K-14)**: revocation answers 200 empty, and the refresh token and its paired access token both become inactive |
 | Offline token | not issued | revocable at Keycloak; **not characterized** (needs `offline_access` and a user flow) and documented as outside this ticket's verification |
 | ID token | not issued | `unsupported_token_type` |
-| Related effects | none (no sessions, no refresh tokens) | access token: `jti` entered in Keycloak's revoked-token store for its remaining lifetime, session untouched; refresh/offline: the client session is detached, which invalidates the tokens tied to it (per source; the refresh case is characterized if issued, the offline case is documented as source-derived only) |
+| Related effects | none (no sessions, no refresh tokens) | access token: `jti` entered in Keycloak's revoked-token store for its remaining lifetime, session untouched (observed: the paired refresh token still buys a new access token, K-18); refresh: the client session is detached, which invalidates the paired access token (observed, K-14); offline: documented as source-derived only |
 
 ### D-17 OAuth error format for exceptions that escape the handler (AC4, AC8)
 
@@ -1002,7 +1026,7 @@ Assumptions still open (each is closed at the named step and reported at its che
 | A-03 | `TaskCanceledException.InnerException is TimeoutException` identifies an `HttpClient` timeout on .NET 10 when the caller's token is not cancelled. | P3.1 stalled-handler test |
 | A-04 | Keycloak client-credentials access tokens carry `azp` equal to the client id (needed for Keycloak's own ownership check). | P1.1 precondition assertion |
 | A-05 | `IExceptionHandlerFeature.Endpoint` carries the route's metadata when `GlobalExceptionHandler` runs for an exception thrown inside a Minimal API handler (it already relies on this for route values). | P2.3 pipeline test |
-| A-06 | Keycloak 26.1 lets any authenticated confidential client introspect any token in the realm and refuses public clients (upstream `TokenIntrospectionEndpoint`: `client.isPublicClient()` → 403 "Client not allowed."; no `azp` check in the endpoint class; the provider may add restrictions). | P1.1 observer precondition assertion |
+| A-06 | **Corrected by P1.1 (§9.1.4).** Keycloak refuses public clients at introspection (403 `invalid_request` "Client not allowed.", observed on 26.1.4 and 26.7.5). Access tokens: on 26.1.4 any confidential client can introspect any token; on 26.7.5 the introspecting client must be in the token's `aud` or the answer is `active:false` (the Red Hat build of Keycloak 26.4 migration guide attributes this check to 26.4.12; upstream versions between 26.1.4 and 26.7.5 were not observed). Refresh tokens: introspectable only by the client they were issued to, with `token_type_hint=refresh_token` (26.7.5 `RefreshTokenIntrospectionProvider` compares the authenticated client with the token's client; 26.1.4 also answers the owner). | Closed by P1.1 |
 
 Decisions resolved by the revision-1 review (recorded so later steps do not reopen them):
 
@@ -1015,6 +1039,7 @@ Decisions resolved by the revision-1 review (recorded so later steps do not reop
 | Q-05 | Scenarios live in a focused `Revocation.feature`. |
 | Q-06 | Changelog `8.1.0.md`; the completed DMS-1478 prerequisite is distinguished from this ticket's additions. |
 | Q-07 | `invalid_client` for "client not found" only after an authoritative successful admin read; a failed, refused or ambiguous read is 503. |
+| Q-08 | (raised and resolved in P1.1) The characterization fixture stays in the existing Keycloak CI E2E lane as a regression guard on the pinned image; no opt-in variable hides it. Every prediction is exact, and the only skipped checks are state checks that do not exist for a row (before-state of a request without a live token, after-state of a request without a token or with a foreign-realm token). |
 
 Nothing in §2.1 is presented as observed behavior; every Keycloak row is "expected from source,
 to be confirmed in P1.1".
@@ -1078,11 +1103,13 @@ Please challenge each item and cite the decision or step that would fail:
 ### 9.1 Keycloak characterization results (P1.1)
 
 Recorded 2026-10-01 from the P1.1 fixture
-(`src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Keycloak/KeycloakRevocationCharacterizationTests.cs`
-with its helpers in `KeycloakCharacterizationHarness.cs`, same directory). Nothing in production code,
-`setup-keycloak.ps1` or the compose files changed. **The tables below are observations; D-10, D-11
-and D-16 are unchanged in this revision. The deviations and proposed corrections in §9.1.4 await
-review before any expectation or decision is edited.**
+(`src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Keycloak/KeycloakRevocationCharacterizationTests.cs`,
+helpers in `KeycloakCharacterizationHarness.cs`, offline disclosure tests in
+`KeycloakCharacterizationDiagnosticsTests.cs`). Nothing in production code, `setup-keycloak.ps1` or
+the compose files changed. The first P1.1 commit (`7cebf3660`) recorded the raw observations with the
+§2.1 predictions as they stood; the P1.1 correction commit applied the reviewed corrections (§0.1) and
+re-ran both versions. The tables below are from the corrected run: every prediction is exact and every
+row passes on both versions.
 
 #### 9.1.1 Environment and provenance
 
@@ -1093,123 +1120,123 @@ review before any expectation or decision is edited.**
 | Server version reported by `GET /admin/serverinfo` | `26.1.4` | `26.7.5` |
 | Container, port, project | `dms-keycloak`, `127.0.0.1:8045`, compose project `cs-local` | `cs-char-267-keycloak`, `127.0.0.1:8046`, compose project `cs-char-267`, own volume `cs-char-267-keycloak` and own default network; a standalone compose file in the session scratch directory, **not** an override of `keycloak.yml`, so no container name, port, volume or network is shared with `cs-local`; removed afterwards with `docker compose -p cs-char-267 -f <scratch>/compose.yml down -v --rmi all` |
 | Realm | `edfi`, `sslRequired` = `external`, created by `setup-keycloak.ps1` ×3 with the parameters `start-local-config.ps1` passes (lines 197–207) | same script, same parameters, `-KeycloakServer http://localhost:8046` |
-| CMS container (started, not exercised) | `ed-fi-api-config-service`, image `sha256:5e6b05b1910b9673068038a76a6fbf7f5aa7e76326e74340c4446b5c706c1e92`, built with `-r` from `f3a44e12b` (`git status --short` showed only the untracked spec and fixture), `AppSettings__IdentityProvider=keycloak`, `IdentitySettings__Authority=http://dms-keycloak:8080/realms/edfi` | none |
+| CMS container (started, not exercised) | `ed-fi-api-config-service`, image `sha256:5e6b05b1910b9673068038a76a6fbf7f5aa7e76326e74340c4446b5c706c1e92`, built with `-r` from `f3a44e12b`, `AppSettings__IdentityProvider=keycloak`, `IdentitySettings__Authority=http://dms-keycloak:8080/realms/edfi` | none |
 
-Environment deviation from the P1.1 precondition, recorded for the reviewer: PowerShell 7 (`pwsh`) is
-not installed on the machine that ran this step. `start-local-config.ps1 -EnvironmentFile
-./.env.config.e2e -r -IdentityProvider keycloak -AddE2EClaimSets` was run under Windows PowerShell 5.1:
-the E2E claim sets were staged and `docker compose … up` succeeded with the Keycloak provider, but the
-script aborted before its realm setup because `database-safety.psm1` uses the `??` operator (a parse
-error under 5.1 that left `Get-ComposeResolvedEnvValue` undefined). The three `setup-keycloak.ps1`
-invocations the script would have made (lines 197–207) were run by hand with identical parameters,
-including the secrets `Resolve-IdentityClientSecretConfiguration` resolves from `.env.config.e2e`.
-`setup-keycloak.ps1` itself is 5.1-compatible. Every later E2E step in §6 depends on these scripts,
-so PowerShell 7 must be installed before P2.3.
+Environment note for the reviewer: when the first P1.1 commit was produced, PowerShell 7 (`pwsh`)
+was not installed on the machine, so `start-local-config.ps1 -EnvironmentFile ./.env.config.e2e -r
+-IdentityProvider keycloak -AddE2EClaimSets` ran under Windows PowerShell 5.1: the claim sets were
+staged and `docker compose … up` succeeded with the Keycloak provider, but the script aborted before
+its realm setup (`database-safety.psm1` uses `??`). The three `setup-keycloak.ps1` invocations it
+would have made (lines 197–207) were run by hand with identical parameters. PowerShell 7.6.6 has since
+been installed and both compose modules load under it. The realm was not recreated for the
+correction run; it is the same `edfi` realm.
 
 Commands (from the repository root; `DMS_CONFIG_IDENTITY_PROVIDER=keycloak` and `KEYCLOAK_PORT` set in
-the test process):
+the test process for the characterization runs, neither set for the offline diagnostics run):
 
 ```
 dotnet build src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj -c Release
+dotnet test  src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj -c Release --no-build --filter "FullyQualifiedName~Tests.E2E.Keycloak&Category!=KeycloakCharacterization"
 dotnet test  src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/EdFi.DmsConfigurationService.Tests.E2E.csproj -c Release --no-build --filter "Category=KeycloakCharacterization"
 ```
 
 | Run | Tests | Passed | Failed | Skipped | Wall time |
 |---|---|---|---|---|---|
-| 26.1.4 (`KEYCLOAK_PORT=8045`) | 130 | 109 | 2 | 19 | 15 s |
-| 26.7.5 (`KEYCLOAK_PORT=8046`) | 130 | 99 | 12 | 19 | 15 s |
+| Offline diagnostics (no Keycloak) | 20 | 20 | 0 | 0 | 2 s |
+| 26.1.4 (`KEYCLOAK_PORT=8045`) | 154 | 146 | 0 | 8 | 16 s |
+| 26.7.5 (`KEYCLOAK_PORT=8046`) | 154 | 146 | 0 | 8 | 17 s |
 
-The 19 skips are identical in both runs and are the fields §2.1 left open (`n/p` below): K-03, K-06,
-K-07 (status, `error`, `error_description`), K-16 (`error`, `error_description`), after-state for
-K-04, K-17, K-22, before-state for the rows that do not start from a live token, and the K-00
-placeholder fields. Each skip message carries the observed value. The failures are analysed in
-§9.1.4; none of them is a revocation-endpoint deviation other than deviation 1.
+The 8 skips are identical in both runs and are state checks that do not exist for the row, each
+reported as "Not applicable": the before-state of K-04, K-16, K-17, K-21 and K-22 (no live token at
+the start of the call) and the after-state of K-04, K-17 and K-22 (no token, or a foreign-realm token
+with no observable state in the `edfi` realm). No prediction is left open.
 
 Each run also wrote its table to `bin/Release/net10.0/keycloak-characterization-<version>.md`; the
 tables below are those files verbatim. The fixture deleted its clients, user and client scope at the
-end of every run; both realms were checked afterwards and hold no `cs-char-*` client or user.
+end of every run; both realms were checked afterwards through the admin API and hold no `cs-char-*`
+client, user or client scope.
 
 #### 9.1.2 Keycloak 26.1.4 (baseline)
 
-| ID | Scenario | HTTP | `error` | `error_description` | active before | active after | Notes |
-|---|---|---|---|---|---|---|---|
-| K-00 | Preconditions (A-02, A-04, A-06) | n/p / — | n/p / (absent) | n/p / (absent) | — | n/p / — | server 26.1.4; sslRequired=external; azp=client id; observer sees subject access token active, public user access token active, public user refresh token active, service-account refresh token active; refresh token issued for client_credentials: yes; observer is in every subject token's aud via a per-run client scope; refresh tokens observed with token_type_hint=refresh_token |
-| K-01 | Owner revokes its own access token (form credentials) † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_post; empty body |
-| K-01b | Owner revokes its own access token (HTTP Basic) † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_basic; empty body |
-| K-02 | Cross-client: B presents A's access token † | 400 / 400 | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | B authenticated with its own correct secret; JSON, 68 chars |
-| K-03 | Owner's token presented with the owner's secret under a case-variant client_id † | n/p / 401 | n/p / `invalid_client` | n/p / "Invalid client or Invalid client credentials" | active | active / active | client_id upper-cased; §2.2 lists unknown client as open; JSON, 93 chars |
-| K-04 | Invalid secret + unknown token | 401 / 401 | `invalid_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | — | n/p / — | no live token involved; JSON, 98 chars |
-| K-05 | Invalid secret + the caller's own valid token † | 401 / 401 | `invalid_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | token must stay active; JSON, 98 chars |
-| K-06 | Unknown client_id presenting A's live token | n/p / 401 | n/p / `invalid_client` | n/p / "Invalid client or Invalid client credentials" | active | active / active | §2.2 lists unknown client as open; JSON, 93 chars |
-| K-07 | No credentials at all, A's live token † | n/p / 401 | n/p / `invalid_client` | n/p / "Invalid client or Invalid client credentials" | active | active / active | no Authorization header, no client_id, no client_secret; JSON, 93 chars |
-| K-08 | Mixed mechanisms: Basic = A, form = B, token = A's † | 400 / 400 | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | identity that Keycloak used: form (B) won; JSON, 68 chars |
-| K-09 | Duplicated `token` parameter (same live token twice) † | 400 / 400 | `invalid_request` / `invalid_request` | "duplicated parameter" / "duplicated parameter" | active | active / active | owner credentials; JSON, 70 chars |
-| K-10 | Owner revokes its access token with token_type_hint="access_token" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-11 | Owner revokes its access token with token_type_hint="refresh_token" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-12 | Owner revokes its access token with token_type_hint="bogus" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-13 | Owner revokes its access token with token_type_hint="" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-14 | Owner revokes its refresh token (client_credentials with refresh enabled) † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | observer's view of the paired access token: active before, inactive after; empty body |
-| K-15 | ID token (public user's, scope=openid) presented by confidential A; state is the paired access token's | 400 / 400 | `unsupported_token_type` / `unsupported_token_type` | "Unsupported token type" / "Unsupported token type" | active | active / active | A is not the ID token's azp, so a 400 unsupported_token_type here shows the type check runs before the ownership check; JSON, 79 chars |
-| K-16 | Owner revokes its own naturally expired access token (short-lifespan client, expiry observed first) | 200 / 200 | n/p / (absent) | n/p / (absent) | — | inactive / inactive | active at issue: True; token lifespan exp-iat=10s; observer reported inactive after 12 polls (11s); configured lifespan 10s; empty body |
-| K-17 | Token issued and signed by the master realm, presented by confidential A | 200 / 200 | `invalid_token` / `invalid_token` | "Invalid token" / "Invalid token" | — | n/p / inactive | the edfi observer's view of a master-realm token is recorded for completeness only; JSON, 61 chars |
-| K-18 | Public client revokes its own user-flow access token, no secret † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | observer's view of the paired refresh token after: active; empty body |
-| K-19 | Public client revokes its own user-flow access token with an arbitrary secret † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret ignored for a public client per §2.1; empty body |
-| K-20 | Public client (no secret) presents confidential A's access token † | 400 / 400 | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | public client authenticates, then fails Keycloak's ownership check; JSON, 68 chars |
-| K-21 | Idempotent second revoke of an already revoked access token | 200 / 200 | (absent) / (absent) | (absent) / (absent) | — | inactive / inactive | first call: HTTP 200, token inactive afterwards; empty body |
-| K-22 | Owner credentials, no `token` parameter | 400 / 400 | `invalid_request` / `invalid_request` | "Token not provided" / "Token not provided" | — | n/p / — | no token involved; JSON, 68 chars |
-| K-23 | Introspection endpoint called by the public client with its own user token (observer rationale, A-06) | 403 / 403 | `invalid_request` / `invalid_request` | "Client not allowed." / "Client not allowed." | active | active / active | not a revocation call; shows why a confidential observer is required; JSON, 69 chars |
+| ID | Scenario | HTTP | Body | `error` | `error_description` | active before | active after | Notes |
+|---|---|---|---|---|---|---|---|---|
+| K-00 | Preconditions (A-02, A-04, A-06 as corrected) | — | — | — | — | — | — | server 26.1.4; sslRequired=external; azp=client id; observer (in aud via the per-run scope) sees subject access token active and public user access token active; refresh subject sees its own refresh token (hint refresh_token) active; public user refresh grant probe HTTP 200; refresh token issued for client_credentials: yes |
+| K-01 | Owner revokes its own access token (form credentials) † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_post |
+| K-01b | Owner revokes its own access token (HTTP Basic) † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_basic |
+| K-02 | Cross-client: B presents A's access token † | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | B authenticated with its own correct secret |
+| K-03 | Owner's token presented with the owner's secret under a case-variant client_id † | 401 / 401 | OAuth JSON / JSON object, application/json, 93 chars | `invalid_client` / `invalid_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | client_id upper-cased; answered as an unknown client |
+| K-04 | Invalid secret + unknown token | 401 / 401 | OAuth JSON / JSON object, application/json, 98 chars | `unauthorized_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | n/a | n/a / n/a | no live token involved |
+| K-05 | Invalid secret + the caller's own valid token † | 401 / 401 | OAuth JSON / JSON object, application/json, 98 chars | `unauthorized_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | token must stay active |
+| K-06 | Unknown client_id presenting A's live token | 401 / 401 | OAuth JSON / JSON object, application/json, 93 chars | `invalid_client` / `invalid_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | A's token is live only to prove it is left untouched |
+| K-07 | No credentials at all, A's live token † | 401 / 401 | OAuth JSON / JSON object, application/json, 93 chars | `invalid_client` / `invalid_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | no Authorization header, no client_id, no client_secret |
+| K-08 | Mixed mechanisms: Basic = A, form = B, token = A's † | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | identity that Keycloak used: form (B) won |
+| K-09 | Duplicated `token` parameter (same live token twice) † | 400 / 400 | OAuth JSON / JSON object, application/json, 70 chars | `invalid_request` / `invalid_request` | "duplicated parameter" / "duplicated parameter" | active | active / active | owner credentials |
+| K-10 | Owner revokes its access token with token_type_hint="access_token" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-11 | Owner revokes its access token with token_type_hint="refresh_token" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-12 | Owner revokes its access token with token_type_hint="bogus" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-13 | Owner revokes its access token with token_type_hint="" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-14 | Owner revokes its refresh token (client_credentials with refresh enabled); refresh state seen by the owner, paired access token by the observer † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | observer's view of the paired access token: active before, inactive after |
+| K-15 | ID token (public user's, scope=openid) presented by confidential A; state is the paired access token's | 400 / 400 | OAuth JSON / JSON object, application/json, 79 chars | `unsupported_token_type` / `unsupported_token_type` | "Unsupported token type" / "Unsupported token type" | active | active / active | A is not the ID token's azp, so a 400 unsupported_token_type here shows the type check runs before the ownership check |
+| K-16 | Owner revokes its own naturally expired access token (short-lifespan client, expiry observed first) | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | n/a | inactive / inactive | active at issue: True; token lifespan exp-iat=10s; observer reported inactive after 12 polls (11s); configured lifespan 10s |
+| K-17 | Token issued and signed by the master realm, presented by confidential A | 200 / 200 | OAuth JSON / JSON object, application/json, 61 chars | `invalid_token` / `invalid_token` | "Invalid token" / "Invalid token" | n/a | n/a / n/a | a master-realm token has no observable state in the edfi realm |
+| K-18 | Public client revokes its own user-flow access token, no secret † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | refresh grant probe with the paired refresh token after the call: HTTP 200 |
+| K-19 | Public client revokes its own user-flow access token with an arbitrary secret † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret ignored for a public client per §2.1 |
+| K-20 | Public client (no secret) presents confidential A's access token † | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | public client authenticates, then fails Keycloak's ownership check |
+| K-21 | Idempotent second revoke of an already revoked access token | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | n/a | inactive / inactive | first call: HTTP 200, token inactive afterwards |
+| K-22 | Owner credentials, no `token` parameter | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Token not provided" / "Token not provided" | n/a | n/a / n/a | no token involved |
+| K-23 | Introspection endpoint called by the public client with its own user token (observer rationale, A-06) | 403 / 403 | OAuth JSON / JSON object, application/json, 69 chars | `invalid_request` / `invalid_request` | "Client not allowed." / "Client not allowed." | active | active / active | not a revocation call; shows why a confidential observer is required |
 
 #### 9.1.3 Keycloak 26.7.5 (compatibility record)
 
-| ID | Scenario | HTTP | `error` | `error_description` | active before | active after | Notes |
-|---|---|---|---|---|---|---|---|
-| K-00 | Preconditions (A-02, A-04, A-06) | n/p / — | n/p / (absent) | n/p / (absent) | — | n/p / — | server 26.7.5; sslRequired=external; azp=client id; observer sees subject access token active, public user access token active, public user refresh token inactive, service-account refresh token inactive; refresh token issued for client_credentials: yes; observer is in every subject token's aud via a per-run client scope; refresh tokens observed with token_type_hint=refresh_token |
-| K-01 | Owner revokes its own access token (form credentials) † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_post; empty body |
-| K-01b | Owner revokes its own access token (HTTP Basic) † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_basic; empty body |
-| K-02 | Cross-client: B presents A's access token † | 400 / 400 | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | B authenticated with its own correct secret; JSON, 68 chars |
-| K-03 | Owner's token presented with the owner's secret under a case-variant client_id † | n/p / 401 | n/p / `invalid_client` | n/p / "Invalid client or Invalid client credentials" | active | active / active | client_id upper-cased; §2.2 lists unknown client as open; JSON, 93 chars |
-| K-04 | Invalid secret + unknown token | 401 / 401 | `invalid_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | — | n/p / — | no live token involved; JSON, 98 chars |
-| K-05 | Invalid secret + the caller's own valid token † | 401 / 401 | `invalid_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | token must stay active; JSON, 98 chars |
-| K-06 | Unknown client_id presenting A's live token | n/p / 401 | n/p / `invalid_client` | n/p / "Invalid client or Invalid client credentials" | active | active / active | §2.2 lists unknown client as open; JSON, 93 chars |
-| K-07 | No credentials at all, A's live token † | n/p / 401 | n/p / `invalid_client` | n/p / "Invalid client or Invalid client credentials" | active | active / active | no Authorization header, no client_id, no client_secret; JSON, 93 chars |
-| K-08 | Mixed mechanisms: Basic = A, form = B, token = A's † | 400 / 400 | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | identity that Keycloak used: form (B) won; JSON, 68 chars |
-| K-09 | Duplicated `token` parameter (same live token twice) † | 400 / 400 | `invalid_request` / `invalid_request` | "duplicated parameter" / "duplicated parameter" | active | active / active | owner credentials; JSON, 70 chars |
-| K-10 | Owner revokes its access token with token_type_hint="access_token" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-11 | Owner revokes its access token with token_type_hint="refresh_token" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-12 | Owner revokes its access token with token_type_hint="bogus" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-13 | Owner revokes its access token with token_type_hint="" † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint; empty body |
-| K-15 | ID token (public user's, scope=openid) presented by confidential A; state is the paired access token's | 400 / 400 | `unsupported_token_type` / `unsupported_token_type` | "Unsupported token type" / "Unsupported token type" | active | active / active | A is not the ID token's azp, so a 400 unsupported_token_type here shows the type check runs before the ownership check; JSON, 79 chars |
-| K-16 | Owner revokes its own naturally expired access token (short-lifespan client, expiry observed first) | 200 / 200 | n/p / (absent) | n/p / (absent) | — | inactive / inactive | active at issue: True; token lifespan exp-iat=10s; observer reported inactive after 12 polls (11s); configured lifespan 10s; empty body |
-| K-17 | Token issued and signed by the master realm, presented by confidential A | 200 / 200 | `invalid_token` / `invalid_token` | "Invalid token" / "Invalid token" | — | n/p / inactive | the edfi observer's view of a master-realm token is recorded for completeness only; JSON, 61 chars |
-| K-18 | Public client revokes its own user-flow access token, no secret † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | observer's view of the paired refresh token after: inactive; empty body |
-| K-19 | Public client revokes its own user-flow access token with an arbitrary secret † | 200 / 200 | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret ignored for a public client per §2.1; empty body |
-| K-20 | Public client (no secret) presents confidential A's access token † | 400 / 400 | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | public client authenticates, then fails Keycloak's ownership check; JSON, 68 chars |
-| K-21 | Idempotent second revoke of an already revoked access token | 200 / 200 | (absent) / (absent) | (absent) / (absent) | — | inactive / inactive | first call: HTTP 200, token inactive afterwards; empty body |
-| K-22 | Owner credentials, no `token` parameter | 400 / 400 | `invalid_request` / `invalid_request` | "Token not provided" / "Token not provided" | — | n/p / — | no token involved; JSON, 68 chars |
-| K-23 | Introspection endpoint called by the public client with its own user token (observer rationale, A-06) | 403 / 403 | `invalid_request` / `invalid_request` | "Client not allowed." / "Client not allowed." | active | active / active | not a revocation call; shows why a confidential observer is required; JSON, 69 chars |
+| ID | Scenario | HTTP | Body | `error` | `error_description` | active before | active after | Notes |
+|---|---|---|---|---|---|---|---|---|
+| K-00 | Preconditions (A-02, A-04, A-06 as corrected) | — | — | — | — | — | — | server 26.7.5; sslRequired=external; azp=client id; observer (in aud via the per-run scope) sees subject access token active and public user access token active; refresh subject sees its own refresh token (hint refresh_token) active; public user refresh grant probe HTTP 200; refresh token issued for client_credentials: yes |
+| K-01 | Owner revokes its own access token (form credentials) † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_post |
+| K-01b | Owner revokes its own access token (HTTP Basic) † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret_basic |
+| K-02 | Cross-client: B presents A's access token † | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | B authenticated with its own correct secret |
+| K-03 | Owner's token presented with the owner's secret under a case-variant client_id † | 401 / 401 | OAuth JSON / JSON object, application/json, 93 chars | `invalid_client` / `invalid_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | client_id upper-cased; answered as an unknown client |
+| K-04 | Invalid secret + unknown token | 401 / 401 | OAuth JSON / JSON object, application/json, 98 chars | `unauthorized_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | n/a | n/a / n/a | no live token involved |
+| K-05 | Invalid secret + the caller's own valid token † | 401 / 401 | OAuth JSON / JSON object, application/json, 98 chars | `unauthorized_client` / `unauthorized_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | token must stay active |
+| K-06 | Unknown client_id presenting A's live token | 401 / 401 | OAuth JSON / JSON object, application/json, 93 chars | `invalid_client` / `invalid_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | A's token is live only to prove it is left untouched |
+| K-07 | No credentials at all, A's live token † | 401 / 401 | OAuth JSON / JSON object, application/json, 93 chars | `invalid_client` / `invalid_client` | "Invalid client or Invalid client credentials" / "Invalid client or Invalid client credentials" | active | active / active | no Authorization header, no client_id, no client_secret |
+| K-08 | Mixed mechanisms: Basic = A, form = B, token = A's † | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | identity that Keycloak used: form (B) won |
+| K-09 | Duplicated `token` parameter (same live token twice) † | 400 / 400 | OAuth JSON / JSON object, application/json, 70 chars | `invalid_request` / `invalid_request` | "duplicated parameter" / "duplicated parameter" | active | active / active | owner credentials |
+| K-10 | Owner revokes its access token with token_type_hint="access_token" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-11 | Owner revokes its access token with token_type_hint="refresh_token" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-12 | Owner revokes its access token with token_type_hint="bogus" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-13 | Owner revokes its access token with token_type_hint="" † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | the endpoint source does not read the hint |
+| K-14 | Owner revokes its refresh token (client_credentials with refresh enabled); refresh state seen by the owner, paired access token by the observer † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | observer's view of the paired access token: active before, inactive after |
+| K-15 | ID token (public user's, scope=openid) presented by confidential A; state is the paired access token's | 400 / 400 | OAuth JSON / JSON object, application/json, 79 chars | `unsupported_token_type` / `unsupported_token_type` | "Unsupported token type" / "Unsupported token type" | active | active / active | A is not the ID token's azp, so a 400 unsupported_token_type here shows the type check runs before the ownership check |
+| K-16 | Owner revokes its own naturally expired access token (short-lifespan client, expiry observed first) | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | n/a | inactive / inactive | active at issue: True; token lifespan exp-iat=10s; observer reported inactive after 12 polls (11s); configured lifespan 10s |
+| K-17 | Token issued and signed by the master realm, presented by confidential A | 200 / 200 | OAuth JSON / JSON object, application/json, 61 chars | `invalid_token` / `invalid_token` | "Invalid token" / "Invalid token" | n/a | n/a / n/a | a master-realm token has no observable state in the edfi realm |
+| K-18 | Public client revokes its own user-flow access token, no secret † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | refresh grant probe with the paired refresh token after the call: HTTP 200 |
+| K-19 | Public client revokes its own user-flow access token with an arbitrary secret † | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | active | inactive / inactive | client_secret ignored for a public client per §2.1 |
+| K-20 | Public client (no secret) presents confidential A's access token † | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Unmatching clients" / "Unmatching clients" | active | active / active | public client authenticates, then fails Keycloak's ownership check |
+| K-21 | Idempotent second revoke of an already revoked access token | 200 / 200 | empty / empty | (absent) / (absent) | (absent) / (absent) | n/a | inactive / inactive | first call: HTTP 200, token inactive afterwards |
+| K-22 | Owner credentials, no `token` parameter | 400 / 400 | OAuth JSON / JSON object, application/json, 68 chars | `invalid_request` / `invalid_request` | "Token not provided" / "Token not provided" | n/a | n/a / n/a | no token involved |
+| K-23 | Introspection endpoint called by the public client with its own user token (observer rationale, A-06) | 403 / 403 | OAuth JSON / JSON object, application/json, 69 chars | `invalid_request` / `invalid_request` | "Client not allowed." / "Client not allowed." | active | active / active | not a revocation call; shows why a confidential observer is required |
 
-K-14 is absent from the 26.7.5 table because its fixture failed in `OneTimeSetUp`: the observer
-reported the freshly issued refresh token inactive, which the fixture treats as a failed prerequisite
-and not as an observation (see deviation 2). The K-00 refresh-token preconditions failed for the same
-reason, and the K-18 note "observer's view of the paired refresh token after: inactive" is the same
-blind spot, not a revocation effect.
+The two tables differ only in the server version noted in K-00.
 
-#### 9.1.4 Findings, deviations and proposed corrections (for review before any edit to §2.1, D-10, D-11, D-16 or the fixture's expectations)
+#### 9.1.4 Findings and the corrections they caused
 
-**Confirmed exactly as §2.1 predicted, on both versions:** success is `200` with an empty body
-(K-01, K-01b, K-10…K-13, K-19, K-21); ownership mismatch is `400` `invalid_request` /
+**Confirmed exactly as §2.1 predicted, on both versions:** success is `200` with a zero-length body
+(K-01, K-01b, K-10…K-14, K-16, K-18, K-19, K-21); ownership mismatch is `400` `invalid_request` /
 `Unmatching clients` with the token untouched (K-02, K-08, K-20) — this is the string D-10 row 2
-normalizes, copied here verbatim from the response body; duplicated parameter is `400`
-`invalid_request` / `duplicated parameter` (K-09); missing token is `400` `invalid_request` /
-`Token not provided` (K-22); an ID token is `400` `unsupported_token_type` / `Unsupported token type`
-and the check runs **before** the ownership check (K-15 presents a token whose `azp` is not the
-caller and still gets the type error) — D-10 row 3's "no ownership information" claim holds; a token
-from another realm is `200` `invalid_token` / `Invalid token` (K-17); a public client authenticates
-with no secret and with an arbitrary secret and revokes its own token (K-18, K-19) — D-11 remains
-necessary; the public client cannot introspect (`403` `invalid_request` / `Client not allowed.`,
-K-23) — the observer must be confidential; the form `client_id` wins over the Basic header (K-08);
-`token_type_hint` values `access_token`, `refresh_token`, `bogus` and empty make no difference
-(K-10…K-13); a second revocation of a revoked token is `200` empty (K-21).
+normalizes, copied from the response body; duplicated parameter is `400` `invalid_request` /
+`duplicated parameter` (K-09); missing token is `400` `invalid_request` / `Token not provided` (K-22);
+an ID token is `400` `unsupported_token_type` / `Unsupported token type` and the check runs **before**
+the ownership check (K-15 presents a token whose `azp` is not the caller and still gets the type
+error) — D-10 row 3's "no ownership information" claim holds; a token from another realm is `200`
+`invalid_token` / `Invalid token` (K-17); a public client authenticates with no secret and with an
+arbitrary secret and revokes its own token (K-18, K-19) — D-11 remains necessary; the public client
+cannot introspect (`403` `invalid_request` / `Client not allowed.`, K-23); the form `client_id` wins
+over the Basic header (K-08); `token_type_hint` values `access_token`, `refresh_token`, `bogus` and
+empty make no difference (K-10…K-13); a second revocation of a revoked token is `200` empty (K-21);
+revoking a refresh token answers `200` empty and invalidates both the refresh token (owner's
+introspection) and the paired access token (observer's introspection) (K-14); revoking an access
+token leaves the session alone — the paired refresh token still buys a new access token (K-18). Every
+OAuth error body is a JSON object served as `application/json`.
 
 **§2.2 unknowns, now observed (both versions):**
 
@@ -1220,69 +1247,65 @@ K-23) — the observer must be confidential; the form `client_id` wins over the 
 | No credentials at all | `401` `invalid_client` / `Invalid client or Invalid client credentials`, no `WWW-Authenticate` header (K-07). CMS answers this before delegation (D-03 row 7), so it never reaches Keycloak |
 | `sslRequired` | `external` (A-02 closed: HTTP from the Docker network and from loopback is accepted) |
 | `azp` on service-account tokens | equals the client id (A-04 closed) |
-| Refresh token for `client_credentials` | issued only with the client attribute `client_credentials.use_refresh_token=true`; revoking it answers `200` empty and the paired access token becomes inactive (K-14, 26.1.4), as §2.1 derived from the source; revoking an access token leaves the paired refresh token active (K-18, 26.1.4) |
-| 26.7 behaviour on the rows CMS depends on | **identical** to 26.1.4 for every revocation response: ownership mismatch, unsupported type, invalid client (both codes), public client, duplicated parameter, missing token, hints, idempotency, expired and foreign-realm tokens. The only version difference is in introspection (deviation 2), which P3.2 uses as its validation path, not in revocation |
+| Refresh token for `client_credentials` | issued only with the client attribute `client_credentials.use_refresh_token=true` (K-00) |
+| 26.7.5 behaviour on the rows CMS depends on | **identical** to 26.1.4 for every revocation response and every observed token state, K-01…K-23 included. The only version difference P1.1 found is in **introspection** (correction 2 below), which is the test-side validation path, not revocation |
 
-**Deviation 1 — wrong secret on a known confidential client is `unauthorized_client`, not `invalid_client` (both versions; the two failing tests).** K-04 and K-05 observed `401` with
+**Correction 1 — wrong secret on a known confidential client is `401 unauthorized_client`, not `invalid_client` (both versions).** K-04 and K-05 observed
 `{"error":"unauthorized_client","error_description":"Invalid client or Invalid client credentials"}`,
 while unknown client and no credentials observed `401` `invalid_client` with the same description.
-§2.1's row "Wrong or missing secret (confidential client) → `invalid_client`" is therefore wrong for
-the wrong-secret case. **D-10 row 4 already maps `error ∈ {invalid_client, unauthorized_client}` at
-400 or 401 to `InvalidClient`, so no normalization decision changes.** Proposed corrections: (a) §2.1
-row split into "wrong secret, known confidential client → 401 `unauthorized_client`" and "unknown
-client or no credentials → 401 `invalid_client`", both with description "Invalid client or Invalid
-client credentials"; (b) the K-04/K-05 predictions in the fixture set to `unauthorized_client` in the
-follow-up commit after approval, per the P1.1 rule that deviations are recorded first and corrected
-after review. The fixture deliberately still fails on these two tests in this commit.
+§2.1's wrong-secret row was corrected accordingly (approved). **D-10 row 4 already maps `error ∈
+{invalid_client, unauthorized_client}` at 400 or 401 to `InvalidClient`, so no normalization
+decision changes.** The first P1.1 commit left K-04/K-05 failing on the old prediction; the
+correction commit set them to the observed value.
 
-**Deviation 2 — A-06 does not hold on Keycloak 26.4.12 and later; the observer needs the token's audience, and cannot see refresh tokens at all on 26.7.5.** On 26.7.5 the first run reported every
+**Correction 2 — A-06 did not hold on 26.7.5; the observer needs the token's audience, and refresh tokens are observable only by their issuing client.** On 26.7.5 the first run reported every
 freshly issued token inactive, including a client's own token introspected with its own credentials.
-The server log gives the reason: `Introspection denied: client '<observer>' not in audience of token`
-(event `INTROSPECT_TOKEN_ERROR`, `error="invalid_token"`). Keycloak introduced this audience check in
-26.4.12; 26.6.2 and later answer `{"active": false}` whenever the asking client is absent from the
-token's `aud`. A deprecated compatibility switch exists (server option
+The server log gave the reason: `Introspection denied: client '<observer>' not in audience of token`
+(event `INTROSPECT_TOKEN_ERROR`, `error="invalid_token"`). The observed facts are: 26.1.4 performs no
+audience check at introspection; 26.7.5 answers `active:false` whenever the asking client is absent
+from the access token's `aud`. The Red Hat build of Keycloak 26.4 migration guide describes this
+check as introduced in 26.4.12 together with a deprecated compatibility switch (server option
 `allow-token-introspection-without-audience-check`, or per client under *Advanced → OpenID Connect
-Compatibility Modes*), documented as logging a warning per request and scheduled for removal. The
-26.1.4 image has no such check (K-00 on 26.1.4 observed every token active with the observer absent
-from `aud` in the first run). Consequences and what was done:
+Compatibility Modes*); upstream versions between 26.1.4 and 26.7.5 were **not** observed here, so
+that threshold is the vendor's statement, not a verified one. For refresh tokens, 26.7.5's
+`RefreshTokenIntrospectionProvider` admits only the client the token was issued to (the owner sees
+`active:true` with `token_type_hint=refresh_token`; every other client, the observer included, gets
+`active:false` with no denial reason in the log); without the hint the access-token provider runs and
+its audience check fails because a refresh token's `aud` is the issuer. What the correction commit
+did (approved):
 
-1. The fixture now creates a per-run client scope carrying an `oidc-audience-mapper` for the observer
-   and attaches it as a default scope to the subject and public clients, so the observer appears in
-   every subject token's `aud`. With that, every **access-token** observation on 26.7.5 matches 26.1.4
-   (K-01…K-13, K-15…K-23 above). The 26.1.4 table did not change between the run without the scope and
-   the run with it (109/2/19 both times). This is a test-realm change only.
-2. **Refresh tokens**: a refresh token's `aud` is the issuer URL and no mapper changes it. With
-   `token_type_hint=refresh_token` Keycloak 26.7.5 routes to the refresh-token introspection provider,
-   which has no audience check but admits only the token's **own** client: the owner sees `active:
-   true`, every other client (the observer included) gets `active: false` with no denial reason in the
-   log. The fixture therefore observes refresh tokens with the hint (harmless on 26.1.4, where it also
-   works), and on 26.7.5 the refresh rows fail as **prerequisites** (K-00 refresh checks, K-14) rather
-   than record an inactive state. Using the owner's credentials to observe would violate D-16's rule
-   that observer credentials are never the ones submitted to revocation (K-14 submits the owner's).
-3. Proposed corrections, for review: (a) A-06 rewritten to "any confidential client **present in the
-   token's `aud`** can introspect an access token; public clients are refused (403); refresh tokens
-   are introspectable only by their own client on 26.4.12+"; (b) D-16's observer paragraph gains the
-   audience requirement, and P3.2's `[BeforeFeature]` observer setup also creates and attaches an
-   audience scope for the observer to the clients whose tokens the Keycloak scenarios observe
-   (`DmsConfigurationService` and the per-scenario public client), removing it in `[AfterFeature]`,
-   so the E2E observer works on the pinned image **and** on 26.4.12+; (c) the D-16 token-type matrix
-   marks the Keycloak refresh-token row "characterized on 26.1.4; not observable by a separate client
-   on 26.4.12+, so its before/after state is not part of the E2E evidence there"; (d) `KEYCLOAK-SETUP.md`
-   (P5.1) notes the audience requirement for any operator who validates revocation through
-   introspection. None of these touch D-10 or D-11.
+1. The fixture creates a per-run client scope carrying an `oidc-audience-mapper` for the observer
+   and attaches it as a default scope to the subject and public clients, so the observer is in every
+   observed access token's `aud`. Creation and removal are confined to fixture-owned resources.
+2. Refresh tokens are introspected by their **owning** client with `token_type_hint=refresh_token`
+   (D-16 corrected). The separate observer still observes every access token, including the paired
+   access token of K-14. K-14 is therefore characterized on both versions with identical results.
+3. The public client's refresh token (K-18, K-00), which its owner cannot introspect (403), is
+   observed through a refresh grant used as a liveness probe, performed only as the last action on
+   that token because the grant may rotate it; `200` is recorded on both versions.
+4. A-06 and D-16 were rewritten (§3, §7); `KEYCLOAK-SETUP.md` (P5.1) will note the audience
+   requirement for operators who validate revocation through introspection; P3.2's observer setup
+   will create and attach the audience scope as D-16 now describes.
+
+**Disclosure (AC8) in the harness, after review finding 1:** every diagnostic the harness raises is
+fixed text plus the operation label, the HTTP status and a body category; request and response
+content never reach an exception. Every secret and token the run sees (client secrets, the user
+password, Basic parameters, admin tokens, every issued access, refresh and ID token) is registered,
+and the evidence log refuses a row that would contain one, so a provider that echoed a credential in
+`error_description` would fail the fixture rather than reach the table. The evidence rows do carry
+Keycloak's `error`, `error_description` and `WWW-Authenticate` values by design — they are the
+characterization target — and the registry is what keeps those fields free of run credentials. The
+offline fixtures in `KeycloakCharacterizationDiagnosticsTests.cs` plant sentinels in request
+representations, credentials, tokens and echoing response bodies and assert that none appears in the
+exception message, `ToString()` or inner chain, and that a leaking evidence row is refused while a
+clean one is recorded.
 
 **Other observations worth the reviewer's attention:** Keycloak's `401` responses carry no
 `WWW-Authenticate` header (CMS adds its own under D-03 row 6/8, independent of Keycloak); the success
-response is `200`, not `204`, with an empty body; the `error` bodies are `application/json`;
-the `dms-keycloak` volume mount in `keycloak.yml` (`/var/lib/keycloak/data`) is not where the dev-mode
-database lives (`/opt/keycloak/data`), so a container recreate loses the realm on both versions — the
-E2E scripts always re-run `setup-keycloak.ps1`, so this only matters for manual restarts.
-
-**Open question Q-08 (new):** the fixture is gated on `DMS_CONFIG_IDENTITY_PROVIDER=keycloak` as
-P1.1 specified, and `build-config.ps1 E2ETest -IdentityProvider keycloak` sets exactly that for the
-test process, so this fixture will also execute in the CI Keycloak E2E lane (about 15 s, two
-fixtures fail until deviation 1's follow-up lands). Decide whether it stays a CI regression guard on
-the pinned image or is gated on an additional opt-in variable.
+response is `200`, not `204`, with a zero-length body; the `dms-keycloak` volume mount in
+`keycloak.yml` (`/var/lib/keycloak/data`) is not where the dev-mode database lives
+(`/opt/keycloak/data`), so a container recreate loses the realm on both versions — the E2E scripts
+always re-run `setup-keycloak.ps1`, so this only matters for manual restarts.
 
 ### 9.2 AC evidence matrix (P5.1)
 
