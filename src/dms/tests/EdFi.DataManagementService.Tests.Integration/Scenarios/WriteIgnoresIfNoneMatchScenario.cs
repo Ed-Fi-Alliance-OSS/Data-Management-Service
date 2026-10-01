@@ -12,15 +12,15 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 /// <summary>
-/// Write-side <c>If-None-Match</c> create-guard: POSTs/PUTs a Student against the real DMS HTTP
-/// pipeline with various <c>If-None-Match</c> request headers, asserting the create-only semantics
-/// (RFC 9110 §13.1.2 <c>If-None-Match: *</c> succeeds only when no current representation exists). Hard-coded
-/// for the ProfileRootOnlyMerge fixture's Student shape: project endpoint <c>ed-fi</c>, resource
-/// <c>students</c>, required identity <c>studentUniqueId</c>, required non-identity <c>firstName</c>.
-/// Each scenario uses a fresh, per-call unique <c>studentUniqueId</c> to avoid cross-test collisions
-/// within a shared leased database.
+/// Write-side <c>If-None-Match</c> is ignored (DMS-1576): POSTs, PUTs, and DELETEs a Student against the
+/// real DMS HTTP pipeline with various <c>If-None-Match</c> request headers, asserting that the header
+/// has no effect on any write -- it is a conditional-read (GET-only) validator, matching the ODS/API.
+/// Hard-coded for the ProfileRootOnlyMerge fixture's Student shape: project endpoint <c>ed-fi</c>,
+/// resource <c>students</c>, required identity <c>studentUniqueId</c>, required non-identity
+/// <c>firstName</c>. Each scenario uses a fresh, per-call unique <c>studentUniqueId</c> to avoid
+/// cross-test collisions within a shared leased database.
 /// </summary>
-internal static class WriteCreateGuardIfNoneMatchScenario
+internal static class WriteIgnoresIfNoneMatchScenario
 {
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string IfNoneMatchHeaderName = "If-None-Match";
@@ -30,7 +30,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
     // any UUID-format validation while remaining guaranteed absent from a freshly leased database.
     private const string NonExistentResourceId = "00000000-0000-4000-a000-000000000000";
 
-    public static async Task It_permits_a_post_insert_under_a_wildcard_if_none_match(
+    public static async Task It_ignores_a_wildcard_if_none_match_on_a_post_of_a_new_document(
         ApiIntegrationHarness harness
     )
     {
@@ -49,18 +49,18 @@ internal static class WriteCreateGuardIfNoneMatchScenario
             .StatusCode.Should()
             .Be(
                 HttpStatusCode.Created,
-                $"If-None-Match: * against a brand-new resource is the create-only success case. Body: {body}"
+                $"If-None-Match: * is ignored on a POST, so a brand-new resource still creates normally. Body: {body}"
             );
         response.Headers.Location.Should().NotBeNull();
         response.TryReadRawEtag(out _).Should().BeTrue("a successful POST create must emit an ETag header");
     }
 
-    public static async Task It_rejects_a_post_upsert_to_an_existing_document_under_a_wildcard_if_none_match(
+    public static async Task It_ignores_a_wildcard_if_none_match_on_a_post_to_an_existing_document(
         ApiIntegrationHarness harness
     )
     {
         string studentUniqueId = UniqueStudentId("pup-wc");
-        await CreateStudentAsync(harness, studentUniqueId, "Ada");
+        (string locationPath, _) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, StudentsEndpoint)
         {
@@ -74,13 +74,56 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         response
             .StatusCode.Should()
             .Be(
-                HttpStatusCode.PreconditionFailed,
-                $"a POST that resolves to an existing document under If-None-Match: * must 412, not silently upsert. Body: {body}"
+                HttpStatusCode.OK,
+                $"If-None-Match: * is ignored on a POST, so an upsert to an existing document still 200s. Body: {body}"
             );
-        AssertIfNoneMatchPreconditionFailed(body);
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(locationPath);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getBody);
+        JsonNode? returnedNode = JsonNode.Parse(getBody);
+        returnedNode.Should().NotBeNull("GET response must be a JSON document");
+        returnedNode!.AsObject()["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Ada-changed", $"the upsert must have taken effect. Body: {getBody}");
     }
 
-    public static async Task It_rejects_an_existing_put_under_a_wildcard_if_none_match(
+    public static async Task It_ignores_a_matching_specific_if_none_match_on_a_post_to_an_existing_document(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("pup-sp");
+        (string locationPath, string etag) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, StudentsEndpoint)
+        {
+            Content = CreateStudentContent(studentUniqueId, "Ada-changed-again"),
+        };
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{etag}\"");
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.OK,
+                $"a specific If-None-Match tag that matches the current ETag is ignored on a POST, so the upsert still 200s. Body: {body}"
+            );
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(locationPath);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getBody);
+        JsonNode? returnedNode = JsonNode.Parse(getBody);
+        returnedNode.Should().NotBeNull("GET response must be a JSON document");
+        returnedNode!.AsObject()["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Ada-changed-again", $"the upsert must have taken effect. Body: {getBody}");
+    }
+
+    public static async Task It_ignores_a_wildcard_if_none_match_on_a_put_to_an_existing_document(
         ApiIntegrationHarness harness
     )
     {
@@ -100,13 +143,22 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         response
             .StatusCode.Should()
             .Be(
-                HttpStatusCode.PreconditionFailed,
-                $"PUT to an existing target under If-None-Match: * must 412 (the target already has a representation). Body: {body}"
+                HttpStatusCode.NoContent,
+                $"If-None-Match: * is ignored on a PUT, so an update to an existing target still succeeds. Body: {body}"
             );
-        AssertIfNoneMatchPreconditionFailed(body);
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(locationPath);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getBody);
+        JsonNode? returnedNode = JsonNode.Parse(getBody);
+        returnedNode.Should().NotBeNull("GET response must be a JSON document");
+        returnedNode!.AsObject()["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Ada-renamed", $"the PUT must have taken effect. Body: {getBody}");
     }
 
-    public static async Task It_returns_not_found_for_a_missing_put_under_a_wildcard_if_none_match(
+    public static async Task It_returns_not_found_for_a_put_to_a_missing_target_under_a_wildcard_if_none_match(
         ApiIntegrationHarness harness
     )
     {
@@ -126,11 +178,11 @@ internal static class WriteCreateGuardIfNoneMatchScenario
             .StatusCode.Should()
             .Be(
                 HttpStatusCode.NotFound,
-                $"PUT to a genuinely missing target under If-None-Match: * is the success case for the create-guard, so it must fall through to the normal 404 rather than 412. Body: {body}"
+                $"If-None-Match: * is ignored on a PUT, so a genuinely missing target still 404s rather than taking any create-guard path. Body: {body}"
             );
     }
 
-    public static async Task It_rejects_an_existing_put_under_a_matching_specific_if_none_match(
+    public static async Task It_ignores_a_matching_specific_if_none_match_on_a_put_to_an_existing_document(
         ApiIntegrationHarness harness
     )
     {
@@ -138,40 +190,75 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         (string locationPath, string etag) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
         string resourceId = GetResourceId(locationPath);
 
-        using var matchingRequest = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
         {
             Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
         };
-        matchingRequest.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{etag}\"");
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"{etag}\"");
 
-        using HttpResponseMessage matchingResponse = await harness.HttpClient.SendAsync(matchingRequest);
-        string matchingBody = await matchingResponse.Content.ReadAsStringAsync();
-        matchingResponse
-            .StatusCode.Should()
-            .Be(
-                HttpStatusCode.PreconditionFailed,
-                $"a specific If-None-Match tag that matches the current ETag must 412. Body: {matchingBody}"
-            );
-        AssertIfNoneMatchPreconditionFailed(matchingBody);
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
 
-        using var nonMatchingRequest = new HttpRequestMessage(HttpMethod.Put, locationPath)
-        {
-            Content = CreateStudentContent(studentUniqueId, "Ada-renamed-again", resourceId),
-        };
-        // A stale, non-matching tag: the client's copy no longer reflects the current representation,
-        // so If-None-Match is satisfied and the write proceeds normally.
-        nonMatchingRequest.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "\"1-00000000.j._.n.i\"");
-
-        using HttpResponseMessage nonMatchingResponse = await harness.HttpClient.SendAsync(
-            nonMatchingRequest
-        );
-        string nonMatchingBody = await nonMatchingResponse.Content.ReadAsStringAsync();
-        nonMatchingResponse
+        response
             .StatusCode.Should()
             .Be(
                 HttpStatusCode.NoContent,
-                $"a non-matching (stale) If-None-Match tag must be satisfied and let the PUT succeed. Body: {nonMatchingBody}"
+                $"a specific If-None-Match tag that matches the current ETag is ignored on a PUT, so the update still succeeds. Body: {body}"
             );
+    }
+
+    public static async Task It_ignores_a_matching_tag_in_an_if_none_match_list_on_a_put_to_an_existing_document(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("pws-list");
+        (string locationPath, string etag) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
+        string resourceId = GetResourceId(locationPath);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        {
+            Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
+        };
+        // Whether or not a list member matches the current representation no longer matters for a
+        // write: If-None-Match is ignored either way. The matching tag is placed among stale tags to
+        // prove list parsing doesn't somehow resurrect the old create-guard behavior for this shape.
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n.i\", \"{etag}\"");
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.NoContent,
+                $"a list containing the current tag is ignored on a PUT, so the update still succeeds. Body: {body}"
+            );
+    }
+
+    public static async Task It_ignores_a_wildcard_if_none_match_on_a_delete_of_an_existing_document(
+        ApiIntegrationHarness harness
+    )
+    {
+        string studentUniqueId = UniqueStudentId("del-wc");
+        (string locationPath, _) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, locationPath);
+        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "*");
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.NoContent,
+                $"If-None-Match: * is ignored on a DELETE, so an existing target still deletes normally. Body: {body}"
+            );
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(locationPath);
+        getResponse
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NotFound, "the ignored If-None-Match must not have prevented the delete");
     }
 
     public static async Task It_prefers_if_match_when_both_headers_are_present(ApiIntegrationHarness harness)
@@ -184,8 +271,8 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         {
             Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
         };
-        // If-Match is correct (matches the current ETag); If-None-Match: * would 412 an existing
-        // target if it were evaluated. If-Match governing must let this PUT succeed.
+        // If-Match is correct (matches the current ETag); If-None-Match: * is ignored on writes either
+        // way, so this also proves that a would-be-failing If-None-Match can't somehow still win.
         request.Headers.TryAddWithoutValidation(IfMatchHeaderName, $"\"{etag}\"");
         request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, "*");
 
@@ -196,7 +283,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
             .StatusCode.Should()
             .Be(
                 HttpStatusCode.NoContent,
-                $"when both headers are present, If-Match must govern; a satisfied If-Match must not be overridden by a would-be-failing If-None-Match. Body: {body}"
+                $"when both headers are present, If-Match must govern and If-None-Match must be ignored. Body: {body}"
             );
     }
 
@@ -204,11 +291,9 @@ internal static class WriteCreateGuardIfNoneMatchScenario
     /// Exercises the deferred (post-proposed-authorization) precondition branch in
     /// <c>DefaultRelationalWriteExecutor</c>: a PUT against a resource whose Update action requires
     /// <c>RelationshipsWithEdOrgsOnly</c> authorization defers the etag precondition check until after
-    /// proposed-value authorization succeeds. This proves the create-guard still 412s on that route
-    /// (backed at the unit level by
-    /// <c>It_returns_precondition_failure_on_the_deferred_path_for_an_existing_put_under_if_none_match</c>).
+    /// proposed-value authorization succeeds. This proves If-None-Match is still ignored on that route.
     /// </summary>
-    public static async Task It_returns_precondition_failure_on_the_deferred_path_for_an_existing_put_under_a_wildcard_if_none_match(
+    public static async Task It_ignores_a_wildcard_if_none_match_on_the_deferred_path_for_an_existing_put(
         ApiIntegrationHarness harness
     )
     {
@@ -216,7 +301,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         // Derived deterministically from the suffix's own hex value (not string.GetHashCode(), which
         // is process-randomized) and kept well clear of any int32 boundary.
         long schoolId = 1_000_000_000L + (Convert.ToInt64(suffix, 16) % 1_000_000_000L);
-        string namespaceUri = $"uri://ed-fi.org/WcgDeferred/{suffix}";
+        string namespaceUri = $"uri://ed-fi.org/WimDeferred/{suffix}";
 
         await SeedAuthorizedSchoolAsync(harness, schoolId, namespaceUri);
 
@@ -224,8 +309,8 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         string resourceId = GetResourceId(locationPath);
 
         // The proposed schoolId is unchanged (still authorized), so proposed-relationship
-        // authorization succeeds and the write falls through to the deferred precondition check --
-        // the only route that exercises TryBuildDeferredPreconditionFailureResult end to end.
+        // authorization succeeds and the write falls through to the deferred precondition check -- the
+        // only route that exercises this branch end to end.
         using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
         {
             Content = CreateRootChildContent(1, $"deferred-{suffix}-updated", schoolId, resourceId),
@@ -238,100 +323,8 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         response
             .StatusCode.Should()
             .Be(
-                HttpStatusCode.PreconditionFailed,
-                $"the deferred (post-proposed-authorization) branch must still honor If-None-Match: * against an existing target. Body: {body}"
-            );
-    }
-
-    public static async Task It_rejects_an_existing_put_when_a_matching_tag_is_in_a_list(
-        ApiIntegrationHarness harness
-    )
-    {
-        string studentUniqueId = UniqueStudentId("pws-list");
-        (string locationPath, string etag) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
-        string resourceId = GetResourceId(locationPath);
-
-        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
-        {
-            Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
-        };
-        // RFC 9110 §13.1.2: a list precondition fails the write (412) when ANY member matches the
-        // current representation. The matching tag is placed among stale tags to prove list iteration.
-        request.Headers.TryAddWithoutValidation(IfNoneMatchHeaderName, $"\"1-00000000.j._.n.i\", \"{etag}\"");
-
-        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
-        string body = await response.Content.ReadAsStringAsync();
-
-        response
-            .StatusCode.Should()
-            .Be(
-                HttpStatusCode.PreconditionFailed,
-                $"a list containing the current tag must 412, even when other list members are stale. Body: {body}"
-            );
-    }
-
-    public static async Task It_permits_an_existing_put_when_no_tag_in_a_list_matches(
-        ApiIntegrationHarness harness
-    )
-    {
-        string studentUniqueId = UniqueStudentId("pwm-list");
-        (string locationPath, _) = await CreateStudentAsync(harness, studentUniqueId, "Ada");
-        string resourceId = GetResourceId(locationPath);
-
-        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
-        {
-            Content = CreateStudentContent(studentUniqueId, "Ada-renamed", resourceId),
-        };
-        // All members are stale, so If-None-Match is satisfied and the write proceeds normally.
-        request.Headers.TryAddWithoutValidation(
-            IfNoneMatchHeaderName,
-            "\"1-00000000.j._.n.i\", \"2-11111111.j._.n.i\""
-        );
-
-        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
-        string body = await response.Content.ReadAsStringAsync();
-
-        response
-            .StatusCode.Should()
-            .Be(
                 HttpStatusCode.NoContent,
-                $"a list in which no member matches must be satisfied and let the PUT succeed. Body: {body}"
-            );
-    }
-
-    private static void AssertIfNoneMatchPreconditionFailed(string responseBody)
-    {
-        JsonObject problem = JsonNode.Parse(responseBody)!.AsObject();
-
-        problem
-            .Select(static property => property.Key)
-            .Should()
-            .BeEquivalentTo(
-                "detail",
-                "type",
-                "title",
-                "status",
-                "correlationId",
-                "validationErrors",
-                "errors"
-            );
-        problem["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be(
-                "The If-None-Match precondition failed because a current representation of the resource matched the request header."
-            );
-        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:precondition-failed:if-none-match");
-        problem["title"]!.GetValue<string>().Should().Be("If-None-Match Precondition Failed");
-        problem["status"]!.GetValue<int>().Should().Be(412);
-        problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-        problem["validationErrors"]!.AsObject().Should().BeEmpty();
-        problem["errors"]!
-            .AsArray()
-            .Select(static error => error!.GetValue<string>())
-            .Should()
-            .Equal(
-                "The 'If-None-Match' request header requires that no current representation match the supplied value, but a matching representation exists."
+                $"the deferred (post-proposed-authorization) branch must also ignore If-None-Match: * against an existing target. Body: {body}"
             );
     }
 
@@ -369,7 +362,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         return new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
     }
 
-    private static string UniqueStudentId(string scenario) => $"wcg-{scenario}-{Guid.NewGuid():N}"[..24];
+    private static string UniqueStudentId(string scenario) => $"wim-{scenario}-{Guid.NewGuid():N}"[..24];
 
     private static string GetResourceId(string locationPath) =>
         locationPath.Split('/', StringSplitOptions.RemoveEmptyEntries)[^1];
@@ -406,7 +399,7 @@ internal static class WriteCreateGuardIfNoneMatchScenario
         var schoolPayload = new JsonObject
         {
             ["schoolId"] = schoolId,
-            ["nameOfInstitution"] = $"Wcg-Deferred-School-{schoolId}",
+            ["nameOfInstitution"] = $"Wim-Deferred-School-{schoolId}",
             ["educationOrganizationCategories"] = new JsonArray(
                 new JsonObject
                 {
