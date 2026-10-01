@@ -2,8 +2,8 @@
 
 **Status:** DRAFT, revision 3, approved for P1.1 only (Codex, 2026-10-01). P1.1 is implemented
 (tests and this document; no production code) and its evidence is in §9.1, together with the
-approved corrections to §2.1, A-06 and D-16 made by the P1.1 correction commit. Nothing beyond P1.1
-is implemented. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
+approved corrections to §2.1, A-06 and D-16 made by the P1.1 correction commit. P2.1 (shared
+contract, classified failures, 503 mapping) is implemented as planned in §6; nothing beyond P2.1 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
 the change made.
 **Ticket:** [DMS-1327](https://edfi.atlassian.net/browse/DMS-1327). Prerequisite: DMS-1478 / PR #1280
 (commit `8b43a5fee`). Related: DMS-1218 (CMS error contract), DMS-1365 (Keycloak compensation).
@@ -1041,8 +1041,12 @@ Decisions resolved by the revision-1 review (recorded so later steps do not reop
 | Q-07 | `invalid_client` for "client not found" only after an authoritative successful admin read; a failed, refused or ambiguous read is 503. |
 | Q-08 | (raised and resolved in P1.1) The characterization fixture stays in the existing Keycloak CI E2E lane as a regression guard on the pinned image; no opt-in variable hides it. Every prediction is exact, and the only skipped checks are state checks that do not exist for a row (before-state of a request without a live token, after-state of a request without a token or with a foreign-realm token). |
 
-Nothing in §2.1 is presented as observed behavior; every Keycloak row is "expected from source,
-to be confirmed in P1.1".
+§2.1 rows marked "observed in P1.1" and every behaviour recorded in §9.1 are observations from
+the pinned 26.1.4 image (and from 26.7.5 for the compatibility record). The remaining §2.1 rows
+that P1.1 did not exercise are still source-derived: bearer-only clients ("Bearer-only not
+allowed"), a token whose `azp` is missing, a session or user that cannot be resolved, and the
+offline-token effect. They stay "expected from source" until a step exercises them, and no
+normalization keys on them (D-10 keys only on strings observed in §9.1).
 
 ---
 

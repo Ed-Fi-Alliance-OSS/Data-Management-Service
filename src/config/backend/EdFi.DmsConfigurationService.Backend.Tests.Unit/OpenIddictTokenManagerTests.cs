@@ -238,98 +238,15 @@ public class OpenIddictTokenManagerTests
     // It returns the stored canonical client id rather than a bare flag, because that is the
     // value tokens are minted from and therefore the only value the ownership check can use.
 
-    [TestFixture]
-    public class Given_AuthenticateClientAsync_WithValidCredentials : OpenIddictTokenManagerTests
-    {
-        private string? _result;
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
-                .Returns(
-                    new ApplicationInfo
-                    {
-                        ClientId = "known-client",
-                        ClientSecret = "hashed-secret",
-                        IsApproved = true,
-                    }
-                );
-            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
-
-            _result = await _tokenManager.AuthenticateClientAsync("known-client", "plain-secret");
-        }
-
-        [Test]
-        public void It_returns_the_client_id() => _result.Should().Be("known-client");
-    }
-
-    // The case that motivated returning a client id instead of a flag: SQL Server's default
-    // collation resolves a mis-cased client id, so the caller authenticates under a spelling
-    // that was never stored. Handing that spelling to the ownership check would compare it
-    // against the canonical value the token was minted from and find a stranger.
-    [TestFixture]
-    public class Given_AuthenticateClientAsync_WithNonCanonicalCasing : OpenIddictTokenManagerTests
-    {
-        private string? _result;
-
-        [SetUp]
-        public async Task Act()
-        {
-            // Stands in for a case-insensitive collation: the lookup resolves the mis-cased id
-            // to the application registered under the canonical one.
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("KNOWN-Client"))
-                .Returns(
-                    new ApplicationInfo
-                    {
-                        ClientId = "known-client",
-                        ClientSecret = "hashed-secret",
-                        IsApproved = true,
-                    }
-                );
-            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
-
-            _result = await _tokenManager.AuthenticateClientAsync("KNOWN-Client", "plain-secret");
-        }
-
-        [Test]
-        public void It_returns_the_canonical_client_id_not_the_requested_one() =>
-            _result.Should().Be("known-client");
-    }
-
-    // A stored row with no client id cannot yield a canonical value, and returning an empty
-    // one would authenticate a caller into an ownership check no token can ever match. The
-    // requested spelling is used instead, matching what minting does in the same situation.
-    [TestFixture]
-    public class Given_AuthenticateClientAsync_WhenTheStoredClientIdIsEmpty : OpenIddictTokenManagerTests
-    {
-        private string? _result;
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
-                .Returns(
-                    new ApplicationInfo
-                    {
-                        ClientId = string.Empty,
-                        ClientSecret = "hashed-secret",
-                        IsApproved = true,
-                    }
-                );
-            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
-
-            _result = await _tokenManager.AuthenticateClientAsync("known-client", "plain-secret");
-        }
-
-        [Test]
-        public void It_falls_back_to_the_requested_client_id() => _result.Should().Be("known-client");
-    }
+    // Client authentication now happens inside RevokeTokenAsync (DMS-1327 D-02): the caller's
+    // credentials are checked before the target token is looked at, so an unknown or invalid
+    // token can never hide an authentication failure. The fixtures below pin that ordering and
+    // the canonical-client-id rule DMS-1478 introduced.
 
     [TestFixture]
-    public class Given_AuthenticateClientAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
+    public class Given_RevokeTokenAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
     {
-        private string? _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -337,17 +254,35 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("unknown-client"))
                 .Returns((ApplicationInfo?)null);
 
-            _result = await _tokenManager.AuthenticateClientAsync("unknown-client", "plain-secret");
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        "unknown-client",
+                        "plain-secret",
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
         }
 
         [Test]
-        public void It_returns_null() => _result.Should().BeNull();
+        public void It_reports_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
-    public class Given_AuthenticateClientAsync_WhenSecretIsInvalid : OpenIddictTokenManagerTests
+    public class Given_RevokeTokenAsync_WhenSecretIsInvalid : OpenIddictTokenManagerTests
     {
-        private string? _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -363,17 +298,35 @@ public class OpenIddictTokenManagerTests
                 );
             A.CallTo(() => _secretHasher.VerifySecretAsync("wrong-secret", "hashed-secret")).Returns(false);
 
-            _result = await _tokenManager.AuthenticateClientAsync("known-client", "wrong-secret");
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        "known-client",
+                        "wrong-secret",
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
         }
 
         [Test]
-        public void It_returns_null() => _result.Should().BeNull();
+        public void It_reports_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
-    public class Given_AuthenticateClientAsync_WhenApiClientIsNotApproved : OpenIddictTokenManagerTests
+    public class Given_RevokeTokenAsync_WhenApiClientIsNotApproved : OpenIddictTokenManagerTests
     {
-        private string? _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -389,28 +342,154 @@ public class OpenIddictTokenManagerTests
                 );
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
 
-            _result = await _tokenManager.AuthenticateClientAsync("disabled-client", "plain-secret");
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        "disabled-client",
+                        "plain-secret",
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
         }
 
         [Test]
-        public void It_returns_null() => _result.Should().BeNull();
+        public void It_reports_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
-    public class Given_AuthenticateClientAsync_WithMissingCredentials : OpenIddictTokenManagerTests
+    public class Given_RevokeTokenAsync_WithMissingCredentials : OpenIddictTokenManagerTests
     {
-        private string? _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act() =>
-            _result = await _tokenManager.AuthenticateClientAsync(string.Empty, string.Empty);
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(string.Empty, string.Empty, "any-token", TokenTypeHint.None),
+                    CancellationToken.None
+                );
 
         [Test]
-        public void It_returns_null() => _result.Should().BeNull();
+        public void It_reports_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
 
         [Test]
         public void It_does_not_query_the_repository() =>
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    // The case that motivated the canonical client id (DMS-1478): SQL Server's default collation
+    // resolves a mis-cased client id, so the caller authenticates under a spelling that was never
+    // stored. The ownership comparison must see the canonical value the token was minted from,
+    // or the owner's own token would look like a stranger's.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithNonCanonicalCasing : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+
+            // Stands in for a case-insensitive collation: the lookup resolves the mis-cased id
+            // to the application registered under the canonical one.
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("KNOWN-Client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "known-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, _jti.ToString()),
+                    new Claim("client_id", "known-client"),
+                }
+            );
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest("KNOWN-Client", "plain-secret", token, TokenTypeHint.None),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_revokes_the_token_minted_under_the_canonical_id() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    // A stored row with no client id cannot yield a canonical value, and an empty one would put
+    // the caller into an ownership check no token can ever match. The requested spelling is used
+    // instead, matching what minting does in the same situation.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheStoredClientIdIsEmpty : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = string.Empty,
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+
+            _jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            string token = CreateSignedToken(
+                signingKey,
+                new[]
+                {
+                    new Claim(JwtRegisteredClaimNames.Jti, _jti.ToString()),
+                    new Claim("client_id", "known-client"),
+                }
+            );
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest("known-client", "plain-secret", token, TokenTypeHint.None),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_falls_back_to_the_requested_client_id_for_ownership() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
     }
 
     // The self-contained provider re-checks token status by jti on every request after
@@ -761,10 +840,95 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
+    private const string CallerSecret = "plain-secret";
+
+    /// <summary>
+    /// Registers <paramref name="clientId"/> as an approved application whose secret the faked
+    /// hasher accepts, so a revocation request carrying <see cref="CallerSecret"/> authenticates.
+    /// </summary>
+    private void StubAuthenticatedCaller(string clientId)
+    {
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(clientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    Id = Guid.NewGuid(),
+                    ClientId = clientId,
+                    ClientSecret = "hashed-secret",
+                    IsApproved = true,
+                }
+            );
+        A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, "hashed-secret")).Returns(true);
+    }
+
+    private static TokenRevocationRequest RevocationRequestFor(string callerClientId, string token) =>
+        new(callerClientId, CallerSecret, token, TokenTypeHint.None);
+
+    /// <summary>
+    /// Authenticates <paramref name="callerClientId"/> (unless empty) and asks the manager to
+    /// revoke <paramref name="token"/> on its behalf.
+    /// </summary>
+    private Task<TokenRevocationResult> RevokeAsAsync(
+        OpenIddictTokenManager manager,
+        string callerClientId,
+        string token
+    )
+    {
+        if (callerClientId.Length > 0)
+        {
+            StubAuthenticatedCaller(callerClientId);
+        }
+
+        return manager.RevokeTokenAsync(RevocationRequestFor(callerClientId, token), CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Everything the manager handed to the logger, at every level: the rendered message, each
+    /// structured value, and any attached exception's full text. A disclosure assertion walks all
+    /// of it rather than only the rendered message (DMS-1327 D-15).
+    /// </summary>
+    private static string AllLoggedText(ILogger<OpenIddictTokenManager> logger)
+    {
+        var text = new System.Text.StringBuilder();
+        foreach (var call in Fake.GetCalls(logger).Where(call => call.Method.Name == nameof(ILogger.Log)))
+        {
+            text.AppendLine(call.Arguments[2]?.ToString());
+            if (call.Arguments[2] is IEnumerable<KeyValuePair<string, object?>> state)
+            {
+                foreach (var pair in state)
+                {
+                    text.AppendLine(pair.Value?.ToString());
+                }
+            }
+
+            text.AppendLine((call.Arguments[3] as Exception)?.ToString());
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>The exception objects attached to log entries; the revocation path must attach none.</summary>
+    private static IReadOnlyList<Exception> LoggedExceptions(ILogger<OpenIddictTokenManager> logger) =>
+        Fake.GetCalls(logger)
+            .Where(call => call.Method.Name == nameof(ILogger.Log))
+            .Select(call => call.Arguments[3] as Exception)
+            .Where(exception => exception is not null)
+            .Select(exception => exception!)
+            .ToList();
+
+    private const string ExceptionSentinel = "SECRET-EX-SENTINEL";
+
+    /// <summary>A dependency exception whose message and inner message carry a value that must never be logged.</summary>
+    private static InvalidOperationException DependencyFailure() =>
+        new(
+            $"connection string {ExceptionSentinel} outer",
+            new InvalidOperationException($"{ExceptionSentinel} inner")
+        );
+
     [TestFixture]
     public class Given_RevokeTokenAsync_WithAValidJtiOwnedByTheCaller : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
         private Guid _jti;
 
         [SetUp]
@@ -785,13 +949,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_true()
+        public void It_reports_completed()
         {
-            _result.Should().BeTrue();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -812,7 +976,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenOwnedByAnotherClient : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -829,13 +993,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OtherClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OtherClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -848,7 +1012,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenCarryingNoClientId : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -861,13 +1025,13 @@ public class OpenIddictTokenManagerTests
                 new[] { new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()) }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -883,7 +1047,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenForgedToNameTheCaller : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
         private Guid _victimJti;
 
         [SetUp]
@@ -907,13 +1071,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(forgedToken, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, forgedToken);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -926,7 +1090,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithoutAJti : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -936,13 +1100,13 @@ public class OpenIddictTokenManagerTests
 
             string token = CreateSignedToken(signingKey, new[] { new Claim("client_id", OwnerClientId) });
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -955,7 +1119,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithAMalformedJti : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -972,13 +1136,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -988,10 +1152,12 @@ public class OpenIddictTokenManagerTests
         }
     }
 
+    // No credentials is an authentication failure, reported as such before the token is looked
+    // at; the endpoint pre-empts this case, so the manager's own guard is defence in depth.
     [TestFixture]
     public class Given_RevokeTokenAsync_WithoutACallerClientId : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -1008,13 +1174,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, string.Empty);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), string.Empty, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_invalid_client()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
         }
 
         [Test]
@@ -1030,7 +1196,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenCarryingAnEmptyClientId : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -1047,13 +1213,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -1069,7 +1235,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenWhoseClientIdDiffersOnlyByCase : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -1086,13 +1252,13 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, "owner-client");
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), "owner-client", token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -1109,7 +1275,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenFromAnotherIssuer : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -1127,13 +1293,13 @@ public class OpenIddictTokenManagerTests
                 issuer: "https://attacker.example.test"
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -1146,7 +1312,7 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_WithATokenForAnotherAudience : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -1164,13 +1330,13 @@ public class OpenIddictTokenManagerTests
                 audience: "some-other-service"
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -1180,14 +1346,13 @@ public class OpenIddictTokenManagerTests
         }
     }
 
-    // Verification includes the lifetime check, so revoking an already-expired token is a no-op.
-    // That is a real behavior change from the previous unvalidated ReadJwtToken path, which would
-    // have marked it revoked by jti. Pinned here so it stays a deliberate decision: a caller
-    // tidying up an old token gets 200 OK while nothing is written.
+    // Verification includes the lifetime check, so revoking an already-expired token is a no-op
+    // that still reports Completed (RFC 7009 200 OK) while nothing is written. Pinned here so it
+    // stays a deliberate decision.
     [TestFixture]
     public class Given_RevokeTokenAsync_WithAnExpiredOwnedToken : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Act()
@@ -1205,13 +1370,13 @@ public class OpenIddictTokenManagerTests
                 expired: true
             );
 
-            _result = await CreateConfiguredTokenManager().RevokeTokenAsync(token, OwnerClientId);
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
         }
 
         [Test]
-        public void It_returns_false()
+        public void It_reports_completed()
         {
-            _result.Should().BeFalse();
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
@@ -1223,12 +1388,15 @@ public class OpenIddictTokenManagerTests
 
     // An expired token and a forged one both fail verification, but they mean completely
     // different things: the first is routine, the second is the attack signal this change
-    // exists to surface. These two fixtures assert the observed log levels differ, so the
-    // distinction cannot silently regress into a single undifferentiated severity.
+    // exists to surface. These fixtures assert the observed log levels differ, so the
+    // distinction cannot silently regress into a single undifferentiated severity. They also
+    // pin D-15: the revocation path logs fixed categories only, never the token, the secret, or
+    // the validator's Detail text, and attaches no exception object.
     [TestFixture]
     public class Given_RevokeTokenAsync_LoggingForAnExpiredOwnedToken : OpenIddictTokenManagerTests
     {
         private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+        private string _token = null!;
 
         [SetUp]
         public async Task Act()
@@ -1237,7 +1405,7 @@ public class OpenIddictTokenManagerTests
             StubActivePublicKey(keyId, publicKeySpki);
             _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
 
-            string token = CreateSignedToken(
+            _token = CreateSignedToken(
                 signingKey,
                 new[]
                 {
@@ -1247,7 +1415,7 @@ public class OpenIddictTokenManagerTests
                 expired: true
             );
 
-            await CreateConfiguredTokenManager(_fakeLogger).RevokeTokenAsync(token, OwnerClientId);
+            await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, _token);
         }
 
         [Test]
@@ -1261,12 +1429,25 @@ public class OpenIddictTokenManagerTests
         {
             LogCountAt(_fakeLogger, LogLevel.Debug).Should().BeGreaterThan(0);
         }
+
+        [Test]
+        public void It_logs_neither_the_token_nor_the_secret()
+        {
+            AllLoggedText(_fakeLogger).Should().NotContain(_token).And.NotContain(CallerSecret);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry()
+        {
+            LoggedExceptions(_fakeLogger).Should().BeEmpty();
+        }
     }
 
     [TestFixture]
     public class Given_RevokeTokenAsync_LoggingForAnUntrustedToken : OpenIddictTokenManagerTests
     {
         private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+        private string _token = null!;
 
         [SetUp]
         public async Task Act()
@@ -1280,7 +1461,7 @@ public class OpenIddictTokenManagerTests
             var (_, _, attackerKey) = CreateSigningKey();
             attackerKey.KeyId = keyId;
 
-            string token = CreateSignedToken(
+            _token = CreateSignedToken(
                 attackerKey,
                 new[]
                 {
@@ -1289,7 +1470,7 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-            await CreateConfiguredTokenManager(_fakeLogger).RevokeTokenAsync(token, OwnerClientId);
+            await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, _token);
         }
 
         [Test]
@@ -1305,6 +1486,18 @@ public class OpenIddictTokenManagerTests
                 .Should()
                 .Contain(message => message.Contains("signature or key id"));
         }
+
+        [Test]
+        public void It_logs_neither_the_token_nor_the_secret()
+        {
+            AllLoggedText(_fakeLogger).Should().NotContain(_token).And.NotContain(CallerSecret);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry()
+        {
+            LoggedExceptions(_fakeLogger).Should().BeEmpty();
+        }
     }
 
     // An Authority or Audience typo fails every token in the environment at once. If that shared
@@ -1314,6 +1507,7 @@ public class OpenIddictTokenManagerTests
     public class Given_RevokeTokenAsync_LoggingForATokenWithTheWrongAudience : OpenIddictTokenManagerTests
     {
         private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+        private string _token = null!;
 
         [SetUp]
         public async Task Act()
@@ -1323,7 +1517,7 @@ public class OpenIddictTokenManagerTests
             _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
 
             // Correctly signed by the service's own key; only the audience is unacceptable.
-            string token = CreateSignedToken(
+            _token = CreateSignedToken(
                 signingKey,
                 new[]
                 {
@@ -1333,7 +1527,7 @@ public class OpenIddictTokenManagerTests
                 audience: "some-other-service"
             );
 
-            await CreateConfiguredTokenManager(_fakeLogger).RevokeTokenAsync(token, OwnerClientId);
+            await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, _token);
         }
 
         [Test]
@@ -1356,6 +1550,18 @@ public class OpenIddictTokenManagerTests
             LogMessagesAt(_fakeLogger, LogLevel.Warning)
                 .Should()
                 .NotContain(message => message.Contains("signature or key id"));
+        }
+
+        [Test]
+        public void It_logs_neither_the_token_nor_the_secret()
+        {
+            AllLoggedText(_fakeLogger).Should().NotContain(_token).And.NotContain(CallerSecret);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry()
+        {
+            LoggedExceptions(_fakeLogger).Should().BeEmpty();
         }
     }
 
@@ -1404,8 +1610,9 @@ public class OpenIddictTokenManagerTests
     [TestFixture]
     public class Given_RevokeTokenAsync_AcrossTwoCasingsOfOneClient : OpenIddictTokenManagerTests
     {
-        private bool _result;
+        private TokenRevocationResult _result = null!;
         private string _callerClientId = null!;
+        private Guid _targetJti;
 
         [SetUp]
         public async Task Act()
@@ -1428,21 +1635,535 @@ public class OpenIddictTokenManagerTests
                     .Claims.First(c => c.Type == JwtRegisteredClaimNames.Jti)
                     .Value
             );
+            _targetJti = targetJti;
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(targetJti)).Returns(true);
 
-            _result = await CreateMintingTokenManager().RevokeTokenAsync(targetToken, _callerClientId);
+            // The caller authenticates under the non-canonical spelling; the manager must resolve
+            // it to the canonical id before comparing it with the target token's claim.
+            _result = await CreateMintingTokenManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        NonCanonicalClientId,
+                        "plain-secret",
+                        targetToken,
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_completed()
+        {
+            _result.Should().BeOfType<TokenRevocationResult.Completed>();
         }
 
         [Test]
         public void It_revokes_the_token()
         {
-            _result.Should().BeTrue();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_targetJti)).MustHaveHappenedOnceExactly();
         }
 
         [Test]
         public void It_treats_both_casings_as_the_same_client()
         {
             _callerClientId.Should().Be(CanonicalClientId);
+        }
+    }
+
+    // DMS-1327 D-07.4 / D-13: every dependency boundary on the revocation path is classified as
+    // TemporarilyUnavailable, never as a token outcome, and nothing a dependency exception
+    // carries reaches a log. The comparison logic between boundaries is not wrapped (D-13.1).
+
+    private static (string Token, Guid Jti) CreateOwnedToken(RsaSecurityKey signingKey)
+    {
+        Guid jti = Guid.NewGuid();
+        string token = CreateSignedToken(
+            signingKey,
+            new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()),
+                new Claim("client_id", OwnerClientId),
+            }
+        );
+        return (token, jti);
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheApplicationLookupThrows : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Throws(DependencyFailure());
+
+            _result = await CreateConfiguredTokenManager(_fakeLogger)
+                .RevokeTokenAsync(RevocationRequestFor(OwnerClientId, "any-token"), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_authentication_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_an_error_naming_the_exception_types_only()
+        {
+            LogCountAt(_fakeLogger, LogLevel.Error).Should().Be(1);
+            AllLoggedText(_fakeLogger).Should().Contain(typeof(InvalidOperationException).FullName);
+        }
+
+        [Test]
+        public void It_discloses_nothing_from_the_dependency_exception() =>
+            AllLoggedText(_fakeLogger).Should().NotContain(ExceptionSentinel).And.NotContain(CallerSecret);
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            LoggedExceptions(_fakeLogger).Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheSecretHasherThrows : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            StubAuthenticatedCaller(OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, "hashed-secret"))
+                .Throws(DependencyFailure());
+
+            _result = await CreateConfiguredTokenManager(_fakeLogger)
+                .RevokeTokenAsync(RevocationRequestFor(OwnerClientId, "any-token"), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_authentication_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_discloses_nothing_from_the_dependency_exception() =>
+            AllLoggedText(_fakeLogger).Should().NotContain(ExceptionSentinel).And.NotContain(CallerSecret);
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheKeyRepositoryThrows : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).Throws(DependencyFailure());
+            var (_, _, signingKey) = CreateSigningKey();
+            var (token, _) = CreateOwnedToken(signingKey);
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_key_retrieval_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("signing-key-retrieval");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_discloses_nothing_from_the_dependency_exception() =>
+            AllLoggedText(_fakeLogger).Should().NotContain(ExceptionSentinel);
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            LoggedExceptions(_fakeLogger).Should().BeEmpty();
+    }
+
+    // The old GetPublicKeysFromDatabaseAsync path skipped a corrupt key and carried on, so a
+    // corrupt active key turned every revocation into an "unknown token" 200. The revocation
+    // loader treats it as unavailable instead.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenAnActivePublicKeyIsCorrupt : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+        private string _corruptKeyId = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            _corruptKeyId = Guid.NewGuid().ToString();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                        new PublicKeyInfo { KeyId = _corruptKeyId, PublicKey = [1, 2, 3, 4] },
+                    }
+                );
+            var (token, _) = CreateOwnedToken(signingKey);
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_key_import_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("signing-key-import");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_an_error_naming_the_corrupt_key()
+        {
+            LogCountAt(_fakeLogger, LogLevel.Error).Should().Be(1);
+            LogMessagesAt(_fakeLogger, LogLevel.Error)
+                .Should()
+                .ContainSingle(message => message.Contains(_corruptKeyId));
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenNoActivePublicKeyExists : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).Returns(Array.Empty<PublicKeyInfo>());
+            var (_, _, signingKey) = CreateSigningKey();
+            var (token, _) = CreateOwnedToken(signingKey);
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_for_the_empty_key_set() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("no-active-signing-keys");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_an_error() => LogCountAt(_fakeLogger, LogLevel.Error).Should().Be(1);
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheCertificatePathIsMisconfigured : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var manager = new OpenIddictTokenManager(
+                Options.Create(
+                    new IdentityOptions
+                    {
+                        Authority = TestIssuer,
+                        Audience = TestAudience,
+                        UseCertificates = true,
+                        UseDevelopmentCertificates = false,
+                        CertificatePath = string.Empty,
+                    }
+                ),
+                NullLogger<OpenIddictTokenManager>.Instance,
+                _secretHasher,
+                _tokenRepository
+            );
+            var (_, _, signingKey) = CreateSigningKey();
+            var (token, _) = CreateOwnedToken(signingKey);
+
+            _result = await RevokeAsAsync(manager, OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_key_retrieval_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("signing-key-retrieval");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // A token whose kid names no loaded key is an ordinary untrusted token against a healthy key
+    // set: a token outcome (Completed), not an outage. The kid is attacker-chosen, so the log must
+    // not echo it.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithAnUnknownKid : OpenIddictTokenManagerTests
+    {
+        private const string KidSentinel = "SECRET-KID-SENTINEL";
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            var (keyId, publicKeySpki, _) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            var (_, _, strangerKey) = CreateSigningKey();
+            strangerKey.KeyId = KidSentinel;
+            var (token, _) = CreateOwnedToken(strangerKey);
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_a_warning_in_the_signature_category() =>
+            LogMessagesAt(_fakeLogger, LogLevel.Warning)
+                .Should()
+                .Contain(message => message.Contains("signature or key id"));
+
+        [Test]
+        public void It_does_not_log_the_unverified_kid() =>
+            AllLoggedText(_fakeLogger).Should().NotContain(KidSentinel);
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheUpdateThrows : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            var (token, jti) = CreateOwnedToken(signingKey);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti)).Throws(DependencyFailure());
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_mutation_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("token-mutation");
+
+        [Test]
+        public void It_discloses_nothing_from_the_dependency_exception() =>
+            AllLoggedText(_fakeLogger).Should().NotContain(ExceptionSentinel).And.NotContain(CallerSecret);
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            LoggedExceptions(_fakeLogger).Should().BeEmpty();
+    }
+
+    // The UPDATE reached the database and then the connection died before the row count came
+    // back. The manager cannot know whether the row changed, so it reports unavailable and says
+    // nothing about the token's state (D-13.3). Deliberately, no assertion here claims the token
+    // is revoked or still live.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheResponseIsLostAfterTheUpdate : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private bool _updateReachedTheStore;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            var (token, jti) = CreateOwnedToken(signingKey);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+                .Invokes(() => _updateReachedTheStore = true)
+                .Throws(new TimeoutException("the connection dropped while reading the result"));
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_had_already_issued_the_update() => _updateReachedTheStore.Should().BeTrue();
+
+        [Test]
+        public void It_reports_temporarily_unavailable_rather_than_a_token_outcome() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("token-mutation");
+    }
+
+    // Authentication precedes any token evaluation: with bad credentials the token is never
+    // decoded, no key is loaded and the store is never touched, so an unknown or malformed token
+    // cannot turn an authentication failure into a 200.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithBadCredentialsAndAnUnknownToken : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns((ApplicationInfo?)null);
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(
+                    RevocationRequestFor(OwnerClientId, "not-even-a-jwt"),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // The caller going away is not an outage: the cancellation propagates so no response is
+    // written, instead of being relabelled as a 503.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheCallerCancels : OpenIddictTokenManagerTests
+    {
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Arrange()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            CancellationToken token = cancellation.Token;
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Throws(new OperationCanceledException(token));
+
+            _act = () =>
+                CreateConfiguredTokenManager()
+                    .RevokeTokenAsync(RevocationRequestFor(OwnerClientId, "any-token"), token);
+        }
+
+        [Test]
+        public async Task It_propagates_the_cancellation() =>
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>
+    /// Injects a fault into the ownership comparison, which sits between the dependency
+    /// boundaries and must therefore not be wrapped.
+    /// </summary>
+    private sealed class FaultingOwnershipTokenManager(
+        IOptions<IdentityOptions> identityOptions,
+        IClientSecretHasher secretHasher,
+        IOpenIddictTokenRepository tokenRepository
+    )
+        : OpenIddictTokenManager(
+            identityOptions,
+            NullLogger<OpenIddictTokenManager>.Instance,
+            secretHasher,
+            tokenRepository
+        )
+    {
+        protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
+            throw new InvalidOperationException("ownership comparison fault");
+    }
+
+    // A bug in the comparison logic is a programming fault, not an outage: it must surface as an
+    // exception (a 500 at the HTTP level), never as a 503 that would relabel it, and never as a
+    // 200 (D-13.1, Q-04).
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheOwnershipComparisonFaults : OpenIddictTokenManagerTests
+    {
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Arrange()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            StubAuthenticatedCaller(OwnerClientId);
+            var (token, _) = CreateOwnedToken(signingKey);
+            var manager = new FaultingOwnershipTokenManager(
+                Options.Create(new IdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
+                _secretHasher,
+                _tokenRepository
+            );
+
+            _act = () =>
+                manager.RevokeTokenAsync(RevocationRequestFor(OwnerClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public async Task It_lets_the_fault_propagate() =>
+            await _act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("ownership comparison fault");
+
+        [Test]
+        public async Task It_does_not_touch_the_token_store()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
         }
     }
 
