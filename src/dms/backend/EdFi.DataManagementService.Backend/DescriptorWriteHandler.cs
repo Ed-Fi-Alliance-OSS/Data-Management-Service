@@ -259,13 +259,6 @@ internal sealed class DescriptorWriteHandler(
                         )
                         .ConfigureAwait(false);
 
-                case DescriptorLockedPreconditionResult.CreateNew:
-                    // If-Match on an insert has no current representation to match, so it fails (412).
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch(
-                        ETagPreconditionFailureReason.TargetDoesNotExist
-                    );
-
                 case DescriptorLockedPreconditionResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new UpsertResult.UpsertFailureWriteConflict();
@@ -1256,7 +1249,10 @@ internal sealed class DescriptorWriteHandler(
                 );
             }
 
-            return DescriptorLockedPreconditionResult.CreateNew.Instance;
+            // If-Match on an insert has no current representation to match, so it fails (412).
+            return new DescriptorLockedPreconditionResult.Mismatch(
+                ETagPreconditionFailureReason.TargetDoesNotExist
+            );
         }
 
         if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
@@ -1411,11 +1407,7 @@ internal sealed class DescriptorWriteHandler(
         ILogger logger
     )
     {
-        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
-            precondition,
-            targetExists: true,
-            currentEtag
-        );
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(precondition, currentEtag);
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
@@ -4570,13 +4562,6 @@ internal sealed class DescriptorWriteHandler(
     private abstract record DescriptorLockedPreconditionResult
     {
         private DescriptorLockedPreconditionResult() { }
-
-        public sealed record CreateNew : DescriptorLockedPreconditionResult
-        {
-            private CreateNew() { }
-
-            public static CreateNew Instance { get; } = new();
-        }
 
         public sealed record NotFound : DescriptorLockedPreconditionResult
         {
