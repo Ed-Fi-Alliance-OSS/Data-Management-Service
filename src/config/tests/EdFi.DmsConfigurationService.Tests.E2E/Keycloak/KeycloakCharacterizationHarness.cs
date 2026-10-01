@@ -57,6 +57,39 @@ public static class KeycloakCharacterizationEnvironment
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 }
 
+/// <summary>
+/// Every secret and token this run has seen. Diagnostics never include request or response
+/// content, and the evidence log refuses any row that contains one of these values, so a provider
+/// that echoed a credential could not get it into test output or CI artifacts (AC8).
+/// </summary>
+public sealed class SensitiveValueRegistry
+{
+    // Shorter strings are not credentials in this run and would produce false matches.
+    private const int MinimumLength = 8;
+
+    private readonly HashSet<string> _values = new(StringComparer.Ordinal);
+    private readonly Lock _sync = new();
+
+    public void Register(string? value)
+    {
+        if (value is { Length: >= MinimumLength })
+        {
+            lock (_sync)
+            {
+                _values.Add(value);
+            }
+        }
+    }
+
+    public bool ContainsAny(string text)
+    {
+        lock (_sync)
+        {
+            return _values.Any(value => text.Contains(value, StringComparison.Ordinal));
+        }
+    }
+}
+
 /// <summary>A Keycloak client created for one characterization run.</summary>
 public sealed record CharacterizationClient(string Uuid, string ClientId, string? Secret)
 {
@@ -76,56 +109,71 @@ public sealed record ClientCredentials(string ClientId, string? Secret)
 /// <summary>The tokens one grant returned.</summary>
 public sealed record TokenGrant(string AccessToken, string? RefreshToken, string? IdToken, int ExpiresIn);
 
+/// <summary>Coarse, content-free description of a response body, safe to put in a diagnostic.</summary>
+public enum BodyKind
+{
+    Empty,
+    JsonObject,
+    JsonArray,
+    JsonValue,
+    NotJson,
+}
+
 /// <summary>
 /// What Keycloak answered to one request, reduced to the fields the evidence table records. The
-/// body itself is parsed for <c>error</c> and <c>error_description</c> and otherwise discarded;
-/// no token, secret or header value is ever kept.
+/// body is parsed for <c>error</c> and <c>error_description</c> and otherwise discarded; no token,
+/// secret or header value is ever kept.
 /// </summary>
 public sealed record HttpOutcome(
     int Status,
     string? Error,
     string? ErrorDescription,
     int BodyLength,
-    bool BodyIsJsonObject,
+    BodyKind Body,
     string? ContentType,
     string? WwwAuthenticate
 )
 {
+    public bool BodyIsJsonObject => Body == BodyKind.JsonObject;
+
     public static async Task<HttpOutcome> FromResponseAsync(HttpResponseMessage response)
     {
         string body = await response.Content.ReadAsStringAsync();
-        string? error = null;
-        string? errorDescription = null;
-        bool isJsonObject = false;
-
-        if (body.Length > 0)
-        {
-            try
-            {
-                if (JsonNode.Parse(body) is JsonObject json)
-                {
-                    isJsonObject = true;
-                    error = StringMember(json, "error");
-                    errorDescription = StringMember(json, "error_description");
-                }
-            }
-            catch (JsonException)
-            {
-                // Recorded as a non-JSON body through BodyIsJsonObject = false.
-            }
-        }
+        (BodyKind kind, JsonObject? json) = Classify(body);
 
         return new HttpOutcome(
             (int)response.StatusCode,
-            error,
-            errorDescription,
+            json is null ? null : StringMember(json, "error"),
+            json is null ? null : StringMember(json, "error_description"),
             body.Length,
-            isJsonObject,
+            kind,
             response.Content.Headers.ContentType?.MediaType,
             response.Headers.WwwAuthenticate.Count > 0
                 ? string.Join(", ", response.Headers.WwwAuthenticate)
                 : null
         );
+    }
+
+    public static (BodyKind Kind, JsonObject? Json) Classify(string body)
+    {
+        if (body.Length == 0)
+        {
+            return (BodyKind.Empty, null);
+        }
+
+        try
+        {
+            return JsonNode.Parse(body) switch
+            {
+                JsonObject json => (BodyKind.JsonObject, json),
+                JsonArray => (BodyKind.JsonArray, null),
+                _ => (BodyKind.JsonValue, null),
+            };
+        }
+        catch (JsonException)
+        {
+            return (BodyKind.NotJson, null);
+        }
     }
 
     private static string? StringMember(JsonObject json, string name) =>
@@ -200,13 +248,36 @@ public sealed class FormBody
 
 /// <summary>
 /// Direct HTTP access to one Keycloak instance: the admin REST API for creating and deleting the
-/// run's clients and user, and the realm's token, introspection and revocation endpoints.
+/// run's clients, user and client scope, and the realm's token, introspection and revocation
+/// endpoints. Every diagnostic it raises is built from fixed text, the operation label, the HTTP
+/// status and a <see cref="BodyKind"/>; request and response content never reach an exception.
 /// </summary>
-public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, string adminRealm) : IDisposable
+public sealed class KeycloakCharacterizationApi : IDisposable
 {
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    private readonly HttpClient _http;
+    private readonly string _baseUrl;
+    private readonly string _realm;
+    private readonly string _adminRealm;
 
-    public string RealmUrl => $"{baseUrl}/realms/{realm}";
+    public KeycloakCharacterizationApi(
+        string baseUrl,
+        string realm,
+        string adminRealm,
+        SensitiveValueRegistry sensitive,
+        HttpMessageHandler? handler = null
+    )
+    {
+        _baseUrl = baseUrl;
+        _realm = realm;
+        _adminRealm = adminRealm;
+        Sensitive = sensitive;
+        _http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+        _http.Timeout = TimeSpan.FromSeconds(30);
+    }
+
+    public SensitiveValueRegistry Sensitive { get; }
+
+    public string RealmUrl => $"{_baseUrl}/realms/{_realm}";
 
     public string TokenEndpoint => $"{RealmUrl}/protocol/openid-connect/token";
 
@@ -220,86 +291,80 @@ public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, st
     // than that, so every admin call fetches its own token instead of caching one.
     public async Task<string> GetAdminTokenAsync(string username, string password)
     {
+        Sensitive.Register(password);
         FormBody form = new FormBody()
             .Add("grant_type", "password")
             .Add("client_id", "admin-cli")
             .Add("username", username)
             .Add("password", password);
         using HttpResponseMessage response = await _http.PostAsync(
-            $"{baseUrl}/realms/{adminRealm}/protocol/openid-connect/token",
+            $"{_baseUrl}/realms/{_adminRealm}/protocol/openid-connect/token",
             form.ToContent()
         );
         JsonObject json = await ReadJsonObjectAsync(response, "admin token request");
-        return json["access_token"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("The admin token response carries no access_token.");
+        string token = RequireString(json, "access_token", "admin token request");
+        Sensitive.Register(token);
+        Sensitive.Register(OptionalString(json, "refresh_token"));
+        return token;
     }
 
     public async Task<string> GetServerVersionAsync(string adminToken)
     {
         using HttpRequestMessage request = AdminRequest(
             HttpMethod.Get,
-            $"{baseUrl}/admin/serverinfo",
+            $"{_baseUrl}/admin/serverinfo",
             adminToken
         );
         using HttpResponseMessage response = await _http.SendAsync(request);
-        JsonObject json = await ReadJsonObjectAsync(response, "GET /admin/serverinfo");
+        JsonObject json = await ReadJsonObjectAsync(response, "server info request");
         return json["systemInfo"]?["version"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("GET /admin/serverinfo carries no systemInfo.version.");
+            ?? throw new InvalidOperationException("The server info request carries no systemInfo.version.");
     }
 
     public async Task<string?> GetRealmSslRequiredAsync(string adminToken)
     {
         using HttpRequestMessage request = AdminRequest(
             HttpMethod.Get,
-            $"{baseUrl}/admin/realms/{realm}",
+            $"{_baseUrl}/admin/realms/{_realm}",
             adminToken
         );
         using HttpResponseMessage response = await _http.SendAsync(request);
-        JsonObject json = await ReadJsonObjectAsync(response, $"GET /admin/realms/{realm}");
-        return json["sslRequired"]?.GetValue<string>();
+        JsonObject json = await ReadJsonObjectAsync(response, "realm representation request");
+        return OptionalString(json, "sslRequired");
     }
 
-    public async Task<string> CreateClientAsync(string adminToken, JsonObject representation)
+    public Task<string> CreateClientAsync(string adminToken, JsonObject representation)
     {
-        using HttpRequestMessage request = AdminRequest(
-            HttpMethod.Post,
-            $"{baseUrl}/admin/realms/{realm}/clients",
-            adminToken
-        );
-        request.Content = new StringContent(representation.ToJsonString(), Encoding.UTF8, "application/json");
-        using HttpResponseMessage response = await _http.SendAsync(request);
-        return await ReadCreatedIdAsync(response, "client");
+        Sensitive.Register(OptionalString(representation, "secret"));
+        return CreateAsync(adminToken, $"{_baseUrl}/admin/realms/{_realm}/clients", representation, "client");
     }
 
-    public async Task<string> CreateUserAsync(string adminToken, JsonObject representation)
+    public Task<string> CreateUserAsync(string adminToken, JsonObject representation)
     {
-        using HttpRequestMessage request = AdminRequest(
-            HttpMethod.Post,
-            $"{baseUrl}/admin/realms/{realm}/users",
-            adminToken
-        );
-        request.Content = new StringContent(representation.ToJsonString(), Encoding.UTF8, "application/json");
-        using HttpResponseMessage response = await _http.SendAsync(request);
-        return await ReadCreatedIdAsync(response, "user");
+        if (representation["credentials"] is JsonArray credentials)
+        {
+            foreach (JsonNode? credential in credentials)
+            {
+                Sensitive.Register(credential is JsonObject item ? OptionalString(item, "value") : null);
+            }
+        }
+
+        return CreateAsync(adminToken, $"{_baseUrl}/admin/realms/{_realm}/users", representation, "user");
     }
 
-    public async Task<string> CreateClientScopeAsync(string adminToken, JsonObject representation)
-    {
-        using HttpRequestMessage request = AdminRequest(
-            HttpMethod.Post,
-            $"{baseUrl}/admin/realms/{realm}/client-scopes",
-            adminToken
+    public Task<string> CreateClientScopeAsync(string adminToken, JsonObject representation) =>
+        CreateAsync(
+            adminToken,
+            $"{_baseUrl}/admin/realms/{_realm}/client-scopes",
+            representation,
+            "client scope"
         );
-        request.Content = new StringContent(representation.ToJsonString(), Encoding.UTF8, "application/json");
-        using HttpResponseMessage response = await _http.SendAsync(request);
-        return await ReadCreatedIdAsync(response, "client scope");
-    }
 
     public async Task AddDefaultClientScopeAsync(string adminToken, string clientUuid, string scopeUuid)
     {
         using HttpRequestMessage request = AdminRequest(
             HttpMethod.Put,
-            $"{baseUrl}/admin/realms/{realm}/clients/{clientUuid}/default-client-scopes/{scopeUuid}",
+            $"{_baseUrl}/admin/realms/{_realm}/clients/{clientUuid}/default-client-scopes/{scopeUuid}",
             adminToken
         );
         using HttpResponseMessage response = await _http.SendAsync(request);
@@ -312,26 +377,39 @@ public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, st
     }
 
     public Task DeleteClientScopeAsync(string adminToken, string uuid) =>
-        DeleteAsync(adminToken, $"{baseUrl}/admin/realms/{realm}/client-scopes/{uuid}", "client scope");
+        DeleteAsync(adminToken, $"{_baseUrl}/admin/realms/{_realm}/client-scopes/{uuid}", "client scope");
 
     public Task DeleteClientAsync(string adminToken, string uuid) =>
-        DeleteAsync(adminToken, $"{baseUrl}/admin/realms/{realm}/clients/{uuid}", "client");
+        DeleteAsync(adminToken, $"{_baseUrl}/admin/realms/{_realm}/clients/{uuid}", "client");
 
     public Task DeleteUserAsync(string adminToken, string uuid) =>
-        DeleteAsync(adminToken, $"{baseUrl}/admin/realms/{realm}/users/{uuid}", "user");
+        DeleteAsync(adminToken, $"{_baseUrl}/admin/realms/{_realm}/users/{uuid}", "user");
 
     /// <summary>Requests tokens from the realm and fails loudly on anything but a 200 with an access token.</summary>
     public async Task<TokenGrant> RequestTokenAsync(FormBody form)
     {
         using HttpResponseMessage response = await _http.PostAsync(TokenEndpoint, form.ToContent());
         JsonObject json = await ReadJsonObjectAsync(response, "token request");
-        return new TokenGrant(
-            json["access_token"]?.GetValue<string>()
-                ?? throw new InvalidOperationException("The token response carries no access_token."),
-            json["refresh_token"]?.GetValue<string>(),
-            json["id_token"]?.GetValue<string>(),
+        TokenGrant grant = new(
+            RequireString(json, "access_token", "token request"),
+            OptionalString(json, "refresh_token"),
+            OptionalString(json, "id_token"),
             json["expires_in"]?.GetValue<int>() ?? 0
         );
+        Sensitive.Register(grant.AccessToken);
+        Sensitive.Register(grant.RefreshToken);
+        Sensitive.Register(grant.IdToken);
+        return grant;
+    }
+
+    /// <summary>
+    /// A token-endpoint call whose outcome, not its tokens, is the observation (for example a
+    /// refresh grant used as a liveness probe). Any tokens in the body are discarded unread.
+    /// </summary>
+    public async Task<HttpOutcome> PostTokenRequestRawAsync(FormBody form)
+    {
+        using HttpResponseMessage response = await _http.PostAsync(TokenEndpoint, form.ToContent());
+        return await HttpOutcome.FromResponseAsync(response);
     }
 
     /// <summary>
@@ -347,17 +425,17 @@ public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, st
     }
 
     /// <summary>
-    /// The observer's view of a token. A failed introspection is a failed prerequisite and throws;
-    /// it is never reported as "inactive".
+    /// A client's view of a token through introspection. A failed introspection is a failed
+    /// prerequisite and throws; it is never reported as "inactive".
     /// </summary>
-    public async Task<bool> IntrospectAsObserverAsync(
-        ClientCredentials observer,
+    public async Task<bool> IntrospectAsync(
+        ClientCredentials introspector,
         string token,
         string? tokenTypeHint
     )
     {
         using HttpRequestMessage request = new(HttpMethod.Post, IntrospectionEndpoint);
-        request.Headers.Authorization = observer.ToBasicHeader();
+        request.Headers.Authorization = RegisterBasic(introspector.ToBasicHeader());
         FormBody form = new FormBody().Add("token", token);
         if (tokenTypeHint is not null)
         {
@@ -366,21 +444,27 @@ public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, st
 
         request.Content = form.ToContent();
         using HttpResponseMessage response = await _http.SendAsync(request);
-        JsonObject json = await ReadJsonObjectAsync(response, "observer introspection");
+        JsonObject json = await ReadJsonObjectAsync(response, "introspection request");
         return json["active"] is JsonValue active && active.TryGetValue(out bool isActive)
             ? isActive
             : throw new InvalidOperationException(
-                "The observer's introspection response has no boolean 'active' member."
+                "The introspection response has no boolean 'active' member; the characterization prerequisite failed."
             );
     }
 
     public async Task<HttpOutcome> RevokeAsync(FormBody form, AuthenticationHeaderValue? authorization = null)
     {
         using HttpRequestMessage request = new(HttpMethod.Post, RevocationEndpoint);
-        request.Headers.Authorization = authorization;
+        request.Headers.Authorization = authorization is null ? null : RegisterBasic(authorization);
         request.Content = form.ToContent();
         using HttpResponseMessage response = await _http.SendAsync(request);
         return await HttpOutcome.FromResponseAsync(response);
+    }
+
+    private AuthenticationHeaderValue RegisterBasic(AuthenticationHeaderValue header)
+    {
+        Sensitive.Register(header.Parameter);
+        return header;
     }
 
     private static HttpRequestMessage AdminRequest(HttpMethod method, string url, string adminToken)
@@ -390,25 +474,21 @@ public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, st
         return request;
     }
 
-    private async Task DeleteAsync(string adminToken, string url, string kind)
+    private async Task<string> CreateAsync(
+        string adminToken,
+        string url,
+        JsonObject representation,
+        string kind
+    )
     {
-        using HttpRequestMessage request = AdminRequest(HttpMethod.Delete, url, adminToken);
+        using HttpRequestMessage request = AdminRequest(HttpMethod.Post, url, adminToken);
+        request.Content = new StringContent(representation.ToJsonString(), Encoding.UTF8, "application/json");
         using HttpResponseMessage response = await _http.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"Deleting the characterization {kind} answered HTTP {(int)response.StatusCode}."
-            );
-        }
-    }
-
-    private static async Task<string> ReadCreatedIdAsync(HttpResponseMessage response, string kind)
-    {
         if (!response.IsSuccessStatusCode)
         {
             string body = await response.Content.ReadAsStringAsync();
             throw new InvalidOperationException(
-                $"Creating the characterization {kind} answered HTTP {(int)response.StatusCode}: {body}"
+                $"Creating the characterization {kind} answered HTTP {(int)response.StatusCode} with {Describe(body)}."
             );
         }
 
@@ -423,38 +503,64 @@ public sealed class KeycloakCharacterizationApi(string baseUrl, string realm, st
         return location[(location.LastIndexOf('/') + 1)..];
     }
 
-    private static async Task<JsonObject> ReadJsonObjectAsync(HttpResponseMessage response, string operation)
+    private async Task DeleteAsync(string adminToken, string url, string kind)
     {
-        string body = await response.Content.ReadAsStringAsync();
+        using HttpRequestMessage request = AdminRequest(HttpMethod.Delete, url, adminToken);
+        using HttpResponseMessage response = await _http.SendAsync(request);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"The {operation} answered HTTP {(int)response.StatusCode}; the characterization prerequisite failed. Body: {Sanitize(body)}"
+                $"Deleting the characterization {kind} answered HTTP {(int)response.StatusCode}."
             );
-        }
-
-        try
-        {
-            return JsonNode.Parse(body)?.AsObject()
-                ?? throw new InvalidOperationException($"The {operation} returned a non-object JSON body.");
-        }
-        catch (JsonException exception)
-        {
-            throw new InvalidOperationException($"The {operation} returned a non-JSON body.", exception);
         }
     }
 
-    // Error bodies from Keycloak's admin/token endpoints carry no secrets, but they are bounded here
-    // so an unexpected large body never floods the test log.
-    private static string Sanitize(string body) => body.Length <= 500 ? body : body[..500] + "…";
+    private static async Task<JsonObject> ReadJsonObjectAsync(HttpResponseMessage response, string operation)
+    {
+        string body = await response.Content.ReadAsStringAsync();
+        (BodyKind kind, JsonObject? json) = HttpOutcome.Classify(body);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"The {operation} answered HTTP {(int)response.StatusCode} with {Describe(kind)}; the characterization prerequisite failed."
+            );
+        }
+
+        return json
+            ?? throw new InvalidOperationException(
+                $"The {operation} answered HTTP {(int)response.StatusCode} with {Describe(kind)} instead of a JSON object."
+            );
+    }
+
+    private static string RequireString(JsonObject json, string member, string operation) =>
+        OptionalString(json, member)
+        ?? throw new InvalidOperationException(
+            $"The {operation} response carries no string '{member}' member."
+        );
+
+    private static string? OptionalString(JsonObject json, string member) =>
+        json[member] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+    private static string Describe(string body) => Describe(HttpOutcome.Classify(body).Kind);
+
+    private static string Describe(BodyKind kind) =>
+        kind switch
+        {
+            BodyKind.Empty => "an empty body",
+            BodyKind.JsonObject => "a JSON object body",
+            BodyKind.JsonArray => "a JSON array body",
+            BodyKind.JsonValue => "a JSON value body",
+            _ => "a non-JSON body",
+        };
 }
 
 /// <summary>
 /// The per-run realm resources (spec P1.1 and D-16): two confidential subject clients, one
 /// confidential subject that also issues refresh tokens, one confidential subject with a short
 /// access-token lifespan for the expiry row only, one confidential observer used solely for
-/// introspection, and one public client with a user so it can hold a user-flow token. Every name
-/// carries the run id, and <see cref="DisposeAsync"/> removes everything through the admin API.
+/// introspecting access tokens, one public client with a user so it can hold a user-flow token,
+/// and one client scope that puts the observer into the audience of every subject token. Every
+/// name carries the run id, and <see cref="DisposeAsync"/> removes everything through the admin API.
 /// </summary>
 public sealed class CharacterizationRealm : IAsyncDisposable
 {
@@ -502,12 +608,13 @@ public sealed class CharacterizationRealm : IAsyncDisposable
     public CharacterizationUser PublicUser =>
         _publicUser ?? throw new InvalidOperationException("The public client's user was not created.");
 
-    public static async Task<CharacterizationRealm> CreateAsync()
+    public static async Task<CharacterizationRealm> CreateAsync(SensitiveValueRegistry sensitive)
     {
         KeycloakCharacterizationApi api = new(
             KeycloakCharacterizationEnvironment.KeycloakUrl,
             KeycloakCharacterizationEnvironment.Realm,
-            KeycloakCharacterizationEnvironment.AdminRealm
+            KeycloakCharacterizationEnvironment.AdminRealm,
+            sensitive
         );
         CharacterizationRealm realm = new(
             api,
@@ -561,17 +668,32 @@ public sealed class CharacterizationRealm : IAsyncDisposable
                 .Add("scope", "openid")
         );
 
-    /// <summary>The observer's view of a token (D-16). Observer credentials are never submitted to revocation.</summary>
+    /// <summary>
+    /// Liveness probe for a public client's refresh token: a refresh grant. 200 means the token and its
+    /// session are still usable; 400 <c>invalid_grant</c> means they are not. The probe may rotate the
+    /// token, so it is only ever the last thing a row does with that token, and the new tokens it
+    /// returns are discarded unread. A public client cannot introspect (403), so this is the only
+    /// first-hand observation available for its refresh token.
+    /// </summary>
+    public Task<HttpOutcome> PublicUserRefreshGrantProbeAsync(string refreshToken) =>
+        Api.PostTokenRequestRawAsync(
+            new FormBody()
+                .Add("grant_type", "refresh_token")
+                .Add("client_id", PublicClient.ClientId)
+                .Add("refresh_token", refreshToken)
+        );
+
+    /// <summary>The observer's view of an access token (D-16). Observer credentials are never submitted to revocation.</summary>
     public Task<bool> ObserveAsync(string token) =>
-        Api.IntrospectAsObserverAsync(Observer.Credentials, token, tokenTypeHint: null);
+        Api.IntrospectAsync(Observer.Credentials, token, tokenTypeHint: null);
 
     /// <summary>
-    /// The observer's view of a refresh token. The hint is required on Keycloak 26.4.12 and later: without
-    /// it the access-token introspection provider applies its audience check, and a refresh token's
-    /// audience is the issuer, so every refresh token would read as inactive (observed in P1.1).
+    /// The owning client's view of its refresh token, with <c>token_type_hint=refresh_token</c> (D-16
+    /// as corrected after P1.1). Keycloak's refresh-token introspection provider admits only the
+    /// client the token was issued to, so a separate observer cannot see refresh tokens on 26.7.5.
     /// </summary>
-    public Task<bool> ObserveRefreshTokenAsync(string refreshToken) =>
-        Api.IntrospectAsObserverAsync(Observer.Credentials, refreshToken, "refresh_token");
+    public Task<bool> ObserveRefreshTokenAsOwnerAsync(CharacterizationClient owner, string refreshToken) =>
+        Api.IntrospectAsync(owner.Credentials, refreshToken, "refresh_token");
 
     /// <summary>
     /// Polls the observer at one-second intervals until the token reports inactive, with a deadline
@@ -729,11 +851,12 @@ public sealed class CharacterizationRealm : IAsyncDisposable
         );
         _publicUser = new CharacterizationUser(userUuid, username, password);
 
-        // Keycloak 26.4.12 and later deny introspection unless the introspecting client is in the
-        // token's audience claim. The pinned 26.1 image has no such check. A per-run client scope adds
-        // the observer to the audience of every subject and public-client token so the observer works
-        // on both versions. The scope changes the audience claim only and is removed with the other
-        // run resources.
+        // Observed in P1.1: Keycloak 26.7.5 denies introspection unless the introspecting client is in
+        // the token's audience claim, while the pinned 26.1.4 image has no such check (the Red Hat
+        // build of Keycloak 26.4 migration guide attributes the check to 26.4.12). A per-run client
+        // scope adds the observer to the audience of every subject and public-client token so the
+        // observer works on both. The scope changes the audience claim only and is removed with the
+        // other run resources.
         _observerAudienceScopeUuid = await Api.CreateClientScopeAsync(
             adminToken,
             new JsonObject
@@ -802,18 +925,23 @@ public sealed class CharacterizationRealm : IAsyncDisposable
     }
 }
 
-/// <summary>A value §2.1 either predicts (possibly as "absent") or leaves open.</summary>
-public readonly record struct Predicted<T>(bool IsPredicted, T? Value)
+/// <summary>
+/// A value the row either predicts exactly (possibly as "absent") or marks as not applicable. After
+/// P1.1 every field §2.1 left open has an exact prediction; "not applicable" is reserved for state
+/// that genuinely does not exist for the row (for example the after-state of a request that carried
+/// no token).
+/// </summary>
+public readonly record struct Predicted<T>(bool IsApplicable, T? Value)
 {
-    public static Predicted<T> Unpredicted => new(false, default);
+    public static Predicted<T> NotApplicable => new(false, default);
 
     public static Predicted<T> Of(T? value) => new(true, value);
 
     public string Render()
     {
-        if (!IsPredicted)
+        if (!IsApplicable)
         {
-            return "n/p";
+            return "n/a";
         }
 
         return Value switch
@@ -821,22 +949,40 @@ public readonly record struct Predicted<T>(bool IsPredicted, T? Value)
             null => "(absent)",
             true => "active",
             false => "inactive",
+            BodyShape.Empty => "empty",
+            BodyShape.OAuthErrorJson => "OAuth JSON",
             _ => Value.ToString() ?? "(absent)",
         };
     }
 }
 
-/// <summary>The §2.1 prediction for one evidence row.</summary>
+/// <summary>The body a row predicts: nothing at all, or an <c>application/json</c> object carrying OAuth error members.</summary>
+public enum BodyShape
+{
+    Empty,
+    OAuthErrorJson,
+}
+
+/// <summary>The prediction for one evidence row.</summary>
 public sealed record RowPrediction(
     Predicted<int> Status,
+    Predicted<BodyShape> Body,
     Predicted<string> Error,
     Predicted<string> ErrorDescription,
     Predicted<bool> ActiveAfter
 )
 {
+    /// <summary>HTTP 200 with a zero-length body and therefore no error members.</summary>
     public static RowPrediction EmptySuccess(Predicted<bool> activeAfter) =>
-        new(Predicted<int>.Of(200), Predicted<string>.Of(null), Predicted<string>.Of(null), activeAfter);
+        new(
+            Predicted<int>.Of(200),
+            Predicted<BodyShape>.Of(BodyShape.Empty),
+            Predicted<string>.Of(null),
+            Predicted<string>.Of(null),
+            activeAfter
+        );
 
+    /// <summary>The given status with an <c>application/json</c> object carrying exactly these OAuth members.</summary>
     public static RowPrediction ErrorBody(
         int status,
         string error,
@@ -845,16 +991,9 @@ public sealed record RowPrediction(
     ) =>
         new(
             Predicted<int>.Of(status),
+            Predicted<BodyShape>.Of(BodyShape.OAuthErrorJson),
             Predicted<string>.Of(error),
             Predicted<string>.Of(description),
-            activeAfter
-        );
-
-    public static RowPrediction Open(Predicted<bool> activeAfter) =>
-        new(
-            Predicted<int>.Unpredicted,
-            Predicted<string>.Unpredicted,
-            Predicted<string>.Unpredicted,
             activeAfter
         );
 }
@@ -869,95 +1008,110 @@ public sealed record EvidenceRow(
     RowObservation Observation
 );
 
-/// <summary>Collects the rows of one run and renders the §9.1 table.</summary>
-public static class EvidenceLog
+/// <summary>
+/// Collects the rows of one run and renders the §9.1 table. A row whose rendering contains any
+/// secret or token the run has seen is refused and the fixture fails, so provider content that
+/// echoed a credential could not reach the evidence.
+/// </summary>
+public sealed class EvidenceLog(SensitiveValueRegistry sensitive)
 {
-    private static readonly List<EvidenceRow> _rows = [];
-    private static readonly Lock _sync = new();
+    private readonly List<string> _renderedRows = [];
+    private readonly Lock _sync = new();
 
-    public static void Record(EvidenceRow row)
+    public void Record(EvidenceRow row) => Add(row.Id, RenderRow(row));
+
+    /// <summary>A row that records facts rather than one characterized call (the preconditions row).</summary>
+    public void RecordNote(string id, string scenario, string notes) =>
+        Add(id, $"| {id} | {scenario} | — | — | — | — | — | — | {Escape(notes)} |");
+
+    public string RenderMarkdown(string serverVersion, string? sslRequired, string runId)
     {
+        List<string> rows;
         lock (_sync)
         {
-            _rows.Add(row);
-        }
-
-        TestContext.Progress.WriteLine($"[evidence] {RenderRow(row)}");
-    }
-
-    public static string RenderMarkdown(CharacterizationRealm realm)
-    {
-        List<EvidenceRow> rows;
-        lock (_sync)
-        {
-            rows = [.. _rows.OrderBy(row => row.Id, StringComparer.Ordinal)];
+            rows = [.. _renderedRows.OrderBy(static rendered => rendered, StringComparer.Ordinal)];
         }
 
         StringBuilder markdown = new();
         markdown.AppendLine(
-            $"Keycloak `{realm.ServerVersion}` at `{KeycloakCharacterizationEnvironment.KeycloakUrl}`, realm `{KeycloakCharacterizationEnvironment.Realm}` (`sslRequired` = `{realm.SslRequired ?? "(absent)"}`), run `{realm.RunId}`, {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC."
+            $"Keycloak `{serverVersion}` at `{KeycloakCharacterizationEnvironment.KeycloakUrl}`, realm `{KeycloakCharacterizationEnvironment.Realm}` (`sslRequired` = `{sslRequired ?? "(absent)"}`), run `{runId}`, {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC."
         );
         markdown.AppendLine();
         markdown.AppendLine(
-            "Columns show `predicted / observed`; `n/p` = §2.1 made no prediction; `(absent)` = no such member in the body."
+            "Columns show `predicted / observed`; `n/a` = the field does not exist for the row; `(absent)` = no such member in the body."
         );
         markdown.AppendLine();
         markdown.AppendLine(
-            "| ID | Scenario | HTTP | `error` | `error_description` | active before | active after | Notes |"
+            "| ID | Scenario | HTTP | Body | `error` | `error_description` | active before | active after | Notes |"
         );
-        markdown.AppendLine("|---|---|---|---|---|---|---|---|");
-        foreach (EvidenceRow row in rows)
+        markdown.AppendLine("|---|---|---|---|---|---|---|---|---|");
+        foreach (string rendered in rows)
         {
-            markdown.AppendLine(RenderRow(row));
+            markdown.AppendLine(rendered);
         }
 
         return markdown.ToString();
     }
 
+    private void Add(string id, string rendered)
+    {
+        if (sensitive.ContainsAny(rendered))
+        {
+            throw new InvalidOperationException(
+                $"Evidence row {id} would contain a secret or token issued during this run; the row was not recorded."
+            );
+        }
+
+        lock (_sync)
+        {
+            _renderedRows.Add(rendered);
+        }
+
+        TestContext.Progress.WriteLine($"[evidence] {rendered}");
+    }
+
     private static string RenderRow(EvidenceRow row)
     {
         HttpOutcome outcome = row.Observation.Outcome;
-        bool hasCall = outcome.Status != 0;
-        string? body = null;
-        if (hasCall)
+        string body = outcome.Body switch
         {
-            body = outcome switch
-            {
-                { BodyLength: 0 } => "empty body",
-                { BodyIsJsonObject: true } => $"JSON, {outcome.BodyLength} chars",
-                _ => $"non-JSON, {outcome.BodyLength} chars",
-            };
-        }
+            BodyKind.Empty => "empty",
+            BodyKind.JsonObject =>
+                $"JSON object, {outcome.ContentType ?? "no media type"}, {outcome.BodyLength} chars",
+            BodyKind.JsonArray => $"JSON array, {outcome.BodyLength} chars",
+            BodyKind.JsonValue => $"JSON value, {outcome.BodyLength} chars",
+            _ => $"non-JSON, {outcome.ContentType ?? "no media type"}, {outcome.BodyLength} chars",
+        };
         string notes = string.Join(
             "; ",
             new string?[]
             {
                 row.Observation.Notes,
-                body,
                 outcome.WwwAuthenticate is null ? null : $"WWW-Authenticate: {outcome.WwwAuthenticate}",
-            }.Where(note => !string.IsNullOrEmpty(note))
+            }.Where(static note => !string.IsNullOrEmpty(note))
         );
-        return $"| {row.Id} | {row.Scenario} | {row.Prediction.Status.Render()} / {(hasCall ? outcome.Status.ToString() : "—")} "
+        return $"| {row.Id} | {row.Scenario} | {row.Prediction.Status.Render()} / {outcome.Status} "
+            + $"| {row.Prediction.Body.Render()} / {body} "
             + $"| {RenderCode(row.Prediction.Error)} / {RenderCode(Predicted<string>.Of(outcome.Error))} "
             + $"| {RenderText(row.Prediction.ErrorDescription)} / {RenderText(Predicted<string>.Of(outcome.ErrorDescription))} "
             + $"| {RenderState(row.Observation.ActiveBefore)} "
             + $"| {row.Prediction.ActiveAfter.Render()} / {RenderState(row.Observation.ActiveAfter)} "
-            + $"| {notes.Replace("|", "\\|")} |";
+            + $"| {Escape(notes)} |";
     }
 
+    private static string Escape(string text) => text.Replace("|", "\\|");
+
     private static string RenderCode(Predicted<string> value) =>
-        value is { IsPredicted: true, Value: not null } ? $"`{value.Value}`" : value.Render();
+        value is { IsApplicable: true, Value: not null } ? $"`{value.Value}`" : value.Render();
 
     private static string RenderText(Predicted<string> value) =>
-        value is { IsPredicted: true, Value: not null }
-            ? $"\"{value.Value.Replace("|", "\\|")}\""
-            : value.Render();
+        value is { IsApplicable: true, Value: not null } ? $"\"{Escape(value.Value)}\"" : value.Render();
 
     private static string RenderState(bool? state) =>
         state switch
         {
             true => "active",
             false => "inactive",
-            null => "—",
+            null => "n/a",
         };
 }
