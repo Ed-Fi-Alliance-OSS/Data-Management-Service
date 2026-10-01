@@ -740,7 +740,10 @@ This table replaces the 2026-07-06 table. The GET rows are unchanged.
 3. **The ignored header is logged at `Debug`**, with method and trace id and without the value.
 4. **The unreachable write-side code is removed** in the same change rather than left dormant (see
    "Scope of the code change").
-5. **No release-note entry.** There are no DMS clients yet, so there is no behavior to announce.
+5. **Announce the change in the 8.1.0 changelog.** The create-guard shipped in v8.0.0 (PR #1095), and
+   the defect report came from a client on DMS 8.0. A client that relied on `If-None-Match: *` as a
+   create-only guard now upserts silently, so the change is listed under "Breaking changes" in
+   `docs/changelog/8.1.0.md`, with the `If-Match: *` difference from the ODS/API.
 
 ### `If-Match: *` divergence from the ODS/API (record)
 
@@ -791,7 +794,7 @@ the compiler proves nothing still depends on it.
 - **Unchanged.** `GetByIdHandler`, `EtagValue.ParseConditionalTagList`, the frontend header-combining
   list, and all conditional-GET tests. Nothing on the GET path used `WritePrecondition`.
 - **Tests.** The write-side integration and E2E scenarios for `If-None-Match` were rewritten to prove
-  the header is ignored on POST and PUT.
+  the header is ignored on POST, PUT, and DELETE.
 
 ### Consequence
 
