@@ -260,15 +260,15 @@ which Management API specification version is active, \
 **How CMS Helps**: The discovery endpoint reports application name, version,
 build metadata, the discovery/OpenAPI metadata URL, and the configured
 Management API specification version (FR-VERSION-2). Multi-tenancy status
-reporting is deferred to v8.1.0.
+reporting is deferred to v8.1.
 
 #### Deferred Jobs
 
 Database instance provisioning, education organization synchronization,
 asynchronous job tracking, rate limiting, dependency-aware health checks,
 full non-success error-response conformance, application-profile lookup by
-application, and OpenAPI disablement are deferred to the v8.1.0 planning
-document: [CMS v8.1.0 Deferred Requirements](./PRD-CMS-v8.1.0.md).
+application, and OpenAPI disablement are deferred to the v8.1 planning
+document: [CMS v8.1 Deferred Requirements](./PRD-CMS-v8.1.md).
 
 ## 2. Enterprise Architecture
 
@@ -617,7 +617,7 @@ External systems and dependencies:
 
 Database instance provisioning, education organization synchronization,
 asynchronous job tracking, and rate limiting are deferred to
-[CMS v8.1.0 Deferred Requirements](./PRD-CMS-v8.1.0.md).
+[CMS v8.1 Deferred Requirements](./PRD-CMS-v8.1.md).
 
 ## 4. Non-Functional Requirements
 
@@ -649,7 +649,7 @@ asynchronous job tracking, and rate limiting are deferred to
 - **NFR-SEC-4**: OpenAPI metadata is exposed through the
   generated `/openapi/v1.json` document and the transformed
   `/metadata/specifications` endpoint. Independent production disablement is
-  deferred to v8.1.0.
+  deferred to v8.1.
 - **NFR-SEC-5**: Self-registration (`POST /connect/register`) SHALL be
   disabled after initial bootstrap in deployments that do not require open
   client self-registration.
@@ -779,7 +779,7 @@ asynchronous job tracking, and rate limiting are deferred to
   checks, full non-success error-response conformance, an
   application-profile lookup endpoint, token cleanup, and OpenAPI
   disablement are deferred to
-  [CMS v8.1.0 Deferred Requirements](./PRD-CMS-v8.1.0.md).
+  [CMS v8.1 Deferred Requirements](./PRD-CMS-v8.1.md).
 - **OUT-5**: Client-secret expiration and scheduled rotation were researched
   in a design spike but are not implemented; today, secret rotation is a
   manual reset (`FR-CLIENT-4`) with no expiration date tracked or enforced.
