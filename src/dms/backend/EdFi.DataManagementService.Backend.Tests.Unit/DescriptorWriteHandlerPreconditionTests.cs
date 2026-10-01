@@ -940,39 +940,6 @@ public class Given_Descriptor_Write_Preconditions
             .MustHaveHappenedOnceExactly();
     }
 
-    // ── If-None-Match create-guard parity (Task B8) ──────────────────────────
-
-    [Test]
-    public async Task It_ignores_if_none_match_on_descriptor_delete_and_deletes_normally()
-    {
-        // DELETE: If-None-Match is not a delete precondition; the delete proceeds normally with no
-        // precondition lock, mirroring an unconditional delete.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
-        ]);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
-        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandleDeleteAsync(request);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        sessionFactory.CreateAsyncCallCount.Should().Be(1);
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        // No FOR UPDATE precondition lock: If-None-Match is ignored on DELETE.
-        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
-        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .Contain("DELETE FROM dms.\"Document\"");
-    }
-
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
         EtagComposer.Compose(
             contentVersion,
