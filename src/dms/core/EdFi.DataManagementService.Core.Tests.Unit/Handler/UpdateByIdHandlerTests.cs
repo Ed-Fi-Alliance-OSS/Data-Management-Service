@@ -11,11 +11,14 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -1387,6 +1390,101 @@ expected: {expected}
 actual: {requestInfo.FrontendResponse.Body}
 """
                 );
+        }
+    }
+
+    /// <summary>
+    /// DMS-1576: If-None-Match is a GET-only conditional-read validator; PUT (and POST, DELETE) ignore
+    /// it. These fixtures prove the shared Debug-log helper fires exactly once when the header is
+    /// present and not at all when it is absent, without logging the header's value.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Put_That_Carries_An_If_None_Match_Header : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateSuccess(updateRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private readonly RecordingLogger _logger = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.PUT;
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["If-None-Match"] = "*",
+                },
+            };
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+                .Returns(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new UpdateByIdHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        // One test method: the fixture's fields are shared across every [Test] in this class (NUnit
+        // reuses a single fixture instance), so a second [Test] here would re-run Setup and double
+        // the accumulated RecordingLogger entries rather than start clean.
+        [Test]
+        public void It_logs_once_at_debug_that_if_none_match_was_ignored_without_the_header_value()
+        {
+            _logger
+                .Records.Where(record =>
+                    record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+                )
+                .Should()
+                .ContainSingle()
+                .Which.Message.Should()
+                .NotContain("*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Put_Without_An_If_None_Match_Header : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateSuccess(updateRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private readonly RecordingLogger _logger = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.PUT;
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+                .Returns(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new UpdateByIdHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_does_not_log_that_if_none_match_was_ignored()
+        {
+            _logger.Records.Should().NotContain(record => record.Message.Contains("If-None-Match"));
         }
     }
 }

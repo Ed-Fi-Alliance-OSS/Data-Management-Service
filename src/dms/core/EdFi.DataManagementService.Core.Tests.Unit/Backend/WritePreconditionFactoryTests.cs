@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
@@ -80,8 +79,10 @@ public class WritePreconditionFactoryTests
     }
 
     [Test]
-    public void It_produces_a_wildcard_if_none_match_for_a_bare_asterisk()
+    public void It_ignores_a_bare_asterisk_if_none_match_on_a_write()
     {
+        // DMS-1576: If-None-Match is a GET-only conditional-read validator; a write (POST, PUT,
+        // DELETE) ignores it entirely, matching the ODS/API.
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["If-None-Match"] = "*",
@@ -89,13 +90,13 @@ public class WritePreconditionFactoryTests
 
         var result = WritePreconditionFactory.Create(headers);
 
-        result.Should().Be(new WritePrecondition.IfNoneMatch("*", IsWildcard: true));
+        result.Should().BeOfType<WritePrecondition.None>();
     }
 
     [TestCase("\"5-a1b2c3d4.j._.l.i\"")] // quoted strong validator
     [TestCase("5-a1b2c3d4.j._.l.i")] // bare unquoted value tolerated
-    [TestCase("W/\"5-a1b2c3d4.j._.l.i\"")] // weak validator accepted (unlike If-Match)
-    public void It_normalizes_the_if_none_match_to_the_unquoted_opaque_tag(string ifNoneMatchValue)
+    [TestCase("W/\"5-a1b2c3d4.j._.l.i\"")] // weak validator, still ignored on a write
+    public void It_ignores_a_single_tag_if_none_match_on_a_write(string ifNoneMatchValue)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -104,11 +105,11 @@ public class WritePreconditionFactoryTests
 
         var result = WritePreconditionFactory.Create(headers);
 
-        result.Should().Be(new WritePrecondition.IfNoneMatch("5-a1b2c3d4.j._.l.i"));
+        result.Should().BeOfType<WritePrecondition.None>();
     }
 
     [Test]
-    public void It_produces_an_if_none_match_with_multiple_opaque_tags()
+    public void It_ignores_an_if_none_match_list_on_a_write()
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -117,13 +118,11 @@ public class WritePreconditionFactoryTests
 
         var result = WritePreconditionFactory.Create(headers);
 
-        result
-            .Should()
-            .Be(new WritePrecondition.IfNoneMatch(["4-does-not-match", "5-a1b2c3d4.j._.l.i", "6-other"]));
+        result.Should().BeOfType<WritePrecondition.None>();
     }
 
     [Test]
-    public void It_does_not_fail_if_none_match_when_the_current_tag_is_only_embedded_inside_a_quoted_tag()
+    public void It_ignores_a_quoted_list_if_none_match_on_a_write()
     {
         const string currentEtag = "5-a1b2c3d4.j._.l.i";
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -133,8 +132,7 @@ public class WritePreconditionFactoryTests
 
         var result = WritePreconditionFactory.Create(headers);
 
-        result.Should().Be(new WritePrecondition.IfNoneMatch($"prefix,{currentEtag},suffix"));
-        EtagPreconditionEvaluator.IsSatisfied(result, targetExists: true, currentEtag).Should().BeTrue();
+        result.Should().BeOfType<WritePrecondition.None>();
     }
 
     [Test]
