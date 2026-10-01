@@ -246,9 +246,13 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
   backoff of 5, 10, 20, 40 and then 60 s, each ±20 %, after consecutive failures (at most
   72 s). During a backoff no request starts a load. The background service wakes at the
   end of the backoff, so an instance retries without any traffic.
-- **Recovery.** Once the key store is back, the next load starts within the remaining
-  backoff, at most 72 s. It completes within `SigningKeyLoadTimeoutSeconds` after that:
-  82 s at the default settings. This bound assumes no earlier database call is still
+- **Recovery.** These bounds are conditional (design §4.4, *Bounds*). When the key store
+  recovers at *R* and no load is in flight, the next load starts within the remaining
+  backoff, by *R* + 72 s, and completes within `SigningKeyLoadTimeoutSeconds` after that:
+  *R* + 82 s at the default settings. A load already in flight at *R* started against the
+  failing store and may still fail; its backoff then counts from its own failure, so add
+  one load timeout (*R* + 92 s). A database call that outlives its deadline delays the
+  next load until it actually ends, so neither bound holds while such a call is
   outstanding.
 - **Maximum staleness.** A snapshot can be used for `SigningKeyMaxStalenessSeconds` after
   its last successful load (default 3600 s). After that it has *expired*, and it is not
@@ -288,9 +292,11 @@ decision:
   and for JWKS `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)`.
   Clients should treat it as transient and retry after the indicated delay, not discard
   their token.
-- **An ordinary 401** means the token itself was judged and rejected. It never results from
-  a key-store failure while the snapshot is usable. An unknown `kid` whose reload fails is
-  401 while the snapshot is usable, and 503 when it is not.
+- **An ordinary 401** means the token was judged against the keys the instance holds, and
+  rejected. While the snapshot is usable, a key-store failure does not turn a request into
+  a 503. A token whose `kid` is unknown, and whose reload fails or is not allowed, is
+  therefore judged against the usable keys and gets 401. The same token gets 503 when no
+  usable snapshot exists.
 - **An empty JWKS (`200 {"keys":[]}`)** is an authoritative answer: the store has no active
   key. Before DMS-1556, JWKS also answered `200 []` when the key read *failed*, and
   protected requests answered 401 when key or status reads failed. Both are now the 503
@@ -306,18 +312,36 @@ decision:
 
 The snapshot makes authentication independent of the **key table**, not of the
 **database**. The token-status check is deliberately uncached, so a revocation takes
-effect on the next request. That check reads the database on every authenticated request.
-When the whole database is unavailable, every authenticated request answers 503
-`TokenStatusStore`, whatever the state of the snapshot. Maximum staleness matters only
-when key reads fail while token-status reads still work, for example while the key table
-is locked.
+effect on the next request. That check reads the database for every token that passes
+validation. When the whole database is unavailable, no token is accepted, and where a
+request stops depends on the snapshot:
+
+- **No usable snapshot:** 503 `SigningKeyStore`, before the token is judged.
+- **Usable snapshot, token rejected on its own merits** (bad signature, expired, unknown
+  `kid`, and so on): 401, before any status read.
+- **Usable snapshot, token passes validation:** the status read fails, giving 503
+  `TokenStatusStore`.
+
+Maximum staleness keeps valid tokens accepted only when key reads fail while token-status
+reads still work, for example while the key table is locked.
 
 ### Rotating and retiring a database signing key
 
-This is how the system behaves, not an extra mechanism. At the default settings, write
-`T_prop` = refresh interval + 10 % + load timeout = 300 + 30 + 10 = **340 s**. A key-table
-change committed at time *t* is in use on every healthy instance by *t* + `T_prop`, even
-with no traffic.
+This is how the system behaves, not an extra mechanism. Write `T_prop` for the time a
+healthy instance takes to use a key-table change, with no traffic:
+
+`T_prop` = load timeout + refresh interval + 10 % + load timeout = 10 + 300 + 30 + 10 =
+**350 s** at the defaults.
+
+A key-table change committed at time *t* is in use on every healthy instance by
+*t* + `T_prop`. "Healthy" means every load succeeds within its deadline.
+
+The first load-timeout term is the load that may already be running at *t*. That load can
+read the rows from before the change and publish them after it, as late as *t* + 10 s. The
+next refresh interval, and the cooldown, count from that publication. For example, a load
+that publishes the old rows at *t* + 9 s, followed by a scheduled load that starts 330 s
+later and takes 9 s, puts the change in use at *t* + 348 s. Any load that starts after *t*
+sees the change.
 
 1. **Insert the new key** as an active row. On PostgreSQL,
    [`Generate-OpenIddictKey-Insert.ps1`](../../../eng/docker-compose/Generate-OpenIddictKey-Insert.ps1)
@@ -328,13 +352,23 @@ with no traffic.
    soon as its snapshot holds the key. The first new-key token it sees triggers the
    unknown-key reload when the cooldown and backoff allow. Otherwise that token is
    rejected with **401**, and the key arrives at the next allowed unknown-key reload or by
-   `T_prop`, whichever comes first. With traffic the delay is bounded by
-   min(cooldown, refresh interval) + load timeout (40 s at the defaults). If the key store
-   was failing, it can reach the maximum backoff + load timeout (82 s). Instances are
-   independent: one may accept a new-key token while another still answers 401 until its
-   cooldown ends or its next reload. **If you need zero such 401s, insert the key at a
-   quiet time and wait `T_prop` before new-key tokens reach validators**, or restart each
-   instance. A restarted instance loads the table at startup.
+   `T_prop`, whichever comes first. A request may also join a load that is already
+   running, but a load that started before the insert returns without the key.
+   - **Healthy key store, with traffic.** The last load that read the old rows completes
+     within one load timeout of the insert. Its cooldown ends one cooldown later. The
+     first new-key request after that starts a reload that completes within one load
+     timeout. New-key tokens are therefore accepted from at most load timeout + cooldown +
+     load timeout after the insert: **50 s** at the defaults. This assumes a new-key
+     request reaches the instance once the cooldown has ended. Without one, `T_prop`
+     applies.
+   - **Key store failing.** The key arrives with the first successful load after the store
+     recovers, within the conditional recovery bounds above (*R* + 82 s at the defaults
+     with no load in flight at recovery, *R* + 92 s with one).
+
+   Instances are independent: one may accept a new-key token while another still answers
+   401 until its cooldown ends or its next reload. **If you need zero such 401s, insert the
+   key at a quiet time and wait `T_prop` before new-key tokens reach validators**, or
+   restart each instance. A restarted instance loads the table at startup.
 3. **Keep the old key active** for at least `TokenExpirationMinutes` plus the 5-minute
    validation clock skew after the insert (35 min at the defaults). Tokens minted before
    the switch then stay valid until they expire.
