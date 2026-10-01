@@ -6,12 +6,14 @@
 using System.Collections.Generic;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using EdFi.DmsConfigurationService.Secrets;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -24,13 +26,20 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configurat
 /// </summary>
 public class SecretsOptionsStartupTests
 {
-    private static WebApplicationFactory<Program> CreateFactory(Dictionary<string, string?> settings) =>
+    private static WebApplicationFactory<Program> CreateFactory(
+        Dictionary<string, string?> settings,
+        ILoggerProvider? logs = null
+    ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(
                 (_, configuration) => configuration.AddInMemoryCollection(settings)
             );
+            if (logs is not null)
+            {
+                builder.ConfigureServices(services => services.AddSingleton(logs));
+            }
         });
 
     /// <summary>Boot is triggered here: WebApplicationFactory defers the entry point until the server is needed.</summary>
@@ -53,41 +62,53 @@ public class SecretsOptionsStartupTests
     [TestFixture("SecretsSettings:ResolveTimeoutSeconds", "4294968")]
     public class Given_an_invalid_secrets_setting_at_startup(string key, string value)
     {
+        private CapturingLoggerProvider _logs = null!;
         private WebApplicationFactory<Program> _factory = null!;
         private Exception? _exception;
-        private OptionsValidationException? _validationFailure;
+        private Exception?[] _startupFaults = [];
 
         /// <summary>
-        /// The test host wraps exceptions thrown from the entry point before RunAsync, so the validation
-        /// failure is located by walking the chain instead of asserting on the outermost type.
+        /// The validation failure is read from the host's startup-fault log rather than from the
+        /// exception CreateClient throws. RunAsync disposes the failed host before the entry point
+        /// reports the failure, so the factory's own start can lose that race and throw
+        /// ObjectDisposedException instead. The host always logs the failure before disposing.
         /// </summary>
-        private static OptionsValidationException? FindOptionsValidationException(Exception? exception) =>
-            exception switch
-            {
-                null => null,
-                OptionsValidationException match => match,
-                AggregateException aggregate => aggregate
-                    .InnerExceptions.Select(FindOptionsValidationException)
-                    .FirstOrDefault(found => found is not null),
-                _ => FindOptionsValidationException(exception.InnerException),
-            };
-
         [SetUp]
         public void Act()
         {
-            _factory = CreateFactory(new Dictionary<string, string?> { [key] = value });
+            _logs = new CapturingLoggerProvider();
+            _factory = CreateFactory(new Dictionary<string, string?> { [key] = value }, _logs);
             _exception = StartupExceptionFor(_factory);
-            _validationFailure = FindOptionsValidationException(_exception);
+            _startupFaults =
+            [
+                .. _logs
+                    .Entries.Where(entry =>
+                        entry.Category == "Microsoft.Extensions.Hosting.Internal.Host"
+                        && entry.EventId.Name == "HostedServiceStartupFaulted"
+                    )
+                    .Select(entry => entry.Exception),
+            ];
         }
 
         [TearDown]
-        public void TearDown() => _factory.Dispose();
+        public void TearDown()
+        {
+            _factory.Dispose();
+            _logs.Dispose();
+        }
 
         [Test]
         public void It_fails_to_start() => _exception.Should().NotBeNull();
 
         [Test]
-        public void It_names_the_setting() => _validationFailure!.Message.Should().Contain($"{key} must be");
+        public void It_names_the_setting() =>
+            _startupFaults
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<OptionsValidationException>()
+                .Which.Message.Should()
+                .Contain($"{key} must be");
     }
 
     [TestFixture]
