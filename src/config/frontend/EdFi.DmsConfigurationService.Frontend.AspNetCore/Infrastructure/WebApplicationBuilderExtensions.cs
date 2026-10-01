@@ -302,6 +302,10 @@ public static class WebApplicationBuilderExtensions
     /// against. It follows the configured datastore because that is the engine this deployment runs,
     /// and it is a single seam: a setting that names the target provider per data store replaces this
     /// method and nothing else.
+    ///
+    /// The one validator is also the <see cref="IDataStoreConnectionStringBuilderSource"/>, forwarded
+    /// to the same registration, so the builder a stored connection string is rewritten through is
+    /// the parser it was validated by.
     /// </summary>
     private static void AddDataStoreConnectionStringValidator(IServiceCollection services, bool usePostgresql)
     {
@@ -319,6 +323,11 @@ public static class WebApplicationBuilderExtensions
                 MssqlDataStoreConnectionStringValidator
             >();
         }
+
+        services.AddSingleton<IDataStoreConnectionStringBuilderSource>(provider =>
+            (IDataStoreConnectionStringBuilderSource)
+                provider.GetRequiredService<IDataStoreConnectionStringValidator>()
+        );
     }
 
     private static void ConfigureIdentityProvider(
