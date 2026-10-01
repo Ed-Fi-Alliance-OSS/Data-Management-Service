@@ -77,9 +77,12 @@ Use the existing Pester test suites; do not introduce a reporting framework.
   passing lanes. Check image/configuration consistency, dependency readiness,
   initialization order, shared resources/concurrency, partial setup cleanup and
   cancellation. Note relevant differences between local, PR and nightly execution.
-- [ ] Check nested timeout budgets. In particular, investigate the runbook's
+- [x] Check nested timeout budgets. In particular, investigate the runbook's
   600-second internal wait inside a wrapper with a 600-second process timeout.
-  This is a review target, not a confirmed cause of the September 30 failure.
+  Review confirms the outer deadline also encloses preparation and provisioning.
+  PostgreSQL's observed setup completed in 324 seconds without timing out; SQL
+  Server evidence remains pending. This is not a confirmed cause of the September
+  30 failure, and no budget increase has been made on that assumption.
 - [ ] Run SQL Server Admission with the improved diagnostics, then run the full
   matrix on the branch through the existing workflow. Do not stop at the previously
   failing lane.
@@ -135,14 +138,27 @@ passes; document that limitation explicitly.
 - Local results default outside the checkout; checkout-local destinations are
   rejected, including a checkout-local TMPDIR for private logs. Both CI workflows
   use the runner temporary directory.
+- SQL startup evidence now retains bounded hexadecimal LSA-load and AppLoader-exit
+  status codes separately, without changing recovery eligibility. Startup failure
+  and recovery totals count each GUID-named attachment once, including when VSTest
+  retains another copy beneath the results directory.
 - The shared SQL Server lifecycle adapter called the removed `Invoke-FixtureSql`
   helper. It now calls `Invoke-CdcFixtureSql`; targeted execution tests verify the
   actual adapter, database forwarding and session-option ordering. This is a test
   harness defect introduced by the fixture extraction, not evidence of the cause
   of the September 30 Admission failure.
-- Broad Pester validation passed 835 tests. Additional export-failure and interrupted
-  case tests passed with the focused diagnostic suite (7 tests). Contract .NET
-  validation and hosted qualification remain in progress.
+- Local Contract validation passed 4,671 controller unit, 819 CLI CDC, 6 runbook-admin,
+  502 offline integration and 839 Pester tests. Subsequent SQL diagnostic/counter
+  changes passed 63 targeted .NET checks and all 283 qualification-script checks,
+  with no failures or skips. The duplicate-count regression failed before its fix.
+- Hosted run `36790134648` on `4748fdda6` has twelve passing live jobs with audited
+  artifacts and a failed SQL Server Recovery job; four jobs remain in progress.
+  The failed scenario encountered a SQL Server process exit before exercising CDC.
+  The AppLoader termination message was identified, but the exact LSA timeout
+  signature was absent. No additional retry was authorized. Twenty fresh local
+  starts of the same image reached client readiness without reproducing the crash;
+  this does not establish hosted stability or resolve the vendor cause. This run
+  cannot count as a complete stability pass. The PR retains the current run ledger.
 - Shared-path review covered the pinned-image provider fixture, separate Kafka
   policy fixture, History servers/retirement, runbook ownership and governed
   teardown, and API E2E setup/test/cleanup/export deadlines. Historical incidents
