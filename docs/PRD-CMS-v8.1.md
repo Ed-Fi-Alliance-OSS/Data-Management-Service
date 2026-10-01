@@ -1,25 +1,17 @@
-# PRD: CMS v8.1.0 Deferred Requirements
+# Product Requirements Document: Ed-Fi Configuration Management Service (CMS) v8.1
 
-> **Status**: Planned / deferred from v8.0 \
+> **Status**: Planned \
 > **Owner**: Stephen Fuqua \
 > **Product**: Ed-Fi Configuration Management Service (CMS) \
 > **Repository**: `Ed-Fi-Alliance-OSS/Data-Management-Service` (`src/config`) \
 > **Companion document**: [CMS v8.0 Product Requirements](./PRD-CMS-v8.0.md)
 
-This document captures requirements and feature slices that appeared in the
-CMS v8.0 PRD but are not implemented in the CMS code shipped at git tag
-`v8.0.0`. It mirrors the v8.0 PRD structure where useful so the deferred work
-can be evaluated for a v8.1.0 release without overstating v8.0.0 behavior.
-
 ## 1. Product Overview
 
-CMS v8.0.0 implements the core Ed-Fi Management API v3 administrative control
-plane. The following jobs and requirements are deferred because the v8.0.0 code
-has no matching route, model, service registration, repository behavior, or
-configuration switch, or because only part of the originally stated behavior is
-implemented.
+CMS v8.1 implements the core Ed-Fi Management API v3 administrative control
+plane, in parity with ODS Admin API v2.4.
 
-### 1.1 Deferred Jobs to Be Done
+### 1.1 Jobs to Be Done
 
 #### JTBD 11: Database Instance Provisioning
 
@@ -34,7 +26,7 @@ progress out of band.
 
 **How CMS Could Help**: The ODS Admin API 2.4 line introduced an analogous
 `/v2/odsInstances/manage` / `/v3/dataStores/manage` resource with
-asynchronous, job-tracked provisioning. No equivalent exists in CMS v8.0.0:
+asynchronous, job-tracked provisioning. No equivalent exists in CMS v8.0:
 current CMS data-store creation is synchronous CRUD over an already-provisioned
 connection string, and schema provisioning is a separate host-run tooling step
 (`api-schema-tools`, `provision-dms-schema.ps1`), not an API-driven workflow.
@@ -51,72 +43,84 @@ querying operational databases directly.
 
 **How CMS Could Help**: The ODS Admin API 2.4 line introduced this as a
 periodically synchronized, on-demand-refreshable cache. No equivalent exists
-in CMS v8.0.0.
+in CMS v8.0.
 
 ## 2. Functional Requirements
 
 ### 2.1 API Versioning and Discovery
 
 - **FR-VERSION-4**: CMS discovery/metadata endpoints SHOULD report whether the
-  deployment is running in multi-tenant mode. In v8.0.0, the discovery model
+  deployment is running in multi-tenant mode. In v8.0, the discovery model
   contains version, application name, build, OpenAPI metadata URL, and
   specification version only.
+- **FR-VERSION-5**: CMS SHOULD expose an anonymous, unauthenticated endpoint
+  that lists the names of configured tenants (an empty list when
+  multi-tenancy is disabled), so a client can discover valid tenant names
+  before it is able to supply tenant-scoped requests.
+- **FR-VERSION-6**: Discovery and API-metadata endpoints SHOULD remain
+  reachable without a tenant header in multi-tenant deployments, since they
+  expose no tenant-scoped data, so deployment discovery does not depend on a
+  client already knowing a tenant name.
 
 ### 2.2 Identity Provider and Authentication
 
-- **FR-AUTH-10**: In self-contained mode, CMS SHOULD periodically remove
+- **FR-AUTH-11**: In self-contained mode, CMS SHOULD periodically remove
   expired access-token records from its own storage on a configurable interval,
   defaulting to enabled with a 30-minute sweep interval. In Keycloak mode, CMS
   SHOULD NOT implement its own token-cleanup mechanism, since Keycloak owns its
   own token and session lifecycle.
+- **FR-AUTH-12**: CMS SHOULD require client authentication for token
+  revocation, SHOULD allow a client to revoke only its own tokens, and SHOULD
+  avoid responses that reveal whether a submitted token was valid, so
+  revocation cannot be used to enumerate or deny service to other clients.
+- **FR-AUTH-13**: When CMS provisions API credentials through an external
+  identity provider, it SHOULD report success only once the credential is
+  fully usable for authorized API access, and SHOULD return a recoverable
+  failure when downstream provisioning cannot be completed, so operators are
+  never handed unusable credentials disguised as a successful result.
 
 ### 2.3 Application Management
 
-- **FR-APP-2-DEFERRED**: Creating an application SHOULD require one or more
-  data store IDs if application-created credentials are expected to be usable
-  immediately against DMS. In v8.0.0, `ApplicationInsertCommand.DataStoreIds`
-  defaults to an empty array and is not marked `NotEmpty`.
-- **FR-APP-3-DEFERRED**: Creating or updating an application SHOULD validate
-  that the referenced claim set name exists. In v8.0.0, `ClaimSetName` is
-  stored as a string and validated for format, but is not enforced by a
-  foreign key or repository lookup.
-- **FR-APP-5-DEFERRED**: Updating an application SHOULD support direct changes
-  to an application-level enabled state if that state remains part of the
-  public application contract. In v8.0.0, enabled/approved state is managed on
-  ApiClient records, and `ApplicationUpdateCommand` has no enabled property.
+- **FR-APP-7**: Creating or updating an API client SHOULD allow zero
+  data-store assignments, extending the zero-assignment support that v8.0
+  already allows at application creation, so operators can provision and
+  administer identity-only or other non-resource-access clients through the
+  normal lifecycle without being forced to grant data access they don't need.
 
 ### 2.4 Data Store Management
 
-- **FR-DATASTORE-3-DEFERRED**: A `PUT /v3/dataStores/{id}` request that omits
-  the connection-string field SHOULD preserve the stored value rather than
-  requiring the caller to resupply it. In v8.0.0, the update path writes the
-  request body's `ConnectionString` value.
+- **FR-DATASTORE-10**: Updating a data store or data-store derivative without
+  supplying a new connection value SHOULD preserve the previously stored
+  value rather than requiring the caller to resupply it.
+- **FR-DATASTORE-11**: CMS SHOULD validate that a submitted connection value is
+  a genuine, correctly formatted connection string for the target database
+  engine before storing it, and SHOULD reject a previously issued (already
+  protected) connection value if a caller resubmits it as new input, so that
+  retrieving and then round-tripping a stored value can never silently
+  corrupt the underlying connection information.
 
 ### 2.5 Profiles
 
 - **FR-PROFILE-5**: CMS SHOULD expose an endpoint for DMS to retrieve all
   Profiles assigned to a given application (`GET /v3/applications/{id}/profiles`),
   so DMS can resolve and cache which Profiles apply to a given API client. In
-  v8.0.0, Profile CRUD exists and Applications expose `profileIds`, but no
+  v8.0, Profile CRUD exists and Applications expose `profileIds`, but no
   application-profile endpoint is mapped.
 
 ### 2.6 Error Handling and Responses
 
-- **FR-ERROR-1-DEFERRED**: Every non-success CMS response — including
-  framework-level errors, authentication/authorization failures,
-  tenant-resolution middleware failures, dynamic claims-management endpoints,
-  and OAuth/OIDC error responses — SHOULD return a JSON body conforming to the
-  Ed-Fi Error Response Knowledge Base contract: `detail`, `type`, `title`,
-  `status`, `correlationId`, `validationErrors`, and `errors`.
-- **FR-ERROR-4-DEFERRED**: CMS SHOULD NOT return bare framework results (for
-  example, `NotFound()` or `Forbid()`) or ad hoc `{ error, message }` shapes
-  from any endpoint or middleware.
-- **FR-ERROR-5-DEFERRED**: All unstructured or untrusted provider, transport,
-  JSON, and operational error text SHOULD be replaced with safe, fixed
-  fallback messages in client-facing responses.
-- **FR-ERROR-6-DEFERRED**: Decide whether unresolved caller-supplied
-  references should remain `400 Bad Request` validation failures, as in
-  v8.0.0, or move to `409 Conflict` for closer ODS Admin API parity.
+- **FR-ERROR-6**: Every non-success CMS response — including framework-level
+  errors, authentication/authorization failures, tenant-resolution middleware
+  failures, dynamic claims-management endpoints, and OAuth/OIDC error
+  responses — SHOULD return a JSON body conforming to the Ed-Fi Error
+  Response Knowledge Base contract: `detail`, `type`, `title`, `status`,
+  `correlationId`, `validationErrors`, and `errors`.
+- **FR-ERROR-7**: CMS SHOULD NOT return bare framework results (for example,
+  `NotFound()` or `Forbid()`) or ad hoc `{ error, message }` shapes from any
+  endpoint or middleware.
+- **FR-ERROR-8**: All unstructured or untrusted provider, transport, JSON, and
+  operational error text SHOULD be replaced with safe, fixed fallback
+  messages in client-facing responses.
 
 ### 2.7 Database Instance Provisioning
 
@@ -151,6 +155,13 @@ in CMS v8.0.0.
   asynchronous background job (such as data-store provisioning or
   education-organization refresh) by job ID, including when it was created and,
   if applicable, when it finished.
+- **FR-JOB-2**: CMS background jobs SHOULD be durably recoverable across
+  process restarts and across replicas, with safe retry behavior, so accepted
+  administrative work is not lost when execution is interrupted.
+- **FR-JOB-3**: CMS SHOULD support recurring schedules for platform-managed
+  background operations, so periodic work continues predictably across
+  restarts and multi-replica deployments without duplicate or missed
+  occurrences.
 
 ### 2.10 Rate Limiting
 
@@ -158,59 +169,105 @@ in CMS v8.0.0.
   requests and return `429 Too Many Requests` when a client exceeds it within a
   configured time window.
 
+### 2.11 Multi-Tenancy and Tenant Partitioning
+
+- **FR-TENANT-7**: In multi-tenant deployments, vendor, claim set, and
+  profile configuration SHOULD be partitioned by tenant, including
+  tenant-scoped uniqueness and rejection of cross-tenant associations, so one
+  tenant's configuration can neither block nor leak into another's.
+
+### 2.12 Extensibility and Secret Management
+
+- **FR-PLUGIN-1**: CMS SHOULD support explicitly enabled, host-provided
+  extensions at approved extension points, so deployments can add supported
+  behavior without modifying CMS itself.
+- **FR-PLUGIN-2**: CMS SHOULD allow a data-store connection definition to
+  reference an externally managed secret that CMS resolves for authorized
+  reads, so operators can keep backend credentials outside CMS-managed
+  configuration data.
+
+### 2.13 Ownership-Based Authorization Administration
+
+- **FR-OWNERSHIP-1**: CMS SHOULD allow administrators to create and maintain
+  ownership-token definitions and assign them to API clients, so downstream
+  services can enforce ownership-based access rules from centrally managed
+  configuration.
+- **FR-OWNERSHIP-2**: CMS SHOULD expose each API client's effective ownership
+  configuration in API-client read models, so downstream services can
+  retrieve the ownership rules they must enforce.
+
+### 2.14 API Contract Consistency
+
+- **FR-CONTRACT-1**: CMS update operations SHOULD reject a request whose
+  route identifier and request-body identifier do not refer to the same
+  resource, so a malformed request cannot partially update one record while
+  intending to affect another.
+
+### 2.15 Vendor Configuration
+
+- **FR-VENDOR-5**: CMS SHOULD allow a vendor to be created or updated without
+  a namespace prefix, so deployments that do not rely on namespace-based
+  authorization are not forced to supply an irrelevant value.
+
 ## 3. Non-Functional Requirements
 
 ### 3.1 Security and Privacy
 
-- **NFR-SEC-4-DEFERRED**: Swagger/OpenAPI generation SHOULD be independently
-  controllable so it can be disabled in production deployments that do not
-  want to expose API metadata. In v8.0.0, `Program.cs` calls `AddOpenApi()` and
-  `MapOpenApi()` unconditionally, and `/metadata/specifications` is always
-  mapped.
+- **NFR-SEC-8**: CMS SHOULD refuse to start unless the deployment supplies a
+  non-default encryption key of sufficient strength for protecting stored
+  connection information, so stock or weak configuration cannot expose
+  administrative secrets.
 
 ### 3.2 Reliability and Operations
 
-- **NFR-REL-1-DEFERRED**: CMS SHOULD expose a health endpoint reflecting the
-  status of its own dependencies, at minimum the configuration database. In
-  v8.0.0, `/health` returns the current server timestamp and does not check
-  dependencies.
-- **NFR-REL-2-DEFERRED**: In self-contained identity-provider mode, CMS SHOULD
-  run an in-process, config-gated background sweep that deletes expired access
+- **NFR-REL-4**: In self-contained identity-provider mode, CMS SHOULD run an
+  in-process, config-gated background sweep that deletes expired access
   token rows on a configurable interval.
+- **NFR-REL-5**: CMS token-expiration storage and cleanup SHOULD use
+  time-zone-independent semantics across supported database engines, so
+  token lifecycle behavior does not vary with the database's or session's
+  configured time zone.
+- **NFR-REL-6**: CMS SHOULD load only explicitly enabled host-provided
+  extensions and SHOULD fail startup when an extension is structurally
+  invalid or conflicts with core runtime behavior, so broken or unreviewed
+  extensions cannot silently alter production behavior.
 
 ### 3.3 Performance and Scalability
 
-- **NFR-PERF-2-DEFERRED**: Running the expired-token cleanup sweep concurrently
+- **NFR-PERF-3**: Running the expired-token cleanup sweep concurrently
   across multiple CMS replicas SHOULD be safe: the underlying delete should be
   idempotent, so replicas racing to delete the same expired rows cause no harm.
 
 ## 4. Out of Scope and Known Limitations
 
-- CMS v8.1.0 planning should decide whether database-instance provisioning and
-  education-organization synchronization remain CMS responsibilities or stay as
-  host-run operational tooling.
-- Secret expiration and scheduled rotation were researched in a design spike
-  but are not implemented in v8.0.0; today, secret rotation is a manual reset
-  with no expiration date tracked or enforced.
+- CMS v8.1 confirmed that database-instance provisioning and
+  education-organization synchronization are CMS responsibilities (see
+  FR-DBINST-1..4 and FR-EDORG-1..2) rather than remaining host-run
+  operational tooling.
+- Requiring one or more data-store IDs on API client creation (v8.0
+  FR-CLIENT-2) and supporting direct application-level enabled/disabled
+  writes were both evaluated and explicitly not carried forward: CMS instead
+  allows zero data-store assignments on API clients (FR-APP-7, extending the
+  zero-assignment support v8.0 FR-APP-2 already allowed at the application
+  level) and continues to manage enabled/approved state at the API-client
+  level.
+- A published Identity API surface and host-pluggable identity
+  implementation are being delivered on the Data Management Service (DMS),
+  not the Configuration Management Service, and are out of scope for this
+  document.
+- Secret expiration and scheduled rotation; today, secret rotation is a manual
+  reset with no expiration date tracked or enforced.
 - Client-supplied correlation IDs, supported on the DMS resource API, are not
-  supported on CMS v8.0.0.
+  supported on CMS v8.1.
+- Several CMS v8.0 requirements originally drafted for v8.1 have no
+  confirmed v8.1 delivery and have been moved to the draft
+  [CMS v8.2 PRD](./PRD-CMS-v8.2.md): claim-set-existence
+  validation on application writes, the `400` vs. `409` decision for
+  unresolved caller-supplied references, independent control of Swagger/OpenAPI
+  generation, and a dependency-aware health endpoint.
 
 ## 5. Open Questions and Decision Log
 
-- **Database-instance provisioning scope**: Should CMS build the async,
-  template-based data-store provisioning workflow described above, or should
-  schema provisioning remain a host-run tooling step (`api-schema-tools`)?
-- **Education-organization synchronization scope**: Is a read-side
-  education-organization cache still a priority for CMS, given DMS's own
-  authorization model resolves relationships from live operational data rather
-  than an administrative cache?
-- **Rate limiting**: Confirm whether CMS should implement request rate
-  limiting or intentionally leave rate limiting to upstream infrastructure.
 - **Secret expiration/rotation**: Decide whether to implement
   `secret_expires_on` tracking and rotation tooling, or leave rotation as a
   fully manual, host-driven operation.
-- **Error conformance scope**: Decide whether OAuth-standard error shapes and
-  dynamic claims-management responses should be converted to the Ed-Fi error
-  contract or explicitly documented as exceptions.
-- **OpenAPI disablement**: Decide whether API metadata exposure should be
-  controlled by configuration, environment, or deployment topology.
