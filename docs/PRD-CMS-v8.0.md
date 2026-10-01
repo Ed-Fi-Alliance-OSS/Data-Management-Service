@@ -208,10 +208,10 @@ see FR-TENANT-4 and NFR-SEC-6.
 to correlate a failure with a request, \
 **so that** operational failures can be diagnosed quickly.
 
-**How CMS Helps**: Exposes a health endpoint, correlates errors with
-`HttpContext.TraceIdentifier`, and returns every non-success response in a
-single, consistent Ed-Fi Problem Details shape (FR-ERROR-1 through
-FR-ERROR-8).
+**How CMS Helps**: Exposes a health endpoint, correlates Ed-Fi-style errors with
+`HttpContext.TraceIdentifier`, and returns business-endpoint and global-exception
+failures in an Ed-Fi Problem Details shape, with the known exceptions documented
+in FR-ERROR-1 (FR-ERROR-1 through FR-ERROR-5).
 
 #### JTBD 8: Upgrade Between CMS Versions
 
