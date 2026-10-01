@@ -104,6 +104,7 @@ public static class WebApplicationBuilderExtensions
         // The cache is a singleton taking the tenant as an argument, so it holds no scoped
         // dependency; the read seam that consults it is transient like the repositories calling it.
         webApplicationBuilder.Services.AddSingleton<SecretValueCache>();
+        webApplicationBuilder.Services.AddTransient<IConnectionStringReader, ConnectionStringReader>();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
