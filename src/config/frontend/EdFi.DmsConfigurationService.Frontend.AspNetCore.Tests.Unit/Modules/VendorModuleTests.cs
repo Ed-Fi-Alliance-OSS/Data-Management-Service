@@ -123,7 +123,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
@@ -312,7 +312,7 @@ public class VendorModuleTests
         private async Task AssertPostAcceptsPrefixesAsync(string body, string expectedPrefixes)
         {
             List<VendorInsertCommand> commands = [];
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Invokes(call => commands.Add(call.GetArgument<VendorInsertCommand>(0)!))
                 .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
             using var client = SetUpClient();
@@ -392,15 +392,37 @@ public class VendorModuleTests
     [TestFixture]
     public class UpsertTests : VendorModuleTests
     {
+        private readonly Guid _clientUuid = Guid.NewGuid();
+
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .Returns(
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Existing Company",
+                            "Original Contact",
+                            "original@example.com",
+                            "uri://old.org",
+                            [new VendorApiClient(51, "client-51", _clientUuid, 10)]
+                        )
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(_clientUuid.ToString(), "")
+                )
+                .Returns(new ClientUpdateResult.Success(_clientUuid));
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(51, _clientUuid, _clientUuid))
+                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success());
         }
 
         [Test]
-        public async Task Should_return_200_with_location_when_vendor_already_exists()
+        public async Task Should_synchronize_clients_before_returning_200_for_an_existing_vendor()
         {
             using var client = SetUpClient();
 
@@ -412,7 +434,7 @@ public class VendorModuleTests
                       "company": "Existing Company",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": "Test"
+                      "namespacePrefixes": ""
                     }
                     """,
                     Encoding.UTF8,
@@ -425,6 +447,22 @@ public class VendorModuleTests
             response.Headers.Location!.ToString().Should().EndWith("/v3/vendors/1");
             var body = await response.Content.ReadAsStringAsync();
             body.Should().BeEmpty();
+            A.CallTo(() =>
+                    _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, updateExisting: false)
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(_clientUuid.ToString(), "")
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _vendorRepository.UpdateVendor(
+                        A<VendorUpdateCommand>.That.Matches(command =>
+                            command.Id == 1 && command.NamespacePrefixes.Length == 0
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -460,7 +498,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
         }
 
@@ -740,7 +778,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Returns(new VendorInsertResult.FailureUnknown(""));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
@@ -813,7 +851,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Returns(new VendorInsertResult());
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))

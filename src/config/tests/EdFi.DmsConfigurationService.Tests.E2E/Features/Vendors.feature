@@ -653,6 +653,18 @@ Feature: Vendors endpoints
                   """
              Then it should respond with 201
               And the response location id is captured as "s20VendorId"
+             When a GET request is made to "/v3/vendors/{s20VendorId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {s20VendorId},
+                    "company": "Scenario 20 {scenarioRunId}",
+                    "contactName": "Test",
+                    "contactEmailAddress": "test@gmail.com",
+                    "namespacePrefixes": ""
+                  }
+                  """
              When a POST request is made to "/v3/applications" with
                   """
                   {

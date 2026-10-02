@@ -67,12 +67,17 @@ public class VendorModule : IEndpointModule
     private static async Task<IResult> InsertVendor(
         VendorInsertCommand entity,
         VendorInsertCommand.Validator validator,
+        VendorUpdateCommand.Validator updateValidator,
         HttpContext httpContext,
-        IVendorRepository repository
+        IVendorRepository repository,
+        IApiClientRepository apiClientRepository,
+        IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
+        ILogger<VendorModule> logger
     )
     {
         await validator.GuardAsync(entity);
-        var insertResult = await repository.InsertVendor(entity);
+        var insertResult = await repository.InsertVendor(entity, updateExisting: false);
 
         var request = httpContext.Request;
         var locationUrl =
@@ -84,6 +89,30 @@ public class VendorModule : IEndpointModule
             if (success.IsNewVendor)
             {
                 return Results.Created(resourceUrl, null);
+            }
+
+            IResult updateResult = await Update(
+                success.Id,
+                new VendorUpdateCommand
+                {
+                    Id = success.Id,
+                    Company = entity.Company,
+                    ContactName = entity.ContactName,
+                    ContactEmailAddress = entity.ContactEmailAddress,
+                    NamespacePrefixes = entity.NamespacePrefixes,
+                },
+                updateValidator,
+                httpContext,
+                repository,
+                apiClientRepository,
+                clientRepository,
+                lockManager,
+                logger
+            );
+
+            if (updateResult is not IStatusCodeHttpResult { StatusCode: StatusCodes.Status204NoContent })
+            {
+                return updateResult;
             }
 
             httpContext.Response.Headers.Location = resourceUrl;

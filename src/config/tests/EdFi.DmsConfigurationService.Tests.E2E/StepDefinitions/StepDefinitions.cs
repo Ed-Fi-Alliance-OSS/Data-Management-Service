@@ -721,7 +721,9 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .EnumerateObject()
             .Where(property => property.NameEquals("namespacePrefixes"))
             .Should()
-            .ContainSingle($"the token should contain exactly one namespacePrefixes claim; payload: {payloadRoot}")
+            .ContainSingle(
+                $"the token should contain exactly one namespacePrefixes claim; payload: {payloadRoot}"
+            )
             .Which;
         JsonElement namespacePrefixValue = namespacePrefixes.Value;
         namespacePrefixValue.ValueKind.Should().Be(JsonValueKind.String);
