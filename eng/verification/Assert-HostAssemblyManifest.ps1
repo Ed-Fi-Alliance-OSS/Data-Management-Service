@@ -28,13 +28,18 @@
     their own project declares, and in **both** the application section and the contract section.
     Those are the published contracts a plugin takes a PackageReference on, and the loader's skew
     preflight compares exactly these values, so a manifest stating a different one would send an
-    implementer to the wrong target. EdFi.DataManagementService.Identity is a third contract
-    assembly in the image as of DMS-1514 and is deliberately not published yet, so it is asserted
-    here only as one of the application rows; adding it to the contract section is part of
-    publishing it. The contract section is a filtered view of the
-    application section rather than an independent sweep, so a row that appeared in one and not the
-    other, or with a different version in each, means the generator's filter and its source have
-    diverged; that is checked here rather than assumed.
+    implementer to the wrong target. The contract section is a filtered view of the application
+    section rather than an independent sweep, so a row that appeared in one and not the other, or
+    with a different version in each, means the generator's filter and its source have diverged; that
+    is checked here rather than assumed.
+
+    EdFi.DataManagementService.Identity is a third contract assembly in the image as of DMS-1514 and
+    is deliberately not published yet. When -ExpectedIdentityVersion is supplied it must be listed
+    exactly once in the application section, at that declared version; a missing row or a different
+    version fails. It is asserted in the application section only, and the contract section is not
+    required to carry it: adding it there is part of publishing it. The parameter is opt-in so that a
+    caller written before the identity contract existed keeps working, and a caller that supplies it
+    gets a mandatory row.
 
     No section may list EdFi.DataManagementService.ApiSchemaDownloader. That is the entry assembly of
     the second application packed into the image as /app/ApiSchemaDownloader/, so it exists in every
@@ -67,7 +72,14 @@ param(
     # Get-CustomValidationContractVersion for the same reason.
     [Parameter(Mandatory)]
     [string]
-    $ExpectedCustomValidationVersion
+    $ExpectedCustomValidationVersion,
+
+    # The identity contract's own declared version, read by callers with Get-PluginsContractVersion
+    # pointed at its csproj, for the same reason as the two above. Optional so existing callers keep
+    # working; once supplied, the application row is mandatory and must match.
+    [Parameter()]
+    [string]
+    $ExpectedIdentityVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -231,7 +243,25 @@ foreach ($contract in $contracts) {
     $verified[$contract.Assembly] = $observed[0]
 }
 
+# The identity contract, application section only. Not part of the loop above because that loop
+# requires each row in both sections, and this contract is not published, so the contract section
+# does not carry it. Asserted only when the caller supplies its declared version.
+$identityVerified = $null
+
+if (-not [string]::IsNullOrWhiteSpace($ExpectedIdentityVersion)) {
+    $identityVerified = Assert-ContractRow `
+        -Assembly "EdFi.DataManagementService.Identity" `
+        -DeclaredVersion $ExpectedIdentityVersion `
+        -Section $applicationSection `
+        -DeclarationSource "EdFi.DataManagementService.Identity.csproj"
+}
+
 $frameworkSummary = ($frameworkSections | ForEach-Object { "$_ ($($sections[$_].Count))" }) -join "; "
 $contractSummary = ($verified.Keys | ForEach-Object { "$_ at $($verified[$_])" }) -join ", "
+$contractSummary += " in both '$applicationSection' and '$contractSection'"
 
-Write-Output "Verified $([System.IO.Path]::GetFileName($ManifestPath)): $contractSummary in both '$applicationSection' and '$contractSection', $($sections[$applicationSection].Count) application assemblies, $sharedFrameworkRequired present, no $downloaderSentinel row, $frameworkSummary."
+if ($null -ne $identityVerified) {
+    $contractSummary += ", EdFi.DataManagementService.Identity at $identityVerified in '$applicationSection'"
+}
+
+Write-Output "Verified $([System.IO.Path]::GetFileName($ManifestPath)): $contractSummary, $($sections[$applicationSection].Count) application assemblies, $sharedFrameworkRequired present, no $downloaderSentinel row, $frameworkSummary."

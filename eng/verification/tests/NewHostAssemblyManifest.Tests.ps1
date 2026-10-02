@@ -26,6 +26,7 @@ BeforeAll {
     Import-Module (Join-Path $script:repositoryRoot "package-helpers.psm1") -Force
     $script:contractVersion = Get-PluginsContractVersion
     $script:customValidationVersion = Get-CustomValidationContractVersion
+    $script:identityVersion = Get-PluginsContractVersion -PropsPath (Join-Path $script:repositoryRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
 
     $script:entryAssemblyName = "TestHost"
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1500-manifest-tests-$([guid]::NewGuid().ToString('N'))"
@@ -33,11 +34,14 @@ BeforeAll {
 
     # The repository's own contract assemblies, which the fixtures put at the top level of app/ so
     # that the declared-version assertions are made against real builds rather than hand-written
-    # rows. Both contracts are here because the verifier asserts both, in both sections.
+    # rows. The two published contracts are here because the verifier asserts both, in both sections;
+    # the identity contract is here because it asserts that one too, in the application section only.
     $script:contractAssembly = Join-Path $script:repositoryRoot "src/plugins/EdFi.Api.Plugins/bin/Release/net10.0/EdFi.Api.Plugins.dll"
     $script:customValidationAssembly = Join-Path $script:repositoryRoot "src/dms/core/EdFi.DataManagementService.CustomValidation/bin/Release/net10.0/EdFi.DataManagementService.CustomValidation.dll"
+    $script:identityAssembly = Join-Path $script:repositoryRoot "src/dms/core/EdFi.DataManagementService.Identity/bin/Release/net10.0/EdFi.DataManagementService.Identity.dll"
     $script:contractAssemblyAvailable = (Test-Path -LiteralPath $script:contractAssembly) -and
-        (Test-Path -LiteralPath $script:customValidationAssembly)
+        (Test-Path -LiteralPath $script:customValidationAssembly) -and
+        (Test-Path -LiteralPath $script:identityAssembly)
 
     # Real shared-framework assemblies from the installed runtime. The fixture's directory names, not
     # these files' versions, are what selection reads, so any installed 10.0.x serves for any name.
@@ -156,6 +160,7 @@ BeforeAll {
         New-Item -ItemType Directory -Path $app -Force | Out-Null
         Copy-Item -LiteralPath $script:contractAssembly -Destination $app
         Copy-Item -LiteralPath $script:customValidationAssembly -Destination $app
+        Copy-Item -LiteralPath $script:identityAssembly -Destination $app
 
         if (-not $OmitDownloaderSentinel) {
             $downloader = Join-Path $app "ApiSchemaDownloader"
@@ -1026,5 +1031,110 @@ Describe "Assert-HostAssemblyManifest" {
             & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
                 -ExpectedCustomValidationVersion $script:customValidationVersion
         } | Should -Throw -ExpectedMessage "*shared-framework section(s)*"
+    }
+
+    # The identity contract is asserted in the application section only. It is in the image but is
+    # not published yet, so the contract section does not carry it, and requiring it there would
+    # fail every correct manifest. The parameter is opt-in so that a caller written before the
+    # identity contract existed keeps working; when it is supplied the row has to be there.
+    It "admits a generated manifest whose identity row is at the declared version" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-identity-happy"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        $output = & $script:verifier `
+            -ManifestPath $fixture.OutputPath `
+            -ExpectedPluginsVersion $script:contractVersion `
+            -ExpectedCustomValidationVersion $script:customValidationVersion `
+            -ExpectedIdentityVersion $script:identityVersion
+
+        $output | Should -BeLike "*EdFi.DataManagementService.Identity at $($script:identityVersion).0*"
+    }
+
+    It "refuses a manifest stating an identity version other than the declared one" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-identity-version"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion "9.9.9"
+        } | Should -Throw -ExpectedMessage "*EdFi.DataManagementService.Identity*9.9.9*"
+    }
+
+    It "refuses a manifest whose application section lost the identity row" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-identity-missing-row"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        Edit-ManifestSection `
+            -ManifestPath $fixture.OutputPath `
+            -Heading "Application assemblies" `
+            -DropRowFor "EdFi.DataManagementService.Identity"
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
+        } | Should -Throw -ExpectedMessage "*EdFi.DataManagementService.Identity 0 time(s) in 'Application assemblies'*"
+    }
+
+    It "does not require the identity row in the contract section" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-identity-not-in-contract-section"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        # Whatever the generator wrote there, the row is gone from the contract section, so the case
+        # holds whether or not the generator ever starts listing the identity contract in it.
+        Edit-ManifestSection `
+            -ManifestPath $fixture.OutputPath `
+            -Heading "Contract assemblies" `
+            -DropRowFor "EdFi.DataManagementService.Identity"
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
+        } | Should -Not -Throw
+    }
+
+    It "still admits a caller that does not supply an identity version" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
+        }
+
+        $fixture = New-ManifestFixture -Name "assert-identity-omitted"
+        Invoke-Generator -Fixture $fixture | Out-Null
+
+        Edit-ManifestSection `
+            -ManifestPath $fixture.OutputPath `
+            -Heading "Application assemblies" `
+            -DropRowFor "EdFi.DataManagementService.Identity"
+
+        {
+            & $script:verifier `
+                -ManifestPath $fixture.OutputPath `
+                -ExpectedPluginsVersion $script:contractVersion `
+                -ExpectedCustomValidationVersion $script:customValidationVersion
+        } | Should -Not -Throw
     }
 }

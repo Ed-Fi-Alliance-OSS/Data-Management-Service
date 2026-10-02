@@ -21,8 +21,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// class, and every other case in that fixture relies on the deployed default.
 /// </remarks>
 [Category("PluginIntegration")]
-public sealed class Given_TheUniqueIdValidatorPluginTimesOutASlowUpstream
-    : PostgresqlApiIntegrationTestBase
+public sealed class Given_TheUniqueIdValidatorPluginTimesOutASlowUpstream : PostgresqlApiIntegrationTestBase
 {
     private string _pluginRoot = string.Empty;
     private UniqueIdServiceStub _stub = null!;
@@ -42,7 +41,7 @@ public sealed class Given_TheUniqueIdValidatorPluginTimesOutASlowUpstream
     public async Task StageThePluginAndStartTheStub()
     {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
         _stub = await UniqueIdServiceStub.StartAsync();
@@ -60,8 +59,5 @@ public sealed class Given_TheUniqueIdValidatorPluginTimesOutASlowUpstream
 
     [Test]
     public Task It_fails_the_write_when_the_upstream_times_out() =>
-        UniqueIdValidationPluginScenario.It_fails_the_write_when_the_upstream_times_out(
-            Harness,
-            _stub
-        );
+        UniqueIdValidationPluginScenario.It_fails_the_write_when_the_upstream_times_out(Harness, _stub);
 }

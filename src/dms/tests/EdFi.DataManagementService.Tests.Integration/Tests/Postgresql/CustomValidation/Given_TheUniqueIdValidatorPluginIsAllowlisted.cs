@@ -65,9 +65,7 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
             .WriteTo.Sink(_logCapture)
             .CreateLogger();
 
-        services.AddSingleton<ILoggerProvider>(
-            new SerilogLoggerProvider(captureLogger, dispose: true)
-        );
+        services.AddSingleton<ILoggerProvider>(new SerilogLoggerProvider(captureLogger, dispose: true));
     }
 
     /// <summary>
@@ -84,7 +82,7 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
     public async Task StageThePluginAndStartTheStub()
     {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
         _stub = await UniqueIdServiceStub.StartAsync();
@@ -138,10 +136,7 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
 
     [Test]
     public Task It_rejects_a_put_after_the_stub_forgets_the_id() =>
-        UniqueIdValidationPluginScenario.It_rejects_a_put_after_the_stub_forgets_the_id(
-            Harness,
-            _stub
-        );
+        UniqueIdValidationPluginScenario.It_rejects_a_put_after_the_stub_forgets_the_id(Harness, _stub);
 
     [Test]
     public Task It_creates_a_non_person_resource_without_calling_the_stub() =>
@@ -184,23 +179,13 @@ public sealed class Given_TheUniqueIdValidatorPluginIsAllowlisted : PostgresqlAp
 
     [Test]
     public Task It_does_not_log_the_submitted_unique_id() =>
-        UniqueIdValidationPluginScenario.It_does_not_log_the_submitted_unique_id(
-            Harness,
-            _stub,
-            _logCapture
-        );
+        UniqueIdValidationPluginScenario.It_does_not_log_the_submitted_unique_id(Harness, _stub, _logCapture);
 
     [Test]
     public Task It_rejects_a_student_whose_unique_id_is_a_single_dot() =>
-        UniqueIdValidationPluginScenario.It_rejects_a_student_whose_unique_id_is_a_single_dot(
-            Harness,
-            _stub
-        );
+        UniqueIdValidationPluginScenario.It_rejects_a_student_whose_unique_id_is_a_single_dot(Harness, _stub);
 
     [Test]
     public Task It_rejects_a_student_whose_unique_id_is_two_dots() =>
-        UniqueIdValidationPluginScenario.It_rejects_a_student_whose_unique_id_is_two_dots(
-            Harness,
-            _stub
-        );
+        UniqueIdValidationPluginScenario.It_rejects_a_student_whose_unique_id_is_two_dots(Harness, _stub);
 }

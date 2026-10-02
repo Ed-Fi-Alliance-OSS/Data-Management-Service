@@ -129,7 +129,10 @@ $requiredXmlDocLandmarks = @(
     "while the same GUID in 32-character hyphen-free form does",
 
     # The $[n].property JSONPath form IdentityError.Path documents for an array-item failure.
-    'with an array item addressed as <c>$[n].property</c>'
+    'with an array item addressed as <c>$[n].property</c>',
+
+    # The Cardinality paragraph's reason a plugin must never use TryAdd for IIdentityService.
+    'because the host default is always registered and a <c>TryAdd</c> is therefore always declined'
 )
 
 $expectedReadme = "IDENTITY.md"

@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The identity fixture plugin: a minimal IIdentityService implementation that proves a plugin published against the packed identity contract loads into a host and has its service registered.
+
+        It consumes the plugin and identity contracts as packed nupkgs from a local folder feed
+        rather than by project reference, which is how an outside implementer consumes them; a
+        project reference would prove the source tree and not the packages.
+
+        It lives under eng/ rather than under src/ because nothing here can inherit what src/
+        imposes. src/Directory.Packages.props turns on central package management, which forbids the
+        inline pinned Version below. src/dms/Directory.Build.props forces a committed lock file,
+        SARIF output and the analyzer set onto everything beneath it. A nested Directory.Build.props
+        stops the props chain but not src/dms/Directory.Build.targets, which MSBuild finds by
+        walking up on its own. eng/ carries no Directory.Build.* and no Directory.Packages.props at
+        all, which is why the sibling deployment fixture
+        (eng/docker-compose/tests/plugin-deployment/Acme.SampleValidator) sits there too.
+
+        The four names the loader requires to agree all read Acme.IdentityFixture: this
+        directory, the assembly name, the published file name, and the plugin's own Name.
+
+        It carries no lock file and belongs to no solution. The only thing that builds it is
+        src/dms/tests/EdFi.DataManagementService.Tests.Integration/PackedContractFixturePlugins.targets.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <AssemblyName>Acme.IdentityFixture</AssemblyName>
+        <RootNamespace>Acme.IdentityFixture</RootNamespace>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!--
+        Both versions arrive from the staging target, which packs the contracts under exactly
+        these values. The defaults below exist only so that a bare build fails with a restore error
+        naming a version that does not exist, rather than quietly succeeding against whatever
+        happens to be in the feed. Each is pinned in [brackets]: a bare version is a floor, not a
+        pin, so with more than one nupkg per id in a folder feed NuGet resolves a different one and
+        warns instead of failing.
+    -->
+    <PropertyGroup>
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''">0.0.0-local</PluginsPackageVersion>
+        <IdentityPackageVersion
+            Condition="'$(IdentityPackageVersion)' == ''"
+        >0.0.0-local</IdentityPackageVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.Plugins" Version="[$(PluginsPackageVersion)]" />
+        <PackageReference Include="EdFi.Api.Identity" Version="[$(IdentityPackageVersion)]" />
+        <!--
+            Named here rather than leaned on transitively, because the plugin's hook signature names
+            IConfiguration and IServiceCollection and a direct use is declared directly. Held at
+            10.0.1, the same AssemblyVersion the host carries: a higher one would trip the loader's
+            newer-plugin-on-older-host preflight.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.1" />
+        <!--
+            Served host-first from the ASP.NET shared framework, as in the UniqueId validator
+            fixture: both carry AssemblyVersion 10.0.0.0, so the loader's newer-plugin-on-older-host
+            preflight never trips on it.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1" />
+    </ItemGroup>
+</Project>
