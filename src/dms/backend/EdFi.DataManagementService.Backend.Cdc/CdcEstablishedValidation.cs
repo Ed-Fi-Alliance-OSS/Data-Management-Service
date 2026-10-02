@@ -361,20 +361,33 @@ public sealed partial class CdcEstablishedValidation
             progress.Capture(partialInput, journal.HasPendingRecordSizeIncrease, offsetHistory);
             await progress.ContainTerminal();
         }
-        if (
-            (
-                request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.Postgresql
-                || offsetHistory.Observation.Diagnostics.Any(diagnostic =>
-                    diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
-                    && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+        var sqlServer = request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.SqlServer;
+        // Count the initial provider/offset pair. Independent samples may never converge,
+        // so preserve the operation deadline and stop after at most three SQL Server pairs.
+        var maximumSamples = sqlServer ? 3 : 2;
+        for (
+            var samples = 1;
+            samples < maximumSamples
+                && (
+                    request.Binding.Provider == Core.DocumentCache.Cdc.CdcProvider.Postgresql
+                    || (
+                        sqlServer
+                        && offsetHistory.Observation.Diagnostics.Any(diagnostic =>
+                            diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
+                            && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+                        )
+                    )
                 )
-            )
-            && offset is not null
-            && offsetHistory.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
+                && offset is not null
+                && offsetHistory.Observation.Continuity == CdcSourceHistoryContinuity.Unknown;
+            samples++
         )
         {
-            // The first source read preceded Connect. Refresh its upper range observation,
-            // retaining the same validate-only provenance checks and any established loss.
+            if (sqlServer)
+            {
+                await Task.Delay(request.Timing.PollInterval, _time, token);
+            }
+            // Refresh using the same validate-only provenance and operation budget.
             setComponent(CdcDeploymentComponent.ProviderSetup);
             provider = await CallAsync(request, ct => _provider.SetupAsync(setup, ct), token);
             mapped = MapProvider(provider);
@@ -402,6 +415,35 @@ public sealed partial class CdcEstablishedValidation
                 if (rawOffset is CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable refreshUnavailable)
                 {
                     diagnostics.Add(refreshUnavailable.Diagnostic);
+                }
+                offsetHistory = await CallAsync(
+                    request,
+                    ct =>
+                        _positions.ObserveSourceHistoryAsync(
+                            new(
+                                operation,
+                                request.Binding,
+                                mapped.ProviderSetup,
+                                offset,
+                                mapped.ProviderHistory
+                            )
+                            {
+                                ExpectedConnectSourcePartitionHash = establishment.SourcePartitionHash,
+                                LatchedIncident = exact.State!.Incident,
+                            },
+                            ct
+                        ),
+                    token
+                );
+                partialInput = partialInput with
+                {
+                    ObservedAt = _time.GetUtcNow(),
+                    SourceHistory = offsetHistory.Observation,
+                };
+                if (progress is not null)
+                {
+                    progress.Capture(partialInput, journal.HasPendingRecordSizeIncrease, offsetHistory);
+                    await progress.ContainTerminal();
                 }
             }
         }

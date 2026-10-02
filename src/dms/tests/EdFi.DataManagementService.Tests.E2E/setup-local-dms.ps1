@@ -114,7 +114,7 @@ try {
     }
 }
 catch {
-    Write-SetupQualificationFailure -Records @($Error)
+    Write-SetupQualificationFailure -Records @($_)
     Write-Host ""
     Write-Error "Docker is not running or not installed. Please start Docker and try again."
     Write-Host ""
@@ -300,7 +300,7 @@ try {
     Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
 }
 catch {
-    Write-SetupQualificationFailure -Records @($Error)
+    Write-SetupQualificationFailure -Records @($_)
     throw
 }
 finally {

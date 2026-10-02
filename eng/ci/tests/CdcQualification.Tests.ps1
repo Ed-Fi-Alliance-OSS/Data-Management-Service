@@ -1812,6 +1812,7 @@ Describe 'CDC runbook failure diagnostics' {
         # Only Docker availability is stubbed. Execute the real setup script through
         # its environment-file validation, before any deployment can be created.
         @"
+try { throw 'earlier-handled-error' } catch { }
 function docker { `$global:LASTEXITCODE = 0 }
 & '$($setup.Replace("'", "''"))' -EnvironmentFile '$((Join-Path $script:private 'private-input-sentinel.env').Replace("'", "''"))'
 "@ | Set-Content -LiteralPath $child
@@ -1825,6 +1826,7 @@ function docker { `$global:LASTEXITCODE = 0 }
         Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
         $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
         $cases = $json | ConvertFrom-Json -NoEnumerate
+        @($cases[0].Operations[0].ChildFailures).Count | Should -Be 1
         $failure = $cases[0].Operations[0].ChildFailures[0]
         $failure.Category | Should -Be 'ChildProcessFailure'
         $failure.Phase | Should -Be 'Setup'
@@ -1924,12 +1926,33 @@ $env:TMPDIR = $Repo
         $output | Should -Match 'outside the repository'
         Test-Path -LiteralPath $destination | Should -BeFalse
     }
-    It 'rejects a results directory inside the checkout before creating any files or running tests' {
+    It 'rejects a results directory inside the checkout (case variation <VaryCase>) before creating any files or running tests' -ForEach @(
+        @{ VaryCase = $false }, @{ VaryCase = $true }
+    ) {
         $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        if ($VaryCase) { $repo = $repo.ToUpperInvariant() }
         $destination = Join-Path $repo ('cdc-forbidden-' + [guid]::NewGuid().ToString('N'))
         $output = & pwsh -NoProfile -File (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Lane Contract -ResultsDirectory $destination 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 1
         $output | Should -Match 'outside the repository'
         Test-Path -LiteralPath $destination | Should -BeFalse
+    }
+}
+
+Describe 'CDC E2E setup export allowlist' {
+    BeforeAll { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+
+    It 'omits invalid field types and values for <Case>' -ForEach @(
+        @{ Case = 'missing'; Record = @{} },
+        @{ Case = 'types'; Record = @{ operation = @('e2e-setup'); succeeded = 'false'; cancelled = 'false'; cleanup = @('Stopped'); provider = @('mssql'); failureCodes = 'Connect/Timeout' } },
+        @{ Case = 'values'; Record = @{ operation = 'private-operation'; succeeded = $true; cancelled = 1; cleanup = 'private-cleanup'; provider = 'private-provider'; failureCodes = @{ code = 'Connect/Timeout' } } }
+    ) {
+        $raw = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid().ToString('N')))
+        $published = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $name = 'cdc-runbook-e2e-setup-00112233445566778899aabbccddeeff.json'
+        $Record | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $raw $name)
+        Export-CdcQualificationEvidence $raw $published
+        $safe = Get-Content (Join-Path $published $name) -Raw | ConvertFrom-Json -AsHashtable
+        $safe.Count | Should -Be 0
     }
 }

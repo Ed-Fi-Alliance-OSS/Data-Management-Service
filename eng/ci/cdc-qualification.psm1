@@ -238,6 +238,29 @@ function Export-CdcQualificationEvidence {
         if ($file.Name -eq 'cdc-runbook-failures.json') {
             $safeValue = @($value | Where-Object { $_ -is [Collections.IDictionary] } | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ })
         }
+        elseif ($file.Name -like 'cdc-runbook-e2e-setup-*') {
+            if ($file.Name -cnotmatch '^cdc-runbook-e2e-setup-[a-f0-9]{32}\.json$' -or
+                $value -isnot [Collections.IDictionary]) { continue }
+            $safeValue = [ordered]@{}
+            if ($value['operation'] -is [string] -and $value['operation'] -ceq 'e2e-setup') {
+                $safeValue.operation = $value['operation']
+            }
+            if ($value['succeeded'] -is [bool] -and -not $value['succeeded']) {
+                $safeValue.succeeded = $false
+            }
+            if ($value['cancelled'] -is [bool]) { $safeValue.cancelled = $value['cancelled'] }
+            if ($value['cleanup'] -is [string] -and $value['cleanup'] -cin @(
+                'NotStarted', 'Stopped', 'RetainedForGovernedTeardown', 'RetainedForReconciliation'
+            )) { $safeValue.cleanup = $value['cleanup'] }
+            if ($value['provider'] -is [string] -and $value['provider'] -cin @('postgresql', 'mssql')) {
+                $safeValue.provider = $value['provider']
+            }
+            if ($value['failureCodes'] -is [array]) {
+                $safeValue.failureCodes = @($value['failureCodes'] | Where-Object {
+                    $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+                })
+            }
+        }
         elseif ($file.Name -like 'cdc-runbook-*') {
             # Narrow procedure attachment schema. Never retain settings, command output or prose,
             # even innocuous-looking values missed by the general fixture redaction heuristic.
