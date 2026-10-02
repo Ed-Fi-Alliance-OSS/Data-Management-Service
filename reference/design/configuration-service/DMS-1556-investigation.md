@@ -2457,6 +2457,8 @@ removed.
 
 No load or runtime investigation was repeated, as directed.
 
+**Test correction at the push review (2026-10-02).** The concurrent fixture first started its eight callers with `Task.Run`. `WaitForCallsAsync(2)` proved only that the first refresh reached the store. A caller scheduled after the gate opened could then see the published key and correctly return `AlreadyPresent`, so the test could fail on a constrained runner. The callers are now collected directly while the gate is closed: each call is admitted synchronously before it returns its incomplete task. The assertions are unchanged. Provider fixtures 153/0, the fresh-store pipeline regression 3/0, CSharpier clean. The reviewer approved the production correction and directed the push after this change.
+
 **State:** the correction is committed locally, **not pushed**, for review. When a push is
 approved, the evidence will be the new CI runs triggered by the new head. Rerunning
 `aff38f7e2`'s failed jobs would test the old code. Jira archival is still pending.

@@ -1025,13 +1025,13 @@ public class SigningKeySnapshotProviderTests
 
             time.Advance(TimeSpan.FromSeconds(1));
             var gate = _harness.Gate();
+            // Each call is admitted synchronously, before it returns its incomplete task, so all eight are admitted
+            // while the gate holds the one refresh in flight.
             Task<SigningKeyUnknownKeyOutcome>[] callers =
             [
                 .. Enumerable
                     .Range(0, 8)
-                    .Select(_ =>
-                        Task.Run(() => provider.TryRefreshForUnknownKeyAsync("key-1", CancellationToken.None))
-                    ),
+                    .Select(_ => provider.TryRefreshForUnknownKeyAsync("key-1", CancellationToken.None)),
             ];
             await _harness.WaitForCallsAsync(2);
             gate.SetResult([KeyRepositoryHarness.Row("key-1")]);
