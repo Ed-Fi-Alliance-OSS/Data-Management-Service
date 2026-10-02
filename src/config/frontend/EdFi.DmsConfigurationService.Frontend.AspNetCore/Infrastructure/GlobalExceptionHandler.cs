@@ -34,6 +34,22 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         // Preserve the TraceId response header that clients and tests use for correlation.
         httpContext.Response.Headers["TraceId"] = traceId;
 
+        // An OAuth endpoint answers every failure in the RFC 6749 §5.2 format, including the ones
+        // that escape its handler (DMS-1327 D-17). Logging is unaffected: RequestLoggingMiddleware
+        // still records a handled 500 as HttpRequestFailed.
+        if (HasOAuthErrorContract(httpContext))
+        {
+            (int status, string error, string description) = MapOAuthFailure(exception);
+            await OAuthErrorResponseWriter.WriteAsync(
+                httpContext,
+                status,
+                error,
+                description,
+                cancellationToken
+            );
+            return true;
+        }
+
         JsonNode failure = exception switch
         {
             BadHttpRequestException badHttpRequest => MapBadHttpRequest(badHttpRequest, httpContext),
@@ -63,6 +79,54 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         await FailureResponseWriter.WriteAsync(httpContext, failure, cancellationToken);
         return true;
     }
+
+    /// <summary>
+    /// Exception handling clears the active endpoint but preserves the original on
+    /// <see cref="IExceptionHandlerFeature"/>, so the route's marker is read from there.
+    /// </summary>
+    private static bool HasOAuthErrorContract(HttpContext httpContext) =>
+        httpContext
+            .Features.Get<IExceptionHandlerFeature>()
+            ?.Endpoint?.Metadata.GetMetadata<OAuthErrorContractMetadata>()
+            is not null;
+
+    /// <summary>
+    /// Malformed or unreadable request bodies are the caller's error and keep their client status;
+    /// anything else is a programming fault and is a 500 <c>server_error</c>. Descriptions are fixed,
+    /// so no exception text reaches the response.
+    /// </summary>
+    private static (int Status, string Error, string Description) MapOAuthFailure(Exception exception) =>
+        exception switch
+        {
+            InvalidDataException => MalformedForm,
+            BadHttpRequestException { StatusCode: StatusCodes.Status400BadRequest } => MalformedForm,
+            BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge } => (
+                StatusCodes.Status413PayloadTooLarge,
+                "invalid_request",
+                "The request body is too large."
+            ),
+            BadHttpRequestException { StatusCode: StatusCodes.Status415UnsupportedMediaType } => (
+                StatusCodes.Status415UnsupportedMediaType,
+                "invalid_request",
+                "The request body must be application/x-www-form-urlencoded."
+            ),
+            BadHttpRequestException badHttpRequest => (
+                badHttpRequest.StatusCode,
+                "invalid_request",
+                "The request could not be read."
+            ),
+            _ => (
+                StatusCodes.Status500InternalServerError,
+                "server_error",
+                "The revocation request could not be processed."
+            ),
+        };
+
+    private static readonly (int Status, string Error, string Description) MalformedForm = (
+        StatusCodes.Status400BadRequest,
+        "invalid_request",
+        "The request form payload is malformed."
+    );
 
     /// <summary>
     /// Sub-classifies a framework <see cref="BadHttpRequestException"/> by status code and, for 400,

@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
@@ -21,6 +21,7 @@ using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using OpenIddict.Abstractions;
 using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
@@ -40,7 +41,10 @@ public class IdentityModule : IEndpointModule
         // access token. The ITokenRevocationManager authenticates the caller inside
         // RevokeTokenAsync before deciding whether it owns the token being revoked, so the
         // ASP.NET Core auth pipeline is not involved at all.
-        endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
+        endpoints
+            .MapPost("connect/revoke/{**contextPath}", RevokeToken)
+            .DisableAntiforgery()
+            .WithMetadata(OAuthErrorContractMetadata.Instance);
     }
 
     private async Task<IResult> RegisterClient(
@@ -146,8 +150,8 @@ public class IdentityModule : IEndpointModule
 
     /// <summary>
     /// Parses HTTP Basic auth credentials (client_id:client_secret) from the Authorization
-    /// header, shared by /connect/token and /connect/revoke since both authenticate the caller
-    /// with client credentials rather than a bearer token.
+    /// header for /connect/token. Lenient by design and unchanged by DMS-1327: /connect/revoke
+    /// uses the strict <see cref="ParseStrictBasicCredentials"/> instead.
     /// </summary>
     private static void TryParseBasicAuthCredentials(
         HttpContext httpContext,
@@ -372,53 +376,93 @@ public class IdentityModule : IEndpointModule
         return Results.Json(response);
     }
 
+    private static readonly string[] _revocationParameters =
+    [
+        "token",
+        "token_type_hint",
+        "client_id",
+        "client_secret",
+    ];
+
+    private const string InvalidClientCredentialsDescription = "Invalid client or Invalid client credentials";
+    private const string ClientAuthenticationRequiredDescription = "Client authentication is required.";
+
+    /// <summary>
+    /// RFC 7009 token revocation. The checks run in the DMS-1327 D-03 order and the first failure
+    /// answers: request shape (form body, duplicates, mixed mechanisms, token), then client
+    /// authentication, then the manager's outcome. Shape and authentication checks never touch the
+    /// token, the database or the identity provider. A malformed form body throws from
+    /// <c>ReadFormAsync</c> and is answered in the OAuth format by <c>GlobalExceptionHandler</c>,
+    /// selected by the route's <see cref="OAuthErrorContractMetadata"/>.
+    /// </summary>
     private static async Task<IResult> RevokeToken(
         [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
-        // RFC 7009 §2.1 requires the caller to authenticate with client credentials (RFC 6749
-        // §2.3), the same as at /connect/token — not with a bearer access token, since the token
-        // being revoked is the subject of the request, not proof of who is calling.
-        TryParseBasicAuthCredentials(httpContext, logger, out var clientId, out var clientSecret);
+        HttpRequest httpRequest = httpContext.Request;
 
-        // Manually read form data to handle empty form bodies in .NET 10
-        RevocationRequest model = new();
-        if (httpContext.Request.HasFormContentType)
+        if (!httpRequest.HasFormContentType)
         {
-            var form = await httpContext.Request.ReadFormAsync();
-            model = new RevocationRequest
-            {
-                Token = form["token"].ToString(),
-                Token_Type_Hint = form["token_type_hint"].ToString(),
-            };
-
-            // RFC 6749 §2.3 also permits credentials in the request body for clients that
-            // cannot use HTTP Basic auth, mirroring the fallback GetClientAccessToken uses.
-            if (string.IsNullOrEmpty(clientId))
-            {
-                clientId = form["client_id"].ToString();
-            }
-            if (string.IsNullOrEmpty(clientSecret))
-            {
-                clientSecret = form["client_secret"].ToString();
-            }
+            return InvalidRequest("The request body must be application/x-www-form-urlencoded.");
         }
 
-        // This request-shape check deliberately runs before client authentication and before the
-        // provider-mode branch below: a structurally invalid request — missing the required
-        // `token` parameter — always gets 400, regardless of who is asking or which identity
-        // provider is configured, mirroring how GetClientAccessToken validates `grant_type` before
-        // authenticating. One consequence: an unauthenticated caller who also omits `token` gets
-        // 400, not 401 — the malformed request is reported before authentication is attempted.
-        if (string.IsNullOrEmpty(model.Token))
+        IFormCollection form = await httpRequest.ReadFormAsync(httpContext.RequestAborted);
+        StringValues authorization = httpRequest.Headers.Authorization;
+
+        if (authorization.Count > 1 || Array.Exists(_revocationParameters, name => form[name].Count > 1))
         {
-            return FailureResults.BadRequest("The token parameter is missing.", httpContext.TraceIdentifier);
+            return InvalidRequest("A request parameter or header was included more than once.");
+        }
+
+        // RFC 6749 §2.3 allows one mechanism per request. Keyed on the presence of the form fields,
+        // whatever their values, and decided before the Basic value is parsed, so a partial or
+        // malformed combination is still mixed. Under Keycloak a form client_id would otherwise
+        // override the header, letting the caller choose which identity is checked (D-05).
+        string? basicCredentials = GetBasicCredentials(authorization);
+        bool basicAttempted = basicCredentials is not null;
+        if (basicAttempted && (form.ContainsKey("client_id") || form.ContainsKey("client_secret")))
+        {
+            return InvalidRequest("Only one client authentication mechanism may be used.");
+        }
+
+        string token = form["token"].ToString();
+        if (token.Length == 0)
+        {
+            return InvalidRequest("The token parameter is missing.");
+        }
+
+        string clientId;
+        string clientSecret;
+        if (basicCredentials is not null)
+        {
+            StrictBasicCredentials parsed = ParseStrictBasicCredentials(basicCredentials);
+            if (parsed is StrictBasicCredentials.Malformed malformed)
+            {
+                logger.LogInformation(
+                    "Revocation Basic credentials were malformed at the {Stage} stage",
+                    malformed.Stage
+                );
+                return InvalidClient(httpContext, basicAttempted, InvalidClientCredentialsDescription);
+            }
+
+            (clientId, clientSecret) = (StrictBasicCredentials.Parsed)parsed;
+        }
+        else
+        {
+            // A non-Basic Authorization header (Bearer, say) is not client authentication here and
+            // grants nothing; the form credentials must authenticate on their own (Q-03).
+            clientId = form["client_id"].ToString();
+            clientSecret = form["client_secret"].ToString();
+            if (clientId.Length == 0 || clientSecret.Length == 0)
+            {
+                return InvalidClient(httpContext, basicAttempted, ClientAuthenticationRequiredDescription);
+            }
         }
 
         // Resolved optionally for now: in Keycloak mode no ITokenRevocationManager is registered
-        // yet (DMS-1327 P3.2 adds it), so revocation stays the external IdP's responsibility there
-        // and this answers a bare 200 OK with nothing revoked, exactly as before. P4.1 makes the
+        // yet (DMS-1327 P3.2 adds it), so once the request shape and the presence of credentials
+        // have been checked above, this answers a bare 200 OK with nothing revoked. P4.1 makes the
         // registration required at startup.
         ITokenRevocationManager? revocationManager =
             httpContext.RequestServices.GetService<ITokenRevocationManager>();
@@ -427,23 +471,16 @@ public class IdentityModule : IEndpointModule
             return Results.Ok();
         }
 
-        // Client-authentication failures are reported, not masked as 200 OK: RFC 7009 only
-        // requires hiding whether a *token* is valid/owned, not whether the *caller* authenticated.
-        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
-        {
-            return InvalidClient(httpContext, "Client authentication is required.");
-        }
-
         TokenRevocationRequest request = new(
             clientId,
             clientSecret,
-            model.Token,
-            ParseTokenTypeHint(model.Token_Type_Hint)
+            token,
+            ParseTokenTypeHint(form["token_type_hint"].ToString())
         );
 
         // The manager owns authenticate → ownership → mutate and classifies every dependency
-        // failure; an exception reaching this point is a programming fault and is left to the
-        // global exception handler rather than being swallowed into a 200 (DMS-1327 D-13).
+        // failure; an exception reaching this point is a programming fault, answered 500
+        // server_error in the OAuth format by the global exception handler (DMS-1327 D-13, D-17).
         TokenRevocationResult result = await revocationManager.RevokeTokenAsync(
             request,
             httpContext.RequestAborted
@@ -456,16 +493,15 @@ public class IdentityModule : IEndpointModule
             TokenRevocationResult.Completed => Results.Ok(),
             TokenRevocationResult.InvalidClient => InvalidClient(
                 httpContext,
-                "Invalid client or Invalid client credentials"
+                basicAttempted,
+                InvalidClientCredentialsDescription
             ),
-            TokenRevocationResult.UnsupportedTokenType => OAuthError(
+            TokenRevocationResult.UnsupportedTokenType => OAuthErrorResponseWriter.Create(
                 StatusCodes.Status400BadRequest,
                 "unsupported_token_type",
                 "The token type is not supported by the identity provider."
             ),
-            TokenRevocationResult.InvalidRequest => OAuthError(
-                StatusCodes.Status400BadRequest,
-                "invalid_request",
+            TokenRevocationResult.InvalidRequest => InvalidRequest(
                 "The identity provider rejected the revocation request."
             ),
             TokenRevocationResult.TemporarilyUnavailable unavailable => TemporarilyUnavailable(
@@ -477,13 +513,182 @@ public class IdentityModule : IEndpointModule
         };
     }
 
-    private static TokenTypeHint ParseTokenTypeHint(string? hint) =>
+    private static TokenTypeHint ParseTokenTypeHint(string hint) =>
         hint switch
         {
             "access_token" => TokenTypeHint.AccessToken,
             "refresh_token" => TokenTypeHint.RefreshToken,
             _ => TokenTypeHint.None,
         };
+
+    /// <summary>
+    /// Returns the credentials text after the scheme when the caller attempted Basic client
+    /// authentication, otherwise <c>null</c>. Attempted means exactly one Authorization value whose
+    /// scheme token is <c>Basic</c> (case-insensitive), whether or not the rest parses. The scheme is
+    /// separated from the credentials by one or more spaces (RFC 7235 §2.1); whitespace inside the
+    /// credentials is malformed.
+    /// </summary>
+    private static string? GetBasicCredentials(StringValues authorization)
+    {
+        if (authorization.Count != 1)
+        {
+            return null;
+        }
+
+        string value = authorization[0] ?? string.Empty;
+        int separator = value.IndexOf(' ');
+        string scheme = separator < 0 ? value : value[..separator];
+        if (!string.Equals(scheme, "Basic", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return separator < 0 ? string.Empty : value[(separator + 1)..].TrimStart(' ');
+    }
+
+    private abstract record StrictBasicCredentials
+    {
+        /// <summary><paramref name="Stage"/> is a fixed label, never caller input.</summary>
+        public sealed record Malformed(string Stage) : StrictBasicCredentials;
+
+        public sealed record Parsed(string ClientId, string ClientSecret) : StrictBasicCredentials;
+    }
+
+    private static readonly UTF8Encoding _strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+
+    /// <summary>
+    /// Decodes Basic client credentials exactly as RFC 6749 §2.3.1 defines them: base64 of
+    /// <c>form-urlencode(client_id) ":" form-urlencode(client_secret)</c>. Each stage is validated
+    /// explicitly because the framework decoders are lenient: <c>Convert.FromBase64String</c> skips
+    /// whitespace, default UTF-8 decoding substitutes U+FFFD, and <c>WebUtility.UrlDecode</c> keeps
+    /// malformed escapes. Used by <c>/connect/revoke</c> only; <c>/connect/token</c> keeps the lenient
+    /// <see cref="TryParseBasicAuthCredentials"/> (DMS-1327 D-04).
+    /// </summary>
+    private static StrictBasicCredentials ParseStrictBasicCredentials(string base64Credentials)
+    {
+        if (!IsStrictBase64(base64Credentials))
+        {
+            return new StrictBasicCredentials.Malformed("base64");
+        }
+
+        string decoded;
+        try
+        {
+            decoded = _strictUtf8.GetString(Convert.FromBase64String(base64Credentials));
+        }
+        catch (DecoderFallbackException)
+        {
+            return new StrictBasicCredentials.Malformed("utf8");
+        }
+
+        int colon = decoded.IndexOf(':');
+        if (colon < 0)
+        {
+            return new StrictBasicCredentials.Malformed("separator");
+        }
+
+        if (
+            !TryFormDecode(decoded[..colon], out string clientId)
+            || !TryFormDecode(decoded[(colon + 1)..], out string clientSecret)
+        )
+        {
+            return new StrictBasicCredentials.Malformed("form-decoding");
+        }
+
+        if (clientId.Length == 0 || clientSecret.Length == 0)
+        {
+            return new StrictBasicCredentials.Malformed("empty");
+        }
+
+        return new StrictBasicCredentials.Parsed(clientId, clientSecret);
+    }
+
+    /// <summary>
+    /// Non-empty, a multiple of four characters, only the base64 alphabet, and <c>=</c> padding in
+    /// the last two positions at most.
+    /// </summary>
+    private static bool IsStrictBase64(string value)
+    {
+        if (value.Length == 0 || value.Length % 4 != 0)
+        {
+            return false;
+        }
+
+        int padding = value.Length - value.TrimEnd('=').Length;
+        if (padding > 2)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < value.Length - padding; i++)
+        {
+            char c = value[i];
+            if (!char.IsAsciiLetterOrDigit(c) && c != '+' && c != '/')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// <c>application/x-www-form-urlencoded</c> decoding: <c>+</c> is a space, <c>%</c> must be
+    /// followed by exactly two hex digits and yields that byte, and any other character contributes
+    /// its UTF-8 bytes. The resulting bytes must be valid UTF-8.
+    /// </summary>
+    private static bool TryFormDecode(string value, out string decoded)
+    {
+        decoded = string.Empty;
+        List<byte> bytes = new(value.Length);
+        int literalStart = 0;
+        int i = 0;
+        while (i < value.Length)
+        {
+            char c = value[i];
+            if (c != '+' && c != '%')
+            {
+                i++;
+                continue;
+            }
+
+            bytes.AddRange(Encoding.UTF8.GetBytes(value[literalStart..i]));
+            if (c == '+')
+            {
+                bytes.Add((byte)' ');
+                i++;
+            }
+            else
+            {
+                if (
+                    i + 2 >= value.Length
+                    || !char.IsAsciiHexDigit(value[i + 1])
+                    || !char.IsAsciiHexDigit(value[i + 2])
+                )
+                {
+                    return false;
+                }
+
+                bytes.Add(Convert.ToByte(value.Substring(i + 1, 2), 16));
+                i += 3;
+            }
+            literalStart = i;
+        }
+        bytes.AddRange(Encoding.UTF8.GetBytes(value[literalStart..]));
+
+        try
+        {
+            decoded = _strictUtf8.GetString([.. bytes]);
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// A dependency the revocation needed (database, signing keys, identity provider) failed, so
@@ -503,26 +708,21 @@ public class IdentityModule : IEndpointModule
             LoggingUtility.SanitizeForLog(clientId),
             unavailable.Reason
         );
-        return OAuthError(
+        return OAuthErrorResponseWriter.Create(
             StatusCodes.Status503ServiceUnavailable,
             "temporarily_unavailable",
             "Token revocation could not be confirmed. Retry the request and confirm the token's state through the provider's validation path."
         );
     }
 
-    /// <summary>An RFC 6749 §5.2 error response with a fixed, service-owned description.</summary>
-    private static IResult OAuthError(int statusCode, string error, string errorDescription) =>
-        Results.Json(
-            new OAuthErrorResponse(error, errorDescription),
-            contentType: "application/json",
-            statusCode: statusCode
-        );
+    private static IResult InvalidRequest(string errorDescription) =>
+        OAuthErrorResponseWriter.Create(StatusCodes.Status400BadRequest, "invalid_request", errorDescription);
 
     /// <summary>
-    /// The RFC 6749 §5.2 error response for a revocation caller that failed client
-    /// authentication: a JSON object whose <c>error</c> and <c>error_description</c> are
-    /// top-level members, plus the <c>WWW-Authenticate</c> challenge §5.2 requires when the
-    /// client attempted to authenticate through the Authorization header.
+    /// The RFC 6749 §5.2 response for a revocation caller that failed client authentication. A
+    /// caller that attempted Basic authentication gets 401 with the <c>WWW-Authenticate</c> challenge
+    /// §5.2 requires; any other caller gets 400, since offering a challenge would invite a scheme it
+    /// did not choose.
     ///
     /// Deliberately not routed through <c>FailureResults</c>, which is the right contract for
     /// the Management API's own endpoints but the wrong one here: it emits
@@ -531,37 +731,30 @@ public class IdentityModule : IEndpointModule
     /// root object — cannot find it. <c>/connect/revoke</c> is an OAuth endpoint and answers in
     /// the OAuth error format.
     /// </summary>
-    private static IResult InvalidClient(HttpContext httpContext, string errorDescription)
+    private static IResult InvalidClient(
+        HttpContext httpContext,
+        bool basicAttempted,
+        string errorDescription
+    )
     {
-        if (
-            httpContext
-                .Request.Headers.Authorization.ToString()
-                .StartsWith(BasicAuthScheme, StringComparison.OrdinalIgnoreCase)
-        )
+        if (!basicAttempted)
         {
-            httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
+            return OAuthErrorResponseWriter.Create(
+                StatusCodes.Status400BadRequest,
+                "invalid_client",
+                errorDescription
+            );
         }
 
-        return OAuthError(StatusCodes.Status401Unauthorized, "invalid_client", errorDescription);
+        httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
+        return OAuthErrorResponseWriter.Create(
+            StatusCodes.Status401Unauthorized,
+            "invalid_client",
+            errorDescription
+        );
     }
-
-    /// <summary>
-    /// An RFC 6749 §5.2 error response body. The property names are the wire names the
-    /// specification fixes, so they are spelled that way rather than renamed by a serializer
-    /// policy that a future configuration change could alter.
-    /// </summary>
-    private sealed record OAuthErrorResponse(
-        [property: JsonPropertyName("error")] string Error,
-        [property: JsonPropertyName("error_description")] string ErrorDescription
-    );
 
     public class IntrospectionRequest
-    {
-        public string Token { get; set; } = string.Empty;
-        public string? Token_Type_Hint { get; set; }
-    }
-
-    public class RevocationRequest
     {
         public string Token { get; set; } = string.Empty;
         public string? Token_Type_Hint { get; set; }

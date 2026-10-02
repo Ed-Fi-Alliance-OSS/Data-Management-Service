@@ -395,15 +395,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         // the bearer token being revoked, and only revokes tokens carrying the caller's own
         // client_id. Here the caller authenticates as the same client that owns _token, so
         // revocation proceeds.
-        var basicAuth = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{_lastClientId}:{_lastClientSecret}")
-        );
         APIRequestContextOptions options = new()
         {
             Headers = new Dictionary<string, string>
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
-                { "Authorization", $"Basic {basicAuth}" },
+                { "Authorization", BasicAuthorization(_lastClientId, _lastClientSecret) },
             },
             Data = await content.ReadAsStringAsync(),
         };

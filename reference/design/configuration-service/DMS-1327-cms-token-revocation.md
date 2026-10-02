@@ -5,7 +5,9 @@
 approved corrections to §2.1, A-06 and D-16 made by the P1.1 correction commit. P2.1 (shared
 contract, classified failures, 503 mapping) is implemented as planned in §6, with a correction
 commit that adds the failure-preserving secret verification and the read-only certificate loader
-described in D-07 and D-13.1; nothing beyond P2.1 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
+described in D-07 and D-13.1. P2.2 (ownership-constrained mutation on both engines, `61e0dda8c`) is
+implemented and approved. P2.3 (endpoint request contract, OAuth exception format, `Revocation.feature`)
+is implemented; the details its implementation settled are in §9.3. Nothing beyond P2.3 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
 the change made.
 **Ticket:** [DMS-1327](https://edfi.atlassian.net/browse/DMS-1327). Prerequisite: DMS-1478 / PR #1280
 (commit `8b43a5fee`). Related: DMS-1218 (CMS error contract), DMS-1365 (Keycloak compensation).
@@ -325,7 +327,9 @@ infrastructure problem is never hidden behind a request-shape 400 or vice versa.
 for programming faults and is never used to express a provider or database outage.
 
 "Basic attempted" is defined as: exactly one `Authorization` header value is present and its scheme
-token equals `Basic` (case-insensitive), regardless of whether the rest of the value parses. A
+token equals `Basic` (case-insensitive), regardless of whether the rest of the value parses. The scheme
+is separated from the credentials by one or more spaces (RFC 7235 §2.1, `1*SP`); whitespace inside the
+credentials is malformed (D-04 stage 1). A
 non-Basic `Authorization` header (for example `Bearer`) is **not** a client authentication attempt
 for this endpoint and grants no authority; it is ignored and the form rules apply (Q-03, resolved).
 
@@ -742,7 +746,9 @@ present, writes the OAuth JSON body instead of the Ed-Fi problem-details body:
 |---|---|---|
 | `InvalidDataException` from `ReadFormAsync` (malformed form, D-03 row 2) | 400 | `invalid_request` / "The request form payload is malformed." |
 | `BadHttpRequestException` 400 raised while the endpoint reads the body (e.g. form value count limits) | 400 | `invalid_request` / "The request form payload is malformed." |
-| `BadHttpRequestException` 413/415 reaching the endpoint | that status | `invalid_request` / fixed text |
+| `BadHttpRequestException` 413 reaching the endpoint | 413 | `invalid_request` / "The request body is too large." |
+| `BadHttpRequestException` 415 reaching the endpoint | 415 | `invalid_request` / "The request body must be application/x-www-form-urlencoded." |
+| `BadHttpRequestException` with any other status (for example 408) | that status | `invalid_request` / "The request could not be read." (settled in P2.3: a client-side read failure keeps its client status, as the Ed-Fi branch does) |
 | anything else | 500 | `server_error` / "The revocation request could not be processed." |
 
 Logging is unchanged: `RequestLoggingMiddleware` still records the handled 500 once as
@@ -1083,7 +1089,7 @@ Assumptions still open (each is closed at the named step and reported at its che
 | A-02 | The E2E realm allows HTTP from the Docker network (`sslRequired` ≠ `all`); otherwise every delegated call is 403. | P1.1 precondition assertion |
 | A-03 | `TaskCanceledException.InnerException is TimeoutException` identifies an `HttpClient` timeout on .NET 10 when the caller's token is not cancelled. | P3.1 stalled-handler test |
 | A-04 | Keycloak client-credentials access tokens carry `azp` equal to the client id (needed for Keycloak's own ownership check). | P1.1 precondition assertion |
-| A-05 | `IExceptionHandlerFeature.Endpoint` carries the route's metadata when `GlobalExceptionHandler` runs for an exception thrown inside a Minimal API handler (it already relies on this for route values). | P2.3 pipeline test |
+| A-05 | `IExceptionHandlerFeature.Endpoint` carries the route's metadata when `GlobalExceptionHandler` runs for an exception thrown inside a Minimal API handler (it already relies on this for route values). | **Closed by P2.3**: the pipeline fixtures (malformed multipart body, faulting manager) receive the OAuth body, and fail when the route marker is removed |
 | A-06 | **Corrected by P1.1 (§9.1.4).** Keycloak refuses public clients at introspection (403 `invalid_request` "Client not allowed.", observed on 26.1.4 and 26.7.5). Access tokens: on 26.1.4 any confidential client can introspect any token; on 26.7.5 the introspecting client must be in the token's `aud` or the answer is `active:false` (the Red Hat build of Keycloak 26.4 migration guide attributes this check to 26.4.12; upstream versions between 26.1.4 and 26.7.5 were not observed). Refresh tokens: introspectable only by the client they were issued to, with `token_type_hint=refresh_token` (26.7.5 `RefreshTokenIntrospectionProvider` compares the authenticated client with the token's client; 26.1.4 also answers the owner). | Closed by P1.1 |
 
 Decisions resolved by the revision-1 review (recorded so later steps do not reopen them):
@@ -1373,3 +1379,34 @@ always re-run `setup-keycloak.ps1`, so this only matters for manual restarts.
 ### 9.2 AC evidence matrix (P5.1)
 
 _Not yet run._
+
+### 9.3 Per-step verification record (P2.2 onward)
+
+Each step's own commit cannot carry its SHA, so the E2E SHA and image identity required by §6.8 are
+reported at the step's checkpoint and consolidated into §9.2 at P5.1.
+
+**P2.2 environment (approved with `61e0dda8c`).** Integration tests ran on the full PostgreSQL and SQL
+Server projects (950/950 and 984/984; the 62 PostgreSQL tests in the 14 `[Explicit]` DMS-1437
+operational-probe fixtures are excluded by design and cover nothing in P2.2). Engines: PostgreSQL 16.8
+in a temporary container (`dms-1327-pg-integration`, published on `127.0.0.1` **and** `[::1]` port 5432:
+publishing only `127.0.0.1` made each connection wait about 2 s for the refused `::1` attempt and caused
+timing failures); SQL Server 2025 17.0.4025.3 Express as the LocalDB instance `DMS1327`, connected
+through its named pipe. The substitution is a deviation from the AGENTS.md SQL Server 2025 container,
+which crashes under emulation on this ARM64 host, and was accepted for this database change by review.
+Both dedicated test databases are kept for later steps.
+
+**P2.3 decisions settled by the implementation** (none changes an approved behaviour):
+
+| Item | Decision |
+|---|---|
+| Keycloak mode until P3.2 | The no-op `200` for an unregistered `ITokenRevocationManager` now runs **after** D-03 rows 1–7, so the endpoint's own shape and credential-presence checks hold in both modes (the re-purposed DMS-1218 fixture asserts `400 invalid_client` with no challenge for a credential-less Keycloak-mode request). Rows 8–12 need the manager and remain a no-op `200` there until P3.2. |
+| Row 6 and row 7 descriptions | A malformed Basic value (row 6) answers "Invalid client or Invalid client credentials"; any incomplete form credentials (row 7: both missing, one missing, or one empty) answer "Client authentication is required.", independent of the client's type. |
+| Space after `Basic` | `1*SP` per RFC 7235 (D-03 above); the test client normalizes repeated spaces, so only embedded whitespace is pinned as malformed. |
+| D-17 texts | 413, 415 and other `BadHttpRequestException` statuses as in the D-17 table. Caller cancellation needs no code: `ExceptionHandlerMiddleware` does not invoke the handler for an aborted request. |
+| E2E observation under Keycloak | The provider-aware introspection step fails explicitly under `keycloak` until P3.2 provisions the observer client (D-16), rather than observing with credentials that were submitted to revocation. |
+
+**P2.3 expected Keycloak gaps (`Revocation.feature`, until P3.2).** Scenarios 01–03 are decided by the
+endpoint and pass under Keycloak. Scenario 04 (wrong Basic secret) answers `200` instead of `401`,
+because without a registered manager nobody verifies the secret. Scenarios 05 and 06 (owner revoke)
+fail at their first introspection step, and the revocation itself is still a no-op. Scenario 07 is
+`@SelfContainedOnly`; its Keycloak counterpart is added with the observer in P3.2.
