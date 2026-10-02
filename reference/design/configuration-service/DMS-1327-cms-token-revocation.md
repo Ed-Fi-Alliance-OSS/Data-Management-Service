@@ -7,7 +7,9 @@ contract, classified failures, 503 mapping) is implemented as planned in §6, wi
 commit that adds the failure-preserving secret verification and the read-only certificate loader
 described in D-07 and D-13.1. P2.2 (ownership-constrained mutation on both engines, `61e0dda8c`) is
 implemented and approved. P2.3 (endpoint request contract, OAuth exception format, `Revocation.feature`)
-is implemented; the details its implementation settled are in §9.3. Nothing beyond P2.3 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
+is implemented, with one correction commit (an invalid separator after `Basic` is a malformed Basic
+attempt, never a request without Basic); the details its implementation settled are in §9.3. Nothing
+beyond P2.3 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
 the change made.
 **Ticket:** [DMS-1327](https://edfi.atlassian.net/browse/DMS-1327). Prerequisite: DMS-1478 / PR #1280
 (commit `8b43a5fee`). Related: DMS-1218 (CMS error contract), DMS-1365 (Keycloak compensation).
@@ -326,10 +328,15 @@ it looks at the token. Operational failure (11) can only occur after 1–7 have 
 infrastructure problem is never hidden behind a request-shape 400 or vice versa. Row 13 is reserved
 for programming faults and is never used to express a provider or database outage.
 
-"Basic attempted" is defined as: exactly one `Authorization` header value is present and its scheme
-token equals `Basic` (case-insensitive), regardless of whether the rest of the value parses. The scheme
-is separated from the credentials by one or more spaces (RFC 7235 §2.1, `1*SP`); whitespace inside the
-credentials is malformed (D-04 stage 1). A
+"Basic attempted" is defined as: exactly one `Authorization` header value is present and its leading
+scheme token (the longest run of RFC 7230 `tchar` characters at the start of the value) equals `Basic`
+(case-insensitive), regardless of whether the rest of the value parses. Recognition looks at the scheme
+token only. What follows it is validated afterwards by D-04 stage 0, and an invalid separator (a tab, a
+tab followed by spaces, a comma, …) makes the attempt **malformed** (row 6, or row 4 when any form
+credential key is present); it never turns the request into one without Basic, so it can never fall
+back to form credentials. The `1*SP` rule below defines what a *valid* attempt looks like, not which
+headers count as attempts. A value whose scheme token is longer (`Basicx …`) or different (`Bearer …`)
+is not a Basic attempt. A
 non-Basic `Authorization` header (for example `Bearer`) is **not** a client authentication attempt
 for this endpoint and grants no authority; it is ignored and the form rules apply (Q-03, resolved).
 
@@ -360,6 +367,7 @@ than trusted to throw:
 
 | Stage | Rule | Why not the obvious API alone |
 |---|---|---|
+| 0. Separator | after the `Basic` scheme token: nothing (then stage 1 rejects the empty value) or one or more spaces (RFC 7235 §2.1 `1*SP`), which are skipped; any other character first, a tab included, → `Malformed` | the separator is part of the attempt, not part of recognising it (D-03) |
 | 1. Base64 text | must be non-empty, length a multiple of 4, consist only of `A–Z a–z 0–9 + /` with `=` padding only in the last two positions; any other character (including whitespace) → `Malformed`. Only then `Convert.FromBase64String`. | `Convert.FromBase64String` silently skips whitespace |
 | 2. Bytes → text | `new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString` → `DecoderFallbackException` → `Malformed` | default decoding substitutes U+FFFD |
 | 3. Split | first `:`; none → `Malformed` | — |
@@ -1401,7 +1409,7 @@ Both dedicated test databases are kept for later steps.
 |---|---|
 | Keycloak mode until P3.2 | The no-op `200` for an unregistered `ITokenRevocationManager` now runs **after** D-03 rows 1–7, so the endpoint's own shape and credential-presence checks hold in both modes (the re-purposed DMS-1218 fixture asserts `400 invalid_client` with no challenge for a credential-less Keycloak-mode request). Rows 8–12 need the manager and remain a no-op `200` there until P3.2. |
 | Row 6 and row 7 descriptions | A malformed Basic value (row 6) answers "Invalid client or Invalid client credentials"; any incomplete form credentials (row 7: both missing, one missing, or one empty) answer "Client authentication is required.", independent of the client's type. |
-| Space after `Basic` | `1*SP` per RFC 7235 (D-03 above); the test client normalizes repeated spaces, so only embedded whitespace is pinned as malformed. |
+| Space after `Basic` | `1*SP` per RFC 7235 (D-03, D-04 stage 0). Corrected after review of `4d0ac4bbf`: the first implementation split the scheme on a literal space, so `Basic<TAB>…` was not recognised as a Basic attempt and fell back to the form rules (form credentials reached the manager; without them the answer was 400 with no challenge). Recognition now uses the scheme token alone. Raw-header fixtures sent through `TestServer` (bypassing `HttpClient` normalization) pin a tab, a tab then a space, and a lower-case scheme with a tab: 401 + challenge without form credential keys, 400 `invalid_request` with any of them, the manager never called; several raw spaces still authenticate, and `Basicx …` is still a different scheme. |
 | D-17 texts | 413, 415 and other `BadHttpRequestException` statuses as in the D-17 table. Caller cancellation needs no code: `ExceptionHandlerMiddleware` does not invoke the handler for an aborted request. |
 | E2E observation under Keycloak | The provider-aware introspection step fails explicitly under `keycloak` until P3.2 provisions the observer client (D-16), rather than observing with credentials that were submitted to revocation. |
 
