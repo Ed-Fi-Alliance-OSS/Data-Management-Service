@@ -9,7 +9,9 @@ Feature: Identity Fixture Plugin
     and allowlists Acme.IdentityFixture, so identity requests reach the fixture rather than the
     operation-not-supported default. This feature carries no CI shard tag and runs only through its
     own filter, with an environment file from New-IdentityPluginEnvironmentFile.ps1. The fixture keeps
-    persons and jobs in memory, so the restart scenario is last.
+    persons and jobs in memory and the runner does not guarantee scenario order, so every scenario,
+    the restart one included, issues its own persons and tokens and relies on no state another
+    scenario left behind.
 
     Background:
         Given the identity fixture plugin is loaded

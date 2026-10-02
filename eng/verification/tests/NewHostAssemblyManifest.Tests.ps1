@@ -26,7 +26,7 @@ BeforeAll {
     Import-Module (Join-Path $script:repositoryRoot "package-helpers.psm1") -Force
     $script:contractVersion = Get-PluginsContractVersion
     $script:customValidationVersion = Get-CustomValidationContractVersion
-    $script:identityVersion = Get-PluginsContractVersion -PropsPath (Join-Path $script:repositoryRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
+    $script:identityVersion = Get-IdentityContractVersion
 
     $script:entryAssemblyName = "TestHost"
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1500-manifest-tests-$([guid]::NewGuid().ToString('N'))"

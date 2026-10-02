@@ -321,6 +321,31 @@ function Get-CustomValidationContractVersion {
 
 <#
 .DESCRIPTION
+Reads the identity contract's own declared version out of its csproj.
+
+The same argument as the siblings above: the identity contract is versioned on its own public
+surface, independently of the DMS release, and every lane reads the version through here so a
+failure to read it names the identity contract rather than the plugin contract.
+
+.EXAMPLE
+Get-IdentityContractVersion
+# Returns: 1.0.0
+#>
+function Get-IdentityContractVersion {
+    param (
+        # The project file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
+    )
+
+    return Get-DeclaredVersionElement `
+        -Path $ProjectPath `
+        -ElementName "VersionPrefix" `
+        -ContractDescription "identity contract"
+}
+
+<#
+.DESCRIPTION
 The view-scoped form of a feed's NuGet v3 service index.
 
 Azure Artifacts addresses a feed's views by suffixing the feed name, so the Release view of
@@ -662,6 +687,7 @@ Export-ModuleMember -Function `
     Convert-ToAssemblyVersion, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
+    Get-IdentityContractVersion, `
     Get-ViewScopedServiceIndexUrl, `
     Test-PackageInView, `
     Get-FeedViewVersion, `

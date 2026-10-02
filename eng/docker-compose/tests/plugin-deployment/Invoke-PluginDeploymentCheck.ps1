@@ -32,9 +32,10 @@
        plugin contract inside the image carries the version src/plugins/Directory.Build.props
        declares rather than the version the build was given, which is the value the loader's
        newer-plugin-on-older-host preflight compares. The custom-validation and identity contracts
-       are held to the same standard against the versions their own csprojs declare. Both expectations are read from the committed
-       props at run time rather than written here, so neither rots. The assemblies are copied out and
-       read as metadata; nothing in the image is executed.
+       are held to the same standard against the versions their own csprojs declare. All three
+       expectations are read from the committed project files at run time rather than written
+       here, so none rots. The assemblies are copied out and read as metadata; nothing in the
+       image is executed.
 
     2. A plugin nobody in this repository has a project reference to is published against the two
        contracts as packed nupkgs, exactly as an outside implementer consumes them, and packed
@@ -504,13 +505,13 @@ function Invoke-ImageVersionProof {
 
     $dmsDeclared = Get-DeclaredAssemblyVersion (Join-Path $repositoryRoot "src/dms/Directory.Build.props")
 
-    # Both contracts through the module's readers. The plugin props declares VersionPrefix and
-    # derives AssemblyVersion from it, so its AssemblyVersion element is not a literal; the second
-    # contract's declaration lives in its csproj rather than in a props file.
+    # All three contracts through the module's readers. The plugin props declares VersionPrefix and
+    # derives AssemblyVersion from it, so its AssemblyVersion element is not a literal; the other
+    # two contracts' declarations live in their csprojs rather than in a props file.
     Import-Module (Join-Path $repositoryRoot "package-helpers.psm1") -Force
     $pluginsDeclared = Get-PluginsContractVersion
     $customValidationDeclared = Get-CustomValidationContractVersion
-    $identityDeclared = Get-PluginsContractVersion -PropsPath (Join-Path $repositoryRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
+    $identityDeclared = Get-IdentityContractVersion
 
     Assert-True `
         ($DmsVersion -notlike "$dmsDeclared*") `

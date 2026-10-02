@@ -16,7 +16,8 @@
 # No YAML parser is available in this lane, so (following DmsPullRequestMssqlWorkflow.Tests.ps1)
 # named blocks are extracted by their two-space job key and invariants are asserted inside them.
 
-# The eleven jobs that each ran their own solution build before the shared build artifact landed.
+# The jobs that consume the shared build artifact: ten that each ran their own solution build before
+# it landed, plus the identity plugin lane, which consumed it from the start.
 # Declared at file scope rather than in BeforeAll because Pester binds -ForEach during discovery,
 # which happens before any BeforeAll body has run.
 $buildOutputConsumer = @(

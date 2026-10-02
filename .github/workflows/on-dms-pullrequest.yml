@@ -569,8 +569,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           Import-Module ./package-helpers.psm1
-          $contractVersion = Get-PluginsContractVersion `
-            -PropsPath "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj"
+          $contractVersion = Get-IdentityContractVersion
 
           # A fresh extraction directory per run. The script refuses a non-empty one rather than
           # emptying it, so a warm runner would otherwise fail here.

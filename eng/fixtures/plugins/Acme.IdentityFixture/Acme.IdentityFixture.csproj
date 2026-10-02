@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <!--
-        The identity fixture plugin: a minimal IIdentityService implementation that proves a plugin published against the packed identity contract loads into a host and has its service registered.
+        The identity fixture plugin: an in-memory reference IIdentityService provider, with
+        documented test triggers and failure variants, that proves a plugin published against the
+        packed identity contract loads into a host, has its service registered, and serves the
+        DMS-owned identity surface. Its README documents its behavior and every trigger.
 
         It consumes the plugin and identity contracts as packed nupkgs from a local folder feed
         rather than by project reference, which is how an outside implementer consumes them; a

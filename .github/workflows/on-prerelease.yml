@@ -1226,7 +1226,7 @@ jobs:
             -ManifestPath "host-assembly-manifest.md" `
             -ExpectedPluginsVersion (Get-PluginsContractVersion) `
             -ExpectedCustomValidationVersion (Get-CustomValidationContractVersion) `
-            -ExpectedIdentityVersion (Get-PluginsContractVersion -PropsPath "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
+            -ExpectedIdentityVersion (Get-IdentityContractVersion)
 
       - name: Attach Host Assembly Manifest to release
         shell: pwsh

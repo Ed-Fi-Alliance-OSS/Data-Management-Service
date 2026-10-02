@@ -72,6 +72,7 @@ Documentation can be drafted earlier, but this Jira is not complete until the pa
 ### Package Publication
 
 - The publish lane includes `EdFi.Api.Identity`.
+- Publishing adds `EdFi.DataManagementService.Identity` to the host assembly manifest's contract section: `eng/verification/New-HostAssemblyManifest.ps1` lists it among the contract assemblies and `eng/verification/Assert-HostAssemblyManifest.ps1` requires it there at the contract version. Until publication it is asserted in the application section only.
 - Publish behavior is publish-when-absent, skip-when-unchanged, and fail-when-changed.
 - The comparison covers exported public types, XML documentation, and nuspec dependencies.
 - Both package publication and DMS release gate the host-owned wire contract against the immutable baseline for the last published identity contract version, even if the package comparison would skip publication as unchanged. Story 02 supplies the deterministic baseline and `x-edfi-identity-contract-version` stamp; the stamp must match the package version.
