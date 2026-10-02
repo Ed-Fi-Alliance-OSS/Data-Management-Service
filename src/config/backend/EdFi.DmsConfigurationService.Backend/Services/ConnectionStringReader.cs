@@ -85,12 +85,13 @@ public interface IConnectionStringReader
 /// scoped tenant provider. The cache it consults is the singleton, and takes the tenant as an
 /// argument.
 ///
-/// Being transient also makes one instance one repository read, which is what bounds a hung resolver.
-/// The timeout bounds one call, and rows are read one at a time, so a read of many rows would
-/// otherwise wait out one timeout per row. Once a call on this instance times out, every later
-/// reference it reads is served from the cache or reported unresolved without asking again, so a read
-/// waits out at most one timeout. A data store read nests one derivative read, so it waits at most
-/// two.
+/// Being transient also makes one instance one repository read, which is what bounds a slow or hung
+/// resolver. Rows are read one at a time, so a timeout on each call alone would let a read of many
+/// rows wait out one timeout per row, and a store that answers each call just inside it would cost
+/// one wait per distinct uncached name. The timeout is therefore the read's: it is armed at the first
+/// reference the read resolves and covers every later one. Once it passes, every later reference the read
+/// meets is served from the cache or reported unresolved without asking again, so a read waits at
+/// most one timeout. A data store read nests one derivative read, so it waits at most two.
 /// </summary>
 public sealed class ConnectionStringReader(
     IConnectionStringEncryptionService encryptionService,
@@ -109,6 +110,7 @@ public sealed class ConnectionStringReader(
     );
 
     private bool _resolverTimedOut;
+    private DateTimeOffset? _readDeadline;
 
     public async Task<string?> ReadAsync(byte[]? stored, ConnectionStringRow row)
     {
@@ -164,7 +166,16 @@ public sealed class ConnectionStringReader(
                 return null;
             }
 
-            builder[key] = resolved;
+            try
+            {
+                builder[key] = resolved;
+            }
+            catch (Exception)
+            {
+                // The provider refuses some values, such as one holding a NUL, and its message may
+                // repeat the value it refused.
+                return Unreadable(row, "could not take a resolved secret value");
+            }
         }
 
         // Rendered even when every reference was discarded, so the stored text that carried one is
@@ -185,11 +196,6 @@ public sealed class ConnectionStringReader(
         }
     }
 
-    /// <summary>
-    /// A stored value that cannot be decrypted or parsed. A derivative read as part of a data store
-    /// reads as not configured, as DMS already treats a derivative it cannot decrypt, so one stale row
-    /// cannot empty every data store's derivatives. Anything read as a resource fails the read.
-    /// </summary>
     private string? Tenant =>
         tenantContextProvider.Context is TenantContext.Multitenant multitenant
             ? multitenant.TenantName
@@ -198,6 +204,12 @@ public sealed class ConnectionStringReader(
     private static string TenantForLog(string? tenant) =>
         tenant is null ? "(none)" : LoggingUtility.SanitizeForLog(tenant);
 
+    /// <summary>
+    /// A stored value that cannot be decrypted or parsed, or that cannot take a resolved value. A
+    /// derivative read as part of a data store reads as not configured, as DMS already treats a
+    /// derivative it cannot decrypt, so one stale row cannot empty every data store's derivatives.
+    /// Anything read as a resource fails the read.
+    /// </summary>
     private string? Unreadable(ConnectionStringRow row, string problem)
     {
         if (row is ConnectionStringRow.Derivative { ReadAs: DerivativeReadMode.PartOfDataStore } derivative)
@@ -262,26 +274,33 @@ public sealed class ConnectionStringReader(
         string? value;
         string outcome;
 
-        if (_resolverTimedOut)
+        _readDeadline ??= _timeProvider.GetUtcNow() + _resolveTimeout;
+        TimeSpan remaining = _readDeadline.Value - _timeProvider.GetUtcNow();
+
+        if (_resolverTimedOut || remaining <= TimeSpan.Zero)
         {
-            // Asking again would wait out another timeout for a resolver that has just shown it is not
-            // answering, so only a value already cached is used.
+            // Asking again would wait beyond the time this read may spend on the resolver, so only a
+            // value already cached is used.
+            _resolverTimedOut = true;
             return cache.TryGetFresh(tenant, name, out string? cached)
                 ? cached
                 : Unresolved(
                     row,
                     name,
                     tenant,
-                    $"was not resolved: the resolver did not return within {secretsOptions.Value.ResolveTimeoutSeconds} seconds earlier in this read"
+                    $"was not resolved: this read had already waited the {secretsOptions.Value.ResolveTimeoutSeconds} seconds it may spend on the resolver"
                 );
         }
 
         try
         {
-            value = await cache.GetOrFetchAsync(
-                tenant,
-                name,
-                () => FetchAsync(secretResolver, new SecretReference(name, tenant))
+            value = await WithinReadDeadlineAsync(
+                cache.GetOrFetchAsync(
+                    tenant,
+                    name,
+                    () => FetchAsync(secretResolver, new SecretReference(name, tenant))
+                ),
+                remaining
             );
             outcome = "could not be resolved: the resolver returned no value";
         }
@@ -290,7 +309,7 @@ public sealed class ConnectionStringReader(
             _resolverTimedOut = true;
             value = null;
             outcome =
-                $"could not be resolved: the resolver did not return within {secretsOptions.Value.ResolveTimeoutSeconds} seconds";
+                $"could not be resolved: the resolver did not return within the {secretsOptions.Value.ResolveTimeoutSeconds} seconds this read may spend on it";
         }
         catch (Exception exception)
         {
@@ -343,6 +362,33 @@ public sealed class ConnectionStringReader(
         throw new ConnectionStringReadException(
             $"The stored connection string for {row} cannot be read: secret {token} {outcome}."
         );
+    }
+
+    /// <summary>
+    /// Waits for a value no longer than the read has left. The fetch may be shared with other reads,
+    /// so its own deadline stays the full timeout and is not shortened here; a fetch this read stops
+    /// waiting for runs on, and caches its value if it gets one.
+    /// </summary>
+    private async Task<string> WithinReadDeadlineAsync(Task<string> fetch, TimeSpan remaining)
+    {
+        using CancellationTokenSource deadlineCancellation = new();
+        Task deadline = Task.Delay(remaining, _timeProvider, deadlineCancellation.Token);
+
+        if (await Task.WhenAny(fetch, deadline) == fetch)
+        {
+            await deadlineCancellation.CancelAsync();
+            return await fetch;
+        }
+
+        // Observed so a fault the fetch raises later is not reported as unobserved.
+        _ = fetch.ContinueWith(
+            completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
+
+        throw new SecretResolveTimeoutException();
     }
 
     /// <summary>

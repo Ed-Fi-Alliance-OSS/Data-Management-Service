@@ -18,10 +18,10 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 /// Concurrent misses on one key share one fetch and its outcome, a failed fetch caches nothing, and
 /// a key never waits behind another one.
 ///
-/// An expired value is never served. It is released when its key is next read, or when any value is
-/// next stored, whichever comes first, so plain text can outlive its expiration until the host next
-/// touches the cache; nothing sweeps it on a timer. What is held is bounded by the number of distinct
-/// secret names read.
+/// An expired value is never served. It is released when its own key is next read, or when any value
+/// is next stored, whichever comes first, so plain text can outlive its expiration until one of those
+/// happens; nothing sweeps it on a timer. What is held is bounded by the number of distinct
+/// (tenant, name) pairs read.
 ///
 /// Nothing tells the cache that a tenant was added or removed. A new tenant has no entries to be
 /// stale, and a removed tenant's entries can only be reached with its own name, so they are never

@@ -741,6 +741,50 @@ public class ConnectionStringReaderTests
                 .BeEquivalentTo(["data store 1", "data store 2"]);
     }
 
+    /// <summary>
+    /// Both providers refuse a value holding a NUL, and their message may repeat it. The refusal is
+    /// the row's, so a nested derivative reads as not configured rather than failing its data store's
+    /// read, and neither the value nor the provider's text reaches the message or the log.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_resolved_value_the_provider_refuses(string engine) : ConnectionStringReaderTests
+    {
+        private const string RefusedSecret = "before\0after-hunter2";
+
+        private ConnectionStringReadException _failure = null!;
+        private string? _nested = "unset";
+
+        private IDataStoreConnectionStringBuilderSource Builder =>
+            engine == "postgresql" ? _postgresql : _sqlServer;
+
+        [SetUp]
+        public async Task Act()
+        {
+            Resolver.Behavior = (_, _) => ValueTask.FromResult(RefusedSecret);
+            byte[] stored = Stored("Server=db;Password=${secret:prod/dms}");
+
+            _failure = await ReadFailure(() => CreateReader(Builder).ReadAsync(stored, DataStoreRow));
+            _nested = await CreateReader(Builder).ReadAsync(stored, NestedDerivativeRow);
+        }
+
+        [Test]
+        public void It_fails_a_data_store_naming_the_problem() =>
+            _failure
+                .Message.Should()
+                .Be("The stored connection string for data store 5 could not take a resolved secret value.");
+
+        [Test]
+        public void It_reads_a_nested_derivative_as_not_configured() => _nested.Should().BeNull();
+
+        [Test]
+        public void It_carries_no_inner_exception() => _failure.InnerException.Should().BeNull();
+
+        [Test]
+        public void It_keeps_the_value_out_of_the_log() =>
+            LoggedText().Should().NotContain(text => text.Contains("hunter2"));
+    }
+
     [TestFixture]
     public class Given_a_tokenized_value_the_engine_cannot_parse : ConnectionStringReaderTests
     {
@@ -928,7 +972,9 @@ public class ConnectionStringReaderTests
 
         [Test]
         public void It_fails_naming_the_timeout() =>
-            _failure.Message.Should().EndWith("the resolver did not return within 10 seconds.");
+            _failure
+                .Message.Should()
+                .EndWith("the resolver did not return within the 10 seconds this read may spend on it.");
 
         [Test]
         public void It_passed_a_cancellable_token() => _token.CanBeCanceled.Should().BeTrue();
@@ -976,7 +1022,9 @@ public class ConnectionStringReaderTests
 
         [Test]
         public void It_fails_naming_the_timeout() =>
-            _failure.Message.Should().EndWith("the resolver did not return within 10 seconds.");
+            _failure
+                .Message.Should()
+                .EndWith("the resolver did not return within the 10 seconds this read may spend on it.");
     }
 
     [TestFixture]
@@ -1158,10 +1206,92 @@ public class ConnectionStringReaderTests
         public void It_fails_a_data_store_naming_the_earlier_timeout() =>
             _dataStoreFailure
                 .Message.Should()
-                .EndWith("the resolver did not return within 10 seconds earlier in this read.");
+                .EndWith("this read had already waited the 10 seconds it may spend on the resolver.");
 
         [Test]
         public void It_asks_again_on_the_next_read() =>
+            _postgresql.CreateBuilder(Decrypted(_nextRead!))["Password"].Should().Be("recovered");
+    }
+
+    /// <summary>
+    /// The timeout is the read's, not each call's: a store that answers every call just inside the
+    /// timeout would otherwise cost one wait per distinct uncached name, and a read of many rows could
+    /// outlast DMS's HTTP client. The second call is cut off when the read's time runs out, the third
+    /// name is never asked for, and a later read starts with a full allowance.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_resolver_that_answers_each_call_inside_the_timeout : ConnectionStringReaderTests
+    {
+        private readonly List<string?> _nested = [];
+        private ConnectionStringReadException _dataStoreFailure = null!;
+        private string? _nextRead;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _nested.Clear();
+            TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<string> value = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Resolver.Behavior = (_, _) =>
+            {
+                entered.TrySetResult();
+                return new ValueTask<string>(value.Task);
+            };
+
+            ConnectionStringReader reader = CreateReader();
+
+            // The first name answers after six of the read's ten seconds.
+            Task<string?> first = reader.ReadAsync(
+                Stored("Host=db;Password=${secret:a}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(6));
+            value.SetResult("first");
+            _nested.Add(await first.WaitAsync(SafetyBound));
+
+            // The second would answer inside its own ten seconds, but the read has four left.
+            entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            value = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<string?> second = reader.ReadAsync(
+                Stored("Host=db;Password=${secret:b}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(4));
+            _nested.Add(await second.WaitAsync(SafetyBound));
+
+            _dataStoreFailure = await ReadFailure(() =>
+                    reader.ReadAsync(Stored("Host=db;Password=${secret:c}"), DataStoreRow)
+                )
+                .WaitAsync(SafetyBound);
+
+            value.SetResult("late");
+            Resolver.Behavior = (_, _) => ValueTask.FromResult("recovered");
+            _nextRead = await CreateReader()
+                .ReadAsync(Stored("Host=db;Password=${secret:c}"), NestedDerivativeRow)
+                .WaitAsync(SafetyBound);
+        }
+
+        [Test]
+        public void It_asks_only_while_the_read_has_time_left() =>
+            Resolver.Calls.Select(call => call.Name).Should().Equal("a", "b", "c");
+
+        [Test]
+        public void It_serves_the_value_returned_in_time() =>
+            _postgresql.CreateBuilder(Decrypted(_nested[0]!))["Password"].Should().Be("first");
+
+        [Test]
+        public void It_reads_the_cut_off_row_as_not_configured() => _nested[1].Should().BeNull();
+
+        [Test]
+        public void It_fails_a_later_data_store_naming_the_spent_time() =>
+            _dataStoreFailure
+                .Message.Should()
+                .EndWith("this read had already waited the 10 seconds it may spend on the resolver.");
+
+        [Test]
+        public void It_gives_the_next_read_a_full_allowance() =>
             _postgresql.CreateBuilder(Decrypted(_nextRead!))["Password"].Should().Be("recovered");
     }
 }

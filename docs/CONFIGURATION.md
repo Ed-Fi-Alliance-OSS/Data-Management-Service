@@ -181,7 +181,7 @@ A stored data store or derivative connection string may name a secret instead of
 | Parameter              | Description                                                                                                                                                                                                                       | Default | Accepted range  |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------- |
 | CacheExpirationSeconds | How long a resolved value is reused, per tenant and secret name, before the resolver is asked again. The expiration is absolute from when the value was fetched; reads do not extend it. `0` disables caching, so every read that needs a value asks the resolver; reads that ask for the same value at the same moment still share one call. | `300`   | `0` or greater  |
-| ResolveTimeoutSeconds  | How long one resolver call may take before the read that needed it fails. It covers the whole call, including any work the resolver does before it returns. After one call times out, the rest of that read uses only values already cached and does not ask the resolver again, so a data store read waits at most two timeouts however many rows it returns. | `10`    | `1` – `4294967` |
+| ResolveTimeoutSeconds  | How long one read may spend waiting on the resolver, across all the calls it makes, before the reference it is waiting for fails. It covers each whole call, including any work the resolver does before it returns, and it counts from the first reference the read resolves, so a store that answers each call slowly costs one allowance per read, not one per secret name. Once it has passed, the rest of that read uses only values already cached and does not ask the resolver again. A data store read includes one derivative read, so it waits at most twice this value however many rows it returns. DMS fetches a tenant's data stores with a 100-second HTTP client timeout, so keep twice this value well under 100 seconds. | `10`    | `1` – `4294967` |
 
 **A rotation reaches DMS within the sum of two windows.** A secret rotated in the store is seen by the Configuration Service within `CacheExpirationSeconds`, and by a running DMS within its own `CacheSettings:DataStoreCacheExpirationSeconds` after that (see [CacheSettings](#cachesettings)). On the defaults that is up to 300 + 600 seconds, about fifteen minutes. For that whole window DMS keeps using the previous value, so write the new credential first and revoke the old one only after the window has elapsed. Nothing pushes a rotation sooner; to apply one immediately, restart both the Configuration Service and DMS. When DMS's `DataStoreCacheRefreshEnabled` is `false` or its `DataStoreCacheExpirationSeconds` is not positive, DMS keeps the value it loaded until it restarts.
 
@@ -304,14 +304,22 @@ These settings configure how the DMS API connects to the Configuration Service t
 > - A data store still under the previous key fails every data store read that
 >   includes it, the collection as well as the single row, with an HTTP 500 whose
 >   log entry says the stored connection string could not be decrypted. DMS
->   therefore cannot load that tenant's data stores.
+>   therefore cannot load that tenant's data stores. The stored format is not
+>   authenticated, so about one value in 256 decrypts under the wrong key into
+>   unreadable text instead of failing; that read succeeds, and returns a
+>   connection string DMS cannot use.
 > - A derivative still under the previous key fails the data store derivative
 >   reads the same way. Read as part of its data store, it is returned with a null
 >   connection string, which DMS treats as not configured, and the data store and
 >   its other derivatives are unaffected.
 >
 > Re-submitting a value is a write, which does not decrypt the stored one, so the
-> procedure works while reads fail.
+> procedure works while reads fail. The update replaces the other fields too, and
+> needs their values: a data store's `id`, `dataStoreType` and `name` (`provider`
+> is kept when omitted), and a derivative's `id`, `dataStoreId` and
+> `derivativeType`. While reads fail the Admin API cannot supply them, so record
+> them before changing the key, or read them from the `dmscs.DataStore` and
+> `dmscs.DataStoreDerivative` tables, where only `ConnectionString` is encrypted.
 >
 > This applies to local Docker Compose stacks as well, where the environment
 > files under `eng/docker-compose/` supply the key. Picking up an updated
