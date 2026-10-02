@@ -86,17 +86,26 @@ authentication failure is never hidden behind a token outcome:
    before any database or identity provider contact.
 
 **HTTP Basic decoding differs from `/connect/token`.** On `/connect/revoke` the Basic value
-is decoded strictly per RFC 6749 §2.3.1: the client form-encodes `client_id` and
-`client_secret`, joins them with the first `:`, and base64-encodes the result. Therefore `+`
-decodes to a space, a literal `+` must be sent as `%2B`, and `%` escapes must be complete and
-form valid UTF-8. Base64 must use the standard alphabet with correct padding and no
-embedded whitespace. The separator after `Basic` is one or more spaces. Any deviation makes
-the attempt **malformed** (`401 invalid_client`); it is never repaired and never falls back
-to form credentials. `/connect/token` keeps its lenient parser, which uses
-`Uri.UnescapeDataString` (a `+` stays a `+`) and falls back to form fields when the Basic
-value cannot be decoded. A client whose secret contains `+`, `%` or non-ASCII characters
-must therefore form-encode it for revocation, or it gets `401` at `/connect/revoke` while the
-same header is accepted at `/connect/token`.
+is decoded per RFC 6749 §2.3.1, which has the client form-encode `client_id` and
+`client_secret`, join them with the first `:`, and base64-encode the result. CMS decodes
+each part as a form value:
+
+- `+` decodes to a space and `%XX` to the byte it names, so `%2B` is a literal `+` and `%25`
+  a literal `%`. Every other character, raw non-ASCII UTF-8 included, is taken as it is.
+- The attempt is **malformed** (`401 invalid_client`, never repaired and never a fallback to
+  form credentials) when the base64 is not the standard alphabet with correct padding and no
+  embedded whitespace, when the decoded bytes or the bytes after percent decoding are not
+  valid UTF-8, when a `%` is not followed by two hex digits, when there is no `:`, when the
+  id or the secret is empty, or when anything other than one or more spaces separates
+  `Basic` from the value.
+
+`/connect/token` keeps its lenient parser, which uses `Uri.UnescapeDataString` (a `+` stays a
+`+`) and falls back to form fields when the Basic value cannot be decoded. The difference
+matters for secrets that contain `+` or `%`. Sent unencoded, a `+` becomes a space and a valid
+`%XX` sequence becomes another character, so revocation compares a different secret and answers
+`401 invalid_client`, and a `%` without two hex digits is malformed, while `/connect/token`
+accepts the same header. Clients should form-encode both values before building the header,
+which every conforming client does and which is safe for raw non-ASCII characters too.
 
 `token_type_hint` accepts `access_token` and `refresh_token`. Any other value, including an
 empty one, is treated as no hint. A hint never blocks lookup and never changes
@@ -118,8 +127,9 @@ never echoes provider text:
 | Authenticated owner, supported live token | `200`, empty; token revoked |
 | Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
 | Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
-| Missing, incomplete or invalid credentials **without** an HTTP Basic attempt (including every public or bearer-only Keycloak client) | `400 invalid_client` |
+| Missing, incomplete or invalid credentials **without** an HTTP Basic attempt | `400 invalid_client` |
 | Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
+| A Keycloak public or bearer-only client | `invalid_client` by the same rule: `401` with the challenge when it attempted HTTP Basic, `400` otherwise |
 | A token type the identity provider does not revoke (Keycloak: an ID token) | `400 unsupported_token_type`; reveals nothing about the token's owner |
 | Keycloak rejected the request shape for a reason CMS could not anticipate | `400 invalid_request` ("The identity provider rejected the revocation request.") |
 | Database or identity provider failure, timeout, or an unusable provider answer | `503 temporarily_unavailable` |
@@ -242,8 +252,14 @@ path:
   authenticated as a **confidential** client:
   - Access tokens. From Keycloak 26.4.12 (Red Hat's statement; observed on 26.7.5, not on
     26.1.4), the introspecting client must be in the token's `aud`, or the answer is
-    `active:false` for a live token. Give the introspecting client an audience mapper, or
-    the answer proves nothing.
+    `active:false` for a live token, which proves nothing. Put the introspecting client into
+    the audience of the tokens you observe: an `Audience` mapper whose included client
+    audience is the introspecting client, added to the clients that **receive** those tokens
+    (in their dedicated scope, or in a client scope assigned to them as a default scope), not
+    to the introspecting client. Only tokens issued after the change carry the audience; a
+    token issued before it keeps its `aud` and still answers `active:false` to that client.
+    The CMS end-to-end observer is set up this way. See
+    [KEYCLOAK-SETUP.md](../../../eng/docker-compose/KEYCLOAK-SETUP.md#confirming-a-revocation-at-keycloak).
   - Refresh tokens. Only the client the token was issued to can introspect it, with
     `token_type_hint=refresh_token`.
   - Public clients. Keycloak refuses them at introspection (`403`), so their tokens must
