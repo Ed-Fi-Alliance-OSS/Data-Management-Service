@@ -565,10 +565,10 @@ function Invoke-ImageVersionProof {
     $identity = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.Identity.dll")
     $frontend = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.Frontend.AspNetCore.dll")
 
-    # Both contracts, and for the same reason: each declares its own version, and neither may take
-    # the version the build was given. The custom-validation contract lives under src/dms, where
-    # SetDMSAssemblyInfo regenerates the props every project there inherits, so its csproj
-    # declaration is the only thing standing between it and the release version.
+    # All three contracts, and for the same reason: each declares its own version, and none may
+    # take the version the build was given. The custom-validation and identity contracts live under
+    # src/dms, where SetDMSAssemblyInfo regenerates the props every project there inherits, so each
+    # one's csproj declaration is the only thing standing between it and the release version.
     Assert-True `
         ($contract.AssemblyVersion -eq "$pluginsDeclared.0") `
         "EdFi.Api.Plugins carries AssemblyVersion $($contract.AssemblyVersion), the version src/plugins/Directory.Build.props declares"

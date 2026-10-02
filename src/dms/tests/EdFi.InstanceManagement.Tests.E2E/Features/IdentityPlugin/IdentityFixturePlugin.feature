@@ -90,7 +90,7 @@ Feature: Identity Fixture Plugin
          And the response should carry a Location to an identity results route
         When the results Location is polled until it completes
         Then it should respond with 200
-         And the DMS container log shows the frontend and core completion events for every correlation id used
+         And the DMS container log shows the frontend and core completion events for every request sent with a correlation id
          And no line of the DMS container log since the recorded position contains an issued UniqueId or request token
 
     Scenario: A request token issued before a DMS container restart answers identity not-found afterwards

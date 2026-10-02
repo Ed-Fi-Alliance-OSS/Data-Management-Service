@@ -58,7 +58,7 @@ internal sealed record IdentityCreateOutcome(
     string? UniqueId,
     string? Reason,
     HttpStatusCode? LookupStatus,
-    IReadOnlyList<int?> LookupScores
+    IReadOnlyList<double?> LookupScores
 );
 
 /// <summary>
@@ -217,7 +217,7 @@ internal sealed class IdentityExampleClient(HttpClient http, int maxPolls = 20)
         };
         using HttpResponseMessage lookedUp = await SendAsync(search);
 
-        IdentityCreateOutcome Stop(string reason, IReadOnlyList<int?>? scores = null) =>
+        IdentityCreateOutcome Stop(string reason, IReadOnlyList<double?>? scores = null) =>
             new(
                 IdentityCreateEnding.OperatorReconciliationRequired,
                 created.StatusCode,
@@ -234,7 +234,7 @@ internal sealed class IdentityExampleClient(HttpClient http, int maxPolls = 20)
 
         JsonNode? answer = JsonNode.Parse(await lookedUp.Content.ReadAsStringAsync());
         JsonArray matches = answer?["SearchResponses"]?[0]?["Responses"]?.AsArray() ?? [];
-        List<int?> scores = [.. matches.Select(match => match?["Score"]?.GetValue<int>())];
+        List<double?> scores = [.. matches.Select(match => match?["Score"]?.GetValue<double>())];
 
         if (!lookup.IsExactUpstreamKey)
         {
@@ -246,7 +246,9 @@ internal sealed class IdentityExampleClient(HttpClient http, int maxPolls = 20)
             return Stop("an empty answer cannot establish that nothing was issued", scores);
         }
 
-        if (matches.Count > 1 || scores[0] != 100)
+        // An exact constant match, not a tolerance: only the score 100 an exact lookup answers is
+        // adopted, and a null score is not.
+        if (matches.Count > 1 || scores[0] is not 100d)
         {
             return Stop("the lookup answer is not a single exact match", scores);
         }

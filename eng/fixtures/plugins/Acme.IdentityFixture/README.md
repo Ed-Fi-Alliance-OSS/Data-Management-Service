@@ -44,14 +44,14 @@ A grant never waives job ownership: `ResultsAsync` additionally requires the job
   The fixture has no per-operation grants.
 - **Cache.**
   Configuration answers are static and uncached.
-  Control-channel answers (grants and denials, never failures) are cached per client, tenant and namespace for `PolicyCacheSeconds`; `0` disables the cache.
+  Control-channel answers are uncached too: every grant check, and so every operation on a mapped namespace, asks the control channel.
 - **Revocation.**
-  Revoking a grant on the control channel takes effect on the next operation after the cache entry expires, immediately when `PolicyCacheSeconds` is `0`.
+  Revoking a grant on the control channel takes effect on the next operation.
   A revoked client's poll of a job it owns then answers `NotFound`.
   Revoking a configuration grant takes a restart.
 - **Policy-source failure.**
   A control-channel failure (a non-success status, a malformed answer, a connection error or a timeout) throws.
-  It is never treated as a grant and is never cached, so DMS answers its sanitized `502` upstream-failure problem.
+  It is never treated as a grant, so DMS answers its sanitized `502` upstream-failure problem.
 
 ## Persons and the operations
 
@@ -173,7 +173,6 @@ Environment variables use `__` for the section separator and a zero-based index 
 | `Grants:{n}:ClientId` | string | none | The client id, or `*` for an explicit tenant-wide grant. |
 | `Grants:{n}:Tenant` | string | unset | The tenant the grant applies to. |
 | `Grants:{n}:Namespace` | string | none | The namespace the grant applies to. |
-| `PolicyCacheSeconds` | integer | `0` | How long control-channel policy answers are cached. |
 | `PollsUntilComplete` | integer | `1` | How many polls answer incomplete before a job completes. |
 | `ControlBaseAddress` | absolute http URI | unset | When set, the control channel is the policy source, the job-state source (expiry and failure) and the destination of the provider's event reports. |
 | `ThrowAt` | `None`, `Factory`, `Constructor`, `Capabilities` or `Operation` | `None` | Makes the provider throw a nested exception whose outer and inner messages both carry the person-data sentinel `SENTINEL-Jane-Doe-1999-01-01`. See the trigger table. |
@@ -262,4 +261,4 @@ Where a variant does not apply to an operation (`success-both` has no token to c
 | `FailNextPoll(token)` | Control stub | The next poll of the token throws, after ownership and expiry checks. DMS answers `502` upstream-failure with no terminal conclusion; every later poll answers normally. |
 | `FailJob(token)` | Control stub | The job failed terminally: every authorized poll while the job is retained answers `JobFailed` with no payload, which DMS maps to `502` job-failed. Ownership is checked first, so another client still gets `404`. |
 | `ExpireJob(token)` | Control stub | After this the token answers `NotFound` (`404`) and the job is dropped. |
-| `Revoke(client, tenant, namespace)` | Control stub | The client's next poll after the policy cache allows it answers `NotFound` (`404`), immediately when `PolicyCacheSeconds` is `0`. |
+| `Revoke(client, tenant, namespace)` | Control stub | The client's next operation on that namespace, a poll of a job it owns included, answers `NotFound` (`404`), because every grant check asks the control channel. |

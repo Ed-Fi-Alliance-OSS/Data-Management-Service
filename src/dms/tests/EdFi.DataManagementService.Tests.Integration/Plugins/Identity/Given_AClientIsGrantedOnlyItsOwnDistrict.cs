@@ -19,9 +19,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// policy source, which answers upstream-failure <c>502</c> rather than a grant.
 /// </summary>
 /// <remarks>
-/// The control stub is the policy source with no cache, and the provider reports an <c>invocation</c>
-/// before its grant check and a <c>lookup</c> only after it, so "denied before any work" is read from
-/// the lookup, issuance and job counts rather than inferred from the status.
+/// The control stub is the policy source, asked on every grant check, and the provider reports an
+/// <c>invocation</c> before its grant check and a <c>lookup</c> only after it, so "denied before any
+/// work" is read from the lookup, issuance and job counts rather than inferred from the status.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_AClientIsGrantedOnlyItsOwnDistrict

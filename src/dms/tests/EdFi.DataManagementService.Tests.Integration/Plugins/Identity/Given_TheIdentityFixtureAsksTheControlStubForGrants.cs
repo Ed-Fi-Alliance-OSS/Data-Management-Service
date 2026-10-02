@@ -36,7 +36,6 @@ public sealed class Given_TheIdentityFixtureAsksTheControlStubForGrants
             fixtureSettings: new Dictionary<string, string>
             {
                 ["IdentityFixture:ControlBaseAddress"] = _stub.BaseAddress.ToString(),
-                ["IdentityFixture:PolicyCacheSeconds"] = "0",
                 ["IdentityFixture:Namespaces:0:Name"] = "ns-a",
                 ["IdentityFixture:Namespaces:0:Contexts:0:Tenant"] = IdentityTestClients.TenantOne,
                 ["IdentityFixture:Namespaces:0:Contexts:0:Qualifiers:districtId"] =

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 
@@ -21,10 +20,6 @@ public sealed class FixturePolicySource(
 )
 {
     private readonly IdentityFixtureOptions _options = options.Value;
-    private readonly ConcurrentDictionary<
-        (string ClientId, string? Tenant, string Namespace),
-        CachedAnswer
-    > _cache = new(PolicyKeyComparer.Instance);
 
     public async Task<bool> IsGrantedAsync(
         string clientId,
@@ -42,28 +37,10 @@ public sealed class FixturePolicySource(
             );
         }
 
-        (string, string?, string) key = (clientId, tenant, namespaceName);
-        DateTimeOffset now = TimeProvider.System.GetUtcNow();
-
-        if (_cache.TryGetValue(key, out CachedAnswer? cached) && cached.ExpiresAt > now)
-        {
-            return cached.Granted;
-        }
-
         string query =
             $"policy?clientId={Uri.EscapeDataString(clientId)}&namespace={Uri.EscapeDataString(namespaceName)}"
             + (tenant is null ? string.Empty : $"&tenant={Uri.EscapeDataString(tenant)}");
-        bool granted = FixtureControlChannel.ReadFlag(
-            await control.GetAsync(query, cancellationToken),
-            "granted"
-        );
-
-        if (_options.PolicyCacheSeconds > 0)
-        {
-            _cache[key] = new CachedAnswer(granted, now.AddSeconds(_options.PolicyCacheSeconds));
-        }
-
-        return granted;
+        return FixtureControlChannel.ReadFlag(await control.GetAsync(query, cancellationToken), "granted");
     }
 
     /// <summary>True when the control channel has expired the job. Configuration never expires one.</summary>
@@ -96,28 +73,5 @@ public sealed class FixturePolicySource(
             FixtureControlChannel.ReadFlag(body, "failed"),
             FixtureControlChannel.ReadFlag(body, "failNextPoll")
         );
-    }
-
-    private sealed record CachedAnswer(bool Granted, DateTimeOffset ExpiresAt);
-
-    private sealed class PolicyKeyComparer
-        : IEqualityComparer<(string ClientId, string? Tenant, string Namespace)>
-    {
-        public static PolicyKeyComparer Instance { get; } = new();
-
-        public bool Equals(
-            (string ClientId, string? Tenant, string Namespace) x,
-            (string ClientId, string? Tenant, string Namespace) y
-        ) =>
-            x.ClientId == y.ClientId
-            && FixtureContextKey.TenantsEqual(x.Tenant, y.Tenant)
-            && x.Namespace == y.Namespace;
-
-        public int GetHashCode((string ClientId, string? Tenant, string Namespace) obj) =>
-            HashCode.Combine(
-                obj.ClientId,
-                obj.Tenant is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Tenant),
-                obj.Namespace
-            );
     }
 }

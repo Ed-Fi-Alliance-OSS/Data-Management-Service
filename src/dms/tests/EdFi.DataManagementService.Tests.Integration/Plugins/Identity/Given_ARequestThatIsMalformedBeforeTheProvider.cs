@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
@@ -151,7 +152,15 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     [Test]
     public void It_reports_the_duplicate_property_under_validation_errors()
     {
-        _outcomes["duplicate-property"].Body!["validationErrors"]!.AsObject().Should().NotBeEmpty();
+        // The host names the repeated property by its JSON path, under one fixed message.
+        JsonObject validationErrors = _outcomes["duplicate-property"].Body!["validationErrors"]!.AsObject();
+
+        validationErrors.Select(error => error.Key).Should().Equal("$.FirstName");
+        validationErrors["$.FirstName"]!
+            .AsArray()
+            .Select(message => message!.GetValue<string>())
+            .Should()
+            .Equal("An item with the same key has already been added.");
     }
 
     [Test]

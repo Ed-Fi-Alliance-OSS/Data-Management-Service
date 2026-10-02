@@ -52,9 +52,10 @@
 
     <!--
         The fixture plugins this file stages, one item per directory under
-        eng/fixtures/plugins/, each consuming the three contracts above (custom validation,
-        plugins and identity) as packed nupkgs instead of by project reference. A fixture's directory name, its csproj name, its assembly name and
-        its published entry file name are all this one Identity, so naming it here is the only
+        eng/fixtures/plugins/, each consuming the plugin contract plus one of the other two
+        contracts above (custom validation or identity) as packed nupkgs instead of by project
+        reference. A fixture's directory name, its csproj name, its assembly name and its
+        published entry file name are all this one Identity, so naming it here is the only
         place a fixture is named: the input closure below, the pack-once publish-per-fixture loop,
         and the fingerprint all key off this list rather than off a per-fixture copy of this file.
     -->

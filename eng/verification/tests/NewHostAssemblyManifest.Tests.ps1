@@ -850,7 +850,8 @@ Describe "Assert-HostAssemblyManifest" {
         Invoke-Generator -Fixture $fixture | Out-Null
 
         & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion |
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion |
             Should -BeLike "*Microsoft.Extensions.Configuration.Abstractions present*"
     }
 
@@ -863,7 +864,9 @@ Describe "Assert-HostAssemblyManifest" {
         Invoke-Generator -Fixture $fixture | Out-Null
 
         {
-            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion "9.9.9" -ExpectedCustomValidationVersion $script:customValidationVersion
+            & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion "9.9.9" `
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*The loader's skew preflight compares this value*"
     }
 
@@ -878,7 +881,8 @@ Describe "Assert-HostAssemblyManifest" {
         $output = & $script:verifier `
             -ManifestPath $fixture.OutputPath `
             -ExpectedPluginsVersion $script:contractVersion `
-            -ExpectedCustomValidationVersion $script:customValidationVersion
+            -ExpectedCustomValidationVersion $script:customValidationVersion `
+            -ExpectedIdentityVersion $script:identityVersion
 
         $output | Should -BeLike "*EdFi.Api.Plugins at*"
         $output | Should -BeLike "*EdFi.DataManagementService.CustomValidation at*"
@@ -898,7 +902,8 @@ Describe "Assert-HostAssemblyManifest" {
             & $script:verifier `
                 -ManifestPath $fixture.OutputPath `
                 -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion "9.9.9"
+                -ExpectedCustomValidationVersion "9.9.9" `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*EdFi.DataManagementService.CustomValidation*9.9.9*"
     }
 
@@ -922,7 +927,8 @@ Describe "Assert-HostAssemblyManifest" {
             & $script:verifier `
                 -ManifestPath $fixture.OutputPath `
                 -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*0 time(s) in 'Contract assemblies'*"
     }
 
@@ -943,7 +949,8 @@ Describe "Assert-HostAssemblyManifest" {
             & $script:verifier `
                 -ManifestPath $fixture.OutputPath `
                 -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*0 time(s) in 'Application assemblies'*"
     }
 
@@ -967,7 +974,8 @@ Describe "Assert-HostAssemblyManifest" {
             & $script:verifier `
                 -ManifestPath $fixture.OutputPath `
                 -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*7.7.7.0*Contract assemblies*"
     }
 
@@ -986,7 +994,8 @@ Describe "Assert-HostAssemblyManifest" {
 
         {
             & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*would omit it*"
     }
 
@@ -1007,7 +1016,8 @@ Describe "Assert-HostAssemblyManifest" {
 
         {
             & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*reaching below the top level of /app*"
     }
 
@@ -1029,14 +1039,15 @@ Describe "Assert-HostAssemblyManifest" {
 
         {
             & $script:verifier -ManifestPath $fixture.OutputPath -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
+                -ExpectedCustomValidationVersion $script:customValidationVersion `
+                -ExpectedIdentityVersion $script:identityVersion
         } | Should -Throw -ExpectedMessage "*shared-framework section(s)*"
     }
 
     # The identity contract is asserted in the application section only. It is in the image but is
     # not published yet, so the contract section does not carry it, and requiring it there would
-    # fail every correct manifest. The parameter is opt-in so that a caller written before the
-    # identity contract existed keeps working; when it is supplied the row has to be there.
+    # fail every correct manifest. The parameter is mandatory, so every caller supplies a version
+    # and the row has to be there.
     It "admits a generated manifest whose identity row is at the declared version" {
         if (-not (Test-FixturesAvailable)) {
             Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
@@ -1117,7 +1128,11 @@ Describe "Assert-HostAssemblyManifest" {
         } | Should -Not -Throw
     }
 
-    It "still admits a caller that does not supply an identity version" {
+    # An optional identity version let a caller that dropped the argument skip the row check, so a
+    # manifest that had lost the identity row was admitted. The verifier runs in a child process
+    # with -NonInteractive because a missing mandatory parameter makes an interactive host prompt
+    # for it, which would hang the run instead of failing it.
+    It "refuses a caller that omits the identity version, even for a manifest that lost the row" {
         if (-not (Test-FixturesAvailable)) {
             Set-ItResult -Inconclusive -Because "the fixture needs the Release builds of the contract assemblies"
         }
@@ -1130,11 +1145,15 @@ Describe "Assert-HostAssemblyManifest" {
             -Heading "Application assemblies" `
             -DropRowFor "EdFi.DataManagementService.Identity"
 
-        {
-            & $script:verifier `
-                -ManifestPath $fixture.OutputPath `
-                -ExpectedPluginsVersion $script:contractVersion `
-                -ExpectedCustomValidationVersion $script:customValidationVersion
-        } | Should -Not -Throw
+        $log = Join-Path $fixture.Root "verifier-without-identity.log"
+
+        & pwsh -NoProfile -NonInteractive -File $script:verifier `
+            -ManifestPath $fixture.OutputPath `
+            -ExpectedPluginsVersion $script:contractVersion `
+            -ExpectedCustomValidationVersion $script:customValidationVersion *> $log
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Not -Be 0
+        [System.IO.File]::ReadAllText($log) | Should -BeLike "*ExpectedIdentityVersion*"
     }
 }

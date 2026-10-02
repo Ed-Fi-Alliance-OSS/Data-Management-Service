@@ -113,6 +113,5 @@ internal sealed class IdentityFixtureSettings
 
     /// <summary>Takes policy and job state from the control stub.</summary>
     public IdentityFixtureSettings WithControlStub(IdentityFixtureControlStub stub) =>
-        With("IdentityFixture:ControlBaseAddress", stub.BaseAddress.ToString())
-            .With("IdentityFixture:PolicyCacheSeconds", "0");
+        With("IdentityFixture:ControlBaseAddress", stub.BaseAddress.ToString());
 }

@@ -5,7 +5,7 @@
 
 #Requires -Version 7
 
-# The two contract version readers in package-helpers.psm1.
+# The contract version readers in package-helpers.psm1.
 #
 # Each contract declares its version in exactly one file, and every lane that needs that version
 # calls one of these rather than repeating a literal. What is pinned here is the behaviour that
@@ -13,8 +13,8 @@
 # declares no version is an error rather than an empty string, and a second declaration cannot
 # stringify into a version no package will ever carry.
 #
-# The repository's own two declarations are read as well, because a reader that agreed with a
-# fixture and disagreed with the tree would leave every lane packing something else.
+# The repository's own declarations are read as well, because a reader that agreed with a fixture
+# and disagreed with the tree would leave every lane packing something else.
 
 BeforeAll {
     $script:repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -331,10 +331,10 @@ Describe "Get-SecretsContractVersion" {
     }
 }
 
-Describe "The two contracts version independently" {
-    # The whole point of the second reader. If these ever collapsed onto one source, a contract's
-    # version would move when the other contract's surface moved, and the loader's skew preflight
-    # compares exactly these values.
+Describe "The three Data Management Service contracts version independently" {
+    # The whole point of a reader per contract. If these ever collapsed onto one source, a
+    # contract's version would move when another contract's surface moved, and the DMS loader's skew
+    # preflight compares exactly these values.
     It "reads each contract's version from its own declaration file" {
         $pluginsPropsPath = Join-Path $script:repositoryRoot "src/plugins/Directory.Build.props"
         $customValidationProjectPath = Join-Path $script:repositoryRoot `

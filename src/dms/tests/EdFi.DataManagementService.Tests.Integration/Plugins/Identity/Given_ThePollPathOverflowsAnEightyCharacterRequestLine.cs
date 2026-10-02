@@ -24,6 +24,11 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// escaped token fits exactly and an 11-character one does not. The accepted neighbours are the
 /// negative controls, and the escaped cases (the non-ASCII letter escapes to 6 characters) show the
 /// measurement is of the escaped token, not the raw one.
+///
+/// Every <c>Location</c> an accepted case produces is followed as returned and must answer
+/// <c>200</c>. The harness runs on TestServer, which applies no Kestrel limits, so that proves the
+/// composed URL routes to the results route, not that Kestrel itself accepts an exactly-full
+/// request line.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_ThePollPathOverflowsAnEightyCharacterRequestLine
@@ -32,6 +37,7 @@ public sealed class Given_ThePollPathOverflowsAnEightyCharacterRequestLine
 
     private IdentityHttpRun? _run;
     private readonly Dictionary<string, IdentityHttpOutcome> _outcomes = [];
+    private readonly Dictionary<string, IdentityHttpOutcome> _followed = [];
 
     private static IReadOnlyDictionary<string, string> Cases { get; } =
         new Dictionary<string, string>
@@ -55,14 +61,28 @@ public sealed class Given_ThePollPathOverflowsAnEightyCharacterRequestLine
 
         foreach ((string name, string token) in Cases)
         {
-            _outcomes[$"find:{name}"] = await _run.PostAsync(
+            await SubmitAndFollowAsync(
+                $"find:{name}",
                 "identities/find",
                 $"[{JsonSerializer.Serialize($"~fixture:token:{token}")}]"
             );
-            _outcomes[$"search:{name}"] = await _run.PostAsync(
+            await SubmitAndFollowAsync(
+                $"search:{name}",
                 "identities/search",
                 $$"""[{ "~FixtureToken": {{JsonSerializer.Serialize(token)}} }]"""
             );
+        }
+    }
+
+    // The Location is followed before the next submission, because find and search reuse one
+    // token and a later job under that token replaces the earlier one.
+    private async Task SubmitAndFollowAsync(string key, string path, string body)
+    {
+        _outcomes[key] = await _run!.PostAsync(path, body);
+
+        if (_outcomes[key].Location is { } location)
+        {
+            _followed[key] = await _run.GetAsync(location);
         }
     }
 
@@ -120,6 +140,17 @@ public sealed class Given_ThePollPathOverflowsAnEightyCharacterRequestLine
     public void It_accepts_a_token_that_fits_the_request_line_with_202(string operation, string name)
     {
         _outcomes[$"{operation}:{name}"].Status.Should().Be(HttpStatusCode.Accepted);
+    }
+
+    [TestCase("find", "fits-10")]
+    [TestCase("search", "fits-10")]
+    [TestCase("find", "escaped-fits-10")]
+    [TestCase("search", "escaped-fits-10")]
+    [TestCase("find", "short-ordinary")]
+    [TestCase("search", "short-ordinary")]
+    public void It_follows_each_accepted_location_to_the_results_route(string operation, string name)
+    {
+        _followed[$"{operation}:{name}"].Status.Should().Be(HttpStatusCode.OK);
     }
 
     [TestCase("find", "fits-10")]

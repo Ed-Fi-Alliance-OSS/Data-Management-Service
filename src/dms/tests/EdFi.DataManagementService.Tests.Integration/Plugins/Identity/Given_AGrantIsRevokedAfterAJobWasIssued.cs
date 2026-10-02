@@ -15,7 +15,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// again, so the denial came from the grant and not from the job having gone.
 /// </summary>
 /// <remarks>
-/// The policy cache is disabled, so the revocation is observed on the next poll.
+/// The fixture caches no control-channel answer and asks the stub on every grant check, so the
+/// revocation is observed on the next poll.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_AGrantIsRevokedAfterAJobWasIssued
