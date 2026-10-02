@@ -8,12 +8,7 @@ using System.Text.Json.Nodes;
 namespace EdFi.DmsConfigurationService.Tests.E2E.Keycloak;
 
 /// <summary>A public client created for one scenario, with the user-flow access token its user obtained.</summary>
-public sealed record KeycloakPublicClient(
-    string ClientUuid,
-    string ClientId,
-    string UserUuid,
-    string AccessToken
-);
+public sealed record KeycloakPublicClient(string ClientUuid, string ClientId, string AccessToken);
 
 /// <summary>
 /// The Keycloak resources <c>Revocation.feature</c> needs to observe token state (DMS-1327 D-16),
@@ -26,36 +21,57 @@ public sealed record KeycloakPublicClient(
 /// from <c>aud</c> (§9.1.4 correction 2). It is attached to the existing clients whose tokens the
 /// scenarios observe and detached again on disposal; it stays out of the token's <c>scope</c> claim
 /// so the Configuration Service's own scope checks see the same value as without it;</item>
-/// <item>public clients with a user, one per scenario that asks for one.</item>
+/// <item>public clients with a user, one per scenario that asks for one. Each resource is tracked from
+/// the moment Keycloak creates it, whether or not the rest of the setup succeeds, and leaves tracking
+/// only once it has been deleted, so a deletion that fails is retried at feature teardown and one that
+/// succeeded is never repeated.</item>
 /// </list>
 /// Diagnostics follow the characterization harness: fixed text, operation, status and body kind only.
 /// </summary>
 public sealed class KeycloakRevocationObserver : IAsyncDisposable
 {
     private readonly KeycloakCharacterizationApi _api;
+    private readonly TextWriter _diagnostics;
     private readonly string _runId = Guid.NewGuid().ToString("N")[..12];
     private readonly List<string> _attachedExistingClientUuids = [];
-    private readonly List<KeycloakPublicClient> _publicClients = [];
+    private readonly List<PublicClientResources> _publicClients = [];
     private CharacterizationClient? _observer;
     private string? _audienceScopeUuid;
     private int _publicClientCount;
 
-    private KeycloakRevocationObserver(KeycloakCharacterizationApi api) => _api = api;
+    private KeycloakRevocationObserver(KeycloakCharacterizationApi api, TextWriter diagnostics)
+    {
+        _api = api;
+        _diagnostics = diagnostics;
+    }
 
     /// <summary>
     /// Creates the observer and the audience scope, and attaches the scope to each existing client
     /// in <paramref name="observedClientIds"/>. Anything created before a failure is removed again.
     /// </summary>
-    public static async Task<KeycloakRevocationObserver> CreateAsync(IEnumerable<string> observedClientIds)
-    {
-        KeycloakRevocationObserver fixture = new(
+    public static Task<KeycloakRevocationObserver> CreateAsync(IEnumerable<string> observedClientIds) =>
+        CreateAsync(
+            observedClientIds,
             new KeycloakCharacterizationApi(
                 KeycloakCharacterizationEnvironment.KeycloakUrl,
                 KeycloakCharacterizationEnvironment.Realm,
                 KeycloakCharacterizationEnvironment.AdminRealm,
                 new SensitiveValueRegistry()
-            )
+            ),
+            TestContext.Progress
         );
+
+    /// <summary>
+    /// <see cref="CreateAsync(IEnumerable{string})"/> over a given API and diagnostics writer, so the
+    /// cleanup rules can be exercised offline against a scripted Keycloak.
+    /// </summary>
+    internal static async Task<KeycloakRevocationObserver> CreateAsync(
+        IEnumerable<string> observedClientIds,
+        KeycloakCharacterizationApi api,
+        TextWriter diagnostics
+    )
+    {
+        KeycloakRevocationObserver fixture = new(api, diagnostics);
 
         try
         {
@@ -71,7 +87,7 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
             catch (Exception cleanupFailure)
             {
                 // The provisioning failure is the one to report; the cleanup problem is only logged.
-                await TestContext.Progress.WriteLineAsync(
+                await fixture._diagnostics.WriteLineAsync(
                     $"Revocation observer cleanup after a failed provisioning also failed: {cleanupFailure.GetType().FullName}"
                 );
             }
@@ -86,7 +102,10 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
 
     /// <summary>
     /// Creates a public client with direct access grants and a user, puts the observer into the
-    /// audience of its tokens, and returns the access token of a fresh password grant.
+    /// audience of its tokens, and returns the access token of a fresh password grant. If any step
+    /// after the client's creation fails, the call deletes what it created, attempting each
+    /// resource even when another deletion fails, leaves whatever it could not delete tracked for
+    /// feature teardown, and rethrows the setup failure.
     /// </summary>
     public async Task<KeycloakPublicClient> CreatePublicClientAsync()
     {
@@ -106,13 +125,14 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
                 ["serviceAccountsEnabled"] = false,
             }
         );
+        PublicClientResources resources = new(clientUuid);
+        _publicClients.Add(resources);
 
-        string userUuid = "";
         try
         {
             string username = $"revocation-user-{suffix}";
             string password = $"Pw-{Guid.NewGuid():N}!Aa1";
-            userUuid = await _api.CreateUserAsync(
+            resources.UserUuid = await _api.CreateUserAsync(
                 adminToken,
                 new JsonObject
                 {
@@ -142,26 +162,18 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
                     .Add("password", password)
             );
 
-            KeycloakPublicClient publicClient = new(clientUuid, clientId, userUuid, grant.AccessToken);
-            _publicClients.Add(publicClient);
-            return publicClient;
+            return new KeycloakPublicClient(clientUuid, clientId, grant.AccessToken);
         }
         catch
         {
-            // Not yet tracked, so remove what this call created before reporting the failure.
-            try
+            List<Exception> cleanupFailures = await DeletePublicClientResourcesAsync(resources);
+            if (cleanupFailures.Count > 0)
             {
-                if (userUuid.Length > 0)
-                {
-                    await _api.DeleteUserAsync(adminToken, userUuid);
-                }
-
-                await _api.DeleteClientAsync(adminToken, clientUuid);
-            }
-            catch (Exception cleanupFailure)
-            {
-                await TestContext.Progress.WriteLineAsync(
-                    $"Public client cleanup after a failed setup also failed: {cleanupFailure.GetType().FullName}"
+                // The setup failure is the one to report. Only exception type names are written, so
+                // nothing a dependency put into a message reaches the output.
+                await _diagnostics.WriteLineAsync(
+                    $"Cleanup after a failed public client setup left {resources.UnresolvedCount} resource(s) for feature teardown; "
+                        + $"failures: {string.Join(", ", cleanupFailures.Select(failure => failure.GetType().FullName))}"
                 );
             }
 
@@ -169,13 +181,29 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
         }
     }
 
-    /// <summary>Deletes a public client created by <see cref="CreatePublicClientAsync"/> and its user.</summary>
+    /// <summary>
+    /// Deletes a public client created by <see cref="CreatePublicClientAsync"/> and its user. Both
+    /// deletions are attempted; whatever could not be deleted stays tracked for feature teardown, and
+    /// the failures are raised together.
+    /// </summary>
     public async Task DeletePublicClientAsync(KeycloakPublicClient publicClient)
     {
-        string adminToken = await GetAdminTokenAsync();
-        await _api.DeleteUserAsync(adminToken, publicClient.UserUuid);
-        await _api.DeleteClientAsync(adminToken, publicClient.ClientUuid);
-        _publicClients.Remove(publicClient);
+        PublicClientResources? resources = _publicClients.Find(tracked =>
+            tracked.CreatedClientUuid == publicClient.ClientUuid
+        );
+        if (resources is null)
+        {
+            return;
+        }
+
+        List<Exception> failures = await DeletePublicClientResourcesAsync(resources);
+        if (failures.Count > 0)
+        {
+            throw new AggregateException(
+                $"Deleting the scenario's public client left {resources.UnresolvedCount} resource(s); feature teardown retries them.",
+                failures
+            );
+        }
     }
 
     /// <summary>
@@ -209,10 +237,9 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
                 }
             }
 
-            foreach (KeycloakPublicClient publicClient in _publicClients)
+            foreach (PublicClientResources resources in _publicClients.ToList())
             {
-                await TryAsync(() => _api.DeleteUserAsync(adminToken, publicClient.UserUuid), failures);
-                await TryAsync(() => _api.DeleteClientAsync(adminToken, publicClient.ClientUuid), failures);
+                failures.AddRange(await DeletePublicClientResourcesAsync(resources, adminToken));
             }
 
             if (_observer is not null)
@@ -247,6 +274,64 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
                 failures.Add(exception);
             }
         }
+    }
+
+    /// <summary>
+    /// Deletes the user and then the client, each attempted whatever happened to the other. A deleted
+    /// resource is cleared from <paramref name="resources"/> at once, and the entry leaves tracking
+    /// when nothing is left, so a later retry touches only what is still there.
+    /// </summary>
+    private async Task<List<Exception>> DeletePublicClientResourcesAsync(
+        PublicClientResources resources,
+        string? adminToken = null
+    )
+    {
+        List<Exception> failures = [];
+        if (adminToken is null)
+        {
+            try
+            {
+                adminToken = await GetAdminTokenAsync();
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+                return failures;
+            }
+        }
+
+        if (resources.UserUuid is { } userUuid)
+        {
+            try
+            {
+                await _api.DeleteUserAsync(adminToken, userUuid);
+                resources.UserUuid = null;
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+        }
+
+        if (resources.ClientUuid is { } clientUuid)
+        {
+            try
+            {
+                await _api.DeleteClientAsync(adminToken, clientUuid);
+                resources.ClientUuid = null;
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+        }
+
+        if (resources.UnresolvedCount == 0)
+        {
+            _publicClients.Remove(resources);
+        }
+
+        return failures;
     }
 
     private CharacterizationClient Observer =>
@@ -316,5 +401,20 @@ public sealed class KeycloakRevocationObserver : IAsyncDisposable
             await _api.AddDefaultClientScopeAsync(adminToken, clientUuid, _audienceScopeUuid);
             _attachedExistingClientUuids.Add(clientUuid);
         }
+    }
+
+    /// <summary>
+    /// The Keycloak resources of one public client. <see cref="ClientUuid"/> and <see cref="UserUuid"/>
+    /// are null once deleted (or, for the user, before it exists).
+    /// </summary>
+    private sealed class PublicClientResources(string clientUuid)
+    {
+        public string CreatedClientUuid { get; } = clientUuid;
+
+        public string? ClientUuid { get; set; } = clientUuid;
+
+        public string? UserUuid { get; set; }
+
+        public int UnresolvedCount => (ClientUuid is null ? 0 : 1) + (UserUuid is null ? 0 : 1);
     }
 }
