@@ -419,8 +419,8 @@ public class IdentityModule : IEndpointModule
         // whatever their values, and decided before the Basic value is parsed, so a partial or
         // malformed combination is still mixed. Under Keycloak a form client_id would otherwise
         // override the header, letting the caller choose which identity is checked (D-05).
-        string? basicCredentials = GetBasicCredentials(authorization);
-        bool basicAttempted = basicCredentials is not null;
+        string? afterBasicScheme = GetTextAfterBasicScheme(authorization);
+        bool basicAttempted = afterBasicScheme is not null;
         if (basicAttempted && (form.ContainsKey("client_id") || form.ContainsKey("client_secret")))
         {
             return InvalidRequest("Only one client authentication mechanism may be used.");
@@ -434,9 +434,9 @@ public class IdentityModule : IEndpointModule
 
         string clientId;
         string clientSecret;
-        if (basicCredentials is not null)
+        if (afterBasicScheme is not null)
         {
-            StrictBasicCredentials parsed = ParseStrictBasicCredentials(basicCredentials);
+            StrictBasicCredentials parsed = ParseStrictBasicCredentials(afterBasicScheme);
             if (parsed is StrictBasicCredentials.Malformed malformed)
             {
                 logger.LogInformation(
@@ -521,14 +521,18 @@ public class IdentityModule : IEndpointModule
             _ => TokenTypeHint.None,
         };
 
+    private const string BasicScheme = "Basic";
+
     /// <summary>
-    /// Returns the credentials text after the scheme when the caller attempted Basic client
+    /// Returns everything after the scheme token when the caller attempted Basic client
     /// authentication, otherwise <c>null</c>. Attempted means exactly one Authorization value whose
-    /// scheme token is <c>Basic</c> (case-insensitive), whether or not the rest parses. The scheme is
-    /// separated from the credentials by one or more spaces (RFC 7235 §2.1); whitespace inside the
-    /// credentials is malformed.
+    /// leading scheme token, the longest run of RFC 7230 <c>tchar</c> characters, is <c>Basic</c>
+    /// (case-insensitive). Recognition stops there: whatever follows the token, including a tab or
+    /// any other invalid separator, is validated by <see cref="ParseStrictBasicCredentials"/> and
+    /// makes the attempt malformed, never a request without Basic. <c>Basicx</c> or <c>Bearer</c> is
+    /// a different scheme and is not an attempt.
     /// </summary>
-    private static string? GetBasicCredentials(StringValues authorization)
+    private static string? GetTextAfterBasicScheme(StringValues authorization)
     {
         if (authorization.Count != 1)
         {
@@ -536,15 +540,19 @@ public class IdentityModule : IEndpointModule
         }
 
         string value = authorization[0] ?? string.Empty;
-        int separator = value.IndexOf(' ');
-        string scheme = separator < 0 ? value : value[..separator];
-        if (!string.Equals(scheme, "Basic", StringComparison.OrdinalIgnoreCase))
+        if (
+            !value.StartsWith(BasicScheme, StringComparison.OrdinalIgnoreCase)
+            || (value.Length > BasicScheme.Length && IsTokenChar(value[BasicScheme.Length]))
+        )
         {
             return null;
         }
 
-        return separator < 0 ? string.Empty : value[(separator + 1)..].TrimStart(' ');
+        return value[BasicScheme.Length..];
     }
+
+    /// <summary>RFC 7230 §3.2.6 <c>tchar</c>.</summary>
+    private static bool IsTokenChar(char c) => char.IsAsciiLetterOrDigit(c) || "!#$%&'*+-.^_`|~".Contains(c);
 
     private abstract record StrictBasicCredentials
     {
@@ -560,15 +568,23 @@ public class IdentityModule : IEndpointModule
     );
 
     /// <summary>
-    /// Decodes Basic client credentials exactly as RFC 6749 §2.3.1 defines them: base64 of
+    /// Validates what follows the <c>Basic</c> scheme token: one or more spaces (RFC 7235 §2.1
+    /// <c>1*SP</c>) and then the credentials. Any other separator is malformed. The credentials are
+    /// decoded exactly as RFC 6749 §2.3.1 defines them: base64 of
     /// <c>form-urlencode(client_id) ":" form-urlencode(client_secret)</c>. Each stage is validated
     /// explicitly because the framework decoders are lenient: <c>Convert.FromBase64String</c> skips
     /// whitespace, default UTF-8 decoding substitutes U+FFFD, and <c>WebUtility.UrlDecode</c> keeps
     /// malformed escapes. Used by <c>/connect/revoke</c> only; <c>/connect/token</c> keeps the lenient
     /// <see cref="TryParseBasicAuthCredentials"/> (DMS-1327 D-04).
     /// </summary>
-    private static StrictBasicCredentials ParseStrictBasicCredentials(string base64Credentials)
+    private static StrictBasicCredentials ParseStrictBasicCredentials(string afterScheme)
     {
+        if (afterScheme.Length > 0 && afterScheme[0] != ' ')
+        {
+            return new StrictBasicCredentials.Malformed("scheme-separator");
+        }
+
+        string base64Credentials = afterScheme.TrimStart(' ');
         if (!IsStrictBase64(base64Credentials))
         {
             return new StrictBasicCredentials.Malformed("base64");

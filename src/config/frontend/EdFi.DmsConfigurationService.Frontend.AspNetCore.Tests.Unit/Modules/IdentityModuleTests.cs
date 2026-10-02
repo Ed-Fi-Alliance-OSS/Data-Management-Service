@@ -24,12 +24,14 @@ using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
 using OpenIddictIdentityOptions = EdFi.DmsConfigurationService.Backend.OpenIddict.Models.IdentityOptions;
@@ -2987,6 +2989,13 @@ public class RevocationRequestContractTests
 
         protected virtual IEnumerable<string> AuthorizationValues => [];
 
+        /// <summary>
+        /// Sends the request through <c>TestServer.SendAsync</c> instead of <see cref="HttpClient"/>,
+        /// which can rewrite whitespace in the Authorization value; the handler then sees exactly
+        /// the bytes the fixture wrote.
+        /// </summary>
+        protected virtual bool SendRawRequest => false;
+
         [SetUp]
         public async Task Setup()
         {
@@ -3007,8 +3016,14 @@ public class RevocationRequestContractTests
             });
             _client = _factory.CreateClient();
 
-            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/revoke") { Content = Body };
             string[] authorization = [.. AuthorizationValues];
+            if (SendRawRequest)
+            {
+                await SendRawAsync(authorization);
+                return;
+            }
+
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/revoke") { Content = Body };
             if (authorization.Length > 0)
             {
                 request.Headers.TryAddWithoutValidation("Authorization", authorization).Should().BeTrue();
@@ -3018,9 +3033,43 @@ public class RevocationRequestContractTests
             Content = await Response.Content.ReadAsStringAsync();
         }
 
+        private async Task SendRawAsync(string[] authorization)
+        {
+            HttpContent? body = Body;
+            byte[] payload = body is null ? [] : await body.ReadAsByteArrayAsync();
+            string? contentType = body?.Headers.ContentType?.ToString();
+
+            HttpContext context = await _factory.Server.SendAsync(raw =>
+            {
+                raw.Request.Method = HttpMethods.Post;
+                raw.Request.Path = "/connect/revoke";
+                raw.Request.ContentType = contentType;
+                raw.Request.ContentLength = payload.Length;
+                raw.Request.Body = new MemoryStream(payload);
+                if (authorization.Length > 0)
+                {
+                    raw.Request.Headers.Authorization = new StringValues(authorization);
+                }
+            });
+
+            Content = await new StreamReader(context.Response.Body).ReadToEndAsync();
+            Response = new HttpResponseMessage((HttpStatusCode)context.Response.StatusCode)
+            {
+                Content = new StringContent(Content),
+            };
+            Response.Content.Headers.ContentType = context.Response.ContentType is { } responseType
+                ? System.Net.Http.Headers.MediaTypeHeaderValue.Parse(responseType)
+                : null;
+            foreach ((string name, StringValues values) in context.Response.Headers)
+            {
+                Response.Headers.TryAddWithoutValidation(name, (IEnumerable<string?>)values);
+            }
+        }
+
         [TearDown]
         public void TearDown()
         {
+            Response?.Dispose();
             _client?.Dispose();
             _factory?.Dispose();
             Logs?.Dispose();
@@ -3400,6 +3449,170 @@ public class RevocationRequestContractTests
                 Token,
                 authorization.Length > "Basic ".Length ? authorization["Basic ".Length..] : Sentinel
             );
+    }
+
+    // ----- D-03 "Basic attempted" / D-04 stage 0: an invalid separator after the scheme -----
+
+    /// <summary>
+    /// A tab (alone, or followed by a space) after <c>Basic</c> is not the RFC 7235 <c>1*SP</c>
+    /// separator, but the scheme token is still <c>Basic</c>: the request attempted Basic and is
+    /// malformed, so it must never fall back to the form rules.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> InvalidBasicSeparators()
+    {
+        string sentinelBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{Sentinel}"));
+        yield return new TestFixtureData($"Basic\t{sentinelBase64}", sentinelBase64).SetArgDisplayNames(
+            "a tab"
+        );
+        yield return new TestFixtureData($"Basic\t {sentinelBase64}", sentinelBase64).SetArgDisplayNames(
+            "a tab then a space"
+        );
+        yield return new TestFixtureData($"basic\t{sentinelBase64}", sentinelBase64).SetArgDisplayNames(
+            "a lower-case scheme and a tab"
+        );
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(InvalidBasicSeparators))]
+    public class Given_a_raw_revocation_request_with_an_invalid_separator_after_basic(
+        string authorization,
+        string credentials
+    ) : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [authorization];
+
+        [Test]
+        public void It_answers_401_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_sends_the_basic_challenge() => AssertChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_logs_only_the_fixed_stage_name() =>
+            Logs
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message
+                    == "Revocation Basic credentials were malformed at the scheme-separator stage"
+                );
+
+        [Test]
+        public void It_does_not_log_the_credentials() => AssertNotLogged(Sentinel, Token, credentials);
+    }
+
+    public static IEnumerable<TestFixtureData> InvalidBasicSeparatorsWithFormCredentialKeys()
+    {
+        string sentinelBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{Sentinel}"));
+        yield return new TestFixtureData(
+            $"Basic\t{sentinelBase64}",
+            sentinelBase64,
+            WithFormCredentials(("token", Token))
+        ).SetArgDisplayNames("a tab and valid form credentials");
+        yield return new TestFixtureData(
+            $"Basic\t {sentinelBase64}",
+            sentinelBase64,
+            WithFormCredentials(("token", Token))
+        ).SetArgDisplayNames("a tab then a space and valid form credentials");
+        yield return new TestFixtureData(
+            $"Basic\t{sentinelBase64}",
+            sentinelBase64,
+            new[] { ("token", Token), ("client_id", ClientId) }
+        ).SetArgDisplayNames("a tab and a form client_id only");
+        yield return new TestFixtureData(
+            $"Basic\t {sentinelBase64}",
+            sentinelBase64,
+            new[] { ("token", Token), ("client_secret", ClientSecret) }
+        ).SetArgDisplayNames("a tab then a space and a form client_secret only");
+    }
+
+    [TestFixtureSource(
+        typeof(RevocationRequestContractTests),
+        nameof(InvalidBasicSeparatorsWithFormCredentialKeys)
+    )]
+    public class Given_a_raw_revocation_request_with_an_invalid_separator_after_basic_and_form_credentials(
+        string authorization,
+        string credentials,
+        (string, string)[] fields
+    ) : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(fields);
+
+        protected override IEnumerable<string> AuthorizationValues => [authorization];
+
+        [Test]
+        public void It_answers_invalid_request_for_mixed_mechanisms() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MixedDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_credentials() =>
+            AssertNotLogged(Sentinel, Token, ClientSecret, credentials);
+    }
+
+    /// <summary>
+    /// Several spaces after <c>Basic</c> are valid <c>1*SP</c> and still authenticate, sent raw so
+    /// the client cannot collapse them first.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_raw_revocation_request_with_several_spaces_after_basic : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues =>
+            [$"Basic   {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{ClientSecret}"))}"];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_passes_the_credentials_to_the_manager() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
+    }
+
+    /// <summary>
+    /// A scheme token that merely starts with <c>Basic</c> is a different scheme, not a Basic
+    /// attempt: it is ignored like any non-Basic header and the form credentials authenticate.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_raw_revocation_request_with_a_longer_scheme_token_and_form_credentials
+        : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        protected override IEnumerable<string> AuthorizationValues => [$"Basicx {Sentinel}"];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_authenticates_with_the_form_credentials_only() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
     }
 
     // ----- D-04: well-formed Basic credentials decode exactly -----
