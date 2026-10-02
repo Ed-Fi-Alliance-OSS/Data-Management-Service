@@ -199,7 +199,7 @@ Profile 'Test-Profile' definition for the write content type for resource
 |----------|-------------|------------|
 | Validation failure | 400 | `urn:ed-fi:api:bad-request` |
 | Profile not found | 404 | `urn:ed-fi:api:not-found` |
-| Duplicate name | 409 | `urn:ed-fi:api:conflict:non-unique-identity` |
+| Duplicate name | 400 | `urn:ed-fi:api:bad-request:data` |
 | Profile in use | 409 | `urn:ed-fi:api:conflict:dependent-item-exists` |
 
 ---

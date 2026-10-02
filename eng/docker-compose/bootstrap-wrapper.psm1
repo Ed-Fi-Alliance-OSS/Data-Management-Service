@@ -1130,7 +1130,7 @@ function Invoke-BootstrapWrapper {
                 Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $continuationArgument [-LoadSeedData ...]" -InformationAction Continue
                 Write-Information "  Note: -NoDataStore supports exactly one route-unqualified data store. If this run used" -InformationAction Continue
                 Write-Information "  -SchoolYearRange (or created route-qualified data stores), do NOT re-run the wrapper:" -InformationAction Continue
-                Write-Information "  re-supplying -SchoolYearRange creates a NEW set of data stores instead of selecting these." -InformationAction Continue
+                Write-Information "  re-supplying -SchoolYearRange tries to create these data stores again, and CMS rejects the repeated names with 400." -InformationAction Continue
                 Write-Information "  Seed the data stores this run created directly once your IDE-hosted DMS is healthy:" -InformationAction Continue
                 Write-Information "    load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...> [...]" -InformationAction Continue
                 return
