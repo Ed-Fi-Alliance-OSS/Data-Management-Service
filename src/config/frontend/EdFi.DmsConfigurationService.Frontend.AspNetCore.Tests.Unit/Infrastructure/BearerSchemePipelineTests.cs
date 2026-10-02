@@ -652,6 +652,47 @@ public class BearerSchemePipelineTests
         public void It_still_holds_the_old_snapshot() => _host.Provider.Current.Should().NotBeNull();
     }
 
+    // Review remediation R3.1 (g) [F]: a wall clock set back during a key-store outage does not extend trust in the
+    // held keys. Past the maximum staleness of elapsed time the instance fails closed with 503, as in 3.1-m.
+    [TestFixture]
+    public class Given_the_wall_clock_set_back_while_refreshes_fail
+    {
+        private BearerPipelineHost _host = null!;
+        private HttpResponseMessage _overdue = null!;
+        private HttpResponseMessage _expired = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _host = new BearerPipelineHost();
+            _host.Store.AddKey("key-1");
+            await _host.StartWarmAsync();
+            _host.Store.FailKeyReads(new TimeoutException("key store down"));
+            string token = _host.Store.Mint("key-1").Token;
+
+            _host.Clock.StepWallClock(TimeSpan.FromHours(-2));
+            _host.Time.Advance(TimeSpan.FromSeconds(301));
+            _overdue = await _host.GetProfileAsync(token);
+            _host.Time.Advance(TimeSpan.FromSeconds(3600 - 301 + 1));
+            _expired = await _host.GetProfileAsync(token);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _overdue.Dispose();
+            _expired.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public void It_serves_the_overdue_snapshot() => _overdue.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public Task It_answers_503_past_the_maximum_staleness_of_elapsed_time() =>
+            ShouldBeADependency503(_expired);
+    }
+
     // 3.1-n [F]: waves of requests while every load fails immediately start no load of their own: the gate refuses them
     // until the retry deadline, and each is a 503.
     [TestFixture]

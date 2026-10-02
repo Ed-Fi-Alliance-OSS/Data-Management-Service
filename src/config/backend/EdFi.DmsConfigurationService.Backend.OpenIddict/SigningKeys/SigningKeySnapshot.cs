@@ -27,7 +27,9 @@ public enum SigningKeySnapshotState
     /// <summary>No snapshot has been published yet.</summary>
     None,
 
-    /// <summary>Retrieved no more than <see cref="SigningKeySettings.RefreshInterval"/> ago.</summary>
+    /// <summary>
+    /// No older than <see cref="SigningKeySettings.RefreshInterval"/> (see <see cref="SigningKeySnapshot.GetAge"/>).
+    /// </summary>
     Fresh,
 
     /// <summary>
@@ -51,6 +53,7 @@ public sealed class SigningKeySnapshot
     public SigningKeySnapshot(
         IEnumerable<SigningKeyEntry> keys,
         DateTimeOffset retrievedAt,
+        long retrievedAtTimestamp,
         long version,
         SigningKeySource source
     )
@@ -67,6 +70,7 @@ public sealed class SigningKeySnapshot
         _entries = entries;
         Keys = entries.AsReadOnly();
         RetrievedAt = retrievedAt;
+        RetrievedAtTimestamp = retrievedAtTimestamp;
         Version = version;
         Source = source;
     }
@@ -81,8 +85,14 @@ public sealed class SigningKeySnapshot
     public IReadOnlyList<SecurityKey> CreateSecurityKeys() =>
         Array.ConvertAll(_entries, entry => entry.CreateSecurityKey());
 
-    /// <summary>When the retrieval that produced this snapshot completed.</summary>
+    /// <summary>When the retrieval that produced this snapshot completed, by the wall clock.</summary>
     public DateTimeOffset RetrievedAt { get; }
+
+    /// <summary>
+    /// The same instant as <see cref="RetrievedAt"/>, as a <see cref="TimeProvider.GetTimestamp"/> value of the
+    /// provider that published the snapshot. It is meaningful only with that same <see cref="TimeProvider"/>.
+    /// </summary>
+    public long RetrievedAtTimestamp { get; }
 
     /// <summary>A positive number that increases with each published snapshot.</summary>
     public long Version { get; }
@@ -96,16 +106,31 @@ public sealed class SigningKeySnapshot
         Keys.Any(entry => string.Equals(entry.KeyId, keyId, StringComparison.Ordinal));
 
     /// <summary>
-    /// Classifies the snapshot at <paramref name="now"/>. An age equal to a bound belongs to the more usable state:
-    /// exactly <see cref="SigningKeySettings.RefreshInterval"/> old is still fresh, and exactly
-    /// <see cref="SigningKeySettings.MaxStaleness"/> old is still overdue (served). A negative age, from a clock moved
-    /// backwards, counts as fresh.
+    /// The snapshot's age: the larger of its wall-clock age and the monotonic time elapsed since
+    /// <see cref="RetrievedAtTimestamp"/>. It is never less than the monotonic elapsed time, so setting the wall clock
+    /// back cannot make the snapshot younger. A wall clock set forward can make it older until the step is reversed.
+    /// <paramref name="timeProvider"/> must be the one that published the snapshot.
     /// </summary>
-    public SigningKeySnapshotState GetState(DateTimeOffset now, SigningKeySettings settings)
+    public TimeSpan GetAge(TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        TimeSpan wallAge = timeProvider.GetUtcNow() - RetrievedAt;
+        TimeSpan monotonicAge = timeProvider.GetElapsedTime(RetrievedAtTimestamp);
+        return wallAge > monotonicAge ? wallAge : monotonicAge;
+    }
+
+    /// <summary>
+    /// Classifies a snapshot of the given <paramref name="age"/> (see <see cref="GetAge"/>). An age equal to a bound
+    /// belongs to the more usable state: exactly <see cref="SigningKeySettings.RefreshInterval"/> old is still fresh,
+    /// and exactly <see cref="SigningKeySettings.MaxStaleness"/> old is still overdue (served).
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="age"/> is negative.</exception>
+    public static SigningKeySnapshotState GetState(TimeSpan age, SigningKeySettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentOutOfRangeException.ThrowIfLessThan(age, TimeSpan.Zero);
 
-        TimeSpan age = now - RetrievedAt;
         if (age <= settings.RefreshInterval)
         {
             return SigningKeySnapshotState.Fresh;

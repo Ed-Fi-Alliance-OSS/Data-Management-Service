@@ -205,6 +205,41 @@ internal sealed class SchedulerTimeProvider(DateTimeOffset start) : FakeTimeProv
 }
 
 /// <summary>
+/// Fake time whose wall clock can be stepped independently of elapsed time (spec R3.1). It wraps, rather than derives
+/// from, a <see cref="FakeTimeProvider"/>: <see cref="GetUtcNow"/> is the inner wall time plus
+/// <see cref="WallOffset"/>, while timestamps, their frequency and timers come from the inner provider unchanged. A
+/// wall step therefore moves neither <see cref="GetTimestamp"/> nor a pending timer, and <see cref="Advance"/> moves
+/// both, as on a real host whose clock is set while time keeps elapsing.
+/// </summary>
+internal sealed class SkewableTimeProvider(FakeTimeProvider inner) : TimeProvider
+{
+    public FakeTimeProvider Inner { get; } = inner;
+
+    public TimeSpan WallOffset { get; private set; }
+
+    /// <summary>Moves the wall clock only, as an NTP step or a manual clock change would.</summary>
+    public void StepWallClock(TimeSpan step) => WallOffset += step;
+
+    /// <summary>Lets time elapse: both the wall clock and the monotonic timestamp move, and due timers fire.</summary>
+    public void Advance(TimeSpan delta) => Inner.Advance(delta);
+
+    public override DateTimeOffset GetUtcNow() => Inner.GetUtcNow() + WallOffset;
+
+    public override long GetTimestamp() => Inner.GetTimestamp();
+
+    public override long TimestampFrequency => Inner.TimestampFrequency;
+
+    public override TimeZoneInfo LocalTimeZone => Inner.LocalTimeZone;
+
+    public override ITimer CreateTimer(
+        TimerCallback callback,
+        object? state,
+        TimeSpan dueTime,
+        TimeSpan period
+    ) => Inner.CreateTimer(callback, state, dueTime, period);
+}
+
+/// <summary>
 /// A provider decorator that counts status reads and refresh requests, and can run an action right after a status read,
 /// before that status reaches the caller.
 /// </summary>

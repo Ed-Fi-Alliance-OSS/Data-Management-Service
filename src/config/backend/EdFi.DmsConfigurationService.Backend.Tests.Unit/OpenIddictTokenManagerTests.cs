@@ -1785,6 +1785,7 @@ public class OpenIddictTokenManagerTests
                 SigningKeyEntry.FromRsaPublicParameters(key.KeyId, key.Rsa.ExportParameters(false))
             ),
             DateTimeOffset.UtcNow,
+            retrievedAtTimestamp: 0,
             version: 1,
             SigningKeySource.Database
         );

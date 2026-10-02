@@ -149,7 +149,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
             lock (_sync)
             {
                 return new SigningKeyProviderStatus(
-                    StateOf(_current, _timeProvider.GetUtcNow()),
+                    StateOf(_current),
                     _current,
                     _consecutiveFailures,
                     _nextAttemptAt,
@@ -167,7 +167,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     {
         // Lock-free fast path. It only ever returns a snapshot; every decision to load is made again under the lock.
         SigningKeySnapshot? snapshot = Current;
-        SigningKeySnapshotState state = StateOf(snapshot, _timeProvider.GetUtcNow());
+        SigningKeySnapshotState state = StateOf(snapshot);
 
         if (state == SigningKeySnapshotState.Fresh)
         {
@@ -283,7 +283,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         lock (_sync)
         {
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            SigningKeySnapshotState state = StateOf(_current, now);
+            SigningKeySnapshotState state = StateOf(_current);
 
             if (_disposed)
             {
@@ -491,7 +491,8 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         lock (_sync)
         {
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            outcome = Classify(result, failure, now);
+            long nowTimestamp = _timeProvider.GetTimestamp();
+            outcome = Classify(result, failure, now, nowTimestamp);
 
             if (outcome is SigningKeyRefreshOutcome.Succeeded succeeded)
             {
@@ -532,11 +533,15 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         return outcome;
     }
 
-    /// <summary>Called under the lock, so versions are assigned in publication order.</summary>
+    /// <summary>
+    /// Called under the lock, so versions are assigned in publication order. A published snapshot carries both the wall
+    /// clock and the monotonic timestamp of its publication.
+    /// </summary>
     private SigningKeyRefreshOutcome Classify(
         SigningKeySourceResult? result,
         Exception? failure,
-        DateTimeOffset now
+        DateTimeOffset now,
+        long nowTimestamp
     )
     {
         if (failure is not null || result is null)
@@ -558,7 +563,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         }
 
         return new SigningKeyRefreshOutcome.Succeeded(
-            new SigningKeySnapshot(result.Entries, now, ++_version, _source.Kind),
+            new SigningKeySnapshot(result.Entries, now, nowTimestamp, ++_version, _source.Kind),
             result.DiscardedCount
         );
     }
@@ -576,8 +581,11 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         return nominal * factor;
     }
 
-    private SigningKeySnapshotState StateOf(SigningKeySnapshot? snapshot, DateTimeOffset now) =>
-        snapshot is null ? SigningKeySnapshotState.None : snapshot.GetState(now, _settings);
+    /// <summary>The snapshot's state by its age now: the larger of its wall-clock and monotonic age.</summary>
+    private SigningKeySnapshotState StateOf(SigningKeySnapshot? snapshot) =>
+        snapshot is null
+            ? SigningKeySnapshotState.None
+            : SigningKeySnapshot.GetState(snapshot.GetAge(_timeProvider), _settings);
 
     private void Log(
         SigningKeyRefreshTrigger trigger,

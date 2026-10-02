@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
@@ -27,7 +28,13 @@ public class SigningKeySnapshotTests
     }
 
     private static SigningKeySnapshot Snapshot(params SigningKeyEntry[] keys) =>
-        new(keys, _retrievedAt, 1, SigningKeySource.Database);
+        new(keys, _retrievedAt, 0, 1, SigningKeySource.Database);
+
+    /// <summary>A snapshot published now by <paramref name="time"/>, stamped with both of its clocks.</summary>
+    private static SigningKeySnapshot PublishedBy(TimeProvider time) =>
+        new([Entry("key-1")], time.GetUtcNow(), time.GetTimestamp(), 1, SigningKeySource.Database);
+
+    private static SkewableTimeProvider NewSkewableTime() => new(new FakeTimeProvider(_retrievedAt));
 
     [TestFixture]
     public class Given_keys_from_a_list_that_later_changes
@@ -38,7 +45,7 @@ public class SigningKeySnapshotTests
         public void Act()
         {
             List<SigningKeyEntry> keys = [Entry("key-1"), Entry("key-2")];
-            _snapshot = new SigningKeySnapshot(keys, _retrievedAt, 7, SigningKeySource.Certificate);
+            _snapshot = new SigningKeySnapshot(keys, _retrievedAt, 42, 7, SigningKeySource.Certificate);
 
             keys.Add(Entry("key-3"));
             keys.RemoveAt(0);
@@ -60,6 +67,9 @@ public class SigningKeySnapshotTests
 
         [Test]
         public void It_keeps_the_retrieval_time() => _snapshot.RetrievedAt.Should().Be(_retrievedAt);
+
+        [Test]
+        public void It_keeps_the_retrieval_timestamp() => _snapshot.RetrievedAtTimestamp.Should().Be(42);
     }
 
     [TestFixture]
@@ -130,7 +140,8 @@ public class SigningKeySnapshotTests
         [Test]
         public void It_is_refused()
         {
-            Action create = () => _ = new SigningKeySnapshot([], _retrievedAt, 0, SigningKeySource.Database);
+            Action create = () =>
+                _ = new SigningKeySnapshot([], _retrievedAt, 0, 0, SigningKeySource.Database);
 
             create.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("version");
         }
@@ -146,6 +157,7 @@ public class SigningKeySnapshotTests
                 _ = new SigningKeySnapshot(
                     [Entry("key-1"), null!],
                     _retrievedAt,
+                    0,
                     1,
                     SigningKeySource.Database
                 );
@@ -176,10 +188,8 @@ public class SigningKeySnapshotTests
     [TestFixture]
     public class Given_snapshot_ages_around_the_bounds
     {
-        private readonly SigningKeySnapshot _snapshot = Snapshot(Entry("key-1"));
-
-        private SigningKeySnapshotState StateAt(TimeSpan age) =>
-            _snapshot.GetState(_retrievedAt + age, _settings);
+        private static SigningKeySnapshotState StateAt(TimeSpan age) =>
+            SigningKeySnapshot.GetState(age, _settings);
 
         [Test]
         public void It_is_fresh_at_retrieval() =>
@@ -207,7 +217,147 @@ public class SigningKeySnapshotTests
                 .Be(SigningKeySnapshotState.Expired);
 
         [Test]
-        public void It_treats_a_clock_moved_backwards_as_fresh() =>
-            StateAt(TimeSpan.FromSeconds(-30)).Should().Be(SigningKeySnapshotState.Fresh);
+        public void It_refuses_a_negative_age()
+        {
+            Action classify = () => StateAt(TimeSpan.FromTicks(-1));
+
+            classify.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("age");
+        }
+    }
+
+    // R3.1 (f): with the wall clock set back, the monotonic age governs, and the bounds hold exactly on it.
+    [TestFixture]
+    public class Given_the_wall_clock_set_back_after_publication
+    {
+        private TimeSpan _ageAfter100Seconds;
+        private readonly Dictionary<string, SigningKeySnapshotState> _states = [];
+
+        [SetUp]
+        public void Act()
+        {
+            SkewableTimeProvider time = NewSkewableTime();
+            SigningKeySnapshot snapshot = PublishedBy(time);
+            time.StepWallClock(TimeSpan.FromHours(-2));
+
+            time.Advance(TimeSpan.FromSeconds(100));
+            _ageAfter100Seconds = snapshot.GetAge(time);
+
+            time.Advance(TimeSpan.FromSeconds(200));
+            _states["refresh interval"] = State(snapshot, time);
+            time.Advance(TimeSpan.FromTicks(1));
+            _states["refresh interval + 1 tick"] = State(snapshot, time);
+            time.Advance(TimeSpan.FromSeconds(3300) - TimeSpan.FromTicks(1));
+            _states["max staleness"] = State(snapshot, time);
+            time.Advance(TimeSpan.FromTicks(1));
+            _states["max staleness + 1 tick"] = State(snapshot, time);
+        }
+
+        private static SigningKeySnapshotState State(SigningKeySnapshot snapshot, TimeProvider time) =>
+            SigningKeySnapshot.GetState(snapshot.GetAge(time), _settings);
+
+        [Test]
+        public void It_reports_the_monotonic_age() =>
+            _ageAfter100Seconds.Should().Be(TimeSpan.FromSeconds(100));
+
+        [Test]
+        public void It_is_still_fresh_at_exactly_the_refresh_interval() =>
+            _states["refresh interval"].Should().Be(SigningKeySnapshotState.Fresh);
+
+        [Test]
+        public void It_is_overdue_just_past_the_refresh_interval() =>
+            _states["refresh interval + 1 tick"].Should().Be(SigningKeySnapshotState.Overdue);
+
+        [Test]
+        public void It_is_still_overdue_at_exactly_the_max_staleness() =>
+            _states["max staleness"].Should().Be(SigningKeySnapshotState.Overdue);
+
+        [Test]
+        public void It_is_expired_just_past_the_max_staleness() =>
+            _states["max staleness + 1 tick"].Should().Be(SigningKeySnapshotState.Expired);
+    }
+
+    // R3.1 (f): with the wall clock set forward and no time elapsed, the wall-clock age governs, at the same bounds.
+    [TestFixture]
+    public class Given_the_wall_clock_set_forward_after_publication
+    {
+        private TimeSpan _ageAfterAStep;
+        private readonly Dictionary<string, SigningKeySnapshotState> _states = [];
+
+        [SetUp]
+        public void Act()
+        {
+            SkewableTimeProvider time = NewSkewableTime();
+            SigningKeySnapshot snapshot = PublishedBy(time);
+
+            time.StepWallClock(TimeSpan.FromSeconds(100));
+            _ageAfterAStep = snapshot.GetAge(time);
+
+            time.StepWallClock(TimeSpan.FromSeconds(200));
+            _states["refresh interval"] = State(snapshot, time);
+            time.StepWallClock(TimeSpan.FromTicks(1));
+            _states["refresh interval + 1 tick"] = State(snapshot, time);
+            time.StepWallClock(TimeSpan.FromSeconds(3300) - TimeSpan.FromTicks(1));
+            _states["max staleness"] = State(snapshot, time);
+            time.StepWallClock(TimeSpan.FromTicks(1));
+            _states["max staleness + 1 tick"] = State(snapshot, time);
+        }
+
+        private static SigningKeySnapshotState State(SigningKeySnapshot snapshot, TimeProvider time) =>
+            SigningKeySnapshot.GetState(snapshot.GetAge(time), _settings);
+
+        [Test]
+        public void It_reports_the_wall_clock_age() => _ageAfterAStep.Should().Be(TimeSpan.FromSeconds(100));
+
+        [Test]
+        public void It_is_still_fresh_at_exactly_the_refresh_interval() =>
+            _states["refresh interval"].Should().Be(SigningKeySnapshotState.Fresh);
+
+        [Test]
+        public void It_is_overdue_just_past_the_refresh_interval() =>
+            _states["refresh interval + 1 tick"].Should().Be(SigningKeySnapshotState.Overdue);
+
+        [Test]
+        public void It_is_still_overdue_at_exactly_the_max_staleness() =>
+            _states["max staleness"].Should().Be(SigningKeySnapshotState.Overdue);
+
+        [Test]
+        public void It_is_expired_just_past_the_max_staleness() =>
+            _states["max staleness + 1 tick"].Should().Be(SigningKeySnapshotState.Expired);
+    }
+
+    // R3.1 (d) at the snapshot level: expiry is not latched. Reversing a forward step returns the age to the monotonic
+    // elapsed time.
+    [TestFixture]
+    public class Given_a_forward_wall_clock_step_that_is_reversed
+    {
+        private SigningKeySnapshotState _duringTheStep;
+        private TimeSpan _ageAfterTheReversal;
+        private SigningKeySnapshotState _afterTheReversal;
+
+        [SetUp]
+        public void Act()
+        {
+            SkewableTimeProvider time = NewSkewableTime();
+            SigningKeySnapshot snapshot = PublishedBy(time);
+            time.Advance(TimeSpan.FromSeconds(10));
+
+            time.StepWallClock(TimeSpan.FromHours(2));
+            _duringTheStep = SigningKeySnapshot.GetState(snapshot.GetAge(time), _settings);
+
+            time.StepWallClock(TimeSpan.FromHours(-2));
+            _ageAfterTheReversal = snapshot.GetAge(time);
+            _afterTheReversal = SigningKeySnapshot.GetState(_ageAfterTheReversal, _settings);
+        }
+
+        [Test]
+        public void It_is_expired_while_the_step_stands() =>
+            _duringTheStep.Should().Be(SigningKeySnapshotState.Expired);
+
+        [Test]
+        public void It_returns_to_the_monotonic_age() =>
+            _ageAfterTheReversal.Should().Be(TimeSpan.FromSeconds(10));
+
+        [Test]
+        public void It_is_fresh_again() => _afterTheReversal.Should().Be(SigningKeySnapshotState.Fresh);
     }
 }

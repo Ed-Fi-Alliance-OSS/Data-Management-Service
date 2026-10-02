@@ -80,6 +80,7 @@ public class SigningKeyBearerEventsTests
         new(
             [SigningKeyEntry.FromRsaPublicParameters(keyId, rsa.ExportParameters(false))],
             DateTimeOffset.UtcNow,
+            retrievedAtTimestamp: 0,
             version: 1,
             SigningKeySource.Database
         );

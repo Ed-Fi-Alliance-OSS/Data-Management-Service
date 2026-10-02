@@ -107,7 +107,7 @@ public class SigningKeysUnavailableExceptionTests
         public void It_is_refused()
         {
             SigningKeyRefreshOutcome succeeded = new SigningKeyRefreshOutcome.Succeeded(
-                new SigningKeySnapshot([], DateTimeOffset.UnixEpoch, 1, SigningKeySource.Database)
+                new SigningKeySnapshot([], DateTimeOffset.UnixEpoch, 0, 1, SigningKeySource.Database)
             );
 
             Action create = () =>

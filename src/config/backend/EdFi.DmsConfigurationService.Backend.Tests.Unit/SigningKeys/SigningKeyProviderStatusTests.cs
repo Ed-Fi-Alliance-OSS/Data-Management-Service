@@ -13,6 +13,7 @@ public class SigningKeyProviderStatusTests
     private static readonly SigningKeySnapshot _snapshot = new(
         [],
         DateTimeOffset.UnixEpoch,
+        retrievedAtTimestamp: 0,
         1,
         SigningKeySource.Database
     );

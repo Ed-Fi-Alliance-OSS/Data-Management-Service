@@ -327,6 +327,34 @@ internal sealed class DmsJwtBearerProbeStartupFilter(Action onProbeReached) : IS
 }
 
 /// <summary>
+/// The host's clock: <see cref="FakeTimeProvider"/> time whose wall clock can also be stepped on its own (review
+/// remediation R3.1). Timestamps, their frequency and timers come from the wrapped fake unchanged, so
+/// <see cref="FakeTimeProvider.Advance"/> on it moves both clocks while <see cref="StepWallClock"/> moves only the wall
+/// clock. The backend unit tests' <c>SkewableTimeProvider</c> is the same wrapper.
+/// </summary>
+internal sealed class SkewableTimeProvider(FakeTimeProvider inner) : TimeProvider
+{
+    public TimeSpan WallOffset { get; private set; }
+
+    public void StepWallClock(TimeSpan step) => WallOffset += step;
+
+    public override DateTimeOffset GetUtcNow() => inner.GetUtcNow() + WallOffset;
+
+    public override long GetTimestamp() => inner.GetTimestamp();
+
+    public override long TimestampFrequency => inner.TimestampFrequency;
+
+    public override TimeZoneInfo LocalTimeZone => inner.LocalTimeZone;
+
+    public override ITimer CreateTimer(
+        TimerCallback callback,
+        object? state,
+        TimeSpan dueTime,
+        TimeSpan period
+    ) => inner.CreateTimer(callback, state, dueTime, period);
+}
+
+/// <summary>
 /// The application with its real bearer schemes, real token manager, real snapshot provider and real refresh service,
 /// over <see cref="PipelineTokenStore"/>, a faked profile repository and fake time (spec §5 steps 3.1 to 3.3). The
 /// provider is wrapped by <see cref="CountingSnapshotProvider"/> and the configuration manager of the scheme under test
@@ -373,6 +401,7 @@ internal sealed class BearerPipelineHost : IDisposable
     )
     {
         Scheme = scheme;
+        Clock = new SkewableTimeProvider(Time);
         A.CallTo(() => Profiles.GetProfile(A<int>._))
             .ReturnsLazily(
                 (int id) =>
@@ -394,7 +423,7 @@ internal sealed class BearerPipelineHost : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<TimeProvider>();
-                services.AddSingleton<TimeProvider>(Time);
+                services.AddSingleton<TimeProvider>(Clock);
                 services.RemoveAll<IOpenIddictTokenRepository>();
                 services.AddSingleton(Store.Repository);
                 services.RemoveAll<IProfileRepository>();
@@ -404,7 +433,7 @@ internal sealed class BearerPipelineHost : IDisposable
                 services.AddSingleton(serviceProvider => new SigningKeySnapshotProvider(
                     serviceProvider.GetRequiredService<ISigningKeySource>(),
                     serviceProvider.GetRequiredService<IOptions<OpenIddictIdentityOptions>>(),
-                    Time,
+                    Clock,
                     serviceProvider.GetRequiredService<ILogger<SigningKeySnapshotProvider>>()
                 ));
                 services.AddSingleton<ISigningKeySnapshotProvider>(
@@ -470,8 +499,14 @@ internal sealed class BearerPipelineHost : IDisposable
     /// <summary>The scheme whose configuration manager and backchannel are observed.</summary>
     public string Scheme { get; }
 
-    /// <summary>Starts at the same instant in every fixture; only the provider and the refresh service read it.</summary>
+    /// <summary>
+    /// Starts at the same instant in every fixture; advancing it moves both of <see cref="Clock"/>'s clocks. Only the
+    /// provider and the refresh service read the time.
+    /// </summary>
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
+
+    /// <summary>The registered clock: <see cref="Time"/>, with a wall clock that a fixture can step on its own.</summary>
+    public SkewableTimeProvider Clock { get; }
 
     public PipelineTokenStore Store { get; } = new();
 

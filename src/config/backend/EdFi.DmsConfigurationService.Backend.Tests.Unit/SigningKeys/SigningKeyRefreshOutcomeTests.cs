@@ -11,7 +11,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
 public class SigningKeyRefreshOutcomeTests
 {
     private static SigningKeySnapshot Snapshot(params SigningKeyEntry[] keys) =>
-        new(keys, DateTimeOffset.UnixEpoch, 1, SigningKeySource.Database);
+        new(keys, DateTimeOffset.UnixEpoch, retrievedAtTimestamp: 0, 1, SigningKeySource.Database);
 
     [TestFixture]
     public class Given_a_store_with_no_active_keys

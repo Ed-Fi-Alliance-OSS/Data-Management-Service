@@ -1509,13 +1509,16 @@ public class SigningKeySnapshotProviderTests
         public void It_made_exactly_two_store_calls() => _harness.Calls.Should().HaveCount(2);
     }
 
-    // Review finding 2: caller A reads "no snapshot", then (inside its first clock read) caller B loads and publishes.
-    // A's decision to load is made again under the gate lock, so A uses B's snapshot; a second, redundant load would
-    // fail here and wrongly answer A as unavailable.
+    // Review finding 2: caller A reads an unusable snapshot, then (inside its first clock read) caller B loads and
+    // publishes. A's decision to load is made again under the gate lock, so A uses B's snapshot; a second, redundant load
+    // would fail here and wrongly answer A as unavailable. The snapshot A reads is expired rather than absent: since
+    // review remediation R3.1 the fast path reads the clock only to age an existing snapshot, so that read is the seam
+    // between A's lock-free read and the lock. Cold and expired callers take the same branch under the lock.
     [TestFixture]
     public class Given_a_caller_overtaken_by_a_publication
     {
         private KeyRepositoryHarness _harness = null!;
+        private SigningKeySnapshot _expired = null!;
         private SigningKeySnapshot? _overtaking;
         private SigningKeySnapshot _overtaken = null!;
 
@@ -1526,10 +1529,12 @@ public class SigningKeySnapshotProviderTests
             _harness = new KeyRepositoryHarness(time);
             int calls = 0;
             _harness.Behavior = _ =>
-                Interlocked.Increment(ref calls) == 1
+                Interlocked.Increment(ref calls) <= 2
                     ? Task.FromResult<IEnumerable<PublicKeyInfo>>([KeyRepositoryHarness.Row("key-1")])
                     : Task.FromException<IEnumerable<PublicKeyInfo>>(new TimeoutException("redundant load"));
             using var provider = Provider(_harness, time);
+            _expired = await provider.GetUsableAsync(CancellationToken.None).Bounded();
+            time.Advance(TimeSpan.FromSeconds(3601));
 
             time.OnNextUtcNow(() =>
                 _overtaking = provider
@@ -1542,11 +1547,15 @@ public class SigningKeySnapshotProviderTests
         }
 
         [Test]
-        public void It_reads_the_store_once() => _harness.Calls.Should().HaveCount(1);
+        public void It_reads_the_store_once_after_the_first_load() => _harness.Calls.Should().HaveCount(2);
 
         [Test]
         public void It_gives_the_overtaken_caller_the_published_snapshot() =>
             _overtaken.Should().BeSameAs(_overtaking);
+
+        [Test]
+        public void It_does_not_give_the_overtaken_caller_the_expired_snapshot() =>
+            _overtaken.Should().NotBeSameAs(_expired);
 
         [Test]
         public void It_published_the_key() => _overtaken.ContainsKeyId("key-1").Should().BeTrue();
