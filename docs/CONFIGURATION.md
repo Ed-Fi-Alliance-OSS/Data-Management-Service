@@ -923,7 +923,12 @@ that relate settings to each other are policy:
 
 [Signing keys in self-contained mode](../reference/design/configuration-service/CS-AUTH.md#signing-keys-in-self-contained-mode)
 describes refresh, backoff, staleness, key rotation and retirement, and which failures answer
-401 or 503.
+401 or 503. These settings bound each Configuration Service instance's own snapshot only.
+DMS and other JWKS consumers keep their own cached key set, and a consumer drops a retired
+key only after it successfully re-fetches JWKS or is restarted. Before you rely on a key
+change, follow
+[Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key):
+it covers verifying the change on every instance and refreshing each consumer.
 
 > [!NOTE]
 > **Connection capacity.** The snapshot removes key reads from the request path. Each

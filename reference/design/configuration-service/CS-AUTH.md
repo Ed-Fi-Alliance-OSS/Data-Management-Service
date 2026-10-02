@@ -273,7 +273,9 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
   starts: the first request carrying that key is accepted without waiting out the
   cooldown. The allowance is spent when that reload starts, even if it finds no key or
   fails (a failure backs off as usual). No later load restores it, and an instance whose
-  first load found a key never gets it.
+  first load found a key never gets it. The allowance helps this instance accept the
+  first key's tokens. It does nothing for DMS or other consumers; see
+  [Adding the first key](#adding-the-first-key).
 
   After the allowance is spent, the normal cooldown applies, including while the store
   stays empty. A key inserted after an earlier unknown-key reload has spent the allowance
@@ -281,10 +283,15 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
 - **Empty key set.** A store that holds no active key is a *successful* load of zero keys.
   It is published with a Warning
   (`Signing-key snapshot {n} is empty: … so every token will be rejected`). JWKS then
-  answers `200 {"keys":[]}`, and every token is rejected with 401. A database that has no
-  key when the service starts behaves this way until a key is added. After that, the first
-  token signed with the new key triggers the unknown-key reload, subject to the cooldown,
-  or the next scheduled reload picks the key up.
+  answers `200 {"keys":[]}`, and every token is rejected with 401, until a later load of
+  that instance finds a key.
+  - **A database with no key when the service starts** behaves this way until a key is
+    added. After that, the first token signed with the new key triggers the unknown-key
+    reload, subject to the cooldown, or the next scheduled reload picks the key up.
+  - **JWKS lags the insert.** Issuance uses the new key at once, so JWKS can still answer
+    `200 {"keys":[]}` after the insert until the instance's next successful load. A
+    consumer that fetches JWKS in that window caches the empty set. See
+    [Adding the first key](#adding-the-first-key).
 
 ### Dependency 503s, ordinary 401s, and an empty JWKS
 
@@ -297,7 +304,7 @@ decision:
 | Token rejected: bad signature, wrong issuer or audience, expired, missing or unknown `kid`, revoked, malformed | **401**, `WWW-Authenticate: Bearer`, no `Retry-After` | unaffected | `{"active": false}` | No-op `200` |
 | No usable snapshot (never loaded, or past maximum staleness) | **503**, category `SigningKeyStore` | **503** | `{"active": false}` and an Error log | No-op `200` and an Error log |
 | Token-status read fails (usable snapshot) | **503**, category `TokenStatusStore` | unaffected | `{"active": false}` and an Error log | not affected (revocation does not read the status) |
-| Store holds no active key (successful empty load) | **401** for every token | `200 {"keys":[]}` | `{"active": false}` | No-op `200` |
+| The instance's last successful load found no active key (empty snapshot) | **401** for every token | `200 {"keys":[]}` | `{"active": false}` | No-op `200` |
 
 - **A dependency 503** carries `Retry-After: 30`, has no `WWW-Authenticate`, and has a
   generic `application/problem+json` body (`title` `Service Unavailable`, the request's
@@ -312,11 +319,19 @@ decision:
   a 503. A token whose `kid` is unknown, and whose reload fails or is not allowed, is
   therefore judged against the usable keys and gets 401. The same token gets 503 when no
   usable snapshot exists.
-- **An empty JWKS (`200 {"keys":[]}`)** is an authoritative answer: the store has no active
-  key. Before DMS-1556, JWKS also answered `200 []` when the key read *failed*, and
-  protected requests answered 401 when key or status reads failed. Both are now the 503
-  above. This is a deliberate contract change. A JWKS consumer now sees a failed fetch
-  instead of an empty key set it might adopt.
+- **An empty JWKS (`200 {"keys":[]}`)** reports what that instance's **last successful
+  load** found: no active key. It is not a live read of the table, so a key inserted
+  since that load is not yet listed. It is never the result of a failed load. A failed
+  load never replaces the snapshot, so JWKS answers 503 when no usable snapshot exists,
+  and otherwise serves the last keys it loaded.
+  - **Before DMS-1556,** JWKS also answered `200 []` when the key read *failed*, and
+    protected requests answered 401 when key or status reads failed. Both are now the 503
+    above. This is a deliberate contract change.
+  - **For a JWKS consumer,** a failed fetch is now visible as a failure, not as an empty
+    key set it might adopt.
+  - **Fresh keys still need verifying.** A successful `200` still shows only that
+    instance's snapshot. Before relying on a key change, verify it on every instance; see
+    [Verifying a key change on every instance](#verifying-a-key-change-on-every-instance).
 - **Introspection and revocation are unchanged on the wire.** They keep their protocol
   answers (`{"active": false}`; RFC 7009's always-`200`) when a dependency fails, and log
   an Error naming the category.
@@ -342,66 +357,210 @@ reads still work, for example while the key table is locked.
 
 ### Rotating and retiring a database signing key
 
-This is how the system behaves, not an extra mechanism. Write `T_prop` for the time a
-healthy instance takes to use a key-table change, with no traffic:
+This is how the system behaves, not an extra mechanism. A key change passes through **two
+independent caching layers**, and each one must pick it up:
 
-`T_prop` = load timeout + refresh interval + 10 % + load timeout = 10 + 300 + 30 + 10 =
-**350 s** at the defaults.
+- **Each Configuration Service instance's snapshot.** It is used for validation and JWKS
+  on that instance only.
+- **Each consumer's cached key set.** DMS, and any other service that validates
+  Configuration Service tokens from JWKS, keep their own.
 
-A key-table change committed at time *t* is in use on every healthy instance by
-*t* + `T_prop`. "Healthy" means every load succeeds within its deadline.
+The Configuration Service's own timing bounds say nothing about how long a consumer keeps
+an old or empty key set.
 
-The first load-timeout term is the load that may already be running at *t*. That load can
-read the rows from before the change and publish them after it, as late as *t* + 10 s. The
-next refresh interval, and the cooldown, count from that publication. For example, a load
-that publishes the old rows at *t* + 9 s, followed by a scheduled load that starts 330 s
-later and takes 9 s, puts the change in use at *t* + 348 s. Any load that starts after *t*
-sees the change.
+#### What each layer does
 
-1. **Insert the new key** as an active row. On PostgreSQL,
+- **Issuance.** Token issuance reads the newest active row directly. An inserted key
+  therefore signs the next token issued, on every instance, at once.
+- **Configuration Service validation and JWKS.** These use the instance's snapshot. Write
+  `T_prop` for the time a healthy instance takes to use a key-table change, with no
+  traffic:
+
+  `T_prop` = load timeout + refresh interval + 10 % + load timeout = 10 + 300 + 30 + 10 =
+  **350 s** at the defaults.
+
+  A key-table change committed at time *t* is expected to be in use on a healthy instance
+  by *t* + `T_prop`. "Healthy" means that every load succeeds within its deadline and the
+  background reload runs as designed. This is an expectation under those conditions, not
+  a guarantee to sleep on. The verification below is what tells you the change arrived.
+
+  The first load-timeout term is the load that may already be running at *t*. That load
+  can read the rows from before the change and publish them after it, as late as
+  *t* + 10 s. The next refresh interval, and the cooldown, count from that publication. For
+  example, a load that publishes the old rows at *t* + 9 s, followed by a scheduled load
+  that starts 330 s later and takes 9 s, puts the change in use at *t* + 348 s. Any load
+  that starts after *t* sees the change. An instance whose key store is failing picks up
+  the change only with its first successful load after the store recovers.
+- **DMS.**
+  - **When it fetches.** DMS fetches the discovery document and JWKS when it starts. It
+    logs `OIDC metadata cache warmed up successfully. Issuer: …, SigningKeys: {n}`.
+    Afterwards it re-fetches on its automatic refresh schedule,
+    `JwtAuthentication:AutomaticRefreshIntervalHours` (default 24). It requests an early
+    re-fetch only when the discovered issuer does not match its configured authority.
+  - **Unknown keys.** A token signed with a key DMS has not cached is rejected with 401.
+    It does not trigger a re-fetch.
+  - **Failed fetches.** A re-fetch that fails keeps the cached set: IdentityModel logs
+    `IDX20806 … Returning the current configuration`. The refresh schedule is therefore
+    not a bound on how long DMS trusts a retired key. A retired key leaves a DMS instance
+    only after a **successful** re-fetch, or a restart that **successfully** loads the
+    corrected set.
+  - **At startup.** A DMS instance that cannot fetch JWKS at startup, for example because
+    the Configuration Service answers 503, does not start.
+- **Revocation.** `POST /connect/revoke` takes effect on the Configuration Service's own
+  endpoints at the next request, because their status check is not cached. DMS validates
+  tokens itself and never consults that status. A revoked token is accepted by DMS until
+  it expires.
+
+#### Verifying a key change on every instance
+
+Before you restart or otherwise refresh any consumer, confirm the change on **every
+Configuration Service instance that serves traffic**, addressing each one individually.
+Use the container or pod address, or a port-forward per instance. Repeated requests
+through a load balancer do not show that every instance has the change.
+
+```powershell
+foreach ($instance in 'http://cms-0:8081', 'http://cms-1:8081') {   # each instance, with its path base
+    (Invoke-RestMethod "$instance/.well-known/jwks.json").keys.kid
+}
+```
+
+- **The key id to look for** is the row's `KeyId`. `Generate-OpenIddictKey-Insert.ps1`
+  sets it with `-KeyId` (default `key-<random>`) and prints it in the `INSERT`. The active
+  ids are also returned by `SELECT "KeyId" FROM dmscs."OpenIddictKey" WHERE "IsActive"`.
+  In certificate mode it is the certificate thumbprint.
+- **After an insert,** every instance must list the new key id. **After a retirement,** no
+  instance may list the retired one.
+- **`503`:** that instance has no usable snapshot. Stop until it serves `200`.
+- **A connection failure:** the instance is unavailable. Stop until it serves and passes
+  the check, or until it is deliberately out of service and receives no traffic.
+- **`200 {"keys":[]}`:** reports what that instance's last successful load found. It is
+  not a live read of the table.
+- **Shortening the wait.** Restarting an instance makes it load the table at startup. That
+  can shorten the wait, but it does not replace the check, because the startup load can
+  fail.
+
+#### Refreshing DMS and other consumers
+
+Waiting for the Configuration Service does not clear a consumer's cache.
+
+1. Once the verification above passes, restart each DMS instance. A rolling restart is
+   fine.
+2. On **each** instance, confirm the outcome with a token whose header `kid` is the key in
+   question. The `kid` is in the token's first segment (base64url-encoded JSON). The
+   `SigningKeys: {n}` count in the startup log line is a diagnostic only. It does not
+   identify the keys.
+3. A restart also discards the token DMS caches for its own Configuration Service calls
+   (`CacheSettings:TokenCacheExpirationSeconds`, default 1500 s, held in memory).
+
+#### Adding the first key
+
+There are two supported orders:
+
+- **Key inserted before the Configuration Service starts** (`start-local-dms.ps1` runs
+  `setup-openiddict.ps1 -InitDb` first). The startup load finds the key. Verify it on every
+  instance, then start DMS.
+- **Key inserted after the Configuration Service starts** (`start-local-config.ps1`, which
+  the Configuration Service E2E setup uses).
+  - Each running instance first publishes an empty snapshot, with the Warning
+    `Signing-key snapshot {n} is empty`.
+  - After the insert, tokens are issued with the new key at once. Each instance accepts
+    them through the bootstrap exception described under
+    [Refresh, backoff, cooldown and staleness](#refresh-backoff-cooldown-and-staleness),
+    then subject to the cooldown, or at its next reload.
+  - Its JWKS lists the key only after that instance's next successful load.
+  - Verify the key on every instance before starting DMS.
+  - Restart any DMS instance that started in the meantime, and confirm acceptance on it.
+    Depending on its startup order, it may have cached an empty key set.
+
+#### Adding a key (rotation)
+
+1. **Insert the new key** as an active row, at a quiet time. On PostgreSQL,
    [`Generate-OpenIddictKey-Insert.ps1`](../../../eng/docker-compose/Generate-OpenIddictKey-Insert.ps1)
    prints a suitable `INSERT`. **Signing switches at the next token issued, on every
-   instance,** because issuance reads the newest active row directly. Validation does not
-   switch at that moment.
-2. **Expect a short new-key acceptance delay.** An instance accepts the new key's tokens as
-   soon as its snapshot holds the key. The first new-key token it sees triggers the
-   unknown-key reload when the cooldown and backoff allow. Otherwise that token is
-   rejected with **401**, and the key arrives at the next allowed unknown-key reload or by
-   `T_prop`, whichever comes first. A request may also join a load that is already
-   running, but a load that started before the insert returns without the key.
-   - **Healthy key store, with traffic.** The last load that read the old rows completes
-     within one load timeout of the insert. Its cooldown ends one cooldown later. The
-     first new-key request after that starts a reload that completes within one load
-     timeout. New-key tokens are therefore accepted from at most load timeout + cooldown +
-     load timeout after the insert: **50 s** at the defaults. This assumes a new-key
-     request reaches the instance once the cooldown has ended. Without one, `T_prop`
-     applies.
-   - **Key store failing.** The key arrives with the first successful load after the store
-     recovers, within the conditional recovery bounds above (*R* + 82 s at the defaults
-     with no load in flight at recovery, *R* + 92 s with one).
-
-   Instances are independent: one may accept a new-key token while another still answers
-   401 until its cooldown ends or its next reload. **If you need zero such 401s, insert the
-   key at a quiet time and wait `T_prop` before new-key tokens reach validators**, or
-   restart each instance. A restarted instance loads the table at startup.
-3. **Keep the old key active** for at least `TokenExpirationMinutes` plus the 5-minute
+   instance.** Validation does not switch at that moment:
+   - **Configuration Service instances** accept the new key's tokens as soon as their
+     snapshot holds the key.
+     - The first new-key token an instance sees triggers the unknown-key reload when the
+       cooldown and backoff allow.
+     - Otherwise that token is rejected with **401**, and the key arrives at the next
+       allowed unknown-key reload or by `T_prop`, whichever comes first.
+     - A request may also join a load that is already running, but a load that started
+       before the insert returns without the key.
+     - *Healthy key store, with traffic.* The last load that read the old rows completes
+       within one load timeout of the insert. Its cooldown ends one cooldown later. The
+       first new-key request after that starts a reload, which completes within one load
+       timeout. New-key tokens are therefore accepted from at most load timeout + cooldown
+       + load timeout after the insert: **50 s** at the defaults. This assumes a new-key
+       request reaches the instance once the cooldown has ended. Without one, `T_prop`
+       applies.
+     - *Key store failing.* The key arrives with the first successful load after the store
+       recovers, within the conditional recovery bounds above (*R* + 82 s at the defaults
+       with no load in flight at recovery, *R* + 92 s with one).
+     - Instances are independent: one may accept a new-key token while another still
+       answers 401 until its cooldown ends or its next reload.
+   - **Each DMS instance** rejects new-key tokens with 401 until a successful re-fetch, or
+     a restart, loads the new key. A client can present the same token again once that
+     has happened.
+2. **Verify the new key on every instance** ([above](#verifying-a-key-change-on-every-instance)).
+   Where you need no 401s from the Configuration Service itself, do this before new-key
+   tokens reach it.
+3. **Restart each DMS instance**, and confirm a new-key token is accepted on each
+   ([above](#refreshing-dms-and-other-consumers)). Do this while the old key is still
+   active. The restarted instance then holds both keys, and tokens minted before the
+   switch keep validating.
+4. **Keep the old key active** for at least `TokenExpirationMinutes` plus the 5-minute
    validation clock skew after the insert (35 min at the defaults). Tokens minted before
    the switch then stay valid until they expire.
-4. **Retire the old key** by setting `IsActive = false`. Its tokens are rejected within
-   `T_prop` on healthy instances. If an instance cannot read the key store, it keeps
-   trusting the retired key until its snapshot expires: at most
-   `SigningKeyMaxStalenessSeconds` (3600 s) after its last successful load. That is the
-   configurable trade-off between availability and how long a retired key can be accepted.
-   To force an immediate reload, for example after a key compromise, restart each instance
-   once the row is updated. A token you know about can also be revoked at once through
-   `POST /connect/revoke`, because the status check is not cached.
 
-In **certificate mode** the snapshot holds the one certificate key, so there is no overlap
-window. Issuance reads the certificate file at every token, so replacing the file switches
-signing at once. Validation switches at the instance's next load. Until then, new-certificate
-tokens face the acceptance delay of step 2. After the load, tokens signed with the replaced
-certificate are rejected. Replace the certificate at a quiet time, or restart each instance
-after replacing it.
+#### Retiring a key
+
+1. **Retire the old key**, after the retention window of step 4 above, by setting
+   `IsActive = false`.
+   - **Configuration Service instances** reject its tokens within `T_prop` on healthy
+     instances.
+   - **An instance that cannot read the key store** keeps trusting the retired key until
+     its snapshot expires: at most `SigningKeyMaxStalenessSeconds` (3600 s) after its last
+     successful load. Its JWKS keeps listing the key meanwhile. That is the configurable
+     trade-off between availability and how long a retired key can be accepted.
+2. **Verify on every instance** that the retired key id is no longer listed.
+3. **Restart each DMS instance**, and confirm on each that a token signed with the retired
+   key is rejected. Until a DMS instance successfully re-fetches or restarts, it keeps
+   accepting such tokens. Retiring the key in the database does not, by itself, stop any
+   consumer from trusting it.
+
+#### Retiring a key early, for example after a compromise
+
+1. Set `IsActive = false` on the key, and make sure another active key exists.
+2. Restart every Configuration Service instance, so that each loads the table at startup.
+   An instance whose startup load fails answers 503 rather than trusting the old snapshot.
+3. Verify on every instance that the key id is no longer listed.
+4. Restart every DMS instance. On each, confirm two things:
+   - a token signed with the retired key, and not yet expired, is rejected;
+   - a token signed with the remaining key is accepted.
+5. Revoke known tokens through `POST /connect/revoke`. That stops them on the Configuration
+   Service's own endpoints only.
+
+#### Replacing the certificate (certificate mode)
+
+The snapshot holds the one certificate key, so there is no overlap window.
+
+- **Issuance** reads the certificate file at every token, so replacing the file switches
+  signing at once.
+- **Validation and JWKS** switch at the instance's next load. Until then, tokens signed with
+  the new certificate face the acceptance delay of [Adding a key](#adding-a-key-rotation),
+  step 1. After the load, tokens signed with the replaced certificate are rejected. Each
+  DMS instance keeps the old certificate's key until it successfully re-fetches or
+  restarts.
+
+To replace the certificate:
+
+1. Work at a quiet time.
+2. Replace the file on every instance.
+3. Restart each Configuration Service instance.
+4. Verify the new thumbprint on every instance.
+5. Restart each DMS instance, and confirm a new-certificate token is accepted on each.
+
+Clients holding tokens signed with the old certificate must obtain new ones.
 
 ### Log signals
 

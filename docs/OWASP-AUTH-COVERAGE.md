@@ -197,12 +197,20 @@ externally-issued tokens), the following compensating controls bound the risk:
   tolerance, limiting acceptance of marginally-expired tokens.
 - **Signing-key rotation (measurable app-side control).** Retiring a signing key
   makes every token issued under it fail signature validation once validators have
-  refreshed their keys, which cuts short the acceptance window for tokens already in
-  circulation. Combined with the short TTL above, this is the measurable control on
-  the stateless paths; rotate per IdP guidance. For the CMS self-contained provider,
-  a retired key's tokens are rejected only after each instance reloads its signing-key
-  snapshot: within a bounded delay on a healthy instance, and up to the maximum
-  staleness while an instance cannot read the key store. See
+  successfully refreshed their keys, which cuts short the acceptance window for tokens
+  already in circulation. Combined with the short TTL above, this is the measurable
+  control on the stateless paths; rotate per IdP guidance. For the CMS self-contained
+  provider there are two separate caches:
+  - **CMS instances.** A retired key's tokens are rejected on the CMS's own endpoints
+    only after each instance reloads its signing-key snapshot: within a bounded delay
+    on a healthy instance, and up to the maximum staleness while an instance cannot
+    read the key store.
+  - **DMS instances.** DMS validates against its own cached JWKS, which the CMS
+    bounds do not cover. A DMS instance stops accepting the retired key only after it
+    successfully re-fetches JWKS or is restarted. A failed re-fetch keeps the old key
+    set.
+
+  See
   [Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key).
 - **IdP-side revocation (constraint, not an app-side control).** Revoking a token at
   the IdP does **not** retroactively reject it on the stateless app paths (DMS for
