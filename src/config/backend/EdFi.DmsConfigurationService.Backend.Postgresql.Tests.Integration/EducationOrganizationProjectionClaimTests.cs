@@ -57,7 +57,12 @@ public abstract class EducationOrganizationProjectionClaimTests
 
     protected sealed record ResourceClaimRow(int Id, string ResourceName, string ClaimName);
 
-    protected sealed record HierarchyRow(string Hierarchy, DateTime LastModifiedDate);
+    protected sealed record HierarchyRow(
+        string Hierarchy,
+        DateTime LastModifiedDate,
+        DateTime? LastModifiedAt,
+        string? ModifiedBy
+    );
 
     private protected JobUpgradeTestDatabase Database { get; private set; } = null!;
 
@@ -143,6 +148,32 @@ public abstract class EducationOrganizationProjectionClaimTests
     }
 
     /// <summary>
+    /// Places a claim under another claim of the stored hierarchy and records its resource-claim
+    /// metadata, as an operator's own claims document would.
+    /// </summary>
+    protected async Task NestClaimAsync(string parentClaimName, JsonNode claim, string resourceName)
+    {
+        JsonArray roots = Roots((await HierarchyAsync()).Hierarchy);
+        JsonNode parent = AllClaims(roots).Single(node => ClaimNameOf(node) == parentClaimName);
+        if (parent["claims"] is not JsonArray children)
+        {
+            children = new JsonArray();
+            parent["claims"] = children;
+        }
+        children.Add(claim);
+
+        await using NpgsqlConnection connection = await OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            """UPDATE "dmscs"."ClaimsHierarchy" SET "Hierarchy" = @Hierarchy::jsonb;""",
+            new { Hierarchy = roots.ToJsonString() }
+        );
+        await connection.ExecuteAsync(
+            """INSERT INTO "dmscs"."ResourceClaim" ("ResourceName", "ClaimName") VALUES (@ResourceName, @ClaimName);""",
+            new { ResourceName = resourceName, ClaimName = ClaimNameOf(claim) }
+        );
+    }
+
+    /// <summary>
     /// Runs the migration a second time by removing its journal entry, which is the only way DbUp
     /// re-executes a script that already ran.
     /// </summary>
@@ -174,7 +205,10 @@ public abstract class EducationOrganizationProjectionClaimTests
     {
         await using NpgsqlConnection connection = await OpenConnectionAsync();
         return await connection.QuerySingleAsync<HierarchyRow>(
-            """SELECT "Hierarchy"::text AS "Hierarchy", "LastModifiedDate" FROM "dmscs"."ClaimsHierarchy";"""
+            """
+            SELECT "Hierarchy"::text AS "Hierarchy", "LastModifiedDate", "LastModifiedAt", "ModifiedBy"
+            FROM "dmscs"."ClaimsHierarchy";
+            """
         );
     }
 
@@ -267,6 +301,10 @@ public abstract class EducationOrganizationProjectionClaimTests
     protected static JsonArray Roots(string hierarchyJson) => JsonNode.Parse(hierarchyJson)!.AsArray();
 
     protected static string? ClaimNameOf(JsonNode? claim) => claim?["name"]?.GetValue<string>();
+
+    // CMS resolves claim names exactly and then with OrdinalIgnoreCase, so either spelling is the claim.
+    protected static bool IsProjectionClaimName(string? claimName) =>
+        string.Equals(claimName, ProjectionClaimName, StringComparison.OrdinalIgnoreCase);
 
     protected static IEnumerable<JsonNode> AllClaims(JsonArray claims)
     {
@@ -494,4 +532,122 @@ public class Given_a_fresh_catalog_with_the_projection_claim : EducationOrganiza
     {
         await AssertReplayChangesNothingAsync();
     }
+}
+
+/// <summary>
+/// Upgrades a catalog whose claims document already provides the projection claim nested under
+/// another claim, with its own authorization and a grant, as an operator's customized claims would.
+/// </summary>
+public abstract class Given_a_catalog_that_already_has_the_projection_claim
+    : EducationOrganizationProjectionClaimTests
+{
+    private const string ParentClaimName = "http://ed-fi.org/identity/claims/services/identity";
+    private const string CustomClaimSetName = "DMS-1440 Existing Claim Reader";
+
+    private List<ResourceClaimRow> _resourceClaimsBefore = [];
+    private List<ResourceClaimRow> _resourceClaimsAfter = [];
+    private HierarchyRow _hierarchyBefore = null!;
+    private HierarchyRow _hierarchyAfter = null!;
+    private int _customClaimSetId;
+
+    protected abstract string ExistingClaimName { get; }
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        DeployThroughPreviousScript();
+        await LoadEmbeddedClaimsAsync();
+        await RemoveProjectionClaimAsync();
+
+        _customClaimSetId = await InsertClaimSetAsync(CustomClaimSetName);
+        await NestClaimAsync(ParentClaimName, ExistingClaim(), ExistingClaimName.Split('/')[^1]);
+
+        _resourceClaimsBefore = await ResourceClaimsAsync();
+        _hierarchyBefore = await HierarchyAsync();
+
+        Database.DeployThrough(ProjectionClaimScript);
+
+        _resourceClaimsAfter = await ResourceClaimsAsync();
+        _hierarchyAfter = await HierarchyAsync();
+    }
+
+    [Test]
+    public void It_starts_with_the_existing_claim_nested_below_the_root()
+    {
+        JsonArray roots = Roots(_hierarchyBefore.Hierarchy);
+
+        roots.Should().NotContain(root => IsProjectionClaimName(ClaimNameOf(root)));
+        AllClaims(roots).Select(ClaimNameOf).Where(IsProjectionClaimName).Should().Equal(ExistingClaimName);
+    }
+
+    [Test]
+    public void It_adds_no_resource_claim_row()
+    {
+        _resourceClaimsAfter.Should().Equal(_resourceClaimsBefore);
+    }
+
+    [Test]
+    public void It_leaves_the_stored_hierarchy_and_its_audit_values_unchanged()
+    {
+        _hierarchyAfter.Should().Be(_hierarchyBefore);
+    }
+
+    [Test]
+    public void It_keeps_the_existing_claim_as_the_only_projection_claim()
+    {
+        AllClaims(Roots(_hierarchyAfter.Hierarchy))
+            .Select(ClaimNameOf)
+            .Where(IsProjectionClaimName)
+            .Should()
+            .Equal(ExistingClaimName);
+    }
+
+    [Test]
+    public async Task It_keeps_the_grant_on_the_existing_claim()
+    {
+        (await ExportedResourceClaimsAsync(_customClaimSetId))
+            .Should()
+            .ContainSingle(resourceClaim => resourceClaim.ClaimName == ExistingClaimName)
+            .Which.Actions!.Where(action => action.Enabled)
+            .Select(action => action.Name)
+            .Should()
+            .Equal("Read");
+    }
+
+    [Test]
+    public async Task It_changes_nothing_when_the_script_runs_again()
+    {
+        await AssertReplayChangesNothingAsync();
+    }
+
+    private JsonNode ExistingClaim() =>
+        JsonNode.Parse(
+            $$"""
+            {
+              "name": "{{ExistingClaimName}}",
+              "defaultAuthorization": {
+                "actions": [
+                  { "name": "Read", "authorizationStrategies": [{ "name": "RelationshipsWithEdOrgsOnly" }] }
+                ]
+              },
+              "claimSets": [{ "name": "{{CustomClaimSetName}}", "actions": [{ "name": "Read" }] }],
+              "claims": []
+            }
+            """
+        )!;
+}
+
+[TestFixture]
+public class Given_a_catalog_with_the_projection_claim_nested_under_another_claim
+    : Given_a_catalog_that_already_has_the_projection_claim
+{
+    protected override string ExistingClaimName => ProjectionClaimName;
+}
+
+[TestFixture]
+public class Given_a_catalog_with_a_nested_case_variant_of_the_projection_claim
+    : Given_a_catalog_that_already_has_the_projection_claim
+{
+    protected override string ExistingClaimName =>
+        "http://ed-fi.org/identity/claims/services/educationorganizationprojection";
 }

@@ -10,19 +10,30 @@
 -- appends the claim to a stored hierarchy that lacks it; a catalog with no stored hierarchy yet
 -- receives the claim from the embedded claims when they are first loaded. Both statements are
 -- insert-if-missing and leave every existing claim and grant unchanged.
+--
+-- "Missing" follows CMS's own claim-name matching, which is exact first and then
+-- StringComparison.OrdinalIgnoreCase. For this all-ASCII name that equivalence is exactly an
+-- ASCII-only name that is equal after ASCII upper-casing, so a claim an operator already provides
+-- in any letter case is kept as it is: never renamed, replaced or duplicated. Comparisons use a
+-- binary collation so they do not depend on the database's default collation; the ASCII check
+-- keeps UPPER() from folding a non-ASCII letter onto an ASCII one, which CMS does not do.
 
 INSERT INTO dmscs.ResourceClaim (ResourceName, ClaimName)
 SELECT v.ResourceName, v.ClaimName FROM (
     VALUES
-        ('educationOrganizationProjection','http://ed-fi.org/identity/claims/services/educationOrganizationProjection')
+        (N'educationOrganizationProjection',N'http://ed-fi.org/identity/claims/services/educationOrganizationProjection')
 ) AS v(ResourceName, ClaimName)
 WHERE NOT EXISTS (
-    SELECT 1 FROM dmscs.ResourceClaim s WHERE s.ClaimName = v.ClaimName
+    SELECT 1 FROM dmscs.ResourceClaim s
+    WHERE s.ClaimName COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^ -~]%'
+      AND UPPER(s.ClaimName COLLATE Latin1_General_100_BIN2)
+          = UPPER(v.ClaimName COLLATE Latin1_General_100_BIN2)
 );
 
 -- The claim is looked for at every depth, so a claim an operator already placed under another
--- claim is not duplicated. LastModifiedDate is the hierarchy's concurrency token: advancing it
--- makes a writer holding the pre-upgrade hierarchy fail with a conflict instead of overwriting it.
+-- claim is not duplicated, and a hierarchy that already has it is not touched at all. When the
+-- claim is appended, LastModifiedDate, the hierarchy's concurrency token, advances so a writer
+-- holding the pre-upgrade hierarchy fails with a conflict instead of overwriting the claim.
 WITH HierarchyClaim AS (
     SELECT h.Id AS HierarchyId, c.[value] AS ClaimJson
     FROM dmscs.ClaimsHierarchy h
@@ -49,6 +60,7 @@ WHERE ISJSON(h.Hierarchy) = 1
   AND NOT EXISTS (
         SELECT 1 FROM HierarchyClaim hc
         WHERE hc.HierarchyId = h.Id
-          AND JSON_VALUE(hc.ClaimJson, '$.name')
-              = N'http://ed-fi.org/identity/claims/services/educationOrganizationProjection'
+          AND JSON_VALUE(hc.ClaimJson, '$.name') COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^ -~]%'
+          AND UPPER(JSON_VALUE(hc.ClaimJson, '$.name') COLLATE Latin1_General_100_BIN2)
+              = UPPER(N'http://ed-fi.org/identity/claims/services/educationOrganizationProjection' COLLATE Latin1_General_100_BIN2)
     );
