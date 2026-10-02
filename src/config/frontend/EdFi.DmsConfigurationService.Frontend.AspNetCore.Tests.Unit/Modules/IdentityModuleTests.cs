@@ -1688,7 +1688,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
             _client = _factory.CreateClient(); // No Authorization header — credentials go in the form body.
@@ -1712,7 +1712,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     [TestFixture]
@@ -1740,7 +1740,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
@@ -1759,7 +1759,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     /// <summary>
@@ -1803,7 +1803,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
             _client = CreateClientWithCredentials(_factory, NonCanonicalClientId, TestClientSecret);
@@ -1825,7 +1825,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     /// <summary>
@@ -1885,7 +1885,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -1963,7 +1963,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2006,7 +2006,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2048,7 +2048,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2097,7 +2097,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_the_other_clients_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2154,7 +2154,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_the_embedded_jti() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2199,7 +2199,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_anything() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2242,7 +2242,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2281,7 +2281,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2308,7 +2308,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._))
                 .Throws(new InvalidOperationException("database unavailable"));
 
             _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
@@ -2359,7 +2359,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._))
                 .Invokes(() => _updateReachedTheStore = true)
                 .Throws(new TimeoutException("the connection dropped while reading the result"));
 
@@ -2432,7 +2432,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     private const int RealHasherIterations = 1000;
@@ -2520,7 +2520,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_has_the_hasher_log_no_warning_and_no_exception() =>
@@ -2596,7 +2596,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_keeps_the_hasher_log_free_of_warnings_exceptions_and_secrets()
@@ -2660,7 +2660,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 }
 

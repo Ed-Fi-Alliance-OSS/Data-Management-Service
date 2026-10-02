@@ -277,7 +277,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -321,7 +321,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -361,7 +361,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -395,6 +395,7 @@ public class OpenIddictTokenManagerTests
     {
         private TokenRevocationResult _result = null!;
         private Guid _jti;
+        private readonly Guid _applicationId = Guid.NewGuid();
 
         [SetUp]
         public async Task Act()
@@ -408,6 +409,7 @@ public class OpenIddictTokenManagerTests
                 .Returns(
                     new ApplicationInfo
                     {
+                        Id = _applicationId,
                         ClientId = "known-client",
                         ClientSecret = "hashed-secret",
                         IsApproved = true,
@@ -416,7 +418,7 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
             string token = CreateSignedToken(
                 signingKey,
                 new[]
@@ -438,7 +440,12 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_revokes_the_token_minted_under_the_canonical_id() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_constrains_the_update_to_the_application_the_lookup_resolved() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _applicationId))
+                .MustHaveHappenedOnceExactly();
     }
 
     // A stored row with no client id cannot yield a canonical value, and an empty one would put
@@ -468,7 +475,7 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
             string token = CreateSignedToken(
                 signingKey,
                 new[]
@@ -490,7 +497,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_falls_back_to_the_requested_client_id_for_ownership() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     // The self-contained provider re-checks token status by jti on every request after
@@ -843,17 +850,21 @@ public class OpenIddictTokenManagerTests
 
     private const string CallerSecret = "plain-secret";
 
+    /// <summary>The stored application Id <see cref="StubAuthenticatedCaller"/> registered last.</summary>
+    private Guid _callerApplicationId;
+
     /// <summary>
     /// Registers <paramref name="clientId"/> as an approved application whose secret the faked
     /// hasher accepts, so a revocation request carrying <see cref="CallerSecret"/> authenticates.
     /// </summary>
     private void StubAuthenticatedCaller(string clientId)
     {
+        _callerApplicationId = Guid.NewGuid();
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(clientId))
             .Returns(
                 new ApplicationInfo
                 {
-                    Id = Guid.NewGuid(),
+                    Id = _callerApplicationId,
                     ClientId = clientId,
                     ClientSecret = "hashed-secret",
                     IsApproved = true,
@@ -939,7 +950,7 @@ public class OpenIddictTokenManagerTests
             StubActivePublicKey(keyId, publicKeySpki);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             string token = CreateSignedToken(
                 signingKey,
@@ -962,7 +973,16 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_revokes_the_token_by_jti()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
+        }
+
+        // The UPDATE is constrained by the token's ApplicationId foreign key (DMS-1327 D-08), so
+        // the authenticated application's stored Id, not some other value, must reach it.
+        [Test]
+        public void It_constrains_the_update_to_the_authenticated_application()
+        {
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _callerApplicationId))
+                .MustHaveHappenedOnceExactly();
         }
 
         // Revocation must stay idempotent per RFC 7009, so it must not gate on the stored
@@ -972,6 +992,34 @@ public class OpenIddictTokenManagerTests
         {
             A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
         }
+    }
+
+    // Zero rows changed covers an unknown token, an already revoked one, and a row stored for a
+    // different application; RFC 7009 answers all of them the same way (DMS-1327 D-07 step 8).
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheConstrainedUpdateChangesNoRow : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            (string token, _jti) = CreateOwnedToken(signingKey);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).Returns(false);
+
+            _result = await RevokeAsAsync(CreateConfiguredTokenManager(), OwnerClientId, token);
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_attempted_the_update_for_the_authenticated_application() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _callerApplicationId))
+                .MustHaveHappenedOnceExactly();
     }
 
     [TestFixture]
@@ -1006,7 +1054,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1038,7 +1086,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1084,7 +1132,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_revoke_the_embedded_victim_jti()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1113,7 +1161,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1149,7 +1197,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1187,7 +1235,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1226,7 +1274,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1265,7 +1313,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1306,7 +1354,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1343,7 +1391,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1383,7 +1431,7 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_call_the_repository()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -1637,7 +1685,7 @@ public class OpenIddictTokenManagerTests
                     .Value
             );
             _targetJti = targetJti;
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(targetJti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(targetJti, A<Guid>._)).Returns(true);
 
             // The caller authenticates under the non-canonical spelling; the manager must resolve
             // it to the canonical id before comparing it with the target token's claim.
@@ -1662,7 +1710,8 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_revokes_the_token()
         {
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_targetJti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_targetJti, A<Guid>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -1721,7 +1770,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_logs_an_error_naming_the_exception_types_only()
@@ -1767,7 +1816,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_discloses_nothing_from_the_dependency_exception() =>
@@ -1801,7 +1850,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_discloses_nothing_from_the_dependency_exception() =>
@@ -1851,7 +1900,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_logs_an_error_naming_the_corrupt_key()
@@ -1890,7 +1939,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_logs_an_error() => LogCountAt(_fakeLogger, LogLevel.Error).Should().Be(1);
@@ -1935,7 +1984,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     // A token whose kid names no loaded key is an ordinary untrusted token against a healthy key
@@ -1966,7 +2015,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_logs_a_warning_in_the_signature_category() =>
@@ -1992,7 +2041,7 @@ public class OpenIddictTokenManagerTests
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
             StubActivePublicKey(keyId, publicKeySpki);
             var (token, jti) = CreateOwnedToken(signingKey);
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti)).Throws(DependencyFailure());
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._)).Throws(DependencyFailure());
 
             _result = await RevokeAsAsync(CreateConfiguredTokenManager(_fakeLogger), OwnerClientId, token);
         }
@@ -2030,7 +2079,7 @@ public class OpenIddictTokenManagerTests
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
             StubActivePublicKey(keyId, publicKeySpki);
             var (token, jti) = CreateOwnedToken(signingKey);
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti))
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._))
                 .Invokes(() => _updateReachedTheStore = true)
                 .Throws(new TimeoutException("the connection dropped while reading the result"));
 
@@ -2080,7 +2129,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     // The caller going away is not an outage: the cancellation propagates so no response is
@@ -2164,7 +2213,7 @@ public class OpenIddictTokenManagerTests
         public async Task It_does_not_touch_the_token_store()
         {
             await _act.Should().ThrowAsync<InvalidOperationException>();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
         }
     }
 
@@ -2278,7 +2327,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_names_the_dependency_exception_type_in_the_manager_log() =>
@@ -2347,7 +2396,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     // A real generated hash missing its last decoded byte: the salt is intact and the stored subkey
@@ -2398,7 +2447,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
 
         [Test]
         public void It_names_only_the_exception_type_in_the_manager_log() =>
@@ -2468,7 +2517,7 @@ public class OpenIddictTokenManagerTests
             StubActivePublicKey(keyId, publicKeySpki);
             StubApplicationWithStoredSecret(OwnerClientId, await HashedAtValidIterations(RealHasherSecret));
             (string token, _jti) = CreateOwnedToken(signingKey);
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _result = await CreateManagerWith(CreateRealHasher(HashedAtIterations))
                 .RevokeTokenAsync(
@@ -2482,7 +2531,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     // The token endpoint is out of scope and keeps the hasher's established semantics: a
@@ -2610,7 +2659,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     // The read-only loader still verifies against a certificate that exists: the owner's token is
@@ -2632,7 +2681,7 @@ public class OpenIddictTokenManagerTests
             RsaSecurityKey signingKey = WriteDevelopmentCertificate(_certificatePath);
             _certificateBytes = await File.ReadAllBytesAsync(_certificatePath);
             (string token, _jti) = CreateOwnedToken(signingKey);
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             var manager = CreateManagerWith(
                 _secretHasher,
@@ -2649,7 +2698,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
 
         [Test]
         public void It_leaves_the_certificate_file_unchanged() =>
@@ -2701,7 +2750,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     // Other callers keep their provisioning behaviour: the JWKS path still creates a missing
