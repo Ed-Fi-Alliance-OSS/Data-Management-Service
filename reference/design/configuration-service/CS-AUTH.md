@@ -215,16 +215,27 @@ in-memory **snapshot**. The snapshot comes from one of two sources:
   development certificate, with the certificate thumbprint as the key id.
 
 The default `Bearer` scheme, `DmsJwtBearer`, the JWKS endpoint, introspection and
-revocation all use the same snapshot. Validating a token does not read the key table.
-The table is read only by a load, and a load starts in one of these ways:
+revocation all use the same snapshot. In steady state, validating a token does not read
+the key table. The table is read only by a load, and a load starts in one of these ways:
 
 - the startup load;
 - a scheduled reload;
 - a request that finds the snapshot missing, expired, or overdue;
 - a token whose key id the snapshot does not hold.
 
-The per-token status check (revoked or not) is a separate database read, made on every
-request and never cached. See [Cached keys do not keep the service available through a
+The last two run on a request's behalf:
+
+- **Missing or expired snapshot.** The request waits for the load, bounded by the load
+  timeout. It is refused at once during a retry backoff, and while a load that outlived
+  its deadline is still finishing.
+- **Unknown key id.** The request also waits when its reload is allowed, or when it joins
+  a load already running.
+- **Overdue snapshot.** The request is served from the snapshot and does not wait.
+
+The per-token status check (revoked or not) is a separate database read, never cached. It
+is made for every token that passes signature, issuer, audience and lifetime validation.
+A request without a bearer token, or with a token rejected before that point, reads no
+status. See [Cached keys do not keep the service available through a
 database outage](#cached-keys-do-not-keep-the-service-available-through-a-database-outage).
 
 ### Refresh, backoff, cooldown and staleness
@@ -570,18 +581,31 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Empty snapshot published | Warning | `Signing-key snapshot {n} is empty: …` |
 | Load failed | Error | `Signing-key load failed ({Trigger}): category SigningKeyStore, kind {Retrieval\|Processing}, consecutive failures {n}, next attempt in {s} s. …` |
 | Load finished after its deadline | Warning | `A signing-key load that outlived its deadline has finished …; its result was discarded` |
-| Unknown key id | Warning | `Bearer token key id {kid} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
+| Unknown key id (bearer schemes) | Warning | `Bearer token key id {kid} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
+| Unknown key id (introspection, revocation) | Warning | `Token key id {KeyId} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
 | Dependency 503 | Error | `Authentication could not reach a decision: the {Category} is unavailable (trace …)` |
 | JWKS 503 | Error | `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)` |
+| Introspection could not decide (answers `{"active": false}`) | Error | `Token validation could not reach a decision: the {Category} is unavailable` |
+| Revocation could not decide (answers `200`) | Error | `Failed to revoke token: the {Category} is unavailable` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a
 request that found the snapshot overdue. It is not a fault. The message
 `Failed to fetch public keys for JWKS`, logged before DMS-1556, is no longer emitted.
 
+**For alerting,** match on message text that covers every source of an event:
+
+- **Unknown key ids:** `was not in the signing-key snapshot` matches both unknown-key
+  lines. The bearer line alone misses introspection and revocation.
+- **Undecided requests:** `is unavailable` matches the dependency 503, the JWKS 503, and
+  the introspection and revocation lines. Introspection and revocation keep their
+  protocol answers on the wire, so these logs are the only signal of their failures.
+
 ### Connection capacity
 
-The snapshot takes key reads off the request path, but each authenticated request still
-opens a database connection for its status check, and most endpoints read their own data.
+The snapshot takes key reads off the steady-state request path; the exceptions are listed
+under [The key snapshot](#the-key-snapshot). Every token that passes signature, issuer,
+audience and lifetime validation still opens a database connection for its uncached status
+check, and most endpoints read their own data.
 Under heavy concurrency the database's connection limit can still be reached. See the
 connection-capacity note in
 [Signing-key settings](../../../docs/CONFIGURATION.md#signing-key-settings-configuration-service-self-contained-only).

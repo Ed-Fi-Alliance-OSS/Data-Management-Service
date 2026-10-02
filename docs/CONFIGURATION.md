@@ -893,7 +893,19 @@ Configuration Service outage.
 
 In `self-contained` mode the Configuration Service keeps the public signing keys it validates
 tokens with in an in-memory snapshot, shared by every request. The snapshot is loaded at startup
-and reloaded in the background. A request does not read the key table. These settings control
+and reloaded in the background. In steady state a request does not read the key table. A load
+runs on a request's behalf in these cases only:
+
+- **No snapshot, or an expired one.** The request starts a load, or joins the one already
+  running, and waits for it. The load is bounded by `SigningKeyLoadTimeoutSeconds`. The request
+  is refused at once, without a key read, during a retry backoff and while a load that outlived
+  its deadline is still finishing.
+- **An overdue snapshot.** The request is served from it and starts a background load. It does
+  not wait for that load.
+- **An unknown key id.** The token's key id is not in the snapshot. The request may start a
+  load, subject to the cooldown and backoff, or join one already running, and waits for it.
+
+These settings control
 the snapshot. They are `IdentitySettings` keys, set in the environment as, for example,
 `IdentitySettings__SigningKeyRefreshIntervalSeconds`. The provided Docker Compose files do not map
 them, so the defaults apply unless you add them.
@@ -931,9 +943,11 @@ change, follow
 it covers verifying the change on every instance and refreshing each consumer.
 
 > [!NOTE]
-> **Connection capacity.** The snapshot removes key reads from the request path. Each
-> authenticated request still reads the token's status from the database, and most endpoints
-> then read their own data, so request concurrency still drives database connections. In local
+> **Connection capacity.** The snapshot removes key reads from the steady-state request path
+> (the exceptions are listed above). Every token that passes signature, issuer, audience and
+> lifetime validation still has its status read from the database, uncached, and most
+> endpoints then read their own data, so request concurrency still drives database
+> connections. In local
 > stress testing (256 requests at 128 concurrent), the Configuration Service's default Npgsql
 > `Max Pool Size` (100) equalled PostgreSQL's `max_connections` (100) on a server that DMS also
 > used. Some requests were then refused by PostgreSQL with `53300: sorry, too many clients
