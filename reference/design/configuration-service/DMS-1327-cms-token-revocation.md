@@ -14,8 +14,10 @@ correction commits (an error member, or a member name, holding an escaped, unpai
 unparseable provider answer, never a 500); A-01 and A-03 are closed by it and the details it settled
 are in §9.3. P3.2 registers the manager in Keycloak mode and adds the Keycloak observer and the
 public-client scenarios to `Revocation.feature`; the details it settled are in §9.3. P4.1 makes the
-manager a required endpoint dependency, adds the D-12 startup check and amends the 8.1.0 changelog;
-the details it settled are in §9.3. Nothing beyond P4.1 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
+manager a required endpoint dependency, adds the D-12 startup check and amends the 8.1.0 changelog,
+with one correction commit (the route's failures are logged by exception type names only, because
+request-time DI construction can raise exceptions no revocation boundary sees); the details it
+settled are in §9.3. Nothing beyond P4.1 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
 the change made.
 **Ticket:** [DMS-1327](https://edfi.atlassian.net/browse/DMS-1327). Prerequisite: DMS-1478 / PR #1280
 (commit `8b43a5fee`). Related: DMS-1218 (CMS error contract), DMS-1365 (Keycloak compensation).
@@ -689,10 +691,15 @@ exception object whose content the revocation code does not control.
 2. Exceptions **constructed by** revocation code carry fixed text only; no interpolation of the
    token, credentials, headers, form values, provider content, or dependency messages. This is a
    code-review rule for every step and is pinned by the tests below.
-3. Consequently the only exceptions that can reach `GlobalExceptionHandler` / `RequestLoggingMiddleware`
-   from this path (D-17) are programming faults raised by runtime or CMS code (for example
-   `NullReferenceException`, `InvalidOperationException` with fixed text). Those are logged with
-   the exception attached, as every other 500 is; rule 2 is what keeps that attachment safe.
+3. Rules 1 and 2 do not bound every exception that reaches `GlobalExceptionHandler` /
+   `RequestLoggingMiddleware` from this route (D-17). Request-time DI construction of the manager,
+   or of anything it depends on, runs registration factories and constructors a plugin can supply,
+   and their exceptions escape before any revocation boundary exists (corrected after review of
+   `dd021d94a`, which still attached them). The route is therefore marked with
+   `ExceptionTypeOnlyLoggingMetadata`, and `RequestLoggingMiddleware` logs its failures by
+   exception type names only (D-17): the exception object is never attached, so no message, inner
+   exception or `Data` from **any** exception on this route reaches a sink, programming faults
+   included. Rule 2 still governs the text of exceptions revocation code constructs.
 4. The strict Basic parser (D-04) logs nothing but a fixed phrase and the stage name; the existing
    lenient parser's type-name/sanitized-message log stays with `/connect/token`.
 
@@ -707,7 +714,8 @@ its full inner chain; the assertion walks all of them, not only the rendered mes
 | Keycloak: provider body with sentinel in `error`, in `error_description`, in an unexpected member; non-object body; 200 with body | body | sentinel, token, secret, Basic header value |
 | Keycloak: handler/facade throws with the sentinel in `Message` and inner; `JsonException` on a body containing the sentinel | the exception | sentinel, token, secret |
 | Endpoint: malformed Basic value containing the sentinel; duplicated parameters containing it | header/form | sentinel |
-| Endpoint (D-17): fake manager throws an exception with fixed text | — | token, secret, header value; and the attached exception's chain contains no caller input (rule 2 witness) |
+| Endpoint (D-17): fake manager throws an exception with fixed text | — | token, secret, header value, the exception's text; the failed-request event carries the type name and no exception object |
+| Runtime (D-17): a registration that constructs at startup and throws on the next resolution, with the sentinel in `Message`, inner and `Data` | the exception | sentinel, from every log field, scope, attached exception and the response body; one failed-request event with the type chain and the correlation fields |
 | Startup (D-12): registration factory throws with the sentinel in `Message` and inner | the exception | sentinel; the critical log names the type chain |
 
 ### D-16 Validation paths (AC8 "validation and compatibility")
@@ -765,14 +773,27 @@ present, writes the OAuth JSON body instead of the Ed-Fi problem-details body:
 | `BadHttpRequestException` with any other status (for example 408) | that status | `invalid_request` / "The request could not be read." (settled in P2.3: a client-side read failure keeps its client status, as the Ed-Fi branch does) |
 | anything else | 500 | `server_error` / "The revocation request could not be processed." |
 
-Logging is unchanged: `RequestLoggingMiddleware` still records the handled 500 once as
-`HttpRequestFailed` through `IExceptionHandlerFeature`, with the exception attached as for every
-other 500. That attachment is safe only because of D-15 rules 1–3: every dependency exception is
-classified inside the manager and never escapes, and revocation code never builds an exception
-message from request or provider content; the D-15 D-17 fixture witnesses this. `FailureResponseWriter`
-gains a sibling `OAuthErrorResponseWriter` (frontend `Infrastructure`) used by both the handler and
+**Logging boundary** (corrected after review of `dd021d94a`). The route also carries a second marker,
+`ExceptionTypeOnlyLoggingMetadata` (frontend `Infrastructure`). `GlobalExceptionHandler` still writes
+no log entry. `RequestLoggingMiddleware` reads the marker from `IExceptionHandlerFeature.Endpoint`, or
+from the active endpoint when the exception handler did not run, and for a marked route:
+
+- records the handled 500 once as the same `HttpRequestFailed` event, at Error, with the same
+  `EventName`, `Method`, `Path`, `StatusCode`, `DurationMs` and `TraceId` fields and the same request
+  scope, plus an `ExceptionTypes` field (the outer-to-inner `->`-joined full type names, or `none`), and
+  **without** the exception object;
+- logs an exception that escapes the exception handler (an aborted request, or a response that had
+  already started) the same way, then rethrows a replacement rather than the original, because the
+  server logs an escaping exception with its own logger: a caller cancellation becomes a fresh
+  `OperationCanceledException` for `RequestAborted`, anything else an `InvalidOperationException`
+  whose fixed text names only the type chain; neither carries an inner exception.
+
+The stack trace is given up on this route, as for the D-12 startup check. Before this correction the
+event attached the exception, which D-15 rules 1–2 made safe only for exceptions raised inside the
+manager's boundaries; request-time DI construction is outside them. `FailureResponseWriter` gains a
+sibling `OAuthErrorResponseWriter` (frontend `Infrastructure`) used by both the handler and
 `IdentityModule`, so the body shape has one definition. Other endpoints are unaffected because they
-carry no marker.
+carry neither marker: their failures keep the exception attached and are rethrown unchanged.
 
 Out of contract (documented, not changed): responses produced before the endpoint is selected
 (Kestrel request-line/header limits, `FrameworkErrorResponseMiddleware`-shaped bodiless
@@ -780,8 +801,11 @@ framework responses before routing, TLS failures). Those are transport failures 
 sees.
 
 Verification is through the HTTP pipeline (`WebApplicationFactory`): a manager fake that throws
-`InvalidOperationException` → 500 OAuth JSON, `TraceId` header present, the request logged as
-failed; a malformed multipart body → 400 OAuth JSON; the same two requests against `/connect/token`
+`InvalidOperationException` → 500 OAuth JSON, `TraceId` header present, the request logged once as
+failed with the type name and no exception object; a manager registration that throws at request
+time with sentinels in its message, inner exception and `Data` → 500 OAuth JSON and no sentinel in
+any log field, scope, attached exception or the body; `RequestLoggingMiddleware` unit fixtures for
+the handled, escaping and cancelled cases on a marked route; a malformed multipart body → 400 OAuth JSON; the same two requests against `/connect/token`
 still produce the Ed-Fi contract (no leakage of the marker).
 
 ---
@@ -1463,3 +1487,4 @@ registered, so no endpoint path reaches it until P3.2):
 | Scope and disposal | The scope is created and released inside the `try`, so an exception from disposing what the registration constructed is reported the same way (type names only, "could not be constructed") and never escapes with its message. The shipped self-contained manager is a singleton: resolving it in the scope constructs it in the root container, where it is kept, rather than being discarded with the scope. |
 | Endpoint | `RevokeToken` takes `[FromServices] ITokenRevocationManager`; the optional resolution and its no-op `200` are removed. The manager is therefore constructed when the request is bound, before the D-03 shape checks run; construction does no I/O and the shape checks still decide before the manager is **called**. A construction failure at request time (one the startup check did not see) is a 500 `server_error` through D-17. Two endpoint fixtures depended on the removed path: the DMS-1478 unauthenticated-caller fixture now registers a fake manager and also asserts it is not consulted, and the P2.3 "no registered manager answers 200" fixture is removed, because that state can no longer start. |
 | Startup tests | `TokenRevocationStartupTests` boots self-contained/postgresql, self-contained/mssql and keycloak/postgresql with `ValidateScopes` on (as in Development, so a root resolution of the Keycloak manager fails), each with `IdentitySettings:Authority` pointing at a loopback listener that counts connections and resets them unanswered. Per shape: the shipped registration starts with no critical log and no connection; removing it, or a factory that throws an exception carrying a sentinel in its message, inner exception and `Data`, fails startup with the exact D-12 message (the type chain for the latter), an `InvalidOperationException` with no inner exception, one critical log with no exception attached, the sentinel absent from every captured log field, scope and exception chain, and no connection. A fake manager answering `TemporarilyUnavailable` then `Completed` gives 503 then 200 with the host not stopping. With the real Keycloak manager, the first revocation reaches the listener (so the startup count of zero is an observation, not a blind spot) and is answered 503; the next request is served (400 for a missing token) and a retry reaches the listener again. A registration that constructs at startup and throws on the next resolution answers that request 500 `server_error` without the factory's text, and the following request is served. Mutations (check removed, check before `DatabaseOptions`, exception logged, exception wrapped, root resolution, missing registration accepted) each fail these tests or `DatabaseOptionsStartupTests`. |
+| Request-time logging (corrected after review of `dd021d94a`) | The late-construction fixture showed the response was safe but the log was not: `RequestLoggingMiddleware` attached the factory's exception to `HttpRequestFailed`. The route now carries `ExceptionTypeOnlyLoggingMetadata` and its failures are logged by exception type names only (D-15 rule 3, D-17 logging boundary). The fixture's exception carries sentinels in its message, inner exception and `Data`; the fixture asserts their absence from every captured log field, scope, attached exception chain and the response, one `HttpRequestFailed` event with `ExceptionTypes` and no exception object, and the request's `TraceId` on both the event and its scope. Mutations (marker removed from the route, exception attached on the handled path, original rethrown, cancellation rethrown as is) each fail these tests or the `RequestLoggingMiddleware` fixtures. The shared type-chain helper moved to `ExceptionTypeNames` (frontend `Infrastructure`), used by the startup check and the middleware. |
