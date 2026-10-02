@@ -3,7 +3,9 @@
 **Status:** DRAFT, revision 3, approved for P1.1 only (Codex, 2026-10-01). P1.1 is implemented
 (tests and this document; no production code) and its evidence is in §9.1, together with the
 approved corrections to §2.1, A-06 and D-16 made by the P1.1 correction commit. P2.1 (shared
-contract, classified failures, 503 mapping) is implemented as planned in §6; nothing beyond P2.1 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
+contract, classified failures, 503 mapping) is implemented as planned in §6, with a correction
+commit that adds the failure-preserving secret verification and the read-only certificate loader
+described in D-07 and D-13.1; nothing beyond P2.1 is. Revisions 1 and 2 were reviewed by Codex and not approved; §0.1 maps each finding to
 the change made.
 **Ticket:** [DMS-1327](https://edfi.atlassian.net/browse/DMS-1327). Prerequisite: DMS-1478 / PR #1280
 (commit `8b43a5fee`). Related: DMS-1218 (CMS error contract), DMS-1365 (Keycloak compensation).
@@ -53,6 +55,14 @@ Revision 3 (responses to the Codex review of revision 2):
 | Image evidence | container name corrected to `ed-fi-api-config-service`. |
 | Commit/test ordering | §6.8 now defines: focused tests on the working tree, commit, then E2E against the clean commit, fix-forward commits if needed, and final E2E against the final commit. |
 | Stale reference | P2.1 now says Keycloak activation happens at P3.2. |
+
+P2.1 correction (responses to the Codex review of commit `3cef7b53a`, the P2.1 commit):
+
+| Codex finding | Change |
+|---|---|
+| 1. The registered `ClientSecretHasher` swallowed verification failures (logging the exception and message) and returned `false`, so a hashing or configuration failure became `InvalidClient`/401 | D-07 step 2 and D-13.1: revocation verifies through `IFailurePreservingSecretVerifier`, implemented by the built-in hasher, which answers `false` only for a genuine mismatch and lets every other failure escape unlogged; the manager's boundary classifies it as `TemporarilyUnavailable` and logs exception type names only. `VerifySecretAsync`, which `/connect/token` uses, is unchanged. Real-hasher tests at the manager, hasher and HTTP levels. |
+| 2. Revocation reused the JWKS certificate helper, which creates a development certificate when the file is missing, so revocation could verify against a fresh unrelated key and answer an empty 200 | D-07.4: revocation loads certificates read-only; a missing or unconfigured certificate is `TemporarilyUnavailable` (`signing-certificate-missing`) and no file is created. The JWKS and signing paths keep provisioning. Missing, existing and unreadable certificate tests plus a JWKS provisioning test. |
+| Spec | D-13.1 gains the rule that catching around a dependency is insufficient when the dependency suppresses failures or repairs missing state internally; D-07.6 records the audit of every helper the revocation path reuses. Q-09 added for replacement (plugin) hashers. |
 
 P1.1 correction (responses to the Codex review of commit `7cebf3660`, the first P1.1 commit):
 
@@ -375,8 +385,20 @@ Sequence inside `RevokeTokenAsync(request, ct)`:
 
 1. `GetApplicationByClientIdAsync(request.ClientId)` — engine lookup unchanged (F-19). Repository
    exception → `TemporarilyUnavailable`.
-2. `VerifySecretAsync` and `IsApproved` as today (`ValidateClientSecretAsync`). Failure →
-   `InvalidClient`. Hasher exception → `TemporarilyUnavailable`.
+2. Secret verification and `IsApproved` (`ValidateClientSecretAsync`), through a
+   **failure-preserving** path. The registered `ClientSecretHasher.VerifySecretAsync` answers
+   `false` for a mismatch **and** for any failure while verifying (it catches, logs the exception
+   with its message, and returns `false`), so catching around it cannot tell the two apart.
+   Revocation therefore calls `IFailurePreservingSecretVerifier.VerifySecretPreservingFailuresAsync`
+   (OpenIddict project; implemented by the built-in hasher): `true` = match, `false` = genuine
+   mismatch (including an empty presented secret or an application with no stored secret), and any
+   failure that prevented the comparison (iteration-count misconfiguration, an unreadable stored
+   hash) escapes as an exception that the hasher does not log. Mismatch or unapproved →
+   `InvalidClient`; escaped failure → `TemporarilyUnavailable` (`client-authentication`), logged by
+   the manager with exception type names only. `/connect/token` keeps `VerifySecretAsync` and its
+   behaviour unchanged (AC1, non-goal). A replacement hasher registered through the plugin contract
+   that does not implement the capability is called through `VerifySecretAsync` and keeps its own
+   failure semantics (Q-09).
 3. Canonical client id = `CanonicalClientId(applicationInfo, request.ClientId)` (unchanged);
    `applicationId = applicationInfo.Id`.
 4. Load verification keys through a **new private path** (`LoadVerificationKeysAsync`) used only
@@ -387,7 +409,9 @@ Sequence inside `RevokeTokenAsync(request, ct)`:
 
    | Situation | Classification | Why |
    |---|---|---|
-   | `UseCertificates = true`: certificate path unset, file missing, unreadable, wrong password, no RSA key | `TemporarilyUnavailable` (configuration/operational) | the service cannot verify any token; same exceptions `GetPublicKeysFromCertificatesAsync` throws today |
+   | `UseCertificates = true`: certificate path unset or file missing (development **or** production) | `TemporarilyUnavailable` (`signing-certificate-missing`), logged at Error; **no file is created** | the JWKS helper `GetPublicKeysFromCertificatesAsync` creates a replacement development certificate when the file is missing; reusing it would verify outstanding tokens against an unrelated key and answer an empty 200 while revoking nothing. Revocation uses its own read-only loader; the JWKS and signing paths keep provisioning |
+   | `UseCertificates = true`: certificate exists but is unreadable or the password is wrong | `TemporarilyUnavailable` (`signing-key-retrieval`) | the loader throws to the boundary catch |
+   | `UseCertificates = true`: certificate carries no RSA public key | `TemporarilyUnavailable` (`signing-certificate-no-rsa-key`), logged at Error | nothing can be verified |
    | database path: `GetActivePublicKeysAsync` throws (connection, timeout, SQL error) | `TemporarilyUnavailable` | F-13 |
    | database path: a key record whose bytes fail every import format (`DetectKeyFormat` → `Unknown`) or whose import throws | `TemporarilyUnavailable`, logged at Error with the sanitized key id | a corrupt active key would otherwise make every revocation an "unknown token" 200 |
    | database path: zero active key records | `TemporarilyUnavailable`, logged at Error | nothing can be verified; a configuration state, not a token outcome |
@@ -411,6 +435,20 @@ Sequence inside `RevokeTokenAsync(request, ct)`:
 8. `RevokeTokenAsync(jti, applicationId)` (D-08). Exception → `TemporarilyUnavailable`. Return
    `Completed` whether or not a row changed (0 rows = unknown, already revoked, or stored for a
    different application; all are 200 by contract and logged at Debug with sanitized ids only).
+
+**D-07.6 Audit of reused helpers (P2.1 correction).** Every dependency or shared helper the
+revocation path calls was checked for internal suppression, repair, or logging before the
+manager's boundary catch:
+
+| Helper | Finding | Disposition |
+|---|---|---|
+| `ClientSecretHasher.VerifySecretAsync` | catches every failure, logs the exception and its message, returns `false` | revocation uses the failure-preserving path (step 2); token endpoint unchanged |
+| `GetPublicKeysFromCertificatesAsync` | creates a development certificate when the file is missing | revocation uses a read-only loader (D-07.4) |
+| `GetPublicKeysFromDatabaseAsync` | swallows repository failures and skips bad keys (returns a partial or empty set) | already not used by revocation (`LoadVerificationKeysAsync`, D-07.4) |
+| `DetectKeyFormat` | its outer catch logged a warning **with the exception attached**; it returns `Unknown` | now logs exception type names only (applies to the JWKS path too, which loses only the stack trace of an `RSA.Create` failure); `Unknown` is `TemporarilyUnavailable` on the revocation path |
+| `ResolveKeyFormat` | caches the detected format, including `Unknown`, for the process lifetime | unchanged: a key that cannot be read stays unavailable until restart, which fails closed |
+| PostgreSQL and SQL Server `OpenIddictDataRepository` (`GetApplicationByClientIdAsync`, `GetActivePublicKeysInternalAsync`, `RevokeTokenAsync`) and both `OpenIddictTokenRepository` wrappers | no internal catch, no logging; exceptions propagate | no change; the boundary catches classify them and log type names only (driver messages can carry connection details) |
+| `JwtTokenValidator.ValidateToken` | catches everything and returns a token-outcome category (`Untrusted`, `Expired`, `UntrustedIssuerOrAudience`) | unchanged and shared with the bearer path (AC1). Residual risk: a loaded key that imports but cannot verify would make tokens `Untrusted` → 200. Bounded because the signing key is the private half of the same pair, so such a key could not have minted the tokens being revoked |
 
 Removed: the blanket `catch (Exception) { return false; }` (F-12). Replaced by classified catches at
 each infrastructure boundary (`DbException`-derived and provider-specific types plus a final
@@ -561,7 +599,12 @@ Cost: one admin read per revocation. Accepted for a low-volume endpoint; recorde
 
 ### D-13 Operational failures vs token outcomes (AC5)
 
-**D-13.1 Classification.** Any exception thrown by: application lookup, secret verification,
+**D-13.1 Classification.** Catching around a dependency is necessary but **not sufficient**: a
+dependency that suppresses its own failures (returns a benign value after catching) or repairs
+missing state internally (creates a file, falls back to defaults) hides the failure before the
+boundary catch can see it. Every dependency on the revocation path therefore either propagates its
+failures or is called through a failure-preserving entry point (D-07 step 2, D-07.4, D-07.6).
+Any exception thrown by: application lookup, secret verification,
 signing-key retrieval (D-07.4), token status/row lookup, the `UPDATE`, the Keycloak admin read
 (D-11.3), or the Keycloak revoke call (D-09) → `TemporarilyUnavailable` → 503. These are caught
 **only** at those boundaries; comparison and parsing logic is not wrapped, so a bug there is a
@@ -1039,6 +1082,7 @@ Decisions resolved by the revision-1 review (recorded so later steps do not reop
 | Q-05 | Scenarios live in a focused `Revocation.feature`. |
 | Q-06 | Changelog `8.1.0.md`; the completed DMS-1478 prerequisite is distinguished from this ticket's additions. |
 | Q-07 | `invalid_client` for "client not found" only after an authoritative successful admin read; a failed, refused or ambiguous read is 503. |
+| Q-09 | (raised in the P2.1 correction, open) A replacement `IClientSecretHasher` registered through the plugin replace contract and not implementing `IFailurePreservingSecretVerifier` is called through `VerifySecretAsync`, so a failure it suppresses is answered `InvalidClient` (fail-closed, nothing mutated). Closing this would mean extending the `Secrets` plugin contract (for example a default interface method), which is outside this ticket. Decide whether to accept the limitation and document it in the plugin guidance, or to raise a follow-up ticket. |
 | Q-08 | (raised and resolved in P1.1) The characterization fixture stays in the existing Keycloak CI E2E lane as a regression guard on the pinned image; no opt-in variable hides it. Every prediction is exact, and the only skipped checks are state checks that do not exist for a row (before-state of a request without a live token, after-state of a request without a token or with a foreign-realm token). |
 
 §2.1 rows marked "observed in P1.1" and every behaviour recorded in §9.1 are observations from

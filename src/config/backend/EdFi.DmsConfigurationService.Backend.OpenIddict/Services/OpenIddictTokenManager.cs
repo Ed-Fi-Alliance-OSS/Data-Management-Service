@@ -208,7 +208,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
                 var (applicationInfo, credentialErrorCode) = await ValidateClientSecretAsync(
                     clientId,
-                    clientSecret
+                    clientSecret,
+                    preserveVerificationFailures: false
                 );
 
                 if (applicationInfo == null)
@@ -340,6 +341,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private const string SigningKeyRetrievalBoundary = "signing-key-retrieval";
         private const string SigningKeyImportBoundary = "signing-key-import";
         private const string NoActiveSigningKeysBoundary = "no-active-signing-keys";
+        private const string SigningCertificateMissingBoundary = "signing-certificate-missing";
+        private const string SigningCertificateNoRsaKeyBoundary = "signing-certificate-no-rsa-key";
         private const string TokenMutationBoundary = "token-mutation";
 
         /// <summary>
@@ -371,7 +374,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             {
                 (applicationInfo, _) = await ValidateClientSecretAsync(
                     request.ClientId,
-                    request.ClientSecret
+                    request.ClientSecret,
+                    preserveVerificationFailures: true
                 );
             }
             catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))
@@ -539,8 +543,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         {
             if (_identityOptions.Value.UseCertificates)
             {
-                var certificateKeys = await GetPublicKeysFromCertificatesAsync();
-                return new VerificationKeys(ToSecurityKeys(certificateKeys), string.Empty);
+                return LoadCertificateVerificationKeys();
             }
 
             var keyRecords = (await _tokenRepository.GetActivePublicKeysAsync()).ToList();
@@ -578,6 +581,58 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             }
 
             return new VerificationKeys(keys, string.Empty);
+        }
+
+        /// <summary>
+        /// The signing certificate's public key for the revocation path, read-only. Unlike
+        /// <see cref="GetPublicKeysFromCertificatesAsync"/>, which serves the JWKS endpoint and
+        /// creates a development certificate when the file is missing, this never creates or
+        /// replaces anything: a replacement would hold an unrelated key, every outstanding token
+        /// would then fail verification against it, and revocation would answer an empty 200 while
+        /// revoking nothing (D-07.4). A missing or unconfigured certificate is therefore
+        /// <see cref="TokenRevocationResult.TemporarilyUnavailable"/>; a certificate that exists but
+        /// cannot be read (wrong password, corrupt file) throws to the caller's boundary catch.
+        /// </summary>
+        private VerificationKeys LoadCertificateVerificationKeys()
+        {
+            IdentityOptions options = _identityOptions.Value;
+            bool development = options.UseDevelopmentCertificates;
+            string certificatePath = development ? options.DevCertificatePath : options.CertificatePath;
+            string certificatePassword = development
+                ? options.DevCertificatePassword
+                : options.CertificatePassword;
+
+            if (string.IsNullOrEmpty(certificatePath) || !System.IO.File.Exists(certificatePath))
+            {
+                _logger.LogError(
+                    "Revocation could not be completed: the configured {CertificateKind} signing certificate does not exist; "
+                        + "revocation never creates one",
+                    development ? "development" : "production"
+                );
+                return new VerificationKeys(null, SigningCertificateMissingBoundary);
+            }
+
+            // Same loading rules as GetPublicKeysFromCertificatesAsync and the signing side.
+            using X509Certificate2 certificate =
+                development || !string.IsNullOrEmpty(certificatePassword)
+                    ? X509CertificateLoader.LoadPkcs12FromFile(certificatePath, certificatePassword)
+                    : X509CertificateLoader.LoadCertificateFromFile(certificatePath);
+            using RSA? publicKey = certificate.GetRSAPublicKey();
+            if (publicKey is null)
+            {
+                _logger.LogError(
+                    "Revocation could not be completed: the configured signing certificate carries no RSA public key"
+                );
+                return new VerificationKeys(null, SigningCertificateNoRsaKeyBoundary);
+            }
+
+            return new VerificationKeys(
+                new Dictionary<string, SecurityKey>
+                {
+                    [certificate.Thumbprint] = new RsaSecurityKey(publicKey.ExportParameters(false)),
+                },
+                string.Empty
+            );
         }
 
         /// <summary>
@@ -623,9 +678,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// (potentially hashed) value. Returns a null application on failure along with the OAuth
         /// error code that describes why.
         /// </summary>
+        /// <param name="preserveVerificationFailures">
+        /// <c>false</c> for the token endpoint, which keeps the hasher's established behaviour of
+        /// answering a verification failure as a mismatch. <c>true</c> for revocation (DMS-1327
+        /// D-07 step 2): when the hasher offers <see cref="IFailurePreservingSecretVerifier"/>, a
+        /// failure that prevents the comparison propagates to the caller's boundary catch instead
+        /// of being reported as wrong credentials. Catching around a dependency is not enough when
+        /// the dependency suppresses its own failures.
+        /// </param>
         private async Task<(ApplicationInfo? Application, string ErrorCode)> ValidateClientSecretAsync(
             string clientId,
-            string clientSecret
+            string clientSecret,
+            bool preserveVerificationFailures
         )
         {
             var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
@@ -634,10 +698,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 return (null, "invalid_client");
             }
 
-            var isValidSecret = await _secretHasher.VerifySecretAsync(
-                clientSecret,
-                applicationInfo.ClientSecret ?? string.Empty
-            );
+            string storedSecret = applicationInfo.ClientSecret ?? string.Empty;
+            var isValidSecret =
+                preserveVerificationFailures && _secretHasher is IFailurePreservingSecretVerifier verifier
+                    ? await verifier.VerifySecretPreservingFailuresAsync(clientSecret, storedSecret)
+                    : await _secretHasher.VerifySecretAsync(clientSecret, storedSecret);
             if (!isValidSecret)
             {
                 return (null, "unauthorized_client");
@@ -990,6 +1055,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
+        /// Reached from the revocation path as well as the JWKS path, so the exception object is not
+        /// handed to the logger: only its type chain is recorded (DMS-1327 D-15 rule 1). The caller
+        /// sees <see cref="KeyFormat.Unknown"/> and decides how to classify it.
+        /// </summary>
+        private void LogKeyFormatDetectionFailure(Exception exception) =>
+            _logger.LogWarning(
+                "Error while detecting key format ({ExceptionTypes})",
+                ExceptionTypeChain(exception)
+            );
+
+        /// <summary>
         /// Detects the format of a public key
         /// </summary>
         private KeyFormat DetectKeyFormat(byte[] keyData)
@@ -1036,7 +1112,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error while detecting key format");
+                LogKeyFormatDetectionFailure(ex);
             }
 
             return KeyFormat.Unknown;

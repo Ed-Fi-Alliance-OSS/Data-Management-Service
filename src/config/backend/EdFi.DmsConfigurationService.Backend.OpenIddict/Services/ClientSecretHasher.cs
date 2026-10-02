@@ -15,7 +15,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 /// Uses dependency injection to allow for flexible password hashing implementations.
 /// </summary>
 public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<IdentityOptions> identityOptions)
-    : IClientSecretHasher
+    : IClientSecretHasher,
+        IFailurePreservingSecretVerifier
 {
     private readonly ILogger<ClientSecretHasher> _logger = logger;
     private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
@@ -64,51 +65,95 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
     }
 
     /// <summary>
-    /// Verifies a plain-text secret against a stored hash.
+    /// Verifies a plain-text secret against a stored hash. Any failure while verifying is logged and
+    /// answered <c>false</c>, the same as a mismatch; the token endpoint relies on that. Revocation
+    /// uses <see cref="VerifySecretPreservingFailuresAsync"/> instead.
     /// </summary>
     public Task<bool> VerifySecretAsync(string plainTextSecret, string hashedSecret)
     {
-        if (string.IsNullOrEmpty(plainTextSecret))
+        if (!HasVerifiableInputs(plainTextSecret, hashedSecret))
         {
-            _logger.LogWarning("Attempt to verify null or empty client secret");
             return Task.FromResult(false);
         }
-
-        if (string.IsNullOrEmpty(hashedSecret))
-        {
-            _logger.LogWarning("Attempt to verify against null or empty hashed secret");
-            return Task.FromResult(false);
-        }
-
-        _logger.LogDebug("Verifying client secret");
 
         try
         {
-            byte[] decoded = Convert.FromBase64String(hashedSecret);
-            using var reader = new BinaryReader(new MemoryStream(decoded));
-
-            _ = reader.ReadByte(); // version byte — read past, value not used
-            int saltLength = reader.ReadInt32();
-            byte[] salt = reader.ReadBytes(saltLength);
-            byte[] expectedSubkey = reader.ReadBytes(32);
-
-            byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
-                plainTextSecret,
-                salt,
-                _identityOptions.Value.ClientSecretHashingIterations,
-                HashAlgorithmName.SHA256,
-                32
-            );
-
-            var result = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
-            _logger.LogDebug("Client secret verification result: {Result}", result);
-            return Task.FromResult(result);
+            return Task.FromResult(SecretMatches(plainTextSecret, hashedSecret));
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error verifying client secret: {ErrorMessage}", ex.Message);
             return Task.FromResult(false);
         }
+    }
+
+    /// <summary>
+    /// Verifies a plain-text secret against a stored hash, letting any failure that prevents the
+    /// comparison escape as a faulted task instead of answering <c>false</c>. Nothing about the
+    /// failure is logged here: the caller classifies it and logs exception type names only.
+    /// </summary>
+    public Task<bool> VerifySecretPreservingFailuresAsync(string plainTextSecret, string hashedSecret)
+    {
+        if (!HasVerifiableInputs(plainTextSecret, hashedSecret))
+        {
+            return Task.FromResult(false);
+        }
+
+        try
+        {
+            return Task.FromResult(SecretMatches(plainTextSecret, hashedSecret));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromException<bool>(ex);
+        }
+    }
+
+    /// <summary>
+    /// An empty presented secret, or an application with no stored secret, is a mismatch rather
+    /// than a failure: no credential could ever verify against it.
+    /// </summary>
+    private bool HasVerifiableInputs(string plainTextSecret, string hashedSecret)
+    {
+        if (string.IsNullOrEmpty(plainTextSecret))
+        {
+            _logger.LogWarning("Attempt to verify null or empty client secret");
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(hashedSecret))
+        {
+            _logger.LogWarning("Attempt to verify against null or empty hashed secret");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Derives the subkey at the configured iteration count and compares in fixed time. Throws when it cannot.</summary>
+    private bool SecretMatches(string plainTextSecret, string hashedSecret)
+    {
+        _logger.LogDebug("Verifying client secret");
+
+        byte[] decoded = Convert.FromBase64String(hashedSecret);
+        using var reader = new BinaryReader(new MemoryStream(decoded));
+
+        _ = reader.ReadByte(); // version byte — read past, value not used
+        int saltLength = reader.ReadInt32();
+        byte[] salt = reader.ReadBytes(saltLength);
+        byte[] expectedSubkey = reader.ReadBytes(32);
+
+        byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
+            plainTextSecret,
+            salt,
+            _identityOptions.Value.ClientSecretHashingIterations,
+            HashAlgorithmName.SHA256,
+            32
+        );
+
+        var result = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
+        _logger.LogDebug("Client secret verification result: {Result}", result);
+        return result;
     }
 
     /// <summary>

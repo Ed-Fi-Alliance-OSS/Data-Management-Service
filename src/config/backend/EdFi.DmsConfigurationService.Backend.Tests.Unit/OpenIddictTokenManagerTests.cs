@@ -6,6 +6,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
@@ -63,7 +64,7 @@ public class OpenIddictTokenManagerTests
     /// into <see cref="ILogger.Log{TState}"/>, whose first argument is the level, so intercepting
     /// that one method observes every call regardless of which extension produced it.
     /// </summary>
-    private static int LogCountAt(ILogger<OpenIddictTokenManager> logger, LogLevel level) =>
+    private static int LogCountAt<T>(ILogger<T> logger, LogLevel level) =>
         Fake.GetCalls(logger)
             .Count(call => call.Method.Name == nameof(ILogger.Log) && call.GetArgument<LogLevel>(0) == level);
 
@@ -887,7 +888,7 @@ public class OpenIddictTokenManagerTests
     /// structured value, and any attached exception's full text. A disclosure assertion walks all
     /// of it rather than only the rendered message (DMS-1327 D-15).
     /// </summary>
-    private static string AllLoggedText(ILogger<OpenIddictTokenManager> logger)
+    private static string AllLoggedText<T>(ILogger<T> logger)
     {
         var text = new System.Text.StringBuilder();
         foreach (var call in Fake.GetCalls(logger).Where(call => call.Method.Name == nameof(ILogger.Log)))
@@ -908,7 +909,7 @@ public class OpenIddictTokenManagerTests
     }
 
     /// <summary>The exception objects attached to log entries; the revocation path must attach none.</summary>
-    private static IReadOnlyList<Exception> LoggedExceptions(ILogger<OpenIddictTokenManager> logger) =>
+    private static IReadOnlyList<Exception> LoggedExceptions<T>(ILogger<T> logger) =>
         Fake.GetCalls(logger)
             .Where(call => call.Method.Name == nameof(ILogger.Log))
             .Select(call => call.Arguments[3] as Exception)
@@ -1925,12 +1926,12 @@ public class OpenIddictTokenManagerTests
         }
 
         [Test]
-        public void It_reports_temporarily_unavailable_at_the_key_retrieval_boundary() =>
+        public void It_reports_temporarily_unavailable_for_the_missing_certificate() =>
             _result
                 .Should()
                 .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
                 .Which.Reason.Should()
-                .Be("signing-key-retrieval");
+                .Be("signing-certificate-missing");
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -2165,6 +2166,501 @@ public class OpenIddictTokenManagerTests
             await _act.Should().ThrowAsync<InvalidOperationException>();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
         }
+    }
+
+    // DMS-1327 P2.1 correction. Catching around a dependency is not enough when the dependency
+    // suppresses its own failures (the registered ClientSecretHasher answers false for anything that
+    // goes wrong) or repairs missing state (the JWKS certificate helper creates a development
+    // certificate when the file is gone). These fixtures run the real hasher and real certificate
+    // files rather than fakes, because a throwing fake cannot reveal either behaviour.
+
+    private const int HashedAtIterations = 1000;
+    private const string RealHasherSecret = "SECRET-CALLER-SENTINEL-real-hasher";
+
+    private static ClientSecretHasher CreateRealHasher(
+        int iterations,
+        ILogger<ClientSecretHasher>? logger = null
+    ) =>
+        new(
+            logger ?? NullLogger<ClientSecretHasher>.Instance,
+            Options.Create(new IdentityOptions { ClientSecretHashingIterations = iterations })
+        );
+
+    private static async Task<string> HashedAtValidIterations(string secret) =>
+        await CreateRealHasher(HashedAtIterations).HashSecretAsync(secret);
+
+    private void StubApplicationWithStoredSecret(string clientId, string storedSecret) =>
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(clientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    Id = Guid.NewGuid(),
+                    ClientId = clientId,
+                    ClientSecret = storedSecret,
+                    IsApproved = true,
+                    Permissions = ["edfi_admin_api/full_access"],
+                }
+            );
+
+    private OpenIddictTokenManager CreateManagerWith(
+        IClientSecretHasher hasher,
+        ILogger<OpenIddictTokenManager>? logger = null,
+        IdentityOptions? options = null
+    ) =>
+        new(
+            Options.Create(
+                options ?? new IdentityOptions { Authority = TestIssuer, Audience = TestAudience }
+            ),
+            logger ?? NullLogger<OpenIddictTokenManager>.Instance,
+            hasher,
+            _tokenRepository
+        );
+
+    // A deterministic configuration failure inside the real hasher: verification cannot run at all.
+    // Before the correction this was answered InvalidClient (401) and the hasher logged the
+    // exception and its message. Startup validation rejects a zero count in production, so this is
+    // a stand-in for any failure the hasher would otherwise turn into "wrong secret".
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithTheRealHasherWhenVerificationCannotRun
+        : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<ClientSecretHasher> _hasherLogger = null!;
+        private ILogger<OpenIddictTokenManager> _managerLogger = null!;
+        private string _dependencyMessage = null!;
+
+        /// <summary>The message the hasher's own dependency throws for a zero iteration count, captured so a test can assert it never reaches a log.</summary>
+        private static string ZeroIterationFailureMessage()
+        {
+            try
+            {
+                Rfc2898DeriveBytes.Pbkdf2("x", new byte[16], 0, HashAlgorithmName.SHA256, 32);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                return ex.Message;
+            }
+
+            throw new InvalidOperationException("PBKDF2 accepted a zero iteration count.");
+        }
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyMessage = ZeroIterationFailureMessage();
+            _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+            _managerLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            StubApplicationWithStoredSecret(OwnerClientId, await HashedAtValidIterations(RealHasherSecret));
+
+            _result = await CreateManagerWith(CreateRealHasher(0, _hasherLogger), _managerLogger)
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        OwnerClientId,
+                        RealHasherSecret,
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_authentication_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_names_the_dependency_exception_type_in_the_manager_log() =>
+            LogMessagesAt(_managerLogger, LogLevel.Error)
+                .Should()
+                .ContainSingle(message => message.Contains(typeof(ArgumentOutOfRangeException).FullName!));
+
+        [Test]
+        public void It_keeps_the_dependency_message_out_of_every_log()
+        {
+            AllLoggedText(_managerLogger).Should().NotContain(_dependencyMessage);
+            AllLoggedText(_hasherLogger).Should().NotContain(_dependencyMessage);
+        }
+
+        [Test]
+        public void It_keeps_the_presented_secret_out_of_every_log()
+        {
+            AllLoggedText(_managerLogger).Should().NotContain(RealHasherSecret);
+            AllLoggedText(_hasherLogger).Should().NotContain(RealHasherSecret);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry()
+        {
+            LoggedExceptions(_managerLogger).Should().BeEmpty();
+            LoggedExceptions(_hasherLogger).Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_logs_no_hasher_warning() => LogCountAt(_hasherLogger, LogLevel.Warning).Should().Be(0);
+    }
+
+    // Stored-data corruption: the hash cannot be decoded, so the secret was never compared. That is
+    // not evidence the caller's credentials are wrong.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithTheRealHasherAndAnUnreadableStoredHash
+        : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // Valid base64 of three bytes: the reader runs out before the salt length.
+            StubApplicationWithStoredSecret(OwnerClientId, Convert.ToBase64String([1, 2, 3]));
+
+            _result = await CreateManagerWith(CreateRealHasher(HashedAtIterations))
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        OwnerClientId,
+                        RealHasherSecret,
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_authentication_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithTheRealHasherAndAWrongSecret : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            StubApplicationWithStoredSecret(OwnerClientId, await HashedAtValidIterations(RealHasherSecret));
+
+            _result = await CreateManagerWith(CreateRealHasher(HashedAtIterations))
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        OwnerClientId,
+                        "not-the-secret",
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithTheRealHasherAndTheRightSecret : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            StubApplicationWithStoredSecret(OwnerClientId, await HashedAtValidIterations(RealHasherSecret));
+            (string token, _jti) = CreateOwnedToken(signingKey);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            _result = await CreateManagerWith(CreateRealHasher(HashedAtIterations))
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(OwnerClientId, RealHasherSecret, token, TokenTypeHint.None),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+    }
+
+    // The token endpoint is out of scope and keeps the hasher's established semantics: a
+    // verification that cannot run is still reported as unauthorized_client, and the hasher still
+    // logs it. Pinned so the revocation fix cannot silently change /connect/token.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithTheRealHasherWhenVerificationCannotRun
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+        private ILogger<ClientSecretHasher> _hasherLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+            StubApplicationWithStoredSecret(OwnerClientId, await HashedAtValidIterations(RealHasherSecret));
+
+            _result = await CreateManagerWith(CreateRealHasher(0, _hasherLogger))
+                .GetAccessTokenAsync([
+                    new KeyValuePair<string, string>("client_id", OwnerClientId),
+                    new KeyValuePair<string, string>("client_secret", RealHasherSecret),
+                ]);
+        }
+
+        [Test]
+        public void It_still_answers_unauthorized_client() =>
+            _result
+                .Should()
+                .BeOfType<TokenResult.FailureAuthentication>()
+                .Which.Error.Should()
+                .Be("unauthorized_client");
+
+        [Test]
+        public void It_still_has_the_hasher_log_the_failure() =>
+            LogCountAt(_hasherLogger, LogLevel.Warning).Should().Be(1);
+    }
+
+    /// <summary>A scratch directory for certificate files, removed by the fixture's teardown.</summary>
+    private static string NewScratchDirectory()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"dms-1327-certs-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private const string DevCertificatePassword = "test-password";
+
+    /// <summary>
+    /// Writes a password-protected development certificate to <paramref name="path"/> and returns a
+    /// signing key for its private half whose key id is the certificate thumbprint, which is what
+    /// the service puts in "kid" when it signs with a certificate.
+    /// </summary>
+    private static RsaSecurityKey WriteDevelopmentCertificate(string path)
+    {
+        var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=DevCert",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1
+        );
+        using X509Certificate2 certificate = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1)
+        );
+        File.WriteAllBytes(path, certificate.Export(X509ContentType.Pfx, DevCertificatePassword));
+        return new RsaSecurityKey(rsa) { KeyId = certificate.Thumbprint };
+    }
+
+    private static IdentityOptions DevelopmentCertificateOptions(string path) =>
+        new()
+        {
+            Authority = TestIssuer,
+            Audience = TestAudience,
+            UseCertificates = true,
+            UseDevelopmentCertificates = true,
+            DevCertificatePath = path,
+            DevCertificatePassword = DevCertificatePassword,
+        };
+
+    // The JWKS helper would create a replacement development certificate here. A replacement holds
+    // an unrelated key, the owner's token would fail verification against it, and revocation would
+    // answer an empty 200 while revoking nothing. Revocation must refuse instead and leave the
+    // filesystem alone.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheDevelopmentCertificateIsMissing : OpenIddictTokenManagerTests
+    {
+        private string _directory = null!;
+        private string _certificatePath = null!;
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _directory = NewScratchDirectory();
+            _certificatePath = Path.Combine(_directory, "devcert.pfx");
+
+            // The owner's token was signed by the certificate that has since gone missing.
+            RsaSecurityKey originalKey = WriteDevelopmentCertificate(_certificatePath);
+            File.Delete(_certificatePath);
+            var (token, _) = CreateOwnedToken(originalKey);
+
+            var manager = CreateManagerWith(
+                _secretHasher,
+                options: DevelopmentCertificateOptions(_certificatePath)
+            );
+            _result = await RevokeAsAsync(manager, OwnerClientId, token);
+        }
+
+        [TearDown]
+        public void RemoveScratchDirectory() => Directory.Delete(_directory, recursive: true);
+
+        [Test]
+        public void It_reports_temporarily_unavailable_for_the_missing_certificate() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("signing-certificate-missing");
+
+        [Test]
+        public void It_does_not_create_a_replacement_certificate() =>
+            File.Exists(_certificatePath).Should().BeFalse();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // The read-only loader still verifies against a certificate that exists: the owner's token is
+    // revoked and the certificate file is left byte-for-byte unchanged.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithAnExistingDevelopmentCertificate : OpenIddictTokenManagerTests
+    {
+        private string _directory = null!;
+        private string _certificatePath = null!;
+        private byte[] _certificateBytes = null!;
+        private TokenRevocationResult _result = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _directory = NewScratchDirectory();
+            _certificatePath = Path.Combine(_directory, "devcert.pfx");
+            RsaSecurityKey signingKey = WriteDevelopmentCertificate(_certificatePath);
+            _certificateBytes = await File.ReadAllBytesAsync(_certificatePath);
+            (string token, _jti) = CreateOwnedToken(signingKey);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+
+            var manager = CreateManagerWith(
+                _secretHasher,
+                options: DevelopmentCertificateOptions(_certificatePath)
+            );
+            _result = await RevokeAsAsync(manager, OwnerClientId, token);
+        }
+
+        [TearDown]
+        public void RemoveScratchDirectory() => Directory.Delete(_directory, recursive: true);
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_revokes_the_token() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_leaves_the_certificate_file_unchanged() =>
+            File.ReadAllBytes(_certificatePath).Should().Equal(_certificateBytes);
+    }
+
+    // A certificate that exists but cannot be read is an operational failure at the key-retrieval
+    // boundary, not an untrusted token.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenTheProductionCertificateIsUnreadable : OpenIddictTokenManagerTests
+    {
+        private string _directory = null!;
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _directory = NewScratchDirectory();
+            string certificatePath = Path.Combine(_directory, "signing.pfx");
+            await File.WriteAllBytesAsync(certificatePath, [1, 2, 3, 4, 5]);
+            var (_, _, signingKey) = CreateSigningKey();
+            var (token, _) = CreateOwnedToken(signingKey);
+
+            var manager = CreateManagerWith(
+                _secretHasher,
+                options: new IdentityOptions
+                {
+                    Authority = TestIssuer,
+                    Audience = TestAudience,
+                    UseCertificates = true,
+                    UseDevelopmentCertificates = false,
+                    CertificatePath = certificatePath,
+                    CertificatePassword = "irrelevant",
+                }
+            );
+            _result = await RevokeAsAsync(manager, OwnerClientId, token);
+        }
+
+        [TearDown]
+        public void RemoveScratchDirectory() => Directory.Delete(_directory, recursive: true);
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_key_retrieval_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("signing-key-retrieval");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // Other callers keep their provisioning behaviour: the JWKS path still creates a missing
+    // development certificate. Only revocation is read-only.
+    [TestFixture]
+    public class Given_GetPublicKeysAsync_WhenTheDevelopmentCertificateIsMissing : OpenIddictTokenManagerTests
+    {
+        private string _directory = null!;
+        private string _certificatePath = null!;
+        private List<(RSAParameters RsaParameters, string KeyId)> _keys = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _directory = NewScratchDirectory();
+            _certificatePath = Path.Combine(_directory, "devcert.pfx");
+
+            var manager = CreateManagerWith(
+                _secretHasher,
+                options: DevelopmentCertificateOptions(_certificatePath)
+            );
+            _keys = (await manager.GetPublicKeysAsync()).ToList();
+        }
+
+        [TearDown]
+        public void RemoveScratchDirectory() => Directory.Delete(_directory, recursive: true);
+
+        [Test]
+        public void It_still_creates_the_development_certificate() =>
+            File.Exists(_certificatePath).Should().BeTrue();
+
+        [Test]
+        public void It_publishes_the_new_certificate_key() => _keys.Should().ContainSingle();
     }
 
     /// <summary>
