@@ -235,6 +235,12 @@ Stores data store definitions and encrypted connection strings.
 | DataStoreType | VARCHAR(50) | Data store classification |
 | Name | VARCHAR(256) | Human-readable data store name |
 | ConnectionString | BYTEA | Encrypted database connection string |
+| TenantId | BIGINT | Owning tenant; null in a single-tenant deployment |
+
+**Constraint:** `UNIQUE (TenantId, Name)` ensures data store names are unique
+within a tenant; in a single-tenant deployment, where `TenantId` is null, they
+are unique across the deployment. A duplicate name is rejected with `400`, on
+`POST` and on a `PUT` that renames a data store.
 
 #### DataStoreContext
 
@@ -283,6 +289,12 @@ Stores OAuth client credentials for applications.
 | ApplicationId | INT | Foreign key to Application |
 | ClientId | VARCHAR(36) | OAuth client identifier |
 | ClientUuid | UUID | Globally unique client identifier |
+| Name | VARCHAR(50) | Human-readable client name |
+
+**Constraint:** `UNIQUE (ApplicationId, Name)` ensures API client names are
+unique within an application; clients of different applications may share a
+name. A duplicate name is rejected with `400`, on `POST` and on a `PUT` that
+renames a client or moves it to another application.
 
 #### ApiClientDataStore
 

@@ -1237,21 +1237,23 @@ public class ClaimSetModuleTests
             var expectedPostResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
-                  "title": "Identifying Values Are Not Unique",
-                  "status": 409,
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": [
-                    "A claim set with this name already exists."
-                  ]
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists."
+                    ]
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
 
             //Assert
-            addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
@@ -1282,21 +1284,23 @@ public class ClaimSetModuleTests
             var expectedPostResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
-                  "title": "Identifying Values Are Not Unique",
-                  "status": 409,
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": [
-                    "A claim set with this name already exists."
-                  ]
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists."
+                    ]
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
 
             //Assert
-            addResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
@@ -1324,20 +1328,22 @@ public class ClaimSetModuleTests
             var expectedImportResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
-                  "title": "Identifying Values Are Not Unique",
-                  "status": 409,
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": [
-                    "A claim set with this name already exists."
-                  ]
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists."
+                    ]
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualImportResponse!["correlationId"]!.GetValue<string>())
             );
 
-            importResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             importResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
         }
@@ -1366,21 +1372,23 @@ public class ClaimSetModuleTests
             var expectedCopyResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                  "type": "urn:ed-fi:api:conflict:non-unique-identity",
-                  "title": "Identifying Values Are Not Unique",
-                  "status": 409,
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
                   "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": [
-                    "A claim set with this name already exists."
-                  ]
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists."
+                    ]
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualCopyResponse!["correlationId"]!.GetValue<string>())
             );
 
             // Assert
-            copyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             copyResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonNode.DeepEquals(actualCopyResponse, expectedCopyResponse).Should().BeTrue();
         }
@@ -1685,26 +1693,40 @@ public class ClaimSetModuleTests
         public async Task It_passes_disabled_action_names_to_repository_validation(string method)
         {
             var commands = new List<ResourceClaimActionMutationCommand>();
-            A.CallTo(() => _claimSetRepository.GrantResourceClaimActions(A<ResourceClaimActionMutationCommand>.Ignored))
+            A.CallTo(() =>
+                    _claimSetRepository.GrantResourceClaimActions(
+                        A<ResourceClaimActionMutationCommand>.Ignored
+                    )
+                )
                 .Invokes((ResourceClaimActionMutationCommand command) => commands.Add(command))
                 .Returns(new ClaimSetResourceActionMutationResult.FailureInvalidAction("NotAnAction"));
-            A.CallTo(() => _claimSetRepository.ModifyResourceClaimActions(A<ResourceClaimActionMutationCommand>.Ignored))
+            A.CallTo(() =>
+                    _claimSetRepository.ModifyResourceClaimActions(
+                        A<ResourceClaimActionMutationCommand>.Ignored
+                    )
+                )
                 .Invokes((ResourceClaimActionMutationCommand command) => commands.Add(command))
                 .Returns(new ClaimSetResourceActionMutationResult.FailureInvalidAction("NotAnAction"));
             using var client = SetUpClient();
-            using var request = new HttpRequestMessage(new HttpMethod(method),
-                method == "POST" ? "/v3/claimSets/1/resourceClaimActions" : "/v3/claimSets/1/resourceClaimActions/2")
+            using var request = new HttpRequestMessage(
+                new HttpMethod(method),
+                method == "POST"
+                    ? "/v3/claimSets/1/resourceClaimActions"
+                    : "/v3/claimSets/1/resourceClaimActions/2"
+            )
             {
-                Content = JsonContent.Create(new
-                {
-                    claimSetId = 1,
-                    resourceClaimId = 2,
-                    resourceClaimActions = new[]
+                Content = JsonContent.Create(
+                    new
                     {
-                        new { name = "Create", enabled = true },
-                        new { name = "NotAnAction", enabled = false },
-                    },
-                }),
+                        claimSetId = 1,
+                        resourceClaimId = 2,
+                        resourceClaimActions = new[]
+                        {
+                            new { name = "Create", enabled = true },
+                            new { name = "NotAnAction", enabled = false },
+                        },
+                    }
+                ),
             };
 
             using var response = await client.SendAsync(request);

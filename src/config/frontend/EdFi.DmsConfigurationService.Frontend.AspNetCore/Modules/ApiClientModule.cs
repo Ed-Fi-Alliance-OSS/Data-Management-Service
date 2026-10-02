@@ -17,6 +17,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
@@ -24,6 +25,15 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class ApiClientModule : IEndpointModule
 {
+    private const string DuplicateNameError =
+        "An API client with this name already exists for the application.";
+
+    private static IResult DuplicateName(HttpContext httpContext) =>
+        FailureResults.DataValidation(
+            [new ValidationFailure("Name", DuplicateNameError)],
+            httpContext.TraceIdentifier
+        );
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
@@ -284,6 +294,9 @@ public class ApiClientModule : IEndpointModule
                     contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.Conflict
                 );
+            case ApiClientInsertResult.FailureDuplicateName:
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return DuplicateName(httpContext);
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError(
                     "Failure inserting the API client row: {FailureMessage}",
@@ -886,6 +899,13 @@ public class ApiClientModule : IEndpointModule
                                 contentType: "application/problem+json",
                                 statusCode: (int)HttpStatusCode.Conflict
                             );
+                        case ApiClientUpdateResult.FailureDuplicateName:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return DuplicateName(httpContext);
                         case ApiClientUpdateResult.FailureUnknown updateFailure:
                             logger.LogError(
                                 "Repository update failed for ApiClient {Id}: {Message}",

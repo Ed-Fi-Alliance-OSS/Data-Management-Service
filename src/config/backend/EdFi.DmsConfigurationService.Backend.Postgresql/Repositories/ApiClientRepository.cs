@@ -72,6 +72,8 @@ public class ApiClientRepository(
         return count == dataStoreIds.Distinct().Count();
     }
 
+    private const string DuplicateNameConstraint = "UX_ApiClient_ApplicationId_Name";
+
     public async Task<ApiClientInsertResult> InsertApiClient(
         ApiClientInsertCommand command,
         ApiClientCommand clientCommand
@@ -156,6 +158,15 @@ public class ApiClientRepository(
             logger.LogWarning(ex, "Data store not found");
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureDataStoreNotFound();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateNameConstraint
+            )
+        {
+            logger.LogWarning(ex, "API client name must be unique within the application");
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {
@@ -464,6 +475,15 @@ public class ApiClientRepository(
             logger.LogWarning(ex, "Data store not found");
             await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDataStoreNotFound();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateNameConstraint
+            )
+        {
+            logger.LogWarning(ex, "API client name must be unique within the application");
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUpdateResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {

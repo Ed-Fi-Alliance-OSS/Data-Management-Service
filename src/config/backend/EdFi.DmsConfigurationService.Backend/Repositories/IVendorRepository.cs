@@ -30,11 +30,10 @@ public interface IVendorRepository
 public record VendorInsertResult
 {
     /// <summary>
-    /// Successful vendor insert or update (upsert by natural key).
+    /// Successful vendor insert. Inserts are create-only; an existing vendor is never updated.
     /// </summary>
-    /// <param name="Id">The Id of the inserted or updated vendor.</param>
-    /// <param name="IsNewVendor">True if the vendor was newly inserted; false if an existing vendor was updated.</param>
-    public record Success(int Id, bool IsNewVendor) : VendorInsertResult();
+    /// <param name="Id">The Id of the inserted vendor.</param>
+    public record Success(int Id) : VendorInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -42,7 +41,7 @@ public record VendorInsertResult
     public record FailureUnknown(string FailureMessage) : VendorInsertResult();
 
     /// <summary>
-    /// Company Name must be unique
+    /// Another vendor in the caller's tenant already has this company name; nothing was written
     /// </summary>
     public record FailureDuplicateCompanyName() : VendorInsertResult();
 }

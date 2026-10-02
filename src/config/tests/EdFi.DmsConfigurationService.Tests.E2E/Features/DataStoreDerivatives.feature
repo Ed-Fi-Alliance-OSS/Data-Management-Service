@@ -7,7 +7,7 @@ Feature: DataStoreDerivatives endpoints
                   """
                   {
                     "dataStoreType": "Production",
-                    "name": "Parent Instance",
+                    "name": "Parent Instance {scenarioRunId}",
                     "connectionString": "Server=localhost;Database=TestDb;"
                   }
                   """
@@ -497,3 +497,50 @@ Feature: DataStoreDerivatives endpoints
                         "connectionString": "{ignore}"
                     }
                   """
+
+        # A data store holds at most one derivative of each type.
+        @DMS-1341 @MssqlRepresentative
+        Scenario: 24 Verify a duplicate dataStoreDerivative type for a data store is rejected
+             When a POST request is made to "/v3/dataStoreDerivatives" with
+                  """
+                    {
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "Server=replica;Database=ReplicaDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/dataStoreDerivatives" with
+                  """
+                    {
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "Server=replica2;Database=ReplicaDb2;"
+                    }
+                  """
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "DerivativeType": [
+                              "A DataStoreDerivative of type ReadReplica already exists for DataStore {dataStoreId}."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/dataStoreDerivatives" with
+                  """
+                    {
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "Snapshot",
+                        "connectionString": "Server=snapshot;Database=SnapshotDb;"
+                    }
+                  """
+             Then it should respond with 201

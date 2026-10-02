@@ -1412,6 +1412,82 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 -Times 1 `
                 -Exactly
         }
+
+        It "New-SeedLoaderCredentials refreshes an existing SeedLoader vendor with PUT instead of POSTing it again" {
+            # POST /v3/vendors is create-only, so a re-run must find the vendor and PUT the new prefixes.
+            Mock -ModuleName Dms-Management -CommandName Invoke-Api -ParameterFilter { $RelativeUrl -like "v3/vendors?company=*" } -MockWith {
+                @([pscustomobject]@{
+                        id                  = 42
+                        company             = "DMS Bootstrap Seed Loader"
+                        contactName         = "Original Contact"
+                        contactEmailAddress = "original@example.com"
+                        namespacePrefixes   = "uri://ed-fi.org"
+                    })
+            }
+            Mock -ModuleName Dms-Management -CommandName Invoke-RestMethod -MockWith { return $null }
+            Mock -ModuleName Dms-Management -CommandName Add-Vendor -MockWith { throw "Add-Vendor must not be called for an existing vendor." }
+            Mock -ModuleName Dms-Management -CommandName Find-CmsApplicationIdsByNameAndVendor -MockWith { return [long[]]@() }
+            Mock -ModuleName Dms-Management -CommandName Add-Application -MockWith { @{ Id = 7; Key = "the-key"; Secret = "the-secret" } }
+            Mock -ModuleName Dms-Management -CommandName Wait-CmsClientAvailable -MockWith {}
+
+            $result = New-SeedLoaderCredentials `
+                -CmsUrl "http://localhost:8081" `
+                -NamespacePrefixes @("uri://ed-fi.org", "uri://extension.org") `
+                -DataStoreIds @([long]1) `
+                -Tenant "edfi-tenant" `
+                -AdminToken "fake-token"
+
+            $result.VendorId | Should -Be 42
+            Should -Invoke -ModuleName Dms-Management -CommandName Add-Vendor -Times 0 -Exactly
+            Should -Invoke `
+                -ModuleName Dms-Management `
+                -CommandName Invoke-Api `
+                -ParameterFilter { $RelativeUrl -eq "v3/vendors?company=DMS%20Bootstrap%20Seed%20Loader" -and $Headers["Tenant"] -eq "edfi-tenant" } `
+                -Times 1 `
+                -Exactly
+            Should -Invoke `
+                -ModuleName Dms-Management `
+                -CommandName Invoke-RestMethod `
+                -ParameterFilter {
+                    $body = $Body | ConvertFrom-Json
+                    $Uri -eq "http://localhost:8081/v3/vendors/42" -and
+                    $Method -eq "Put" -and
+                    $Headers["Tenant"] -eq "edfi-tenant" -and
+                    $body.id -eq 42 -and
+                    $body.company -eq "DMS Bootstrap Seed Loader" -and
+                    $body.contactName -eq "Original Contact" -and
+                    $body.contactEmailAddress -eq "original@example.com" -and
+                    $body.namespacePrefixes -eq "uri://ed-fi.org, uri://extension.org"
+                } `
+                -Times 1 `
+                -Exactly
+            Should -Invoke -ModuleName Dms-Management -CommandName Add-Application -ParameterFilter { $VendorId -eq 42 } -Times 1 -Exactly
+        }
+
+        It "New-SeedLoaderCredentials creates the SeedLoader vendor when none exists" {
+            Mock -ModuleName Dms-Management -CommandName Invoke-Api -ParameterFilter { $RelativeUrl -like "v3/vendors?company=*" } -MockWith { @() }
+            Mock -ModuleName Dms-Management -CommandName Invoke-RestMethod -MockWith { throw "No vendor PUT is expected when the vendor does not exist." }
+            Mock -ModuleName Dms-Management -CommandName Add-Vendor -MockWith { return [long]43 }
+            Mock -ModuleName Dms-Management -CommandName Find-CmsApplicationIdsByNameAndVendor -MockWith { return [long[]]@() }
+            Mock -ModuleName Dms-Management -CommandName Add-Application -MockWith { @{ Id = 7; Key = "the-key"; Secret = "the-secret" } }
+            Mock -ModuleName Dms-Management -CommandName Wait-CmsClientAvailable -MockWith {}
+
+            $result = New-SeedLoaderCredentials `
+                -CmsUrl "http://localhost:8081" `
+                -NamespacePrefixes @("uri://ed-fi.org", "uri://extension.org") `
+                -DataStoreIds @([long]1) `
+                -AdminToken "fake-token"
+
+            $result.VendorId | Should -Be 43
+            Should -Invoke `
+                -ModuleName Dms-Management `
+                -CommandName Add-Vendor `
+                -ParameterFilter { $Company -eq "DMS Bootstrap Seed Loader" -and $NamespacePrefixes -eq "uri://ed-fi.org, uri://extension.org" } `
+                -Times 1 `
+                -Exactly
+            Should -Invoke -ModuleName Dms-Management -CommandName Invoke-RestMethod -Times 0 -Exactly
+            Should -Invoke -ModuleName Dms-Management -CommandName Add-Application -ParameterFilter { $VendorId -eq 43 } -Times 1 -Exactly
+        }
     }
 
     Context "environment, URL, OAuth, selector, and XSD resolution" {

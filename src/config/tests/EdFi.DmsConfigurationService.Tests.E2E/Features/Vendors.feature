@@ -7,7 +7,7 @@ Feature: Vendors endpoints
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store",
+                        "name": "Test Data Store {scenarioRunId}",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """
@@ -386,11 +386,14 @@ Feature: Vendors endpoints
                   """
 
 
-        Scenario: 18 POST with an existing company name returns 200 and updates the vendor
+        # POST /v3/vendors is create-only: a company the tenant already holds is rejected and the
+        # existing vendor is left exactly as it was.
+        @DMS-1341 @MssqlRepresentative
+        Scenario: 18 POST with an existing company name returns 400 and leaves the vendor unchanged
              When a POST request is made to "/v3/vendors" with
                   """
                    {
-                       "company": "Upsert Co",
+                       "company": "Repeat Co {scenarioRunId}",
                        "contactName": "Initial Contact",
                        "contactEmailAddress": "initial@example.com",
                        "namespacePrefixes": "Test"
@@ -407,27 +410,38 @@ Feature: Vendors endpoints
              When a POST request is made to "/v3/vendors" with
                   """
                    {
-                       "company": "Upsert Co",
+                       "company": "Repeat Co {scenarioRunId}",
                        "contactName": "Updated Contact",
                        "contactEmailAddress": "updated@example.com",
-                       "namespacePrefixes": "Test"
+                       "namespacePrefixes": "Updated"
                    }
                   """
-             Then it should respond with 200
-              And the response headers include
-                  """
-                   {
-                       "location": "/v3/vendors/{vendorId}"
-                   }
-                  """
-              And the response body is empty
-              And the record can be retrieved with a GET request
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
                   """
                   {
-                      "id": {id},
-                      "company": "Upsert Co",
-                      "contactName": "Updated Contact",
-                      "contactEmailAddress": "updated@example.com",
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Company": [
+                              "A vendor with this company name already exists."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a GET request is made to "/v3/vendors/{vendorId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": {vendorId},
+                      "company": "Repeat Co {scenarioRunId}",
+                      "contactName": "Initial Contact",
+                      "contactEmailAddress": "initial@example.com",
                       "namespacePrefixes": "Test"
                   }
                   """
