@@ -5793,4 +5793,180 @@ public class ApiClientModuleTests
         [Test]
         public void It_performs_no_cleanup() => AssertNoProviderCleanup();
     }
+
+    /// <summary>
+    /// The complete 400 body a duplicate API client name answers, on both create and update.
+    /// </summary>
+    protected static async Task AssertDuplicateApiClientNameContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        JsonNode expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "Name": [
+                  "An API client with this name already exists for the application."
+                ]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+        )!;
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_with_a_duplicate_name : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateName());
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+    }
+
+    /// <summary>
+    /// The unique violation proves the database update did not commit, so the provider change is
+    /// rolled back to the client's original values and the rejection is returned without outcome
+    /// resolution.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name : CompensationSyncTestBase
+    {
+        private List<(
+            string ClientUuid,
+            string DisplayName,
+            int[]? DataStoreIds,
+            bool IsApproved
+        )> _providerUpdates = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _providerUpdates = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                    _providerUpdates.Add(
+                        (
+                            call.GetArgument<string>(0)!,
+                            call.GetArgument<string>(1)!,
+                            call.GetArgument<int[]?>(4),
+                            call.GetArgument<bool>(5)
+                        )
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_updateResponse);
+
+        [Test]
+        public void It_applies_the_requested_name_to_the_provider_first()
+        {
+            _providerUpdates.Should().HaveCount(2);
+            _providerUpdates[0].ClientUuid.Should().Be(_existingUuid.ToString());
+            _providerUpdates[0].DisplayName.Should().Be("Updated");
+        }
+
+        [Test]
+        public void It_rolls_the_provider_back_to_the_original_client()
+        {
+            _providerUpdates.Should().HaveCount(2);
+            _providerUpdates[1].ClientUuid.Should().Be(_updatedUuid.ToString());
+            _providerUpdates[1].DisplayName.Should().Be("Test");
+            _providerUpdates[1].DataStoreIds.Should().Equal(1);
+            _providerUpdates[1].IsApproved.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_persists_the_rolled_back_client_uuid() =>
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(1, _existingUuid, _rollbackUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_rollback_fails
+        : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_DUPLICATE_ROLLBACK_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.FailureUnknown(Sentinel)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+    }
 }

@@ -666,4 +666,207 @@ public class ApiClientTests : DatabaseTest
             result.Should().BeOfType<ApiClientGetResult.FailureNotFound>();
         }
     }
+
+    [TestFixture]
+    public class Given_api_client_names_within_an_application : ApiClientTests
+    {
+        private const string ApplicationAName = "DMS1341 Application A";
+        private const string SharedName = "DMS1341 Shared Client";
+        private const string OtherName = "DMS1341 Other Client";
+
+        private int _applicationAId;
+        private int _applicationBId;
+        private int _otherClientId;
+        private int _duplicateAttemptDataStoreId;
+        private ApiClientInsertResult _duplicateInsert = null!;
+        private ApiClientInsertResult _otherApplicationInsert = null!;
+        private ApiClientInsertResult _firstClientNameInsert = null!;
+        private ApiClientUpdateResult _renameOntoTakenName = null!;
+        private ApiClientUpdateResult _moveOntoTakenName = null!;
+        private ApiClientResponse _otherClientAfterRejectedUpdates = null!;
+        private ApiClientUpdateResult _updateKeepingOwnName = null!;
+
+        private async Task<int> InsertApplication(int vendorId, string name)
+        {
+            var result = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = name,
+                    VendorId = vendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.Success>();
+            return ((ApplicationInsertResult.Success)result).Id;
+        }
+
+        private static async Task<int> InsertDataStore()
+        {
+            var tenantContextProvider = new TenantContextProvider();
+            var dataStoreRepository = new DataStoreRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new DataStoreContextRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreContextRepository>.Instance,
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                new DataStoreDerivativeRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<DataStoreDerivativeRepository>.Instance,
+                    new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+            var result = await dataStoreRepository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Production",
+                    Name = $"DMS1341 Data Store {Guid.NewGuid()}",
+                    ConnectionString = "Server=localhost;Database=TestDb;",
+                }
+            );
+            result.Should().BeOfType<DataStoreInsertResult.Success>();
+            return ((DataStoreInsertResult.Success)result).Id;
+        }
+
+        private Task<ApiClientInsertResult> InsertApiClient(
+            int applicationId,
+            string name,
+            int[] dataStoreIds
+        ) =>
+            _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = applicationId,
+                    Name = name,
+                    IsApproved = true,
+                    DataStoreIds = dataStoreIds,
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+        private Task<ApiClientUpdateResult> UpdateOtherClient(
+            int applicationId,
+            string name,
+            bool isApproved
+        ) =>
+            _apiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = _otherClientId,
+                    ApplicationId = applicationId,
+                    Name = name,
+                    IsApproved = isApproved,
+                    DataStoreIds = [],
+                }
+            );
+
+        private async Task<List<ApiClientResponse>> ApiClients(int? applicationId)
+        {
+            var result = await _apiClientRepository.QueryApiClient(
+                new ApiClientQuery { ApplicationId = applicationId }
+            );
+            result.Should().BeOfType<ApiClientQueryResult.Success>();
+            return ((ApiClientQueryResult.Success)result).ApiClientResponses;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var vendorResult = await new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            ).InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = $"DMS1341 Vendor {Guid.NewGuid()}",
+                    ContactEmailAddress = "names@test.com",
+                    ContactName = "Names Tester",
+                    NamespacePrefixes = "uri://names-test.example",
+                }
+            );
+            int vendorId = ((VendorInsertResult.Success)vendorResult).Id;
+
+            // Each new application already holds one API client named after the application.
+            _applicationAId = await InsertApplication(vendorId, ApplicationAName);
+            _applicationBId = await InsertApplication(vendorId, "DMS1341 Application B");
+            int originalDataStoreId = await InsertDataStore();
+            _duplicateAttemptDataStoreId = await InsertDataStore();
+
+            (await InsertApiClient(_applicationAId, SharedName, [originalDataStoreId]))
+                .Should()
+                .BeOfType<ApiClientInsertResult.Success>();
+            var otherInsert = await InsertApiClient(_applicationAId, OtherName, []);
+            _otherClientId = ((ApiClientInsertResult.Success)otherInsert).Id;
+
+            _duplicateInsert = await InsertApiClient(
+                _applicationAId,
+                SharedName,
+                [_duplicateAttemptDataStoreId]
+            );
+            _otherApplicationInsert = await InsertApiClient(_applicationBId, SharedName, []);
+            _firstClientNameInsert = await InsertApiClient(_applicationAId, ApplicationAName, []);
+
+            _renameOntoTakenName = await UpdateOtherClient(_applicationAId, SharedName, isApproved: true);
+            _moveOntoTakenName = await UpdateOtherClient(_applicationBId, SharedName, isApproved: true);
+            var reread = await _apiClientRepository.GetApiClientById(_otherClientId);
+            _otherClientAfterRejectedUpdates = ((ApiClientGetResult.Success)reread).ApiClientResponse;
+
+            _updateKeepingOwnName = await UpdateOtherClient(_applicationAId, OtherName, isApproved: false);
+        }
+
+        [Test]
+        public void It_should_reject_a_duplicate_name_within_an_application() =>
+            _duplicateInsert.Should().BeOfType<ApiClientInsertResult.FailureDuplicateName>();
+
+        [Test]
+        public async Task It_should_write_no_row_for_a_rejected_insert() =>
+            (await ApiClients(_applicationAId))
+                .Select(apiClient => apiClient.Name)
+                .Should()
+                .BeEquivalentTo(ApplicationAName, SharedName, OtherName);
+
+        [Test]
+        public async Task It_should_write_no_data_store_assignment_for_a_rejected_insert() =>
+            (await ApiClients(null))
+                .Should()
+                .NotContain(apiClient => apiClient.DataStoreIds.Contains(_duplicateAttemptDataStoreId));
+
+        [Test]
+        public void It_should_accept_the_same_name_under_another_application() =>
+            _otherApplicationInsert.Should().BeOfType<ApiClientInsertResult.Success>();
+
+        [Test]
+        public void It_should_reject_the_name_of_the_applications_first_client() =>
+            _firstClientNameInsert.Should().BeOfType<ApiClientInsertResult.FailureDuplicateName>();
+
+        [Test]
+        public void It_should_reject_a_rename_onto_a_taken_name() =>
+            _renameOntoTakenName.Should().BeOfType<ApiClientUpdateResult.FailureDuplicateName>();
+
+        [Test]
+        public void It_should_reject_a_move_to_an_application_that_has_the_name() =>
+            _moveOntoTakenName.Should().BeOfType<ApiClientUpdateResult.FailureDuplicateName>();
+
+        [Test]
+        public void It_should_leave_the_client_unchanged_after_rejected_updates()
+        {
+            _otherClientAfterRejectedUpdates.Name.Should().Be(OtherName);
+            _otherClientAfterRejectedUpdates.ApplicationId.Should().Be(_applicationAId);
+        }
+
+        [Test]
+        public void It_should_accept_an_update_that_keeps_its_own_name() =>
+            _updateKeepingOwnName.Should().BeOfType<ApiClientUpdateResult.Success>();
+    }
 }
