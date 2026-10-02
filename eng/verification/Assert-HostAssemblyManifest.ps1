@@ -74,9 +74,9 @@ param(
     [string]
     $ExpectedCustomValidationVersion,
 
-    # The identity contract's own declared version, read by callers with Get-PluginsContractVersion
-    # pointed at its csproj, for the same reason as the two above. Optional so existing callers keep
-    # working; once supplied, the application row is mandatory and must match.
+    # The identity contract's own declared version, read by callers with Get-IdentityContractVersion
+    # for the same reason as the two above. Optional so existing callers keep working; once
+    # supplied, the application row is mandatory and must match.
     [Parameter()]
     [string]
     $ExpectedIdentityVersion

@@ -62,6 +62,15 @@ public sealed class Given_TwoAllowlistedPluginsReplaceTheIdentityService
     }
 
     [Test]
+    public void It_recorded_the_failure_under_the_plugin_registration_validation_phase()
+    {
+        PluginHostProbe.ReadStartupStatus(_host!.StartupStatusFilePath)["Phase"]!
+            .GetValue<string>()
+            .Should()
+            .Be("ValidatePluginRegistrations");
+    }
+
+    [Test]
     public void It_named_both_plugins_in_the_status_file_error()
     {
         string message = PluginHostProbe.ReadStartupStatus(_host!.StartupStatusFilePath)[

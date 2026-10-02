@@ -59,10 +59,10 @@
     -->
     <Import Project="PluginIntegrationFixtures.targets" />
     <!--
-        Packs the two published contracts into a local folder feed and publishes the packed contract
-        fixture plugins against it, into a stage root of their own. Separate from the file
-        above because that one's shared machinery publishes every fixture with one fixed command and
-        no package feed; see the targets file for the whole reason.
+        Packs the plugin, custom-validation and identity contracts into a local folder feed and
+        publishes the packed contract fixture plugins against it, into a stage root of their own.
+        Separate from the file above because that one's shared machinery publishes every fixture
+        with one fixed command and no package feed; see the targets file for the whole reason.
     -->
     <Import Project="PackedContractFixturePlugins.targets" />
     <ItemGroup>

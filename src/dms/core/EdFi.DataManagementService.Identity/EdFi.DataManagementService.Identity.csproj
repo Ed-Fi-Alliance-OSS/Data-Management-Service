@@ -29,9 +29,9 @@
             SetDMSAssemblyInfo wrote there - the same MSBuild evaluation order the plugins tree
             relies on.
 
-            VersionPrefix rather than Version: Get-PluginsContractVersion (package-helpers.psm1)
-            reads //PropertyGroup/VersionPrefix from a caller-supplied -PropsPath, and pointing that
-            path at this csproj has to work unchanged.
+            VersionPrefix rather than Version: Get-IdentityContractVersion (package-helpers.psm1)
+            reads //PropertyGroup/VersionPrefix from this csproj, and the same element is what the
+            plugin contract's props and the custom-validation csproj declare.
 
             InformationalVersion is one property beyond what the ticket's list names, because
             without it declared here the packed DLL's ProductVersion falls back to the regenerated

@@ -321,6 +321,31 @@ function Get-CustomValidationContractVersion {
 
 <#
 .DESCRIPTION
+Reads the identity contract's own declared version out of its csproj.
+
+The same argument as the siblings above: the identity contract is versioned on its own public
+surface, independently of the DMS release, and every lane reads the version through here so a
+failure to read it names the identity contract rather than the plugin contract.
+
+.EXAMPLE
+Get-IdentityContractVersion
+# Returns: 1.0.0
+#>
+function Get-IdentityContractVersion {
+    param (
+        # The project file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
+    )
+
+    return Get-DeclaredVersionElement `
+        -Path $ProjectPath `
+        -ElementName "VersionPrefix" `
+        -ContractDescription "identity contract"
+}
+
+<#
+.DESCRIPTION
 Reads the secrets contract's own declared version out of its csproj.
 
 EdFi.Api.Secrets is versioned on its own public surface, independently of the Configuration Service
@@ -329,8 +354,8 @@ FileVersion and InformationalVersion, and marks all four TreatAsLocalProperty so
 release-stamped src/config/Directory.Build.props nor a global /p:Version can replace them. Every
 lane that names the package by version reads it through here rather than from a release tag.
 
-The element is Version rather than the VersionPrefix the other two contracts declare, because that
-is the property this csproj states; the reader asks for the element the file actually carries.
+The element is Version rather than the VersionPrefix the other contracts declare, because that is
+the property this csproj states; the reader asks for the element the file actually carries.
 
 .EXAMPLE
 Get-SecretsContractVersion
@@ -692,6 +717,7 @@ Export-ModuleMember -Function `
     Convert-ToAssemblyVersion, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
+    Get-IdentityContractVersion, `
     Get-SecretsContractVersion, `
     Get-ViewScopedServiceIndexUrl, `
     Test-PackageInView, `

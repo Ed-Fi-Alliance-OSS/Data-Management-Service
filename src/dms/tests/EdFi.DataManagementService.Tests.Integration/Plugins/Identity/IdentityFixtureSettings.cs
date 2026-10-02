@@ -36,6 +36,31 @@ internal sealed class IdentityFixtureSettings
     public IdentityFixtureSettings NamespaceWithYear(
         string name,
         params (string Tenant, string DistrictId, string SchoolYear)[] contexts
+    ) =>
+        NamespaceWithQualifiers(
+            name,
+            [
+                .. contexts.Select(context =>
+                    (
+                        context.Tenant,
+                        (IReadOnlyDictionary<string, string>)
+                            new Dictionary<string, string>
+                            {
+                                ["districtId"] = context.DistrictId,
+                                ["schoolYear"] = context.SchoolYear,
+                            }
+                    )
+                ),
+            ]
+        );
+
+    /// <summary>
+    /// Maps a namespace from contexts whose qualifier set is stated exactly, so a case can map a
+    /// context that is missing or adds a qualifier.
+    /// </summary>
+    public IdentityFixtureSettings NamespaceWithQualifiers(
+        string name,
+        params (string Tenant, IReadOnlyDictionary<string, string> Qualifiers)[] contexts
     )
     {
         string prefix = $"IdentityFixture:Namespaces:{_namespaces++}";
@@ -45,8 +70,11 @@ internal sealed class IdentityFixtureSettings
         {
             string contextPrefix = $"{prefix}:Contexts:{index}";
             _settings[$"{contextPrefix}:Tenant"] = contexts[index].Tenant;
-            _settings[$"{contextPrefix}:Qualifiers:districtId"] = contexts[index].DistrictId;
-            _settings[$"{contextPrefix}:Qualifiers:schoolYear"] = contexts[index].SchoolYear;
+
+            foreach ((string qualifier, string value) in contexts[index].Qualifiers)
+            {
+                _settings[$"{contextPrefix}:Qualifiers:{qualifier}"] = value;
+            }
         }
 
         return this;

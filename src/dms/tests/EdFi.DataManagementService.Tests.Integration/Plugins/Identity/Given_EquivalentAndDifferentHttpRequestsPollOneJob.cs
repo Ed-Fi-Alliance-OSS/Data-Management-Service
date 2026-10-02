@@ -20,13 +20,16 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// District ids and school years are numeric, so a qualifier value cannot differ by case over HTTP;
 /// value case, missing and extra qualifiers, dictionary order and case-distinct client ids are covered at
 /// the provider boundary by <c>Given_CraftedRequestContextsReachTheIdentityProvider</c>.
-/// Every denied caller is granted the namespace, so the denial is job ownership. The case-variant
-/// client has its own successful job as the control that its token and grant work.
+/// Every denied caller reaches the granted namespace: the other district and the other school year are
+/// extra contexts of the same namespace, and each caller holds a grant on it, so only job ownership can
+/// deny them. Each denied caller or route also polls a job it issued itself, and reads the seeded
+/// person, as the control that its token, grant and route reach the namespace.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
 {
     private const string FixturePlugin = "Acme.IdentityFixture";
+    private const string OtherYear = "2027";
     private const string SeededId = "0123456789abcdef0123456789abcdef";
 
     private IdentityPluginHost? _host;
@@ -34,6 +37,11 @@ public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
     private string _token = string.Empty;
     private readonly Dictionary<string, (HttpStatusCode Status, JsonNode? Body)> _polls = [];
     private HttpStatusCode _caseVariantClientOwnJob;
+    private HttpStatusCode _otherClientOwnJob;
+    private HttpStatusCode _otherDistrictOwnJob;
+    private HttpStatusCode _otherYearOwnJob;
+    private HttpStatusCode _otherDistrictGetById;
+    private HttpStatusCode _otherYearGetById;
     private HttpStatusCode _tenantCaseGetById;
 
     [OneTimeSetUp]
@@ -43,7 +51,12 @@ public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
         _district = districts[0];
 
         IdentityFixtureSettings fixture = new IdentityFixtureSettings()
-            .Namespace("ns-a", (IdentityTestClients.TenantOne, _district))
+            .NamespaceWithYear(
+                "ns-a",
+                (IdentityTestClients.TenantOne, _district, IdentityTestClients.SchoolYear),
+                (IdentityTestClients.TenantOne, districts[1], IdentityTestClients.SchoolYear),
+                (IdentityTestClients.TenantOne, _district, OtherYear)
+            )
             .Seed(SeededId, "Rivera", "Ana")
             .Grant(IdentityTestClients.ClientA.ClientId, IdentityTestClients.TenantOne, "ns-a")
             .Grant(IdentityTestClients.ClientB.ClientId, IdentityTestClients.TenantOne, "ns-a")
@@ -84,26 +97,52 @@ public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
             $"/tenant-one/{_district}/{IdentityTestClients.SchoolYear}/IDENTITY/V2/IDENTITIES/RESULTS/{_token}"
         );
         _polls["otherDistrict"] = await GetAsync(clientA, Results("tenant-one", districts[1]));
-        _polls["otherYear"] = await GetAsync(clientA, Results("tenant-one", _district, "2027"));
+        _polls["otherYear"] = await GetAsync(clientA, Results("tenant-one", _district, OtherYear));
         _polls["otherClient"] = await GetAsync(clientB, Results("tenant-one", _district));
         _polls["caseVariantClient"] = await GetAsync(caseVariant, Results("tenant-one", _district));
 
-        using HttpRequestMessage ownSubmit = new(
-            HttpMethod.Post,
-            IdentityTestClients.Route(IdentityTestClients.TenantOne, _district, "identities/find")
-        )
-        {
-            Content = new StringContent("""["~fixture:async"]""", Encoding.UTF8, "application/json"),
-        };
-        using HttpResponseMessage ownAccepted = await caseVariant.SendAsync(ownSubmit);
-        string ownToken = ownAccepted.Headers.Location!.OriginalString.Split('/')[^1];
-        _caseVariantClientOwnJob = (
+        _caseVariantClientOwnJob = await OwnJobPollAsync(
+            caseVariant,
+            IdentityTestClients.TenantOne,
+            _district,
+            IdentityTestClients.SchoolYear
+        );
+        _otherClientOwnJob = await OwnJobPollAsync(
+            clientB,
+            IdentityTestClients.TenantOne,
+            _district,
+            IdentityTestClients.SchoolYear
+        );
+        _otherDistrictOwnJob = await OwnJobPollAsync(
+            clientA,
+            IdentityTestClients.TenantOne,
+            districts[1],
+            IdentityTestClients.SchoolYear
+        );
+        _otherYearOwnJob = await OwnJobPollAsync(
+            clientA,
+            IdentityTestClients.TenantOne,
+            _district,
+            OtherYear
+        );
+        _otherDistrictGetById = (
             await GetAsync(
-                caseVariant,
+                clientA,
+                IdentityTestClients.Route(
+                    IdentityTestClients.TenantOne,
+                    districts[1],
+                    $"identities/{SeededId}"
+                )
+            )
+        ).Status;
+        _otherYearGetById = (
+            await GetAsync(
+                clientA,
                 IdentityTestClients.Route(
                     IdentityTestClients.TenantOne,
                     _district,
-                    $"identities/results/{ownToken}"
+                    $"identities/{SeededId}",
+                    OtherYear
                 )
             )
         ).Status;
@@ -112,6 +151,31 @@ public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
             await GetAsync(
                 clientA,
                 IdentityTestClients.Route("TENANT-ONE", _district, $"identities/{SeededId}")
+            )
+        ).Status;
+    }
+
+    // Issues an asynchronous find and polls it under the same client and route.
+    private static async Task<HttpStatusCode> OwnJobPollAsync(
+        HttpClient client,
+        string tenant,
+        string district,
+        string year
+    )
+    {
+        using HttpRequestMessage submit = new(
+            HttpMethod.Post,
+            IdentityTestClients.Route(tenant, district, "identities/find", year)
+        )
+        {
+            Content = new StringContent("""["~fixture:async"]""", Encoding.UTF8, "application/json"),
+        };
+        using HttpResponseMessage accepted = await client.SendAsync(submit);
+        string token = accepted.Headers.Location!.OriginalString.Split('/')[^1];
+        return (
+            await GetAsync(
+                client,
+                IdentityTestClients.Route(tenant, district, $"identities/results/{token}", year)
             )
         ).Status;
     }
@@ -169,6 +233,20 @@ public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
     }
 
     [Test]
+    public void It_reaches_the_namespace_on_the_other_district_and_year_routes()
+    {
+        _otherDistrictGetById.Should().Be(HttpStatusCode.OK);
+        _otherYearGetById.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public void It_polls_a_job_issued_on_the_other_district_and_year_routes()
+    {
+        _otherDistrictOwnJob.Should().Be(HttpStatusCode.OK);
+        _otherYearOwnJob.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
     public void It_denies_a_different_client()
     {
         _polls["otherClient"].Status.Should().Be(HttpStatusCode.NotFound);
@@ -176,6 +254,12 @@ public sealed class Given_EquivalentAndDifferentHttpRequestsPollOneJob
             .GetValue<string>()
             .Should()
             .Be(IdentityFailureResponse.NotFoundType);
+    }
+
+    [Test]
+    public void It_answers_the_different_client_for_a_job_it_was_issued()
+    {
+        _otherClientOwnJob.Should().Be(HttpStatusCode.OK);
     }
 
     [Test]

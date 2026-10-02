@@ -441,8 +441,9 @@ The host detects conflicting claims, and its detection depends on the form you u
 
 Ignoring that rule fails in two shapes, and the second is the reason it is a rule:
 
-1. A `TryAdd` that declines, when it was your plugin's only contribution, leaves you registering no
-   declared contract, and **startup fails naming you**. Annoying, but loud.
+1. A `TryAdd` that declines, when your plugin is left with no declared contract registered and
+   added no configuration source, leaves you registering nothing the host will call, and **startup
+   fails naming you**, even if you also registered helper services of your own. Annoying, but loud.
 2. A `TryAdd` that declines in a plugin that *also* registered something declared, or added a
    configuration source in `ContributeConfiguration`, is **not detected at all**. Your plugin loads,
    startup succeeds, and the replacement simply never happens.

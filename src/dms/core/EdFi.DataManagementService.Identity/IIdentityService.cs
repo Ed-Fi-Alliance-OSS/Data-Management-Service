@@ -29,11 +29,20 @@ namespace EdFi.DataManagementService.Identity;
 /// <b>Cardinality.</b> This is a replace contract with zero or one plugin implementation replacing the
 /// host default, <c>NoIdentityService</c>. Register an implementation with a plain <c>Add</c>, such as
 /// <c>services.AddScoped&lt;IIdentityService, MyIdentityService&gt;()</c>, and never with a
-/// <c>TryAdd</c>, because the host default is always registered and a <c>TryAdd</c> is therefore
-/// always declined. When that declined <c>TryAdd</c> was the plugin's only contribution, startup fails
-/// naming the plugin; beside another declared registration, such as a custom validator, it goes
-/// undetected and the host default silently keeps serving. Never use <c>services.Replace</c> or
-/// <c>RemoveAll</c> either: they remove the host's own registration, which the host refuses at startup.
+/// <c>TryAdd</c>: the host default is always registered, so a plain <c>TryAdd</c> is declined and the
+/// replacement never happens. Startup catches that only when the plugin is left with no declared
+/// registration and added no configuration source; it then fails naming the plugin, even if the
+/// plugin registered helper services of its own. Beside a surviving declared registration, such as a
+/// custom validator, or beside a configuration source, the declined <c>TryAdd</c> goes undetected and
+/// the host default silently keeps serving. <c>TryAddEnumerable</c> happens to add here, because its
+/// implementation type differs from the host default's, but it is the fan-in form; use <c>Add</c>.
+/// Never use <c>services.Replace</c> or <c>RemoveAll</c> either: they remove the host's own
+/// registration, which the host refuses at startup.
+/// </para>
+/// <para>
+/// <b>Keying.</b> Register the implementation unkeyed. DMS resolves this contract unkeyed from the
+/// request scope, so a keyed registration is accepted at startup but never reached by a request, and
+/// the host default keeps serving.
 /// </para>
 /// <para>
 /// <b>Namespace authorization.</b> Every operation - create, get, find, search, and results - requires

@@ -1,16 +1,17 @@
 <Project>
     <!--
-        Packs the published contracts into a local folder feed, then publishes every fixture
-        plugin named in the PackedContractFixture item list against that feed into this project's
-        output as a real plugin directory.
+        Packs the plugin contracts - the plugin contract, the custom-validation contract and the
+        identity contract - into a local folder feed, then publishes every fixture plugin named in
+        the PackedContractFixture item list against that feed into this project's output as a real
+        plugin directory.
 
         Why this is not an entry in PluginIntegrationFixtures.targets' two lists, and why it does
         not import src/dms/PluginFixtureStaging.targets: that shared file publishes every fixture
         with one fixed command carrying no version properties, no package source and no cache
         override, and its prune removes the whole PluginFixtures tree. These fixtures consume their
         contracts as packed nupkgs rather than by project reference, which is the whole point of the
-        story they belong to, so they need a pack step ahead of the publish and two version arguments
-        and an isolated package cache during it. That is a different staging shape rather than a
+        story they belong to, so they need a pack step ahead of the publish, one version argument per
+        contract and an isolated package cache during it. That is a different staging shape rather than a
         longer list, and the shared file's own header records that generalizing it is not wanted -
         the plugin hosting test project already declines to import it for the same kind of reason.
 
@@ -34,8 +35,8 @@
             configuration, because a nuget.config cannot expand an MSBuild property, so the
             configuration is carried in the package version instead: a Debug and a Release build
             write two differently named nupkgs into this one folder and never race over a file.
-            Both PackageReferences are bracket-pinned, so several nupkgs per id resolve to the
-            pinned one or fail rather than silently resolving another.
+            Every fixture's contract PackageReferences are bracket-pinned, so several nupkgs per id
+            resolve to the pinned one or fail rather than silently resolving another.
         -->
         <PackedContractFixtureFeed
         >$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/.local-feed</PackedContractFixtureFeed>
@@ -209,15 +210,15 @@
             pinned version from the one feed and packing twice would race two dotnet processes over
             the same nupkg file.
 
-            PackageVersion rather than Version, so only the nupkg's version moves. Both contracts
-            declare AssemblyVersion and FileVersion explicitly - the custom-validation contract in
-            its own csproj and the plugin contract in src/plugins/Directory.Build.props, 1.0.0 in
-            both today - and the loader's newer-plugin-on-older-host preflight compares contract
-            AssemblyVersions, so a local repack must not move them. The configuration-specific
-            package version here is fixture isolation, not the contract's published version. Under
-            host-first resolution the host serves the plugin its own copies of both assemblies at
-            run time, and identical assembly versions are what keeps that from being recorded as a
-            substitution.
+            PackageVersion rather than Version, so only the nupkg's version moves. Every contract
+            declares AssemblyVersion and FileVersion explicitly - the custom-validation and identity
+            contracts in their own csprojs, 1.0.0 today, and the plugin contract in
+            src/plugins/Directory.Build.props, 1.1.0 today - and the loader's
+            newer-plugin-on-older-host preflight compares contract AssemblyVersions, so a local
+            repack must not move them. The configuration-specific package version here is fixture
+            isolation, not a contract's published version. Under host-first resolution the host
+            serves the plugin its own copies of the contract assemblies at run time, and identical
+            assembly versions are what keeps that from being recorded as a substitution.
         -->
         <Exec
             Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(CustomValidationContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(PackedContractFixtureFeed)&quot; -p:PackageVersion=$(PackedContractFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
