@@ -36,7 +36,6 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
 
         const byte Version = 1;
         const int SaltLength = 16;
-        const int SubkeyLength = 32;
         int iterations = _identityOptions.Value.ClientSecretHashingIterations;
 
         byte[] salt = RandomNumberGenerator.GetBytes(SaltLength);
@@ -78,7 +77,7 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
 
         try
         {
-            return Task.FromResult(SecretMatches(plainTextSecret, hashedSecret));
+            return Task.FromResult(SecretMatches(plainTextSecret, hashedSecret, requireCompleteHash: false));
         }
         catch (Exception ex)
         {
@@ -101,7 +100,7 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
 
         try
         {
-            return Task.FromResult(SecretMatches(plainTextSecret, hashedSecret));
+            return Task.FromResult(SecretMatches(plainTextSecret, hashedSecret, requireCompleteHash: true));
         }
         catch (Exception ex)
         {
@@ -130,8 +129,16 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
         return true;
     }
 
+    private const int SubkeyLength = 32;
+
     /// <summary>Derives the subkey at the configured iteration count and compares in fixed time. Throws when it cannot.</summary>
-    private bool SecretMatches(string plainTextSecret, string hashedSecret)
+    /// <param name="requireCompleteHash">
+    /// <c>true</c> for the failure-preserving path: a stored hash shorter than its declared salt plus
+    /// the 32-byte subkey is structural corruption, not a mismatch, because <see cref="BinaryReader.ReadBytes"/>
+    /// returns a short array instead of throwing and the fixed-time comparison of unequal lengths would
+    /// otherwise answer <c>false</c>. <c>false</c> keeps the lenient path exactly as it was.
+    /// </param>
+    private bool SecretMatches(string plainTextSecret, string hashedSecret, bool requireCompleteHash)
     {
         _logger.LogDebug("Verifying client secret");
 
@@ -141,14 +148,20 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
         _ = reader.ReadByte(); // version byte — read past, value not used
         int saltLength = reader.ReadInt32();
         byte[] salt = reader.ReadBytes(saltLength);
-        byte[] expectedSubkey = reader.ReadBytes(32);
+        byte[] expectedSubkey = reader.ReadBytes(SubkeyLength);
+
+        if (requireCompleteHash && (salt.Length != saltLength || expectedSubkey.Length != SubkeyLength))
+        {
+            // Fixed text: nothing from the stored value or the presented secret.
+            throw new InvalidDataException("The stored client secret hash is incomplete.");
+        }
 
         byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
             plainTextSecret,
             salt,
             _identityOptions.Value.ClientSecretHashingIterations,
             HashAlgorithmName.SHA256,
-            32
+            SubkeyLength
         );
 
         var result = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);

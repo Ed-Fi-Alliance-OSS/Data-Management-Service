@@ -56,6 +56,14 @@ Revision 3 (responses to the Codex review of revision 2):
 | Commit/test ordering | §6.8 now defines: focused tests on the working tree, commit, then E2E against the clean commit, fix-forward commits if needed, and final E2E against the final commit. |
 | Stale reference | P2.1 now says Keycloak activation happens at P3.2. |
 
+P2.1 second correction (responses to the Codex review of commit `b8c1d4b4b`):
+
+| Codex finding | Change |
+|---|---|
+| A truncated stored hash still became `invalid_client`: `BinaryReader.ReadBytes` returns a short array without throwing, so a hash missing its last byte compared a 31-byte subkey and answered `false` | D-07 step 2: the failure-preserving path checks that the stored hash holds the complete declared salt and the 32-byte subkey before comparing, and reports structural corruption as an `InvalidDataException` with fixed text, classified `TemporarilyUnavailable`. The lenient path is unchanged. Regressions use a truncated real generated hash at the hasher, manager and HTTP levels. |
+| Q-09 | Resolved as a plugin compatibility requirement (§7); no contract change. |
+| Validator limitation | D-07.6 no longer claims the "same key pair" rationale bounds the risk; the limitation is recorded as residual. |
+
 P2.1 correction (responses to the Codex review of commit `3cef7b53a`, the P2.1 commit):
 
 | Codex finding | Change |
@@ -392,13 +400,18 @@ Sequence inside `RevokeTokenAsync(request, ct)`:
    Revocation therefore calls `IFailurePreservingSecretVerifier.VerifySecretPreservingFailuresAsync`
    (OpenIddict project; implemented by the built-in hasher): `true` = match, `false` = genuine
    mismatch (including an empty presented secret or an application with no stored secret), and any
-   failure that prevented the comparison (iteration-count misconfiguration, an unreadable stored
-   hash) escapes as an exception that the hasher does not log. Mismatch or unapproved →
+   failure that prevented the comparison escapes as an exception that the hasher does not log:
+   iteration-count misconfiguration, a stored hash that cannot be decoded, and a stored hash that
+   decodes but is **structurally incomplete** (shorter than its declared salt plus the 32-byte
+   subkey). The completeness check is explicit because `BinaryReader.ReadBytes` returns a short
+   array instead of throwing, so a hash missing even one trailing byte would otherwise reach the
+   fixed-time comparison and answer "wrong secret"; it throws `InvalidDataException` with fixed
+   text. Mismatch or unapproved →
    `InvalidClient`; escaped failure → `TemporarilyUnavailable` (`client-authentication`), logged by
    the manager with exception type names only. `/connect/token` keeps `VerifySecretAsync` and its
-   behaviour unchanged (AC1, non-goal). A replacement hasher registered through the plugin contract
-   that does not implement the capability is called through `VerifySecretAsync` and keeps its own
-   failure semantics (Q-09).
+   behaviour unchanged (AC1, non-goal), including its quiet `false` for an incomplete hash. A
+   replacement hasher registered through the plugin contract is called through `VerifySecretAsync`;
+   it must meet the plugin compatibility requirement in Q-09 for revocation to keep this guarantee.
 3. Canonical client id = `CanonicalClientId(applicationInfo, request.ClientId)` (unchanged);
    `applicationId = applicationInfo.Id`.
 4. Load verification keys through a **new private path** (`LoadVerificationKeysAsync`) used only
@@ -442,13 +455,13 @@ manager's boundary catch:
 
 | Helper | Finding | Disposition |
 |---|---|---|
-| `ClientSecretHasher.VerifySecretAsync` | catches every failure, logs the exception and its message, returns `false` | revocation uses the failure-preserving path (step 2); token endpoint unchanged |
+| `ClientSecretHasher.VerifySecretAsync` | catches every failure, logs the exception and its message, returns `false`; an incomplete stored hash does not even throw (short `ReadBytes`) and simply compares unequal | revocation uses the failure-preserving path with an explicit completeness check (step 2); token endpoint unchanged |
 | `GetPublicKeysFromCertificatesAsync` | creates a development certificate when the file is missing | revocation uses a read-only loader (D-07.4) |
 | `GetPublicKeysFromDatabaseAsync` | swallows repository failures and skips bad keys (returns a partial or empty set) | already not used by revocation (`LoadVerificationKeysAsync`, D-07.4) |
 | `DetectKeyFormat` | its outer catch logged a warning **with the exception attached**; it returns `Unknown` | now logs exception type names only (applies to the JWKS path too, which loses only the stack trace of an `RSA.Create` failure); `Unknown` is `TemporarilyUnavailable` on the revocation path |
 | `ResolveKeyFormat` | caches the detected format, including `Unknown`, for the process lifetime | unchanged: a key that cannot be read stays unavailable until restart, which fails closed |
 | PostgreSQL and SQL Server `OpenIddictDataRepository` (`GetApplicationByClientIdAsync`, `GetActivePublicKeysInternalAsync`, `RevokeTokenAsync`) and both `OpenIddictTokenRepository` wrappers | no internal catch, no logging; exceptions propagate | no change; the boundary catches classify them and log type names only (driver messages can carry connection details) |
-| `JwtTokenValidator.ValidateToken` | catches everything and returns a token-outcome category (`Untrusted`, `Expired`, `UntrustedIssuerOrAudience`) | unchanged and shared with the bearer path (AC1). Residual risk: a loaded key that imports but cannot verify would make tokens `Untrusted` → 200. Bounded because the signing key is the private half of the same pair, so such a key could not have minted the tokens being revoked |
+| `JwtTokenValidator.ValidateToken` | catches everything and returns a token-outcome category (`Untrusted`, `Expired`, `UntrustedIssuerOrAudience`) | unchanged and shared with the bearer path (AC1). **Residual limitation, not bounded by this design:** if a key that imports successfully cannot be used for verification at the time of the request (the stored key changed after the token was issued, or a cryptographic provider becomes unavailable or refuses the key), the validator reports the token `Untrusted` and revocation answers 200 without revoking. Ordinary signature failures remain token outcomes; this ticket does not rewrite the validator or reclassify signature failures as outages. Recorded for the operator documentation (P5.1) |
 
 Removed: the blanket `catch (Exception) { return false; }` (F-12). Replaced by classified catches at
 each infrastructure boundary (`DbException`-derived and provider-specific types plus a final
@@ -1013,7 +1026,9 @@ executable path from the endpoint; P3.2 activates it.
 ### Phase 5 — Final verification and documentation
 
 **P5.1 Documentation and full verification.**
-- Files: `CS-AUTH.md` (rewrite the revocation sections: both providers authenticated; error format
+- Files: `CS-AUTH.md` (the Q-09 plugin compatibility requirement for replacement
+  `IClientSecretHasher` implementations; the D-07.6 validator residual limitation; and rewrite the
+  revocation sections: both providers authenticated; error format
   exception to DMS-1218; token types per provider; related-token/session effects; validation paths;
   propagation/clock-skew limits; TLS: delegation goes to `IdentitySettings:Authority`, which must
   be HTTPS outside local development; local `http://dms-keycloak:8080` is the documented exception;
@@ -1082,7 +1097,7 @@ Decisions resolved by the revision-1 review (recorded so later steps do not reop
 | Q-05 | Scenarios live in a focused `Revocation.feature`. |
 | Q-06 | Changelog `8.1.0.md`; the completed DMS-1478 prerequisite is distinguished from this ticket's additions. |
 | Q-07 | `invalid_client` for "client not found" only after an authoritative successful admin read; a failed, refused or ambiguous read is 503. |
-| Q-09 | (raised in the P2.1 correction, open) A replacement `IClientSecretHasher` registered through the plugin replace contract and not implementing `IFailurePreservingSecretVerifier` is called through `VerifySecretAsync`, so a failure it suppresses is answered `InvalidClient` (fail-closed, nothing mutated). Closing this would mean extending the `Secrets` plugin contract (for example a default interface method), which is outside this ticket. Decide whether to accept the limitation and document it in the plugin guidance, or to raise a follow-up ticket. |
+| Q-09 | (raised in the first P2.1 correction, resolved by review) **Plugin compatibility requirement.** The `IClientSecretHasher` replace contract is unchanged and no member is added: a default interface method wrapping `VerifySecretAsync` could not recover a failure the plugin already suppressed. A replacement hasher's `VerifySecretAsync` must (1) return `false` for normal credential rejection, (2) **throw** for an operational failure that prevents verification (configuration, dependency, unreadable or incomplete stored value), and (3) log neither secret nor dependency exception content. Revocation calls a conforming plugin through `VerifySecretAsync` and its boundary classifies the exception as `TemporarilyUnavailable`. A plugin that suppresses operational failures **cannot satisfy** the revocation guarantee: its failures are answered `invalid_client`. That outcome mutates nothing, but preventing mutation alone does **not** satisfy AC5's separation of operational failures from authentication outcomes, so such a plugin is non-conforming. The built-in hasher's `VerifySecretAsync` predates this requirement and suppresses failures, which is why revocation uses its `IFailurePreservingSecretVerifier` path instead. The `Secrets` package is separately versioned (1.0.0), so the requirement is recorded here and published with the plugin-facing documentation in P5.1, not by editing the shipped contract. |
 | Q-08 | (raised and resolved in P1.1) The characterization fixture stays in the existing Keycloak CI E2E lane as a regression guard on the pinned image; no opt-in variable hides it. Every prediction is exact, and the only skipped checks are state checks that do not exist for a row (before-state of a request without a live token, after-state of a request without a token or with a foreign-realm token). |
 
 §2.1 rows marked "observed in P1.1" and every behaviour recorded in §9.1 are observations from

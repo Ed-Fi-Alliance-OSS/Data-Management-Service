@@ -208,4 +208,92 @@ public class ClientSecretHasherTests
                     && call.Arguments[3] is ArgumentOutOfRangeException
                 );
     }
+
+    /// <summary>
+    /// A real generated hash with its last <paramref name="bytesRemoved"/> decoded bytes dropped. One
+    /// byte leaves the salt intact and a 31-byte subkey; more reaches into the salt.
+    /// </summary>
+    private static async Task<string> TruncatedRealHash(int bytesRemoved)
+    {
+        byte[] decoded = Convert.FromBase64String(
+            await CreateHasher(HashedAtIterations).HashSecretAsync(Secret)
+        );
+        return Convert.ToBase64String(decoded[..^bytesRemoved]);
+    }
+
+    // BinaryReader.ReadBytes returns a short array rather than throwing, so a hash missing only its
+    // final byte still decodes, and the fixed-time comparison of a 32- and a 31-byte subkey answers
+    // false. On the failure-preserving path that is corruption, not a wrong secret.
+    [TestFixture]
+    public class Given_a_failure_preserving_verification_of_a_hash_missing_its_last_byte
+    {
+        private ILogger<ClientSecretHasher> _logger = null!;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string truncated = await TruncatedRealHash(1);
+            _logger = A.Fake<ILogger<ClientSecretHasher>>();
+            ClientSecretHasher hasher = CreateHasher(HashedAtIterations, _logger);
+            _act = () => hasher.VerifySecretPreservingFailuresAsync(Secret, truncated);
+        }
+
+        [Test]
+        public async Task It_reports_the_hash_as_incomplete() =>
+            await _act.Should()
+                .ThrowAsync<InvalidDataException>()
+                .WithMessage("The stored client secret hash is incomplete.");
+
+        [Test]
+        public async Task It_logs_no_warning_and_attaches_no_exception()
+        {
+            await _act.Should().ThrowAsync<InvalidDataException>();
+            LogCalls(_logger).Should().NotContain(call => call.GetArgument<LogLevel>(0) >= LogLevel.Warning);
+            LogCalls(_logger).Should().NotContain(call => call.Arguments[3] != null);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_failure_preserving_verification_of_a_hash_truncated_inside_its_salt
+    {
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // 1 version byte + 4 length bytes + 16 salt + 32 subkey = 53; dropping 40 leaves 8 salt bytes.
+            string truncated = await TruncatedRealHash(40);
+            ClientSecretHasher hasher = CreateHasher(HashedAtIterations);
+            _act = () => hasher.VerifySecretPreservingFailuresAsync(Secret, truncated);
+        }
+
+        [Test]
+        public async Task It_reports_the_hash_as_incomplete() =>
+            await _act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    // The lenient entry point the token endpoint uses keeps its established behaviour for the same
+    // corrupt value: a quiet false, exactly as before the structural check existed.
+    [TestFixture]
+    public class Given_a_lenient_verification_of_a_hash_missing_its_last_byte
+    {
+        private ILogger<ClientSecretHasher> _logger = null!;
+        private bool _verified;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string truncated = await TruncatedRealHash(1);
+            _logger = A.Fake<ILogger<ClientSecretHasher>>();
+            _verified = await CreateHasher(HashedAtIterations, _logger).VerifySecretAsync(Secret, truncated);
+        }
+
+        [Test]
+        public void It_still_answers_false() => _verified.Should().BeFalse();
+
+        [Test]
+        public void It_still_logs_no_warning() =>
+            LogCalls(_logger).Should().NotContain(call => call.GetArgument<LogLevel>(0) >= LogLevel.Warning);
+    }
 }
