@@ -2031,3 +2031,238 @@ Nothing is pushed.
 - any runtime or load check.
 
 The reviewer selects these after reviewing the merge.
+
+### Review disposition (2026-10-01)
+
+The reviewer approved `0b8fd96d6` and `81d95f874` with no blocking merge findings, after
+reviewing the code and records; no tests were rerun.
+
+- Both startup validators are preserved, and the signing-key implementation is unchanged.
+- The diff against merged `main` contains no `src/dms` change.
+- The nine CSharpier failures are accepted as inherited from `main`; those files stay
+  untouched.
+- The bounded post-merge validation below was selected.
+- Not to be repeated unless a new failure or code change warrants it: Phase 0, the full
+  stress and outage matrix, mutation probes, and the already-green unit suites.
+- The stress exception and the mutation waivers remain in force.
+
+## Post-merge validation (2026-10-01/02)
+
+### Scope and tested code
+
+- **Tested commit:** HEAD `81d95f874`. Its `src/` is identical to the merge `0b8fd96d6`
+  (`main` `5c964676f` + `a59b931ce`).
+- **No production, test, setting or script change was made in this step.**
+- **Phase 0** stays historical causal evidence. **4.1 and 4.2** stay historical regression
+  evidence for the pre-merge implementation (`src/` = `c799f084d`).
+- **Single runs.** Each lane below ran once, as directed. A single passing run is not proof
+  by itself: the earlier repeated runs remain the regression history, and CI adds to it.
+- **Raw captures:** `eng/performance/dms-1556/artifacts/postmerge/` (gitignored), bundled
+  as EV-PM-* (see *Evidence bundle*).
+
+### Images (all built from the merged tree in this step)
+
+| Lane | CMS image | DMS image | Built |
+| --- | --- | --- | --- |
+| DMS shard 1 | `0651760f1145` (16 layers) | `ae34a689df97` (17) | compose build after teardown, 23:52:16Z / 23:52:34Z |
+| DMS shard 2 | `bc7b5e43d908` | `3a1282da052d` | compose build after teardown; same creation times as shard 1 (cache hits on its layers; new image ids, as in 4.2) |
+| CMS E2E | `74312c8ada82` (16) | — | `start-local-config -r` (no cache), 00:40:14Z |
+| Catalog runtime | `5862a2b0ff0a…`, tagged `ed-fi-api-config-local:dms1556-0b8fd96d6` (16) | DMS idle | `setup-local-dms.ps1` rebuild, 00:43:26Z |
+| Matched control (below) | `7b89092645bd…`, `ed-fi-api-config-local:dms1556-c799f084d-rebuild` (16) | DMS idle | rebuilt from `a59b931ce` (`src/` = `c799f084d`); every layer a cache hit on the 4.1 build (creation time 13:26:17Z, as the 4.1 image) |
+
+`main`'s Dockerfile now stages the plugin tree from the `parentdir` named context and
+strips host `bin/` and `obj/`. Compose provides `parentdir: ../../src/`, and every CMS
+image above built through it. The publish step and runtime settings are unchanged from the
+4.1 image's Dockerfile: no ReadyToRun or tiered-compilation difference.
+
+### Results
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| PostgreSQL integration, full lane | **959 passed, 0 failed, 0 skipped** (8 m 25 s) | 937 → 959 with `main`'s fixtures. 62 `NotExecuted` trx entries: the `[Explicit]` DMS-1437 operational probes. **Target verified after building:** the merge's `--no-incremental` build had replaced the gitignored bin override with the frontend `appsettings.Test.json`, which has no `DatabaseConnection`. The lane's guard refused to start, and no test ran. The override was restored to `127.0.0.1:5437`, and mid-run `pg_stat_activity` showed the suite's connections on the dedicated 5437 server and none on the other session's 5432 server. |
+| SQL Server integration, full lane | **979 passed, 0 failed, 0 skipped** (8 m 57 s) | `ConnectionStrings__MssqlAdmin` to `127.0.0.1,14335`. 957 → 979. 0 skips: every non-explicit test executed. 66 `NotExecuted` trx entries: the `[Explicit]` DMS-1437 operational probes. |
+| `./build-config.ps1 Build -Configuration Release` | succeeded | — |
+| `./build-dms.ps1 Build -Configuration Release` | exit 1 | The recorded local exception (NU1008/MSB3073 in the `Acme.CustomValidationProof` plugin-fixture publish; worktree placement, 4.2). The E2E assemblies built. Neither Release build changed a tracked file. |
+| DMS E2E shard 1 (`build-dms.ps1 E2ETest … -TestFilter 'Category=@e2e-ci-shard-1'`) | **230 passed, 0 failed, 2 skipped** (27.4 min) | The same 2 profile skips as 4.2 |
+| DMS E2E shard 2 (`… @e2e-ci-shard-2`) | **220 passed, 0 failed, 2 skipped** (22.1 min) | The same 2 `@ignore` profile skips as 4.2 |
+| CMS E2E (`build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained`) | **235 passed, 0 failed, 10 skipped** (2.2 min) | The 10 skips are `@MultitenantOnly`: the 8 of 4.2 plus 2 new tenancy-discovery scenarios from DMS-1508/1506. ApiClients 09 and 15 are again pending-binding `NotExecuted`, giving 247 trx entries. 227 → 235 passed with `main`'s scenarios. |
+| Catalog runtime, P-runner-approx, default settings, 87/87 | **all 1,740 responses 200 with validated bodies** (3 cold + 1 warm, 5 rounds each) | Details below |
+
+Teardown ran after every E2E lane, with exit 0 each time.
+
+### DMS-1557's two effects
+
+DMS-1557 (`eb0b10597`, on `main`) changes both services, and its two parts are separate:
+
+- **CMS changes:** they broaden the read scopes. `GET /v3/profiles/`, `/v3/profiles/{id}`
+  and `/v3/applications/{id}` move to `MapLimitedAccess`, which accepts any of the three
+  scopes. Every token accepted before is still accepted, and the post-authentication
+  profile-repository 500 (F8) is unchanged (integration review above).
+- **DMS changes:** independently of this ticket, DMS no longer caches an incomplete profile
+  catalog. `ConfigurationServiceProfileProvider` throws `ProfileDataUnavailableException`
+  for every non-404 CMS failure. That maps to 503, and `CachedProfileService` fails closed.
+  This is why the merged DMS shards matter: they run DMS's fail-closed catalog handling
+  against the CMS that no longer stalls.
+- **What the shards show:** in both runs, every DMS request to CMS answered 200 (2,541 in
+  shard 1, 2,702 in shard 2). There were no 5xx from CMS and no profile-data-unavailable
+  signal. So the shards show the two fixes working together on the real workload. They do
+  not exercise DMS's fail-closed path, because no CMS failure occurred; that path is covered
+  by DMS-1557's own tests.
+
+### Logs of the E2E lanes
+
+These are the JSON CMS logs and DMS logs, parsed per lane:
+`postmerge/e2e/pm-e2e-log-signals.txt` and `pm-e2e-dms-log-signals.txt`.
+
+- **CMS, DMS shards:** zero Error lines; 2 Warning lines each, both data-protection startup
+  notices.
+  - Shard 1 published 6 snapshots: `Startup`, 3 `Timer`, 2 `Request` (overdue background
+    reloads). Shard 2 published 5. All had 1 key and took 0–25 ms.
+  - No boundary 503, JWKS 503, load failure, late discard or unknown-key refresh.
+- **CMS, CMS E2E:** the same cold path as 4.2.
+  - The `Startup` snapshot had 0 keys, which produced the empty-snapshot Warning.
+  - One unknown-key refresh followed, `RefreshedFound`, and v2 had 1 key.
+  - 4 Error lines are `Authentication failed: IDX10511`, from the manipulated-signature
+    scenarios. 2 are claims upload/validation failures, from scenarios that expect them.
+- **DMS, startup token 401s:**
+  - **Observed:** in each shard, DMS's first 3 client-credential requests to CMS
+    `/connect/token` got 401. They came 5–20 s after CMS started and before the first
+    successful token, at 23:53:08Z and 00:18:17Z. CMS logged them at Information only (the
+    401 result) and logged no Warning or Error. Every later token request returned 200
+    (499 and 521). Each 401 aborted that DMS start, which accounts for the 3 data-store load
+    failures and 6 fatal-startup lines per shard. 4.2 shard 1 run 1 had 1 such 401, with 2
+    and 4 matching lines.
+  - **Inferred, not proven:** DMS's startup racing the provisioning of its client. These
+    requests go to token issuance, whose contract this ticket does not change; this is not
+    bearer validation or signing-key resolution.
+- **DMS, other Error lines:** all also present in 4.2, and all expected scenario output:
+  - 1 malformed-JWT token-validation error (shard 1, IDX12741);
+  - 2 `GET /ed-fi/schools/deletes` 500s (shard 1);
+  - 1 data-store startup-validation `PostgresException` per shard;
+  - the profile-validation errors of the profile scenarios.
+
+### Catalog runtime (P-runner-approx, default settings)
+
+The 4.1 protocol, run through `Invoke-ControlBatch.ps1`:
+
+- **Setup:** CMS restart per run; 5 rounds with body validation; samplers under the
+  coverage gate; stacks at 0, 2, 8 and 14 s into round 1. Every container outside
+  `dms-local` that belongs to this ticket was stopped. Results are in `postmerge/catalog/`.
+- **Seed:** 87 profiles into a freshly set-up database, with the manifest in
+  `postmerge/catalog/`. The historical manifest is untouched.
+
+| Runs | Responses | Non-200 | 200 with invalid body | Round-1 p50 (ms) | Round-1 max (ms) | Rounds 2–5 p50 (ms) | Handshake p50, round 1 (ms) | CMS conns created, round 1 | CMS CPU max (%) | PG CPU max (%) | Coverage failures |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **Merged**, cold × 3 | 1,305 | **0** | 0 | 958–1,147 | ≤ 1,330 | 163–375 | 299–377 | 83–84 | 149–194 | 137–157 | 0 |
+| **Merged**, warm × 1 | 435 | **0** | 0 | 613 | 818 | 260–303 | 211 | 77 | — | — | 0 |
+| **Pre-merge control**, cold × 3 (same environment, run right after) | 1,305 | **0** | 0 | 914–976 | ≤ 1,249 | 166–328 | 281–299 | 83–84 | 144–155 | 137–157 | 0 |
+| *4.1 reference*, cold × 5 (pre-merge image, 2026-10-01 14:56Z) | 2,175 | 0 | 0 | 458–562 | ≤ 585 | 85–208 | 102–185 | 81–82 | 94–129 | 68–76 | 0 |
+| *4.1 reference*, warm × 5 | 2,175 | 0 | 0 | 259–422 | ≤ 519 | 90–134 | — | 59–79 | — | — | 0 |
+
+The warm run's CPU columns were not extracted; "—" in a 4.1 row means it was not quoted
+here.
+
+**Gate criteria:**
+
+- every response was 200 with the expected `id`, `name` and `definition`;
+- peak overlap was 87 in every round;
+- there was no non-200 to correlate;
+- the §4.9 dependency signals counted over each run's CMS log are zero (`h41-report.md`):
+  no boundary 503, JWKS 503, load failure, late discard, unknown-key refresh, empty
+  snapshot or introspection failure;
+- PostgreSQL logged no `53300`;
+- sampler coverage had 0 failures;
+- Worker Min Limit was **4**, as in every P-runner-approx dump.
+
+**Stacks.** 16 merged captures (12 cold, 4 warm) and 12 control captures. Every
+thread-pool worker is parked, with **0 resolver waits, 0 authentication frames in a
+synchronous wait and 0 other synchronous waits**. As in 4.1, each round 1 ends inside its
+0 s capture.
+
+**Round-1 latency: investigated.** No plateau returned: the slowest response in any round
+was 1.33 s, against Phase 0's 13–16 s. Round 1 was, however, about 0.5 s slower than in
+4.1, and the warm round 1 about 0.2–0.35 s slower.
+
+- **Ruled out by inspection:** the request path, the build and the stall's signature. The
+  stacks are clean, the number of connections created is unchanged, and the Dockerfile's
+  publish and runtime settings are unchanged.
+- **Matched control.** The pre-merge image, rebuilt from the same source with layers
+  cache-identical to 4.1's, ran in the same environment immediately after: 3 cold runs.
+  - It shows the same shift: round-1 p50 914–976 ms against the merged image's 958–1,147 ms,
+    handshake p50 281–299 ms against 299–377 ms.
+  - It used the same CPU: PostgreSQL 137–157 % on both images, against 68–76 % in 4.1.
+  - **The difference from 4.1 is environmental, not the merged code.** The same work costs
+    about twice the CPU it did at 4.1.
+- **Environment differences from 4.1:**
+  - host free memory was 2.6–2.7 GB of 31 GB;
+  - four containers of other sessions were running, idle at about 2 % CPU each:
+    `cms-pg-integration-1437`, `cms-probe-mssql-1437`, `dms-mssql-integration-2025`,
+    `dms-pg-integration-1431`. 4.1 had stopped every non-`dms-local` container.
+
+  Which of these, if either, causes the shift is **not established**.
+
+### Deviations
+
+- **PostgreSQL override.** The merge build had replaced the bin override (above). The guard
+  stopped the first lane attempt before any test ran, and the override was restored.
+- **Containers.** This ticket's own integration containers (`cms-pg-integration-1556`,
+  `cms-mssql-integration-1556`) were stopped before the Docker lanes to save memory. They
+  are not removed: `docker start` restores them. Other sessions' containers were left
+  running (`postmerge/running-containers-before-e2e.txt`; each block index lists them).
+- **In-block dump not taken.** `Invoke-ControlBatch.ps1` finds the last run of a block with
+  `$order[-1]`. With a single workload per block, that indexes a character of the workload
+  name rather than the last workload, so the dump never triggers. 4.1 always used two
+  workloads. The Worker Min Limit dump was taken manually after the cold block, outside
+  every timed window. The script is unchanged; this is a harness limitation to fix if
+  single-workload blocks are used again.
+- **The 4.1 image tag was gone,** removed by this step's teardowns. The control used a
+  source-identical rebuild whose layers are all cache hits on the 4.1 build.
+- **Control interrupted by memory pressure.** Claude Code stopped the control script after
+  its 3 runs and its block index were written, during the control dump, because the
+  system was critically low on memory.
+  - The dump file exists, but its Worker Min Limit analysis, the image restore and the
+    report did not run in that script.
+  - The report was generated afterwards from the written files.
+  - The `dms-local` containers were then stopped, not removed, to relieve memory. They are
+    left on the control image.
+  - The control's Worker Min Limit was not read; the merged block's was 4.
+- **Image tags.** The E2E driver's image-tag field is empty (a formatting slip in the
+  driver). Image ids and creation times identify every image.
+
+### Evidence bundle
+
+`eng/performance/dms-1556/artifacts/evidence-bundle-20261001/` (gitignored, local only):
+
+- **`INDEX.md` and `INDEX.json`:** per evidence ID, the step, record section, provenance
+  (commit and image), file count, size, archive and archive SHA-256. Post-merge results
+  (EV-PM-*) and historical results are in separate tables.
+- **`SHA256SUMS.txt`:** the SHA-256 of every one of the 3,904 original files bundled, with
+  paths relative to `artifacts/`.
+- **21 zip archives, one per evidence ID, 692 MB.** The README evidence index IDs, plus:
+  - EV-SEED (the 4.1 seed manifest);
+  - EV-DUMP-META (the Worker Min Limit records without the dumps);
+  - EV-PM-INT, EV-PM-E2E, EV-PM-CAT, EV-PM-CTL and EV-PM-ENV;
+  - NOT-EVIDENCE (shake-down and superseded runs, labelled as such).
+- **Excluded:** all 91 memory dumps (37.0 GB), listed in `INDEX.json`. No file is
+  unclassified.
+- **Verified:**
+  - every archive's hash matches the index;
+  - every archive's entry count matches its checksum list;
+  - 92 randomly sampled entries re-hash to `SHA256SUMS.txt`.
+- **Originals retained:** all 3,995 files stay under `artifacts/` until archival is verified.
+- **Not uploaded.** Jira archival remains a separate step.
+
+### Status for the push-readiness review
+
+- **On the merged tree:** integration (both engines), CMS E2E, DMS shards 1 and 2, and the
+  catalog runtime are green, with no blocked-authentication evidence. The round-1 shift
+  from 4.1 is shown by the matched control to be environmental.
+- **Still in force:** the default stress gate stays FAILED as a ticket-scoped exception, and
+  the seven mutants stay *UNRUN — execution requirement waived*.
+- **Open:**
+  - CI, which has never run on the implementation: draft PR #1317 is at `6e3aec32c`, 34
+    commits behind the local branch;
+  - the Jira upload of the bundle;
+  - the cause of the environmental round-1 shift;
+  - the nine CSharpier failures inherited from `main` (accepted).
+- **Nothing is pushed.** The PR stays a draft, and DMS-1556 stays open.
