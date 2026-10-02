@@ -376,6 +376,65 @@ public sealed class KeycloakCharacterizationApi : IDisposable
         }
     }
 
+    /// <summary>
+    /// Detaches a default client scope from a client. The DMS-1327 P3.2 revocation observer uses it
+    /// to undo the audience scope it attached to a client it did not create.
+    /// </summary>
+    public async Task RemoveDefaultClientScopeAsync(string adminToken, string clientUuid, string scopeUuid)
+    {
+        using HttpRequestMessage request = AdminRequest(
+            HttpMethod.Delete,
+            $"{_baseUrl}/admin/realms/{_realm}/clients/{clientUuid}/default-client-scopes/{scopeUuid}",
+            adminToken
+        );
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Detaching the observer audience scope answered HTTP {(int)response.StatusCode}."
+            );
+        }
+    }
+
+    /// <summary>
+    /// The internal id of the one realm client whose <c>clientId</c> equals <paramref name="clientId"/>
+    /// ordinally (Keycloak's <c>clientId</c> query parameter is a search, not an exact match).
+    /// </summary>
+    public async Task<string> FindClientUuidAsync(string adminToken, string clientId)
+    {
+        using HttpRequestMessage request = AdminRequest(
+            HttpMethod.Get,
+            $"{_baseUrl}/admin/realms/{_realm}/clients?clientId={Uri.EscapeDataString(clientId)}",
+            adminToken
+        );
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+        BodyKind kind = HttpOutcome.Classify(body).Kind;
+        if (!response.IsSuccessStatusCode || kind != BodyKind.JsonArray)
+        {
+            throw new InvalidOperationException(
+                $"The client lookup answered HTTP {(int)response.StatusCode} with {Describe(kind)} instead of a JSON array."
+            );
+        }
+
+        List<JsonObject> matches = JsonNode
+            .Parse(body)!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Where(client =>
+                string.Equals(OptionalString(client, "clientId"), clientId, StringComparison.Ordinal)
+            )
+            .ToList();
+        if (matches.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"The client lookup found {matches.Count} clients with the requested clientId; exactly one was expected."
+            );
+        }
+
+        return RequireString(matches[0], "id", "client lookup");
+    }
+
     public Task DeleteClientScopeAsync(string adminToken, string uuid) =>
         DeleteAsync(adminToken, $"{_baseUrl}/admin/realms/{_realm}/client-scopes/{uuid}", "client scope");
 
