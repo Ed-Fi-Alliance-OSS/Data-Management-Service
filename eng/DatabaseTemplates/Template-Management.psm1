@@ -1158,10 +1158,10 @@ function Add-TemplateDataStore {
         Registers the template build's target data store when the Configuration Service has none.
 
     .DESCRIPTION
-        Add-DataStore retains a mandatory PostgreSQL credential for backward compatibility, even
-        when a caller supplies a complete connection string for another engine. This helper keeps
-        that compatibility detail in one place while ensuring an MSSQL template build registers an
-        MSSQL connection string instead of silently falling back to the PostgreSQL defaults.
+        Add-DataStore needs a PostgreSQL credential only when it builds the connection string
+        itself. This helper supplies one for the PostgreSQL path and, for MSSQL, passes a complete
+        SQL Server connection string, so an MSSQL template build registers an MSSQL connection
+        string instead of silently falling back to the PostgreSQL defaults.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
@@ -1185,8 +1185,8 @@ function Add-TemplateDataStore {
         [string]$MssqlPassword
     )
 
-    # Add-DataStore requires this credential even when -ConnectionString supplies the actual
-    # MSSQL target. It remains the real credential on the PostgreSQL path.
+    # The real credential on the PostgreSQL path; on the MSSQL path -ConnectionString supplies
+    # the target and Add-DataStore does not read it.
     $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
     $dataStoreParameters = @{
         CmsUrl              = $CmsUrl

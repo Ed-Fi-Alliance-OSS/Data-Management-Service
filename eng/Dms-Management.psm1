@@ -997,7 +997,8 @@ function Get-E2EStartupPhasePlan {
     The name of the data store. Defaults to "Local Data Store".
 
 .PARAMETER PostgresCredential
-    The PostgreSQL credential (mandatory).
+    The PostgreSQL credential used to build the connection string. Required when -ConnectionString
+    is not supplied; ignored (and optional) when it is.
 
 .PARAMETER PostgresDbName
     The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
@@ -1047,8 +1048,9 @@ function Add-DataStore {
         [ValidateNotNullOrEmpty()]
         [string]$Name = "Local Data Store",
 
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNull()]
+        # Required only when -ConnectionString is not supplied; see .PARAMETER PostgresCredential.
+        # Not [Parameter(Mandatory)]: with a pre-built -ConnectionString it is never read, and a
+        # caller registering an MSSQL data store has no PostgreSQL credential to give.
         [System.Management.Automation.PSCredential]$PostgresCredential,
 
         [ValidateNotNullOrEmpty()]
@@ -1097,6 +1099,9 @@ function Add-DataStore {
     if (-not $hasPrebuiltConnectionString) {
         if ($DatabaseEngine -eq "mssql") {
             throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
+        }
+        if ($null -eq $PostgresCredential) {
+            throw "-PostgresCredential is required when -ConnectionString is not supplied."
         }
 
         # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
@@ -1304,7 +1309,8 @@ function Add-DataStoreContext {
     The last school year in the range (mandatory).
 
 .PARAMETER PostgresCredential
-    The PostgreSQL credential (mandatory).
+    The PostgreSQL credential used to build the connection string. Required when -ConnectionString
+    is not supplied; ignored (and optional) when it is.
 
 .PARAMETER PostgresDbName
     The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
@@ -1351,8 +1357,9 @@ function Add-DmsSchoolYearInstances {
         [Parameter(Mandatory = $true)]
         [int]$EndYear,
 
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNull()]
+        # Required only when -ConnectionString is not supplied; see .PARAMETER PostgresCredential.
+        # Not [Parameter(Mandatory)]: with a pre-built -ConnectionString it is never read, and a
+        # caller registering an MSSQL data store has no PostgreSQL credential to give.
         [System.Management.Automation.PSCredential]$PostgresCredential,
 
         [ValidateNotNullOrEmpty()]
@@ -1388,6 +1395,12 @@ function Add-DmsSchoolYearInstances {
 
     if (-not $hasPrebuiltConnectionString -and $DatabaseEngine -eq "mssql") {
         throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
+    }
+
+    # Checked up front rather than left to the first Add-DataStore call, so a missing credential
+    # fails before any year of the range has been registered.
+    if (-not $hasPrebuiltConnectionString -and $null -eq $PostgresCredential) {
+        throw "-PostgresCredential is required when -ConnectionString is not supplied."
     }
 
     $createdDataStores = @()

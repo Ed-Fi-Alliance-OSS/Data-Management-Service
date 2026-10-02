@@ -248,8 +248,8 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Add-DataStore requires a PostgresCredential regardless of target engine; for MSSQL it goes
-    # unused because -ConnectionString is supplied verbatim from New-DataStoreConnectionString.
+    # Used on the PostgreSQL path; for MSSQL, -ConnectionString is supplied verbatim from
+    # New-DataStoreConnectionString and Add-DataStore does not read the credential.
     $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
 
     $dataStoreConnectionString = ""
