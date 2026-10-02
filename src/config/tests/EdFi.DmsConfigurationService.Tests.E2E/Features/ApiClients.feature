@@ -1188,7 +1188,7 @@ Feature: ApiClients endpoints
                   """
                   {
                    "applicationId": {applicationId},
-                   "name": "Other Client 28 {scenarioRunId}",
+                   "name": "Client 28b {scenarioRunId}",
                    "isApproved": true,
                    "dataStoreIds": [{dataStoreId}]
                   }
@@ -1231,7 +1231,7 @@ Feature: ApiClients endpoints
                     "applicationId": {applicationId},
                     "clientId": "{otherClient28Key}",
                     "clientUuid": "{clientUuid}",
-                    "name": "Other Client 28 {scenarioRunId}",
+                    "name": "Client 28b {scenarioRunId}",
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
