@@ -1097,3 +1097,58 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
         }
     }
 }
+
+Describe "Build-Template vendor reuse" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "creates one vendor for a populated build and creates both applications under it" {
+        # POST /v3/vendors is create-only, so a second Add-Vendor for the same company would be
+        # rejected with 400 and fail every populated template build.
+        InModuleScope Template-Management {
+            Mock Add-CmsClient {}
+            Mock Get-CmsToken { return "cms-token" }
+            Mock Get-DataStore { return @() }
+            Mock Resolve-DataStoreIdForTemplate { return [long]5 }
+            Mock Add-Vendor { return [long]17 }
+            Mock Add-Application { return @{ Id = 1; Key = "key"; Secret = "secret" } }
+            Mock Get-DmsToken { return "dms-token" }
+            Mock Invoke-SchoolYearLoader {}
+            Mock Initialize-BulkLoad { return @{} }
+            Mock Get-TemplateBulkLoadTuning { return @{} }
+            Mock Invoke-BulkLoad {}
+            Mock Get-EducatorPreparationSampleFileName { return @() }
+            Mock New-EducatorPreparationFilteredSampleDirectory { return "populated-dir" }
+            Mock Get-EducationOrganizationIdsFromSampleData { return @() }
+            Mock Build-TemplateNuGetPackage {}
+
+            Build-Template `
+                -TemplateType Populated `
+                -DmsUrl "http://dms" `
+                -CmsUrl "http://cms" `
+                -MinimalSampleDataDirectory "minimal-dir" `
+                -PopulatedSampleDataDirectory "populated-dir" `
+                -Extension "ed-fi" `
+                -ConfigFilePath "config.psd1" `
+                -StandardVersion "5.2.0" `
+                -PackageVersion "1.0.0"
+
+            Should -Invoke Add-Vendor -Times 1 -Exactly
+            Should -Invoke Add-Application -Times 2 -Exactly
+            Should -Invoke Add-Application -Times 1 -Exactly -ParameterFilter {
+                $VendorId -eq 17 -and $ClaimSetName -eq 'BootstrapDescriptorsandEdOrgs'
+            }
+            Should -Invoke Add-Application -Times 1 -Exactly -ParameterFilter {
+                $VendorId -eq 17 -and $ClaimSetName -eq 'EdFiSandbox'
+            }
+        }
+    }
+}
