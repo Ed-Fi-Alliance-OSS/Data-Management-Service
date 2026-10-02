@@ -17,7 +17,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 /// </summary>
 /// <remarks>
 /// The replacement keeps the category the exception middleware and <see cref="GlobalExceptionHandler"/>
-/// act on: a malformed form, an unreadable request with its status code, and a caller cancellation;
+/// act on: a malformed form, an unreadable request with its status code, and an aborted request (an
+/// <see cref="OperationCanceledException"/> or <see cref="IOException"/> while the caller has aborted);
 /// anything else is a fault answered 500. No replacement carries the original as its inner exception or
 /// any of its <c>Data</c>; the original type names are kept on <see cref="WithheldExceptionFeature"/> for
 /// the failed-request log event.
@@ -47,7 +48,9 @@ public class ExceptionContentBoundaryMiddleware(RequestDelegate next)
     private static Exception Replacement(HttpContext context, Exception exception, string exceptionTypes) =>
         exception switch
         {
-            OperationCanceledException when context.RequestAborted.IsCancellationRequested =>
+            // The framework's exception middleware treats either type, while the request is aborted, as
+            // an aborted request rather than a failure; BadHttpRequestException is an IOException too.
+            OperationCanceledException or IOException when context.RequestAborted.IsCancellationRequested =>
                 new OperationCanceledException(
                     $"The request was cancelled ({exceptionTypes}).",
                     context.RequestAborted

@@ -12,9 +12,11 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -637,6 +639,178 @@ public class TokenRevocationStartupTests
                 .ContainSingle(record => record.EventId.Name == "HttpRequestFailed")
                 .Which.Exception.Should()
                 .BeOfType<SentinelFactoryException>();
+    }
+
+    // ----- An I/O failure on the revocation route, with and without an aborted request (D-17) -----
+
+    /// <summary>Delegates to the host's handler and records each exception it was asked to answer.</summary>
+    private sealed class RecordingExceptionHandler(IExceptionHandler inner) : IExceptionHandler
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public ValueTask<bool> TryHandleAsync(
+            HttpContext httpContext,
+            Exception exception,
+            CancellationToken cancellationToken
+        )
+        {
+            Interlocked.Increment(ref _calls);
+            return inner.TryHandleAsync(httpContext, exception, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// A revocation whose manager binding throws an <see cref="IOException"/> carrying the sentinel in its
+    /// message, inner exception and <c>Data</c>, after aborting the request when asked. The host's
+    /// exception handler is wrapped so the test sees whether the error writer was invoked.
+    /// </summary>
+    private static async Task<(
+        RevocationBoot Boot,
+        RecordingExceptionHandler Handler,
+        HttpResponseMessage? Response
+    )> RunIoFailureAsync(bool abortRequest)
+    {
+        RecordingExceptionHandler handler = new(new GlobalExceptionHandler());
+        RevocationBoot boot = RevocationBoot.Run(
+            "self-contained",
+            "postgresql",
+            services =>
+            {
+                services.AddHttpContextAccessor();
+                services.RemoveAll<IExceptionHandler>();
+                services.AddSingleton<IExceptionHandler>(handler);
+                services.RemoveAll<ITokenRevocationManager>();
+                services.AddTransient<ITokenRevocationManager>(provider =>
+                {
+                    HttpContext? context = provider.GetRequiredService<IHttpContextAccessor>().HttpContext;
+                    if (context is null)
+                    {
+                        return new ScriptedRevocationManager(new TokenRevocationResult.Completed());
+                    }
+                    if (abortRequest)
+                    {
+                        context.Abort();
+                    }
+                    IOException failure = new($"io {Sentinel}", new TimeoutException($"inner {Sentinel}"));
+                    failure.Data["connection"] = Sentinel;
+                    throw failure;
+                });
+            }
+        );
+
+        try
+        {
+            return (boot, handler, await RevokeAsync(boot.Client!));
+        }
+        catch (Exception) when (abortRequest)
+        {
+            // The client sees the aborted request as a failed send.
+            return (boot, handler, null);
+        }
+    }
+
+    private static readonly string _ioFailureTypeChain =
+        $"{typeof(IOException).FullName} -> {typeof(TimeoutException).FullName}";
+
+    /// <summary>
+    /// The aborted request: the framework's exception middleware takes its aborted-request path (logs the
+    /// abort, answers 499, invokes no error handler), and nothing of the exception reaches a log.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_aborted_while_an_io_failure_is_raised
+    {
+        private RevocationBoot _boot = null!;
+        private RecordingExceptionHandler _handler = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp() =>
+            (_boot, _handler, _) = await RunIoFailureAsync(abortRequest: true);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_does_not_invoke_the_error_handler() => _handler.Calls.Should().Be(0);
+
+        [Test]
+        public void It_takes_the_aborted_request_path() =>
+            _boot
+                .Logs.Records.Should()
+                .Contain(record =>
+                    record.Category.StartsWith("Microsoft.AspNetCore.Diagnostics", StringComparison.Ordinal)
+                    && record.Message == "The request was aborted by the client."
+                );
+
+        [Test]
+        public void It_logs_the_request_as_completed_with_499_and_not_as_failed()
+        {
+            _boot.Logs.Records.Should().NotContain(record => record.EventId.Name == "HttpRequestFailed");
+            _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.EventId.Name == "HttpRequestCompleted")
+                .Which.State.Should()
+                .Contain(new KeyValuePair<string, object?>("StatusCode", 499));
+        }
+
+        [Test]
+        public void It_keeps_the_exception_content_out_of_every_logger_category() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
+    }
+
+    /// <summary>
+    /// The control: the same failure on a request the caller did not abort stays a server fault, answered
+    /// 500 <c>server_error</c> by the error handler and logged once as a failed request by type names.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_that_raises_an_io_failure_without_an_abort
+    {
+        private RevocationBoot _boot = null!;
+        private RecordingExceptionHandler _handler = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            HttpResponseMessage? response;
+            (_boot, _handler, response) = await RunIoFailureAsync(abortRequest: false);
+            _response = response!;
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            _response.Dispose();
+            _boot.Dispose();
+        }
+
+        [Test]
+        public void It_invokes_the_error_handler_once() => _handler.Calls.Should().Be(1);
+
+        [Test]
+        public async Task It_answers_500_server_error()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            (await OAuthErrorAsync(_response)).Should().Be("server_error");
+        }
+
+        [Test]
+        public void It_logs_one_failed_request_naming_the_original_exception_types()
+        {
+            CapturedStartupLog failed = _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.EventId.Name == "HttpRequestFailed")
+                .Subject;
+            failed.Exception.Should().BeNull();
+            failed
+                .State.Should()
+                .Contain(new KeyValuePair<string, object?>("ExceptionTypes", _ioFailureTypeChain));
+        }
+
+        [Test]
+        public void It_keeps_the_exception_content_out_of_every_logger_category() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
     }
 
     /// <summary>
