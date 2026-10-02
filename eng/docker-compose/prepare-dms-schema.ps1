@@ -125,6 +125,28 @@ if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue)) {
     }
 }
 
+# bootstrap-schema-tool force-imports bootstrap-manifest into its module scope, which removes the
+# formatter commands exported globally by the import above. Keep these script-scope path semantics
+# available without replacing the canonical implementation when the command remains visible.
+if (-not (Get-Command Format-LogSafePath -ErrorAction SilentlyContinue)) {
+    function Format-LogSafePath {
+        param($Value)
+
+        if ($null -eq $Value) { return "" }
+        $text = [string]$Value
+        if ([string]::IsNullOrEmpty($text)) { return "" }
+
+        $builder = [System.Text.StringBuilder]::new()
+        foreach ($character in $text.ToCharArray()) {
+            if (-not [char]::IsControl($character)) {
+                $null = $builder.Append($character)
+            }
+        }
+
+        return $builder.ToString()
+    }
+}
+
 if (-not (Get-Command Read-RequiredJsonBoolean -ErrorAction SilentlyContinue)) {
     function Read-RequiredJsonBoolean {
         param(
