@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Tests.E2E.Keycloak;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
@@ -17,6 +18,12 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 /// </summary>
 public partial class StepDefinitions
 {
+    /// <summary>
+    /// The scenario's Keycloak public client (DMS-1327 D-11), deleted with its user after the
+    /// scenario. Its credentials are its client id alone; it never holds a secret.
+    /// </summary>
+    private KeycloakPublicClient? _publicClient;
+
     /// <summary>
     /// RFC 6749 §2.3.1: each credential is form-urlencoded before the two are joined and base64
     /// encoded. Percent-encoding is a valid form encoding and decodes identically on both CMS token
@@ -99,6 +106,60 @@ public partial class StepDefinitions
         );
     }
 
+    [Given("a Keycloak public client holds a user-flow access token")]
+    public async Task GivenAKeycloakPublicClientHoldsAUserFlowAccessToken() =>
+        _publicClient = await RequireKeycloakObserver().CreatePublicClientAsync();
+
+    [When("the public client attempts to revoke its token with no client secret")]
+    public async Task WhenThePublicClientAttemptsToRevokeItsTokenWithNoClientSecret() =>
+        await PostRevocation(
+            new() { { "token", PublicClient.AccessToken }, { "client_id", PublicClient.ClientId } },
+            authorization: null
+        );
+
+    // Keycloak ignores any secret a public client sends and would revoke the token (§9.1, K-19), so
+    // only the Configuration Service's client-type gate can turn these two requests away.
+    [When("the public client attempts to revoke its token with an arbitrary form client secret")]
+    public async Task WhenThePublicClientAttemptsToRevokeItsTokenWithAnArbitraryFormClientSecret() =>
+        await PostRevocation(
+            new()
+            {
+                { "token", PublicClient.AccessToken },
+                { "client_id", PublicClient.ClientId },
+                { "client_secret", ArbitraryPublicClientSecret },
+            },
+            authorization: null
+        );
+
+    [When("the public client attempts to revoke its token with an arbitrary Basic client secret")]
+    public async Task WhenThePublicClientAttemptsToRevokeItsTokenWithAnArbitraryBasicClientSecret() =>
+        await PostRevocation(
+            new() { { "token", PublicClient.AccessToken } },
+            BasicAuthorization(PublicClient.ClientId, ArbitraryPublicClientSecret)
+        );
+
+    [Then("the public client's token is active at the identity provider")]
+    public async Task ThenThePublicClientsTokenIsActive() =>
+        (await IsTokenActive(PublicClient.AccessToken))
+            .Should()
+            .BeTrue("the public client's token should still be usable");
+
+    [AfterScenario]
+    public async Task DeleteThePublicClient()
+    {
+        if (_publicClient is not null)
+        {
+            await RequireKeycloakObserver().DeletePublicClientAsync(_publicClient);
+            _publicClient = null;
+        }
+    }
+
+    private const string ArbitraryPublicClientSecret = "arbitrary-public-client-secret";
+
+    private KeycloakPublicClient PublicClient =>
+        _publicClient
+        ?? throw new InvalidOperationException("The scenario has not created a Keycloak public client.");
+
     [Then("the response is the OAuth error {string} with description {string}")]
     public async Task ThenTheResponseIsTheOAuthError(string error, string description)
     {
@@ -113,27 +174,23 @@ public partial class StepDefinitions
 
     [Then("the current token is active at the identity provider")]
     public async Task ThenTheCurrentTokenIsActive() =>
-        (await IsCurrentTokenActive()).Should().BeTrue("the current token should still be usable");
+        (await IsTokenActive(_token)).Should().BeTrue("the current token should still be usable");
 
     [Then("the current token is inactive at the identity provider")]
     public async Task ThenTheCurrentTokenIsInactive() =>
-        (await IsCurrentTokenActive()).Should().BeFalse("the current token should have been revoked");
+        (await IsTokenActive(_token)).Should().BeFalse("the current token should have been revoked");
 
     /// <summary>
     /// The self-contained provider is observed through CMS <c>/connect/introspect</c>, which checks
-    /// the token's stored status. Keycloak tokens are observed through Keycloak's own introspection
-    /// endpoint by a dedicated observer client whose credentials are never sent to revocation
-    /// (D-16); DMS-1327 P3.2 provisions that client, so the Keycloak path fails until then rather
-    /// than passing on an observation it cannot make. Does not replace the scenario's last response.
+    /// the token's stored status. Keycloak access tokens are observed through Keycloak's own
+    /// introspection endpoint by the feature's dedicated observer client, whose credentials are
+    /// never sent to revocation (D-16). Does not replace the scenario's last response.
     /// </summary>
-    private async Task<bool> IsCurrentTokenActive()
+    private async Task<bool> IsTokenActive(string token)
     {
-        string? identityProvider = Environment.GetEnvironmentVariable("DMS_CONFIG_IDENTITY_PROVIDER");
-        if (string.Equals(identityProvider, "keycloak", StringComparison.OrdinalIgnoreCase))
+        if (KeycloakCharacterizationEnvironment.IsKeycloakProvider)
         {
-            Assert.Fail(
-                "Keycloak token state is observed by the Keycloak introspection observer client, which DMS-1327 P3.2 provisions."
-            );
+            return await RequireKeycloakObserver().IsActiveAsync(token);
         }
 
         APIRequestContextOptions options = new()
@@ -143,7 +200,7 @@ public partial class StepDefinitions
                 { "Content-Type", "application/x-www-form-urlencoded" },
             },
             Data = await new FormUrlEncodedContent(
-                new Dictionary<string, string> { { "token", _token } }
+                new Dictionary<string, string> { { "token", token } }
             ).ReadAsStringAsync(),
         };
         IAPIResponse introspection = await playwrightContext.ApiRequestContext!.PostAsync(
@@ -153,5 +210,17 @@ public partial class StepDefinitions
         string content = await introspection.TextAsync();
         introspection.Status.Should().Be(200, content);
         return JsonNode.Parse(content)!["active"]!.GetValue<bool>();
+    }
+
+    private KeycloakRevocationObserver RequireKeycloakObserver()
+    {
+        if (!featureContext.TryGetValue(out KeycloakRevocationObserver observer))
+        {
+            Assert.Fail(
+                "Keycloak token state is observed by the revocation observer client, which a feature tagged @KeycloakRevocationObserver provisions under the keycloak provider."
+            );
+        }
+
+        return observer;
     }
 }

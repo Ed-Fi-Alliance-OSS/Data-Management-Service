@@ -16,8 +16,15 @@ using static EdFi.DmsConfigurationService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public partial class StepDefinitions(PlaywrightContext playwrightContext, ScenarioContext scenarioContext)
+public partial class StepDefinitions(
+    PlaywrightContext playwrightContext,
+    ScenarioContext scenarioContext,
+    FeatureContext featureContext
+)
 {
+    /// <summary>The Configuration Service's own client, whose credentials "valid credentials" uses.</summary>
+    public const string SystemClientId = "DmsConfigurationService";
+
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
 
@@ -60,7 +67,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task GivenValidCredentials()
     {
         await GetClientAccessToken(
-            "DmsConfigurationService",
+            SystemClientId,
             "ValidClientSecret1234567890!Abcd",
             "edfi_admin_api/full_access"
         );

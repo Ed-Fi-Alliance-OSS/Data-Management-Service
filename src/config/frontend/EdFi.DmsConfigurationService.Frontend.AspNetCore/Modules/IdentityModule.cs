@@ -460,10 +460,10 @@ public class IdentityModule : IEndpointModule
             }
         }
 
-        // Resolved optionally for now: in Keycloak mode no ITokenRevocationManager is registered
-        // yet (DMS-1327 P3.2 adds it), so once the request shape and the presence of credentials
-        // have been checked above, this answers a bare 200 OK with nothing revoked. P4.1 makes the
-        // registration required at startup.
+        // Resolved optionally for now: both identity providers register an ITokenRevocationManager,
+        // but until DMS-1327 P4.1 makes the registration required at startup, a host without one
+        // answers a bare 200 OK with nothing revoked once the request shape and the presence of
+        // credentials have been checked above.
         ITokenRevocationManager? revocationManager =
             httpContext.RequestServices.GetService<ITokenRevocationManager>();
         if (revocationManager is null)

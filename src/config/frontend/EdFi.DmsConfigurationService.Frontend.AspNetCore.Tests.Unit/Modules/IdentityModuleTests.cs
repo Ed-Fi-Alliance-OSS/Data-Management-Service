@@ -1479,11 +1479,11 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
-    /// Keycloak mode as it stands until DMS-1327 P3.2: no <c>ITokenRevocationManager</c> is
-    /// registered (this fixture removes the one the Test host's self-contained configuration
-    /// adds). The endpoint's own shape and credential-presence checks (D-03 rows 1–7) still run
-    /// before the no-op branch, so a caller with no client credentials is rejected instead of
-    /// being answered 200 as it was before DMS-1327.
+    /// A host with no <c>ITokenRevocationManager</c> registered, which the endpoint tolerates until
+    /// DMS-1327 P4.1 makes the registration required (this fixture removes the one the Test host's
+    /// self-contained configuration adds). The endpoint's own shape and credential-presence checks
+    /// (D-03 rows 1–7) still run before the no-op branch, so a caller with no client credentials is
+    /// rejected instead of being answered 200 as it was before DMS-1327.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller
@@ -3887,12 +3887,12 @@ public class RevocationRequestContractTests
             Manager.Requests.Should().ContainSingle().Which.TokenTypeHint.Should().Be(expected);
     }
 
-    // ----- Keycloak mode until P3.2 -----
+    // ----- No registered manager, until P4.1 -----
 
     /// <summary>
-    /// With no revocation manager registered (Keycloak mode until DMS-1327 P3.2), a request that
-    /// passes the endpoint's shape and credential-presence checks is still answered 200 without
-    /// revoking anything. P3.2 registers the Keycloak manager; P4.1 makes it required.
+    /// With no revocation manager registered (Keycloak mode until DMS-1327 P3.2 registered the
+    /// Keycloak manager), a request that passes the endpoint's shape and credential-presence checks
+    /// is still answered 200 without revoking anything. P4.1 makes the registration required.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_no_registered_manager : RevocationRequestFixture
@@ -3904,7 +3904,7 @@ public class RevocationRequestContractTests
         protected override IEnumerable<string> AuthorizationValues => [_validBasic];
 
         [Test]
-        public void It_still_answers_200_until_keycloak_revocation_is_registered() =>
+        public void It_still_answers_200_until_the_registration_is_required() =>
             Response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
