@@ -67,7 +67,7 @@ public interface IConnectionStringReader
     /// <c>${secret:&lt;name&gt;}</c> reference it holds. Throws
     /// <see cref="ConnectionStringReadException"/> when the value cannot be returned; returns null
     /// instead for a derivative read as part of a data store, whose value cannot be decrypted, parsed
-    /// or resolved.
+    /// or resolved, or cannot take a value it resolved.
     /// </summary>
     Task<string?> ReadAsync(byte[]? stored, ConnectionStringRow row);
 }
@@ -218,13 +218,15 @@ public sealed class ConnectionStringReader(
     /// A stored value that cannot be decrypted or parsed, or that cannot take a resolved value. A
     /// derivative read as part of a data store reads as not configured, as DMS already treats a
     /// derivative it cannot decrypt, so one stale row cannot empty every data store's derivatives.
-    /// Anything read as a resource fails the read.
+    /// It is logged as an error, as DMS logs that case: the null this returns takes DMS's silent
+    /// not-configured path, so this log is the only report of a defect in the stored value. Anything
+    /// read as a resource fails the read.
     /// </summary>
     private string? Unreadable(ConnectionStringRow row, string problem)
     {
         if (row is ConnectionStringRow.Derivative { ReadAs: DerivativeReadMode.PartOfDataStore } derivative)
         {
-            logger.LogWarning(
+            logger.LogError(
                 "Derivative {DerivativeId} ({DerivativeType}) of data store {DataStoreId} in tenant {Tenant} is treated as not configured: its stored connection string {Problem}",
                 derivative.DerivativeId,
                 LoggingUtility.SanitizeForLog(derivative.DerivativeType),

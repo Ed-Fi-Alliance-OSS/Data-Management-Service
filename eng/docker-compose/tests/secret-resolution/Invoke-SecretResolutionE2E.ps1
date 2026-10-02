@@ -252,8 +252,9 @@ function Remove-Deployment {
         throw "docker compose down for project $project failed with exit code $downExitCode; the deployment and $workDirectory were left in place. Retry with -Down."
     }
 
-    # Compose usually removes the network itself, so this one failing is expected and is not the
-    # run's exit code.
+    # The compose files declare this network external, so compose down leaves it and this is the only
+    # removal. Its failure is not the run's exit code: the network holds no data, and the next run
+    # reuses it.
     & docker network rm $names.SECRETS_E2E_NETWORK *> $null
     $global:LASTEXITCODE = 0
     if (Test-Path -LiteralPath $workDirectory) {
@@ -269,9 +270,12 @@ try {
     }
     Set-HarnessVariable -Name SECRETS_E2E_SECRETS_DIRECTORY -Value $secretsDirectory
     Set-HarnessVariable -Name CMS_PLUGINS_MOUNT_SOURCE -Value $pluginRoot
-    # The proof deploys PostgreSQL, and local-config.yml takes the engine from this variable, which an
-    # earlier MSSQL build-config.ps1 run in the same session leaves set.
+    # The proof deploys PostgreSQL with one tenant and sends no Tenant header. The compose files take
+    # the engine and tenancy from these variables, which an earlier build-config.ps1 run in the same
+    # session can leave set to MSSQL or to multitenant.
     Set-HarnessVariable -Name DMS_CONFIG_DATASTORE -Value "postgresql"
+    Set-HarnessVariable -Name DMS_CONFIG_MULTI_TENANCY -Value "false"
+    Set-HarnessVariable -Name DMS_MULTI_TENANCY -Value "false"
 
     if ($Down) {
         Remove-Deployment
@@ -292,7 +296,13 @@ try {
     function Get-BaseValue([string] $Name) {
         Get-RequiredComposeResolvedEnvValue -EnvironmentValues $baseValues -Name $Name
     }
-    $postgresPassword = Get-BaseValue "POSTGRES_PASSWORD"
+    # The data store connects as a role the harness creates, with a password it generates and writes
+    # only to the plugin's store, so the proof shows a credential that reaches the driver without being
+    # in a configuration file or an environment variable. The stack's own POSTGRES_PASSWORD, which CMS
+    # and provisioning use, is never the data store's.
+    $datastoreRole = "dms_secret_resolution"
+    $datastorePassword = [System.Security.Cryptography.RandomNumberGenerator]::GetString(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 32)
     $databaseName = Get-BaseValue "E2E_DATABASE_NAME"
     $configUrlInNetwork = "http://ed-fi-api-config:$configPort"
     $claimsMountSource = Initialize-E2EClaimsWorkspace
@@ -324,10 +334,10 @@ try {
         throw "Publishing $pluginName failed with exit code $LASTEXITCODE."
     }
 
-    # The store the fixture reads. The data store password is the real one; the data store's stored
-    # connection string carries only its reference, so this store is where the data store reads it from.
-    # The test owns every other entry, including the ones it rotates.
-    @{ $datastoreSecretName = $postgresPassword } | ConvertTo-Json | Set-Content -LiteralPath $secretsFile
+    # The store the fixture reads, and the only place the data store's password is written; its stored
+    # connection string carries only the reference. The test owns every other entry, including the ones
+    # it rotates.
+    @{ $datastoreSecretName = $datastorePassword } | ConvertTo-Json | Set-Content -LiteralPath $secretsFile
 
     $succeeded = $false
     Push-Location $composeDirectory
@@ -371,6 +381,17 @@ try {
         ./provision-e2e-database.ps1 -EnvironmentFile $environmentFile -DatabaseName $databaseName `
             -PostgresContainerName $names.SECRETS_E2E_POSTGRES_CONTAINER -Configuration $Configuration
 
+        # A superuser, because the proof is about where the credential lives rather than what it may do,
+        # and DMS needs everything provisioning created. The statement goes on standard input, so the
+        # password is not in any process's arguments. The password is alphanumeric, so it needs no
+        # quoting in SQL or in the connection string.
+        Write-Output "Creating the data store's login role..."
+        "CREATE ROLE $datastoreRole WITH LOGIN SUPERUSER PASSWORD '$datastorePassword';" |
+            & docker exec -i $names.SECRETS_E2E_POSTGRES_CONTAINER psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q
+        if ($LASTEXITCODE -ne 0) {
+            throw "Creating the data store's login role failed with exit code $LASTEXITCODE."
+        }
+
         # DMS will not start without a data store to load, so the one the capability proof uses is
         # created first, through the Configuration Service's own endpoint and validator, carrying only a
         # reference to its password. DMS's startup load is then already a read through the resolver.
@@ -384,7 +405,7 @@ try {
             -Headers @{ Authorization = "Bearer $cmsToken" } -ContentType "application/json" -Body (@{
                 dataStoreType = "Test"
                 name = "Secret resolution capability"
-                connectionString = "host=dms-postgresql;port=5432;username=postgres;password=`${secret:$datastoreSecretName};database=$($databaseName)"
+                connectionString = "host=dms-postgresql;port=5432;username=$datastoreRole;password=`${secret:$datastoreSecretName};database=$($databaseName)"
             } | ConvertTo-Json)
 
         Invoke-Compose -Arguments @("up", "--detach", "dms")

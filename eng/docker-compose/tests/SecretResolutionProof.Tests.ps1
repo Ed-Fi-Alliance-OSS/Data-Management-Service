@@ -82,7 +82,7 @@ Describe 'Secret resolution proof results' {
 
     It 'expects exactly the proofs the SecretResolutionPlugin tests declare' {
         $source = Get-Content -Raw -LiteralPath (Join-Path $script:repositoryRoot 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/SecretResolution/SecretResolutionPluginTests.cs')
-        $declared = @([regex]::Matches($source, '(?m)\[Test\b[^\]]*\]\s+public\s+(?:async\s+Task|void)\s+(It_\w+)') |
+        $declared = @([regex]::Matches($source, '(?m)\[Test\b[^\]]*\](?:\s*\[[^\]]*\])*\s+public\s+(?:async\s+Task|void)\s+(It_\w+)') |
                 ForEach-Object { $_.Groups[1].Value })
 
         $declared | Should -Not -BeNullOrEmpty

@@ -15,6 +15,8 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 ///
 /// A value expires <see cref="SecretsOptions.CacheExpirationSeconds"/> after it was fetched, and
 /// reading it does not extend that, so the setting is how long a rotation takes to reach this host.
+/// Expiry is measured on the system clock, so a step back in that clock lengthens it by the size of
+/// the step.
 /// Concurrent misses on one key share one fetch and its outcome, a failed fetch caches nothing, and
 /// a key never waits behind another one.
 ///

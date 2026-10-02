@@ -333,13 +333,13 @@ public class ConnectionStringReaderTests
         public void It_reads_as_not_configured() => _result.Should().BeNull();
 
         [Test]
-        public void It_logs_one_warning_naming_the_row_and_the_problem() =>
+        public void It_logs_one_error_naming_the_row_and_the_problem() =>
             Logger
                 .Entries.Should()
                 .ContainSingle()
                 .Which.Should()
                 .Match<LogEntry>(entry =>
-                    entry.Level == LogLevel.Warning
+                    entry.Level == LogLevel.Error
                     && Equals(entry.Field("DerivativeId"), 7L)
                     && Equals(entry.Field("DataStoreId"), 5L)
                     && (string)entry.Field("Tenant")! == "district-a"
@@ -351,8 +351,9 @@ public class ConnectionStringReaderTests
     }
 
     /// <summary>
-    /// The measured cases from the design: each value must reach the driver exactly, and a textual
-    /// substitution of the same values is recorded alongside so a rewrite that reintroduces one fails.
+    /// The measured cases from the design: each value must reach the driver exactly, which a rewrite
+    /// that reintroduced textual substitution would fail. What textual substitution does to the same
+    /// values is recorded alongside, against the builder alone, as the reason the reader does not use it.
     /// </summary>
     [TestFixture("postgresql")]
     [TestFixture("mssql")]
@@ -1396,12 +1397,13 @@ public class ConnectionStringReaderTests
     }
 
     /// <summary>
-    /// A timer can fire just before the read's allowance is used up. Which task won decides the
-    /// outcome, so the read still reports its own timeout rather than a joined call's, and it does not
-    /// spend the sliver left on asking a resolver that may be hung for the next reference.
+    /// A read's first call and its allowance end together, and either timer can fire first, just before
+    /// the allowance is used up. Here the call's own timer wins: the read still reports its own timeout
+    /// rather than a joined call's, because it started the call, and it does not spend the sliver left
+    /// on asking a resolver that may be hung for the next reference.
     /// </summary>
     [TestFixture]
-    public class Given_the_reads_own_timer_firing_just_before_its_allowance_is_used_up
+    public class Given_a_call_the_read_started_timing_out_just_before_its_allowance_is_used_up
         : ConnectionStringReaderTests
     {
         private string? _nested;
@@ -1542,8 +1544,8 @@ public class ConnectionStringReaderTests
 
     /// <summary>
     /// A read that joined a call which timed out keeps only what is left of its own allowance, not a
-    /// fresh one: it joined eight seconds after it started, so its next reference is cut off eight
-    /// seconds after the shared call's deadline.
+    /// fresh one: its allowance started when it joined, two seconds before the shared call's deadline,
+    /// so its next reference is cut off eight seconds after that deadline.
     /// </summary>
     [TestFixture]
     public class Given_a_joining_read_after_the_shared_call_times_out : ConnectionStringReaderTests
@@ -1595,5 +1597,81 @@ public class ConnectionStringReaderTests
                 .Contain(
                     "could not be resolved: the resolver did not return within the 10 seconds this read may spend on it"
                 );
+    }
+
+    /// <summary>
+    /// The read's own timer fires just before its allowance is used up, while the call it started
+    /// still has time of its own. The read marks its allowance spent, so the sliver the early timer left
+    /// does not send its next reference to a resolver that may be hung.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_reads_own_timer_firing_just_before_its_allowance_is_used_up
+        : ConnectionStringReaderTests
+    {
+        private string? _cutOff;
+        private ConnectionStringReadException _dataStoreFailure = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<string> first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Resolver.Behavior = (reference, _) =>
+            {
+                entered.TrySetResult();
+                return reference.Name == "a"
+                    ? new ValueTask<string>(first.Task)
+                    : new ValueTask<string>(new TaskCompletionSource<string>().Task);
+            };
+
+            ConnectionStringReader reader = CreateReader(timeProvider: new EarlyTimerTimeProvider(Time));
+
+            // The first name answers after six of the read's ten seconds.
+            Task<string?> warmUp = reader.ReadAsync(
+                Stored("Host=db;Password=${secret:a}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(6));
+            first.SetResult("first");
+            await warmUp.WaitAsync(SafetyBound);
+
+            // The second call has ten seconds of its own; the read has four, and its timer fires early.
+            entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<string?> cutOff = reader.ReadAsync(
+                Stored("Host=db;Password=${secret:b}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(4) - EarlyTimerTimeProvider.Early);
+            _cutOff = await cutOff.WaitAsync(SafetyBound);
+
+            // Would hang until the clock moved again if it asked the resolver.
+            _dataStoreFailure = await ReadFailure(() =>
+                    reader.ReadAsync(Stored("Host=db;Password=${secret:c}"), DataStoreRow)
+                )
+                .WaitAsync(SafetyBound);
+        }
+
+        [Test]
+        public void It_reads_the_cut_off_row_as_not_configured() => _cutOff.Should().BeNull();
+
+        [Test]
+        public void It_reports_the_reads_own_timeout() =>
+            LoggedText()
+                .Should()
+                .Contain(
+                    "could not be resolved: the resolver did not return within the 10 seconds this read may spend on it"
+                );
+
+        [Test]
+        public void It_does_not_ask_for_the_next_reference() =>
+            Resolver.Calls.Select(call => call.Name).Should().Equal("a", "b");
+
+        [Test]
+        public void It_fails_a_later_data_store_naming_the_spent_time() =>
+            _dataStoreFailure
+                .Message.Should()
+                .EndWith("this read had already waited the 10 seconds it may spend on the resolver.");
     }
 }
