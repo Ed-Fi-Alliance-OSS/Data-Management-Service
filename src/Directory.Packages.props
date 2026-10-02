@@ -65,6 +65,7 @@
     <PackageVersion Include="Npgsql" Version="8.0.4" />
     <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
     <PackageVersion Include="NuGet.Configuration" Version="6.13.1" />
+    <PackageVersion Include="NuGet.Credentials" Version="6.13.1" />
     <PackageVersion Include="NuGet.Packaging" Version="6.13.1" />
     <PackageVersion Include="NuGet.Protocol" Version="6.13.1" />
     <PackageVersion Include="Polly" Version="8.5.2" />

@@ -8,6 +8,7 @@
     <ItemGroup>
         <PackageReference Include="CommandLineParser" />
         <PackageReference Include="NuGet.Configuration" />
+        <PackageReference Include="NuGet.Credentials" />
         <PackageReference Include="NuGet.Packaging" />
         <PackageReference Include="NuGet.Protocol" />
         <PackageReference Include="Microsoft.Extensions.Logging" />
