@@ -21,8 +21,10 @@ public class SecretsOptions
     public int CacheExpirationSeconds { get; set; } = 300;
 
     /// <summary>
-    /// How long one resolver call may take, from invoking it to receiving its value, before the read
-    /// that needed it fails.
+    /// How long one read may spend waiting on the resolver, across every call it makes, counted from
+    /// the first reference it resolves. Once it has passed, the rest of that read uses only values
+    /// already cached and reports every other reference unresolved. Each call is also bounded by it on
+    /// its own, from invoking the resolver to receiving its value.
     /// </summary>
     public int ResolveTimeoutSeconds { get; set; } = 10;
 }

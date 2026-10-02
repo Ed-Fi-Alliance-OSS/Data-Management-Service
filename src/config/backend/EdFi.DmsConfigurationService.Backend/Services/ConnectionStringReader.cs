@@ -91,7 +91,14 @@ public interface IConnectionStringReader
 /// one wait per distinct uncached name. The timeout is therefore the read's: it is armed at the first
 /// reference the read resolves and covers every later one. Once it passes, every later reference the read
 /// meets is served from the cache or reported unresolved without asking again, so a read waits at
-/// most one timeout. A data store read nests one derivative read, so it waits at most two.
+/// most one timeout. A data store read nests one derivative read, so it waits at most two. The
+/// allowance is measured on the monotonic clock, so a step in the system clock cannot shorten or
+/// stretch it, and it belongs to the instance, so a caller that kept one repository across reads would
+/// share one allowance among them and, once it was spent, serve only cached values; no caller does.
+///
+/// A read that joins a call another read started waits on that call's own deadline, which may pass
+/// before the joining read's allowance does. That read reports the reference unresolved and keeps
+/// what is left of its allowance for the references after it.
 /// </summary>
 public sealed class ConnectionStringReader(
     IConnectionStringEncryptionService encryptionService,
@@ -109,8 +116,7 @@ public sealed class ConnectionStringReader(
         secretsOptions.Value.ResolveTimeoutSeconds
     );
 
-    private bool _resolverTimedOut;
-    private DateTimeOffset? _readDeadline;
+    private long? _readStarted;
 
     public async Task<string?> ReadAsync(byte[]? stored, ConnectionStringRow row)
     {
@@ -274,14 +280,13 @@ public sealed class ConnectionStringReader(
         string? value;
         string outcome;
 
-        _readDeadline ??= _timeProvider.GetUtcNow() + _resolveTimeout;
-        TimeSpan remaining = _readDeadline.Value - _timeProvider.GetUtcNow();
+        _readStarted ??= _timeProvider.GetTimestamp();
+        TimeSpan remaining = RemainingAllowance();
 
-        if (_resolverTimedOut || remaining <= TimeSpan.Zero)
+        if (remaining <= TimeSpan.Zero)
         {
             // Asking again would wait beyond the time this read may spend on the resolver, so only a
             // value already cached is used.
-            _resolverTimedOut = true;
             return cache.TryGetFresh(tenant, name, out string? cached)
                 ? cached
                 : Unresolved(
@@ -306,10 +311,13 @@ public sealed class ConnectionStringReader(
         }
         catch (SecretResolveTimeoutException)
         {
-            _resolverTimedOut = true;
+            // Either this read's allowance passed, or the call it joined reached its own deadline
+            // first and the read still has time for the references after this one.
             value = null;
             outcome =
-                $"could not be resolved: the resolver did not return within the {secretsOptions.Value.ResolveTimeoutSeconds} seconds this read may spend on it";
+                RemainingAllowance() <= TimeSpan.Zero
+                    ? $"could not be resolved: the resolver did not return within the {secretsOptions.Value.ResolveTimeoutSeconds} seconds this read may spend on it"
+                    : $"could not be resolved: the call this read joined, which another read started, did not return within its {secretsOptions.Value.ResolveTimeoutSeconds} seconds";
         }
         catch (Exception exception)
         {
@@ -325,6 +333,9 @@ public sealed class ConnectionStringReader(
 
         return string.IsNullOrEmpty(value) ? Unresolved(row, name, tenant, outcome) : value;
     }
+
+    private TimeSpan RemainingAllowance() =>
+        _resolveTimeout - _timeProvider.GetElapsedTime(_readStarted!.Value);
 
     /// <summary>
     /// A derivative read as part of a data store is optional there, so an unresolvable one reads as not
@@ -396,7 +407,8 @@ public sealed class ConnectionStringReader(
     /// resolver that blocks before returning its <see cref="ValueTask{TResult}"/> is bounded as well as
     /// one that returns an incomplete one. The token passed to the resolver is cancelled at the
     /// deadline so a cooperative resolver stops work nobody is waiting for; a thread an uncooperative
-    /// one blocks is released only when it returns.
+    /// one blocks is released only when it returns. A call still queued when the deadline passes is
+    /// never started.
     /// </summary>
     private async Task<string> FetchAsync(ISecretResolver resolver, SecretReference reference)
     {
@@ -407,7 +419,7 @@ public sealed class ConnectionStringReader(
         CancellationTokenSource cancellation = new();
         Task<string> call = Task.Run(
             () => resolver.ResolveAsync(reference, cancellation.Token).AsTask(),
-            CancellationToken.None
+            cancellation.Token
         );
 
         if (await Task.WhenAny(call, deadline) == call)
@@ -420,9 +432,10 @@ public sealed class ConnectionStringReader(
         // Cancellation callbacks are the resolver's, so they run off this path and cannot delay the
         // timeout. The late outcome is observed and dropped: this fetch has already failed, so nothing
         // the call returns can reach the cache. The source is disposed only once both the call and its
-        // callbacks are done with it.
+        // callbacks are done with it. Until a call that never completes does, this continuation, the
+        // source and the call's state stay reachable from whatever the resolver keeps pending.
         Task cancelled = cancellation.CancelAsync();
-        _ = Task.WhenAll(call, cancelled)
+        AbandonedCall = Task.WhenAll(call, cancelled)
             .ContinueWith(
                 completed =>
                 {
@@ -436,6 +449,12 @@ public sealed class ConnectionStringReader(
 
         throw new SecretResolveTimeoutException();
     }
+
+    /// <summary>
+    /// Completes once the outcome of the last call this reader stopped waiting for has been observed
+    /// and dropped, so a test can wait for it instead of guessing when it ran.
+    /// </summary>
+    internal Task? AbandonedCall { get; private set; }
 
     /// <summary>
     /// The host's own deadline passing, kept apart from any <see cref="TimeoutException"/> a resolver

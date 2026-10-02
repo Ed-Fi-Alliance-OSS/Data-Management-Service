@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Generic;
+using System.Reflection;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Secrets;
@@ -116,22 +117,34 @@ public class Given_the_host_booted_in_the_development_environment(string datasto
     public void It_composes_both_repositories_over_the_reader()
     {
         using IServiceScope scope = _factory.Services.CreateScope();
+        string engine = datastore == "postgresql" ? "Postgresql" : "Mssql";
 
-        scope
-            .ServiceProvider.GetRequiredService<IDataStoreRepository>()
-            .GetType()
-            .Namespace.Should()
-            .StartWith(
-                $"EdFi.DmsConfigurationService.Backend.{(datastore == "postgresql" ? "Postgresql" : "Mssql")}"
-            );
-        scope
-            .ServiceProvider.GetRequiredService<IDataStoreDerivativeRepository>()
-            .GetType()
-            .Namespace.Should()
-            .StartWith(
-                $"EdFi.DmsConfigurationService.Backend.{(datastore == "postgresql" ? "Postgresql" : "Mssql")}"
-            );
+        foreach (
+            object repository in new object[]
+            {
+                scope.ServiceProvider.GetRequiredService<IDataStoreRepository>(),
+                scope.ServiceProvider.GetRequiredService<IDataStoreDerivativeRepository>(),
+            }
+        )
+        {
+            repository
+                .GetType()
+                .Namespace.Should()
+                .StartWith($"EdFi.DmsConfigurationService.Backend.{engine}");
+            ReaderHeldBy(repository).Should().BeOfType<ConnectionStringReader>();
+        }
     }
+
+    /// <summary>
+    /// The reader a repository captured. A primary constructor keeps a parameter as a field only when
+    /// the class uses it, so a repository that stopped reading through the seam holds none.
+    /// </summary>
+    private static object? ReaderHeldBy(object repository) =>
+        repository
+            .GetType()
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+            .SingleOrDefault(field => field.FieldType == typeof(IConnectionStringReader))
+            ?.GetValue(repository);
 
     [Test]
     public void It_shares_one_cache_across_scopes()
