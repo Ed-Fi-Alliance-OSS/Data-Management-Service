@@ -39,8 +39,8 @@ internal sealed record RelationalCurrentEtagPreconditionCheckRequest
 /// <summary>
 /// Result of the current-etag precondition check. <see cref="IsSatisfied"/> is whether the write may
 /// PROCEED under the precondition (the If-Match tag matched). Computed by
-/// <see cref="EtagPreconditionEvaluator"/>. The
-/// <see cref="CurrentState"/> is loaded only when the precondition is satisfied.
+/// <see cref="EtagPreconditionEvaluator"/>. The <see cref="CurrentState"/> is loaded only when the
+/// precondition is satisfied.
 /// </summary>
 internal sealed record RelationalCurrentEtagPreconditionCheckResult(
     RelationalWriteCurrentState? CurrentState,

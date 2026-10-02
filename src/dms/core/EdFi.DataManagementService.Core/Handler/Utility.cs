@@ -178,7 +178,7 @@ public static class Utility
         )
         {
             logger.LogDebug(
-                "{Method} ignored the If-None-Match header, which DMS honors only on GET - {TraceId}",
+                "{Method} ignored the If-None-Match header (DMS honors it only on GET) and is processing the request as if it were absent - {TraceId}",
                 requestInfo.MethodName,
                 requestInfo.FrontendRequest.TraceId.Value
             );

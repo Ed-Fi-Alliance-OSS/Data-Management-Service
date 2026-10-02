@@ -858,6 +858,9 @@ These examples are general guidelines and not 100% exhaustive.
   * Will require anonymization of the natural key fields when reporting a
     referential integrity problem.
 * Entered a function
+* Ignored an `If-None-Match` header on POST, PUT, or DELETE (DMS honors it only on
+  GET) → the request is processed as if the header were absent, which explains a
+  create-only request that overwrote a record
 * About to connect to a service or run through an interesting algorithm
 * Received information back from a service
   * Metadata only
