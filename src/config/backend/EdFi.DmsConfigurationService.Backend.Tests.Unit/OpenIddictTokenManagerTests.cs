@@ -2350,6 +2350,80 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
     }
 
+    // A real generated hash missing its last decoded byte: the salt is intact and the stored subkey
+    // is 31 bytes, so without the structural check the comparison quietly answers "wrong secret".
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WithTheRealHasherAndATruncatedRealHash : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ILogger<ClientSecretHasher> _hasherLogger = null!;
+        private ILogger<OpenIddictTokenManager> _managerLogger = null!;
+        private string _truncatedHash = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+            _managerLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            byte[] decoded = Convert.FromBase64String(await HashedAtValidIterations(RealHasherSecret));
+            _truncatedHash = Convert.ToBase64String(decoded[..^1]);
+            StubApplicationWithStoredSecret(OwnerClientId, _truncatedHash);
+
+            _result = await CreateManagerWith(
+                    CreateRealHasher(HashedAtIterations, _hasherLogger),
+                    _managerLogger
+                )
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        OwnerClientId,
+                        RealHasherSecret,
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_reports_temporarily_unavailable_at_the_authentication_boundary() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_names_only_the_exception_type_in_the_manager_log() =>
+            LogMessagesAt(_managerLogger, LogLevel.Error)
+                .Should()
+                .ContainSingle(message => message.Contains(typeof(InvalidDataException).FullName!));
+
+        [Test]
+        public void It_keeps_the_secret_and_the_stored_hash_out_of_every_log()
+        {
+            AllLoggedText(_managerLogger)
+                .Should()
+                .NotContain(RealHasherSecret)
+                .And.NotContain(_truncatedHash);
+            AllLoggedText(_hasherLogger).Should().NotContain(RealHasherSecret).And.NotContain(_truncatedHash);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry()
+        {
+            LoggedExceptions(_managerLogger).Should().BeEmpty();
+            LoggedExceptions(_hasherLogger).Should().BeEmpty();
+        }
+    }
+
     [TestFixture]
     public class Given_RevokeTokenAsync_WithTheRealHasherAndAWrongSecret : OpenIddictTokenManagerTests
     {

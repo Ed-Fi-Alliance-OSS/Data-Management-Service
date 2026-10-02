@@ -2536,6 +2536,84 @@ public class RevocationOwnershipTests
             AllHasherLogText(_hasherLogger).Should().NotContain(RealHasherSecret);
     }
 
+    /// <summary>
+    /// A real generated hash missing its last decoded byte. Through the HTTP pipeline this is an
+    /// operational 503: no key is loaded, nothing is revoked, and neither the secret nor the stored
+    /// value reaches the hasher's log.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_stored_hash_is_truncated
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly ILogger<ClientSecretHasher> _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+        private string _truncatedHash = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string storedHash = await CreateRealHasher(
+                    RealHasherIterations,
+                    NullLogger<ClientSecretHasher>.Instance
+                )
+                .HashSecretAsync(RealHasherSecret);
+            _truncatedHash = Convert.ToBase64String(Convert.FromBase64String(storedHash)[..^1]);
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = OwnerClientId,
+                        ClientSecret = _truncatedHash,
+                        IsApproved = true,
+                    }
+                );
+
+            _factory = CreateFactory(
+                CreateTokenManager(_tokenRepository, CreateRealHasher(RealHasherIterations, _hasherLogger))
+            );
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, RealHasherSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_keeps_the_hasher_log_free_of_warnings_exceptions_and_secrets()
+        {
+            var calls = Fake.GetCalls(_hasherLogger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .ToList();
+            calls
+                .Should()
+                .NotContain(call =>
+                    call.GetArgument<LogLevel>(0) >= LogLevel.Warning || call.Arguments[3] != null
+                );
+            string text = string.Join("\n", calls.Select(call => call.Arguments[2]?.ToString()));
+            text.Should().NotContain(RealHasherSecret).And.NotContain(_truncatedHash);
+        }
+    }
+
     /// <summary>A genuine mismatch checked by the real hasher remains an authentication failure.</summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_wrong_secret_checked_by_the_real_hasher
