@@ -78,6 +78,7 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $composeDirectory "../.."))
 Import-Module (Join-Path $composeDirectory "env-utility.psm1") -Force
 Import-Module (Join-Path $composeDirectory "bootstrap-manifest.psm1") -Force
 Import-Module (Join-Path $composeDirectory "database-safety.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "secret-resolution-proof.psm1") -Force
 
 # The deployment's identity. Everything that names a container, network, port or image is here, so
 # none of it can collide with a stack another launcher owns.
@@ -147,52 +148,6 @@ function Restore-HarnessEnvironment {
         }
     }
     $priorEnvironment.Clear()
-}
-
-<#
-    Every proof the run must have executed and passed. A filter that matches nothing, or a proof that
-    ignores itself because a setting did not reach it, leaves dotnet test exiting zero, so the exit
-    code alone is not evidence. Renaming or adding a proof means updating this list.
-#>
-$expectedProofs = @(
-    "It_returns_the_resolved_password_from_the_configuration_service",
-    "It_lets_dms_write_and_read_a_resource_through_the_resolved_credential",
-    "It_resolves_the_value_the_store_held_first",
-    "It_observed_the_inside_read_inside_the_window",
-    "It_keeps_the_previous_value_inside_the_window",
-    "It_does_not_return_the_rotated_value_before_the_window_can_have_closed",
-    "It_returns_the_rotated_value_once_the_window_has_closed",
-    "It_keeps_returning_the_rotated_value",
-    "It_returns_only_the_previous_or_the_rotated_value"
-)
-
-function Assert-ProofsExecuted {
-    param([Parameter(Mandatory)] [string] $TrxPath)
-
-    if (-not (Test-Path -LiteralPath $TrxPath)) {
-        throw "The SecretResolutionPlugin proofs wrote no results to $TrxPath."
-    }
-
-    # Selected by local name, so a TRX with no Results element reaches the message below instead of
-    # failing strict mode's property access.
-    [xml]$trx = Get-Content -LiteralPath $TrxPath -Raw
-    $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
-    if ($results.Count -eq 0) {
-        throw "No SecretResolutionPlugin proofs ran; the filter matched nothing."
-    }
-
-    $notPassed = @($results | Where-Object { $_.outcome -ne "Passed" })
-    if ($notPassed.Count -gt 0) {
-        throw "SecretResolutionPlugin proofs did not pass: $(($notPassed | ForEach-Object { "$($_.testName) ($($_.outcome))" }) -join ', ')."
-    }
-
-    foreach ($name in $expectedProofs) {
-        if (@($results | Where-Object { $_.testName -eq $name }).Count -ne 1) {
-            throw "The SecretResolutionPlugin proof $name did not execute exactly once."
-        }
-    }
-
-    Write-Output "All $($expectedProofs.Count) SecretResolutionPlugin proofs executed and passed."
 }
 
 function Wait-HttpHealthy {
@@ -366,15 +321,17 @@ try {
         throw "Publishing $pluginName failed with exit code $LASTEXITCODE."
     }
 
-    # The store the fixture reads. The data store password is the real one, held only here; the test
-    # owns every other entry, including the ones it rotates.
+    # The store the fixture reads. The data store password is the real one, held only here and not in
+    # the stored connection string, which carries only its reference; the test owns every other entry,
+    # including the ones it rotates.
     @{ $datastoreSecretName = $postgresPassword } | ConvertTo-Json | Set-Content -LiteralPath $secretsFile
 
     $succeeded = $false
     Push-Location $composeDirectory
     try {
-        & docker network inspect $names.SECRETS_E2E_NETWORK *> $null
-        if ($LASTEXITCODE -ne 0) {
+        # Matched by exact name: a name filter on network ls matches substrings, and network inspect
+        # also accepts an ID prefix.
+        if (@(& docker network ls --format '{{.Name}}') -cnotcontains $names.SECRETS_E2E_NETWORK) {
             & docker network create $names.SECRETS_E2E_NETWORK | Out-Null
         }
 

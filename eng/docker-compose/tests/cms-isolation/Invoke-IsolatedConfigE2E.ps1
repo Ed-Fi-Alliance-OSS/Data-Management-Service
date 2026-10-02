@@ -138,12 +138,23 @@ try {
 
         Push-Location $composeDirectory
         try {
+            # start-local-config.ps1 does not check its own docker compose down, so the exit code it
+            # leaves behind is read here: a stack that is still running must not read as removed.
+            $global:LASTEXITCODE = 0
             ./start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile
-            & docker network rm $isolation.CMS_COMPOSE_NETWORK *> $null
+            $downExitCode = $LASTEXITCODE
         }
         finally {
             Pop-Location
         }
+
+        if ($downExitCode -ne 0) {
+            throw "Removing the isolated stack (project $($isolation.CMS_COMPOSE_PROJECT)) failed with exit code $downExitCode; it may still be running. Remove it with start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile."
+        }
+
+        # Compose usually removes the network itself, so this one failing is expected.
+        & docker network rm $isolation.CMS_COMPOSE_NETWORK *> $null
+        $global:LASTEXITCODE = 0
     }
 
     <#
@@ -200,8 +211,14 @@ try {
         }
 
         # Zero discovered or skipped tests is not a pass: every preflight test must have executed and passed.
-        [xml]$trx = Get-Content -LiteralPath $preflightResults -Raw
-        $results = @($trx.TestRun.Results.UnitTestResult)
+        # Results are selected by local name, so a results file with no Results element reaches the
+        # message below instead of failing strict mode's property access.
+        $content = if (Test-Path -LiteralPath $preflightResults) { Get-Content -LiteralPath $preflightResults -Raw } else { $null }
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            throw "The target preflight wrote no results to $preflightResults for $($assembly.FullName). Refusing to run."
+        }
+        [xml]$trx = $content
+        $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
         foreach ($name in $preflightTests) {
             $result = $results | Where-Object { $_.testName -eq $name }
             if (@($result).Count -ne 1 -or $result.outcome -ne "Passed") {
@@ -241,8 +258,17 @@ try {
         if ($KeepStack) {
             Write-Output "Isolated stack left running (project $($isolation.CMS_COMPOSE_PROJECT))."
         }
-        else {
+        elseif ($exitCode -eq 0) {
             Remove-IsolatedStack
+        }
+        else {
+            # The suite's own failure is the one to report; a teardown failure on top of it is a warning.
+            try {
+                Remove-IsolatedStack
+            }
+            catch {
+                Write-Warning $_.Exception.Message
+            }
         }
     }
 }

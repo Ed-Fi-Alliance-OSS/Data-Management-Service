@@ -261,6 +261,12 @@ public class Given_a_secret_rotated_in_the_store : SecretResolutionPluginTestBas
     /// <summary>How late the new value may be observed after the window, polling once a second.</summary>
     private static readonly TimeSpan _pollSlack = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Reads taken after the rotated value is first seen, whenever that is, so the proof that it keeps
+    /// being returned always rests on reads that happened.
+    /// </summary>
+    private const int LaterReads = 3;
+
     private TimeSpan _window;
     private TimeSpan _rotatedAfterCreation;
     private TimeSpan _firstReadAfterCreation;
@@ -269,7 +275,8 @@ public class Given_a_secret_rotated_in_the_store : SecretResolutionPluginTestBas
     private TimeSpan _firstRotatedAfterCreation;
     private bool _firstReadIsPrevious;
     private bool _insideReadIsPrevious;
-    private bool _everyLaterReadIsRotated = true;
+    private int _laterReads;
+    private int _laterReadsNotRotated;
     private bool _onlyKnownValuesReturned = true;
     private string _timings = string.Empty;
 
@@ -304,7 +311,7 @@ public class Given_a_secret_rotated_in_the_store : SecretResolutionPluginTestBas
             if (_firstRotatedAfterCreation != TimeSpan.MaxValue)
             {
                 // Once the rotated value has been seen, nothing else may be returned.
-                _everyLaterReadIsRotated &= password == rotated;
+                CountLaterRead(password);
             }
             else if (password == rotated)
             {
@@ -320,6 +327,23 @@ public class Given_a_secret_rotated_in_the_store : SecretResolutionPluginTestBas
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        // The rotated value may first appear on the last poll before the deadline, which leaves no
+        // later read inside the loop.
+        while (_firstRotatedAfterCreation != TimeSpan.MaxValue && _laterReads < LaterReads)
+        {
+            CountLaterRead(await PasswordReadFromCms(dataStoreId));
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        void CountLaterRead(string password)
+        {
+            _laterReads++;
+            if (password != rotated)
+            {
+                _laterReadsNotRotated++;
+            }
         }
 
         _timings = (
@@ -358,7 +382,11 @@ public class Given_a_secret_rotated_in_the_store : SecretResolutionPluginTestBas
     }
 
     [Test]
-    public void It_keeps_returning_the_rotated_value() => _everyLaterReadIsRotated.Should().BeTrue();
+    public void It_keeps_returning_the_rotated_value()
+    {
+        _laterReads.Should().BeGreaterThanOrEqualTo(LaterReads);
+        _laterReadsNotRotated.Should().Be(0);
+    }
 
     [Test]
     public void It_returns_only_the_previous_or_the_rotated_value() =>

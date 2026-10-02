@@ -102,9 +102,9 @@ try {
     }
     else {
 
-        # Inspected by exact name: a name filter on network ls matches substrings.
-        docker network inspect $composeNetwork *> $null
-        if ($LASTEXITCODE -ne 0) {
+        # Matched by exact name: a name filter on network ls matches substrings, and network inspect
+        # also accepts an ID prefix.
+        if (@(docker network ls --format '{{.Name}}') -cnotcontains $composeNetwork) {
             docker network create $composeNetwork
         }
 

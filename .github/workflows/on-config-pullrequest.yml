@@ -234,6 +234,16 @@ jobs:
               throw "$($result.FailedCount) build script zero-test guard test(s) failed."
           }
 
+      # The secret resolution proof runs only on a schedule (scheduled-secret-resolution-proof.yml).
+      # Its check that every proof executed and passed is exercised here, so a break in it fails a
+      # pull request rather than the next scheduled run.
+      - name: Run Secret Resolution Proof Results Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/docker-compose/tests/SecretResolutionProof.Tests.ps1" -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
+              throw "Secret resolution proof results Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
+          }
+
   run-unit-tests:
     name: Run Unit Tests
     needs: detect-fresh-build-changes
@@ -263,6 +273,11 @@ jobs:
 
       - name: Build
         run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      # No test stages the secret resolution proof's fixture plugin, and the proof runs only on a
+      # schedule, so it is compiled here to fail a pull request that breaks it.
+      - name: Build the Secret Resolution Fixture Plugin
+        run: dotnet build src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.FileSecretResolver/Acme.FileSecretResolver.csproj --configuration ${{ env.CONFIGURATION }} --nologo
 
       - name: Restore .NET tools
         if: success()
