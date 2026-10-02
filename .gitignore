@@ -465,6 +465,9 @@ CLAUDE.local.md
 .plans/
 .claude/
 
+# Local implementation plan
+/PLAN.md
+
 # SDK generation artifacts
 /eng/sdkGen/csharp/*
 openApi-codegen-cli*.jar
