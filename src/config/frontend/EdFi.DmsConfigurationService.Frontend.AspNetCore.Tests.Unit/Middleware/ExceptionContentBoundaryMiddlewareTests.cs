@@ -82,6 +82,14 @@ public class ExceptionContentBoundaryMiddlewareTests
             typeof(InvalidDataException).FullName
         );
         yield return new TestFixtureData(
+            "an I/O failure on a request the caller did not abort",
+            (Func<Exception>)(
+                () => WithSentinels(new IOException($"io {Sentinel}", new TimeoutException(Sentinel)))
+            ),
+            typeof(InvalidOperationException),
+            $"{typeof(IOException).FullName} -> {typeof(TimeoutException).FullName}"
+        );
+        yield return new TestFixtureData(
             "a cancellation the caller did not cause",
             (Func<Exception>)(() => WithSentinels(new OperationCanceledException($"timeout {Sentinel}"))),
             typeof(InvalidOperationException),
@@ -148,17 +156,47 @@ public class ExceptionContentBoundaryMiddlewareTests
         }
     }
 
-    [TestFixture]
-    public class Given_a_caller_cancellation_on_a_marked_route
+    public static IEnumerable<TestFixtureData> AbortedRequestFailures()
+    {
+        yield return new TestFixtureData(
+            (Func<Exception>)(
+                () =>
+                    WithSentinels(
+                        new OperationCanceledException(
+                            $"cancelled {Sentinel}",
+                            new TimeoutException(Sentinel)
+                        )
+                    )
+            )
+        ).SetArgDisplayNames("OperationCanceledException");
+        yield return new TestFixtureData(
+            (Func<Exception>)(
+                () => WithSentinels(new IOException($"io {Sentinel}", new TimeoutException(Sentinel)))
+            )
+        ).SetArgDisplayNames("IOException");
+        yield return new TestFixtureData(
+            (Func<Exception>)(
+                () =>
+                    WithSentinels(
+                        new BadHttpRequestException($"unreadable {Sentinel}", StatusCodes.Status400BadRequest)
+                    )
+            )
+        ).SetArgDisplayNames("BadHttpRequestException");
+    }
+
+    /// <summary>
+    /// Every type the framework's exception middleware treats as an aborted request when the caller has
+    /// aborted stays a cancellation, so that middleware still takes its aborted-request path.
+    /// </summary>
+    [TestFixtureSource(typeof(ExceptionContentBoundaryMiddlewareTests), nameof(AbortedRequestFailures))]
+    public class Given_a_failure_on_an_aborted_request_on_a_marked_route(Func<Exception> create)
     {
         [Test]
         public void It_stays_a_cancellation_for_the_aborted_request()
         {
             using CancellationTokenSource aborted = new();
             aborted.Cancel();
-            OperationCanceledException original = WithSentinels(
-                new OperationCanceledException($"cancelled {Sentinel}", new TimeoutException(Sentinel))
-            );
+            Exception original = create();
 
             (Exception? thrown, _) = Run(
                 original,
