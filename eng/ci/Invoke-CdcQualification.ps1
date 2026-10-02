@@ -25,7 +25,7 @@ $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $destination = [IO.Path]::GetFullPath($ResultsDirectory)
 $raw = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))))
 foreach ($path in @($destination, $raw)) {
-    if ($path -eq $repo -or $path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar)) {
+    if ($path.Equals($repo, [StringComparison]::OrdinalIgnoreCase) -or $path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Qualification diagnostics must be written outside the repository checkout.'
     }
 }

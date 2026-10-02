@@ -19,6 +19,90 @@ AfterAll {
     } | Remove-Module -Force
 }
 
+Describe 'CDC E2E setup failure export' {
+    BeforeAll {
+        Import-Module (Join-Path $script:composeRoot '../ci/cdc-qualification.psm1') -Force
+    }
+    BeforeEach {
+        $script:savedDiagnosticDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+
+        $script:arguments = @{
+            EnvironmentFile = (Join-Path $TestDrive '.env.e2e')
+            OriginalEnvironmentFile = (Join-Path $TestDrive '.env.original')
+            DatabaseName = 'primary_e2e'; SnapshotDatabaseName = 'snapshot_e2e'
+            CdcSettingsPath = (Join-Path $TestDrive 'settings.json')
+            CdcBindingStatePath = (Join-Path $TestDrive 'custom-state')
+            SkipDockerBuild = $true; UsePrebuiltTools = $true; Configuration = 'Release'
+        }
+        Mock ReadValuesFromEnvFile -ModuleName e2e-cdc { return @{ E2E_DATABASE_NAME = 'primary_e2e'; E2E_SNAPSHOT_DATABASE_NAME = 'snapshot_e2e' } }
+        Mock Assert-E2EDatabaseIsDedicated -ModuleName e2e-cdc {}
+        Mock Assert-E2ECdcWorkspaceAvailable -ModuleName e2e-cdc {}
+        Mock Read-BootstrapCdcSettings -ModuleName e2e-cdc { return @{ ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } } }
+        Mock Assert-BootstrapCdcOfflineOwnership -ModuleName e2e-cdc {}
+        Mock Invoke-E2ECdcSnapshotPreparation -ModuleName e2e-cdc {}
+        Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc {}
+        Mock Test-CdcDeployment -ModuleName e2e-cdc { return $false }
+        Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc {}
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
+            & $BeforeCdcAdmission '/effective/.env'
+        }
+    }
+
+    AfterEach { $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:savedDiagnosticDirectory }
+
+
+    It 'publishes the real <Cleanup> failure record for <Provider> with cancellation <Cancelled>' -ForEach @(
+        @{ Cleanup = 'NotStarted'; Provider = 'postgresql'; Cancelled = $false },
+        @{ Cleanup = 'Stopped'; Provider = 'mssql'; Cancelled = $true },
+        @{ Cleanup = 'RetainedForReconciliation'; Provider = 'mssql'; Cancelled = $false },
+        @{ Cleanup = 'RetainedForGovernedTeardown'; Provider = 'postgresql'; Cancelled = $false }
+    ) {
+        $script:cancelSetup = $Cancelled
+        if ($Cleanup -eq 'RetainedForGovernedTeardown') {
+            Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc { throw 'private-rollout-prose' }
+            $script:arguments.CdcApiE2E = $true
+        } else {
+            Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
+                $exception = if ($script:cancelSetup) { [OperationCanceledException]::new('private-cancellation-prose') }
+                    else { [InvalidOperationException]::new('private-setup-prose') }
+                $exception.Data['CdcFailureCodes'] = @('ProviderSetup/ValidationFailed', 'Connect/Timeout', 'private-secret/Timeout')
+                throw $exception
+            }
+        }
+        if ($Cleanup -in @('Stopped', 'RetainedForReconciliation')) {
+            Mock Test-CdcDeployment -ModuleName e2e-cdc { return $true }
+        }
+        if ($Cleanup -eq 'RetainedForReconciliation') {
+            Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc { throw 'private-cleanup-prose' }
+        }
+        { Invoke-E2ECdcSetup @script:arguments -DatabaseEngine $Provider } | Should -Throw '*tests were not launched*'
+        $files = @(Get-ChildItem (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'e2e-setup') -Filter '*.json')
+        $files.Count | Should -Be 1
+        $record = Get-Content $files[0].FullName -Raw | ConvertFrom-Json -AsHashtable
+        $record.cleanup | Should -Be $Cleanup
+        # Exercise the final export boundary as well as the real writer.
+        $record.privateText = 'private-unexpected-field'
+        $record.failureCodes += @('private-unrecognized-code', @{ secret = 'private-object' })
+        $record | ConvertTo-Json -Depth 10 | Set-Content $files[0].FullName
+        '{"private":"private-guid-file"}' | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'aabbccddeeff00112233445566778899.json')
+        $published = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        Export-CdcQualificationEvidence $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY $published
+        @(Get-ChildItem $published).Count | Should -Be 1
+        $json = Get-Content (Join-Path $published $files[0].Name) -Raw
+        $safe = $json | ConvertFrom-Json -AsHashtable
+        @($safe.Keys | Sort-Object) | Should -Be @('cancelled', 'cleanup', 'failureCodes', 'operation', 'provider', 'succeeded')
+        $safe.operation | Should -BeExactly 'e2e-setup'
+        $safe.succeeded | Should -BeFalse
+        $safe.cancelled | Should -Be $Cancelled
+        $safe.cleanup | Should -BeExactly $Cleanup
+        $safe.provider | Should -BeExactly $Provider
+        if ($Cleanup -eq 'RetainedForGovernedTeardown') { $safe.failureCodes.Count | Should -Be 0 }
+        else { $safe.failureCodes | Should -Be @('ProviderSetup/ValidationFailed', 'Connect/Timeout') }
+        $json | Should -Not -Match 'private-|secret|Exception|Output'
+    }
+}
+
 Describe 'Shared CDC E2E setup handoff' {
     BeforeEach {
         $script:savedDiagnosticDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY

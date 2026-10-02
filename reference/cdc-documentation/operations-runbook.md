@@ -770,9 +770,16 @@ This is the DMS E2E suite, not Instance Management E2E.
 | Authority/offline window | Same exclusive deployment and initial writer/seed exclusion as the selected provider setup; test processes start only after controller admission and DMS startup. |
 | Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; temporary CDC diagnostics on failure. |
 | Invocation | PostgreSQL: `cdc-pg-e2e-setup` then optional `cdc-pg-e2e-test`, **or** `cdc-pg-e2e-build` on a separate fresh workspace. SQL Server: `cdc-sqlserver-e2e-setup` or `cdc-sqlserver-e2e-build` with the SQL Server variant below. |
-| JSON/exit status | Wrappers print progress, not a CLI JSON envelope. Internal admission requires the same matching `enable` publication result as local setup. On failure, the sanitized `e2e-setup` artifact includes `operation`, `succeeded`, `cancelled`, `cleanup`, `provider`, `failureCodes`. |
+| JSON/exit status | Wrappers print progress, not a CLI JSON envelope. Internal admission requires the same matching `enable` publication result as local setup. On failure, `cdc-runbook-e2e-setup-<id>.json` records `operation`, `succeeded`, `cancelled`, `cleanup`, `provider`, `failureCodes`. The qualification exporter validates and publishes only these permitted fields and values. |
 | Postcondition | Managed primary receipt retained, separate snapshot prepared with matching schema, CDC admitted before DMS/tests; selected setup-smoke tests pass without source-reset hooks. This does not qualify message scenarios. |
 | Rejection/timeout action | Do not launch tests. Retain the temporary CDC diagnostics path printed by setup and original settings/state. `cleanup: "Stopped"` means governed stop completed; `"RetainedForReconciliation"` means stop failed and infrastructure remains for reconciliation; `"NotStarted"` is not proof of shutdown. Use status/initial-retry handoffs above and governed teardown below. |
+
+The setup failure record lives in the temporary diagnostics path printed by the
+wrapper. During qualification this is private input to the exporter, alongside
+raw process logs; never upload that directory. Uploaded qualification artifacts
+contain the separately sanitized record, without exception prose, raw output,
+or unexpected fields. `RetainedForGovernedTeardown` means the HTTP rollout failed
+and left the worker unchanged for explicit governed teardown.
 
 ### Prepare the E2E variant
 

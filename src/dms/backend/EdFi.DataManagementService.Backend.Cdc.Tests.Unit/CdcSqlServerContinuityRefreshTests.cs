@@ -16,6 +16,11 @@ internal enum SqlServerRangeRefreshCase
 {
     CatchesUp,
     StillBehind,
+    OffsetAdvancesAgain,
+    FinalSampleCatchesUp,
+    FinalOffsetUnavailable,
+    FinalRetentionLoss,
+    InitialOffsetUnavailable,
     RetentionAndOffsetAdvance,
     RetentionOvertakesOffset,
     OffsetUnavailable,
@@ -23,6 +28,11 @@ internal enum SqlServerRangeRefreshCase
 
 [TestFixture(SqlServerRangeRefreshCase.CatchesUp)]
 [TestFixture(SqlServerRangeRefreshCase.StillBehind)]
+[TestFixture(SqlServerRangeRefreshCase.OffsetAdvancesAgain)]
+[TestFixture(SqlServerRangeRefreshCase.FinalSampleCatchesUp)]
+[TestFixture(SqlServerRangeRefreshCase.FinalOffsetUnavailable)]
+[TestFixture(SqlServerRangeRefreshCase.FinalRetentionLoss)]
+[TestFixture(SqlServerRangeRefreshCase.InitialOffsetUnavailable)]
 [TestFixture(SqlServerRangeRefreshCase.RetentionAndOffsetAdvance)]
 [TestFixture(SqlServerRangeRefreshCase.RetentionOvertakesOffset)]
 [TestFixture(SqlServerRangeRefreshCase.OffsetUnavailable)]
@@ -31,10 +41,12 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
 {
     private CdcEstablishedValidationObservation _result = null!;
     private int _sourceReads;
+    private readonly List<string> _readOrder = [];
 
     [SetUp]
     public async Task SetupRefresh()
     {
+        _readOrder.Clear();
         _sourceReads = 0;
         _offsetReads = 0;
         var floorAdvances =
@@ -45,12 +57,28 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
             .ReturnsLazily(() =>
             {
                 _offsetReads++;
-                if (scenario == SqlServerRangeRefreshCase.OffsetUnavailable && _offsetReads > 1)
+                _readOrder.Add("offset");
+                if (
+                    scenario == SqlServerRangeRefreshCase.InitialOffsetUnavailable
+                    || (scenario == SqlServerRangeRefreshCase.OffsetUnavailable && _offsetReads > 1)
+                    || (scenario == SqlServerRangeRefreshCase.FinalOffsetUnavailable && _offsetReads == 3)
+                )
                 {
                     return new CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable(
                         new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
                     );
                 }
+                var position = scenario switch
+                {
+                    SqlServerRangeRefreshCase.OffsetAdvancesAgain
+                    or SqlServerRangeRefreshCase.FinalSampleCatchesUp
+                    or SqlServerRangeRefreshCase.FinalOffsetUnavailable
+                    or SqlServerRangeRefreshCase.FinalRetentionLoss when _offsetReads > 1 =>
+                        "00000001:00000002:0005",
+                    SqlServerRangeRefreshCase.RetentionAndOffsetAdvance when _offsetReads > 1 =>
+                        "00000001:00000002:0004",
+                    _ => "00000001:00000002:0003",
+                };
                 var offset = Offsets();
                 return Observed(
                     new CdcConnectOffsetEvidence(
@@ -59,16 +87,8 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
                         offset.Postgresql,
                         offset.SqlServer with
                         {
-                            CommitLsn =
-                                scenario == SqlServerRangeRefreshCase.RetentionAndOffsetAdvance
-                                && _offsetReads > 1
-                                    ? "00000001:00000002:0004"
-                                    : "00000001:00000002:0003",
-                            ChangeLsn =
-                                scenario == SqlServerRangeRefreshCase.RetentionAndOffsetAdvance
-                                && _offsetReads > 1
-                                    ? "00000001:00000002:0004"
-                                    : "00000001:00000002:0003",
+                            CommitLsn = position,
+                            ChangeLsn = position,
                             EventSerialNo = CdcSqlServerProviderPosition.HeartbeatAfterImageEventSerialNo,
                         }
                     )
@@ -81,7 +101,24 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
         _change = r =>
         {
             _sourceReads++;
+            _readOrder.Add("provider");
             var result = original(r);
+            var minimum = scenario switch
+            {
+                SqlServerRangeRefreshCase.FinalRetentionLoss when _sourceReads == 3 =>
+                    "0x00000001000000020006",
+                _ when floorAdvances && _sourceReads > 1 => "0x00000001000000020004",
+                _ => "0x00000001000000020001",
+            };
+            var maximum = scenario switch
+            {
+                _ when _sourceReads == 1 => "0x00000001000000020002",
+                SqlServerRangeRefreshCase.StillBehind => "0x00000001000000020002",
+                SqlServerRangeRefreshCase.FinalSampleCatchesUp
+                or SqlServerRangeRefreshCase.FinalRetentionLoss when _sourceReads == 3 =>
+                    "0x00000001000000020006",
+                _ => "0x00000001000000020004",
+            };
             return result with
             {
                 ProviderHistoryObservations = result
@@ -90,14 +127,8 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
                         {
                             SafeObservedValues = new Dictionary<string, string>(h.SafeObservedValues)
                             {
-                                ["retained_min_lsn"] =
-                                    floorAdvances && _sourceReads > 1
-                                        ? "0x00000001000000020004"
-                                        : "0x00000001000000020001",
-                                ["retained_max_lsn"] =
-                                    _sourceReads == 1 || scenario == SqlServerRangeRefreshCase.StillBehind
-                                        ? "0x00000001000000020002"
-                                        : "0x00000001000000020004",
+                                ["retained_min_lsn"] = minimum,
+                                ["retained_max_lsn"] = maximum,
                             },
                         }
                     )
@@ -129,11 +160,31 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
             .Subject.Value;
     }
 
-    [Test]
-    public void It_refreshes_source_evidence_once() => _sourceReads.Should().Be(2);
+    private int ExpectedSamples =>
+        scenario switch
+        {
+            SqlServerRangeRefreshCase.InitialOffsetUnavailable => 1,
+            SqlServerRangeRefreshCase.StillBehind
+            or SqlServerRangeRefreshCase.OffsetAdvancesAgain
+            or SqlServerRangeRefreshCase.FinalSampleCatchesUp
+            or SqlServerRangeRefreshCase.FinalOffsetUnavailable
+            or SqlServerRangeRefreshCase.FinalRetentionLoss => 3,
+            _ => 2,
+        };
 
     [Test]
-    public void It_reads_the_offset_again_after_refreshing_the_range() => _offsetReads.Should().Be(2);
+    public void It_bounds_source_reads_and_stops_on_conclusive_or_unavailable_evidence() =>
+        _sourceReads.Should().Be(ExpectedSamples);
+
+    [Test]
+    public void It_reads_the_offset_again_after_refreshing_the_range() =>
+        _offsetReads.Should().Be(ExpectedSamples);
+
+    [Test]
+    public void It_samples_the_provider_before_each_offset() =>
+        _readOrder
+            .Should()
+            .Equal(Enumerable.Range(0, ExpectedSamples).SelectMany(_ => new[] { "provider", "offset" }));
 
     [Test]
     public void It_requires_affirmative_evidence_for_prestart() =>
@@ -142,13 +193,18 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
             .Be(
                 scenario
                     is SqlServerRangeRefreshCase.CatchesUp
+                        or SqlServerRangeRefreshCase.FinalSampleCatchesUp
                         or SqlServerRangeRefreshCase.RetentionAndOffsetAdvance
             );
 
     [Test]
     public void It_only_reports_loss_when_the_fresh_offset_is_below_the_retention_floor()
     {
-        if (scenario == SqlServerRangeRefreshCase.RetentionOvertakesOffset)
+        if (
+            scenario
+            is SqlServerRangeRefreshCase.RetentionOvertakesOffset
+                or SqlServerRangeRefreshCase.FinalRetentionLoss
+        )
         {
             _result.SourceHistory.IncidentCandidate.Should().NotBeNull();
         }
@@ -165,9 +221,14 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
             .Be(
                 scenario switch
                 {
-                    SqlServerRangeRefreshCase.StillBehind or SqlServerRangeRefreshCase.OffsetUnavailable =>
+                    SqlServerRangeRefreshCase.StillBehind
+                    or SqlServerRangeRefreshCase.OffsetUnavailable
+                    or SqlServerRangeRefreshCase.OffsetAdvancesAgain
+                    or SqlServerRangeRefreshCase.FinalOffsetUnavailable
+                    or SqlServerRangeRefreshCase.InitialOffsetUnavailable =>
                         CdcSourceHistoryContinuity.Unknown,
-                    SqlServerRangeRefreshCase.RetentionOvertakesOffset => CdcSourceHistoryContinuity.Lost,
+                    SqlServerRangeRefreshCase.RetentionOvertakesOffset
+                    or SqlServerRangeRefreshCase.FinalRetentionLoss => CdcSourceHistoryContinuity.Lost,
                     _ => CdcSourceHistoryContinuity.Healthy,
                 }
             );

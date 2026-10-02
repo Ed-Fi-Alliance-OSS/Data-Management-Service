@@ -398,7 +398,7 @@ function Invoke-E2ECdcSetup {
                 throw 'CDC diagnostics must be outside the repository checkout.'
             }
             $null = [IO.Directory]::CreateDirectory($diagnosticRoot)
-            $diagnostic | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot "$([guid]::NewGuid().ToString('N')).json") -ErrorAction Stop
+            $diagnostic | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot "cdc-runbook-e2e-setup-$([guid]::NewGuid().ToString('N')).json") -ErrorAction Stop
         } catch { Write-Warning 'CDC E2E failure diagnostics could not be saved; the original setup failure is retained.' }
         if ($cancelled) { throw [OperationCanceledException]::new("CDC E2E setup cancelled; tests were not launched. Retain original state and temporary diagnostics at '$diagnosticRoot' for governed cleanup.") }
         throw "CDC E2E setup failed; tests were not launched. Retain original state and inspect temporary diagnostics at '$diagnosticRoot' plus SchemaTools cdc status before governed cleanup."
