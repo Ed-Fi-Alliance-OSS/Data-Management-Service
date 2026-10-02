@@ -9,6 +9,8 @@ using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
+using Npgsql;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Integration.CdcProviderAdmissionFixture;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
