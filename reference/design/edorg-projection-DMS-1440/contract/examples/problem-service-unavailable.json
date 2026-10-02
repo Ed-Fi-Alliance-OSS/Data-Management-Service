@@ -1,0 +1,9 @@
+{
+  "detail": "The service is temporarily unable to handle the request. Retry the request later.",
+  "type": "urn:ed-fi:api:service-unavailable",
+  "title": "Service Unavailable",
+  "status": 503,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

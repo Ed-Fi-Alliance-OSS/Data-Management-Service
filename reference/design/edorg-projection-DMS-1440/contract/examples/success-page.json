@@ -1,0 +1,21 @@
+{
+  "contractVersion": "educationOrganizationProjection.v1",
+  "dataStoreId": 3788,
+  "nextCursor": "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCw0NGNlM2RiYTc0ZWM4ZjhiYTE0ZGFjN2U5NDNmYWRmNw",
+  "items": [
+    {
+      "educationOrganizationId": 1,
+      "nameOfInstitution": "Example State Department of Education",
+      "shortNameOfInstitution": "ESDE",
+      "discriminator": "edfi.StateEducationAgency",
+      "parentId": null
+    },
+    {
+      "educationOrganizationId": 10,
+      "nameOfInstitution": "Region 10 Education Service Center",
+      "shortNameOfInstitution": "ESC 10",
+      "discriminator": "edfi.EducationServiceCenter",
+      "parentId": 1
+    }
+  ]
+}

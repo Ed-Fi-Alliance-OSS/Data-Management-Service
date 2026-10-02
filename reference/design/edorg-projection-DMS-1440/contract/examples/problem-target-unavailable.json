@@ -1,0 +1,9 @@
+{
+  "detail": "The data store's database is temporarily unavailable. Retry the request later.",
+  "type": "urn:ed-fi:api:education-organization-projection:target-unavailable",
+  "title": "Target Unavailable",
+  "status": 503,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

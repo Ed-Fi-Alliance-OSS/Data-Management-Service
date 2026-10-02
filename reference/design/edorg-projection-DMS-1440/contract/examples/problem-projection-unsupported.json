@@ -1,0 +1,9 @@
+{
+  "detail": "The education organization projection is not supported by the data model in use.",
+  "type": "urn:ed-fi:api:education-organization-projection:projection-unsupported",
+  "title": "Projection Unsupported",
+  "status": 409,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

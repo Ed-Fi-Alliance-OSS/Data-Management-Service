@@ -1,0 +1,11 @@
+{
+  "detail": "A security configuration problem was detected. The request cannot be authorized.",
+  "type": "urn:ed-fi:api:system:configuration:security",
+  "title": "Security Configuration Error",
+  "status": 500,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": [
+    "The service claim's authorization strategies for claim set 'EdOrgProjectionReader' and action 'Read' must be exactly ['NoFurtherAuthorizationRequired']."
+  ]
+}
