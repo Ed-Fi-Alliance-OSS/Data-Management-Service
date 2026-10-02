@@ -12,8 +12,11 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -380,6 +383,262 @@ public class TokenRevocationStartupTests
                 .Subject;
     }
 
+    // ----- Exceptions the framework's exception middleware cannot answer (D-15, D-17) -----
+
+    /// <summary>The request header that makes the outermost test middleware fail every response write.</summary>
+    private const string FailResponseWriteHeader = "X-Test-Fail-Response-Write";
+
+    /// <summary>
+    /// A boot whose <paramref name="route"/> fails at request time while binding its manager parameter,
+    /// with the sentinel-bearing exception: after starting the response, or before it so the error
+    /// handler runs and its response write fails. The revocation route carries
+    /// <c>ExceptionTypeOnlyLoggingMetadata</c>; <c>/connect/token</c> is the unmarked control. The
+    /// framework's exception middleware logs an exception it cannot answer with the exception attached,
+    /// so these are the paths where only withholding the content before that middleware keeps it out
+    /// of the logs.
+    /// </summary>
+    private static async Task<(RevocationBoot Boot, Exception? ClientFailure)> RunRequestTimeFailureAsync(
+        string route,
+        bool startResponseFirst
+    )
+    {
+        RevocationBoot boot = RevocationBoot.Run(
+            "self-contained",
+            "postgresql",
+            services =>
+            {
+                services.AddHttpContextAccessor();
+                services.AddTransient<IStartupFilter, FailingResponseWriteStartupFilter>();
+                services.RemoveAll<ITokenRevocationManager>();
+                services.AddTransient<ITokenRevocationManager>(provider =>
+                    FailRequestTime(provider, "/connect/revoke", startResponseFirst)
+                    ?? new ScriptedRevocationManager(new TokenRevocationResult.Completed())
+                );
+                services.RemoveAll<ITokenManager>();
+                services.AddTransient<ITokenManager>(provider =>
+                    FailRequestTime<ITokenManager>(provider, "/connect/token", startResponseFirst)
+                    ?? A.Fake<ITokenManager>()
+                );
+            }
+        );
+
+        using HttpRequestMessage request = new(HttpMethod.Post, route)
+        {
+            Content = RevocationForm(("token", "opaque-token"), ("grant_type", "client_credentials")),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes("revocation-caller:revocation-secret"))
+        );
+        if (!startResponseFirst)
+        {
+            request.Headers.Add(FailResponseWriteHeader, "1");
+        }
+
+        try
+        {
+            using HttpResponseMessage response = await boot.Client!.SendAsync(request);
+            _ = await response.Content.ReadAsStringAsync();
+            return (boot, null);
+        }
+        catch (Exception exception)
+        {
+            return (boot, exception);
+        }
+    }
+
+    /// <summary>
+    /// Throws the sentinel-bearing exception when resolved for a request to <paramref name="path"/>,
+    /// after starting the response when asked; returns null outside such a request, startup included.
+    /// </summary>
+    private static T? FailRequestTime<T>(IServiceProvider provider, string path, bool startResponseFirst)
+        where T : class
+    {
+        HttpContext? context = provider.GetRequiredService<IHttpContextAccessor>().HttpContext;
+        if (context is null || !context.Request.Path.StartsWithSegments(path))
+        {
+            return null;
+        }
+
+        if (startResponseFirst)
+        {
+            context.Response.StartAsync().GetAwaiter().GetResult();
+        }
+
+        throw ThrowingFactoryFailure();
+    }
+
+    private static ITokenRevocationManager? FailRequestTime(
+        IServiceProvider provider,
+        string path,
+        bool startResponseFirst
+    ) => FailRequestTime<ITokenRevocationManager>(provider, path, startResponseFirst);
+
+    /// <summary>
+    /// Outermost test middleware: a request carrying <see cref="FailResponseWriteHeader"/> gets a response
+    /// body that refuses every write, so the error handler's response write fails.
+    /// </summary>
+    private sealed class FailingResponseWriteStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(
+                    async (context, nextMiddleware) =>
+                    {
+                        if (context.Request.Headers.ContainsKey(FailResponseWriteHeader))
+                        {
+                            context.Response.Body = new WriteRefusingStream();
+                        }
+                        await nextMiddleware(context);
+                    }
+                );
+                next(app);
+            };
+    }
+
+    private sealed class WriteRefusingStream : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new IOException("The test response body refused the write.");
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default
+        ) => throw new IOException("The test response body refused the write.");
+
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => throw new IOException("The test response body refused the write.");
+    }
+
+    public static readonly object[] UnanswerableFailures =
+    [
+        new object[] { "after-the-response-started", true },
+        new object[] { "while-writing-the-error-response", false },
+    ];
+
+    /// <summary>
+    /// The revocation route: the framework's exception middleware does log the failure with an exception
+    /// attached on both paths, and nothing of the withheld exception reaches any category, field, scope
+    /// or attached exception chain.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(UnanswerableFailures))]
+    public class Given_a_revocation_request_that_fails_where_the_exception_handler_cannot_answer(
+        string failure,
+        bool startResponseFirst
+    )
+    {
+        private RevocationBoot _boot = null!;
+
+        private static IEnumerable<CapturedStartupLog> FrameworkRecordsWithAnException(RevocationBoot boot) =>
+            boot.Logs.Records.Where(record =>
+                record.Category.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)
+                && record.Exception is not null
+            );
+
+        private static IEnumerable<Exception> ChainOf(Exception exception)
+        {
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                yield return current;
+            }
+        }
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp() =>
+            (_boot, _) = await RunRequestTimeFailureAsync("/connect/revoke", startResponseFirst);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_reaches_the_framework_exception_logging() =>
+            FrameworkRecordsWithAnException(_boot).Should().NotBeEmpty(failure);
+
+        [Test]
+        public void It_keeps_the_withheld_exception_out_of_every_logger_category() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_attaches_no_exception_chain_carrying_the_original() =>
+            _boot
+                .Logs.Records.Where(record => record.Exception is not null)
+                .SelectMany(record => ChainOf(record.Exception!))
+                .Should()
+                .NotContain(exception =>
+                    exception is SentinelFactoryException || exception is TimeoutException
+                );
+
+        [Test]
+        public void It_logs_one_failed_request_naming_the_original_exception_types()
+        {
+            CapturedStartupLog failed = _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.EventId.Name == "HttpRequestFailed")
+                .Subject;
+            failed.Exception.Should().BeNull();
+            failed
+                .State.Should()
+                .Contain(new KeyValuePair<string, object?>("ExceptionTypes", _throwingFactoryTypeChain));
+        }
+    }
+
+    /// <summary>
+    /// The unmarked control: the same failures on <c>/connect/token</c> keep their existing logging, so
+    /// the original exception, sentinel included, still reaches the logs there.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(UnanswerableFailures))]
+    public class Given_an_unmarked_request_that_fails_where_the_exception_handler_cannot_answer(
+        string failure,
+        bool startResponseFirst
+    )
+    {
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp() =>
+            (_boot, _) = await RunRequestTimeFailureAsync("/connect/token", startResponseFirst);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_still_logs_the_original_exception() =>
+            _boot.CapturedText().Should().Contain(Sentinel, failure);
+
+        [Test]
+        public void It_still_attaches_the_original_to_the_failed_request() =>
+            _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.EventId.Name == "HttpRequestFailed")
+                .Which.Exception.Should()
+                .BeOfType<SentinelFactoryException>();
+    }
+
     /// <summary>
     /// The shipped Keycloak manager against the recording endpoint: startup made no provider request,
     /// the first revocation reaches the endpoint (so the startup count of zero is an observation, not a
@@ -528,6 +787,11 @@ public class TokenRevocationStartupTests
                     builder.UseSetting("AppSettings:Datastore", datastore);
                     builder.UseSetting("IdentitySettings:Authority", endpoint.Authority);
                     builder.ConfigureServices(services => services.AddSingleton<ILoggerProvider>(logs));
+                    // Every category at every level, the framework's included: a provider-specific rule
+                    // outranks the configured category levels.
+                    builder.ConfigureLogging(logging =>
+                        logging.AddFilter<StartupLogCapture>(category: null, LogLevel.Trace)
+                    );
                     if (configureTestServices is not null)
                     {
                         // Applied after Program's own registrations, so it sees what AddServices left.
@@ -585,7 +849,7 @@ public class TokenRevocationStartupTests
             StringBuilder text = new();
             foreach (CapturedStartupLog record in Logs.Records)
             {
-                text.AppendLine(record.Message);
+                text.AppendLine($"{record.Category} {record.EventId} {record.Message}");
                 foreach ((string key, object? value) in record.State)
                 {
                     text.AppendLine($"{key}={value}");
@@ -677,6 +941,7 @@ public class TokenRevocationStartupTests
     }
 
     internal sealed record CapturedStartupLog(
+        string Category,
         LogLevel Level,
         EventId EventId,
         string Message,
@@ -696,13 +961,13 @@ public class TokenRevocationStartupTests
 
         internal IReadOnlyList<CapturedStartupLog> Records => [.. _records];
 
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this);
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, this);
 
         public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
 
         public void Dispose() { }
 
-        private sealed class CapturingLogger(StartupLogCapture capture) : ILogger
+        private sealed class CapturingLogger(string category, StartupLogCapture capture) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull => capture._scopes.Push(state);
@@ -725,6 +990,7 @@ public class TokenRevocationStartupTests
                 capture._scopes.ForEachScope((scope, list) => list.Add(scope), scopes);
                 capture._records.Enqueue(
                     new CapturedStartupLog(
+                        category,
                         logLevel,
                         eventId,
                         formatter(state, exception),

@@ -86,6 +86,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     if (LogsExceptionTypesOnly(context))
                     {
                         LogTypeOnlyFailure(
+                            context,
                             logger,
                             handledException,
                             method,
@@ -163,7 +164,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
 
             if (typesOnly)
             {
-                LogTypeOnlyFailure(logger, ex, method, path, statusCode, durationMs, traceId);
+                LogTypeOnlyFailure(context, logger, ex, method, path, statusCode, durationMs, traceId);
                 return;
             }
 
@@ -198,9 +199,12 @@ public class RequestLoggingMiddleware(RequestDelegate next)
 
     /// <summary>
     /// The failure event with the exception type names as a field and no exception object attached,
-    /// so no message, inner exception or <c>Data</c> reaches a log sink.
+    /// so no message, inner exception or <c>Data</c> reaches a log sink. The type names are those of
+    /// the exception <c>ExceptionContentBoundaryMiddleware</c> withheld when it replaced one, otherwise
+    /// those of the exception seen here.
     /// </summary>
     private static void LogTypeOnlyFailure(
+        HttpContext context,
         ILogger<RequestLoggingMiddleware> logger,
         Exception? exception,
         string method,
@@ -218,7 +222,8 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             statusCode,
             durationMs,
             traceId,
-            exception is null ? "none" : ExceptionTypeNames.Chain(exception)
+            context.Features.Get<WithheldExceptionFeature>()?.OriginalExceptionTypes
+                ?? (exception is null ? "none" : ExceptionTypeNames.Chain(exception))
         );
 
     /// <summary>

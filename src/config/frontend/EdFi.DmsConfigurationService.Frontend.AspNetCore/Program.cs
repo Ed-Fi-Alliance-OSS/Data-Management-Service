@@ -118,6 +118,11 @@ if (!ReportInvalidConfiguration(app))
 
 app.UseRouting();
 
+// Immediately after routing, the first point the route is known, and inside UseExceptionHandler: a route
+// whose exception content is not under CMS control has that content withheld before the framework's
+// exception middleware can log it, endpoint parameter binding included (DMS-1327 D-15, D-17).
+app.UseMiddleware<ExceptionContentBoundaryMiddleware>();
+
 // Shape framework-generated bodiless error responses into the Ed-Fi contract. Placed after routing
 // but before CORS/authentication/authorization so it wraps the auth short-circuits and the endpoint
 // terminal, independent of route and authentication scheme.
