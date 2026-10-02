@@ -1293,6 +1293,31 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         jsonArray.Should().NotBeNull("response body should be a JSON array");
     }
 
+    [Then("the response body lists tenant names including")]
+    public async Task ThenTheResponseBodyListsTenantNamesIncluding(Table table)
+    {
+        string content = await _apiResponse.TextAsync();
+        var parsed = JsonNode.Parse(content);
+        parsed.Should().BeOfType<JsonObject>("response body should be a JSON object");
+        var body = parsed!.AsObject();
+        body.Select(property => property.Key).Should().Equal(["tenants"], "the body carries names only");
+
+        var tenants = body["tenants"]!.AsArray();
+        tenants
+            .Should()
+            .OnlyContain(
+                element => element != null && element.GetValueKind() == JsonValueKind.String,
+                "every tenant is listed by name alone"
+            );
+
+        // Containment, not equality: tenants created by other scenarios persist between runs.
+        var names = tenants.Select(element => element!.GetValue<string>()).ToList();
+        foreach (var row in table.Rows)
+        {
+            names.Should().Contain(await ReplaceIdsAsync(row["Name"]));
+        }
+    }
+
     [Then("the response body has property {string}")]
     public async Task ThenTheResponseBodyHasProperty(string propertyName)
     {
