@@ -879,6 +879,128 @@ public class KeycloakTokenRevocationManagerTests
         public void It_is_unparseable() => _result.Should().Be(Unavailable("unparseable"));
     }
 
+    /// <summary>
+    /// Escaped, unpaired UTF-16 surrogates. Each body is pure ASCII and syntactically valid JSON, so it
+    /// passes the UTF-8 check and <see cref="JsonDocument.Parse(ReadOnlyMemory{byte}, JsonDocumentOptions)"/>;
+    /// only reading the string fails. The payloads are raw literals, never produced by a serializer that
+    /// could replace the invalid escape.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> MalformedUnicodeEscapes()
+    {
+        TestFixtureData Case(string name, int status, string body, TokenRevocationResult expected) =>
+            new TestFixtureData(status, body, expected).SetArgDisplayNames(name);
+
+        TokenRevocationResult unparseable = Unavailable("unparseable");
+
+        yield return Case(
+            "400 lone high surrogate in error",
+            400,
+            """{"error":"\uD800","error_description":"Unmatching clients"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 lone low surrogate in error",
+            400,
+            """{"error":"\uDC00SECRET-PROVIDER-SENTINEL","error_description":"Unmatching clients"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 lone high surrogate in error_description",
+            400,
+            """{"error":"invalid_request","error_description":"SECRET-PROVIDER-SENTINEL\uD800"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 lone low surrogate in error_description",
+            400,
+            """{"error":"invalid_request","error_description":"\uDC00SECRET-PROVIDER-SENTINEL"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 high surrogate followed by an ordinary character",
+            400,
+            """{"error":"invalid_request","error_description":"Unmatching clients\uD800x"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 surrogates in reversed order",
+            400,
+            """{"error":"invalid_request","error_description":"\uDC00\uD800"}""",
+            unparseable
+        );
+        yield return Case(
+            "401 lone high surrogate in error",
+            401,
+            """{"error":"\uD800SECRET-PROVIDER-SENTINEL"}""",
+            unparseable
+        );
+        // At an unmapped status the body is parsed only for the log category.
+        yield return Case(
+            "500 lone high surrogate in error",
+            500,
+            """{"error":"\uD800SECRET-PROVIDER-SENTINEL"}""",
+            Unavailable("provider-status")
+        );
+
+        // Controls: well-formed escapes still decode and map as before.
+        yield return Case(
+            "400 valid surrogate pair in error_description",
+            400,
+            """{"error":"invalid_request","error_description":"\uD83D\uDE00"}""",
+            new TokenRevocationResult.InvalidRequest()
+        );
+        yield return Case(
+            "400 valid surrogate pair in error",
+            400,
+            """{"error":"\uD83D\uDE00","error_description":"Unmatching clients"}""",
+            Unavailable("unrecognized-response")
+        );
+        yield return Case(
+            "400 ownership mismatch written with escapes",
+            400,
+            """{"error":"invalid\u005Frequest","error_description":"Unmatching\u0020clients"}""",
+            new TokenRevocationResult.Completed()
+        );
+    }
+
+    [TestFixtureSource(typeof(KeycloakTokenRevocationManagerTests), nameof(MalformedUnicodeEscapes))]
+    public class Given_a_keycloak_answer_with_unicode_escapes(
+        int status,
+        string body,
+        TokenRevocationResult expected
+    ) : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult? _result;
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            KeycloakAnswers(() => Response(status, body));
+            try
+            {
+                _result = await Revoke();
+            }
+            catch (Exception ex)
+            {
+                _exception = ex;
+            }
+        }
+
+        [Test]
+        public void It_sends_the_escape_text_to_the_parser_unchanged() =>
+            body.Should().Contain(@"\u").And.Match(text => text.All(char.IsAscii));
+
+        [Test]
+        public void It_lets_no_exception_escape() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_maps_to_the_expected_result() => _result.Should().Be(expected);
+
+        [Test]
+        public void It_logs_no_provider_content_and_attaches_no_exception() => AssertNoDisclosure();
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Bounded reading (D-09)
     // ---------------------------------------------------------------------------------------------

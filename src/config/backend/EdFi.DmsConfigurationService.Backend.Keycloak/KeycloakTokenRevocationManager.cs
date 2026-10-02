@@ -386,8 +386,8 @@ public sealed class KeycloakTokenRevocationManager(
 
     /// <summary>
     /// Extracts <c>error</c> and <c>error_description</c> from an RFC 6749 §5.2 object. A body
-    /// that is missing, oversized, not UTF-8, not JSON, not an object, or repeats either member is
-    /// unparseable: a duplicated member would make the exact-match normalization ambiguous. A
+    /// that is missing, oversized, not UTF-8, not JSON, not an object, repeats either member, or
+    /// holds either member as a string that cannot be decoded is unparseable: a duplicated member would make the exact-match normalization ambiguous. A
     /// member that is not a string is treated as absent.
     /// </summary>
     private static ProviderErrorBody ParseErrorBody(byte[]? body)
@@ -421,7 +421,10 @@ public sealed class KeycloakTokenRevocationManager(
                     }
 
                     errorSeen = true;
-                    error = StringValue(property.Value);
+                    if (!TryReadString(property.Value, out error))
+                    {
+                        return ProviderErrorBody.Unparseable;
+                    }
                 }
                 else if (property.NameEquals("error_description"))
                 {
@@ -431,7 +434,10 @@ public sealed class KeycloakTokenRevocationManager(
                     }
 
                     descriptionSeen = true;
-                    description = StringValue(property.Value);
+                    if (!TryReadString(property.Value, out description))
+                    {
+                        return ProviderErrorBody.Unparseable;
+                    }
                 }
             }
 
@@ -443,8 +449,31 @@ public sealed class KeycloakTokenRevocationManager(
         }
     }
 
-    private static string? StringValue(JsonElement element) =>
-        element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+    /// <summary>
+    /// Reads a member as a string; a non-string member reads as absent. False when the string
+    /// cannot be represented: an escaped, unpaired surrogate such as <c>"\uD800"</c> is valid
+    /// UTF-8 and valid JSON syntax, so it passes the checks above, and <c>GetString</c> rejects it
+    /// with <see cref="InvalidOperationException"/>. Only that call is guarded, and only for a
+    /// string element, so any other fault in the caller still escapes.
+    /// </summary>
+    private static bool TryReadString(JsonElement element, out string? value)
+    {
+        value = null;
+        if (element.ValueKind != JsonValueKind.String)
+        {
+            return true;
+        }
+
+        try
+        {
+            value = element.GetString();
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
 
     private static string ProviderErrorCategory(ProviderErrorBody body) =>
         body.Error is not null && _loggableProviderErrors.Contains(body.Error) ? body.Error : "unrecognized";
