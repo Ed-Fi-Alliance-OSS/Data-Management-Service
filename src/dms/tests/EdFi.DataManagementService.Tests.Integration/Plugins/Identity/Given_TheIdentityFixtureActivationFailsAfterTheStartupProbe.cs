@@ -52,7 +52,7 @@ public sealed class Given_TheIdentityFixtureActivationFailsAfterTheStartupProbe(
         );
 
         _bootFailure = _host.TryBoot();
-        _startupLeaks = IdentityLogAssertions.EventsLeaking(_host.Capture.Events, Sentinel);
+        _startupLeaks = IdentityLogAssertions.EventsCarrying(_host.Capture.Events, Sentinel);
 
         if (_bootFailure is not null)
         {

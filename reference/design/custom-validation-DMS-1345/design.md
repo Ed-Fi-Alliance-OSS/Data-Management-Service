@@ -485,6 +485,7 @@ The guard's `Order` must therefore sit inside an executed window and above `Load
 Any value in 101-299 satisfies both; the 200s is this design's preference, keeping the guard visibly after schema loading.
 DMS's existing registration-validation guards sit lower (`Order => 50` and `Order => 55`, `Startup/ValidateDatabaseFingerprintReaderRegistrationTask.cs:19`, `Startup/ValidateResourceKeyRowReaderRegistrationTask.cs:19`), and this guard deliberately does not join them: both run before `LoadAndBuildEffectiveSchemaTask` (`Order => 100`), whose effective ApiSchema the `AppliesTo` warning reads.
 That preference conflicts with the doc comment labelling 200-299 "Schema processing" (`Startup/IDmsStartupTask.cs:27`), which is introduced as a recommendation (`:25`) and enforced by nothing; the implementation records the mismatch at the `Order` declaration and proves the guard actually executed rather than merely being registered.
+The windows were later split: `[0, 249]` runs as `InitializeApiSchemas` and `[250, 299]` as its own `ValidatePluginRegistrations` phase, which holds this guard at `Order => 250`, and `IDmsStartupTask.cs` now labels 250-299 as registration validation.
 
 **What the guard guarantees** is constructibility: a dependency the container cannot supply, or a constructor that throws when resolved outside a request.
 That is narrower than "no validator depends on per-request state", and the implementer guide inherits the distinction rather than overclaiming.

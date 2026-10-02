@@ -1547,6 +1547,7 @@ That is the same displacement-proofness closure capture now gives DMS-1434's gua
 Neither side leaves a plugin anything to displace, which is why [Contract Cardinality](#contract-cardinality) can list `IServiceCollection` as a permitted registration without that permission costing either audit its reading.
 With no plugins allowlisted the invoker returns an empty record set, the singleton is still registered, and the task runs and finds nothing, so the seam does not depend on a plugin existing.
 The task's `Order` sits in the same 200-299 band as DMS-1434's guard and above it, so both run inside the same executed window and the plugin checks see a collection the validator audit has already accepted.
+That band was later made its own window: 250-299 runs as the `ValidatePluginRegistrations` startup phase, after the `[0, 249]` schema window, and both guards sit inside it.
 
 **That ordering costs one thing, and the inventory event is what pays it back.**
 DMS-1434's validator audit runs first, so a plugin validator registered with the wrong lifetime is reported by that audit, which knows the offending `ICustomResourceValidator` implementation type and knows nothing about plugins, and the message names the type alone.

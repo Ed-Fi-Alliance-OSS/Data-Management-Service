@@ -30,12 +30,6 @@ public sealed class IdentityFixtureOptions
     public List<FixtureGrantOptions> Grants { get; set; } = [];
 
     /// <summary>
-    /// How long a control-channel policy answer is cached. Zero disables the cache. The configuration
-    /// policy source is static and has no cache.
-    /// </summary>
-    public int PolicyCacheSeconds { get; set; }
-
-    /// <summary>
     /// How many polls of an async job answer incomplete before the next one answers complete. Counted
     /// in polls, never in time.
     /// </summary>

@@ -38,6 +38,7 @@ public partial class IdentityPluginStepDefinitions(InstanceManagementContext con
     private string? _currentCorrelationId;
     private DmsLogPosition? _logPosition;
     private readonly List<string> _correlationIds = [];
+    private readonly Dictionary<string, int> _requestsSentByCorrelationId = [];
     private readonly List<string> _requestTokens = [];
     private readonly List<string> _pollStatuses = [];
 
@@ -217,9 +218,9 @@ public partial class IdentityPluginStepDefinitions(InstanceManagementContext con
     }
 
     [Then(
-        "the DMS container log shows the frontend and core completion events for every correlation id used"
+        "the DMS container log shows the frontend and core completion events for every request sent with a correlation id"
     )]
-    public async Task ThenTheDmsContainerLogShowsTheCompletionEventsForEveryCorrelationIdUsed()
+    public async Task ThenTheDmsContainerLogShowsTheCompletionEventsForEveryRequestSentWithACorrelationId()
     {
         _logPosition.Should().NotBeNull("the log position must be recorded first");
         _correlationIds.Should().NotBeEmpty("a correlation id must be used first");
@@ -232,11 +233,22 @@ public partial class IdentityPluginStepDefinitions(InstanceManagementContext con
             DmsLogSnapshot logs = await DmsContainerControl.GetLogsAsync();
             List<string> window = logs.LinesSince(_logPosition!.Value).ToList();
 
+            // One completion event per request sent, not one per correlation id: the results polls
+            // reuse the find's id, and the frontend logs its completion only after the response is
+            // produced, so the find's events alone would satisfy a per-id check while the last poll's
+            // line, the one whose path carries the request token, is still unwritten.
             missing = _correlationIds
                 .SelectMany(id =>
                     new[] { "DMS request completed", "DMS core request completed" }
-                        .Where(marker => !window.Exists(line => IsCompletionEvent(line, id, marker)))
-                        .Select(marker => $"'{marker}' for {id}")
+                        .Select(marker =>
+                            (
+                                Marker: marker,
+                                Logged: window.Count(line => IsCompletionEvent(line, id, marker)),
+                                Sent: Math.Max(1, _requestsSentByCorrelationId.GetValueOrDefault(id))
+                            )
+                        )
+                        .Where(entry => entry.Logged < entry.Sent)
+                        .Select(entry => $"'{entry.Marker}' for {id}: {entry.Logged} of {entry.Sent}")
                 )
                 .ToList();
 
@@ -324,6 +336,8 @@ public partial class IdentityPluginStepDefinitions(InstanceManagementContext con
         if (_currentCorrelationId is not null)
         {
             request.Headers.Add(CorrelationIdHeader, _currentCorrelationId);
+            _requestsSentByCorrelationId[_currentCorrelationId] =
+                _requestsSentByCorrelationId.GetValueOrDefault(_currentCorrelationId) + 1;
         }
 
         if (jsonBody is not null)

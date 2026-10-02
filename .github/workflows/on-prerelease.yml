@@ -1218,8 +1218,9 @@ jobs:
 
           # Each contract's own declared version, read from this checkout rather than passed as a
           # literal, so the assertion is made against the versions this release's source declares.
-          # The identity contract declares its version in its csproj with the same VersionPrefix
-          # element the plugin props use, so the same reader serves it.
+          # There is a reader per contract, so a version that cannot be read is reported against
+          # the contract it belongs to. The identity contract's is Get-IdentityContractVersion,
+          # which reads the VersionPrefix its own csproj declares.
           Import-Module ./package-helpers.psm1
 
           ./eng/verification/Assert-HostAssemblyManifest.ps1 `

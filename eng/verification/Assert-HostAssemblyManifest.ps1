@@ -34,12 +34,11 @@
     is checked here rather than assumed.
 
     EdFi.DataManagementService.Identity is a third contract assembly in the image as of DMS-1514 and
-    is deliberately not published yet. When -ExpectedIdentityVersion is supplied it must be listed
-    exactly once in the application section, at that declared version; a missing row or a different
-    version fails. It is asserted in the application section only, and the contract section is not
-    required to carry it: adding it there is part of publishing it. The parameter is opt-in so that a
-    caller written before the identity contract existed keeps working, and a caller that supplies it
-    gets a mandatory row.
+    is deliberately not published yet. It must be listed exactly once in the application section, at
+    the declared version -ExpectedIdentityVersion carries; a missing row or a different version
+    fails. It is asserted in the application section only, and the contract section is not required
+    to carry it: adding it there is part of publishing it. The parameter is mandatory, like its two
+    siblings, so a caller that drops the argument is refused rather than silently skipping the row.
 
     No section may list EdFi.DataManagementService.ApiSchemaDownloader. That is the entry assembly of
     the second application packed into the image as /app/ApiSchemaDownloader/, so it exists in every
@@ -75,9 +74,9 @@ param(
     $ExpectedCustomValidationVersion,
 
     # The identity contract's own declared version, read by callers with Get-IdentityContractVersion
-    # for the same reason as the two above. Optional so existing callers keep working; once
-    # supplied, the application row is mandatory and must match.
-    [Parameter()]
+    # for the same reason as the two above. Mandatory like them, because the application row it
+    # checks is required: a caller able to omit it would skip that check without saying so.
+    [Parameter(Mandatory)]
     [string]
     $ExpectedIdentityVersion
 )
@@ -245,23 +244,16 @@ foreach ($contract in $contracts) {
 
 # The identity contract, application section only. Not part of the loop above because that loop
 # requires each row in both sections, and this contract is not published, so the contract section
-# does not carry it. Asserted only when the caller supplies its declared version.
-$identityVerified = $null
-
-if (-not [string]::IsNullOrWhiteSpace($ExpectedIdentityVersion)) {
-    $identityVerified = Assert-ContractRow `
-        -Assembly "EdFi.DataManagementService.Identity" `
-        -DeclaredVersion $ExpectedIdentityVersion `
-        -Section $applicationSection `
-        -DeclarationSource "EdFi.DataManagementService.Identity.csproj"
-}
+# does not carry it.
+$identityVerified = Assert-ContractRow `
+    -Assembly "EdFi.DataManagementService.Identity" `
+    -DeclaredVersion $ExpectedIdentityVersion `
+    -Section $applicationSection `
+    -DeclarationSource "EdFi.DataManagementService.Identity.csproj"
 
 $frameworkSummary = ($frameworkSections | ForEach-Object { "$_ ($($sections[$_].Count))" }) -join "; "
 $contractSummary = ($verified.Keys | ForEach-Object { "$_ at $($verified[$_])" }) -join ", "
 $contractSummary += " in both '$applicationSection' and '$contractSection'"
-
-if ($null -ne $identityVerified) {
-    $contractSummary += ", EdFi.DataManagementService.Identity at $identityVerified in '$applicationSection'"
-}
+$contractSummary += ", EdFi.DataManagementService.Identity at $identityVerified in '$applicationSection'"
 
 Write-Output "Verified $([System.IO.Path]::GetFileName($ManifestPath)): $contractSummary, $($sections[$applicationSection].Count) application assemblies, $sharedFrameworkRequired present, no $downloaderSentinel row, $frameworkSummary."

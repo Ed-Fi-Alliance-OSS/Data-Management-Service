@@ -70,7 +70,7 @@ public sealed class Given_ACreateIsLostAndTheExactUpstreamKeyLookupIsAvailable
     {
         _recovered!.CreateStatus.Should().Be(HttpStatusCode.BadGateway);
         _recovered.Ending.Should().Be(IdentityCreateEnding.Recovered);
-        _recovered.LookupScores.Should().Equal(100);
+        _recovered.LookupScores.Should().Equal(100d);
     }
 
     [Test]
