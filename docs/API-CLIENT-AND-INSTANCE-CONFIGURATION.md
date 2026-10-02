@@ -235,6 +235,7 @@ Stores data store definitions and encrypted connection strings.
 | DataStoreType | VARCHAR(50) | Data store classification |
 | Name | VARCHAR(256) | Human-readable data store name |
 | ConnectionString | BYTEA | Encrypted database connection string |
+| TenantId | BIGINT | Owning tenant; null in a single-tenant deployment |
 
 **Constraint:** `UNIQUE (TenantId, Name)` ensures data store names are unique
 within a tenant; in a single-tenant deployment, where `TenantId` is null, they
