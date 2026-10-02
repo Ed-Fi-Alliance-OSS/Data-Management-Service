@@ -558,8 +558,9 @@ if ($d) {
     }
 }
 else {
-    $existingNetwork = docker network ls --filter name="dms" -q
-    if (! $existingNetwork) {
+    # Inspected by exact name: a name filter on network ls matches substrings.
+    docker network inspect dms *> $null
+    if ($LASTEXITCODE -ne 0) {
         docker network create dms
     }
 

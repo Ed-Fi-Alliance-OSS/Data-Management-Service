@@ -118,8 +118,9 @@ function Invoke-Compose {
 }
 
 # Every process variable the harness sets, with the value it replaced, so a run inside an interactive
-# session leaves that session as it found it. A later start-local-config.ps1 in the same session would
-# otherwise inherit the harness's project, ports and images.
+# session restores those variables afterwards. A later start-local-config.ps1 in the same session would
+# otherwise inherit the harness's project, ports and images. Variables the scripts it calls set
+# themselves are not tracked here.
 $priorEnvironment = @{}
 
 function Set-HarnessVariable {
@@ -133,9 +134,17 @@ function Set-HarnessVariable {
     [System.Environment]::SetEnvironmentVariable($Name, $Value)
 }
 
+# A $null prior value means the variable was absent and must be removed. Remove-Item is required for
+# that: SetEnvironmentVariable with $null from PowerShell coerces the value to "", which pwsh on Unix
+# stores as a present-but-blank variable instead of removing it (see bootstrap-manifest.psm1).
 function Restore-HarnessEnvironment {
     foreach ($name in $priorEnvironment.Keys) {
-        [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+        if ($null -eq $priorEnvironment[$name]) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+        else {
+            [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+        }
     }
     $priorEnvironment.Clear()
 }
@@ -164,8 +173,10 @@ function Assert-ProofsExecuted {
         throw "The SecretResolutionPlugin proofs wrote no results to $TrxPath."
     }
 
+    # Selected by local name, so a TRX with no Results element reaches the message below instead of
+    # failing strict mode's property access.
     [xml]$trx = Get-Content -LiteralPath $TrxPath -Raw
-    $results = @($trx.TestRun.Results.UnitTestResult | Where-Object { $null -ne $_ })
+    $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
     if ($results.Count -eq 0) {
         throw "No SecretResolutionPlugin proofs ran; the filter matched nothing."
     }
@@ -286,7 +297,10 @@ function Remove-Deployment {
         throw "docker compose down for project $project failed with exit code $downExitCode; the deployment and $workDirectory were left in place. Retry with -Down."
     }
 
+    # Compose usually removes the network itself, so this one failing is expected and is not the
+    # run's exit code.
     & docker network rm $names.SECRETS_E2E_NETWORK *> $null
+    $global:LASTEXITCODE = 0
     if (Test-Path -LiteralPath $workDirectory) {
         Remove-Item -LiteralPath $workDirectory -Recurse -Force
     }
@@ -479,3 +493,7 @@ try {
 finally {
     Restore-HarnessEnvironment
 }
+
+# A failure above has already thrown; reaching here is success, whatever the last native command
+# returned.
+exit 0

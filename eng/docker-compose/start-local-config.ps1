@@ -102,8 +102,9 @@ try {
     }
     else {
 
-        $existingNetwork = docker network ls --filter name="$composeNetwork" -q
-        if (! $existingNetwork) {
+        # Inspected by exact name: a name filter on network ls matches substrings.
+        docker network inspect $composeNetwork *> $null
+        if ($LASTEXITCODE -ne 0) {
             docker network create $composeNetwork
         }
 

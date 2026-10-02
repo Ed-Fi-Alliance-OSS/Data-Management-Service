@@ -107,8 +107,9 @@ Set-Content -LiteralPath $derivedEnvironmentFile -Value $lines
 Write-Output "Isolated environment file: $derivedEnvironmentFile"
 
 # Every process variable the harness sets, with the value it replaced, so a run inside an interactive
-# session leaves that session as it found it. A later start-local-config.ps1 in the same session would
-# otherwise inherit the isolated project, ports and image.
+# session restores those variables afterwards. A later start-local-config.ps1 in the same session would
+# otherwise inherit the isolated project, ports and image. Variables build-config.ps1 and the scripts
+# it calls set themselves are not tracked here.
 $priorEnvironment = @{}
 
 function Set-HarnessVariable {
@@ -246,8 +247,16 @@ try {
     }
 }
 finally {
+    # A $null prior value means the variable was absent and must be removed. Remove-Item is required for
+    # that: SetEnvironmentVariable with $null from PowerShell coerces the value to "", which pwsh on Unix
+    # stores as a present-but-blank variable instead of removing it (see bootstrap-manifest.psm1).
     foreach ($name in $priorEnvironment.Keys) {
-        [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+        if ($null -eq $priorEnvironment[$name]) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+        else {
+            [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+        }
     }
 }
 
