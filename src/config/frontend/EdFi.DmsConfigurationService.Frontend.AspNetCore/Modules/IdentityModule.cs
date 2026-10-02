@@ -397,6 +397,7 @@ public class IdentityModule : IEndpointModule
     /// </summary>
     private static async Task<IResult> RevokeToken(
         [FromServices] ILogger<IdentityModule> logger,
+        [FromServices] ITokenRevocationManager revocationManager,
         HttpContext httpContext
     )
     {
@@ -458,17 +459,6 @@ public class IdentityModule : IEndpointModule
             {
                 return InvalidClient(httpContext, basicAttempted, ClientAuthenticationRequiredDescription);
             }
-        }
-
-        // Resolved optionally for now: both identity providers register an ITokenRevocationManager,
-        // but until DMS-1327 P4.1 makes the registration required at startup, a host without one
-        // answers a bare 200 OK with nothing revoked once the request shape and the presence of
-        // credentials have been checked above.
-        ITokenRevocationManager? revocationManager =
-            httpContext.RequestServices.GetService<ITokenRevocationManager>();
-        if (revocationManager is null)
-        {
-            return Results.Ok();
         }
 
         TokenRevocationRequest request = new(

@@ -1479,16 +1479,14 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
-    /// A host with no <c>ITokenRevocationManager</c> registered, which the endpoint tolerates until
-    /// DMS-1327 P4.1 makes the registration required (this fixture removes the one the Test host's
-    /// self-contained configuration adds). The endpoint's own shape and credential-presence checks
-    /// (D-03 rows 1–7) still run before the no-op branch, so a caller with no client credentials is
-    /// rejected instead of being answered 200 as it was before DMS-1327.
+    /// A caller with no client credentials, which was answered 200 before DMS-1327. The endpoint's own
+    /// credential-presence check (D-03 row 7) rejects it before the revocation manager is consulted.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller
     {
         private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private readonly ITokenRevocationManager _revocationManager = A.Fake<ITokenRevocationManager>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
@@ -1501,6 +1499,7 @@ public class OAuthEndpointErrorTests
             {
                 collection.AddTransient(_ => _tokenManager);
                 collection.RemoveAll<ITokenRevocationManager>();
+                collection.AddSingleton(_revocationManager);
             });
             _client = _factory.CreateClient();
             _response = await _client.PostAsync(
@@ -1532,6 +1531,10 @@ public class OAuthEndpointErrorTests
         [Test]
         public void It_does_not_send_a_basic_challenge() =>
             _response.Headers.WwwAuthenticate.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_consult_the_revocation_manager() =>
+            A.CallTo(_revocationManager).MustNotHaveHappened();
     }
 }
 
@@ -2969,7 +2972,7 @@ public class RevocationRequestContractTests
     /// <summary>
     /// Arranges a host with a recording manager and a capturing log provider, sends the request
     /// the fixture builds, and keeps the response. A fixture overrides <see cref="Respond"/> to
-    /// choose the manager's outcome, or <see cref="RegisterManager"/> for the Keycloak shape.
+    /// choose the manager's outcome.
     /// </summary>
     public abstract class RevocationRequestFixture
     {
@@ -2982,8 +2985,6 @@ public class RevocationRequestContractTests
         protected string Content { get; private set; } = null!;
 
         protected virtual TokenRevocationResult Respond() => new TokenRevocationResult.Completed();
-
-        protected virtual bool RegisterManager => true;
 
         protected abstract HttpContent? Body { get; }
 
@@ -3008,10 +3009,7 @@ public class RevocationRequestContractTests
                 {
                     collection.AddSingleton<ILoggerProvider>(Logs);
                     collection.RemoveAll<ITokenRevocationManager>();
-                    if (RegisterManager)
-                    {
-                        collection.AddSingleton<ITokenRevocationManager>(Manager);
-                    }
+                    collection.AddSingleton<ITokenRevocationManager>(Manager);
                 });
             });
             _client = _factory.CreateClient();
@@ -3885,27 +3883,6 @@ public class RevocationRequestContractTests
         [Test]
         public void It_passes_the_parsed_hint() =>
             Manager.Requests.Should().ContainSingle().Which.TokenTypeHint.Should().Be(expected);
-    }
-
-    // ----- No registered manager, until P4.1 -----
-
-    /// <summary>
-    /// With no revocation manager registered (Keycloak mode until DMS-1327 P3.2 registered the
-    /// Keycloak manager), a request that passes the endpoint's shape and credential-presence checks
-    /// is still answered 200 without revoking anything. P4.1 makes the registration required.
-    /// </summary>
-    [TestFixture]
-    public class Given_a_revocation_request_with_no_registered_manager : RevocationRequestFixture
-    {
-        protected override bool RegisterManager => false;
-
-        protected override HttpContent? Body => Form(("token", Token));
-
-        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
-
-        [Test]
-        public void It_still_answers_200_until_the_registration_is_required() =>
-            Response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ----- D-03 row 13 / D-17: a programming fault escaping the handler -----
