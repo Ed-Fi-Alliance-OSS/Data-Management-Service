@@ -25,6 +25,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -2428,6 +2429,156 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_answers_500() => _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    private const int RealHasherIterations = 1000;
+    private const string RealHasherSecret = "SECRET-CALLER-SENTINEL-http-real-hasher";
+
+    private static ClientSecretHasher CreateRealHasher(int iterations, ILogger<ClientSecretHasher> logger) =>
+        new(
+            logger,
+            Options.Create(new OpenIddictIdentityOptions { ClientSecretHashingIterations = iterations })
+        );
+
+    /// <summary>Registers an approved application whose stored secret is a real hash of <see cref="RealHasherSecret"/>.</summary>
+    private static async Task RegisterClientWithRealHash(
+        IOpenIddictTokenRepository tokenRepository,
+        string clientId
+    )
+    {
+        string storedHash = await CreateRealHasher(
+                RealHasherIterations,
+                NullLogger<ClientSecretHasher>.Instance
+            )
+            .HashSecretAsync(RealHasherSecret);
+        A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    ClientId = clientId,
+                    ClientSecret = storedHash,
+                    IsApproved = true,
+                }
+            );
+    }
+
+    /// <summary>
+    /// DMS-1327 P2.1 correction, through the HTTP pipeline with the real, registered hasher type.
+    /// Its lenient verification answers false for any failure, which made a verification that
+    /// could not run look like wrong credentials (401). Revocation now uses the hasher's
+    /// failure-preserving path, so the same failure is an operational 503, nothing is revoked, and
+    /// the hasher logs nothing about the failure. The zero iteration count is a deterministic
+    /// stand-in for a hashing failure; production startup validation rejects it.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_real_hasher_cannot_verify
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly ILogger<ClientSecretHasher> _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        private static string AllHasherLogText(ILogger<ClientSecretHasher> logger) =>
+            string.Join(
+                "\n",
+                Fake.GetCalls(logger)
+                    .Where(call => call.Method.Name == nameof(ILogger.Log))
+                    .SelectMany(call =>
+                        new[] { call.Arguments[2]?.ToString(), (call.Arguments[3] as Exception)?.ToString() }
+                    )
+            );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await RegisterClientWithRealHash(_tokenRepository, OwnerClientId);
+
+            _factory = CreateFactory(
+                CreateTokenManager(_tokenRepository, CreateRealHasher(0, _hasherLogger))
+            );
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, RealHasherSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_has_the_hasher_log_no_warning_and_no_exception() =>
+            Fake.GetCalls(_hasherLogger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Should()
+                .NotContain(call =>
+                    call.GetArgument<LogLevel>(0) >= LogLevel.Warning || call.Arguments[3] != null
+                );
+
+        [Test]
+        public void It_keeps_the_presented_secret_out_of_the_hasher_log() =>
+            AllHasherLogText(_hasherLogger).Should().NotContain(RealHasherSecret);
+    }
+
+    /// <summary>A genuine mismatch checked by the real hasher remains an authentication failure.</summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_wrong_secret_checked_by_the_real_hasher
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await RegisterClientWithRealHash(_tokenRepository, OwnerClientId);
+
+            _factory = CreateFactory(
+                CreateTokenManager(
+                    _tokenRepository,
+                    CreateRealHasher(RealHasherIterations, NullLogger<ClientSecretHasher>.Instance)
+                )
+            );
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, "not-the-secret");
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_reports_invalid_client() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_sends_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().ContainSingle(header => header.Scheme == "Basic");
 
         [Test]
         public void It_does_not_attempt_revocation() =>
