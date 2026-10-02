@@ -140,8 +140,20 @@ Keycloak tokens. Confirm through Keycloak's introspection endpoint,
 - Introspect access tokens with a client that is in the token's audience (`aud`). From
   Keycloak 26.4.12 (per the Red Hat build of Keycloak 26.4 migration guide; observed on
   26.7.5, not on the pinned 26.1.4), any other client is answered `active:false` for a live
-  token. Add an `Audience` mapper for the introspecting client to the client scopes of the
-  clients whose tokens you need to observe.
+  token. The mapper goes on the clients whose tokens you observe, not on the introspecting
+  client:
+
+  1. Create a client scope (or use each observed client's `<client>-dedicated` scope) and
+     add an `Audience` mapper by configuration, with *Included Client Audience* set to the
+     introspecting client and *Add to access token* and *Add to token introspection* on.
+  2. Assign that client scope as a **Default** scope to every client whose tokens you need
+     to observe.
+  3. Request new tokens. Only tokens issued after the change carry the audience; a token
+     issued before it keeps its original `aud` and still answers `active:false`.
+
+  The CMS end-to-end tests set up their observer client the same way (a per-run client
+  scope with an audience mapper for the observer, assigned as a default scope to the
+  observed clients).
 - Introspect refresh tokens with the client they were issued to, passing
   `token_type_hint=refresh_token`.
 - A public client cannot introspect (`403` "Client not allowed."); observe its tokens with a
