@@ -1451,7 +1451,110 @@ always re-run `setup-keycloak.ps1`, so this only matters for manual restarts.
 
 ### 9.2 AC evidence matrix (P5.1)
 
-_Not yet run._
+Final verification, run 2026-10-02 against `112e4fb8fb5b8afd53ab4213f284659b144f2d01` (the P5.1
+documentation commit) with `git status --short` empty before every run. That commit changes
+documentation only: `git diff 9fbb94f12..112e4fb8f` lists five Markdown files and nothing under `src/`
+or in the compose scripts, so the production code verified here is the code approved at P4.1. The
+commit that records this section changes only this document.
+
+#### 9.2.1 Environment
+
+| Item | Value |
+|---|---|
+| Host | Windows 11 ARM64; .NET SDK 10.0.401; PowerShell 7.6.6; Docker Engine 29.6.1 (linux/arm64); CSharpier 1.2.5 |
+| PostgreSQL (integration) | `postgres:16.8-alpine@sha256:951d0626…2d82b0` (PostgreSQL 16.8), container `dms-1327-pg-integration`, published on `127.0.0.1` and `[::1]` port 5432, trust auth |
+| SQL Server (integration and MSSQL lanes) | LocalDB instance `DMS1327`, SQL Server 17.0.4025.3 Express Edition (64-bit), named pipe, Windows authentication (accepted substitution, L-10) |
+| Keycloak (E2E) | `quay.io/keycloak/keycloak:26.1@sha256:044a457e04987e1fff756be3d2fa325a4ef420fa356b7034ecc9f1b693c32761`, label `version` 26.1.4 (pinned, unchanged) |
+| E2E PostgreSQL | `postgres:16.8-alpine@sha256:951d0626…2d82b0` (`cs-local` stack) |
+| Release build | `./build-config.ps1 Build -Configuration Release`: 0 warnings, 0 errors |
+| Test assembly hashes (SHA-256) | `EdFi.DmsConfigurationService.Tests.E2E.dll` `F7C8161E73ACC3923A772B4BD450FEE572B9BD46D2ECB5B78F45C918E0270848`; `EdFi.DmsConfigurationService.Frontend.AspNetCore.dll` (host CMS of the MSSQL lanes) `CCE144CA5C4F2D734D7F06CD765AA24C02E0D5274B879CEF167E21074F828DBB`; both from the Release build above (08:45 local) |
+
+#### 9.2.2 Runs
+
+Commands from the repository root; `NODE_OPTIONS` cleared for every test process.
+
+| Suite | Command | Result | Not executed |
+|---|---|---|---|
+| Backend unit | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/…csproj -c Release --no-build` | **1895 / 1895 passed** | 0 |
+| Frontend unit | `dotnet test src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit/…csproj -c Release --no-build` | **2185 / 2185 passed** | 0 |
+| PostgreSQL integration | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/…csproj -c Release --no-build` | **950 / 950 passed** | 62 `[Explicit]` DMS-1437 operational probes (36 step 0.2, 26 step 2.11), excluded by design |
+| SQL Server integration | same for `…Backend.Mssql.Tests.Integration`, `ConnectionStrings__MssqlAdmin=Server=<LocalDB pipe>;Integrated Security=true;TrustServerCertificate=true` | **984 / 984 passed** | 66 `[Explicit]` DMS-1437 operational probes (38 step 0.2, 28 step 2.11) |
+| E2E PostgreSQL × keycloak | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider keycloak -EnvironmentFile ./.env.config.e2e` (no `-SkipDockerBuild`; teardown first) | **421 passed, 0 failed** | 21: 8 multi-tenant only, 3 self-contained only, 8 characterization state checks "Not applicable" (§9.1.1), 2 undefined bindings (§9.2.4) |
+| E2E PostgreSQL × self-contained | same with `-IdentityProvider self-contained` (no `-SkipDockerBuild`; teardown first) | **275 passed, 0 failed** | 167: 154 characterization (Keycloak only), 8 multi-tenant only, 3 `@KeycloakOnly` (`Revocation.feature` 08–10), 2 undefined bindings |
+| E2E MSSQL representative × keycloak | LocalDB lane (below), `--filter TestCategory=MssqlRepresentative` | **27 / 27 passed** | 0 |
+| E2E MSSQL representative × self-contained | LocalDB lane, same filter | **27 / 27 passed** | 0 |
+| Formatting | `dotnet csharpier check src/config` | exit 1: 9 pre-existing files (§9.2.4); every file this branch touches is formatted | — |
+
+The console summary of the two PostgreSQL lanes reports 440 tests with 19 and 165 skipped; the
+TRX files report 442 results with 21 and 167 not executed. The difference is the two scenarios with
+undefined bindings, which the console counts neither as passed nor as skipped.
+
+Revocation-specific results inside those lanes: `Revocation.feature` 10/10 on PostgreSQL × keycloak,
+7/7 plus the 3 `@KeycloakOnly` scenarios skipped on PostgreSQL × self-contained, and 05–07 (3/3) on each
+MSSQL lane; `OwaspCriticalPaths.feature` scenario 18 passes on PostgreSQL × self-contained; the P1.1
+characterization re-ran in the keycloak lane with every row passing (146 passed, the 8 recorded "Not
+applicable" state checks skipped) together with its 35 offline diagnostics and observer-cleanup tests.
+After the MSSQL self-contained lane, `dmscs.OpenIddictToken` held 43 tokens, 2 of them `revoked`: the
+owner revocations of scenarios 05 and 06; the cross-client attempt of 07 changed nothing.
+
+#### 9.2.3 Image identity per lane (§6.8)
+
+| Lane | Configuration Service | Built |
+|---|---|---|
+| PostgreSQL × keycloak | container `ed-fi-api-config-service`, image `ed-fi-api-config-local` `sha256:897f3a90ec291ab237255afb8e27d4323f0e19ece7bbbd2315d39f89ced892f7`, `AppSettings__IdentityProvider=keycloak`, `AppSettings__Datastore=postgresql`, `IdentitySettings__Authority=http://dms-keycloak:8080/realms/edfi` | 2026-10-02T16:15:31Z, by `start-local-config.ps1 -r` inside the lane |
+| PostgreSQL × self-contained | image `sha256:d20e1f0c4ccdd947e55c4db85515c9599388527dfd48f4245825d0016ea6c772`, `self-contained`, `postgresql`, `IdentitySettings__Authority=http://ed-fi-api-config:8081` | 2026-10-02T16:21:27Z, `-r` inside the lane |
+| MSSQL × keycloak | host process `dotnet EdFi.DmsConfigurationService.Frontend.AspNetCore.dll` (hash above) with the container's settings, overriding `AppSettings__Datastore=mssql`, the LocalDB connection (database `edfi_configurationservice_p51_keycloak`), the claims directory, and `IdentitySettings__Authority=http://localhost:8045/realms/edfi` (the host reaches the realm on the published port, which is also the issuer) | Release build of `112e4fb8f` |
+| MSSQL × self-contained | the same host process, database `edfi_configurationservice_p51_self_contained`, keys and clients seeded by the repo's `OpenIddict-Crypto.psm1` and `setup-openiddict.ps1 -InsertData` through a `docker exec` shim routed to the LocalDB pipe | Release build of `112e4fb8f` |
+
+The MSSQL lanes stand up the standard `cs-local` stack for the provider (`start-local-config.ps1
+-EnvironmentFile ./.env.config.e2e -IdentityProvider <provider> -AddE2EClaimSets`, Keycloak realm setup
+included), stop the Configuration Service container, and run the Configuration Service on the host
+against LocalDB, as in P3.2 (L-10). The test process gets the environment `build-config.ps1` would give
+it, with `DMS_CONFIG_DATASTORE=mssql`.
+
+#### 9.2.4 Pre-existing failures (not changed by this ticket)
+
+- **CSharpier, 9 files**, none touched by this branch (`git diff main..HEAD` lists none of them), so
+  identical to `main`:
+  `Backend.Mssql/Repositories/ClaimSetRepository.cs`,
+  `Backend.Postgresql/Repositories/ClaimSetRepository.cs`,
+  `Backend.Tests.Unit/Model/ClaimSets/ResourceClaimActionRequestValidatorTests.cs`,
+  `Backend.Tests.Unit/Models/ClaimsHierarchy/ClaimsHierarchyManagerTests.cs`,
+  `Backend/Models/ClaimsHierarchy/ClaimsHierarchyManager.cs`,
+  `contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj`,
+  `datamodel/EdFi.DmsConfigurationService.DataModel/Model/ClaimSets/ResourceClaimActionRequests.cs`,
+  `Frontend.AspNetCore.Tests.Unit/Modules/ApiClientOpenApiContractTests.cs`,
+  `Frontend.AspNetCore.Tests.Unit/Modules/ClaimSetModuleTests.cs`
+  (paths under `src/config/`, project prefix `EdFi.DmsConfigurationService.` omitted).
+- **Undefined bindings, 2 scenarios** in `ApiClients.feature`, on both PostgreSQL lanes:
+  `_09VerifyUpdatedApiClientHasCorrectValues` (`And a PUT request is made to "/v3/apiClients/{apiClientId}" with`)
+  and `_15VerifyDeletedApiClientNoLongerExists` (`And a DELETE request is made to "/v3/apiClients/{apiClientId}"`).
+  Both steps follow a `Given`, so Reqnroll looks for `[Given]` bindings, and the step definitions are
+  bound only as `[When]`. The feature and both bindings are unchanged from `main`.
+
+#### 9.2.5 AC by AC
+
+| AC | Evidence (this run unless a step is named) |
+|---|---|
+| AC1 preserve DMS-1478 | Every migrated DMS-1478 fixture passes in the unit suites: `OpenIddictTokenManagerTests` (forged token, cross-client, case-only difference, non-canonical casing, expired, wrong issuer and audience, failure-category logging) and `IdentityModuleTests` ownership fixtures; the engine lookup tests in both integration suites are unchanged and pass; `/connect/token` fixtures unchanged; `OwaspCriticalPaths.feature` scenario 18 (revoked token rejected on reuse) passes on self-contained |
+| AC2 authentication | `IdentityModuleTests`: every D-03 row and worked example, every D-04 decoding case, duplicates of the four parameters and of `Authorization`, the precedence pairs, manager not called on every shape or credential failure. `KeycloakTokenRevocationManagerTests`: every D-11.3 row asserts whether a revoke request was sent; only a proven confidential client gets one. E2E on both providers and both engines: `Revocation.feature` 01–04 (shape, mixed, no credentials, wrong Basic secret with challenge) on PostgreSQL, owner success with Basic (05) and form (06) on all four lanes; Keycloak public client with no secret, an arbitrary form secret and an arbitrary Basic secret refused with its token still active (08–10) |
+| AC3 ownership | Both integration suites: `RevokeTokenAsync(tokenId, applicationId)` revokes only the owning application's row, leaves another application's row `valid`, and a second call changes nothing and keeps `RedemptionDate` (P2.2 fixtures, re-run here). Keycloak manager tests: the form body carries the caller's credentials and never the service secret. E2E 07 (cross-client: `200`, then the token still active at the provider and still usable for a protected request) on all four lanes; the MSSQL self-contained row count above |
+| AC4 response contract | `IdentityModuleTests` one fixture per §4 row and per precedence pair; `GlobalExceptionHandlerTests` and `TokenRevocationStartupTests` pipeline fixtures for D-17 (500 `server_error` in OAuth JSON, malformed multipart 400, 413/415, `/connect/token` keeps the Ed-Fi contract); E2E 01–04 and 08–10 assert the OAuth bodies and the challenge |
+| AC5 shared abstraction, failure separation | `ITokenRevocationManager` in the Backend project, which gains no project reference (two `ProjectReference` entries on `main` and on the branch); `OpenIddictTokenManagerTests`: each boundary throw, each D-07.4 row, truncated stored hash, missing certificate without provisioning, mutation-then-lost-response 503 with no state assertion, comparison fault 500 not 503; Keycloak manager tests: timeouts, transport, lost response, unparseable and oversize bodies → `TemporarilyUnavailable` |
+| AC6 Keycloak mapping | §9.1 evidence on 26.1.4 and 26.7.5 (P1.1); the characterization re-ran green on 26.1.4 in this run; manager tests keyed on `OwnershipMismatchDescription = "Unmatching clients"` and the observed codes, including a fixture pinning the production constant; E2E keycloak lanes: owner revoke (observer `active:false`), cross-client and public clients (observer `active:true`) |
+| AC7 startup and runtime | `TokenRevocationStartupTests` in the frontend suite: all three provider/engine shapes boot; removed registration and throwing factory refuse startup with the D-12 messages, no inner exception, no exception attached to the critical log, no provider connection; a `503` leaves the host serving; a late construction failure is a `500` without the factory's text. Release note amended in P4.1 (`docs/changelog/8.1.0.md`) |
+| AC8 verification and docs | Disclosure fixtures (D-15 table) in both unit suites and the characterization diagnostics; both databases (integration, MSSQL lanes) and both identity providers (all four E2E lanes); `CS-AUTH.md`, `OWASP-AUTH-COVERAGE.md`, `KEYCLOAK-SETUP.md`, the design index and the changelog updated; the token-type matrix in `CS-AUTH.md` marks offline tokens untested and Keycloak refresh-token revocation as characterized directly, not through CMS (L-08); image ids and SHAs above |
+
+#### 9.2.6 Cleanup
+
+After the last lane: `teardown-local-cms.ps1` removed every `cs-local` container, volume and image
+(`ed-fi-api-config-local` included) and the unused `dms` network, and its own verification reported all
+three removed. Both lane databases (`edfi_configurationservice_p51_keycloak`,
+`edfi_configurationservice_p51_self_contained`) were dropped from LocalDB, which then held only the
+integration database `edfi_configurationservice_mssql_integration`, and the instance was stopped. The
+PostgreSQL integration container `dms-1327-pg-integration` is kept, as since P2.2. No lane logged a
+cleanup failure; the Keycloak observer and public-client cleanup ran inside the passing keycloak lane,
+and its realm was destroyed with the stack. `git status --short` was empty after every run.
 
 ### 9.3 Per-step verification record (P2.2 onward)
 
