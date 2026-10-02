@@ -944,10 +944,10 @@ it covers verifying the change on every instance and refreshing each consumer.
 
 > [!NOTE]
 > **Connection capacity.** The snapshot removes key reads from the steady-state request path
-> (the exceptions are listed above). Every token that passes signature, issuer, audience and
-> lifetime validation still has its status read from the database, uncached, and most
-> endpoints then read their own data, so request concurrency still drives database
-> connections. In local
+> (the exceptions are listed above). Bearer authentication and introspection still read the
+> status of every token that passes verification with a valid `jti` from the database,
+> uncached. Most endpoints then read their own data, so request concurrency still drives
+> database connections. In local
 > stress testing (256 requests at 128 concurrent), the Configuration Service's default Npgsql
 > `Max Pool Size` (100) equalled PostgreSQL's `max_connections` (100) on a server that DMS also
 > used. Some requests were then refused by PostgreSQL with `53300: sorry, too many clients

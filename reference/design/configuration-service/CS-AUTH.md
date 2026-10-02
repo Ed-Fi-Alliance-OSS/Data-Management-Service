@@ -232,10 +232,17 @@ The last two run on a request's behalf:
   a load already running.
 - **Overdue snapshot.** The request is served from the snapshot and does not wait.
 
-The per-token status check (revoked or not) is a separate database read, never cached. It
-is made for every token that passes signature, issuer, audience and lifetime validation.
-A request without a bearer token, or with a token rejected before that point, reads no
-status. See [Cached keys do not keep the service available through a
+The per-token status check (revoked or not) is a separate database read, never cached. Two
+paths make it, and both make it only after the token's verification succeeds and its
+`jti` claim is present and parses as a GUID:
+
+- **Bearer authentication** (`Bearer`, `DmsJwtBearer`) checks the token from the
+  `Authorization` header. On this path, a request without a bearer token reads no status.
+  Neither does a request whose token fails verification or has no usable `jti`.
+- **Introspection** checks the token supplied in the request form, whatever the request's
+  own `Authorization` header.
+
+Revocation verifies the token but does not read its status. See [Cached keys do not keep the service available through a
 database outage](#cached-keys-do-not-keep-the-service-available-through-a-database-outage).
 
 ### Refresh, backoff, cooldown and staleness
@@ -603,9 +610,9 @@ request that found the snapshot overdue. It is not a fault. The message
 ### Connection capacity
 
 The snapshot takes key reads off the steady-state request path; the exceptions are listed
-under [The key snapshot](#the-key-snapshot). Every token that passes signature, issuer,
-audience and lifetime validation still opens a database connection for its uncached status
-check, and most endpoints read their own data.
+under [The key snapshot](#the-key-snapshot). Bearer authentication and introspection still
+open a database connection for the uncached status check of every token that passes
+verification with a valid `jti`, and most endpoints read their own data.
 Under heavy concurrency the database's connection limit can still be reached. See the
 connection-capacity note in
 [Signing-key settings](../../../docs/CONFIGURATION.md#signing-key-settings-configuration-service-self-contained-only).
