@@ -28,10 +28,22 @@ $script:ExpectedProofs = @(
 )
 
 function Get-ExpectedSecretResolutionProof {
+    <#
+    .SYNOPSIS
+    Returns the name of every SecretResolutionPlugin proof a run must have executed and passed.
+    #>
     $script:ExpectedProofs
 }
 
 function Assert-ProofsExecuted {
+    <#
+    .SYNOPSIS
+    Throws unless the TRX results file shows every expected SecretResolutionPlugin proof executed
+    exactly once and every result passed.
+
+    .PARAMETER TrxPath
+    The TRX results file the proof run wrote.
+    #>
     param([Parameter(Mandatory)] [string] $TrxPath)
 
     if (-not (Test-Path -LiteralPath $TrxPath)) {
