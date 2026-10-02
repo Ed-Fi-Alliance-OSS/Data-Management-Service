@@ -18,7 +18,7 @@
         directory, the assembly name, the published file name, and the plugin's own Name.
 
         It carries no lock file and belongs to no solution. The only thing that builds it is
-        src/dms/tests/EdFi.DataManagementService.Tests.Integration/CustomValidationFixturePlugin.targets.
+        src/dms/tests/EdFi.DataManagementService.Tests.Integration/PackedContractFixturePlugins.targets.
     -->
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>

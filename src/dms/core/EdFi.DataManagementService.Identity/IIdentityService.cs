@@ -21,6 +21,19 @@ namespace EdFi.DataManagementService.Identity;
 /// was gated on. A provider must be safe for concurrent calls across requests - a singleton or
 /// transient registration gives DMS no per-request isolation, and even a scoped registration, though
 /// called at most once per request, may share captured dependencies with other concurrent requests.
+/// Separately from that per-request resolution, at startup the host constructs every declared plugin
+/// contract once in a discarded scope with no request, to verify the registration can be activated,
+/// so a provider's constructor or factory must succeed outside a request.
+/// </para>
+/// <para>
+/// <b>Cardinality.</b> This is a replace contract with zero or one plugin implementation replacing the
+/// host default, <c>NoIdentityService</c>. Register an implementation with a plain <c>Add</c>, such as
+/// <c>services.AddScoped&lt;IIdentityService, MyIdentityService&gt;()</c>, and never with a
+/// <c>TryAdd</c>, because the host default is always registered and a <c>TryAdd</c> is therefore
+/// always declined. When that declined <c>TryAdd</c> was the plugin's only contribution, startup fails
+/// naming the plugin; beside another declared registration, such as a custom validator, it goes
+/// undetected and the host default silently keeps serving. Never use <c>services.Replace</c> or
+/// <c>RemoveAll</c> either: they remove the host's own registration, which the host refuses at startup.
 /// </para>
 /// <para>
 /// <b>Namespace authorization.</b> Every operation - create, get, find, search, and results - requires

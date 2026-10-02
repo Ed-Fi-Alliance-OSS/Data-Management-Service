@@ -31,7 +31,8 @@
     1. The image build no longer stamps AssemblyVersion or FileVersion, and nothing replaced it. The
        plugin contract inside the image carries the version src/plugins/Directory.Build.props
        declares rather than the version the build was given, which is the value the loader's
-       newer-plugin-on-older-host preflight compares. Both expectations are read from the committed
+       newer-plugin-on-older-host preflight compares. The custom-validation and identity contracts
+       are held to the same standard against the versions their own csprojs declare. Both expectations are read from the committed
        props at run time rather than written here, so neither rots. The assemblies are copied out and
        read as metadata; nothing in the image is executed.
 
@@ -509,6 +510,7 @@ function Invoke-ImageVersionProof {
     Import-Module (Join-Path $repositoryRoot "package-helpers.psm1") -Force
     $pluginsDeclared = Get-PluginsContractVersion
     $customValidationDeclared = Get-CustomValidationContractVersion
+    $identityDeclared = Get-PluginsContractVersion -PropsPath (Join-Path $repositoryRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
 
     Assert-True `
         ($DmsVersion -notlike "$dmsDeclared*") `
@@ -546,6 +548,7 @@ function Invoke-ImageVersionProof {
         foreach ($assembly in @(
                 "EdFi.Api.Plugins.dll",
                 "EdFi.DataManagementService.CustomValidation.dll",
+                "EdFi.DataManagementService.Identity.dll",
                 "EdFi.DataManagementService.Frontend.AspNetCore.dll")) {
             Invoke-Checked -What "docker cp $assembly" -Command {
                 & docker cp "${container}:/app/$assembly" $extractRoot | Out-Null
@@ -558,6 +561,7 @@ function Invoke-ImageVersionProof {
 
     $contract = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.Api.Plugins.dll")
     $customValidation = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.CustomValidation.dll")
+    $identity = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.Identity.dll")
     $frontend = Get-AssemblyIdentity (Join-Path $extractRoot "EdFi.DataManagementService.Frontend.AspNetCore.dll")
 
     # Both contracts, and for the same reason: each declares its own version, and neither may take
@@ -579,6 +583,15 @@ function Invoke-ImageVersionProof {
     Assert-True `
         ($customValidation.AssemblyVersion -ne "$dmsDeclared.0" -and $customValidation.AssemblyVersion -notlike "$DmsVersion*") `
         "EdFi.DataManagementService.CustomValidation took neither the committed DMS version '$dmsDeclared' nor the build's '$DmsVersion'"
+    Assert-True `
+        ($identity.AssemblyVersion -eq "$identityDeclared.0") `
+        "EdFi.DataManagementService.Identity carries AssemblyVersion $($identity.AssemblyVersion), the version its own csproj declares"
+    Assert-True `
+        ($identity.FileVersion -eq $identityDeclared) `
+        "EdFi.DataManagementService.Identity carries FileVersion $($identity.FileVersion)"
+    Assert-True `
+        ($identity.AssemblyVersion -ne "$dmsDeclared.0" -and $identity.AssemblyVersion -notlike "$DmsVersion*") `
+        "EdFi.DataManagementService.Identity took neither the committed DMS version '$dmsDeclared' nor the build's '$DmsVersion'"
     Assert-True `
         ($frontend.AssemblyVersion -eq "$dmsDeclared.0") `
         "the frontend carries AssemblyVersion $($frontend.AssemblyVersion), the committed value"
@@ -613,11 +626,13 @@ function Invoke-ImageVersionProof {
         committedDmsVersion                    = $dmsDeclared
         committedContractVersion               = $pluginsDeclared
         committedCustomValidationVersion       = $customValidationDeclared
+        committedIdentityVersion               = $identityDeclared
         probedImageReference                   = "local/ed-fi-api"
         probedImageId                          = $probedImageId
         defaultTagImageId                      = $defaultTagImageId
         contract                               = $contract
         customValidation                       = $customValidation
+        identity                               = $identity
         frontend                               = $frontend
         propsUnchanged                         = $true
     }

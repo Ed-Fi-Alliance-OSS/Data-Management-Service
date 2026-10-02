@@ -33,8 +33,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// </para>
 /// </remarks>
 [Category("PluginIntegration")]
-public sealed class Given_TheUniqueIdValidatorPluginIsNotAllowlisted
-    : PostgresqlApiIntegrationTestBase
+public sealed class Given_TheUniqueIdValidatorPluginIsNotAllowlisted : PostgresqlApiIntegrationTestBase
 {
     private string _pluginRoot = string.Empty;
     private UniqueIdServiceStub _stub = null!;
@@ -53,7 +52,7 @@ public sealed class Given_TheUniqueIdValidatorPluginIsNotAllowlisted
     public async Task StageThePluginAndStartTheStub()
     {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
         _stub = await UniqueIdServiceStub.StartAsync();

@@ -46,18 +46,25 @@
     <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
+    <ItemGroup>
+        <!--
+            Linked rather than referenced: the identity cases judge the served OpenAPI document with the
+            same rewrite the Core conformance tests use, and that class lives in a test assembly.
+        -->
+        <Compile Include="..\..\core\EdFi.DataManagementService.Core.Tests.Unit\OpenApi\OpenApiSchemaNormalizer.cs" Link="Shared\OpenApiSchemaNormalizer.cs" />
+    </ItemGroup>
     <!--
         Publishes the fixture plugin directories the host-integration plugin cases load. See the targets
         file for why staging lives here rather than in the tree the fixture sources sit in.
     -->
     <Import Project="PluginIntegrationFixtures.targets" />
     <!--
-        Packs the two published contracts into a local folder feed and publishes the custom
-        validation fixture plugins against it, into a stage root of their own. Separate from the file
+        Packs the two published contracts into a local folder feed and publishes the packed contract
+        fixture plugins against it, into a stage root of their own. Separate from the file
         above because that one's shared machinery publishes every fixture with one fixed command and
         no package feed; see the targets file for the whole reason.
     -->
-    <Import Project="CustomValidationFixturePlugin.targets" />
+    <Import Project="PackedContractFixturePlugins.targets" />
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Performance.Harness" />
     </ItemGroup>

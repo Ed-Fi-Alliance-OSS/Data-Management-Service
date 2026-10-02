@@ -1218,12 +1218,15 @@ jobs:
 
           # Each contract's own declared version, read from this checkout rather than passed as a
           # literal, so the assertion is made against the versions this release's source declares.
+          # The identity contract declares its version in its csproj with the same VersionPrefix
+          # element the plugin props use, so the same reader serves it.
           Import-Module ./package-helpers.psm1
 
           ./eng/verification/Assert-HostAssemblyManifest.ps1 `
             -ManifestPath "host-assembly-manifest.md" `
             -ExpectedPluginsVersion (Get-PluginsContractVersion) `
-            -ExpectedCustomValidationVersion (Get-CustomValidationContractVersion)
+            -ExpectedCustomValidationVersion (Get-CustomValidationContractVersion) `
+            -ExpectedIdentityVersion (Get-PluginsContractVersion -PropsPath "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
 
       - name: Attach Host Assembly Manifest to release
         shell: pwsh
