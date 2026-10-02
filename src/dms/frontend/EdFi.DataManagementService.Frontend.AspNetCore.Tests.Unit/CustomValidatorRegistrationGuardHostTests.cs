@@ -103,7 +103,8 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
     private sealed record TestHost(
         WebApplicationFactory<Program> Factory,
         RecordingLoggerProvider LoggerProvider,
-        RecordingStartupProcessExit ProcessExit
+        RecordingStartupProcessExit ProcessExit,
+        string StatusFilePath
     );
 
     /// <summary>
@@ -160,7 +161,7 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
         });
         disposables.Add(factory);
 
-        return new TestHost(factory, loggerProvider, processExit);
+        return new TestHost(factory, loggerProvider, processExit, statusFilePath);
     }
 
     [Test]
@@ -208,10 +209,18 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
         // Asserted against the window constant and the real task it must follow, rather than against
         // restated literals, so that moving either the window bound or the schema task's Order fails
         // this test instead of leaving it agreeing with numbers that no longer match Program.cs.
-        guard.Order.Should().BeInRange(0, DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum);
+        guard
+            .Order.Should()
+            .BeInRange(
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum
+            );
 
         int effectiveSchemaTaskOrder = startupTasks.OfType<LoadAndBuildEffectiveSchemaTask>().Single().Order;
         guard.Order.Should().BeGreaterThan(effectiveSchemaTaskOrder);
+        effectiveSchemaTaskOrder
+            .Should()
+            .BeLessThanOrEqualTo(DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum);
     }
 
     /// <summary>
@@ -221,10 +230,12 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
     /// <remarks>
     /// Required negative control: temporarily moving the guard's Order to 600 puts it outside every
     /// window Program.cs's RunByOrderRangeAsync executes before request serving begins
-    /// (Program.cs:315, :329, :341), so the guard is still registered but never runs. At Order 600
-    /// this test fails, the record below never being captured, while the host still boots
-    /// successfully and the registration and Order tests above still pass. That a host can boot clean
-    /// with the guard silently skipped is exactly the failure mode this case exists to catch.
+    /// (the InitializeApiSchemas, ValidatePluginRegistrations, InitializeBackendMappings and
+    /// InitializeAuthMetadata helpers in Program.cs), so the guard is still registered but never
+    /// runs. At Order 600 this test fails, the record below never being captured, while the host
+    /// still boots successfully and the registration and Order tests above still pass. That a host
+    /// can boot clean with the guard silently skipped is exactly the failure mode this case exists
+    /// to catch.
     /// </remarks>
     [Test]
     public async Task It_runs_during_a_real_host_boot()
@@ -315,6 +326,48 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
 
         host.ProcessExit.ExitCallCount.Should().Be(1);
         host.ProcessExit.ExitCode.Should().Be(-1);
+    }
+
+    /// <summary>
+    /// Schema initialization failing must be reported under its own phase and must stop startup before
+    /// either registration guard runs. The guards read the effective ApiSchema that task 100 builds,
+    /// so running them after a failed schema load would only add a second, misleading failure. This
+    /// is also the control for the ValidatePluginRegistrations phase: the same boot with a healthy
+    /// schema runs the guards after task 100, as It_runs_during_a_real_host_boot shows.
+    /// </summary>
+    [Test]
+    public void It_reports_a_schema_failure_under_InitializeApiSchemas_and_never_runs_the_guards()
+    {
+        TestHost host = BuildHost(services =>
+            services.Replace(
+                ServiceDescriptor.Singleton<IEffectiveSchemaBootstrapper>(new ThrowingSchemaBootstrapper())
+            )
+        );
+
+        Action startHost = () => host.Factory.CreateClient();
+
+        startHost.Should().Throw<Exception>();
+
+        JsonObject status = JsonNode.Parse(File.ReadAllText(host.StatusFilePath))!.AsObject();
+        status["State"]!.GetValue<string>().Should().Be("Failed");
+        status["Phase"]!.GetValue<string>().Should().Be(DmsStartupPhases.InitializeApiSchemas);
+        status["Summary"]!
+            .GetValue<string>()
+            .Should()
+            .Be("API schema initialization failed. DMS cannot start with invalid schemas.");
+
+        host.ProcessExit.ExitCallCount.Should().Be(1);
+        host.LoggerProvider.Records.Should()
+            .NotContain(record =>
+                record.Category == typeof(CustomValidatorRegistrationGuard).FullName
+                || record.Category.EndsWith(".PluginRegistrationGuard", StringComparison.Ordinal)
+            );
+    }
+
+    private sealed class ThrowingSchemaBootstrapper : IEffectiveSchemaBootstrapper
+    {
+        public Task InitializeAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Simulated API schema initialization failure.");
     }
 
     /// <summary>

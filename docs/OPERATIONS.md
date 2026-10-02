@@ -484,6 +484,9 @@ failure inside a plugin's `ContributeConfiguration` hook, which runs in that sam
 phase as soon as loading returns. `ConfigureServices` covers a failure inside a
 `ContributeServices` hook, because the host invokes that hook while it is registering
 services.
+`ValidatePluginRegistrations` covers a registration the host refuses after the container
+is built: an invalid custom validator registration, or a plugin contribution the audit
+rejects, such as two plugins replacing one contract.
 
 **What actually loaded: the log.** Each loaded plugin produces one
 `Plugin inventory for {PluginName} version {AssemblyVersion}` event listing the files
