@@ -39,15 +39,21 @@ public class IdentityModule : IEndpointModule
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. The ITokenRevocationManager authenticates the caller inside
-        // RevokeTokenAsync before deciding whether it owns the token being revoked, so the
-        // ASP.NET Core auth pipeline is not involved at all. A failure is answered in the OAuth
-        // format and logged by exception type names only: the handler resolves a manager whose
-        // construction can run plugin code, so an exception's text is not under CMS control
-        // (DMS-1327 D-15, D-17).
+        // RevokeTokenAsync before deciding whether it owns the token being revoked. Leaving out
+        // RequireAuthorization() does not keep UseAuthentication from processing a bearer header,
+        // so the route is also exempt from bearer authentication: its key loading would recreate a
+        // missing development certificate that revocation must report (D-07.4). A failure is
+        // answered in the OAuth format and logged by exception type names only: the handler
+        // resolves a manager whose construction can run plugin code, so an exception's text is not
+        // under CMS control (DMS-1327 D-15, D-17).
         endpoints
             .MapPost("connect/revoke/{**contextPath}", RevokeToken)
             .DisableAntiforgery()
-            .WithMetadata(OAuthErrorContractMetadata.Instance, ExceptionTypeOnlyLoggingMetadata.Instance);
+            .WithMetadata(
+                OAuthErrorContractMetadata.Instance,
+                ExceptionTypeOnlyLoggingMetadata.Instance,
+                BearerAuthenticationExemptMetadata.Instance
+            );
     }
 
     private async Task<IResult> RegisterClient(

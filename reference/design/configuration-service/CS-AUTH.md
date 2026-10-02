@@ -99,13 +99,21 @@ each part as a form value:
   id or the secret is empty, or when anything other than one or more spaces separates
   `Basic` from the value.
 
-`/connect/token` keeps its lenient parser, which uses `Uri.UnescapeDataString` (a `+` stays a
-`+`) and falls back to form fields when the Basic value cannot be decoded. The difference
-matters for secrets that contain `+` or `%`. Sent unencoded, a `+` becomes a space and a valid
-`%XX` sequence becomes another character, so revocation compares a different secret and answers
-`401 invalid_client`, and a `%` without two hex digits is malformed, while `/connect/token`
-accepts the same header. Clients should form-encode both values before building the header,
-which every conforming client does and which is safe for raw non-ASCII characters too.
+`/connect/token` keeps its lenient parser, which uses `Uri.UnescapeDataString` and falls back to
+form fields when the Basic value cannot be decoded. For a secret sent without encoding, the two
+parsers agree or differ as follows:
+
+- **A literal `+`.** `/connect/token` keeps it; revocation decodes it to a space, compares a
+  different secret and answers `401 invalid_client`.
+- **A valid `%XX` sequence.** Both decode it to the character it names, so both compare the decoded
+  secret. A secret that really contains such a sequence must send its `%` as `%25` at either
+  endpoint.
+- **A `%` not followed by two hex digits.** `/connect/token` keeps it as it is; revocation treats
+  the attempt as malformed (`401 invalid_client`).
+
+Percent-encoding both values (`%2B` for `+`, `%25` for `%`, `%20` for a space) gives a header
+that decodes to the same credentials at both endpoints; raw non-ASCII characters need no encoding
+at either.
 
 `token_type_hint` accepts `access_token` and `refresh_token`. Any other value, including an
 empty one, is treated as no hint. A hint never blocks lookup and never changes

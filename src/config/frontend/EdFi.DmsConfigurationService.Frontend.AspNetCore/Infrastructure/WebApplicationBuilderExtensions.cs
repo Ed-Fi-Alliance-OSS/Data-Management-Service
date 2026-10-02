@@ -374,6 +374,7 @@ public static class WebApplicationBuilderExtensions
 
                         options.Events = new JwtBearerEvents
                         {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
                             OnAuthenticationFailed = context =>
                             {
                                 logger.Error("Authentication failed: {Message}", context.Exception.Message);
@@ -500,6 +501,7 @@ public static class WebApplicationBuilderExtensions
 
                         options.Events = new JwtBearerEvents
                         {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
                             OnAuthenticationFailed = context =>
                             {
                                 Console.WriteLine($"Authentication failed: {context.Exception.Message}");

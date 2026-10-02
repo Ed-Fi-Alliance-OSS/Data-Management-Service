@@ -7,12 +7,17 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -25,7 +30,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
+using OpenIddictIdentityOptions = EdFi.DmsConfigurationService.Backend.OpenIddict.Models.IdentityOptions;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configuration;
 
@@ -882,6 +890,342 @@ public class TokenRevocationStartupTests
                 .Factory.Services.GetRequiredService<IHostApplicationLifetime>()
                 .ApplicationStopping.IsCancellationRequested.Should()
                 .BeFalse();
+    }
+
+    /// <summary>
+    /// A self-contained host signing with a development certificate, booted through the real pipeline:
+    /// authentication middleware, the shipped <see cref="OpenIddictTokenManager"/>, its real secret
+    /// hasher and certificate loaders. Only the token store is a fake, so every token write is
+    /// observable. The token is issued by <c>/connect/token</c>, so it is a JWT signed by the
+    /// certificate's key with the issuer and audience the host verifies.
+    /// </summary>
+    private sealed class DevelopmentCertificateHost : IDisposable
+    {
+        private const string ClientId = "certificate-owner";
+        private const string ClientSecret = "certificate-owner-secret-0123456789";
+        private const string CertificatePassword = "test-password";
+
+        private readonly string _directory;
+        private string _storedSecret = string.Empty;
+
+        private DevelopmentCertificateHost()
+        {
+            _directory = Path.Combine(Path.GetTempPath(), $"dms-1327-certs-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(_directory);
+            CertificatePath = Path.Combine(_directory, "devcert.pfx");
+            WriteDevelopmentCertificate(CertificatePath);
+
+            A.CallTo(() => Repository.GetApplicationByClientIdAsync(ClientId))
+                .ReturnsLazily(() =>
+                    new ApplicationInfo
+                    {
+                        Id = ApplicationId,
+                        ClientId = ClientId,
+                        ClientSecret = _storedSecret,
+                        Permissions = ["edfi_admin_api/full_access"],
+                    }
+                );
+            A.CallTo(() => Repository.GetClientRolesAsync(ApplicationId)).Returns(Array.Empty<string>());
+            A.CallTo(() =>
+                    Repository.StoreTokenAsync(
+                        A<Guid>._,
+                        ApplicationId,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        A<int>._
+                    )
+                )
+                .Returns(TokenStoreOutcome.Stored);
+            A.CallTo(() => Repository.GetTokenStatusAsync(A<Guid>._)).Returns("valid");
+            A.CallTo(() => Repository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).Returns(true);
+
+            Boot = RevocationBoot.Run(
+                "self-contained",
+                "postgresql",
+                services =>
+                {
+                    services.RemoveAll<IOpenIddictTokenRepository>();
+                    services.AddSingleton(Repository);
+                    services.PostConfigure<OpenIddictIdentityOptions>(options =>
+                    {
+                        options.UseCertificates = true;
+                        options.UseDevelopmentCertificates = true;
+                        options.DevCertificatePath = CertificatePath;
+                        options.DevCertificatePassword = CertificatePassword;
+                    });
+                }
+            );
+        }
+
+        internal Guid ApplicationId { get; } = Guid.NewGuid();
+
+        internal IOpenIddictTokenRepository Repository { get; } = A.Fake<IOpenIddictTokenRepository>();
+
+        internal string CertificatePath { get; }
+
+        internal RevocationBoot Boot { get; }
+
+        internal static async Task<DevelopmentCertificateHost> StartAsync()
+        {
+            DevelopmentCertificateHost host = new();
+            host._storedSecret = await host
+                .Boot.Factory.Services.GetRequiredService<IClientSecretHasher>()
+                .HashSecretAsync(ClientSecret);
+            return host;
+        }
+
+        /// <summary>A token issued by the host's own token endpoint.</summary>
+        internal async Task<string> IssueTokenAsync()
+        {
+            using HttpResponseMessage response = await Boot.Client!.PostAsync(
+                "/connect/token",
+                RevocationForm(
+                    ("grant_type", "client_credentials"),
+                    ("client_id", ClientId),
+                    ("client_secret", ClientSecret)
+                )
+            );
+            response.StatusCode.Should().Be(HttpStatusCode.OK, "the precondition is an issued token");
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync())![
+                "access_token"
+            ]!.GetValue<string>();
+        }
+
+        /// <summary>
+        /// Revokes with the owner's form credentials and, when asked, the same token as a bearer
+        /// header, which revocation ignores.
+        /// </summary>
+        internal async Task<HttpResponseMessage> RevokeWithFormCredentialsAsync(
+            string token,
+            bool withBearerHeader
+        )
+        {
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/revoke")
+            {
+                Content = RevocationForm(
+                    ("client_id", ClientId),
+                    ("client_secret", ClientSecret),
+                    ("token", token)
+                ),
+            };
+            if (withBearerHeader)
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+            return await Boot.Client!.SendAsync(request);
+        }
+
+        private static void WriteDevelopmentCertificate(string path)
+        {
+            using RSA rsa = RSA.Create(2048);
+            CertificateRequest request = new(
+                "CN=DevCert",
+                rsa,
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pkcs1
+            );
+            using X509Certificate2 certificate = request.CreateSelfSigned(
+                DateTimeOffset.UtcNow.AddDays(-1),
+                DateTimeOffset.UtcNow.AddYears(1)
+            );
+            File.WriteAllBytes(path, certificate.Export(X509ContentType.Pfx, CertificatePassword));
+        }
+
+        public void Dispose()
+        {
+            Boot.Dispose();
+            Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// D-07.4 through the real pipeline: the development certificate that signed the owner's token is
+    /// gone, so revocation cannot verify the token and must answer 503 without creating a replacement.
+    /// With the bearer header, the request must not reach the bearer authentication handler either: its
+    /// key resolver loads keys through the JWKS helper, which creates a replacement certificate, and
+    /// revocation would then verify against that unrelated key and answer an empty 200 revoking nothing.
+    /// </summary>
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class Given_a_revocation_whose_development_signing_certificate_has_gone_missing(
+        bool withBearerHeader
+    )
+    {
+        private DevelopmentCertificateHost _host = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _host = await DevelopmentCertificateHost.StartAsync();
+            string token = await _host.IssueTokenAsync();
+            File.Delete(_host.CertificatePath);
+            _response = await _host.RevokeWithFormCredentialsAsync(token, withBearerHeader);
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            _response.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public async Task It_answers_503_temporarily_unavailable()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await OAuthErrorAsync(_response)).Should().Be("temporarily_unavailable");
+        }
+
+        [Test]
+        public void It_does_not_recreate_the_missing_certificate() =>
+            File.Exists(_host.CertificatePath).Should().BeFalse();
+
+        [Test]
+        public void It_does_not_update_any_token() =>
+            A.CallTo(() => _host.Repository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The control for the fixture above: with the certificate in place, the same request revokes the
+    /// owner's token, so a bearer header leaves form-credential authentication and revocation working.
+    /// </summary>
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class Given_a_revocation_whose_development_signing_certificate_is_present(bool withBearerHeader)
+    {
+        private DevelopmentCertificateHost _host = null!;
+        private byte[] _certificateBytes = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _host = await DevelopmentCertificateHost.StartAsync();
+            string token = await _host.IssueTokenAsync();
+            _certificateBytes = await File.ReadAllBytesAsync(_host.CertificatePath);
+            _response = await _host.RevokeWithFormCredentialsAsync(token, withBearerHeader);
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            _response.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public async Task It_answers_an_empty_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await _response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_revokes_the_owners_token_once() =>
+            A.CallTo(() => _host.Repository.RevokeTokenAsync(A<Guid>._, _host.ApplicationId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_leaves_the_certificate_unchanged() =>
+            File.ReadAllBytes(_host.CertificatePath).Should().Equal(_certificateBytes);
+
+        [Test]
+        public void It_does_not_authenticate_the_bearer_header() =>
+            A.CallTo(() => _host.Repository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The exemption is the revocation route's alone: a protected route still authenticates the same
+    /// token through the bearer handler, its per-request status check included. The token's client holds
+    /// no role, so the authenticated request is refused by authorization (403), not authentication (401).
+    /// </summary>
+    public class Given_a_protected_request_carrying_the_issued_token
+    {
+        private DevelopmentCertificateHost _host = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _host = await DevelopmentCertificateHost.StartAsync();
+            string token = await _host.IssueTokenAsync();
+            using HttpRequestMessage request = new(HttpMethod.Get, "/v3/vendors/");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            _response = await _host.Boot.Client!.SendAsync(request);
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            _response.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public void It_authenticates_the_bearer_token() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        [Test]
+        public void It_checks_the_tokens_stored_status_once() =>
+            A.CallTo(() => _host.Repository.GetTokenStatusAsync(A<Guid>._)).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// Under Keycloak the bearer handler would fetch the realm's metadata from the identity provider for
+    /// a bearer header on the revocation route. A request the endpoint rejects for its shape never calls
+    /// the manager, so any provider connection it causes comes from bearer authentication.
+    /// </summary>
+    public class Given_a_keycloak_revocation_request_carrying_a_bearer_header
+    {
+        private RevocationBoot _boot = null!;
+        private int _connectionsBefore;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _boot = RevocationBoot.Run("keycloak", "postgresql");
+            _connectionsBefore = _boot.Endpoint.Connections;
+
+            using RSA rsa = RSA.Create(2048);
+            string bearer = new JsonWebTokenHandler().CreateToken(
+                new SecurityTokenDescriptor
+                {
+                    Issuer = _boot.Endpoint.Authority,
+                    Audience = "account",
+                    Expires = DateTime.UtcNow.AddMinutes(5),
+                    SigningCredentials = new SigningCredentials(
+                        new RsaSecurityKey(rsa) { KeyId = "unrelated" },
+                        SecurityAlgorithms.RsaSha256
+                    ),
+                }
+            );
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/revoke")
+            {
+                Content = RevocationForm(("client_id", "revocation-caller"), ("client_secret", "secret")),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+            _response = await _boot.Client!.SendAsync(request);
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            _response.Dispose();
+            _boot.Dispose();
+        }
+
+        [Test]
+        public async Task It_answers_the_missing_token_400_invalid_request()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await OAuthErrorAsync(_response)).Should().Be("invalid_request");
+        }
+
+        [Test]
+        public void It_makes_no_identity_provider_request() =>
+            _boot.Endpoint.Connections.Should().Be(_connectionsBefore);
     }
 
     /// <summary>Answers each call with the next scripted result and counts the calls.</summary>
