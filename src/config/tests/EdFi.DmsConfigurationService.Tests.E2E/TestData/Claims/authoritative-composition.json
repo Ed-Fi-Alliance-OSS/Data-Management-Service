@@ -8619,6 +8619,21 @@
     ]
   },
   {
+    "name": "http://ed-fi.org/identity/claims/services/educationOrganizationProjection",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     "name": "http://ed-fi.org/identity/claims/domains/sample",
     "defaultAuthorization": {
       "actions": [
