@@ -23,6 +23,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// every transition (attempt start, completion, release of an outstanding operation, disposal) changes the version.
 /// </item>
 /// <item>
+/// <b>Unknown-key cooldown.</b> An unknown-key refresh is suppressed until
+/// <see cref="SigningKeySettings.UnknownKeyRefreshCooldown"/> after the last completed load, so unknown key ids cannot
+/// drive store reads at request rate (I-6). The one exception is the bootstrap allowance: when the provider's first
+/// successful load finds no key, one unknown-key refresh may start inside the cooldown while the snapshot is still
+/// empty, so a fresh store's first key, inserted after startup, is accepted promptly. The allowance is spent when that
+/// refresh starts, whatever it returns, and no later publication restores it.
+/// </item>
+/// <item>
 /// <b>Deadline.</b> The store call runs on the thread pool, so synchronous work in a source cannot delay a caller, under
 /// a token that the load deadline (<see cref="SigningKeySettings.LoadTimeout"/>) and disposal cancel. The attempt ends
 /// at the deadline even when the store ignores the token, and a result that arrives at or after the deadline is
@@ -69,6 +77,8 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     private int _consecutiveFailures;
     private SigningKeyRefreshOutcome? _lastOutcome;
     private DateTimeOffset? _lastCompletedAt;
+    private bool _firstSuccessRecorded;
+    private bool _bootstrapAllowance;
     private long _version;
     private long _stateVersion;
     private TaskCompletionSource _stateChanged = NewSignal();
@@ -313,18 +323,23 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 return new Admission(state, Attempt: _inFlight);
             }
 
-            // The cooldown protects a snapshot that can validate tokens from refreshes driven by unknown key ids. An
-            // empty snapshot rejects every token, so there is nothing to protect: on a fresh store, a key inserted
-            // after the startup load is accepted on first sight rather than after the cooldown. Single-flight, the
-            // retry gate and the backoff still bound the loads.
+            // The cooldown bounds the store reads that unknown key ids can drive (I-6). Its one exception is the
+            // bootstrap allowance: after a first successful load that found no key (a fresh store whose first key is
+            // inserted after startup), one unknown-key refresh may start inside the cooldown. It is spent only when
+            // that refresh starts, below, and is never granted again.
+            bool usesBootstrapAllowance = false;
             if (
                 enforceCooldown
-                && _current is { Keys.Count: > 0 }
                 && _lastCompletedAt is { } lastCompleted
                 && now - lastCompleted < _settings.UnknownKeyRefreshCooldown
             )
             {
-                return new Admission(state);
+                if (!_bootstrapAllowance || _current is not { Keys.Count: 0 })
+                {
+                    return new Admission(state);
+                }
+
+                usesBootstrapAllowance = true;
             }
 
             if (now < _nextAttemptAt)
@@ -335,6 +350,11 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
             if (_storeOperation is not null)
             {
                 return new Admission(state, Attempt: Refused(SigningKeyRefusalReason.OperationOutstanding));
+            }
+
+            if (usesBootstrapAllowance)
+            {
+                _bootstrapAllowance = false;
             }
 
             return new Admission(state, Attempt: StartAttemptUnderLock(trigger));
@@ -478,6 +498,13 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 Volatile.Write(ref _current, succeeded.Snapshot);
                 _consecutiveFailures = 0;
                 _nextAttemptAt = now;
+
+                // Granted once, by the first successful load only, and only when it found no key.
+                if (!_firstSuccessRecorded)
+                {
+                    _firstSuccessRecorded = true;
+                    _bootstrapAllowance = succeeded.Snapshot.Keys.Count == 0;
+                }
             }
             else
             {

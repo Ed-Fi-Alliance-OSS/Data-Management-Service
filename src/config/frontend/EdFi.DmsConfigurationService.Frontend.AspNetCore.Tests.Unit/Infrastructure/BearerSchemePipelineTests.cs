@@ -358,8 +358,8 @@ public class BearerSchemePipelineTests
     }
 
     // 3.1-q, fresh store (CI regression on PR #1317): the startup load finds no key, the first key is inserted
-    // afterwards, and a token signed with it arrives inside the cooldown. An empty snapshot rejects every token, so
-    // the cooldown does not apply and the first request is accepted.
+    // afterwards, and a token signed with it arrives inside the cooldown. It spends the one bootstrap allowance, so the
+    // first request is accepted.
     [TestFixture]
     public class Given_the_first_key_inserted_after_an_empty_startup_load
     {

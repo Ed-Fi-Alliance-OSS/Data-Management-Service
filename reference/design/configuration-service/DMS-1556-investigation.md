@@ -2346,8 +2346,8 @@ hashes and entry counts. The source tree is unchanged, and no tests were rerun.
 
 | File | Change |
 | --- | --- |
-| `Backend.OpenIddict/SigningKeys/SigningKeySnapshotProvider.cs` (production) | The unknown-key cooldown applies only while the current snapshot holds at least one key (`_current is { Keys.Count: > 0 }`). An empty snapshot rejects every token, so there is nothing to protect, and a first key inserted after an empty load is accepted on first sight. Single-flight, the retry gate and the backoff are unchanged. While the store stays empty, each unknown-key request reads it at most once, never concurrently. That is still fewer reads than the replaced code's per-request key reads. |
-| `Backend.Tests.Unit/SigningKeys/SigningKeySnapshotProviderTests.cs` | New `Given_a_key_inserted_after_an_empty_startup_load` (6 tests): refreshes while empty; refreshes again while the store stays empty; the inserted key is accepted inside the cooldown and published; the cooldown applies again once the snapshot holds a key; one store read per refresh |
+| `Backend.OpenIddict/SigningKeys/SigningKeySnapshotProvider.cs` (production; **superseded by the bounded correction below**) | The unknown-key cooldown applies only while the current snapshot holds at least one key (`_current is { Keys.Count: > 0 }`). An empty snapshot rejects every token, so there is nothing to protect, and a first key inserted after an empty load is accepted on first sight. Single-flight, the retry gate and the backoff are unchanged. While the store stays empty, each unknown-key request reads it at most once, never concurrently. That is still fewer reads than the replaced code's per-request key reads. |
+| `Backend.Tests.Unit/SigningKeys/SigningKeySnapshotProviderTests.cs` (**superseded below**) | New `Given_a_key_inserted_after_an_empty_startup_load` (6 tests): refreshes while empty; refreshes again while the store stays empty; the inserted key is accepted inside the cooldown and published; the cooldown applies again once the snapshot holds a key; one store read per refresh |
 | `Frontend…Tests.Unit/Infrastructure/BearerSchemePipelineTests.cs` | New real-pipeline `Given_the_first_key_inserted_after_an_empty_startup_load` (3 tests): an empty startup load, then the key inserted, then a request 1 s later answers 200 with one more key read, and the key is published |
 | `Frontend…Tests.Unit/Modules/ClaimsManagementModuleTests.cs` (test only) | Its test hosts replace `ISigningKeySource` with a reachable store holding no key (`RemoveAll` + `AddSingleton`, because the application registers it with a try-add). The snapshot is then usable and empty, and a malformed token gets the ordinary 401 the fixtures assert, with no hidden database dependency. |
 | `eng/docker-compose/local-config-diagnostics.yml` | `cms-monitor`, which declares a real container, gets the repository's json-file logging cap |
@@ -2386,3 +2386,77 @@ No other file changed. Mutation M5 (cooldown removed) is unaffected: its fixture
 - **Evidence bundle:** prepared; the upload is awaiting the user, and file list and sizes
   were provided.
 - **Not merged; the ticket stays open.**
+
+### Review of `a9408527a` and the bounded correction (2026-10-02)
+
+The reviewer did not approve pushing `a9408527a`. Finding **[P1]**: exempting empty
+snapshots from the cooldown violated I-6.
+
+- Every successful empty load resets the failure count and opens the retry gate at once.
+- Sequential unauthenticated requests with arbitrary `kid`s therefore each trigger a store
+  read.
+- Single-flight limits only overlap, and backoff limits only failures. Neither throttles
+  successful empty reads, and the `a9408527a` test pinned that behavior.
+- The "nothing to protect" rationale was wrong: what the cooldown protects is database
+  capacity.
+
+The ClaimsManagement isolation and the compose-logging fixes were accepted. The JobLease
+code stays unchanged: a CI retry is reasonable, but one local pass does not establish that
+the failure is unrelated. Its failure evidence is preserved, and it is investigated if it
+recurs.
+
+**Correction: a bounded bootstrap allowance** (`SigningKeySnapshotProvider.cs`):
+
+- **Granted once,** by the provider's first successful load, and only when that load
+  found no key. A first load with a key never grants it, and no later publication, empty
+  or not, restores it.
+- **Its one use:** inside the cooldown, while the snapshot is still empty, it lets exactly
+  one unknown-key refresh through.
+- **Spent atomically** under the gate lock when that refresh *starts*, whatever it then
+  returns: empty, found, or failed. A refresh refused by the retry gate or by an
+  outstanding operation spends nothing.
+- **Concurrency:** concurrent callers join the attempt in flight, a check that runs before
+  the cooldown, so they cannot spend more than one allowance.
+- **Afterwards:** the normal instance-wide cooldown applies, including while the store
+  stays empty.
+- **Unchanged:** single-flight, failure backoff, outstanding-operation ownership, and the
+  behavior with a non-empty snapshot.
+- **Bound:** arbitrary `kid`s drive at most one extra load in a provider's lifetime.
+
+The `a9408527a` provider fixture is replaced by six fixtures (27 tests) in
+`SigningKeySnapshotProviderTests.cs`:
+
+| Fixture | Establishes |
+| --- | --- |
+| `Given_the_first_key_inserted_after_an_empty_startup_load` | (1) empty startup, then the key inserted, then the first request inside the original cooldown → `RefreshedFound`, with the key published. The next unknown key is then suppressed. 2 store reads. |
+| `Given_successive_unknown_key_ids_while_the_store_stays_empty` | (2) 20 successive unknown `kid`s, 1 s apart, while the store stays empty → exactly one early refresh; the other 19 are `SuppressedCooldown` (2 store reads). After the cooldown, one normal refresh. The empty snapshot it publishes does **not** restore the allowance: the next request is suppressed. |
+| `Given_the_bootstrap_allowance_spent_before_the_first_key_is_inserted` | (3) an unknown `kid` spends the allowance, and then the key is inserted. The key's token is suppressed inside the cooldown, with the key absent, and accepted once the cooldown expires. |
+| `Given_concurrent_unknown_key_requests_after_an_empty_startup_load` | (4) 8 concurrent callers on a gated store share one refresh (one store read, all `RefreshedFound`), and the cooldown applies afterwards |
+| `Given_a_failing_bootstrap_refresh` | (4) a bootstrap refresh that fails: `RefreshFailed`, 1 consecutive failure, a 5 s backoff (fixed jitter). The allowance is spent and the empty snapshot kept. |
+| `Given_a_store_emptied_after_a_first_load_with_a_key` | no grant: the first load has a key and a later reload is empty. An unknown `kid` inside the cooldown is suppressed. |
+
+The real-pipeline fixture `Given_the_first_key_inserted_after_an_empty_startup_load`
+(3.1-q, fresh store) keeps its scenario: a 200 for the first request with the inserted
+key. Only its comment changed.
+
+The spec's I-6 now states the exception and its bound. `CS-AUTH.md` and
+`docs/CONFIGURATION.md` describe the allowance, and the "nothing to protect" text is
+removed.
+
+**Validation of the correction:**
+
+| Check | Result |
+| --- | --- |
+| Solution build, then `--no-incremental` after the revert checks | 0 warnings, 0 errors |
+| Provider fixtures (`SigningKeySnapshotProviderTests`) | **153 passed, 0 failed** (126 + 27) |
+| Revert check (a): provider restored to `aff38f7e2` (no allowance), new tests kept | **15 of 27 fail**, across the fresh-store, stream, spent-allowance, concurrent and failing-bootstrap fixtures |
+| Revert check (b): provider restored to `a9408527a` (unbounded), new tests kept | **10 of 27 fail.** The stream fixture shows more than one early refresh and the allowance restored by the empty publication. The spent-allowance fixture accepts the key inside the cooldown. The no-grant fixture refreshes inside the cooldown. The failing-bootstrap fixture does not spend the allowance. |
+| Backend unit, full | **1939 passed, 0 failed, 0 skipped** (1912 + 27) |
+| Frontend unit, full, with the database connection unreachable (CI's condition) | **2019 passed, 0 failed, 0 skipped** (9 m 20 s) |
+| CSharpier on the changed C# files | clean |
+
+No load or runtime investigation was repeated, as directed.
+
+**State:** the correction is committed locally, **not pushed**, for review. When a push is
+approved, the evidence will be the new CI runs triggered by the new head. Rerunning
+`aff38f7e2`'s failed jobs would test the old code. Jira archival is still pending.
