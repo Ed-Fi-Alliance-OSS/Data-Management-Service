@@ -106,6 +106,24 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// Writes active token rows of an arbitrary type directly. <c>StoreTokenAsync</c> cannot seed
     /// these: it always writes <c>access_token</c>.
     /// </summary>
+    protected static async Task<DateTime?> RedemptionDateAsync(Guid tokenId)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<DateTime?>(
+            "SELECT RedemptionDate FROM dmscs.OpenIddictToken WHERE Id = @Id",
+            new { Id = tokenId }
+        );
+    }
+
+    protected static async Task SetRedemptionDateAsync(Guid tokenId, DateTime redemptionDate)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "UPDATE dmscs.OpenIddictToken SET RedemptionDate = @RedemptionDate WHERE Id = @Id",
+            new { Id = tokenId, RedemptionDate = redemptionDate }
+        );
+    }
+
     protected static async Task SeedTokenOfTypeAsync(Guid applicationId, string type, int count)
     {
         await using SqlConnection connection = await OpenConnectionAsync();
@@ -355,7 +373,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 past,
                 EnforcementDisabled
             );
-            await _repository.RevokeTokenAsync(_expiredRevokedTokenId);
+            await _repository.RevokeTokenAsync(_expiredRevokedTokenId, applicationId);
             await _repository.StoreTokenAsync(
                 _unexpiredTokenId,
                 applicationId,
@@ -426,6 +444,254 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
             deletedCount.Should().Be(1);
             (await _repository.GetTokenStatusAsync(_tokenId)).Should().BeNull();
+        }
+    }
+
+    // DMS-1327 D-08: revocation is one UPDATE constrained by token id, the stored ApplicationId,
+    // and an unrevoked status. These fixtures pin each predicate against the real engine.
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_By_The_Owning_Application : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _tokenId;
+        private DateTime? _redemptionDateBefore;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-owner-{Guid.NewGuid():N}"
+            );
+            _tokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                applicationId,
+                "revoke-owner-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+            _redemptionDateBefore = await RedemptionDateAsync(_tokenId);
+
+            _result = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+        }
+
+        [Test]
+        public void It_reports_that_a_row_changed() => _result.Should().BeTrue();
+
+        [Test]
+        public async Task It_marks_the_token_revoked() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_sets_the_redemption_date()
+        {
+            _redemptionDateBefore.Should().BeNull();
+            (await RedemptionDateAsync(_tokenId)).Should().NotBeNull();
+        }
+    }
+
+    // The other application is a real registered row, so the only thing keeping the UPDATE off the
+    // token is the ApplicationId predicate. Remove it and this token is revoked.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_By_Another_Application : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _tokenId;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid ownerApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-victim-{Guid.NewGuid():N}"
+            );
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-other-{Guid.NewGuid():N}"
+            );
+            _tokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                ownerApplicationId,
+                "revoke-victim-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _result = await _repository.RevokeTokenAsync(_tokenId, otherApplicationId);
+        }
+
+        [Test]
+        public void It_reports_that_no_row_changed() => _result.Should().BeFalse();
+
+        [Test]
+        public async Task It_leaves_the_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("valid");
+
+        [Test]
+        public async Task It_leaves_the_redemption_date_unset() =>
+            (await RedemptionDateAsync(_tokenId)).Should().BeNull();
+    }
+
+    // The first redemption date is replaced with a fixed, distinctive value before the repeat, so
+    // the assertion does not depend on the clock advancing between two statements: without the
+    // status predicate the repeat overwrites it with the current time.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_Repeated_For_A_Revoked_Token : OpenIddictDataRepositoryTests
+    {
+        private static readonly DateTime _originalRedemptionDate = new(
+            2001,
+            2,
+            3,
+            4,
+            5,
+            6,
+            DateTimeKind.Unspecified
+        );
+
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _tokenId;
+        private bool _firstResult;
+        private bool _repeatResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-repeat-{Guid.NewGuid():N}"
+            );
+            _tokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                applicationId,
+                "revoke-repeat-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+            _firstResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+            await SetRedemptionDateAsync(_tokenId, _originalRedemptionDate);
+
+            _repeatResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+        }
+
+        [Test]
+        public void It_revoked_the_token_the_first_time() => _firstResult.Should().BeTrue();
+
+        [Test]
+        public void It_reports_that_the_repeat_changed_no_row() => _repeatResult.Should().BeFalse();
+
+        [Test]
+        public async Task It_keeps_the_token_revoked() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_preserves_the_original_redemption_date() =>
+            (await RedemptionDateAsync(_tokenId)).Should().Be(_originalRedemptionDate);
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_For_An_Unknown_Token : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _storedTokenId;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-unknown-{Guid.NewGuid():N}"
+            );
+            _storedTokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _storedTokenId,
+                applicationId,
+                "revoke-unknown-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _result = await _repository.RevokeTokenAsync(Guid.NewGuid(), applicationId);
+        }
+
+        [Test]
+        public void It_reports_that_no_row_changed() => _result.Should().BeFalse();
+
+        [Test]
+        public async Task It_leaves_the_applications_stored_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_storedTokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// The manager reaches the UPDATE through <c>OpenIddictTokenRepository</c>; a wrapper that
+    /// dropped or swapped the application id would break ownership with every data-repository
+    /// fixture above still green.
+    /// </summary>
+    [TestFixture]
+    public class Given_RevokeTokenAsync_Through_The_Token_Repository_Wrapper : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _dataRepository = null!;
+        private Guid _ownedTokenId;
+        private Guid _foreignTokenId;
+        private bool _ownedResult;
+        private bool _foreignResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            IOpenIddictTokenRepository tokenRepository = new OpenIddictTokenRepository(_dataRepository);
+            Guid callerApplicationId = await RegisterApplicationAsync(
+                _dataRepository,
+                $"revoke-wrapper-caller-{Guid.NewGuid():N}"
+            );
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                _dataRepository,
+                $"revoke-wrapper-other-{Guid.NewGuid():N}"
+            );
+            _ownedTokenId = Guid.NewGuid();
+            _foreignTokenId = Guid.NewGuid();
+            await _dataRepository.StoreTokenAsync(
+                _ownedTokenId,
+                callerApplicationId,
+                "revoke-wrapper-owned",
+                FarFuture,
+                EnforcementDisabled
+            );
+            await _dataRepository.StoreTokenAsync(
+                _foreignTokenId,
+                otherApplicationId,
+                "revoke-wrapper-foreign",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _ownedResult = await tokenRepository.RevokeTokenAsync(_ownedTokenId, callerApplicationId);
+            _foreignResult = await tokenRepository.RevokeTokenAsync(_foreignTokenId, callerApplicationId);
+        }
+
+        [Test]
+        public async Task It_revokes_the_callers_token()
+        {
+            _ownedResult.Should().BeTrue();
+            (await _dataRepository.GetTokenStatusAsync(_ownedTokenId)).Should().Be("revoked");
+        }
+
+        [Test]
+        public async Task It_leaves_another_applications_token_valid()
+        {
+            _foreignResult.Should().BeFalse();
+            (await _dataRepository.GetTokenStatusAsync(_foreignTokenId)).Should().Be("valid");
         }
     }
 
@@ -596,7 +862,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             FarFuture,
                             EnforcementDisabled
                         );
-                        await _repository.RevokeTokenAsync(tokenId);
+                        await _repository.RevokeTokenAsync(tokenId, applicationId);
                     }
                 },
                 "revoked-rows"

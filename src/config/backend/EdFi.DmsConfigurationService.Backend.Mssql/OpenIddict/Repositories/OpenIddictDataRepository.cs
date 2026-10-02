@@ -540,13 +540,16 @@ UPDATE dmscs.OpenIddictApplication
             );
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
+            // Ownership and status are predicates of the single statement rather than a prior read,
+            // so no interleaving can revoke another application's token, and a repeat changes no
+            // row and keeps the original RedemptionDate.
             var result = await connection.ExecuteAsync(
-                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id",
-                new { Id = tokenId }
+                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id AND ApplicationId = @ApplicationId AND Status <> 'revoked'",
+                new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
         }

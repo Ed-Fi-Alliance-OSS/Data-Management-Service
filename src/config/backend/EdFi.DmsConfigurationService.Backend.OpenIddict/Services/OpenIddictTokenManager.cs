@@ -444,11 +444,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
             try
             {
-                bool changed = await _tokenRepository.RevokeTokenAsync(tokenId);
+                // The stored application Id, not the client id, is the token's foreign key; the
+                // UPDATE re-checks it so ownership holds even if the claim check were bypassed.
+                bool changed = await _tokenRepository.RevokeTokenAsync(tokenId, applicationInfo.Id);
                 _logger.LogDebug(
                     "Revocation for client {CallerClientId} {Outcome}",
                     LoggingUtility.SanitizeForLog(callerClientId),
-                    changed ? "revoked the token" : "changed no row (unknown or already revoked)"
+                    changed
+                        ? "revoked the token"
+                        : "changed no row (unknown, already revoked, or stored for another application)"
                 );
                 return new TokenRevocationResult.Completed();
             }
