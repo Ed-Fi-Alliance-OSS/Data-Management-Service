@@ -400,6 +400,37 @@ public class Given_duplicate_data_store_names_without_a_tenant : BlockedNameUniq
             );
 }
 
+/// <summary>
+/// The default column collation ignores case and trailing spaces, so the constraint treats these names
+/// as equal. The preflight must agree, or the upgrade fails in the raw ALTER TABLE instead.
+/// </summary>
+[TestFixture]
+[Category("MssqlIntegration")]
+public class Given_case_and_trailing_space_variant_data_store_names_within_a_tenant
+    : BlockedNameUniquenessUpgradeFixture
+{
+    private int _firstVariantId;
+    private int _secondVariantId;
+
+    protected override async Task SeedAsync(SqlConnection connection)
+    {
+        long tenantId = await InsertTenantAsync(connection);
+
+        _firstVariantId = await InsertDataStoreAsync(connection, tenantId, "School Year 2025");
+        _secondVariantId = await InsertDataStoreAsync(connection, tenantId, "school year 2025 ");
+    }
+
+    [Test]
+    public void It_blocks_the_upgrade_listing_both_variants() =>
+        UpgradeFailureMessage()
+            .Should()
+            .Be(
+                BlockedPrefix
+                    + $"2 DataStore row(s) share a (TenantId, Name) with another row, ids: {_firstVariantId}, {_secondVariantId}. "
+                    + Remediation
+            );
+}
+
 [TestFixture]
 [Category("MssqlIntegration")]
 public class Given_duplicate_api_client_names_within_an_application : BlockedNameUniquenessUpgradeFixture
