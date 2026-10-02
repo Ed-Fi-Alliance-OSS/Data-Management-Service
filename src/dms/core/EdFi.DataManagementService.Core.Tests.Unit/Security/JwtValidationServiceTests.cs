@@ -450,6 +450,55 @@ public class JwtValidationServiceTests
         }
     }
 
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Token_With_An_Explicitly_Empty_Namespace_Claim : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+        private ClientAuthorizations? _clientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            Claim[] claims =
+            [
+                new("jti", "empty-namespace-token-id"),
+                new("scope", "edfi-admin"),
+                new("namespacePrefixes", ""),
+            ];
+            var token = CreateTestToken(
+                claims,
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_returns_a_valid_principal() => _principal.Should().NotBeNull();
+
+        [Test]
+        public void It_returns_empty_namespace_prefixes() =>
+            _clientAuthorizations!.NamespacePrefixes.Should().BeEmpty();
+    }
+
     /// <summary>
     /// DMS performs stateless self-inspection of bearer tokens and does not maintain
     /// a replay cache or perform per-request revocation. The same valid token may be

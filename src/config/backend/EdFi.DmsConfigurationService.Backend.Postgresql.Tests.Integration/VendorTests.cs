@@ -75,6 +75,57 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         }
 
         [TestFixture]
+        public class DetectExistingVendorTests : VendorTests
+        {
+            private int _vendorId;
+            private VendorInsertResult _repeatResult = null!;
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var firstResult = await _repository.InsertVendor(
+                    new VendorInsertCommand
+                    {
+                        Company = "Existing Company",
+                        ContactEmailAddress = "original@example.com",
+                        ContactName = "Original Contact",
+                        NamespacePrefixes = "uri://old.org",
+                    }
+                );
+                _vendorId = ((VendorInsertResult.Success)firstResult).Id;
+
+                _repeatResult = await _repository.InsertVendor(
+                    new VendorInsertCommand
+                    {
+                        Company = "Existing Company",
+                        ContactEmailAddress = "replacement@example.com",
+                        ContactName = "Replacement Contact",
+                        NamespacePrefixes = "",
+                    },
+                    updateExisting: false
+                );
+            }
+
+            [Test]
+            public void It_returns_the_existing_vendor_without_reporting_a_new_insert()
+            {
+                var success = _repeatResult.Should().BeOfType<VendorInsertResult.Success>().Subject;
+                success.Id.Should().Be(_vendorId);
+                success.IsNewVendor.Should().BeFalse();
+            }
+
+            [Test]
+            public async Task It_does_not_mutate_the_existing_vendor()
+            {
+                var getResult = await _repository.GetVendor(_vendorId);
+                var vendor = getResult.Should().BeOfType<VendorGetResult.Success>().Subject.VendorResponse;
+                vendor.ContactEmailAddress.Should().Be("original@example.com");
+                vendor.ContactName.Should().Be("Original Contact");
+                vendor.NamespacePrefixes.Should().Be("uri://old.org");
+            }
+        }
+
+        [TestFixture]
         public class UpdateTests : VendorTests
         {
             private VendorInsertCommand _vendorInsert = null!;
@@ -121,6 +172,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
+                vendorFromDb.NamespacePrefixes.Should().BeEmpty();
             }
 
             [Test]
@@ -133,6 +185,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
+                vendorFromDb.NamespacePrefixes.Should().BeEmpty();
             }
         }
 

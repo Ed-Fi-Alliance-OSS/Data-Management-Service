@@ -27,7 +27,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
         private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
 
-        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
+        public Task<VendorInsertResult> InsertVendor(VendorInsertCommand command) =>
+            InsertVendor(command, updateExisting: true);
+
+        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command, bool updateExisting)
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
@@ -48,6 +51,12 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
                 if (existingVendorId.HasValue)
                 {
+                    if (!updateExisting)
+                    {
+                        await transaction.CommitAsync();
+                        return new VendorInsertResult.Success(existingVendorId.Value, IsNewVendor: false);
+                    }
+
                     sql = $"""
                         UPDATE dmscs.Vendor
                         SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
