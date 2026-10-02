@@ -902,7 +902,7 @@ them, so the defaults apply unless you add them.
 | --- | --- | --- | --- |
 | `IdentitySettings.SigningKeyRefreshIntervalSeconds` | `300` | 30–43,200 | Time between scheduled reloads. Each reload is scheduled at this interval ±10 %. Bounds how long a healthy instance takes to see a key-table change. |
 | `IdentitySettings.SigningKeyMaxStalenessSeconds` | `3600` | from 2 × the refresh interval to 86,400 | How long after its last successful load a snapshot can still be used while reloads fail. After that, every authenticated request answers 503. Also bounds how long a key retired during a key-store outage can still be accepted. |
-| `IdentitySettings.SigningKeyUnknownKeyRefreshCooldownSeconds` | `30` | 1–3,600 | Minimum time after the last completed load before a token with an unknown key id may trigger a reload. It applies to the whole instance, not to each caller. |
+| `IdentitySettings.SigningKeyUnknownKeyRefreshCooldownSeconds` | `30` | 1–3,600 | Minimum time after the last completed load before a token with an unknown key id may trigger a reload. It applies to the whole instance, not to each caller, and not while the snapshot holds no key: a first key inserted after an empty load is accepted on first sight. |
 | `IdentitySettings.SigningKeyLoadTimeoutSeconds` | `10` | 1–60, and less than the refresh interval | How long one load may run before it is canceled and counted as failed. |
 | `IdentitySettings.KeyFormatCacheSize` | `100` | any | **Ignored.** The key-format cache it sized was removed. The setting still binds, so existing configuration keeps working, but it has no effect. |
 

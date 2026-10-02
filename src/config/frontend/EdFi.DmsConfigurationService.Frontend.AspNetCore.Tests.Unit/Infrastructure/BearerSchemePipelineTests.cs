@@ -357,6 +357,45 @@ public class BearerSchemePipelineTests
         public void It_loads_the_keys_once_after_the_cooldown() => _host.Store.KeyReads.Should().Be(2);
     }
 
+    // 3.1-q, fresh store (CI regression on PR #1317): the startup load finds no key, the first key is inserted
+    // afterwards, and a token signed with it arrives inside the cooldown. An empty snapshot rejects every token, so
+    // the cooldown does not apply and the first request is accepted.
+    [TestFixture]
+    public class Given_the_first_key_inserted_after_an_empty_startup_load
+    {
+        private BearerPipelineHost _host = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _host = new BearerPipelineHost();
+            await _host.StartWarmAsync();
+            _host.Store.AddKey("key-1");
+            _host.Time.Advance(TimeSpan.FromSeconds(1));
+
+            _response = await _host.GetProfileAsync(_host.Store.Mint("key-1").Token);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _host.Dispose();
+        }
+
+        [Test]
+        public void It_loads_the_keys_once_for_it() => _host.Store.KeyReads.Should().Be(2);
+
+        [Test]
+        public void It_accepts_the_first_request_with_the_inserted_key() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_publishes_the_inserted_key() =>
+            _host.Provider.Current!.ContainsKeyId("key-1").Should().BeTrue();
+    }
+
     // 3.1-f [F]: a cold instance whose key store fails answers 503 at the boundary; the handler never asks the
     // configuration manager, the token status is never read, and the store's error text never reaches the client.
     [TestFixture]

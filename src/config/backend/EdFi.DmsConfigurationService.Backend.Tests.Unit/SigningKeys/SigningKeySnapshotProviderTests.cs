@@ -839,6 +839,72 @@ public class SigningKeySnapshotProviderTests
         public void It_reads_the_store_only_after_the_cooldown() => _harness.Calls.Should().HaveCount(2);
     }
 
+    // Variant of (p) on a fresh store. The startup load publishes no key and the first key is inserted afterwards. An
+    // empty snapshot rejects every token, so the cooldown does not hold back the refresh that finds the new key. Once
+    // the snapshot holds a key, the cooldown applies again.
+    [TestFixture]
+    public class Given_a_key_inserted_after_an_empty_startup_load
+    {
+        private KeyRepositoryHarness _harness = null!;
+        private SigningKeyUnknownKeyOutcome _whileStoreEmpty;
+        private SigningKeyUnknownKeyOutcome _againWhileStoreEmpty;
+        private SigningKeyUnknownKeyOutcome _afterInsert;
+        private bool _presentAfterInsert;
+        private SigningKeyUnknownKeyOutcome _nextUnknownKeyInsideCooldown;
+
+        [SetUp]
+        public async Task Act()
+        {
+            FakeTimeProvider time = NewTime();
+            _harness = new KeyRepositoryHarness(time);
+            _harness.ReturnsKeys();
+            using var provider = Provider(_harness, time);
+            await provider.GetUsableAsync(CancellationToken.None); // startup load at 0 s: 0 keys
+
+            time.Advance(TimeSpan.FromSeconds(1));
+            _whileStoreEmpty = await provider.TryRefreshForUnknownKeyAsync("key-1", CancellationToken.None);
+            time.Advance(TimeSpan.FromSeconds(1));
+            _againWhileStoreEmpty = await provider.TryRefreshForUnknownKeyAsync(
+                "key-1",
+                CancellationToken.None
+            );
+
+            _harness.ReturnsKeys("key-1");
+            time.Advance(TimeSpan.FromSeconds(1));
+            _afterInsert = await provider.TryRefreshForUnknownKeyAsync("key-1", CancellationToken.None);
+            _presentAfterInsert = provider.Current!.ContainsKeyId("key-1");
+
+            _harness.ReturnsKeys("key-1", "key-2");
+            time.Advance(TimeSpan.FromSeconds(1));
+            _nextUnknownKeyInsideCooldown = await provider.TryRefreshForUnknownKeyAsync(
+                "key-2",
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_refreshes_while_the_snapshot_is_empty() =>
+            _whileStoreEmpty.Should().Be(SigningKeyUnknownKeyOutcome.RefreshedAbsent);
+
+        [Test]
+        public void It_refreshes_again_while_the_store_stays_empty() =>
+            _againWhileStoreEmpty.Should().Be(SigningKeyUnknownKeyOutcome.RefreshedAbsent);
+
+        [Test]
+        public void It_accepts_the_inserted_key_inside_the_cooldown() =>
+            _afterInsert.Should().Be(SigningKeyUnknownKeyOutcome.RefreshedFound);
+
+        [Test]
+        public void It_publishes_the_inserted_key() => _presentAfterInsert.Should().BeTrue();
+
+        [Test]
+        public void It_applies_the_cooldown_once_the_snapshot_holds_a_key() =>
+            _nextUnknownKeyInsideCooldown.Should().Be(SigningKeyUnknownKeyOutcome.SuppressedCooldown);
+
+        [Test]
+        public void It_reads_the_store_once_per_refresh() => _harness.Calls.Should().HaveCount(4);
+    }
+
     // (q)
     [TestFixture]
     public class Given_two_providers_over_one_store

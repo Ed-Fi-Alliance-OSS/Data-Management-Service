@@ -2286,3 +2286,103 @@ hashes and entry counts. The source tree is unchanged, and no tests were rerun.
 - **Before merge or closing:** CI results, then the Jira archival of the evidence bundle
   with the archived copies verified. Fixes prompted by CI stay focused and return for
   review.
+
+## CI on PR #1317 and focused fixes (2026-10-02)
+
+### Push and CI
+
+- **Pushed:** `DMS-1556` fast-forwarded `6e3aec32c..aff38f7e2`; no force.
+- **PR:** PR #1317's description was replaced with the completed implementation and
+  validation, and the PR was marked ready for review. The draft-time runs were skipped. The
+  ready-for-review event started CI on `aff38f7e2`:
+
+| Workflow (run) | Result | Failing jobs |
+| --- | --- | --- |
+| PowerShell (36949524777) | success | — |
+| CodeQL (36949524293) | success | — |
+| On Config Pull Request (36949524768) | **failure** | Run Unit Tests, Run Integration Tests, Run E2E Tests (self-contained) → Config CI Gate |
+| On DMS Pull Request (36949524767) | **failure** | Run Bootstrap Pester Tests → DMS CI Gate. 46 jobs succeeded. |
+
+### Failures and causes
+
+1. **CMS E2E (self-contained): 10 ApiClients scenarios answered 401** ("Authentication is
+   required"). It passed 225, failed 10, skipped 10. This is a real gap in this ticket's
+   design.
+   - **Timeline from the job log:** CMS started at 01:29:26Z, against a fresh database.
+     Its startup load published an empty snapshot. The E2E setup inserted the first
+     signing key at 01:29:51.9Z. ApiClients, the first feature, ran at 01:29:57–58Z,
+     inside the 30 s unknown-key cooldown that counts from the startup load.
+   - **Mechanism:** every unknown-key refresh was `SuppressedCooldown`, so tokens signed
+     with the new key got 401. The later features passed once the cooldown ended.
+   - **Why the local run passed:** its first scenario happened to start after the cooldown.
+     The code this replaced read keys on every request, so a key inserted after startup
+     worked at once.
+2. **CMS frontend unit: 6 failures.** These are `ClaimsManagementModuleTests`' two
+   `Given_an_invalid_bearer_token_*` fixtures (×3), which expected 401 and got 503. The
+   other 2,010 passed, and the backend passed 1,912/0/0.
+   - **A merge interaction:** these tests come from `main` (DMS-853). They send a malformed
+     bearer token through the real self-contained host, with no database in CI. With no
+     usable snapshot, the documented contract answers 503 `SigningKeyStore` before the
+     token is examined.
+   - **Why local runs passed:** they reached another session's PostgreSQL on
+     `localhost:5432`, the frontend test settings' target. It holds an
+     `edfi_configurationservice` database whose `dmscs."OpenIddictKey"` table has 0 active
+     keys (checked). The background key load therefore published an empty, usable
+     snapshot, and the malformed token got 401. That hid the dependency, in both the merge
+     validation and the 4.4 runs.
+3. **DMS Bootstrap Pester: 1 failure,**
+   `DockerComposeLogging.Tests.ps1` "caps json-file logs in every compose service file that
+   ships a runnable stack". 3,439 passed and 68 were skipped.
+   - The rule predates this branch. This branch's investigation overlays have no logging
+     cap. The assertion stopped at the first file, `local-config-diagnostics.yml` (`config`,
+     `cms-monitor`), and the six other overlays would have failed next.
+4. **CMS SQL Server integration: 1 failure,**
+   `Jobs.JobLeaseRepositoryTests.Given_an_exhaust_sweep_cancelled_while_waiting_for_a_connection`
+   (`_sweepWaitedForTheConnection` false); 978 passed.
+   - It is a timing-sensitive DMS-1437 test that came from `main`, outside this ticket's
+     code, and it passed in the post-merge local run. No change; it is left to a rerun.
+
+### Fixes (local, not pushed; for review)
+
+| File | Change |
+| --- | --- |
+| `Backend.OpenIddict/SigningKeys/SigningKeySnapshotProvider.cs` (production) | The unknown-key cooldown applies only while the current snapshot holds at least one key (`_current is { Keys.Count: > 0 }`). An empty snapshot rejects every token, so there is nothing to protect, and a first key inserted after an empty load is accepted on first sight. Single-flight, the retry gate and the backoff are unchanged. While the store stays empty, each unknown-key request reads it at most once, never concurrently. That is still fewer reads than the replaced code's per-request key reads. |
+| `Backend.Tests.Unit/SigningKeys/SigningKeySnapshotProviderTests.cs` | New `Given_a_key_inserted_after_an_empty_startup_load` (6 tests): refreshes while empty; refreshes again while the store stays empty; the inserted key is accepted inside the cooldown and published; the cooldown applies again once the snapshot holds a key; one store read per refresh |
+| `Frontend…Tests.Unit/Infrastructure/BearerSchemePipelineTests.cs` | New real-pipeline `Given_the_first_key_inserted_after_an_empty_startup_load` (3 tests): an empty startup load, then the key inserted, then a request 1 s later answers 200 with one more key read, and the key is published |
+| `Frontend…Tests.Unit/Modules/ClaimsManagementModuleTests.cs` (test only) | Its test hosts replace `ISigningKeySource` with a reachable store holding no key (`RemoveAll` + `AddSingleton`, because the application registers it with a try-add). The snapshot is then usable and empty, and a malformed token gets the ordinary 401 the fixtures assert, with no hidden database dependency. |
+| `eng/docker-compose/local-config-diagnostics.yml` | `cms-monitor`, which declares a real container, gets the repository's json-file logging cap |
+| `eng/docker-compose/tests/DockerComposeLogging.Tests.ps1` | The seven DMS-1556 investigation overlays join the rule's exclusion list for overlay-block files. Each declares only overlay blocks on `config`/`db`, verified as no `image:`/`build:`, except `cms-monitor`, which now has the cap. |
+| `docs/CONFIGURATION.md`, `CS-AUTH.md` | Document the cooldown exception |
+
+No other file changed. Mutation M5 (cooldown removed) is unaffected: its fixtures (1.5-j,
+1.5-p, 1.5-q, 3.1-q) start from non-empty snapshots and still pass.
+
+### Local validation of the fixes
+
+| Check | Result |
+| --- | --- |
+| `dotnet build src/config/EdFi.DmsConfigurationService.sln` (and `--no-incremental` after the revert checks) | 0 warnings, 0 errors |
+| Backend unit, full | **1918 passed, 0 failed, 0 skipped** (1912 + 6 new) |
+| Frontend unit, full, **with `DatabaseSettings__DatabaseConnection` pointed at an unreachable port** (CI's condition: no reachable database) | **2019 passed, 0 failed, 0 skipped** (2016 + 3 new), in 10 m 13 s. Slower than usual because every test host's startup key load now fails. |
+| Revert check: `ClaimsManagementModuleTests.cs` restored to the merged version, same no-database condition | The `Given_an_invalid_bearer_token_*` fixtures fail with "expected 401, but found 503", which reproduces CI. They pass with the fix. |
+| Revert check: `SigningKeySnapshotProvider.cs` restored, new tests kept, `--no-incremental` | Provider fixture 5 of 6 fail (`SuppressedCooldown`; the cooldown-resumes test passes either way). The pipeline fixture fails 3 of 3 (401 instead of 200), which reproduces CI. All pass with the fix. |
+| After restoring: provider fixtures, plus the Bearer, DmsJwtBearer and ClaimsManagement fixtures | 132/0, 182/0 |
+| `DockerComposeLogging.Tests.ps1` (Pester) | 9 passed, 0 failed (was 8/1) |
+| CSharpier on the changed C# files | clean |
+
+**Not run locally:**
+
+- **CMS E2E:** its outcome depends on start-up timing, and the local run passed even
+  before the fix. The fake-time pipeline test is the deterministic reproduction, and CI is
+  the E2E evidence.
+- **The full Bootstrap Pester lane:** run locally it has a known Windows-only failure.
+- **The integration lanes:** the integration code is unchanged, apart from the provider
+  line covered by the unit and pipeline fixtures.
+
+### State
+
+- **Fixes:** committed locally, **not pushed**, for review.
+- **PR #1317:** open and ready for review at `aff38f7e2`, with CI failed as above.
+- **Evidence bundle:** prepared; the upload is awaiting the user, and file list and sizes
+  were provided.
+- **Not merged; the ticket stays open.**

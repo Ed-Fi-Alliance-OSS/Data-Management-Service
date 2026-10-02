@@ -263,6 +263,14 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
   cooldown applies to the whole instance, so tokens carrying made-up key ids cause at most
   one load per cooldown. If the key is still absent after the reload, or the reload was
   not allowed, the token is rejected with 401.
+
+  **Exception: the snapshot holds no key.** Then the cooldown does not apply, because an
+  empty snapshot rejects every token and there is nothing to protect. A key inserted after
+  an empty load, for example on a fresh store where setup inserts the first key after CMS
+  starts, is accepted on first sight. Without the exception it would take up to one
+  cooldown. Single-flight and the backoff still bound the loads: while the store stays
+  empty, each unknown-key request reads the store at most once, never concurrently. That
+  is fewer reads than the per-request key reads of the code this replaced.
 - **Empty key set.** A store that holds no active key is a *successful* load of zero keys.
   It is published with a Warning
   (`Signing-key snapshot {n} is empty: … so every token will be rejected`). JWKS then

@@ -313,8 +313,13 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 return new Admission(state, Attempt: _inFlight);
             }
 
+            // The cooldown protects a snapshot that can validate tokens from refreshes driven by unknown key ids. An
+            // empty snapshot rejects every token, so there is nothing to protect: on a fresh store, a key inserted
+            // after the startup load is accepted on first sight rather than after the cooldown. Single-flight, the
+            // retry gate and the backoff still bound the loads.
             if (
                 enforceCooldown
+                && _current is { Keys.Count: > 0 }
                 && _lastCompletedAt is { } lastCompleted
                 && now - lastCompleted < _settings.UnknownKeyRefreshCooldown
             )
