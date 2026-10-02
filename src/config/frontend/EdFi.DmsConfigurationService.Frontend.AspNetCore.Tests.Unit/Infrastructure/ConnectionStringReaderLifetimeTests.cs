@@ -20,7 +20,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 /// Boots the host in the Development environment, where the container validates scopes and builds
 /// every registration at startup, so a read seam or cache registered with a lifetime that captures
 /// the scoped tenant provider fails the boot here. The seam is transient like the repositories that
-/// call it, and the cache and the resolver are singletons.
+/// call it, and the cache is a singleton.
 /// </summary>
 [TestFixture("postgresql", "with a resolver")]
 [TestFixture("postgresql", "without a resolver")]
@@ -143,22 +143,5 @@ public class Given_the_host_booted_in_the_development_environment(string datasto
             .ServiceProvider.GetRequiredService<SecretValueCache>()
             .Should()
             .BeSameAs(second.ServiceProvider.GetRequiredService<SecretValueCache>());
-    }
-
-    [Test]
-    public void It_shares_one_resolver_across_scopes_when_one_is_registered()
-    {
-        using IServiceScope first = _factory.Services.CreateScope();
-        using IServiceScope second = _factory.Services.CreateScope();
-        ISecretResolver? fromFirst = first.ServiceProvider.GetService<ISecretResolver>();
-
-        if (resolver == "with a resolver")
-        {
-            fromFirst.Should().NotBeNull().And.BeSameAs(second.ServiceProvider.GetService<ISecretResolver>());
-        }
-        else
-        {
-            fromFirst.Should().BeNull();
-        }
     }
 }

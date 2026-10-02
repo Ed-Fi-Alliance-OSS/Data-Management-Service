@@ -18,7 +18,9 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Management;
 ///
 /// The database name is not checked: the harness builds the expected name from POSTGRES_DB_NAME, the
 /// same variable the cleanup hooks read, so the check cannot tell whether the Configuration Service
-/// uses another database. Only the engine and the port can fail it.
+/// uses another database. The engine is read from DMS_CONFIG_DATASTORE, which the harness sets from
+/// the same value it builds the expectation from, so that part agrees unless something later in the
+/// run changes the variable. The port is what the check reliably catches.
 /// </summary>
 [TestFixture]
 [Category("E2ETargetPreflight")]

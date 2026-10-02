@@ -120,6 +120,7 @@ public class SecretsOptionsStartupTests
         private SecretValueCache _cache = null!;
         private SecretValueCache _cacheFromScope = null!;
         private ISecretResolver? _resolver;
+        private IConfigurationSection _shipped = null!;
 
         [SetUp]
         public void Act()
@@ -131,6 +132,7 @@ public class SecretsOptionsStartupTests
             using IServiceScope scope = _factory.Services.CreateScope();
             _cacheFromScope = scope.ServiceProvider.GetRequiredService<SecretValueCache>();
             _resolver = _factory.Services.GetService<ISecretResolver>();
+            _shipped = _factory.Services.GetRequiredService<IConfiguration>().GetSection("SecretsSettings");
         }
 
         [TearDown]
@@ -139,12 +141,21 @@ public class SecretsOptionsStartupTests
         [Test]
         public void It_starts() => _exception.Should().BeNull();
 
+        // The shipped values equal the property defaults, so the configuration is asserted as well as
+        // the bound options: deleting the section would leave the options unchanged.
         [Test]
-        public void It_binds_the_shipped_cache_expiration() =>
+        public void It_binds_the_shipped_cache_expiration()
+        {
+            _shipped["CacheExpirationSeconds"].Should().Be("300");
             _options.CacheExpirationSeconds.Should().Be(300);
+        }
 
         [Test]
-        public void It_binds_the_shipped_resolve_timeout() => _options.ResolveTimeoutSeconds.Should().Be(10);
+        public void It_binds_the_shipped_resolve_timeout()
+        {
+            _shipped["ResolveTimeoutSeconds"].Should().Be("10");
+            _options.ResolveTimeoutSeconds.Should().Be(10);
+        }
 
         [Test]
         public void It_registers_one_cache_for_the_life_of_the_host() =>
