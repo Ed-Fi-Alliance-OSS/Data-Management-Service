@@ -3889,9 +3889,9 @@ public class RevocationRequestContractTests
 
     /// <summary>
     /// A fault inside the endpoint after the manager was called is a 500 <c>server_error</c> in the
-    /// OAuth format, logged once as a failed request with the exception attached, and nothing the
-    /// caller sent (token, secret, Authorization value) reaches any log field, the attached
-    /// exception or its inner chain (D-15 rules 2 and 3).
+    /// OAuth format, logged once as a failed request that names the exception types and carries no
+    /// exception object, and nothing the caller sent (token, secret, Authorization value) or the
+    /// exception's text reaches any log field (D-15, D-17).
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_whose_manager_faults : RevocationRequestFixture
@@ -3920,14 +3920,25 @@ public class RevocationRequestContractTests
             Response.Headers.GetValues("TraceId").Should().ContainSingle().Which.Should().NotBeEmpty();
 
         [Test]
-        public void It_logs_one_failed_request_with_the_exception_attached() =>
-            Logs
+        public void It_logs_one_failed_request_naming_the_exception_types_without_the_exception()
+        {
+            RevocationLogCapture.Record failed = Logs
                 .Records.Should()
                 .ContainSingle(record => record.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id)
-                .Which.Exception.Should()
-                .BeOfType<InvalidOperationException>()
-                .Which.Message.Should()
-                .Be(FaultText);
+                .Subject;
+            failed.Exception.Should().BeNull();
+            failed
+                .State.Should()
+                .Contain(
+                    new KeyValuePair<string, object?>(
+                        "ExceptionTypes",
+                        typeof(InvalidOperationException).FullName
+                    )
+                );
+        }
+
+        [Test]
+        public void It_does_not_log_the_exception_text() => AssertNotLogged(FaultText);
 
         [Test]
         public void It_does_not_log_the_caller_input() =>

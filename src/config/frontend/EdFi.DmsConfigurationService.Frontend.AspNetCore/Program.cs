@@ -247,7 +247,7 @@ void EnsureTokenRevocationSupport(WebApplication app)
 
     if (constructionFailure is not null)
     {
-        string exceptionTypes = ExceptionTypeChain(constructionFailure);
+        string exceptionTypes = ExceptionTypeNames.Chain(constructionFailure);
         app.Logger.LogCritical(
             "The token revocation manager for AppSettings:IdentityProvider '{Provider}' could not be "
                 + "constructed ({ExceptionTypes}). Correct the registration or its dependencies, then restart.",
@@ -285,21 +285,6 @@ static string TokenRevocationProviderName(string? configured) =>
         "self-contained" => "self-contained",
         _ => "unrecognized",
     };
-
-/// <summary>
-/// The full type names of an exception and each inner exception, outermost first. Only type names are
-/// read: no message, data or stack trace.
-/// </summary>
-static string ExceptionTypeChain(Exception exception)
-{
-    List<string> names = [];
-    for (Exception? current = exception; current is not null; current = current.InnerException)
-    {
-        names.Add(current.GetType().FullName ?? current.GetType().Name);
-    }
-
-    return string.Join(" -> ", names);
-}
 
 /// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.

@@ -40,11 +40,14 @@ public class IdentityModule : IEndpointModule
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. The ITokenRevocationManager authenticates the caller inside
         // RevokeTokenAsync before deciding whether it owns the token being revoked, so the
-        // ASP.NET Core auth pipeline is not involved at all.
+        // ASP.NET Core auth pipeline is not involved at all. A failure is answered in the OAuth
+        // format and logged by exception type names only: the handler resolves a manager whose
+        // construction can run plugin code, so an exception's text is not under CMS control
+        // (DMS-1327 D-15, D-17).
         endpoints
             .MapPost("connect/revoke/{**contextPath}", RevokeToken)
             .DisableAntiforgery()
-            .WithMetadata(OAuthErrorContractMetadata.Instance);
+            .WithMetadata(OAuthErrorContractMetadata.Instance, ExceptionTypeOnlyLoggingMetadata.Instance);
     }
 
     private async Task<IResult> RegisterClient(

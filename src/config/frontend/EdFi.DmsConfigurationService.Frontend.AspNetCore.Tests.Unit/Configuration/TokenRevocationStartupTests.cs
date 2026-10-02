@@ -68,6 +68,19 @@ public class TokenRevocationStartupTests
     /// <summary>The exception a registration factory throws, with the sentinel everywhere it can carry text.</summary>
     public sealed class SentinelFactoryException(string message, Exception inner) : Exception(message, inner);
 
+    private static Exception ThrowingFactoryFailure()
+    {
+        SentinelFactoryException failure = new(
+            $"factory failed with {Sentinel}",
+            new TimeoutException($"inner {Sentinel}")
+        );
+        failure.Data["connection"] = Sentinel;
+        return failure;
+    }
+
+    private static readonly string _throwingFactoryTypeChain =
+        $"{typeof(SentinelFactoryException).FullName} -> {typeof(TimeoutException).FullName}";
+
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_with_the_registration_its_provider_ships(string provider, string datastore)
     {
@@ -149,19 +162,6 @@ public class TokenRevocationStartupTests
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_whose_revocation_manager_factory_throws(string provider, string datastore)
     {
-        private static Exception ThrowingFactoryFailure()
-        {
-            SentinelFactoryException failure = new(
-                $"factory failed with {Sentinel}",
-                new TimeoutException($"inner {Sentinel}")
-            );
-            failure.Data["connection"] = Sentinel;
-            return failure;
-        }
-
-        private static readonly string _throwingFactoryTypeChain =
-            $"{typeof(SentinelFactoryException).FullName} -> {typeof(TimeoutException).FullName}";
-
         private static string NotConstructedMessage(string provider, string exceptionTypes) =>
             $"The token revocation manager for AppSettings:IdentityProvider '{provider}' could not be "
             + $"constructed ({exceptionTypes}). Correct the registration or its dependencies, then restart.";
@@ -283,8 +283,10 @@ public class TokenRevocationStartupTests
 
     /// <summary>
     /// A registration that constructs at startup and throws on a later resolution, which the startup
-    /// check cannot see: the request it fails is answered 500 <c>server_error</c> in the OAuth format,
-    /// with nothing of the factory's exception in the body, and the host keeps serving.
+    /// check cannot see: the request it fails is answered 500 <c>server_error</c> in the OAuth format and
+    /// logged once as a failed request by exception type names only, the factory's message, inner
+    /// exception and <c>Data</c> reach neither the response nor any log field, scope or attached
+    /// exception, and the host keeps serving (D-15, D-17).
     /// </summary>
     [TestFixture]
     public class Given_a_running_host_whose_revocation_manager_later_fails_to_construct
@@ -306,7 +308,7 @@ public class TokenRevocationStartupTests
                     services.RemoveAll<ITokenRevocationManager>();
                     services.AddTransient<ITokenRevocationManager>(_ =>
                         Interlocked.Increment(ref _resolutions) == 2
-                            ? throw new InvalidOperationException($"factory failed with {Sentinel}")
+                            ? throw ThrowingFactoryFailure()
                             : new ScriptedRevocationManager(new TokenRevocationResult.Completed())
                     );
                 }
@@ -339,7 +341,43 @@ public class TokenRevocationStartupTests
             _failedContent.Should().NotContain(Sentinel);
 
         [Test]
+        public void It_logs_one_failed_request_naming_the_exception_types_without_the_exception()
+        {
+            CapturedStartupLog failed = FailedRequestLog();
+            failed.Exception.Should().BeNull();
+            failed
+                .State.Should()
+                .Contain(new KeyValuePair<string, object?>("ExceptionTypes", _throwingFactoryTypeChain));
+        }
+
+        [Test]
+        public void It_keeps_the_correlation_fields_on_the_failed_request()
+        {
+            string traceId = _failed.Headers.GetValues("TraceId").Single();
+            CapturedStartupLog failed = FailedRequestLog();
+            failed.State.Should().Contain(new KeyValuePair<string, object?>("TraceId", traceId));
+            failed.State.Should().Contain(new KeyValuePair<string, object?>("StatusCode", 500));
+            failed
+                .Scopes.OfType<IEnumerable<KeyValuePair<string, object>>>()
+                .SelectMany(scope => scope)
+                .Where(pair => pair.Key == "TraceId")
+                .Select(pair => pair.Value)
+                .Should()
+                .Contain(traceId, "the request logging scope carries the same TraceId");
+        }
+
+        [Test]
+        public void It_keeps_the_factory_exception_content_out_of_every_log_field_scope_and_exception() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
+
+        [Test]
         public void It_serves_the_next_request() => _next.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        private CapturedStartupLog FailedRequestLog() =>
+            _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.EventId.Name == "HttpRequestFailed")
+                .Subject;
     }
 
     /// <summary>
@@ -555,6 +593,13 @@ public class TokenRevocationStartupTests
                 foreach (object? scope in record.Scopes)
                 {
                     text.AppendLine(scope?.ToString());
+                    if (scope is System.Collections.IEnumerable values and not string)
+                    {
+                        foreach (object? value in values)
+                        {
+                            text.AppendLine(value?.ToString());
+                        }
+                    }
                 }
                 AppendChain(text, record.Exception);
             }
@@ -633,6 +678,7 @@ public class TokenRevocationStartupTests
 
     internal sealed record CapturedStartupLog(
         LogLevel Level,
+        EventId EventId,
         string Message,
         IReadOnlyList<KeyValuePair<string, object?>> State,
         IReadOnlyList<object?> Scopes,
@@ -678,7 +724,14 @@ public class TokenRevocationStartupTests
                 List<object?> scopes = [];
                 capture._scopes.ForEachScope((scope, list) => list.Add(scope), scopes);
                 capture._records.Enqueue(
-                    new CapturedStartupLog(logLevel, formatter(state, exception), values, scopes, exception)
+                    new CapturedStartupLog(
+                        logLevel,
+                        eventId,
+                        formatter(state, exception),
+                        values,
+                        scopes,
+                        exception
+                    )
                 );
             }
         }
