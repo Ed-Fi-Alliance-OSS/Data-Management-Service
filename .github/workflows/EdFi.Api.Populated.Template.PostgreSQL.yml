@@ -92,7 +92,9 @@ jobs:
   # docs/DATA-STANDARD-VERSIONS.md. DS 5.2 is the default.
   configure-matrix:
     name: Configure matrix
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) }}
+    # Push and release runs only in Ed-Fi-Alliance-OSS: a fork syncing main would otherwise
+    # try to build, attest and publish packages it cannot. workflow_dispatch still runs anywhere.
+    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') }}
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.build-matrix.outputs.include }}
@@ -122,7 +124,7 @@ jobs:
   build-populated-template:
     name: Build Populated Template ${{ matrix.standard_version }}
     needs: configure-matrix
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) }}
+    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') }}
     # Each leg invokes the whole reusable build/SBOM/provenance pipeline, so per-version outputs
     # stay correlated. The matrix is computed by configure-matrix (filterable on dispatch).
     strategy:
