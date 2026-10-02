@@ -269,6 +269,9 @@ try {
     }
     Set-HarnessVariable -Name SECRETS_E2E_SECRETS_DIRECTORY -Value $secretsDirectory
     Set-HarnessVariable -Name CMS_PLUGINS_MOUNT_SOURCE -Value $pluginRoot
+    # The proof deploys PostgreSQL, and local-config.yml takes the engine from this variable, which an
+    # earlier MSSQL build-config.ps1 run in the same session leaves set.
+    Set-HarnessVariable -Name DMS_CONFIG_DATASTORE -Value "postgresql"
 
     if ($Down) {
         Remove-Deployment
@@ -321,9 +324,9 @@ try {
         throw "Publishing $pluginName failed with exit code $LASTEXITCODE."
     }
 
-    # The store the fixture reads. The data store password is the real one, held only here and not in
-    # the stored connection string, which carries only its reference; the test owns every other entry,
-    # including the ones it rotates.
+    # The store the fixture reads. The data store password is the real one; the data store's stored
+    # connection string carries only its reference, so this store is where the data store reads it from.
+    # The test owns every other entry, including the ones it rotates.
     @{ $datastoreSecretName = $postgresPassword } | ConvertTo-Json | Set-Content -LiteralPath $secretsFile
 
     $succeeded = $false

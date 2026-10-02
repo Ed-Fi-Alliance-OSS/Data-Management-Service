@@ -240,6 +240,9 @@ jobs:
       - name: Run Secret Resolution Proof Results Tests
         run: |
           $result = Invoke-Pester -Path "eng/docker-compose/tests/SecretResolutionProof.Tests.ps1" -Output Detailed -PassThru
+          if ($result.TotalCount -eq 0) {
+              throw "Secret resolution proof results Pester lane ran no tests; check that eng/docker-compose/tests/SecretResolutionProof.Tests.ps1 exists."
+          }
           if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
               throw "Secret resolution proof results Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
           }

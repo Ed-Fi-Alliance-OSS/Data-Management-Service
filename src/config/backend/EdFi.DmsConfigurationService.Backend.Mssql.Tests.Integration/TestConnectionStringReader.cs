@@ -13,8 +13,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
 /// The read seam the host composes for this engine, built over the encryption service and tenant
-/// provider a test's repository already uses, so a repository under test reads exactly as it does in
-/// the host. The cache is off unless a test asks for one, so each read reaches the resolver.
+/// provider a test's repository already uses. The host gives each repository its own reader, so a
+/// test does the same; one reader's resolve allowance covers every read made through it. The cache is
+/// off unless a test asks for one, so each read reaches the resolver.
 /// </summary>
 public static class TestConnectionStringReader
 {

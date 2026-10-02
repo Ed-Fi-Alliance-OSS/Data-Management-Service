@@ -118,6 +118,10 @@ public sealed class ConnectionStringReader(
 
     private long? _readStarted;
 
+    // Set once this read has waited out its allowance, so a timer that fires a little early cannot
+    // leave a sliver of time that sends a later reference back to a resolver that may be hung.
+    private bool _allowanceSpent;
+
     public async Task<string?> ReadAsync(byte[]? stored, ConnectionStringRow row)
     {
         if (stored is null)
@@ -297,27 +301,46 @@ public sealed class ConnectionStringReader(
                 );
         }
 
+        // The cache invokes the factory only for the read that starts the call, and before it first
+        // yields, so this tells a call this read started from one it joined.
+        bool startedCall = false;
+
         try
         {
             value = await WithinReadDeadlineAsync(
                 cache.GetOrFetchAsync(
                     tenant,
                     name,
-                    () => FetchAsync(secretResolver, new SecretReference(name, tenant))
+                    () =>
+                    {
+                        startedCall = true;
+                        return FetchAsync(secretResolver, new SecretReference(name, tenant));
+                    }
                 ),
                 remaining
             );
             outcome = "could not be resolved: the resolver returned no value";
         }
+        catch (ReadAllowanceSpentException)
+        {
+            value = null;
+            outcome = AllowanceSpentOutcome();
+        }
+        catch (SecretResolveTimeoutException) when (startedCall)
+        {
+            // A call this read started is armed no later than the read's own deadline, so reaching its
+            // deadline first means the read's allowance is spent too.
+            _allowanceSpent = true;
+            value = null;
+            outcome = AllowanceSpentOutcome();
+        }
         catch (SecretResolveTimeoutException)
         {
-            // Either this read's allowance passed, or the call it joined reached its own deadline
-            // first and the read still has time for the references after this one.
+            // The call this read joined reached its own deadline first, and the read still has time
+            // for the references after this one.
             value = null;
             outcome =
-                RemainingAllowance() <= TimeSpan.Zero
-                    ? $"could not be resolved: the resolver did not return within the {secretsOptions.Value.ResolveTimeoutSeconds} seconds this read may spend on it"
-                    : $"could not be resolved: the call this read joined, which another read started, did not return within its {secretsOptions.Value.ResolveTimeoutSeconds} seconds";
+                $"could not be resolved: the call this read joined, which another read started, did not return within its {secretsOptions.Value.ResolveTimeoutSeconds} seconds";
         }
         catch (Exception exception)
         {
@@ -335,7 +358,10 @@ public sealed class ConnectionStringReader(
     }
 
     private TimeSpan RemainingAllowance() =>
-        _resolveTimeout - _timeProvider.GetElapsedTime(_readStarted!.Value);
+        _allowanceSpent ? TimeSpan.Zero : _resolveTimeout - _timeProvider.GetElapsedTime(_readStarted!.Value);
+
+    private string AllowanceSpentOutcome() =>
+        $"could not be resolved: the resolver did not return within the {secretsOptions.Value.ResolveTimeoutSeconds} seconds this read may spend on it";
 
     /// <summary>
     /// A derivative read as part of a data store is optional there, so an unresolvable one reads as not
@@ -378,10 +404,18 @@ public sealed class ConnectionStringReader(
     /// <summary>
     /// Waits for a value no longer than the read has left. The fetch may be shared with other reads,
     /// so its own deadline stays the full timeout and is not shortened here; a fetch this read stops
-    /// waiting for runs on, and caches its value if it gets one.
+    /// waiting for runs on, and caches its value if it returns one within that deadline. Which task
+    /// finished first decides the outcome, not a later look at the clock: a timer may fire a little
+    /// before the allowance is used up.
     /// </summary>
     private async Task<string> WithinReadDeadlineAsync(Task<string> fetch, TimeSpan remaining)
     {
+        // A cached value, or a fetch that finished on the caller's thread, needs no timer.
+        if (fetch.IsCompleted)
+        {
+            return await fetch;
+        }
+
         using CancellationTokenSource deadlineCancellation = new();
         Task deadline = Task.Delay(remaining, _timeProvider, deadlineCancellation.Token);
 
@@ -399,7 +433,8 @@ public sealed class ConnectionStringReader(
             TaskScheduler.Default
         );
 
-        throw new SecretResolveTimeoutException();
+        _allowanceSpent = true;
+        throw new ReadAllowanceSpentException();
     }
 
     /// <summary>
@@ -454,9 +489,10 @@ public sealed class ConnectionStringReader(
     private TaskCompletionSource? _abandonedCallObserved;
 
     /// <summary>
-    /// Completes once the outcome of a call this reader stopped waiting for has been observed and
-    /// dropped, so a test can wait for it instead of guessing when it ran. The signal is created on
-    /// first use by either side, so it is the same one whichever comes first.
+    /// Completes once the outcome of a call this reader started, and abandoned at that call's own
+    /// deadline, has been observed and dropped, so a test can wait for it instead of guessing when it
+    /// ran. It completes once, for the first such call. The signal is created on first use by either
+    /// side, so it is the same one whichever comes first.
     /// </summary>
     internal Task AbandonedCallObserved => AbandonedCallSignal().Task;
 
@@ -471,4 +507,7 @@ public sealed class ConnectionStringReader(
     /// raises itself so the two are reported differently.
     /// </summary>
     public sealed class SecretResolveTimeoutException : Exception;
+
+    /// <summary>This read's own allowance passed before the call it was waiting on finished.</summary>
+    public sealed class ReadAllowanceSpentException : Exception;
 }

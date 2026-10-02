@@ -97,7 +97,8 @@ public class ConnectionStringReaderTests
 
     protected ConnectionStringReader CreateReader(
         IDataStoreConnectionStringBuilderSource? builderSource = null,
-        bool withResolver = true
+        bool withResolver = true,
+        TimeProvider? timeProvider = null
     ) =>
         new(
             Encryption,
@@ -107,7 +108,7 @@ public class ConnectionStringReaderTests
             Tenant,
             Logger,
             withResolver ? Resolver : null,
-            Time
+            timeProvider ?? Time
         );
 
     protected static byte[] Stored(string plainText) => _encryption.Encrypt(plainText)!;
@@ -173,6 +174,28 @@ public class ConnectionStringReaderTests
             Calls.Enqueue(reference);
             return Behavior(reference, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// The fake clock, with every timer firing a millisecond before it is due, as a system timer that
+    /// rounds its due time down to whole milliseconds can.
+    /// </summary>
+    public sealed class EarlyTimerTimeProvider(FakeTimeProvider inner) : TimeProvider
+    {
+        public static readonly TimeSpan Early = TimeSpan.FromMilliseconds(1);
+
+        public override long TimestampFrequency => inner.TimestampFrequency;
+
+        public override long GetTimestamp() => inner.GetTimestamp();
+
+        public override DateTimeOffset GetUtcNow() => inner.GetUtcNow();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        ) => inner.CreateTimer(callback, state, dueTime > Early ? dueTime - Early : dueTime, period);
     }
 
     /// <summary>Fails any parse, proving a path never reached the builder.</summary>
@@ -1370,5 +1393,207 @@ public class ConnectionStringReaderTests
         [Test]
         public void It_serves_the_next_reference() =>
             _postgresql.CreateBuilder(Decrypted(_nextRead!))["Password"].Should().Be("next-value");
+    }
+
+    /// <summary>
+    /// A timer can fire just before the read's allowance is used up. Which task won decides the
+    /// outcome, so the read still reports its own timeout rather than a joined call's, and it does not
+    /// spend the sliver left on asking a resolver that may be hung for the next reference.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_reads_own_timer_firing_just_before_its_allowance_is_used_up
+        : ConnectionStringReaderTests
+    {
+        private string? _nested;
+        private ConnectionStringReadException _dataStoreFailure = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Resolver.Behavior = (_, _) =>
+            {
+                entered.TrySetResult();
+                return new ValueTask<string>(new TaskCompletionSource<string>().Task);
+            };
+
+            ConnectionStringReader reader = CreateReader(timeProvider: new EarlyTimerTimeProvider(Time));
+            Task<string?> first = reader.ReadAsync(
+                Stored("Host=db;Password=${secret:a}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(TimeoutSeconds) - EarlyTimerTimeProvider.Early);
+            _nested = await first.WaitAsync(SafetyBound);
+
+            // Would hang until the clock moved again if it asked the resolver.
+            _dataStoreFailure = await ReadFailure(() =>
+                    reader.ReadAsync(Stored("Host=db;Password=${secret:b}"), DataStoreRow)
+                )
+                .WaitAsync(SafetyBound);
+        }
+
+        [Test]
+        public void It_reads_the_row_as_not_configured() => _nested.Should().BeNull();
+
+        [Test]
+        public void It_reports_the_reads_own_timeout() =>
+            LoggedText()
+                .Should()
+                .Contain(
+                    "could not be resolved: the resolver did not return within the 10 seconds this read may spend on it"
+                )
+                .And.NotContain(text => text.Contains("the call this read joined"));
+
+        [Test]
+        public void It_does_not_ask_for_the_next_reference() =>
+            Resolver.Calls.Select(call => call.Name).Should().Equal("a");
+
+        [Test]
+        public void It_fails_a_later_data_store_naming_the_spent_time() =>
+            _dataStoreFailure
+                .Message.Should()
+                .EndWith("this read had already waited the 10 seconds it may spend on the resolver.");
+    }
+
+    /// <summary>
+    /// A shared call keeps its own full deadline even when the read that started it has less time
+    /// left. The starting read stops waiting when its allowance passes, but the call runs on: a read
+    /// that joins it later is answered by it, and the value it returns is cached.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_read_that_stops_waiting_for_a_call_it_started_late : ConnectionStringReaderTests
+    {
+        private string? _starterRead;
+        private string? _joinedRead;
+        private string? _cachedRead;
+
+        [SetUp]
+        public async Task Act()
+        {
+            TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<string> first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<string> late = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            int sharedCalls = 0;
+            Resolver.Behavior = (reference, _) =>
+            {
+                entered.TrySetResult();
+
+                if (reference.Name == "a")
+                {
+                    return new ValueTask<string>(first.Task);
+                }
+
+                // Only a second call, made because the first was cut short, would answer this.
+                return Interlocked.Increment(ref sharedCalls) == 1
+                    ? new ValueTask<string>(late.Task)
+                    : ValueTask.FromResult("second-call");
+            };
+
+            ConnectionStringReader starter = CreateReader();
+
+            // The first name answers after six of the starting read's ten seconds.
+            Task<string?> warmUp = starter.ReadAsync(
+                Stored("Host=db;Password=${secret:a}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(6));
+            first.SetResult("first");
+            await warmUp.WaitAsync(SafetyBound);
+
+            // The shared call starts with four seconds left to the read, and ten to itself.
+            entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<string?> started = starter.ReadAsync(
+                Stored("Host=db;Password=${secret:shared}"),
+                NestedDerivativeRow
+            );
+            await entered.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(4));
+            _starterRead = await started.WaitAsync(SafetyBound);
+
+            // Two seconds later the call is still in flight, and a new read joins it.
+            Time.Advance(TimeSpan.FromSeconds(2));
+            Task<string?> joined = CreateReader()
+                .ReadAsync(Stored("Host=db;Password=${secret:shared}"), NestedDerivativeRow);
+            late.SetResult("late");
+            _joinedRead = await joined.WaitAsync(SafetyBound);
+
+            _cachedRead = await CreateReader()
+                .ReadAsync(Stored("Host=db;Password=${secret:shared}"), NestedDerivativeRow)
+                .WaitAsync(SafetyBound);
+        }
+
+        [Test]
+        public void It_stops_the_starting_read_at_its_allowance() => _starterRead.Should().BeNull();
+
+        [Test]
+        public void It_answers_the_joining_read_from_the_same_call() =>
+            _postgresql.CreateBuilder(Decrypted(_joinedRead!))["Password"].Should().Be("late");
+
+        [Test]
+        public void It_caches_the_late_value() =>
+            _postgresql.CreateBuilder(Decrypted(_cachedRead!))["Password"].Should().Be("late");
+
+        [Test]
+        public void It_asks_for_the_shared_name_once() =>
+            Resolver.Calls.Select(call => call.Name).Should().Equal("a", "shared");
+    }
+
+    /// <summary>
+    /// A read that joined a call which timed out keeps only what is left of its own allowance, not a
+    /// fresh one: it joined eight seconds after it started, so its next reference is cut off eight
+    /// seconds after the shared call's deadline.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_joining_read_after_the_shared_call_times_out : ConnectionStringReaderTests
+    {
+        private string? _nextRead;
+
+        [SetUp]
+        public async Task Act()
+        {
+            TaskCompletionSource shared = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource next = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Resolver.Behavior = (reference, _) =>
+            {
+                (reference.Name == "shared" ? shared : next).TrySetResult();
+                return new ValueTask<string>(new TaskCompletionSource<string>().Task);
+            };
+
+            Task<ConnectionStringReadException> starter = ReadFailure(() =>
+                CreateReader().ReadAsync(Stored("Host=db;Password=${secret:shared}"), DataStoreRow)
+            );
+            await shared.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(8));
+
+            ConnectionStringReader joiner = CreateReader();
+            Task<string?> joined = joiner.ReadAsync(
+                Stored("Host=db;Password=${secret:shared}"),
+                NestedDerivativeRow
+            );
+            Time.Advance(TimeSpan.FromSeconds(2));
+            await starter.WaitAsync(SafetyBound);
+            await joined.WaitAsync(SafetyBound);
+
+            Task<string?> nextRead = joiner.ReadAsync(
+                Stored("Host=db;Password=${secret:next}"),
+                NestedDerivativeRow
+            );
+            await next.Task.WaitAsync(SafetyBound);
+            Time.Advance(TimeSpan.FromSeconds(8));
+            _nextRead = await nextRead.WaitAsync(SafetyBound);
+        }
+
+        [Test]
+        public void It_reads_the_next_row_as_not_configured() => _nextRead.Should().BeNull();
+
+        [Test]
+        public void It_reports_the_reads_own_timeout() =>
+            LoggedText()
+                .Should()
+                .Contain(
+                    "could not be resolved: the resolver did not return within the 10 seconds this read may spend on it"
+                );
     }
 }

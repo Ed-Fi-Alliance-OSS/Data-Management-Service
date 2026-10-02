@@ -152,7 +152,8 @@ try {
             throw "Removing the isolated stack (project $($isolation.CMS_COMPOSE_PROJECT)) failed with exit code $downExitCode; it may still be running. Remove it with start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile."
         }
 
-        # Compose usually removes the network itself, so this one failing is expected.
+        # Every compose file declares this network external, so compose down leaves it and this is the
+        # only removal. Its failure is not fatal: the network holds no data, and the next run reuses it.
         & docker network rm $isolation.CMS_COMPOSE_NETWORK *> $null
         $global:LASTEXITCODE = 0
     }

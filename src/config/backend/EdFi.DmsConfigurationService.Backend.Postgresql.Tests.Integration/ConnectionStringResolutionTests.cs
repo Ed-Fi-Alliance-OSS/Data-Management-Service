@@ -82,13 +82,13 @@ public class ConnectionStringResolutionTests : DatabaseTest
         ISecretResolver? resolver
     )
     {
-        // The cache is off, so a value resolved twice reaches the resolver twice.
-        IConnectionStringReader reader = TestConnectionStringReader.Create(_encryption, tenant, resolver);
+        // The cache is off, so a value resolved twice reaches the resolver twice. Each repository has its
+        // own reader, as in the host, where the reader is transient.
         var derivatives = new DataStoreDerivativeRepository(
             Configuration.DatabaseOptions,
             NullLogger<DataStoreDerivativeRepository>.Instance,
             _encryption,
-            reader,
+            TestConnectionStringReader.Create(_encryption, tenant, resolver),
             new TestAuditContext(),
             tenant
         );
@@ -96,7 +96,7 @@ public class ConnectionStringResolutionTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DataStoreRepository>.Instance,
             _encryption,
-            reader,
+            TestConnectionStringReader.Create(_encryption, tenant, resolver),
             new DataStoreContextRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreContextRepository>.Instance,
